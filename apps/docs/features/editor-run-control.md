@@ -35,8 +35,8 @@ of an answer, until that worker stops, a key answers no other worker and starts 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
   test stops), in the palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under
   `…`).
-- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
-  menu, whose text starts `Piwi: paused · checkout.page.ts:12` while a test is stopped.
+- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
+  whose text says why a test stopped and where, `Piwi: stopped at a breakpoint · checkout.page.ts:12`, while one is.
 
 The progress beside them comes from the run, so it counts offline and with the desktop app
 ([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.

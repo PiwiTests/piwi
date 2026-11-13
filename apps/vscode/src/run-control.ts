@@ -532,8 +532,8 @@ export function asideColumn(
 
 /**
  * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`, or,
- * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
- * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
+ * at a failure, how the test failed, `Held at its failure · Timed out 5000ms waiting for getByRole('button') · attempt
+ * 2`, in plain text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
 export function pausedText(
   stop: RunStop,
@@ -552,10 +552,11 @@ export function pausedText(
       : runner
         ? " · run by the editor's test runner"
         : ' · run in a terminal';
-  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  if (stop.reason === 'failure') {
+    return `${RUN_STOP_WORDS.failure} · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  }
   // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
-  const reason = stop.reason as Exclude<RunStop['reason'], 'failure'>;
-  const why = stop.by === 'agent' ? 'Paused by the agent' : (RUN_STOP_WORDS[reason] ?? RUN_STOP_WORDS.other);
+  const why = stop.by === 'agent' ? 'Paused by the agent' : (RUN_STOP_WORDS[stop.reason] ?? RUN_STOP_WORDS.other);
   return `${why} · ${stop.title}${attempt}${where}`;
 }
 

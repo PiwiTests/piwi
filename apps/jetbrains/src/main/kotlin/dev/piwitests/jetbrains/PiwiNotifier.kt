@@ -30,8 +30,8 @@ enum class PiwiNotice(val group: String) {
 }
 
 /**
- * Every Piwi balloon: titled Piwi (a run's verdict, by its run), in the group of its kind ([PiwiNotice]), with Piwi's icon when it is an information
- * (a warning or an error keeps the platform's icon, which says how serious it is).
+ * Every Piwi balloon: titled Piwi (a run's verdict, by its run), in the group of its kind ([PiwiNotice]), with Piwi's
+ * icon when it is an information (a warning or an error keeps the platform's icon, which says how serious it is).
  */
 object PiwiNotifier {
     private val ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiNotifier::class.java)

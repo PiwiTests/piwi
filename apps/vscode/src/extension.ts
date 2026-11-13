@@ -2051,7 +2051,9 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
     }
     projects = await progress(`Piwi: listing the projects of ${base}…`, () => listProjects(base, apiKey));
   } catch (e) {
-    void vscode.window.showErrorMessage(`Piwi: could not connect to ${base}: ${connectFailure(e, base)}`);
+    void vscode.window.showErrorMessage(
+      `Piwi: could not connect to ${base}: ${connectFailure(e, base, vscode.env.appName)}`,
+    );
     return false;
   }
   let project = '';

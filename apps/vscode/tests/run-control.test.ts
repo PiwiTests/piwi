@@ -2009,7 +2009,7 @@ describe('a failure held for the editor', () => {
   };
 
   test('says how the test failed, with its own icon, and offers Resume alone among the controls', () => {
-    expect(pausedText(failed, runTest(1))).toBe('Failed · Timed out 5000ms waiting for click · attempt 2');
+    expect(pausedText(failed, runTest(1))).toBe('Held at its failure · Timed out 5000ms waiting for click · attempt 2');
     expect(stopIcon(failed)).toBe('$(error)');
     expect(stopIcon(stopAt(spec, 5))).toBe('$(debug-pause)');
     expect(stopControls(shown(failed)).map((c) => c.title)).toEqual(['Resume']);
@@ -2019,7 +2019,7 @@ describe('a failure held for the editor', () => {
       'Run to cursor',
       'Finish',
     ]);
-    expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
+    expect(stopPick(shown(failed)).label).toBe('$(error) Held at its failure · Timed out 5000ms waiting for click');
   });
 
   test('keeps the lens row above a stop to five entries: Run to cursor, End test and each action stay in its hover', () => {

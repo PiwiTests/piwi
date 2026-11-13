@@ -515,7 +515,7 @@ command started with or was last sent (`breakpointUpdates`), and once to a run a
 hears them as they stand too (`piwi/setBreakpoints`, as the service starts, as the Playwright configs change and as they
 change, only when they differ): a run started in a terminal starts with them.
 
-**A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
+**A held failure** (`reason: 'failure'`) is `Held at its failure · <how it failed> · attempt N` after `$(error)`, with Resume alone
 among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.
 
 **Who else is there.** The paused page's caption (`stopCaption`), the worker panel's (`laneShown`) and a stop's hover
@@ -879,10 +879,11 @@ API `activate` returns gives what the view shows (`testExplorer`).
    `SecretStorage`.
 
 A failure is said in the JetBrains plugin's words (`connectFailure`, as its `Glue.connectFailure`): a refused key, a 404
-that is not a Piwi instance, a certificate VS Code does not trust with its host and `NODE_EXTRA_CA_CERTS`, no answer,
-nothing listening, an unknown host. The requests to the instance (`needsKey`, `startSignIn`, `waitForSignIn`,
-`listProjects`) are in `src/connect.ts`, which uses no VS Code API and is tested against a stub
-(`tests/connect.test.ts`). The order in which the service picks a connection: [Connection order and watching
+or a page that is not a Piwi instance, a certificate the editor does not trust (its host and `NODE_EXTRA_CA_CERTS`), one
+expired or issued for another address, HTTPS asked of an HTTP server, no answer, nothing listening, a name not found;
+else the deepest cause's own message, never the bare `fetch failed`. The requests to the instance (`needsKey`,
+`startSignIn`, `waitForSignIn`, `listProjects`) are in `src/connect.ts`, which uses no VS Code API and is tested against
+a stub (`tests/connect.test.ts`). The order in which the service picks a connection: [Connection order and watching
 `HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the editor service's reference.
 
 ## The pure half

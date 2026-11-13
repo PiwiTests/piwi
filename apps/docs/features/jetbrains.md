@@ -91,7 +91,7 @@ The rest is native, and every action is under **Tools → Piwi**:
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a locator**, **Record here**, **Assert**, **Assert a region** and **Mock a request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
-  says how many elements its locator matches on the stopped page, and a failure held there reads `Failed · …`.
+  says how many elements its locator matches on the stopped page, and a failure held there reads `Held at its failure · …`.
 - **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
   off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
   tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate

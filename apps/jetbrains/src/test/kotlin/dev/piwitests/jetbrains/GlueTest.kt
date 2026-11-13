@@ -748,7 +748,7 @@ class GlueTest {
             Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
         )
         assertEquals("The test went on.", Glue.sharedText(StopBindResult(false, "The test went on.")))
-        assertEquals("Piwi: paused · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals("Piwi: stopped at a breakpoint · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(null, Glue.runControlStatus(Glue.runControls(running), emptyList()))
     }
 
@@ -819,7 +819,7 @@ class GlueTest {
         assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
-            "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
+            "Piwi: stopped at a breakpoint · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
     }
@@ -1034,7 +1034,7 @@ class GlueTest {
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
         assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · Worker 2", Glue.stopLabel(stops[1]))
-        assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
+        assertEquals("Piwi: 2 tests stopped", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 
     /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`, or with the pause bar for `bar`. */
@@ -1496,12 +1496,12 @@ class GlueTest {
     @Test
     fun `a failure held for the IDE says how the test failed and offers Resume alone among the controls`() {
         val failed = stopAt(specUri, 5).copy(reason = "failure", title = "Failed: Timed out 5000ms waiting for click")
-        assertEquals("Failed · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
+        assertEquals("Held at its failure · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
         val shown = { stop: RunStop, takes: List<String> -> Glue.ShownStop("ed-1", 0, stop, runTest(), takes) }
         assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(shown(failed, listOf("end"))))
         assertEquals(Glue.StopControl.entries - Glue.StopControl.END, Glue.stopControls(shown(stopAt(specUri, 5), allTakes)))
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), failed, takes = allTakes)))
-        assertEquals("Piwi: failed · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals("Piwi: held at its failure · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(Glue.StopAction.entries.toSet(), Glue.runControls(stopped).actions)
     }
 
@@ -3114,6 +3114,7 @@ class GlueTest {
         assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the failures", "Open in dashboard")), Glue.runVerdict(passed, "failures"))
         // The balloon is titled by its run, so two runs' balloons read apart.
         assertEquals("Piwi: run #124", Glue.runVerdictTitle(124))
+        assertEquals("Passed 3 of 3", Glue.runVerdict(passed, "failures")?.let { Glue.runVerdictBody(it, 124) })
     }
 
     @Test

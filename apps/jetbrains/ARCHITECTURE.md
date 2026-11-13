@@ -342,11 +342,12 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - the service cannot start: the Node.js settings;
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
-- while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's
-  controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
+- while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's controls
+  ([Run control](#run-control)). The item reads `Piwi: stopped at a breakpoint · checkout.page.ts:12` (`Glue.stopWhy`)
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
   progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
-  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
+  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 ·
+  cart › adds a mug · stopped`);
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
@@ -530,9 +531,10 @@ written since.
 the call a test runs, where it sends `give-up`, naming the worker and no stop), `Piwi.ShowPausedPage` and
 `Piwi.StopRun`.
 
-- They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists;
-  the item reads `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`), with the
-  pause's icon, or the error's while every stop held is a failure (`Glue.heldFailuresOnly`).
+- They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists; the
+  item reads `Piwi: stopped at a breakpoint · checkout.page.ts:12` while one is stopped, its reason's words
+  (`Glue.runControlStatus`), with the pause's icon, or the error's while every stop held is a failure
+  (`Glue.heldFailuresOnly`).
 - They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
   stop of that slot opens, they act on a stop of the answered slot or on none, whatever the caret or another worker's
   new stop say, so a key pressed again answers no other worker. Otherwise they act on the stop at the caret's line, else
@@ -636,7 +638,7 @@ started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun`
 hears them as they stand too (`piwi/setBreakpoints`, from `PiwiRunSessions.breakpointsChanged`, also as the status
 changes, only when they differ): a run started in a terminal starts with them.
 
-**A held failure** (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
+**A held failure** (`reason: 'failure'`, `Glue.isFailure`) is `Held at its failure · <how it failed> · attempt N`, with
 `AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and
 `Piwi: failed · checkout.spec.ts:12` in the status bar.
 

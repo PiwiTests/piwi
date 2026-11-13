@@ -12,24 +12,27 @@ export class InstanceError extends Error {
   }
 }
 
-/** The error codes of a certificate Node.js does not trust. */
-const CERTIFICATE_CODES = new Set([
+/** The error codes of a certificate signed by an authority Node.js does not trust. */
+const UNTRUSTED_CODES = new Set([
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
   'UNABLE_TO_GET_ISSUER_CERT',
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'SELF_SIGNED_CERT_IN_CHAIN',
   'DEPTH_ZERO_SELF_SIGNED_CERT',
-  'CERT_HAS_EXPIRED',
   'CERT_UNTRUSTED',
-  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'INVALID_CA',
 ]);
 
+/** A link of an error's chain, as Node.js and undici give them. */
+type ErrorLink = { name?: string; code?: string; message?: string };
+
 /**
- * Why Connect could not reach `url`, in the JetBrains plugin's words (`Glue.connectFailure`): a refused key, a 404 that
- * is not a Piwi instance, another status, a certificate the editor does not trust (naming its host and where to trust
- * it), no answer in time, nothing listening, an unknown host; else the error's own message.
+ * Why Connect could not reach `url`, in the JetBrains plugin's words (`Glue.connectFailure`): a refused key, an address
+ * that is not a Piwi instance (a 404, or a page where Piwi's API should answer), another status, a certificate the
+ * editor does not trust, one expired or for another name, no answer in time, nothing listening, a name not found; else
+ * the deepest cause's own message. `editor` names the editor in the advice (`vscode.env.appName`).
  */
-export function connectFailure(e: unknown, url: string | null): string {
+export function connectFailure(e: unknown, url: string | null, editor = 'VS Code'): string {
   let host = 'the instance';
   try {
     if (url) host = new URL(url).hostname || host;
@@ -41,23 +44,36 @@ export function connectFailure(e: unknown, url: string | null): string {
     if (e.status === 404) return "not a Piwi instance: nothing answers Piwi's requests at this address (404)";
     return `the instance answered ${e.status}`;
   }
-  const chain: Array<{ name?: string; code?: string; message?: string }> = [];
+  if (e instanceof SyntaxError) return "not a Piwi instance: the address answers with a page, not Piwi's requests";
+  const chain: ErrorLink[] = [];
   for (let c: unknown = e; c && typeof c === 'object' && chain.length < 10; c = (c as { cause?: unknown }).cause) {
-    chain.push(c as { name?: string; code?: string; message?: string });
+    chain.push(c as ErrorLink);
   }
-  const has = (test: (c: { name?: string; code?: string; message?: string }) => boolean) => chain.some(test);
-  if (has((c) => !!c.code && CERTIFICATE_CODES.has(c.code))) {
+  const code = (test: (code: string) => boolean) => chain.some((c) => !!c.code && test(c.code));
+  if (code((c) => UNTRUSTED_CODES.has(c))) {
     return (
-      `VS Code does not trust the certificate of ${host}. Add the authority that signed it, or your company's root ` +
-      'certificate, to NODE_EXTRA_CA_CERTS in the environment VS Code starts with'
+      `${editor} does not trust the certificate of ${host}. Add the authority that signed it, or your company's root ` +
+      'certificate, to NODE_EXTRA_CA_CERTS in the environment the editor runs extensions in'
     );
   }
-  if (has((c) => c.name === 'TimeoutError' || c.code === 'UND_ERR_CONNECT_TIMEOUT' || c.code === 'ETIMEDOUT')) {
-    return 'no answer within 15 seconds';
+  if (code((c) => c === 'CERT_HAS_EXPIRED')) return `the certificate of ${host} has expired`;
+  if (code((c) => c === 'CERT_NOT_YET_VALID'))
+    return `the certificate of ${host} is not valid yet: check this machine's clock`;
+  if (code((c) => c === 'ERR_TLS_CERT_ALTNAME_INVALID')) {
+    return `the certificate of ${host} names another address: use the address it was issued for`;
   }
-  if (has((c) => c.code === 'ECONNREFUSED')) return 'nothing answers there. Is the instance running, on that port?';
-  if (has((c) => c.code === 'ENOTFOUND' || c.code === 'EAI_AGAIN')) return `unknown host ${host}`;
-  return (e as Error)?.message ?? String(e);
+  if (code((c) => c === 'ERR_SSL_WRONG_VERSION_NUMBER')) return `${host} does not answer HTTPS there: try http://`;
+  if (
+    chain.some((c) => c.name === 'TimeoutError') ||
+    code((c) => c === 'UND_ERR_CONNECT_TIMEOUT' || c === 'ETIMEDOUT')
+  ) {
+    return 'no answer in time';
+  }
+  if (code((c) => c === 'ECONNREFUSED')) return 'nothing answers there. Is the instance running, on that port?';
+  if (code((c) => c === 'ENOTFOUND')) return `unknown host ${host}`;
+  if (code((c) => c === 'EAI_AGAIN')) return `the name ${host} could not be looked up now: is this machine online?`;
+  const deepest = chain[chain.length - 1];
+  return deepest?.message || deepest?.code || (e as Error)?.message || String(e);
 }
 
 export interface ProjectItem {

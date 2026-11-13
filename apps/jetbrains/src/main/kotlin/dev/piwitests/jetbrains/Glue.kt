@@ -893,6 +893,9 @@ object Glue {
     /** The title of a run's verdict balloon, which tells two runs' balloons apart: `Piwi: run #124`. */
     fun runVerdictTitle(runId: Int): String = "Piwi: run #$runId"
 
+    /** A run's verdict under its balloon's title (`runVerdictTitle`): its sentence without the run it names. */
+    fun runVerdictBody(verdict: RunVerdict, runId: Int): String = verdict.text.removePrefix("Run #$runId · ")
+
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
 
@@ -2078,8 +2081,8 @@ object Glue {
 
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
-     * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
-     * plain text: the gutter's icon marks the stop.
+     * or, at a failure, how the test failed, `Held at its failure · Timed out 5000ms waiting for getByRole('button') ·
+     * attempt 2`, in plain text: the gutter's icon marks the stop.
      */
     fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false, runner: Boolean = false, checkout: String? = null): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
@@ -2091,14 +2094,18 @@ object Glue {
             runner -> " · run by the editor's test runner"
             else -> " · run in a terminal"
         }
-        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
-        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
-        val why = if (stop.by == "agent") {
-            "Paused by the agent"
-        } else {
-            stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
-        }
-        return "$why · ${stop.title.orEmpty()}$attempt$where"
+        if (isFailure(stop)) return "${stopWhy(stop)} · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
+        return "${stopWhy(stop)} · ${stop.title.orEmpty()}$attempt$where"
+    }
+
+    /**
+     * Why a stop's test stands there: a stop an agent asked for (its Pause, Step or Run to) says so, for the person
+     * watching; else its reason's words (`RUN_STOP_WORDS`), a held failure's among them.
+     */
+    fun stopWhy(stop: RunStop): String = when {
+        isFailure(stop) -> RUN_STOP_WORDS.getValue("failure")
+        stop.by == "agent" -> "Paused by the agent"
+        else -> stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
     }
 
     /** What a stop says of why its test stands there, by its reason: the editor service's `RUN_STOP_WORDS`. */
@@ -2108,6 +2115,7 @@ object Glue {
         "pause" to "Paused",
         "run-to" to "Stopped at the line it ran to",
         "page-pause" to "Stopped at page.pause()",
+        "failure" to "Held at its failure",
         "other" to "Stopped",
     )
 
@@ -2637,8 +2645,10 @@ object Glue {
     fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? {
         val shared = controls.liveViewers?.let { " · ${liveCount(it)}" }.orEmpty()
         return when {
-            stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
-            stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
+            stops.size == 1 -> stops.single().stop.let { stop ->
+                "Piwi: ${stopWhy(stop).replaceFirstChar { it.lowercaseChar() }} · ${stopPlace(stop)}$shared"
+            }
+            stops.size > 1 -> "Piwi: ${stops.size} tests stopped$shared"
             controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
             controls.pausing -> "Piwi: pausing…$shared"
             else -> null

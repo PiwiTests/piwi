@@ -1683,14 +1683,15 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
 /**
  * What a stop says of why its test stands there, by its reason, as every surface says it: the editors here (the
  * JetBrains plugin's `Glue.RUN_STOP_WORDS` mirrors it), the run page, the desktop app and Piwi Picker
- * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure says how it failed instead.
+ * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure held for a look is named so, how it failed after.
  */
-export const RUN_STOP_WORDS: Record<Exclude<RunStopReason, 'failure'>, string> = {
+export const RUN_STOP_WORDS: Record<RunStopReason, string> = {
   breakpoint: 'Stopped at a breakpoint',
   step: 'Stopped after a step',
   pause: 'Paused',
   'run-to': 'Stopped at the line it ran to',
   'page-pause': 'Stopped at page.pause()',
+  failure: 'Held at its failure',
   other: 'Stopped',
 };
 

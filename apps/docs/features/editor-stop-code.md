@@ -113,7 +113,7 @@ from the editor (**Piwi: Hold failures: turn on or off for the run**, **Tools �
 or Piwi Picker's [Runs window](./runs-window). The editor shows it as a stop of its own, at the
 line where the error entered the test's code, or at the call a test timeout cut short:
 
-`Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
+`Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
 
 Its line is marked in red. **Resume** lets the test end as it failed (**Step** and **Finish** do the same, so VS Code's
 status bar offers Resume alone); **Pick** replaces the failing locator, **Record** writes the steps that were missing

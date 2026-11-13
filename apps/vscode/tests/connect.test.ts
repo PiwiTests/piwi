@@ -130,8 +130,30 @@ describe('connectFailure', () => {
       'unknown host piwi.example',
     );
     expect(connectFailure(Object.assign(new Error('aborted'), { name: 'TimeoutError' }), url)).toBe(
-      'no answer within 15 seconds',
+      'no answer in time',
+    );
+    expect(connectFailure(fetchFailed({ code: 'EAI_AGAIN' }), url)).toBe(
+      'the name piwi.corp could not be looked up now: is this machine online?',
+    );
+    // A cause it does not name says itself, rather than the bare 'fetch failed'.
+    expect(connectFailure(fetchFailed({ code: 'ECONNRESET', message: 'read ECONNRESET' }), url)).toBe(
+      'read ECONNRESET',
     );
     expect(connectFailure(new Error('boom'), url)).toBe('boom');
+  });
+
+  test('names a certificate that expired or names another address, and a page that is not Piwi', () => {
+    expect(connectFailure(fetchFailed({ code: 'CERT_HAS_EXPIRED' }), url)).toBe(
+      'the certificate of piwi.corp has expired',
+    );
+    expect(connectFailure(fetchFailed({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' }), url)).toBe(
+      'the certificate of piwi.corp names another address: use the address it was issued for',
+    );
+    expect(connectFailure(new SyntaxError("Unexpected token '<'"), url)).toBe(
+      "not a Piwi instance: the address answers with a page, not Piwi's requests",
+    );
+    expect(connectFailure(fetchFailed({ code: 'SELF_SIGNED_CERT_IN_CHAIN' }), url, 'Cursor')).toMatch(
+      /^Cursor does not trust/,
+    );
   });
 });

@@ -880,7 +880,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-8", file, 5, "2026-10-25T10:00:08.000Z", "failure", "Failed: Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })"))
         val shown = sessions.shown()
         val renderer = shown.inlays.single().renderer as StopInlay
-        assertEquals("Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
+        assertEquals("Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
         assertEquals(listOf(Glue.StopControl.RESUME) + Glue.StopAction.entries, renderer.links)
         assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
         val statusBar = PiwiStatusBarWidget(project)

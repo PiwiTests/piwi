@@ -150,7 +150,7 @@ object PiwiCommands {
         val verdict = Glue.runVerdict(ended, setting) ?: return
         val notification = PiwiNotifier.create(
             PiwiNotice.RESULT,
-            verdict.text.removePrefix("Run #${ended.runId} · "),
+            com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(Glue.runVerdictBody(verdict, ended.runId)),
             if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION,
             Glue.runVerdictTitle(ended.runId),
         )

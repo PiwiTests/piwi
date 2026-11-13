@@ -16,11 +16,12 @@ now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentat
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a
 run's balloon titled by its run, VS Code's Connect failures in JetBrains' words (ST20), and Q23, the desktop app's
 product name, Piwi Desktop, which #1317 shipped (AC13); and M6's End the test off the square and Finish's step-out glyph
-in the Runs window and the desktop app, and the pause bar in the editors' order (IC5). §14 adds the findings the code
-that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10,
-each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document
-owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words
-and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+in the Runs window and the desktop app, and the pause bar in the editors' order (IC5); and M22's held failure worded as
+the run page words it, and JetBrains' status item saying why a test stopped (LR15). §14 adds the findings the code that
+built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each
+but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns
+where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and
+its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -366,7 +367,7 @@ input follows. ([M1](#m1), [LI1](#li1))
 `Glue.kt:2552` says Run to Caret, and a paused recording reads "paused · N" (`apps/vscode/src/glue.ts:1227-1229`) or
 "recording paused · N" (`Glue.kt:3223`); `apps/application/tests/unit/stop-words-drift.test.ts` holds only the words for
 why a test stopped. **(read)** Fix: the editor service sends the words and the clients map only icons; the rest comes
-from the words table of [LI1](#li1), held by a test over both clients ([LR15](#lr15)). ([M22](#m22), [LI1](#li1),
+from the words table of [LI1](#li1), held by a test over both clients. ([M22](#m22), [LI1](#li1),
 [LI6](#li6))
 
 ### 4.5 Keys
@@ -955,16 +956,6 @@ wherever the run is listed. ([M4](#m4))
 
 ### 8.7 Words deferred to the study
 
-<a id="lr15"></a>**LR15. A held failure reads "Failed · …" in the editors and "Held at its failure" on the run page and
-in the tray, and JetBrains' status item says "paused" whatever the reason.** Both editors take the rows' words for each
-other reason (`RUN_STOP_WORDS`, `packages/editor/src/protocol.ts:1681`, `Glue.kt:2062-2069`) but write
-`Failed · <error>` at a failure (`apps/vscode/src/run-control.ts:537`, `Glue.kt:2051`), where
-`apps/application/app/utils/stop-words.ts:13` says "Held at its failure"; JetBrains' status item says
-`Piwi: paused · <place>` at any one stop but a failure, and `Piwi: 3 tests paused` at several (`Glue.kt:2487-2488`).
-**(read)** Fix: the editors take the rows' failure words, the error after them, which the editor service carries for
-both clients (FSL words do not move into MIT `packages/core`), and the status item the stop's reason; the per-reason
-row joins [developer-loop-audit.md](developer-loop-audit.md) §9. ([M22](#m22))
-
 <a id="lr16"></a>**LR16. One run has a different name in each place: the VS Code task, JetBrains' Run tab, the worker
 views and the Stop and Share live choosers.** The task is its command line (`runTaskName`,
 `apps/vscode/src/glue.ts:1332-1335`), the Run tab what it runs (`Glue.runTabName`, `Glue.kt:1503-1514`), the Stop
@@ -1382,7 +1373,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m18"></a>M18 | **A flaky group in both failures trees**, selected from the flaky row of the status popup and the status menu | `ide` | [HM10](#hm10) |
 | <a id="m20"></a>M20 | **Piwi's per-test data in VS Code's Testing view**: durations, and the Playwright, owner and quarantine tags beside the flaky one | `ide` | [TL20](#tl20) |
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
-| <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR15](#lr15), [LR18](#lr18) |
+| <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
 | <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends, the dashboard's Reproduce included | `ide` | [IC11](#ic11) |
 
