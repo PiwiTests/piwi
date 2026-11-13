@@ -15,7 +15,7 @@
         --accent-fg: #6d28d9;
         --bug: #dc2626;
         --ok: #059669;
-        --wait: #b45309;
+        --wait: #7c3aed;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -27,7 +27,7 @@
           --accent-fg: #c4b5fd;
           --bug: #f87171;
           --ok: #34d399;
-          --wait: #fbbf24;
+          --wait: #a78bfa;
         }
       }
       /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
@@ -303,7 +303,8 @@
       .tile[data-state='waiting'] .label {
         color: var(--muted);
       }
-      /* Runs while a test of the editor's or the desktop app's runs waits for you (amber), or failed (red). */
+      /* Runs while a test of the editor's or the desktop app's runs waits for you (the pause bar's violet), or failed
+         (red). */
       .tile[data-state='attention'] {
         border-color: color-mix(in srgb, var(--wait) 60%, transparent);
         background: color-mix(in srgb, var(--wait) 8%, var(--surface));

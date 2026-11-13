@@ -259,8 +259,9 @@ export async function runsSummary(): Promise<{
 }
 
 /**
- * What the toolbar's badge says of the runs: how many tests wait for the person (amber), else how many failed (red),
- * those of a run that failed while no Runs window had the focus included until one takes it, else nothing.
+ * What the toolbar's badge says of the runs: how many tests wait for the person (the pause bar's violet), else how
+ * many failed (red), those of a run that failed while no Runs window had the focus included until one takes it, else
+ * nothing.
  */
 export function runsBadge(): { text: string; color: string } | null {
   const attention = attentionOf(runHubs.state());
@@ -270,7 +271,7 @@ export function runsBadge(): { text: string; color: string } | null {
   return null;
 }
 
-const RUNS_WAITING_COLOR = '#b45309';
+const RUNS_WAITING_COLOR = '#7c3aed';
 const RUNS_FAILED_COLOR = '#b91c1c';
 
 /** Starts finding the hubs, and follows the pairings and their grants. */

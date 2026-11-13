@@ -250,7 +250,8 @@ test('says on the toolbar badge, the popup’s Runs tile and the Runs window’s
       await expect.poll(async () => (await badge()).text).toBe('');
       run.worker.stopAt(1, 30, true);
       await expect.poll(async () => (await badge()).text).toBe('1');
-      expect((await badge()).color).toEqual([180, 83, 9, 255]);
+      // The pause bar's violet, #7c3aed.
+      expect((await badge()).color).toEqual([124, 58, 237, 255]);
       const popup = await context.newPage();
       await popup.goto(`chrome-extension://${extensionId}/popup.html`);
       await expect(popup.locator('#runs-hint')).toHaveText('1 test waits for you');
