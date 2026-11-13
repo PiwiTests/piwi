@@ -174,3 +174,16 @@ test('the Testing view lists the spec’s tests with the run’s results', async
   await expand('catalog (Passed)');
   await expect(tree.getByRole('treeitem').filter({ hasText: 'filters in-stock products' })).toContainText('flaky');
 });
+
+test('a flaky test’s line says flaky after it while the Testing view lists the tests', async () => {
+  await openFile(page, 'tests/catalog.spec.ts');
+  const line = page.locator('.monaco-editor .view-line').filter({ hasText: 'filters in-stock products' });
+  // The mark is drawn after the line's text, by a decoration's `::after` content.
+  await expect
+    .poll(() =>
+      line.evaluate((el) =>
+        [el, ...el.querySelectorAll('*')].map((node) => getComputedStyle(node, '::after').content).join(' '),
+      ),
+    )
+    .toContain('flaky');
+});

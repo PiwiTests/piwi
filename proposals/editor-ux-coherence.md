@@ -24,7 +24,7 @@ and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Po
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
 say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
 and the status popup takes one entry per run page (HM3); its three new groups (`Piwi.RunControl`, `Piwi.StatusActions`,
-`Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in part: VS Code's outcome marks in the
+`Piwi.FailureActions`) wait for NF10's register of group ids. M5 and part of Q2: VS Code's outcome marks in the
 dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result icon and JetBrains' CI tab), and
 Piwi Picker's dots in the same palette, a running ring in both editors where they drew a run triangle, all held by
 `status-mark-colors.test.ts` (copies restated by hand, not generated); and the dashboard's Reproduce here as the
@@ -49,17 +49,18 @@ plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-
 (NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20: VS
 Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
 `SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). Q2: a fixture check
-in each editor fails when a flaky test carries no flaky mark, VS Code's nightly suite reading its Testing item and
-`PiwiPluginTest` its gutter icon through the bundled service (TL13). §14 adds the findings the code that built the plan
-raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
-leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
-each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
-phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
-fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
+in each editor fails when a flaky test loses its flaky mark, VS Code's nightly suite reading its Testing item and its
+line's mark, `PiwiPluginTest` the bundled service's answer for its line and the result icon that answer draws (TL13).
+§14 adds the findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has
+built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the
+editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the
+study the live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does
+not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
+step moves the document to `adr/`.
 
 **Summary.**
 
@@ -448,8 +449,6 @@ missing from VS Code's Ctrl+.** `RecordHereIntention.kt:22-25` offers it anywher
 registers only the recorded-locator fixes (`apps/vscode/src/recording.ts:833-836`). **(read)** Fix:
 [record-from-the-ide.md](record-from-the-ide.md) Part 2's two places, between tests and inside a test body, in both
 editors, as a refactor-kind action from the service ([TL7](#tl7)). ([M7](#m7), [LI7](#li7))
-
-### 5.4 The marks
 
 ### 5.6 Debug
 

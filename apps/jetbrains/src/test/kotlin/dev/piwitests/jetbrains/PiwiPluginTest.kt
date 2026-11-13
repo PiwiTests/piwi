@@ -1353,7 +1353,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     ),
                     specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
                 )
-                // A flaky test of the catalog carries the flaky mark in the gutter, as VS Code's line and Testing item do.
+                // The service answers a flaky test of the catalog as flaky on its line, which the result icon draws as the flaky mark.
                 val catalog = File(dir, "tests/catalog.spec.ts").toURI().toString().replace("file:/", "file:///")
                 val flaky = server.fileSummary(UriParams(catalog)).get(5, TimeUnit.SECONDS)?.lines.orEmpty().single { it.status != null }
                 assertEquals(2 to "flaky", flaky.line to flaky.status)
