@@ -163,7 +163,7 @@ import javax.swing.text.DefaultHighlighter
  * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
  * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
  * and debug runs it follows too. **Share the run live** shares a run on the team instance its reporter reports to
- * (`piwi/shareRun`), after a warning the first time in the project, and **Stop sharing the Run Live** ends it;
+ * (`piwi/shareRun`), after a warning the first time in the project, and **Stop sharing the run live…** ends it;
  * the status bar says how a shared run stands. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
@@ -3079,7 +3079,7 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
 
 /**
  * The line above a stop, at its indentation: what is about to run, then its controls (**Resume**, **Step**, **Run to
- * Caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
+ * caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
     val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)
@@ -3472,8 +3472,8 @@ class StopSharingRunAction : RunControlAction() {
 }
 
 /**
- * **Share this project's runs Live**: each run of the project from now on is shared live until the person stops or
- * the project closes, asked with a warning the first time.
+ * **Share this project's runs live until I stop**: each run of the project from now on is shared live until the
+ * person stops or the project closes, asked with a warning the first time.
  */
 class ShareWindowLiveAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

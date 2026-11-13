@@ -24,8 +24,8 @@ sent](/guide/concepts#watch-share-live).
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
 | Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
-**Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and Watch a
-Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
+**Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and watch a
+worker's test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
 workers to choose from, the editor asks which.
 
 ## A CI run of your branch

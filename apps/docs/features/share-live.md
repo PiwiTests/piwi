@@ -57,8 +57,8 @@ $env:PIWI_SHARE_LIVE='1'; npx playwright test
 
 ### A window's runs
 
-**Piwi: Share this window's runs live until I stop** in VS Code, **Tools → Piwi → Share this project's runs Live
-Until I Stop** in a JetBrains IDE, and **Share this editor window's runs** under an editor's run in Piwi Picker's Runs
+**Piwi: Share this window's runs live until I stop** in VS Code, **Tools → Piwi → Share this project's runs live
+until I stop** in a JetBrains IDE, and **Share this editor window's runs** under an editor's run in Piwi Picker's Runs
 window share each run the window starts from then on, each one said as it is shared, until you stop (**…Stop sharing
 this window's runs live**, the menu of the status bar's **Live · this window**, or **Stop sharing this window's runs**
 on the Runs window's line that says the window shares its runs, whatever runs it lists) or close the window. A run's

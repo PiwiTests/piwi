@@ -153,7 +153,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
         if (index >= 0) list.selectedIndex = index
     }
 
-    private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI run" else "CI Runs (${now.size})"
+    private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI run" else "CI runs (${now.size})"
 
     /**
      * The tab's list: a row opens its lane in the Worker tab, its file at its line, or its page on the dashboard, on a

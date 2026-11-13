@@ -167,7 +167,7 @@ class ResumeRecordingAction : AnAction(), DumbAware {
 
 /**
  * Starts recordings. Record here asks `piwi/pageCandidates` where the caret is: outside every test, function and class,
- * a new test; anywhere else, the steps there. Record a New Test File creates the spec first. Without an answer, the
+ * a new test; anywhere else, the steps there. Record a new test file creates the spec first. Without an answer, the
  * recording does not start. Both ask for the start page and the page the steps run on, then send `piwi/record`, asking
  * for the Playwright project when it answers with several. The choices are remembered on this machine
  * (`PiwiLocalSettings`).
@@ -188,7 +188,7 @@ object PiwiRecordFlow {
     fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
 
     /**
-     * Record a New Test File: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
+     * Record a new test file: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
      * test folder, else in the test folder of the config holding the file at hand, under a name it does not hold yet),
      * then the name is asked there; a folder that does not exist yet is created with the file. `fallback` is the folder
      * when the service does not answer.
