@@ -229,8 +229,16 @@ data class CommandStartedParams(val ref: String, val terminalRef: String? = null
 /** `piwi/commandEnded`: the command of a `RunCommand` with `ref` ended, with its exit code. */
 data class CommandEndedParams(val ref: String, val exitCode: Int? = null)
 
-/** `piwi/notice`: a sentence to show once about the context at `root`; `severity` is `information` or `warning`. */
-data class NoticeParams(val root: String? = null, val severity: String? = null, val message: String? = null)
+/**
+ * `piwi/notice`: a sentence to show once about the context at `root`; `severity` is `information` or `warning`; `key`,
+ * the kind of a notice that comes unasked and may come again (`NOTICE_KEYS`).
+ */
+data class NoticeParams(
+    val root: String? = null,
+    val severity: String? = null,
+    val message: String? = null,
+    val key: String? = null,
+)
 
 data class TraceParams(val uri: String, val executionId: Int)
 

@@ -17,7 +17,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   This covers every request and field of `src/protocol.ts`, which VS Code imports and the JetBrains plugin mirrors in
   `Protocol.kt`. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **Renaming a command id (`PiwiCommand.command`) is a breaking change for users**, whatever the clients do: their
-  keybindings and settings name the ids, which `proposals/1.0-stabilization.md` freezes at 1.0.
+  keybindings and settings name the ids, which `proposals/1.0-stabilization.md` freezes at 1.0. So is renaming a
+  `NOTICE_KEYS` value, which `piwi.hiddenMessages` keeps in the developer's settings.
 - **The instance, the project's reporter and the desktop app may be older than the service: keep reading them.** Each
   is installed on its own, so a route or a field an older one lacks has a fallback, and the variables a test run passes
   the reporter (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`, `PIWI_PAUSE_AT`, `PIWI_RUN_CHANNEL`, `PIWI_RECORD_CHANNEL`,

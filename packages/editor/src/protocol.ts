@@ -1059,7 +1059,23 @@ export interface Notice {
   root: string;
   severity: 'information' | 'warning';
   message: string;
+  /**
+   * The kind of a notice an editor client offers to stop showing: one that comes unasked, may come again, and hides
+   * nothing the developer must hear. Absent for a notice that answers what the developer did, says what an agent does,
+   * or says a run was lost.
+   */
+  key?: NoticeKey;
 }
+
+/**
+ * The notices an editor client may hide, kept by these values in the developer's settings: `agent-let-go`, a stop an
+ * agent held let go once it went idle; `window-shared`, a run shared live as the window's runs are;
+ * `unattended-resumed`, a stop nobody attends let go on; `reporter-missing`, a run that did not reach the instance
+ * from a config without the Piwi reporter.
+ */
+export const NOTICE_KEYS = ['agent-let-go', 'window-shared', 'unattended-resumed', 'reporter-missing'] as const;
+
+export type NoticeKey = (typeof NOTICE_KEYS)[number];
 
 export const NOTICE_NOTIFICATION = 'piwi/notice';
 

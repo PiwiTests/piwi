@@ -292,7 +292,7 @@ describe('this window’s runs shared live, and a teammate’s ask to watch', ()
     const sessions = new RunSessions({
       notify: () => {},
       answersStops: () => true,
-      notice: (_root, _severity, message) => void notices.push(message),
+      notice: (_root, _severity, message, key) => void notices.push(key ? `${key}: ${message}` : message),
       rootOf: () => '/work/shop',
       instances: () => ['https://piwi.example.com'],
       askedToWatch: (ask) => void asks.push(ask),
@@ -358,7 +358,7 @@ describe('this window’s runs shared live, and a teammate’s ask to watch', ()
     expect(first.shares()).toEqual([{ type: 'share', on: true }]);
     first.live(true);
     expect(notices).toEqual([
-      "Run #77 is shared live on piwi.example.com, as this window's runs are until you stop sharing them.",
+      "window-shared: Run #77 is shared live on piwi.example.com, as this window's runs are until you stop sharing them.",
     ]);
     // A run that starts while it runs continues nothing: it is no rerun of it.
     main('ed-5', 80);

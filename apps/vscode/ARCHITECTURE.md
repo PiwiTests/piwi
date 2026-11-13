@@ -159,6 +159,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
 | `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
@@ -294,6 +295,8 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
 when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
+one write after the other); a key that setting holds is not shown (`noticeShown`).
 
 A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result.
 `runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a
@@ -666,14 +669,16 @@ the item's own action (a recording's controls follow it), which depends on the s
 
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:
 
-- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`);
-- the baseline, the local runs and the run in progress;
+- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`),
+  with the tests the failed results are when a test failed on several Playwright projects (`2 failed (1 test)`);
+- the baseline, the local runs with what they fixed and the tests failing after them (the item's count), and the run
+  in progress;
 - when the run was read, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every
   30 s);
 - the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and
   a hint when the desktop app runs but is not in use, or was chosen but does not run;
-- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, to `piwi.refresh`
-  (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
+- links to `piwi.openRun`, `piwi.openInDashboard` and `piwi.compareWith`, to `piwi.connect` only while not connected,
+  to `piwi.refresh` (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
   failures view lists flaky tests for it (`flakyTestsByRoot`; the view draws the item again once it has read its tree),
   which selects and opens that config's **Flaky in this run** group (`FailuresView.revealFlaky`).
 

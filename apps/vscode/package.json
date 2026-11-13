@@ -1291,6 +1291,28 @@
           "default": "auto",
           "markdownDescription": "**Hold failures** of each run Piwi starts from this window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it."
         },
+        "piwi.hiddenMessages": {
+          "type": "array",
+          "scope": "application",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "agent-let-go",
+              "window-shared",
+              "unattended-resumed",
+              "reporter-missing"
+            ],
+            "enumDescriptions": [
+              "A stop an agent held goes on once the agent went idle.",
+              "A run is shared live, as this window's runs are.",
+              "A test stopped where nobody attends the run goes on.",
+              "A run did not reach the instance, from a config without the Piwi reporter."
+            ]
+          },
+          "default": [],
+          "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [
@@ -1370,20 +1392,20 @@
         "id": "piwi.failingTestBackground",
         "description": "The background of a test that failed in the latest run Piwi reads.",
         "defaults": {
-          "dark": "#f8514926",
-          "light": "#f851491a",
-          "highContrast": "#f8514940",
-          "highContrastLight": "#f8514926"
+          "dark": "#f43f5e26",
+          "light": "#f43f5e1a",
+          "highContrast": "#f43f5e40",
+          "highContrastLight": "#f43f5e26"
         }
       },
       {
         "id": "piwi.failingLineBackground",
         "description": "The background of the line a failing test failed at, over the test's own.",
         "defaults": {
-          "dark": "#f8514940",
-          "light": "#f8514933",
-          "highContrast": "#f8514966",
-          "highContrastLight": "#f8514940"
+          "dark": "#f43f5e40",
+          "light": "#f43f5e33",
+          "highContrast": "#f43f5e66",
+          "highContrastLight": "#f43f5e40"
         }
       },
       {
@@ -1440,10 +1462,10 @@
         "id": "piwi.recordingBlockBackground",
         "description": "The background of the block a recording writes, while it records.",
         "defaults": {
-          "dark": "#2f81f726",
-          "light": "#0969da1a",
-          "highContrast": "#2f81f740",
-          "highContrastLight": "#0969da26"
+          "dark": "#3b82f626",
+          "light": "#3b82f61a",
+          "highContrast": "#3b82f640",
+          "highContrastLight": "#3b82f626"
         }
       },
       {
@@ -1460,10 +1482,10 @@
         "id": "piwi.failurePointBackground",
         "description": "The background of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
         "defaults": {
-          "dark": "#f8514940",
-          "light": "#f8514933",
-          "highContrast": "#f8514966",
-          "highContrastLight": "#f8514940"
+          "dark": "#f43f5e40",
+          "light": "#f43f5e33",
+          "highContrast": "#f43f5e66",
+          "highContrastLight": "#f43f5e40"
         }
       }
     ],

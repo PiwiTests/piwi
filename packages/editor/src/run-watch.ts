@@ -341,6 +341,30 @@ interface Followed {
  * One per service: the event streams of the instances the contexts read, the run each context follows, and the latest
  * commands built with a ref, whose runs are the editor's own, a rerun with the same ref included.
  */
+/**
+ * What a run that ended without reaching the instance says: a reporter that ran but sent nothing is told apart from a
+ * config without it, and only the second is a notice the developer may hide (`reporter-missing`).
+ */
+export function unreachedNotice(
+  code: string,
+  serverUrl: string,
+  reporterRan: boolean,
+): Pick<Notice, 'severity' | 'message' | 'key'> {
+  if (reporterRan) {
+    return {
+      severity: 'warning',
+      message:
+        `The run ended${code} but did not reach ${serverUrl}, though its Piwi reporter ran: its lines in the run's ` +
+        'output say why (its server address, its key, or an instance that refused it).',
+    };
+  }
+  return {
+    severity: 'warning',
+    message: `The run ended${code} but did not reach ${serverUrl}: is the Piwi reporter in the Playwright config?`,
+    key: 'reporter-missing',
+  };
+}
+
 export class RunWatch {
   private readonly streams = new Map<string, InstanceStream>();
   private readonly watches = new Map<string, RefWatch>();
@@ -492,12 +516,8 @@ export class RunWatch {
     if (!this.current(w)) return false;
     if (ended === null) {
       const code = exitCode === null || exitCode === undefined ? '' : ` (exit code ${exitCode})`;
-      // A reporter that ran but sent nothing is told apart from a config without it.
-      const message = this.options.reporterHeard?.(w.ref)
-        ? `The run ended${code} but did not reach ${w.serverUrl}, though its Piwi reporter ran: its lines in the run's ` +
-          'output say why (its server address, its key, or an instance that refused it).'
-        : `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`;
-      this.options.notice({ root: context.root, severity: 'warning', message });
+      const reporterRan = this.options.reporterHeard?.(w.ref) ?? false;
+      this.options.notice({ root: context.root, ...unreachedNotice(code, w.serverUrl, reporterRan) });
     } else {
       w.known.add(ended);
     }
