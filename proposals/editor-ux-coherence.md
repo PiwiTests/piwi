@@ -26,17 +26,17 @@ say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Sourc
 and Open run #78 (running) beside the same run's page row joins Q8's one Open in dashboard; its three new groups
 (`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in
 part: VS Code's outcome marks in the dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result
-icon and JetBrains' CI tab), and Piwi Picker's dots in the same palette, held by `status-mark-colors.test.ts`. §14 adds
-the findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0
-to P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors
-still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study
-the live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+icon and JetBrains' CI tab), and Piwi Picker's dots in the same palette, held by `status-mark-colors.test.ts`; and the
+dashboard's Reproduce here as the editors' monitor (IC11). §14 adds the findings the code that built the plan raised.
+The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its
+Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor
+hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing
+here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
@@ -275,12 +275,6 @@ New UI mapping on 241), with no Kotlin `else`; Assert a region takes Picker's `v
 [LI2](#li2))
 
 ### 3.6 Hand-offs
-
-<a id="ic11"></a>**IC11. Reproduce is a monitor where the editors hand it to the desktop app and a play where the
-desktop app offers it.** Both editors draw Reproduce in the Desktop App with a monitor (`PiwiIcons.kt:21`,
-`apps/vscode/package.json:378-382`), and the dashboard's Reproduce here, in the desktop app, draws Run's play
-(`apps/application/app/components/shared/ReproduceSection.vue:189`). **(read)** Fix: the monitor at both ends, as
-Appendix A's row has it. ([M24](#m24), [LI2](#li2), [LI20](#li20))
 
 ## 4. Menus, actions, keys and names
 
@@ -1341,7 +1335,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
-| <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends, the dashboard's Reproduce included | `ide` | [IC11](#ic11) |
+| <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends | `ide` | none ([LI20](#li20)) |
 
 ### Large
 
