@@ -1511,7 +1511,7 @@ describe('the Piwi language server', () => {
       {
         line: 6,
         title: 'Screenshot',
-        command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+        command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
       },
       {
         line: 6,

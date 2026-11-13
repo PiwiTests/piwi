@@ -3249,7 +3249,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           reasons.push({
             line: failure.line,
             title: 'Screenshot',
-            command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+            command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
           });
         }
         if (failed.traces.length) {

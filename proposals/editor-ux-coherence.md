@@ -21,11 +21,12 @@ the run page words it, and JetBrains' status item saying why a test stopped (LR1
 menu and failures tree built from registered actions, the tree's as new `Piwi.Failure.*` ids, with Find Action synonyms,
 and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Point's key, `Piwi.OpenRunPage`,
 `Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
-the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2). §14 adds the findings the code that built the plan raised. The
-live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status
-names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a
-run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is
-on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
+say Open the screenshot (HM11). M2 is built. §14 adds the findings the code that built the plan raised. The live-run
+study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names,
+and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and
+the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -35,10 +36,9 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 **Summary.**
 
 - **What is left.** Most of the plan's quick wins are built; the steps left center on one action catalog in sentence
-  case and one concept table (M1, M4), registered JetBrains popups (M2), one Piwi menu and status menu (M3, M13), the
-  run controls in the debugger's places and one page per worker (M14, M15), one action list per test line and Debug with
-  Piwi (M7, M8), the settings registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision
-  (L3).
+  case and one concept table (M1, M4), one Piwi menu and status menu (M3, M13), the run controls in the debugger's
+  places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the settings
+  registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -47,7 +47,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** 11 quick wins, most of them first, then 23 medium and 7 large
+- **Twenty larger items (§10) and a ranked plan (§12):** 11 quick wins, most of them first, then 22 medium and 7 large
   steps, each the size of a pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -149,7 +149,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
    client lacks.** ([AC11](#ac11), [HM8](#hm8), [HM16](#hm16))
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
-   has an icon and a when clause.** ([HM11](#hm11))
+   has an icon and a when clause.** ([AC12](#ac12))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
    interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [ST8](#st8), [TL4](#tl4))
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
@@ -474,10 +474,10 @@ no Debug (`packages/editor/src/server.ts:2689-2701`). Every run but Verify ×3 p
 `piwi.breakpoints` is on, its default, and `withBreakpoints` makes it headed (`server.ts:3434-3457`). To stop a CI
 failure at its line, a developer goes through the dashboard and a consent prompt, while yesterday's breakpoint pauses
 Run with Piwi. **(seen)** Fix: Debug with Piwi, the dashboard's run for a failure and a headed run otherwise, as VS
-Code's Debug profile and in [TL2](#tl2)'s list, on [TL3](#tl3)'s icon and on failure nodes (Debug this failure there,
-[HM11](#hm11); §13), with no consent prompt; whether plain Run still stops is open (`piwi.breakpoints` keeps its key,
-and a new value could keep stops for Debug). It is Piwi's run control, not an IDE debug session ([LI10](#li10)).
-([M8](#m8), [LI7](#li7))
+Code's Debug profile and in [TL2](#tl2)'s list, on [TL3](#tl3)'s icon and on failure nodes (Debug this failure there;
+§13), with no consent prompt; whether plain Run still stops is open (`piwi.breakpoints` keeps its key, and a new value
+could keep stops for Debug). It is Piwi's run control, not an IDE debug session ([LI10](#li10)). ([M8](#m8),
+[LI7](#li7))
 
 ### 5.7 The IDE's own test UI
 
@@ -729,12 +729,6 @@ fixed nodes only (`packages/editor/src/failure-tree.ts:94`) and the gutter marks
 developer opens the dashboard to find the test. **(seen)** Fix: a 'Flaky in this run' group under the run node, from the
 service, each test with its retries, pass rate and a Flake Lab action, in the outcome palette's flaky glyph; the status
 menu's 'N flaky' row selects it. ([M18](#m18), [LI5](#li5))
-
-<a id="hm11"></a>**HM11. VS Code's run node offers Open in dashboard on hover only, and the screenshot action has two
-names.** The run node's Open in dashboard is inline only (`apps/vscode/package.json:968-971`), out of Shift+F10's reach;
-the screenshot is 'Open the failure screenshot' in VS Code (`package.json:396-397`) and 'Open the screenshot' in
-JetBrains. **(read)** Fix: VS Code's inline actions in its menu too; one wording; Debug this failure ([TL17](#tl17)) and
-Jump to Source in both trees. ([M2](#m2), [LI5](#li5))
 
 <a id="hm12"></a>**HM12. The Piwi tool window's header is two lines of inert gray text that repeat the run row and name
 only the first connection.** It is a static label (`PiwiFailuresToolWindow.kt:115-119, 180-182`) built from the first
@@ -1008,7 +1002,7 @@ generates `package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s comma
 `packages/editor` (FSL); the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and
 four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
-makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Steps [M1](#m1), [M2](#m2), [M22](#m22).
+makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Steps [M1](#m1), [M22](#m22).
 
 <a id="li15"></a>
 
@@ -1080,7 +1074,7 @@ acting on the selection; the service sends the view's state and words, node icon
 run' group. **Lives in** `failure-tree.ts`, `protocol.ts` and both clients (FSL). **Replaces** the Paused Page and
 Worker N tabs side by side, a log with no place in the home, a gear without Documentation. **Depends on** [LI1](#li1),
 [LI6](#li6). **Revisits** no decision: [editor-local-runs.md](../adr/editor-local-runs.md) Part 6 built the two trees
-apart. Steps [Q8](#q8), [Q27](#q27), [M2](#m2), [M18](#m18).
+apart. Steps [Q8](#q8), [Q27](#q27), [M18](#m18).
 
 <a id="li7"></a>
 
@@ -1315,7 +1309,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="q2"></a>Q2 | **A flaky test marked flaky in JetBrains**: the outcome palette's flaky glyph ([M5](#m5)) on the result icon and in the CI Run tab, where the warning and the amber `TestFailed` draw it now; a fixture check fails when a flaky test carries no flaky mark | `ide` | [TL13](#tl13), [IC4](#ic4) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
-| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM3](#hm3) |
+| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
@@ -1330,8 +1324,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
-| <a id="m2"></a>M2 | **The failures trees' menus alike**: VS Code's run node actions in its menu too, one screenshot wording | `ide` | [HM11](#hm11) |
-| <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1 and M2; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
+| <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
 | <a id="m6"></a>M6 | **Glyphs on the pause bar**, drawn anew in picker-dom (MIT) | `extension` | [IC6](#ic6) |
@@ -1342,7 +1335,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18) |
-| <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls; after M2 | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
+| <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
@@ -1367,11 +1360,11 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1 and M2, on which most of the
-rest builds: the names that still differ (AC7, NF3), the popups built from unregistered actions (AC6, NF2), one Piwi
-menu (M3) and the run-control places (M14); M4 and M5 draw the glyphs and the outcome palette that Q2, Q9, Q26 and IC2's
-recording wait for. M13 and M15 finish the glance and the page; M16 and M17 close #1117 and #1118; L1's Runs home
-settles where the CI list goes (NF10); L3 decides before 1.0 whether M14's places are interim.
+The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1, on which most of the rest
+builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
+glyphs and the outcome palette that Q2, Q9, Q26 and IC2's recording wait for. M13 and M15 finish the glance and the
+page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
+whether M14's places are interim.
 
 ## 13. Open questions
 

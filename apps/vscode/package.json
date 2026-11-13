@@ -394,7 +394,7 @@
       },
       {
         "command": "piwi.openScreenshot",
-        "title": "Open the failure screenshot",
+        "title": "Open the screenshot",
         "category": "Piwi",
         "icon": "$(device-camera)"
       },
@@ -979,6 +979,11 @@
           "command": "piwi.openInDashboard",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
           "group": "inline@1"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
+          "group": "3_open@1"
         },
         {
           "command": "piwi.rerunFailing",
