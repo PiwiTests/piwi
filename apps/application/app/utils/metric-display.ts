@@ -8,7 +8,7 @@ import type { AnalyticsMetricValue, AnalyticsStatTile } from '#shared/analytics/
 import { makeFormatter, type ValueFormatter } from '#shared/reports/format';
 import { getMetric } from '#shared/analytics/metrics';
 import type { ProjectTargetVerdict } from '#shared/analytics/targets';
-import { STATUS_PALETTE } from './status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 import { passRateTextClass } from './pass-rate';
 
 export function metricFormatter(): ValueFormatter {

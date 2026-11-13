@@ -7,9 +7,9 @@ import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.impl.isTrusted
+import com.intellij.ide.trustedProjects.TrustedProjectsListener
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -29,6 +29,7 @@ import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -83,7 +84,8 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
- * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
+ * at the IDE's breakpoints, whether they run in the IDE's Playwright runner, whether they run headed, and their
+ * Hold failures from each run's start (`Glue.HOLD_FAILURES_CHOICES`); when a run started from the IDE says what it changed (`always`,
  * `failures`, `never`); the baseline chosen with **Compare With…** for each Playwright
  * config folder (`Glue.encodeBaseline`; the ladder is no entry); whether the coverage marks are shown; and the severity
  * of a failure's diagnostic (`Glue.FAILURE_SEVERITIES`).
@@ -101,6 +103,8 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var failuresGrouping: String = "file",
         var breakpoints: Boolean = true,
         var playwrightRunner: Boolean = false,
+        var runHeaded: Boolean = false,
+        var runHoldFailures: String = "auto",
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
@@ -156,6 +160,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var startProblem: String? = null
         private set
 
+    /** Whether the editor service ran and stopped, and none started since: the tool window offers to start it again. */
+    @Volatile var serviceStopped = false
+        private set
+
+    /** The editor service's latest process: one that ends after another started says nothing of the running one. */
+    @Volatile private var latestProcess: ProcessHandler? = null
+
     /** Whether the project's wait for trust was said already. */
     private val trustAsked = AtomicBoolean()
 
@@ -206,17 +217,50 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
+     * Call `listener` on the event thread as `onChange` does, also while a modal dialog shows, such as the settings page
+     * that registers it: it only reads what changed.
+     */
+    fun onChangeInDialogs(parent: Disposable, listener: () -> Unit) {
+        dialogListeners += listener
+        com.intellij.openapi.util.Disposer.register(parent) { dialogListeners -= listener }
+    }
+
+    private val dialogListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val dialogChangeQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
      * Whether the project is trusted. In a project opened in safe mode Piwi starts no editor service, runs no command
      * and reads no `.env`: each of them runs what the repository says.
      */
     fun trusted(): Boolean = project.isTrusted()
 
+    /**
+     * Once the project is trusted, tell the listeners, so the status bar item, the tool window and the settings page
+     * stop waiting, start the editor service for the open files, and offer the first-run notification.
+     */
+    fun watchTrust() {
+        ApplicationManager.getApplication().messageBus.connect(this).subscribe(
+            TrustedProjectsListener.TOPIC,
+            object : TrustedProjectsListener {
+                override fun onProjectTrusted(project: Project) {
+                    if (project != this@PiwiProjectService.project) return
+                    changed()
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        if (gone.value(null)) return@executeOnPooledThread
+                        restartServer()
+                        val found = playwright ?: return@executeOnPooledThread
+                        val addresses = readKnownAddresses()
+                        offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+                    }
+                }
+            },
+        )
+    }
+
     /** Say once that the editor service starts once the project is trusted. */
     fun waitForTrust() {
         if (!trustAsked.compareAndSet(false, true)) return
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(Glue.UNTRUSTED, NotificationType.INFORMATION)
-            .notify(project)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.UNTRUSTED).notify(project)
     }
 
     /** Whether a Playwright config sits in the project; false until the search started with the project ends. */
@@ -265,8 +309,30 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
             offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+            noteDotnetPlaywright(found)
         }
     }
+
+    /**
+     * Once per project, on a pooled thread: a trusted project with no Playwright config whose MSBuild project, in the
+     * folders the configs are searched, references Playwright for .NET hears that Piwi reads Playwright Test suites in
+     * JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`). One search at a time reads the flag and sets it.
+     */
+    fun noteDotnetPlaywright(found: Glue.PlaywrightSearch) {
+        if (found.configDirs.isNotEmpty() || !trusted()) return
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+        synchronized(dotnetNoteLock) {
+            if (properties.getBoolean(DOTNET_PLAYWRIGHT_NOTED)) return
+            val home = System.getProperty("user.home")?.let { runCatching { Path.of(it) }.getOrNull() }
+            if (!Glue.holdsDotnetPlaywright(Glue.searchedFolders(found.roots, home)) || gone.value(null)) return
+            properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
+        }
+        PiwiNotifier.create(PiwiNotice.RESULT, Glue.DOTNET_PLAYWRIGHT_NOTE)
+            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
+            .notify(project)
+    }
+
+    private val dotnetNoteLock = Any()
 
     /**
      * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it
@@ -277,8 +343,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
         if (!Glue.showsFirstRun(properties.getBoolean(FIRST_RUN_SHOWN), trusted(), found.configDirs, status, instances)) return
         properties.setValue(FIRST_RUN_SHOWN, true)
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(Glue.FIRST_RUN, NotificationType.INFORMATION)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.FIRST_RUN)
             .addAction(NotificationAction.createSimpleExpiring("Connect…") { PiwiConnectFlow.run(project) })
             .addAction(
                 NotificationAction.createSimple(Glue.OPEN_FAILURES) {
@@ -287,6 +352,22 @@ class PiwiProjectService(private val project: Project) : Disposable {
             )
             .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOCS_URL) })
             .notify(project)
+    }
+
+    /**
+     * Restart the Editor Service, from its action, a balloon or the tool window, said in the log, then [restartServer].
+     * With none running and no test file open, the IDE has nothing to start it for: a balloon says to open one.
+     */
+    fun restartService() {
+        val log = project.service<PiwiLog>()
+        val open = FileEditorManager.getInstance(project).openFiles.any { PiwiLspServerSupportProvider.isSupported(it) }
+        if (!serverStarted() && !open) {
+            log.write(Glue.SERVICE_NEEDS_A_FILE)
+            PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.SERVICE_NEEDS_A_FILE, NotificationType.INFORMATION).notify(project)
+            return
+        }
+        log.write("Restarting the editor service.")
+        ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
     }
 
     /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
@@ -309,16 +390,42 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     fun watchServer(process: ProcessHandler) {
         val startedAt = System.currentTimeMillis()
+        latestProcess = process
+        serviceStopped = false
+        changed()
+        val watching = Disposer.newDisposable(this, "Piwi editor service process")
         process.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
-                    if (gone.value(null) || startProblem != null) return
+                    Disposer.dispose(watching)
+                    if (gone.value(null)) return
+                    project.getServiceIfCreated(PiwiLog::class.java)?.write("The editor service stopped (exit code ${event.exitCode}).")
+                    if (latestProcess === process) stopped()
+                    if (startProblem != null) return
                     if (!Glue.restartsService(startedAt, System.currentTimeMillis(), serverRestarts)) return
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
                 }
             },
-            this,
+            watching,
         )
+    }
+
+    /**
+     * The latest service's process ended: until another starts, the tool window says it stopped and offers to start it,
+     * and nothing it answered is shown. Its answers are dropped here, not read again from a service that is gone.
+     */
+    private fun stopped() {
+        synchronized(lock) {
+            serviceStopped = true
+            status = null
+            runs = null
+            failuresResult = null
+            failures = emptyList()
+            statusPushes++
+            runsPushes++
+            failuresPushes++
+        }
+        changed()
     }
 
     /** Start the editor service again unless another one starts or runs. */
@@ -342,11 +449,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (problem == before) return
         changed()
         if (problem == null) return
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(problem, NotificationType.WARNING)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)
     }
+
+    /** The id of the Node.js settings page, which **Node.js Settings…** opens. */
+    val nodeSettingsId get() = NODE_SETTINGS_ID
 
     /** The Node.js settings, then the service started again with the interpreter chosen there. */
     fun openNodeSettings() {
@@ -647,11 +756,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
-     * status, on a pooled thread: the status bar item's click. `refreshing` is set meanwhile.
+     * status, on a pooled thread: the status bar item's click and **Refresh the Latest Run**. `refreshing` is set
+     * meanwhile, and the listeners are told as it is.
      */
     fun refreshRun() {
         if (refreshing) return
         refreshing = true
+        changed()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 server()?.refreshRun()?.orNull()
@@ -761,6 +872,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     private fun changed() {
         pushed.incrementAndGet()
+        if (dialogListeners.isNotEmpty() && dialogChangeQueued.compareAndSet(false, true)) {
+            ApplicationManager.getApplication().invokeLater({
+                dialogChangeQueued.set(false)
+                dialogListeners.forEach { it() }
+            }, com.intellij.openapi.application.ModalityState.any(), gone)
+        }
         if (!changeQueued.compareAndSet(false, true)) return
         ApplicationManager.getApplication().invokeLater({
             changeQueued.set(false)
@@ -843,12 +960,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val current = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull() ?: return
         if (current.source == "desktop" || current.serverUrl == null) return
         local.desktopOffered = true
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(
-                "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
-                    "Connect switches back.",
-                NotificationType.INFORMATION,
-            )
+        PiwiNotifier.create(
+            PiwiNotice.OFFER,
+            "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
+                "Connect switches back.",
+        )
             .addAction(NotificationAction.createSimpleExpiring("Use the Desktop App") { PiwiConnectFlow.useDesktop(project) })
             .notify(project)
     }
@@ -881,6 +997,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
         /** Whether the first-run notification was shown on this installation: an application-level property. */
         const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
 
+        /** Set in the project once it heard `Glue.DOTNET_PLAYWRIGHT_NOTE`. */
+        const val DOTNET_PLAYWRIGHT_NOTED = "piwi.dotnetPlaywrightNoted"
+
         /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
         const val SUMMARY_TTL_MILLIS = 5_000L
 
@@ -894,15 +1013,25 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 }
 
-/** Searches the project for Playwright configs once it is open, off the event thread, then whenever one comes or goes. */
+/**
+ * Searches the project for Playwright configs once it is open, off the event thread, then whenever one comes or goes,
+ * and starts Piwi once the project is trusted.
+ */
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         val service = project.service<PiwiProjectService>()
         service.findPlaywright()
         service.watchConfigs()
+        service.watchTrust()
         project.service<PiwiCoverageMarks>().start()
     }
 }
+
+/** The log of the plugin's requests to the editor service, in idea.log under `#dev.piwitests.jetbrains`. */
+private val REQUESTS_LOG = com.intellij.openapi.diagnostic.Logger.getInstance("#dev.piwitests.jetbrains")
+
+/** When a failed request was last logged as a warning: the failures that follow within a minute are logged at debug. */
+@Volatile private var lastRequestWarning = 0L
 
 /**
  * The answer of a service request, or null when it failed or took too long. A task with progress stops waiting at its
@@ -922,8 +1051,25 @@ fun <T> CompletableFuture<T>.awaitCancellably(timeoutMillis: Long): T? {
         try {
             return get(10, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            if (System.nanoTime() >= deadline) return null
-        } catch (_: Exception) {
+            if (System.nanoTime() >= deadline) {
+                REQUESTS_LOG.debug("A request to the Piwi editor service took longer than $timeoutMillis ms")
+                return null
+            }
+        } catch (_: java.util.concurrent.CancellationException) {
+            return null
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        } catch (e: Exception) {
+            // In idea.log with its cause, a warning at most once a minute: the daemon asks on every pass.
+            val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+            val now = System.currentTimeMillis()
+            if (now - lastRequestWarning >= 60_000) {
+                lastRequestWarning = now
+                REQUESTS_LOG.warn("A request to the Piwi editor service failed: ${cause.javaClass.simpleName}: ${cause.message}", cause)
+            } else {
+                REQUESTS_LOG.debug("A request to the Piwi editor service failed", cause)
+            }
             return null
         }
     }

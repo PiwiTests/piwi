@@ -28,7 +28,15 @@ export interface PiwiConnection {
   serverUrl: string;
   apiKey: string | null;
   project: string;
+  /**
+   * Set when `apiKey` is the desktop app's token: it came from the app's discovery file, or from the environment of a
+   * run the app started (`DESKTOP_KEY_ENV`). A client sends it only after `proveDesktopServer` passed for `serverUrl`.
+   */
+  desktop?: true;
 }
+
+/** Set to `1` in the environment of a run the desktop app starts: its `PIWI_API_KEY` is the app's token. */
+export const DESKTOP_KEY_ENV = 'PIWI_DESKTOP_KEY';
 
 /**
  * The connection from the first source that names an instance URL, in order:
@@ -45,6 +53,8 @@ export function resolvePiwiConnection(sources: {
   env?: Record<string, string | undefined>;
   dotEnv?: Record<string, string>;
   desktop?: { url: string; token: string } | null;
+  /** The token of the desktop app's discovery file, read only to recognize a key that equals it. */
+  desktopToken?: string | null;
 }): PiwiConnection | null {
   const own = {
     serverUrl: sources.flags?.serverUrl || sources.env?.PIWI_DASHBOARD_URL,
@@ -58,5 +68,16 @@ export function resolvePiwiConnection(sources: {
   const serverUrl = layer ? trim(layer.serverUrl!) : desktop ? trim(desktop.url) : '';
   if (!serverUrl) return null;
   const desktopKey = desktop && trim(desktop.url) === serverUrl ? desktop.token : null;
-  return { serverUrl, apiKey: layer?.apiKey || desktopKey || null, project };
+  const apiKey = layer?.apiKey || desktopKey || null;
+  const fromFile = apiKey !== null && apiKey === desktopKey && !layer?.apiKey;
+  const fromRun =
+    apiKey !== null &&
+    layer === own &&
+    !sources.flags?.apiKey &&
+    apiKey === sources.env?.PIWI_API_KEY &&
+    sources.env?.[DESKTOP_KEY_ENV] === '1';
+  // A key equal to the app's token is the app's, wherever it was set.
+  const knownToken = desktop?.token ?? sources.desktopToken ?? null;
+  const byValue = apiKey !== null && knownToken !== null && apiKey === knownToken;
+  return { serverUrl, apiKey, project, ...((fromFile || fromRun || byValue) && { desktop: true as const }) };
 }

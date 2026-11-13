@@ -13,7 +13,7 @@ failing line in your editor, on your machine. It sits on the **Source** tab, bes
 the failure enters your code (a page object's line included), in the captured frames and in the full stack alike.
 
 1. Click it. The dashboard hands your editor its [open link](./ide-integration) with `debug=1`: the Piwi plugin of a
-   JetBrains IDE, or the Piwi extension in VS Code, Cursor or VSCodium, as your **Open in IDE** method picks
+   JetBrains IDE, or the Piwi extension in VS Code, Cursor or VSCodium, as your **Open in editor** method picks
    ([Auto](./ide-integration#auto-the-first-method-that-works) asks the plugin first).
 2. The editor opens the failing line, then asks in a notification, never a dialog: **Debug this test here? Piwi runs
    “Checkout › pays” in the Playwright project “chromium”, headed, one worker, and stops at line 16.** Nothing runs
@@ -45,7 +45,7 @@ A link is anyone's to write, so the editor reads it as data, never as a command:
   finds in your spec, as for every run Piwi starts.
 
 A JetBrains IDE also answers only a page of the instance a project is connected to, or of the desktop app, as for
-Open in IDE.
+Open in editor.
 
 ## Limits
 
@@ -68,7 +68,7 @@ server on `127.0.0.1` (JetBrains). The suggested locator comes from the instance
 
 ## Related
 
-- [Open in IDE](./ide-integration): the two links this one extends, and the method that picks between them.
+- [Open in editor](./ide-integration): the two links this one extends, and the method that picks between them.
 - [Pause and step from the editor](./editor-run-control): the controls at the stop.
 - [Locator healing](./locator-healing): where the suggested locator comes from.
 - [Failure evidence](./evidence): the Source tab and the rest of the failure's page.

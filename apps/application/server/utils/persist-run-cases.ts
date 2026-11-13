@@ -344,7 +344,7 @@ async function dedupeGreenSamples(
  *
  * Shared by the submit, upload, import and streaming-events endpoints. Returns
  * one entry per inserted junction row, each carrying the index of the input
- * case that produced it. A skipped duplicate has no entry, so callers link
+ * case that produced it and the failure cluster it joined. A skipped duplicate has no entry, so callers link
  * attachments (e.g. trace files) and events to executions by `inputIndex`,
  * never by position in the returned array.
  *
@@ -368,6 +368,7 @@ export async function persistRunCases(
     inputIndex: number;
     passedAfterFailure: boolean;
     attempts: unknown;
+    failureClusterId: number | null;
   }>
 > {
   if (input.length === 0) return [];
@@ -718,6 +719,7 @@ export async function persistRunCases(
     inputIndex: rowInputIndices[r.rowIndex]!,
     passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
     attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
+    failureClusterId: runCasesRows[r.rowIndex]!.failureClusterId ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);

@@ -10,8 +10,8 @@ import { desktopPagePath } from '#shared/desktop-handoff';
  * navigates to it and asks the shell to bring it to the front — restored if
  * minimized, shown if closed to the tray, then focused. The shell's own menu
  * and a `piwi://open/…` link open a page the same way, with a `piwi:open-page`
- * event; a link that came while this page loaded waits in the shell until the
- * page listens (`desktop_take_linked_page`).
+ * event; a link that came while this page loaded, or after the server exited,
+ * waits in the shell until the page listens (`desktop_take_linked_page`).
  *
  * Activates only in the shell's `main` window: the other shell windows (trace
  * viewer, attachments) and the shared web build ignore it.

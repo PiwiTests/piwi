@@ -101,6 +101,17 @@ with the marker or a Highlights heading) **with notes that are not polished** un
 - `git diff CHANGELOG.md`: only the target version's section changed; the header line and every
   other version are untouched.
 
+### 5. Without `gh` (a Claude Code cloud session): finish through main
+
+A cloud session cannot write a release body, so tidying is not done at `CHANGELOG.md`:
+
+1. `apply <tag> --notes <notes> --changelog-only` for each version, commit, push, and open the pull
+   request (`docs(release): …`) without being asked.
+2. Subscribe to it, and merge it once its checks are green.
+3. Dispatch the `Tidy release notes` workflow (`release-notes.yml`, input `tag`) on `main` for each
+   tag with the GitHub MCP `actions_run_trigger`, then confirm each release body carries the
+   `<!-- notes:polished -->` marker.
+
 ## Requirements & notes
 
 - **`gh` authenticated** for writing the release body (`gh auth status`). Without `gh` installed,

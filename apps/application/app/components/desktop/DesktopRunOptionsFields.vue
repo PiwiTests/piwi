@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the fields of a local run's options (how tests are
- * selected, the browser mode, repeat each, a forced trace), on one options
- * object. The run dialog edits one run's options with it, and a project's
+ * selected, the browser mode, repeat each and whether a repeat ends at its
+ * first failure, a forced trace, Hold failures), on one options object. The run dialog edits one run's options with it, and a project's
  * Local folder section the project's defaults.
  */
 import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
+import { localRunHoldRefusal } from '~/utils/local-run-args';
 
 const options = defineModel<SavedLocalRunOptions>({ required: true });
 
@@ -20,6 +21,17 @@ const mode = field('mode');
 const runMode = field('runMode');
 const trace = field('trace');
 const repeatEach = field('repeatEach');
+const stopAtFirstFailure = field('stopAtFirstFailure');
+const holdFailures = field('holdFailures');
+
+const repeats = computed(() => Math.floor(repeatEach.value ?? 1) > 1);
+/** Why Hold failures does nothing with these options: a run nobody attends goes on past each failure. */
+const holdRefused = computed(() => localRunHoldRefusal(options.value));
+/** The switch as the run would start: off whatever is kept while the options refuse it. */
+const holdShown = computed({
+  get: () => !holdRefused.value && holdFailures.value,
+  set: (on: boolean) => (holdFailures.value = on),
+});
 </script>
 
 <template>
@@ -33,8 +45,22 @@ const repeatEach = field('repeatEach');
     <UFormField label="Repeat each" name="repeatEach" description="Run every test N times — flake reproduction.">
       <UInput v-model.number="repeatEach" type="number" min="1" max="1000" class="w-full" />
     </UFormField>
+    <UFormField
+      label="Stop at the first failing repetition"
+      name="stopAtFirstFailure"
+      description="Start no repetition after the first failure (--max-failures=1), so you can look at it."
+    >
+      <USwitch v-model="stopAtFirstFailure" :disabled="!repeats" />
+    </UFormField>
     <UFormField label="Trace" name="trace" description="Force trace recording (--trace=on).">
       <USwitch v-model="trace" />
+    </UFormField>
+    <UFormField
+      label="Hold failures"
+      name="holdFailures"
+      :description="holdRefused ?? 'Hold each failing test at its line from the run\'s start, until you answer it.'"
+    >
+      <USwitch v-model="holdShown" :disabled="!!holdRefused" />
     </UFormField>
   </div>
 </template>

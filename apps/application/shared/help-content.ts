@@ -70,6 +70,16 @@ export const HELP_TOPICS = {
     text: 'After each run, Piwi files an issue for each failure that meets a rule, counting only the runs the rule names.\n\n- **Occurrences, Runs** — how often it failed, and in how many distinct runs\n- **Days** — how long since the first occurrence counted\n- **Test tags** — only failures of tests carrying one of them\n\nA failure that is snoozed, looks flaky, is already tracked or that an open issue already carries the labels of is never filed, and the daily cap holds. Preview shows what the rules file before you save.',
     doc: 'features/issue-automation#automatic-creation',
   },
+  'integrations.test-management': {
+    title: 'Test management binding',
+    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. A finished CI run of the whole suite is sent as one test run, one result per test case key.\n\n- **Dry run** — on for a new binding; a run’s page shows what would be sent and nothing reaches Zephyr Scale\n- **Where a test’s case key comes from** — its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
+    doc: 'operate/zephyr-scale#bind-a-project',
+  },
+  'integrations.test-management-run-name': {
+    title: 'Test run name',
+    text: 'The name a test run in Zephyr Scale Cloud gets for each Piwi run. It must contain `{runId}`, so each run has its own name.\n\n- `{branch}`, `{environment}` — where the run happened\n- `{runId}` — the Piwi run number\n- `{commit}`, `{date}`, `{ciBuild}` — the commit, the day and the CI build of the run',
+    doc: 'operate/zephyr-scale#the-test-run-name',
+  },
 
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
@@ -534,6 +544,7 @@ export const HELP_TOPICS = {
       '- **To** — the people who may open the run, over this instance. The images show what the page shows, the secret fields painted over.',
       '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
+      '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
@@ -561,10 +572,10 @@ export const HELP_TOPICS = {
     text: [
       'Two patterns that read a key out of a test’s tags, so the issue tracker and the test management integration can tell the tags apart.',
       '',
-      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`.',
+      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`. Piwi links that issue to the failing test’s cluster, for the issue types the project’s tracker binding lists.',
       '- **Test case key** — a tag naming the test case a test covers, such as `SHOP-T123`.',
       '',
-      'Each is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor it with `^` and `$` (`^SHOP-T[0-9]+$`) and use letters, digits, character classes and quantifiers only: no groups or `|`. A pattern that breaks the rule, matches an empty tag, or does not compile is refused. Leave a field empty to turn it off; both are off by default.',
+      'Each is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor it with `^` and `$` (`^SHOP-T[0-9]+$`) and use letters, digits, character classes and quantifiers only: no groups or `|`. An issue key pattern must match the whole tag as an issue key of the binding’s project, such as `SHOP-1234`, so `^bug-SHOP-[0-9]+$` or a lower-case pattern links nothing. A pattern that breaks the rule, matches an empty tag, or does not compile is refused. Leave a field empty to turn it off; both are off by default.',
       '',
       'When both are on, the tags of the last complete run (the whole suite, finished) that both patterns match are listed with a test that carries each. Such a tag would be read as an issue and as a test case.',
     ].join('\n'),
@@ -624,6 +635,9 @@ export const HELP_TOPICS = {
       '- **JetBrains IDEs** — **Tools → Piwi → Share the Run Live**.',
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
+      '- **Terminal** — `PIWI_SHARE_LIVE=1` shares a run from its start.',
+      '',
+      '**Ask to watch** asks the developer to share it, naming you, where they launched the run (a run with no tool prints it in its terminal); this page shows their answer. Once per 5 minutes, when the project allows it and you are signed in.',
     ].join('\n'),
     doc: 'features/share-live',
   },
@@ -711,9 +725,14 @@ export const HELP_TOPICS = {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
   },
+  'run.testManagementSync': {
+    title: 'Results sync',
+    text: 'When the project sends results to a test management tool, the run’s results go there as one test run when the run finishes: one result per test case key, the worst outcome of its tests. A dry run shows what would be sent and sends nothing. When an upload may have reached the tool, Sync again looks for the test run before it sends.',
+    doc: 'features/test-management',
+  },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. A test ended at a stop with End the test counts as skipped and reads **Ended at a stop**, as the header marks the run that holds one. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
     doc: 'reference/test-search',
   },
   'run.changes': {
@@ -732,6 +751,7 @@ export const HELP_TOPICS = {
       'When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard.',
       '',
       '- **Lanes** — one per worker. Playwright replaces a worker process after a failed test; ↻ marks where the new process took over. A dashed line is time the worker ran no test: hover it or ↻ for what it was.',
+      '- **While the run runs** — each running test is a bar growing to now, over a pale bar of its usual time: the longest of its last passing runs. It turns amber once it is marked **Stuck?**. A sharded run’s lanes are grouped by shard, and the header says which shards have started.',
       '- **Hatched ends** — hook time: setup (`beforeAll`, `beforeEach`, fixtures) at the start, teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A bar spans the hooks Playwright leaves out of a test’s duration, such as a slow `beforeAll`. A failed hook shows in dark red even with **Show hooks** off; hover it for the hooks it ran and the error, click it to open the steps on that hook.',
       '- **Retries** — a test Playwright retried has one bar per attempt, labelled **Attempt 1**, **Attempt 2**…. An attempt that was retried is drawn pale with an outline; the last one is solid: purple when the test passed on retry, red when every attempt failed. Hover any attempt to bring the others forward, joined by arrows in the order they ran, with when and where each one ran.',
       '- **Click a test** to expand its steps into a nested waterfall on the same axis, like a span viewer.',
@@ -1258,6 +1278,11 @@ export const HELP_TOPICS = {
     text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
     doc: 'features/run-on-my-machine#connected-apps',
   },
+  'settings.run-requests': {
+    title: 'Your runs on my machine',
+    text: 'The runs you asked your own apps for with **Run on my machine**, newest first: where each stands, the app that holds it and the run it reported. Only you see them. **Stop** ends one still going on.',
+    doc: 'features/run-on-my-machine#follow-and-stop',
+  },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
   },
@@ -1294,7 +1319,19 @@ export const HELP_TOPICS = {
     title: 'Integrations',
     text: "Connect an issue tracker and bind a project to it, so the project's pinned links to its site unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and any project can be bound to it.",
     doc: 'operate/integrations',
-    envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+    envVars: [
+      'PIWI_JIRA_BASE_URL',
+      'PIWI_JIRA_EMAIL',
+      'PIWI_JIRA_API_TOKEN',
+      'PIWI_ZEPHYR_API_TOKEN',
+      'PIWI_ZEPHYR_REGION',
+    ],
+  },
+  'settings.integrations.zephyr-connection': {
+    title: 'Zephyr Scale Cloud',
+    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. A project bound to the connection sends its finished runs’ results to Zephyr Scale.',
+    doc: 'operate/zephyr-scale',
+    envVars: ['PIWI_ZEPHYR_API_TOKEN', 'PIWI_ZEPHYR_REGION'],
   },
   'settings.integrations.connection': {
     title: 'Connect a system',
@@ -1414,7 +1451,7 @@ export const HELP_TOPICS = {
     text: 'Links to external systems (Jira, GitHub, etc.) attached to this item. The provider is detected automatically from the URL.',
   },
   'ide.open': {
-    title: 'Open in IDE',
+    title: 'Open in editor',
     text: [
       'Click a source path to open it in your local editor.',
       '',

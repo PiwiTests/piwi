@@ -1,41 +1,51 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { reactive } from 'vue';
+import { markRaw, reactive } from 'vue';
 import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
+import { CONTROLS } from '@piwitests/run-model/controls';
 import {
   desktopArgsAttended,
-  desktopCodeActions,
-  desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
+  desktopRowWorker,
+  desktopHeldSessions,
+  desktopRunHoldRefusal,
+  desktopRunHolds,
+  desktopRunOf,
+  desktopShellIdOf,
+  desktopRunRef,
+  desktopSessionsOfRun,
+  desktopEditorRunOf,
+  desktopEditorRunsOf,
+  desktopFailedExecution,
+  desktopFailedStep,
+  desktopRunProgress,
+  desktopShownRefs,
+  desktopStopLink,
+} from '../../app/utils/desktop-run-view';
+import {
+  DESKTOP_RUN_ICONS,
+  DESKTOP_TONE_COLORS,
+  desktopCodeItem,
   desktopImagePoint,
-  desktopLaneFrameCurrent,
   desktopLaneKey,
   desktopLiveInstance,
   desktopLiveText,
   desktopPickItem,
   desktopRunName,
-  desktopRowWorker,
-  desktopRunHoldRefusal,
-  desktopRunHolds,
-  desktopRunOf,
-  desktopRunRef,
-  desktopSessionsOfRun,
+  desktopSaidAround,
+  desktopSay,
   desktopShareOffered,
   desktopShareWarning,
-  desktopShownRefs,
-  desktopSteering,
+  desktopStopSharingQuestion,
   desktopWaitedFor,
-  desktopStopLink,
-  desktopStopPlace,
   desktopStopSaid,
-  desktopWatchesLane,
-  desktopWorkerMeta,
-  desktopWorkerState,
   isDesktopRunImage,
-} from '../../app/utils/desktop-run-view';
-import { isUnattendedDesktopRun } from '#shared/desktop-runs';
+} from '@piwitests/run-ui/run-view';
+import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
+import { hideSecretsInText } from '@piwitests/core/mask';
+import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
 
 /**
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
@@ -87,12 +97,92 @@ function sessionOf(ref: string, workers: HubWorker[], over: Partial<HubSession> 
   return { ref, root: ROOT, label: 'shop', command: null, project: 'Shop', workers, ended: false, ...over };
 }
 
+describe('how far a run of the tray is, and where its end leads', () => {
+  const counts = { total: 4, done: 2, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null };
+
+  test('counts what its steps’ own processes counted, and a test held at its failure as failed so far', () => {
+    const run = { hubRefs: ['desktop-6', 'desktop-7'] };
+    // No step said how far it is (a reporter that predates it): nothing to count.
+    expect(desktopRunProgress(run, [sessionOf('desktop-7', [workerOf()])], {})).toBeNull();
+    // The step that ended, as it last counted, and the step running now, with a test held at its failure.
+    const held = workerOf({ worker: 1, parallelIndex: 1, state: 'stopped', stop: stopOf({ reason: 'failure' }) });
+    const running = sessionOf('desktop-7-unattended', [workerOf(), held], { progress: { ...counts, flaky: 1 } });
+    const ended = {
+      'desktop-6': { ...counts, total: 3, done: 3, skipped: 1, endedAtStop: 1, status: 'failed' as const },
+    };
+    expect(desktopRunProgress(run, [running, sessionOf('desktop-9', [], { progress: counts })], ended)).toEqual({
+      total: 7,
+      done: 5,
+      failed: 3,
+      flaky: 1,
+      skipped: 1,
+      endedAtStop: 1,
+    });
+  });
+
+  test('leads a failed run to its first failure, by the title its process named, else its first failed test', () => {
+    const cases = [
+      { executionId: 11, title: 'lists the cart', suitePath: ['cart'], status: 'passed' },
+      { executionId: 12, title: 'pays', suitePath: ['checkout'], status: 'timedOut' },
+      { executionId: 13, title: 'pays', suitePath: ['checkout', 'with a card'], status: 'failed' },
+    ];
+    expect(desktopFailedExecution(cases, { title: 'checkout › with a card › pays', error: null })).toBe(13);
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, { title: 'refunds', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, null)).toBe(12);
+    expect(desktopFailedExecution(cases.slice(0, 1), null)).toBeNull();
+  });
+
+  test('finds a failure whose title its process sent cut or with its secrets hidden, never a test it only begins', () => {
+    const long = 'pays '.repeat(120);
+    const cases = [
+      { executionId: 21, title: 'lists the cart', suitePath: ['cart'], status: 'failed' },
+      { executionId: 22, title: 'pays', suitePath: ['checkout'], status: 'failed' },
+      { executionId: 23, title: `${long}by card`, suitePath: ['checkout'], status: 'failed' },
+      { executionId: 24, title: 'logs in with AKIAIOSFODNN7EXAMPLE', suitePath: [], status: 'failed' },
+    ];
+    // As the reporter sends them: cut at MAX_RUN_FAILURE_TEXT, its secrets hidden.
+    const cut = `checkout › ${long}by card`.slice(0, MAX_RUN_FAILURE_TEXT);
+    expect(desktopFailedExecution(cases, { title: cut, error: null })).toBe(23);
+    const hidden = hideSecretsInText('logs in with AKIAIOSFODNN7EXAMPLE');
+    expect(hidden).not.toContain('AKIA');
+    expect(desktopFailedExecution(cases, { title: hidden, error: null })).toBe(24);
+    // A title another test's only begins with names that test alone.
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(22);
+  });
+
+  test('leads a run of several steps to the first step that failed, and the failure it named', () => {
+    const progress = (failed: number, title: string | null) => ({
+      total: 2,
+      done: 2,
+      failed,
+      flaky: 0,
+      skipped: 0,
+      status: failed ? ('failed' as const) : ('passed' as const),
+      failure: title ? { title, error: null } : null,
+    });
+    const run = { hubRefs: ['desktop-1', 'desktop-2', 'desktop-3'] };
+    expect(
+      desktopFailedStep(run, {
+        'desktop-1': progress(0, null),
+        'desktop-2-unattended': progress(1, 'checkout › pays'),
+        'desktop-3': progress(1, 'cart › lists'),
+      }),
+    ).toEqual({ ref: 'desktop-2', failure: { title: 'checkout › pays', error: null } });
+    expect(desktopFailedStep(run, { 'desktop-1': progress(0, null) })).toBeNull();
+  });
+});
+
 describe('a worker of a desktop run', () => {
   test('is a run of the tray by the name its step gave the hub', () => {
     expect(desktopRunRef(7)).toBe('desktop-7');
     // A run nobody attends is the tray's run of the same step, its mark left out.
     expect(desktopRunOf('desktop-7-unattended')).toBe('desktop-7');
     expect(desktopRunOf('desktop-7')).toBe('desktop-7');
+    // A job run on an editor's channel in a throwaway checkout is the tray's run of its step, its commit left out.
+    expect(desktopRunOf('desktop-7-at-abc1234')).toBe('desktop-7');
+    expect(desktopRunOf('desktop-7-at-abc1234-unattended')).toBe('desktop-7');
+    expect(desktopShellIdOf('desktop-7-at-abc1234')).toBe(7);
     expect(isUnattendedDesktopRun('desktop-7-unattended')).toBe(true);
     expect(isUnattendedDesktopRun('desktop-7')).toBe(false);
     expect(desktopRunName({ project: null, label: 'shop' })).toBe('shop');
@@ -116,8 +206,18 @@ describe('a worker of a desktop run', () => {
       ['--repeat-each=20'],
       ['--repeat-each', '3'],
       ['--repeat-each=many'],
+      ['--repeat-each=20', '--max-failures=2'],
+      ['--repeat-each=20', '--max-failures'],
+      ['--ui', '--repeat-each=20', '--max-failures=1'],
     ]) {
       expect(desktopArgsAttended(args), args.join(' ')).toBe(false);
+    }
+    // A repeated run that ends at its first failure is one a person can attend, whatever the order of its flags.
+    for (const args of [
+      ['--repeat-each=20', '--retries=0', '--max-failures=1'],
+      ['--max-failures', '1', '--repeat-each', '5'],
+    ]) {
+      expect(desktopArgsAttended(args), args.join(' ')).toBe(true);
     }
     expect(desktopHoldRefusal(run('tests', ['tests/a.spec.ts:3']))).toBeNull();
     expect(desktopHoldRefusal(run('reproduce'))).toBeNull();
@@ -128,15 +228,21 @@ describe('a worker of a desktop run', () => {
       'UI mode goes on past each failure.',
     );
     expect(desktopHoldRefusal(run('tests', ['--grep', 'pays', '--repeat-each=20', '--trace=on']))).toBe(
-      'A run that repeats its tests goes on past each failure.',
+      'A run that repeats its tests goes on past each failure, unless it stops at the first one.',
     );
     expect(desktopHoldRefusal(run('repro', ['--repeat-each=5']))).toBe(
-      'A run that repeats its tests goes on past each failure.',
+      'A run that repeats its tests goes on past each failure, unless it stops at the first one.',
     );
     // A reproduction runs to see its failure at its line: it holds from its start; every other run starts off.
     expect(desktopHoldsByDefault({ kind: 'reproduce' })).toBe(true);
     for (const kind of ['tests', 'repro', 'bisect', 'flake'] as const)
       expect(desktopHoldsByDefault({ kind })).toBe(false);
+    // A run started with Hold failures on holds from its start.
+    expect(desktopHoldsByDefault({ kind: 'tests', options: { holdFailures: true } })).toBe(true);
+    expect(desktopHoldsByDefault({ kind: 'tests', options: { holdFailures: false } })).toBe(false);
+    expect(
+      desktopHoldRefusal(run('tests', ['--grep', 'pays', '--repeat-each=20', '--retries=0', '--max-failures=1'])),
+    ).toBeNull();
   });
 
   test('is shown live while it runs with Hold failures on, by its steps’ names, whatever the tray shows', () => {
@@ -165,6 +271,15 @@ describe('a worker of a desktop run', () => {
     );
     expect(desktopShownRefs(runs, { 1: true }, unattended)).toEqual(['desktop-5']);
     expect(desktopRunHoldRefusal(reproduce, unattended)).toBeNull();
+    // Its switch shows the run's own Hold failures once a step is live, whoever set it; the shown runs stay the
+    // person's choice.
+    const agentOff = [sessionOf('desktop-5', [workerOf()], { hold: { on: false, by: 'agent' } })];
+    expect(desktopRunHolds(reproduce, undefined, agentOff)).toBe(false);
+    expect(desktopHeldSessions(reproduce, agentOff).map((s) => s.ref)).toEqual(['desktop-5']);
+    expect(desktopShownRefs(runs, {}, agentOff)).toEqual(['desktop-5']);
+    const pickerOn = [sessionOf('desktop-4', [workerOf()], { hold: { on: true, by: 'person' } })];
+    expect(desktopRunHolds(tests, false, pickerOn)).toBe(true);
+    expect(desktopHeldSessions(bisect, pickerOn)).toEqual([]);
   });
 
   test('says each stop it hears with its test and its place', () => {
@@ -181,26 +296,7 @@ describe('a worker of a desktop run', () => {
     );
   });
 
-  test('says where it stands, with Pause while it runs and Resume, Step and Finish at a stop', () => {
-    const running = workerOf();
-    expect(desktopWorkerState(running, ROOT)).toBe('Running');
-    expect(desktopWorkerMeta(running)).toBe('chromium · attempt 1');
-    expect(desktopSteering(running)).toEqual(['pause']);
-    expect(desktopSteering(workerOf({ pausing: true }))).toEqual([]);
-    expect(desktopSteering(workerOf({ state: 'between' }))).toEqual([]);
-    // A state of a newer service reads as running.
-    expect(desktopWorkerState(workerOf({ state: 'other' }), ROOT)).toBe('Running');
-
-    const stopped = workerOf({ state: 'stopped', stop: stopOf({ reason: 'page-pause' }) });
-    expect(desktopWorkerState(stopped, ROOT)).toBe('Stopped at page.pause()');
-    expect(desktopSteering(stopped)).toEqual(['resume', 'step', 'finish']);
-    expect(desktopStopPlace(stopped.stop!, ROOT)).toBe('tests/checkout.spec.ts:5');
-    // End the test, where the stop takes it: its reporter ends the test there, skipped.
-    const endable = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view', 'end'] }) });
-    expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
-  });
-
-  test('says the call a Pause waits in and how long it has run, with End the test where its worker takes it', () => {
+  test('says how long the call a Pause waits in has run, in the run model’s words', () => {
     const waiting = {
       title: "Click getByRole('button', { name: 'Pay' })",
       uri: `file://${ROOT}/tests/checkout.spec.ts`,
@@ -210,66 +306,36 @@ describe('a worker of a desktop run', () => {
     };
     const at = Date.parse(waiting.since);
     const pausing = workerOf({ pausing: true, waiting, intents: ['give-up'] });
-    expect(desktopWorkerState(pausing, ROOT)).toBe("Pausing: waits in Click getByRole('button', { name: 'Pay' })");
     expect(desktopWaitedFor(pausing, at + 12_400)).toBe('for 12 s');
     expect(desktopWaitedFor(pausing, at + 125_000)).toBe('for 2 min 5 s');
-    expect(desktopSteering(pausing)).toEqual(['give-up']);
-    // A worker that cannot tell when the call began, or whose reporter does not end a test there.
+    // A worker that cannot tell when the call began.
     expect(desktopWaitedFor(workerOf({ pausing: true, waiting: { ...waiting, since: null } }), at)).toBeNull();
-    expect(desktopSteering(workerOf({ pausing: true, waiting, intents: [] }))).toEqual([]);
-    // No Pause waits: the call is not said.
+    // No Pause waits, or the worker stopped: the call is not said.
     expect(desktopWaitedFor(workerOf({ waiting }), at + 12_400)).toBeNull();
-    expect(desktopWorkerState(workerOf({ pausing: true }), ROOT)).toBe('Pausing before its next call…');
+    expect(desktopWaitedFor(workerOf({ pausing: true, waiting, state: 'stopped', stop: stopOf() }), at)).toBeNull();
+  });
+});
+
+describe('the run model’s words, icons and tones in the window', () => {
+  test('are said in English, a placeholder set apart where the window draws its value itself', () => {
+    expect(desktopSay('runs_pageCaption')).toBe('The test’s page');
+    expect(desktopSay('runs_worker', { number: '2' })).toBe('worker 2');
+    expect(desktopSaidAround('runs_statePausingIn', 'call')).toEqual(['Pausing: waits in ', '']);
+    expect(desktopSaidAround('runs_announceStopped', 'place', { test: 'pays' })).toEqual(['pays stopped at ', '.']);
   });
 
-  test('says a stop an agent asked for is the agent’s', () => {
-    const at = (reason: HubStop['reason']) =>
-      desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason, by: 'agent' }) }), ROOT);
-    expect(at('pause')).toBe('Paused by the agent');
-    expect(at('step')).toBe('Stopped after the agent’s step');
-    expect(at('run-to')).toBe('Stopped at the line the agent ran it to');
-    expect(at('page-pause')).toBe('Stopped at page.pause()');
-    expect(desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason: 'pause' }) }), ROOT)).toBe('Paused');
-  });
-
-  test('ends a failure as it failed, Resume alone', () => {
-    const failed = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', error: 'expect failed' }) });
-    expect(desktopWorkerState(failed, ROOT)).toBe('Failed at tests/checkout.spec.ts:5');
-    expect(desktopSteering(failed)).toEqual(['resume']);
-    const told = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', intents: ['end'] }) });
-    expect(desktopSteering(told)).toEqual(['resume']);
-  });
-
-  test('offers the code actions the stop takes from the window, never those that end in an editor', () => {
-    const at = workerOf({ state: 'stopped', stop: stopOf() });
-    expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
-    const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
-    expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+  test('map every icon of a worker’s state and of a control to one of the app’s own, by its meaning', () => {
+    const icons = [...Object.values(CONTROLS).map((look) => look.icon), 'x-circle', 'pause', 'clock', 'play', 'dot'];
+    for (const name of icons)
+      expect(DESKTOP_RUN_ICONS[name as keyof typeof DESKTOP_RUN_ICONS], name).toMatch(/^i-lucide-/);
+    // Each tone a color of the app's tokens, never one written here.
+    for (const color of Object.values(DESKTOP_TONE_COLORS)) expect(color).toMatch(/^var\(--(?:ui|color-status)-/);
   });
 });
 
 describe('the lane of a worker', () => {
-  test('is watched while its test runs only where its reporter shows it', () => {
+  test('is named by its run and its lane', () => {
     expect(desktopLaneKey('desktop-7', 1)).toBe('desktop-7|lane 1');
-    expect(desktopWatchesLane(workerOf({ intents: ['view', 'watch'] }))).toBe(true);
-    expect(desktopWatchesLane(workerOf())).toBe(false);
-  });
-
-  test('shows the page as it is now with the frame of its running test or of its stop, else as it last showed', () => {
-    const running = workerOf();
-    const runningFrame = { worker: 0, test: 't', since: null };
-    expect(desktopLaneFrameCurrent(runningFrame, running)).toBe(true);
-    // A frame of the stop it went on from, of another test, or of the worker Playwright ran in the lane before.
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, running)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, test: 'u' }, running)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, worker: 1 }, running)).toBe(false);
-    // Between two tests, no frame is the page now.
-    expect(desktopLaneFrameCurrent(runningFrame, workerOf({ state: 'between', test: null }))).toBe(false);
-    // At a stop, the stop's frame alone.
-    const stopped = workerOf({ state: 'stopped', stop: stopOf({ since: 's2' }) });
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's2' }, stopped)).toBe(true);
-    expect(desktopLaneFrameCurrent(runningFrame, stopped)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, stopped)).toBe(false);
   });
 
   test('names a point of its image in CSS pixels of the page it shows', () => {
@@ -514,8 +580,21 @@ describe('the window’s stream of its runs', () => {
 
   async function hub() {
     vi.resetModules();
-    const { useDesktopRunHub } = await import('../../app/composables/useDesktopRunHub');
+    const { useDesktopRunHub } = await import('../../../../packages/run-ui/app/composables/useDesktopRunHub');
     return useDesktopRunHub();
+  }
+
+  /** The window's stream with the dashboard's Inspect as its host: Inspect opens with it, and what it heard reads. */
+  async function inspectHub() {
+    const runs = await hub();
+    const { useDesktopLaneInspects } = await import('../../app/composables/useDesktopLaneInspects');
+    const { reader, inspectOf } = useDesktopLaneInspects();
+    const host = { ...reader, view: {}, title: '' };
+    return {
+      ...runs,
+      setInspect: (ref: string, lane: number, on: boolean) => runs.setInspect(ref, lane, on ? host : null),
+      inspectOf,
+    };
   }
 
   test('opens while it is wanted, names its stream, and closes when it is not', async () => {
@@ -533,6 +612,17 @@ describe('the window’s stream of its runs', () => {
     expect(source.closed).toBe(true);
     expect(runs.state.connected).toBe(false);
     expect(runs.state.sessions).toEqual({});
+  });
+
+  test('takes back how far the runs that ended before a reload came, without counting one again', async () => {
+    const runs = await hub();
+    const progress = { total: 2, done: 2, failed: 1, flaky: 0, skipped: 1, status: 'failed' as const, failure: null };
+    runs.takeBackEnded({ 'desktop-7': { progress, endedAtStop: 1 }, 'desktop-8': { endedAtStop: 2 } });
+    expect(runs.state.endedProgress).toEqual({ 'desktop-7': progress });
+    expect(runs.state.endedAtStop).toEqual({ 'desktop-7': 1, 'desktop-8': 2 });
+    // A run the stream tells of again keeps what the stream says.
+    runs.takeBackEnded({ 'desktop-7': { progress: { ...progress, failed: 2 } } });
+    expect(runs.state.endedProgress['desktop-7']?.failed).toBe(1);
   });
 
   test('says which runs it shows live, again on each new stream, and names its stream in every command', async () => {
@@ -594,7 +684,7 @@ describe('the window’s stream of its runs', () => {
     runs.want(false);
   });
 
-  test('keeps Watch live for each worker through a new stream, until it is turned off or its run ends', async () => {
+  test('keeps Watch for each worker through a new stream, until it is turned off or its run ends', async () => {
     const runs = await hub();
     runs.want(true);
     const source = FakeSource.last!;
@@ -605,15 +695,61 @@ describe('the window’s stream of its runs', () => {
     runs.setWatchLive('desktop-7', 1, true);
     runs.setWatchLive('desktop-7', 1, false);
     expect([runs.watchesLive('desktop-7', 0), runs.watchesLive('desktop-7', 1)]).toEqual([true, false]);
-    // The stream opens again: Watch live stays.
+    // The stream opens again: Watch stays.
     source.send({ type: 'hello', viewer: VIEWER });
     expect(runs.watchesLive('desktop-7', 0)).toBe(true);
     source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
     expect(runs.watchesLive('desktop-7', 0)).toBe(false);
-    // The window stops listening: every run it showed is over, and so is their Watch live.
+    // The window stops listening: every run it showed is over, and so is their Watch.
     runs.setWatchLive('desktop-8', 0, true);
     runs.want(false);
     expect(runs.watchesLive('desktop-8', 0)).toBe(false);
+  });
+
+  test('follows a run’s worker tabs as it hears it, the person’s choice and Resume there included', async () => {
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    const run = (...workers: HubWorker[]) => source.send({ type: 'session', session: sessionOf('desktop-7', workers) });
+    const running = (w: number) => workerOf({ worker: w, parallelIndex: w });
+    const stopped = (w: number, since: string) =>
+      workerOf({ worker: w, parallelIndex: w, state: 'stopped', stop: stopOf({ since }) });
+    run(running(0));
+    expect(runs.tabsOf('desktop-7')).toBeNull();
+    run(running(0), running(1));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    // A stop takes the tab; the person's choice holds as long as no new stop comes.
+    run(running(0), stopped(1, 's1'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    runs.chooseTab('desktop-7', 0);
+    run(running(0), stopped(1, 's1'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    // A worker whose lane is watched keeps its tab when another stops; its Watch, which shows nothing while it
+    // runs, does not.
+    runs.setWatchLive('desktop-7', 0, true);
+    run(running(0), stopped(1, 's4'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    // Pausing with Watch on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
+    runs.chooseTab('desktop-7', 0);
+    run({ ...running(0), pausing: true }, stopped(1, 's5'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    runs.setWatchLive('desktop-7', 0, false);
+    runs.chooseTab('desktop-7', 0);
+    await runs.setLaneWatch('desktop-7', 0, true);
+    run(running(0), stopped(1, 's2'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    await runs.setLaneWatch('desktop-7', 0, false);
+    // Resumed where it is shown, the next stopped test takes the tab once it goes on; elsewhere, nothing moves.
+    run(stopped(0, 's3'), stopped(1, 's2'));
+    runs.advanceTab('desktop-7', 1, 's3');
+    expect(runs.tabsOf('desktop-7')?.advance).toBeNull();
+    runs.advanceTab('desktop-7', 0, 's3');
+    run(running(0), stopped(1, 's2'));
+    expect(runs.tabsOf('desktop-7')).toEqual({ shown: 1, known: ['s2'], advance: null });
+    // The run ends: its tabs go.
+    source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
+    expect(runs.tabsOf('desktop-7')).toBeNull();
   });
 
   test('passes a frame to who watches its view alone, keeping the latest one until the last one leaves', async () => {
@@ -702,6 +838,156 @@ describe('the window’s stream of its runs', () => {
     expect(lanesSaid()[4]).toEqual({ ref: 'desktop-7', lane: 0, on: false });
     runs.want(false);
     expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+  });
+
+  test('has the server read a lane’s pages for Inspect while a view shows it, again on each stream, until the lane’s watch ends', async () => {
+    const notice = (call: string) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title: `Click ${call}`,
+      phase: 'after',
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: true,
+      index: 0,
+      at: 1_800_000_000_000,
+      test: 'checkout › pays',
+    });
+    const listed: unknown[] = [];
+    vi.stubGlobal('markRaw', markRaw);
+    vi.stubGlobal('$fetch', async (url: string, init: { body?: Record<string, unknown>; query?: unknown }) => {
+      if (url === '/api/desktop/runs/inspect/calls') {
+        listed.push(init.query);
+        return { attempt: 't#0', heard: [notice('call@1')], refused: null };
+      }
+      posted.push(init.body!);
+      return { type: 'answer', ok: true, message: '', id: init.body!.id };
+    });
+    const runs = await inspectHub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const said = () =>
+      posted.filter((body) => body.type === 'inspect').map(({ ref, lane, on, viewer }) => ({ ref, lane, on, viewer }));
+
+    // Open, but shown nowhere: the server hears nothing.
+    expect(await runs.setInspect('desktop-7', 0, true)).toEqual({ ok: true, message: '' });
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ attempt: null, heard: [] });
+    expect(said()).toEqual([]);
+    // A view shows it: the server reads the lane's pages, and what it read so far comes, then each one it says.
+    runs.showInspect('desktop-7', 0);
+    await vi.waitFor(() => expect(said()).toEqual([{ ref: 'desktop-7', lane: 0, on: true, viewer: VIEWER }]));
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)?.heard).toHaveLength(1));
+    expect(listed).toEqual([{ viewer: VIEWER, ref: 'desktop-7', lane: 0 }]);
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 0, attempt: 't#0', snapshot: notice('call@2') });
+    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1', 'call@2']);
+    // Another lane's, or one of a lane not open, changes nothing.
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 1, attempt: 't#0', snapshot: notice('call@9') });
+    expect(runs.inspectOf('desktop-7', 1)).toBeNull();
+
+    // A view that leaves as another comes, in one tick, changes nothing.
+    const views = [runs.showInspect('desktop-7', 0)];
+    views.push(runs.showInspect('desktop-7', 0));
+    views.shift()!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(said()).toHaveLength(1);
+
+    // A new stream: the server is told again on it, and what it reads again replaces what the view held of the test,
+    // the view staying on it.
+    const turn = runs.inspectOf('desktop-7', 0)!.turn;
+    const other = 'b'.repeat(32);
+    source.send({ type: 'hello', viewer: other });
+    await vi.waitFor(() => expect(said()).toHaveLength(2));
+    expect(said()[1]).toEqual({ ref: 'desktop-7', lane: 0, on: true, viewer: other });
+    await vi.waitFor(() => expect(listed).toHaveLength(2));
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1']));
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn, attempt: 't#0' });
+
+    // The lane's watch off closes it.
+    await runs.setLaneWatch('desktop-7', 0, false);
+    await vi.waitFor(() => expect(said()).toHaveLength(3));
+    expect(said()[2]).toMatchObject({ ref: 'desktop-7', lane: 0, on: false });
+    expect(runs.inspectOf('desktop-7', 0)).toBeNull();
+    runs.want(false);
+  });
+
+  test('tells the server Inspect is off while the window is hidden, the view kept, and says why a new stream refuses it', async () => {
+    const changed: Array<() => void> = [];
+    const page = {
+      hidden: false,
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'visibilitychange') changed.push(listener);
+      },
+    };
+    vi.stubGlobal('document', page);
+    const notice = (call: string, at: number) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title: `Click ${call}`,
+      phase: 'after',
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: false,
+      index: at,
+      at: 1_800_000_000_000 + at,
+      test: 'checkout › pays',
+    });
+    let listing = { attempt: 't#0', heard: [notice('call@1', 1)], refused: null as string | null };
+    let refusal: string | null = null;
+    vi.stubGlobal('markRaw', markRaw);
+    vi.stubGlobal('$fetch', async (url: string, init: { body?: Record<string, unknown> }) => {
+      if (url === '/api/desktop/runs/inspect/calls') return listing;
+      posted.push(init.body!);
+      const refused = init.body!.type === 'inspect' && init.body!.on && refusal;
+      return { type: 'answer', ok: !refused, message: refused || '', id: init.body!.id };
+    });
+    const runs = await inspectHub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const said = () => posted.filter((body) => body.type === 'inspect').map(({ on }) => on);
+    await runs.setInspect('desktop-7', 0, true);
+    runs.showInspect('desktop-7', 0);
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)?.heard).toHaveLength(1));
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 0, attempt: 't#0', snapshot: notice('call@2', 2) });
+    const turn = runs.inspectOf('desktop-7', 0)!.turn;
+
+    // Hidden: the server reads no page meanwhile, and the view keeps what it heard.
+    page.hidden = true;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(said()).toEqual([true, false]));
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn, attempt: 't#0' });
+    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1', 'call@2']);
+    // Shown again: the server reads again, and what it read since joins the view, which stays on the test.
+    listing = { ...listing, heard: [notice('call@2', 2), notice('call@3', 3)] };
+    page.hidden = false;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(said()).toEqual([true, false, true]));
+    await vi.waitFor(() =>
+      expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@2', 'call@3']),
+    );
+    expect(runs.inspectOf('desktop-7', 0)!.turn).toBe(turn);
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toBeNull();
+
+    // A new stream the server refuses Inspect on: it closes, saying why, as a refused click does.
+    refusal = 'Inspect is open on 16 lanes already: close one first.';
+    source.send({ type: 'hello', viewer: 'b'.repeat(32) });
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)).toBeNull());
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toMatchObject({ message: refusal });
+    // A click refused the same way says it again.
+    const first = runs.inspectRefusalOf('desktop-7', 0);
+    expect(await runs.setInspect('desktop-7', 0, true)).toMatchObject({ ok: false, message: refusal });
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toMatchObject({ message: refusal });
+    expect(runs.inspectRefusalOf('desktop-7', 0)).not.toBe(first);
+    runs.want(false);
   });
 
   test('passes a lane’s frames to who listens, keeping the latest image while the lane is watched', async () => {
@@ -973,10 +1259,71 @@ describe('Share live in the window', () => {
     expect(desktopShareWarning({ page: null })).toContain('the Piwi instance this run reports to');
   });
 
+  test('asks before Stop sharing: what closes on the instance, and that nothing more of the run goes there', () => {
+    const page = { id: 42, url: 'https://piwi.example.com/test-runs/42' };
+    expect(desktopStopSharingQuestion({ page, live })).toEqual({
+      title: 'Stop sharing run #42 live?',
+      body: 'Nothing more of it goes to piwi.example.com.',
+    });
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 1 } }).body).toBe(
+      'The view open on piwi.example.com closes, and nothing more of the run goes there.',
+    );
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 3 } }).body).toBe(
+      'The 3 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    // Before its process named its page, the run has no number, and an instance named by no page is the team's.
+    expect(desktopStopSharingQuestion({ live: { ...live, page: null, viewers: 2 } })).toEqual({
+      title: 'Stop sharing the run live?',
+      body: 'The 2 views open on the team instance close, and nothing more of the run goes there.',
+    });
+  });
+
   test('offers no Share live for a run that reports to this app, which no teammate reaches', () => {
     expect(desktopShareOffered(live)).toBe(true);
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.off })).toBe(true);
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.local })).toBe(false);
     expect(desktopShareOffered(null)).toBe(false);
+  });
+});
+
+describe('a job of the tray an editor’s hub owns', () => {
+  test('is the editor’s run of the job’s step, in a throwaway checkout, until it ends', () => {
+    const editorRun = (ref: string, ended = false) => ({
+      client: 'Visual Studio Code',
+      session: { ref, root: null, workers: [], ended },
+    });
+    const repro = editorRun('desktop-7-at-abc1234');
+    const bisect = editorRun('desktop-7-at-0123456789ab-unattended');
+    const runs = [repro, bisect, editorRun('desktop-8-at-abc1234'), editorRun('terminal-1-2'), editorRun('desktop-7')];
+    expect(desktopEditorRunsOf({ hubRefs: ['desktop-7'] }, runs)).toEqual([repro, bisect]);
+    expect(desktopEditorRunsOf({ hubRefs: ['desktop-7'] }, [editorRun('desktop-7-at-abc1234', true)])).toEqual([]);
+    expect(desktopEditorRunsOf({ hubRefs: [] }, runs)).toEqual([]);
+  });
+});
+
+describe('an editor’s run on the run page', () => {
+  const ORIGIN = 'http://127.0.0.1:3000';
+  const session = (page: { id: number; url: string } | undefined, ended = false) => ({ page, ended });
+
+  test('is the page’s run when its page is that run on this app’s own server', () => {
+    expect(desktopEditorRunOf(session({ id: 77, url: `${ORIGIN}/test-runs/77` }), 77, ORIGIN)).toBe(true);
+    // The same server under another name of the loopback interface; not another port.
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3000/test-runs/77' }), 77, ORIGIN)).toBe(true);
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3001/test-runs/77' }), 77, ORIGIN)).toBe(false);
+    // A run of the same number on the team instance, another run, an ended one, or one with no page yet.
+    expect(desktopEditorRunOf(session({ id: 77, url: 'https://piwi.example.com/test-runs/77' }), 77, ORIGIN)).toBe(
+      false,
+    );
+    expect(desktopEditorRunOf(session({ id: 78, url: `${ORIGIN}/test-runs/78` }), 77, ORIGIN)).toBe(false);
+    expect(desktopEditorRunOf(session({ id: 77, url: `${ORIGIN}/test-runs/77` }, true), 77, ORIGIN)).toBe(false);
+    expect(desktopEditorRunOf(session(undefined), 77, ORIGIN)).toBe(false);
+  });
+
+  test('reads from the server’s message only what reads as a run', () => {
+    const run = { client: 'WebStorm', session: { ref: 'ed-1', workers: [] } };
+    expect(desktopEditorRuns([run, { client: 3, session: { ref: 'x', workers: [] } }, { client: null }, null])).toEqual(
+      [run],
+    );
+    expect(desktopEditorRuns('runs')).toEqual([]);
   });
 });

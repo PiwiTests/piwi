@@ -121,7 +121,12 @@ interface SimTest {
   browser?: Record<string, unknown> | null;
   tags?: string[];
   locks?: string[];
-  testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
+  testMeta?: {
+    owner?: string | null;
+    priority?: string | null;
+    feature?: string | null;
+    issues?: string[];
+  } | null;
   externalId?: string | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
@@ -1280,7 +1285,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     icon: 'i-lucide-hourglass',
     group: 'causes',
     result: {
-      text: 'The PayPal test ran past its usual time, so its row read Stuck? until the payment timed out.',
+      text: 'The PayPal test ran past its usual time, so its row read Stuck? and its Timeline bar turned amber until the payment timed out.',
     },
     speed: 15,
     workers: 3,

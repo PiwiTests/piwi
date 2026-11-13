@@ -1,7 +1,8 @@
 /**
  * One connection to an editor service's hub (`@piwitests/core/run-hub`), from the background worker alone: the
  * WebSocket the editor's live endpoint named, `hello` with its token, `subscribe` once welcomed, then each run as the
- * hub pushes it, what each code written at a stop came to, and the frames of the live views and lanes it watches.
+ * hub pushes it, what each code written at a stop came to, the frames of the live views and lanes it watches, and the
+ * layers of those lanes it asked for.
  * Every message is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a newer hub's
  * would be. A command waits for the answer of its `id`, and is answered by the worker itself when the connection
  * closes or the hub stays silent. The hub sends `keepalive` every
@@ -17,6 +18,7 @@ import {
   type HubFrameRefusal,
   type HubLaneFrameMessage,
   type HubLaneFrameRefusal,
+  type HubLaneLayerMessage,
   type HubSession,
   type HubWelcome,
   type LiveHub,
@@ -76,6 +78,8 @@ export interface HubConnectionEvents {
   frame(frame: HubFrameMessage | HubFrameRefusal): void;
   /** A frame of a lane the connection watches (`watch`), or why none comes. */
   laneFrame(frame: HubLaneFrameMessage | HubLaneFrameRefusal): void;
+  /** A layer of a lane the connection watches and asked for (`watch`'s `layers`). */
+  laneLayer(layer: HubLaneLayerMessage): void;
   /** The other live hubs of the machine, as the hub names them each time they change: no token. */
   peers(hubs: PeerHub[]): void;
   /** The connection closed by itself; `sessions` still holds the runs it had. */
@@ -105,6 +109,11 @@ export class HubConnection {
    * hub that answers for its runs yet (`RunHubs` says it is not connected).
    */
   heardRuns = false;
+  /**
+   * The editor window shares each of its runs live until the person stops, as a hub whose features list
+   * `share-window` last said (`share-window`).
+   */
+  windowShared = false;
   /** Resolves once the runs live at `subscribe` were heard, or the connection closed. */
   readonly ready: Promise<void>;
 
@@ -206,8 +215,15 @@ export class HubConnection {
         return this.events.frame(message);
       case 'lane-frame':
         return this.events.laneFrame(message);
+      case 'lane-layer':
+        return this.events.laneLayer(message);
       case 'peers':
         return this.events.peers(message.hubs);
+      case 'share-window':
+        if (this.windowShared === message.on) return;
+        this.windowShared = message.on;
+        this.events.changed();
+        return;
       case 'session': {
         const { session } = message;
         if (session.ended) {
@@ -236,13 +252,14 @@ export class HubConnection {
       return;
     }
     // What the window reads of an answer, each part read field by field by `parseHubMessage`; the hub's id stays here.
-    const { ok, message, image, requests, locator } = answer;
+    const { ok, message, image, requests, locator, taken } = answer;
     waiting.resolve({
       ok,
       message,
       ...(image === undefined ? {} : { image }),
       ...(requests === undefined ? {} : { requests }),
       ...(locator === undefined ? {} : { locator }),
+      ...(taken === undefined ? {} : { taken }),
     });
   }
 

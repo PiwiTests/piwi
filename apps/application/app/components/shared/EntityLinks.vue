@@ -9,6 +9,8 @@ const props = defineProps<{
   links?: EntityLinkInfo[] | null;
   /** Hide the add/remove controls for viewers without write access. */
   readonly?: boolean;
+  /** How many more issues the cluster's tests named than it links. */
+  declaredMore?: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -66,16 +68,17 @@ async function addLink() {
   }
 }
 
+function unlinkWarning(link: EntityLinkInfo): string {
+  if (link.provider === 'zephyr-scale') {
+    return `Unlink ${link.key ?? 'this test run'}? Piwi sent this run's results to it. The test run itself stays in the test management tool.`;
+  }
+  return `Unlink ${link.key ?? 'this issue'}? Piwi filed it: unlinking stops its status sync and the comments Piwi writes to it. The issue itself stays in the tracker.`;
+}
+
 async function removeLink(id: number) {
-  // An issue Piwi filed is synced and written to through its link: say so first.
+  // A link Piwi made (an issue it filed and writes to, a test run it sent results to): say what unlinking leaves first.
   const link = localLinks.value.find((l) => l.id === id);
-  if (
-    link?.origin === 'created' &&
-    !window.confirm(
-      `Unlink ${link.key ?? 'this issue'}? Piwi filed it: unlinking stops its status sync and the comments Piwi writes to it. The issue itself stays in the tracker.`,
-    )
-  )
-    return;
+  if (link?.origin === 'created' && !window.confirm(unlinkWarning(link))) return;
   try {
     await $fetch(`/api/links/${id}`, { method: 'DELETE' });
     localLinks.value = localLinks.value.filter((l) => l.id !== id);
@@ -102,7 +105,11 @@ watch(
   <div class="flex flex-wrap items-center gap-1.5">
     <LinkChip v-for="link in localLinks" :key="link.id" :link="link" :removable="!readonly" @remove="removeLink" />
 
-    <span v-if="readonly && localLinks.length === 0" class="text-xs text-muted">None</span>
+    <span v-if="declaredMore" class="text-xs text-muted" data-testid="links-declared-more">
+      and {{ declaredMore }} more named by its tests
+    </span>
+
+    <span v-if="readonly && localLinks.length === 0 && !declaredMore" class="text-xs text-muted">None</span>
 
     <UPopover v-if="!readonly" v-model:open="addLinkOpen">
       <UButton

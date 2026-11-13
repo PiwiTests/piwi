@@ -28,7 +28,8 @@ export const READY_INSPECTION = {
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
  * native import picker returns, else none), `localRunId` (the shell's id of a
  * local run `desktop_run_local_tests` starts, which then goes on until the
- * scene ends; else none starts), and `serverPort` and `activePort` (the port
+ * scene ends; a list gives each start the next id of it, the last one again
+ * once they are used; else none starts), and `serverPort` and `activePort` (the port
  * the settings name and the one the server listens on, else both 3000), and
  * `update` (`{ check, releaseNotes }`: the update the startup check found and
  * the release notes `desktop_get_release_notes` answers; else the build has
@@ -44,13 +45,15 @@ export function bridgeScript(shape = {}) {
   const link = shape.link ?? null;
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
-  const localRunId = shape.localRunId ?? null;
+  const localRunIds = [shape.localRunId ?? null].flat();
   const requestFolders = shape.requestFolders ?? {};
   const serverPort = shape.serverPort ?? 3000;
   const activePort = shape.activePort ?? serverPort;
   const update = shape.update ?? null;
   return `
     window.__mockLink = ${JSON.stringify(link)};
+    const localRunIds = ${JSON.stringify(localRunIds)};
+    let localRunsStarted = 0;
     const listeners = {};
     window.__emitTauri = (name, payload) => {
       for (const cb of listeners[name] ?? []) cb({ payload });
@@ -99,7 +102,7 @@ export function bridgeScript(shape = {}) {
               return Promise.resolve([]);
             case 'desktop_run_local_tests':
               window.__runArgs = args;
-              return Promise.resolve(${JSON.stringify(localRunId)});
+              return Promise.resolve(localRunIds[Math.min(localRunsStarted++, localRunIds.length - 1)]);
             case 'desktop_open_output_window':
               window.__outputWindowName = args.name;
               return Promise.resolve('output-' + args.name + '_0');

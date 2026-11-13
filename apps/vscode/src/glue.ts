@@ -5,8 +5,9 @@
  * and the Playwright configs it opens in, the MCP
  * configuration editors without the MCP provider API are given to paste, the
  * file a dashboard's open link names, and the recorded block a recording
- * writes and follows through the edits around it, and the Testing view's tree
- * of Piwi's tests with the results it publishes.
+ * writes and follows through the edits around it, the Testing view's tree
+ * of Piwi's tests with the results it publishes, and how every run of the
+ * window starts.
  */
 import type {
   BaselineChoice,
@@ -21,15 +22,19 @@ import type {
   FileEdit,
   LineSpan,
   LiveRun,
+  RunProgress,
   McpServerDefinition,
   RecordingPlacement,
   RecordingStep,
   RecordingUpdate,
   RunStatus,
   RunEnded,
+  RunSelectionParams,
+  RunStartOptions,
   RunStatusResult,
   RunTestsArgs,
   SpecTest,
+  RunSession,
   StatusResult,
   SummaryLine,
   TestAtResult,
@@ -40,6 +45,35 @@ import type {
 } from '@piwitests/editor/protocol';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
+
+/** What a Refresh the editor service did not answer says, with `RESTART_SERVICE`. */
+export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
+
+/** The button that runs `piwi.restartService`. */
+export const RESTART_SERVICE = 'Restart the editor service';
+
+/** What a command that reads the instance says while no context is connected, with Connect. */
+export const NOT_CONNECTED = 'Piwi: connect to an instance first.';
+
+/**
+ * What a command that reads the instance says while no context reads one: that an instance does not answer, with
+ * Retry; that one is still being read; else to connect, with Connect. Null while a context is connected.
+ */
+export function notConnectedNotice(
+  status: Pick<StatusResult, 'contexts'> | null,
+): { message: string; action: 'retry' | 'connect' | null } | null {
+  const contexts = status?.contexts ?? [];
+  if (contexts.some((c) => c.connected)) return null;
+  const down = contexts.find((c) => c.problemKind === 'unreachable');
+  if (down)
+    return {
+      message: `Piwi: ${down.serverUrl ?? 'the instance'} does not answer. Piwi tries again on its own.`,
+      action: 'retry',
+    };
+  if (contexts.some((c) => c.serverUrl && !c.problem))
+    return { message: 'Piwi: still reading the instance.', action: null };
+  return { message: NOT_CONNECTED, action: 'connect' };
+}
 
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
@@ -57,24 +91,32 @@ export interface StatusBarView {
   tooltip: string;
   /**
    * `refresh` reads the latest run again (`piwi.refreshRun`); `retry` reads the instance again (`piwi.refresh`);
-   * `connect` runs Piwi: Connect.
+   * `connect` runs Piwi: Connect; `restart` starts the editor service again (`piwi.restartService`).
    */
-  action: 'refresh' | 'retry' | 'connect' | 'none';
+  action: 'refresh' | 'retry' | 'connect' | 'restart' | 'none';
   /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
+  /** The page of the run in progress the item counts, which `piwi.openLiveRun` opens; null while none runs. */
+  liveUrl: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
+  /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
+  ownLive?: boolean;
 }
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
 /** The commands the status bar item's tooltip links to. */
 export const STATUS_TOOLTIP_COMMANDS = [
+  'piwi.openLiveRun',
   'piwi.openRun',
   'piwi.openInDashboard',
   'piwi.compareWith',
   'piwi.connect',
   'piwi.refresh',
+  'piwi.runOptions',
+  'piwi.restartService',
+  'piwi.openLog',
 ];
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -113,16 +155,31 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
   return desktopChosen ? 'The Piwi desktop app, chosen with Piwi: Connect, is not running.' : null;
 }
 
-/** A run in progress in the status bar: `$(sync~spin) Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+/**
+ * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the
+ * editor's own.
+ */
 function liveText(live: LiveRun): string {
   const failing = live.failed ? ` · ${live.failed} failing` : '';
-  return `$(sync~spin) Piwi: ${live.done}/${live.total}${failing}${live.own ? ' · your run' : ''}`;
+  const run = live.ci ? 'CI run' : 'run';
+  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${live.done}/${live.total}${failing}${live.own ? ' · yours' : ''}`;
 }
 
 /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
 function liveLine(live: LiveRun): string {
   const failing = live.failed ? ` · ${live.failed} failing` : '';
-  return `${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+  const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
+  return `${run} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+}
+
+/** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
+function liveLink(live: LiveRun | null): string | null {
+  return live?.url ? `[Open run #${live.runId} (running)](command:piwi.openLiveRun)` : null;
+}
+
+/** The links of the tooltip's last line, the run in progress first. */
+function linksLine(...links: Array<string | null>): string {
+  return links.filter((link): link is string => !!link).join(' · ');
 }
 
 /** When the latest run was read, and how the service learns of the next: `Updated 12 s ago · live`. */
@@ -137,6 +194,26 @@ export function baselineLine(label: string | undefined): string | null {
   return label ? `Baseline: ${label}` : null;
 }
 
+/**
+ * The item's text while a run this editor started holds a stop and the item counts that run (`StatusBarView.ownLive`):
+ * no spinner, as no test runs there, but the pause's icon, or the error's while every stop held is a failure. Any other
+ * text is left as it is.
+ */
+export function heldText(text: string, held: 'stop' | 'failure' | null): string {
+  if (!held) return text;
+  return text.replace(/^\$\(sync~spin\)/, held === 'failure' ? '$(error)' : '$(debug-pause)');
+}
+
+/** What the runs this editor started hold: a stop, only failures, or nothing; a terminal's run is the terminal's. */
+export function heldStops(sessions: readonly RunSession[]): 'stop' | 'failure' | null {
+  const stops = sessions
+    .filter((s) => !s.terminal)
+    .flatMap((s) => s.workers ?? [])
+    .flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop] : []));
+  if (!stops.length) return null;
+  return stops.every((s) => s.reason === 'failure') ? 'failure' : 'stop';
+}
+
 /** The item's text while the latest run is read again: its icon spins. */
 export function refreshingText(text: string): string {
   return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
@@ -146,7 +223,8 @@ type StatusContext = StatusResult['contexts'][number];
 
 /**
  * The context the status bar item speaks for: the one whose Playwright config folder holds the active file, the
- * deepest when several do; else the first connected one, else the first the instance did not answer, else the first.
+ * deepest when several do; else the first connected one, else the first the instance did not answer or the desktop app
+ * did not prove itself to, else the first.
  */
 export function statusContext(contexts: readonly StatusContext[], activeFile: string | null): StatusContext | null {
   const holding = activeFile
@@ -155,7 +233,7 @@ export function statusContext(contexts: readonly StatusContext[], activeFile: st
   return (
     holding ??
     contexts.find((c) => c.connected) ??
-    contexts.find((c) => c.problemKind === 'unreachable') ??
+    contexts.find((c) => c.problemKind === 'unreachable' || c.problemKind === 'desktop-unproven') ??
     contexts[0] ??
     null
   );
@@ -178,6 +256,71 @@ function configLine(
 }
 
 /**
+ * The status bar item while the editor service is not running (its start failed, or the client gave up starting it
+ * again): it says so, a click starts it again, and the tooltip offers the log.
+ */
+export function serviceDownView(): StatusBarView {
+  return {
+    text: '$(warning) Piwi: not running',
+    tooltip: lines(
+      'The Piwi editor service is not running, so nothing of the instance is read. When it does not start again, the log says why, and reloading the window starts it anew.',
+      '[Restart the editor service](command:piwi.restartService) · [Open the log](command:piwi.openLog)',
+    ),
+    action: 'restart',
+    url: null,
+    liveUrl: null,
+    error: false,
+  };
+}
+
+/** How far a run got: the tests that ended, out of all, and how many failed. */
+export type RunCounts = Pick<RunProgress, 'done' | 'total' | 'failed'>;
+
+/** The most runs whose last count `OwnRunCounts` keeps: past them, the oldest go. */
+const MAX_KEPT_COUNTS = 16;
+
+/**
+ * The count each of the editor's own runs told last through its session (`RunSession.progress`), kept once the session
+ * ended while the instance still counts the run behind it, so the status bar's count never goes back: until the
+ * instance's count reaches it, the instance says the run ends (`finalizing`), or another run takes the ref.
+ */
+export class OwnRunCounts {
+  private kept = new Map<string, { runId: number; counts: RunCounts }>();
+
+  /** The count of the run of `ref` the instance counts as `instance`: `told` by its session, else the one kept. */
+  count(ref: string, told: RunCounts | undefined, instance: LiveRun): RunCounts | undefined {
+    if (told) {
+      this.kept.delete(ref);
+      this.kept.set(ref, { runId: instance.runId, counts: told });
+      for (const oldest of this.kept.keys()) {
+        if (this.kept.size <= MAX_KEPT_COUNTS) break;
+        this.kept.delete(oldest);
+      }
+      return told;
+    }
+    const kept = this.kept.get(ref);
+    if (!kept) return undefined;
+    if (kept.runId !== instance.runId || instance.status === 'finalizing' || instance.done >= kept.counts.done) {
+      this.kept.delete(ref);
+      return undefined;
+    }
+    return kept.counts;
+  }
+}
+
+/**
+ * The editor's own run in progress counted from its own process's events (`RunSession.progress`), which come before the
+ * instance hears them and without one; any other run, or one whose events say nothing, as the instance counts it.
+ */
+function withOwnProgress(
+  live: LiveRun | null,
+  progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined,
+): LiveRun | null {
+  const told = live?.own && live.ref ? progressOf(live.ref, live) : undefined;
+  return live && told ? { ...live, done: told.done, total: told.total, failed: told.failed } : live;
+}
+
+/**
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
@@ -190,15 +333,38 @@ export function statusBarView(
   desktopChosen = false,
   now = Date.now(),
   activeFile: string | null = null,
+  progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined = () => undefined,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
   if (!shown) {
-    return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
+    return {
+      text: '$(beaker) Piwi',
+      tooltip: 'No Playwright config found',
+      action: 'none',
+      url: null,
+      liveUrl: null,
+      error: false,
+    };
   }
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
   const which = configLine(contexts, shown, activeFile);
+  if (!shown.connected && shown.problemKind === 'desktop-unproven') {
+    return {
+      text: '$(warning) Piwi: restart the desktop app',
+      tooltip: lines(
+        md(shown.problem ?? 'The desktop app did not prove it holds its token'),
+        which,
+        hint,
+        `[Retry](command:piwi.refresh) · ${connect}`,
+      ),
+      action: 'retry',
+      url: null,
+      liveUrl: null,
+      error: false,
+    };
+  }
   if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
       text: '$(debug-disconnect) Piwi: unreachable',
@@ -207,10 +373,11 @@ export function statusBarView(
         which,
         'Piwi reads it again on its own.',
         hint,
-        `[Retry](command:piwi.refresh) · ${connect}`,
+        `[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · ${connect}`,
       ),
       action: 'retry',
       url: null,
+      liveUrl: null,
       error: false,
     };
   }
@@ -220,6 +387,7 @@ export function statusBarView(
       tooltip: lines(md(shown.problem ?? 'Not connected'), which, hint, connect),
       action: 'connect',
       url: null,
+      liveUrl: null,
       error: false,
     };
   }
@@ -233,14 +401,16 @@ export function statusBarView(
   const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
   const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
   const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
-  const live = run?.live ?? null;
+  // The editor's own run in progress stays in view whichever config the active file belongs to.
+  const live = withOwnProgress(run?.live ?? runs?.contexts.find((c) => c.live?.own)?.live ?? null, progressOf);
+  const liveUrl = live?.url ?? null;
   const progress = live ? liveLine(live) : null;
   const updated = updatedLine(run, now);
   const baseline = run?.baseline ? md(baselineLine(run.baseline.label)!) : null;
   const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
   const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
-    const links = `${dashboard} · ${compare} · ${connect}`;
+    const links = linksLine(liveLink(live), dashboard, compare, connect);
     if (run?.overlays) {
       // A developer's own runs alone, with no baseline.
       const failing = run.failingTests ?? run.failures;
@@ -259,6 +429,7 @@ export function statusBarView(
         ),
         action: 'refresh',
         url: null,
+        liveUrl,
         error: !live && failing > 0,
       };
     }
@@ -267,6 +438,7 @@ export function statusBarView(
       tooltip: lines(`No run of ${where} yet`, which, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
+      liveUrl,
       error: false,
     };
   }
@@ -284,13 +456,23 @@ export function statusBarView(
     from,
     reporter,
     hint,
-    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${compare} · ${connect}`,
+    linksLine(
+      liveLink(live),
+      live?.runId === r.id ? null : `[Open run #${r.id}](command:piwi.openRun)`,
+      dashboard,
+      compare,
+      connect,
+    ),
   );
-  const view = { tooltip, action: 'refresh' as const, url: r.url, error: false };
+  const view = { tooltip, action: 'refresh' as const, url: r.url, liveUrl, error: false };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
-    return { ...view, text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}` };
+    return {
+      ...view,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
+      ownLive: !!live?.own,
+    };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
   if (failing > 0) {
@@ -550,7 +732,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
             line: l.line,
             failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
             failingLine: l.failure?.line ?? null,
-            hover: testResultHover(l.status, l.title, l.failure?.state === 'edited'),
+            hover: testResultHover(l.title),
             dashboardUrl:
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
@@ -562,20 +744,9 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   );
 }
 
-/**
- * A test's hover: its latest result, whether the line it failed at changed since the run (`edited`), then its
- * history as the service sums it up.
- */
-export function testResultHover(status: TestLineStatus, title: string, edited = false): string {
-  const result = {
-    failed: 'failing',
-    flaky: 'flaky',
-    passed: 'passing',
-    skipped: 'skipped',
-    running: 'running',
-    unknown: 'no recent result',
-  }[status];
-  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', md(title)].filter(Boolean).join(' · ');
+/** A test's hover: the summary the service writes, its latest result naming the run first. */
+export function testResultHover(title: string): string {
+  return `**Piwi**: ${md(title)}`;
 }
 
 /** The coverage marks of a file, as whole lines: those the tests ran, the executable ones none runs, those changed since. */
@@ -625,6 +796,7 @@ export const VERDICT_ACTIONS = {
   failures: 'Open the failures',
   dashboard: 'Open in dashboard',
   rerun: 'Re-run failing',
+  onlyOnFailure: 'Only on failure',
 } as const;
 
 /** Titles as a verdict lists them: the first ones, then how many more. */
@@ -636,8 +808,9 @@ function titleList(titles: string[], count: number): string {
 /**
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet. A run of each test
- * several times says how many of its runs passed, `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
+ * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`.
+ * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
+ * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
 export function runVerdict(
   ended: RunEnded,
@@ -662,7 +835,9 @@ export function runVerdict(
   if (!parts.length) {
     const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
     if (ended.flaky) counts.push(`${ended.flaky} flaky`);
-    if (ended.skipped) counts.push(`${ended.skipped} skipped`);
+    if (ended.skipped) {
+      counts.push(`${ended.skipped} skipped${ended.endedAtStop ? ` (${ended.endedAtStop} ended at a stop)` : ''}`);
+    }
     parts.push(counts.join(', '));
   }
   const failing = still + added > 0 || ended.failed > 0;
@@ -670,7 +845,12 @@ export function runVerdict(
   return {
     severity: failing ? 'warning' : 'information',
     text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
-    actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard, ...(failing ? [VERDICT_ACTIONS.rerun] : [])],
+    actions: [
+      VERDICT_ACTIONS.failures,
+      VERDICT_ACTIONS.dashboard,
+      ...(failing ? [VERDICT_ACTIONS.rerun] : []),
+      ...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []),
+    ],
   };
 }
 
@@ -762,6 +942,17 @@ export function mcpConfiguration(servers: McpServerDefinition[], format: RunsMcp
     ]),
   );
   return JSON.stringify(format === 'vscode' ? { servers: entries } : { mcpServers: entries }, null, 2);
+}
+
+/**
+ * The address the editor's agent is given for one of Piwi's servers: the desktop app's leaves its run tools out
+ * (`?runs=off`) while this window lists its own runs' server, so the agent hears one set of run tools.
+ */
+export function agentMcpUrl(server: McpServerDefinition, ownRunsListed: boolean): string {
+  if (!server.desktop || !ownRunsListed) return server.url;
+  const url = new URL(server.url);
+  url.searchParams.set('runs', 'off');
+  return url.href;
 }
 
 /** The formats Piwi's MCP configuration is copied in (`mcpConfiguration`), as the copy command offers them. */
@@ -1183,10 +1374,28 @@ export function coalesced(fn: () => void, schedule: (run: () => void) => void): 
 /** The longest name a test run's task gets: the start of `playwright test` and its arguments. */
 const TASK_NAME_LENGTH = 80;
 
-/** The name of a test run's task: `playwright test` and its arguments, cut at `TASK_NAME_LENGTH` characters. */
-export function runTaskName(args: readonly string[]): string {
-  const name = ['playwright test', ...args].join(' ');
+/**
+ * The name of a test run's task, cut at `TASK_NAME_LENGTH` characters: `playwright test` and its arguments, or, for a
+ * command whose arguments the service did not give, the command itself (`commandTaskName`).
+ */
+export function runTaskName(args: readonly string[], command?: string): string {
+  const name = args.length || !command ? ['playwright test', ...args].join(' ') : commandTaskName(command);
   return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
+}
+
+/**
+ * A command as its task's name, without `npx`: a `playwright test` whole (a fix plan's verification of several
+ * projects, `playwright test a.spec.ts --project=chromium && playwright test …`), any other up to its first option, the
+ * reporter's package named as its command (`piwi flake verify 12`).
+ */
+function commandTaskName(command: string): string {
+  const words = command
+    .split(/\s+/)
+    .filter((word) => word && word !== 'npx')
+    .map((word) => (word === '@piwitests/reporter' ? 'piwi' : word));
+  if (words[0] === 'playwright' && words[1] === 'test') return words.join(' ');
+  const option = words.findIndex((word) => word.startsWith('-'));
+  return (option < 0 ? words : words.slice(0, option)).join(' ');
 }
 
 /**
@@ -1486,6 +1695,20 @@ export type TestOutcome =
   | { state: 'failed'; message: string; line: number | null };
 
 /**
+ * The Testing view's tag of a flaky test, by which the view's filter finds it: `@piwi:flaky`, the test controller's id
+ * (`piwi`) before the tag's.
+ */
+export const FLAKY_TAG = 'flaky';
+
+/**
+ * What the Testing view adds to a test's item, which its gutter and its results do not say: `flaky` beside the title
+ * and the flaky tag, for a test the view shows as passed (`testOutcome`).
+ */
+export function testItemExtras(test: TreeTest | null): { description: string | undefined; tags: string[] } {
+  return test?.status === 'flaky' ? { description: 'flaky', tags: [FLAKY_TAG] } : { description: undefined, tags: [] };
+}
+
+/**
  * A test's latest result as the Testing view shows it: a pass for a flaky test too, a failure with why and where it
  * failed; null for a test with no result Piwi knows.
  */
@@ -1576,7 +1799,89 @@ export function unfollowedOutcome(
   };
 }
 
-/** The name of the test run that follows a run in progress. */
+/**
+ * The name of the test run that follows a run in progress: `Piwi: your run #124`, `Piwi: CI run #125 on main`, else
+ * `Piwi: run #126 on main`, whoever started it, by the branch it runs on when it names one.
+ */
 export function liveRunName(live: LiveRun): string {
-  return `Piwi: ${live.own ? 'your ' : ''}run #${live.runId}`;
+  if (live.own) return `Piwi: your run #${live.runId}`;
+  return `Piwi: ${live.ci ? 'CI run' : 'run'} #${live.runId}${live.branch ? ` on ${live.branch}` : ''}`;
+}
+
+/** **Hold failures** from each run's start, as `piwi.runHoldFailures` holds it: `auto` leaves it to the service. */
+export type HoldFailuresChoice = 'auto' | 'on' | 'off';
+
+/** How every run of the window starts, as the person chose it (`piwi.runHeaded`, `piwi.runHoldFailures`). */
+export interface RunStartChoices {
+  headed: boolean;
+  holdFailures: HoldFailuresChoice;
+}
+
+/** The choices of `piwi.runHoldFailures`, as **Piwi: Run options…** offers them. */
+export const HOLD_FAILURES_CHOICES: Array<{ choice: HoldFailuresChoice; label: string; detail: string }> = [
+  { choice: 'auto', label: 'Auto', detail: 'On for a run with a breakpoint or a page.pause(), off otherwise' },
+  { choice: 'on', label: 'On', detail: 'From each run’s start: a failed test waits at its line for an answer' },
+  { choice: 'off', label: 'Off', detail: 'From each run’s start: a failed test fails as it would without Piwi' },
+];
+
+/** The settings' values as choices: a value of another type or outside the enum reads as its default. */
+export function runStartChoices(headed: unknown, holdFailures: unknown): RunStartChoices {
+  return {
+    headed: headed === true,
+    holdFailures: holdFailures === 'on' || holdFailures === 'off' ? holdFailures : 'auto',
+  };
+}
+
+/**
+ * What a run sends the service of the choices (`RunStartOptions`): `headed` when on, `holdFailures` when on or off.
+ * Left out, the service decides.
+ */
+export function runStartOptions(choices: RunStartChoices): RunStartOptions {
+  return {
+    ...(choices.headed ? { headed: true } : {}),
+    ...(choices.holdFailures === 'auto' ? {} : { holdFailures: choices.holdFailures === 'on' }),
+  };
+}
+
+/** A run's arguments with the choices; a debug run (`debug`) starts as the service builds it, headed. */
+export function withRunStart<T extends RunTestsArgs | RunSelectionParams>(args: T, choices: RunStartChoices): T {
+  if ('debug' in args && args.debug) return args;
+  return { ...args, ...runStartOptions(choices) };
+}
+
+/** The choices in words, as **Piwi: Run options…** names them: `Run headed: on · Hold failures: Auto`. */
+export function runStartText(choices: RunStartChoices): string {
+  const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!.label;
+  return `Run headed: ${choices.headed ? 'on' : 'off'} · Hold failures: ${hold}`;
+}
+
+/** The status bar item tooltip's line on the choices, with the link that changes them. */
+export function runStartLine(choices: RunStartChoices): string {
+  return `${runStartText(choices)} · [Run options…](command:piwi.runOptions)`;
+}
+
+/** The items of **Piwi: Run options…**: Run headed, on or off, then Hold failures, with the current choice. */
+export function runOptionPicks(
+  choices: RunStartChoices,
+): Array<{ label: string; description: string; detail: string; option: 'headed' | 'holdFailures' }> {
+  const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!;
+  return [
+    {
+      label: 'Run headed',
+      description: choices.headed ? 'On' : 'Off',
+      detail: choices.headed
+        ? 'Every test runs with its browser window shown. Pick to turn it off.'
+        : 'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
+      option: 'headed',
+    },
+    { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
+  ];
+}
+
+/**
+ * Where **Piwi: Run options…** writes a setting: the workspace's settings when they hold a value for it, which would
+ * win over the user's, else the user's.
+ */
+export function runOptionTarget(inspected: { workspaceValue?: unknown } | undefined): 'workspace' | 'global' {
+  return inspected?.workspaceValue === undefined ? 'global' : 'workspace';
 }

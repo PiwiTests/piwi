@@ -109,6 +109,16 @@ export interface TrackerSummary {
   name: string;
   /** The tracker's site URL, for linking to a project on it. */
   baseUrl: string;
+  /** The connection's default title prefix, which a project without its own inherits. */
+  titlePrefix?: string | null;
+}
+
+/** A test management connection a project can be bound to — what the binding form offers. */
+export interface TestManagementConnectionSummary {
+  id: number;
+  provider: IntegrationProviderName;
+  name: string;
+  status: 'unverified' | 'ok' | 'failed';
 }
 
 /** A tracker project option for the create modal's picker. */

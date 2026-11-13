@@ -14,6 +14,7 @@ import {
   openRunChannel,
   runChannelOpen,
   runHost,
+  traceAnswer,
   workerTakes,
   type RunControl,
   type StopToHold,
@@ -291,7 +292,7 @@ describe('the worker’s run connection', () => {
           'share',
         ],
         holds: ['failure'],
-        features: ['view-lane', 'give-up'],
+        features: ['view-lane', 'give-up', 'front', 'layers', 'trace'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
@@ -563,6 +564,31 @@ describe('the worker’s run connection', () => {
     } finally {
       log.mockRestore();
       await hub.close();
+    }
+  });
+});
+
+describe('the answer to a trace ask', () => {
+  it('names the file to the hub, or says in a plain sentence why there is none', () => {
+    expect(traceAnswer({ file: '/w/test-results/.playwright-artifacts-0/traces/a1.trace' })).toEqual({
+      ok: true,
+      message: "The attempt's trace grows there.",
+      file: '/w/test-results/.playwright-artifacts-0/traces/a1.trace',
+    });
+    const said = (none: Parameters<typeof traceAnswer>[0]) => traceAnswer(none) as { ok: false; message: string };
+    expect(said({ none: 'no-test' })).toEqual({ ok: false, message: 'No test runs on this worker now.' });
+    expect(said({ none: 'not-traced' }).message).toBe(
+      "This test's attempt is not traced: its project's trace option records none of it.",
+    );
+    expect(said({ none: 'not-yet' }).message).toBe(
+      'This test has written no trace yet: its trace starts with its first browser context.',
+    );
+    // A runner whose shape does not say whether it traces the attempt: true either way.
+    expect(said({ none: 'unknown' }).message).toBe(
+      "This test has no trace to open now: either its project's trace option records none of it, or its trace starts with its first browser context.",
+    );
+    for (const none of ['no-test', 'not-traced', 'not-yet', 'unknown'] as const) {
+      expect(said({ none }).message).not.toContain('`');
     }
   });
 });

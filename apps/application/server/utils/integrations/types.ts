@@ -52,6 +52,20 @@ export interface TrackerIssue {
   /** Badge color token resolved from the category (info / warning / success). */
   statusColor: string | null;
   assignee: TrackerUser | null;
+  /** The key of the project the issue is in now; absent when the tracker did not say. */
+  projectKey?: string | null;
+  /** The issue type's name, e.g. "Bug"; absent when the tracker did not say. */
+  issueType?: string | null;
+  /** The issue type's id, e.g. "10004"; absent when the tracker did not say. */
+  issueTypeId?: string | null;
+}
+
+/** The most keys one bulk lookup takes (Jira Cloud's bulk fetch limit). */
+export const MAX_BULK_ISSUE_KEYS = 100;
+
+/** The issues one bulk lookup found; a key it could not read is left out. */
+export interface TrackerIssueBatch {
+  issues: TrackerIssue[];
 }
 
 export interface CreateIssueInput {
@@ -103,7 +117,8 @@ export interface IssueTracker {
   listIssueTypes(projectKey: string): Promise<TrackerIssueType[]>;
   /** The fields of the create screen for a project and issue type (id or name). */
   listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
-  searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
+  /** People the project's issues can be assigned to, matching `query`, or the one person `accountId` names. */
+  searchAssignable(projectKey: string, query: string, options?: { accountId?: string }): Promise<TrackerUser[]>;
   /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
   pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
   /**
@@ -113,6 +128,11 @@ export interface IssueTracker {
   fetchIcon?(path: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
+  /**
+   * Several issues in one request, at most `MAX_BULK_ISSUE_KEYS`. A key the tracker does not find, or the account
+   * cannot read, is left out instead of failing the request. Throws when the tracker cannot answer.
+   */
+  getIssues?(keys: string[], options?: { signal?: AbortSignal }): Promise<TrackerIssueBatch>;
   addComment(key: string, body: IssueDocument): Promise<void>;
   /** Replace an issue's title and/or description. A tracker without it keeps what Piwi first wrote. */
   updateIssue?(key: string, input: UpdateIssueInput): Promise<void>;

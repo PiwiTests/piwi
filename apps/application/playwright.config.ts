@@ -103,19 +103,16 @@ const baseConfig = defineConfig({
     // (and so a no-op) when not targeting the desktop.
     extraHTTPHeaders: targetAuthHeaders(e2eTarget),
 
-    /* Trace on failure, with per-action DOM, ARIA and screenshot snapshots so the
-       evidence timeline can show the page at each step. See https://playwright.dev/docs/trace-viewer */
-    trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
+    /* Trace on failure. A local run records per-action DOM, ARIA and screenshot snapshots, so the
+       evidence timeline can show the page at each step. CI keeps the DOM snapshots for the merged
+       HTML report and records no ARIA or screenshot snapshots and no screencast.
+       See https://playwright.dev/docs/trace-viewer */
+    trace: process.env.CI
+      ? { mode: 'retain-on-failure', screenshots: false }
+      : { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
 
     /* Capture screenshot on first retry for failure diagnostics */
     screenshot: 'only-on-failure',
-
-    // Chromium puts its shared renderer memory in /dev/shm, which is small on a
-    // CI runner. When it fills the renderer is killed mid-test and Playwright
-    // surfaces it as "Target page, context or browser has been closed" or an
-    // unbound protocol object rather than as a real assertion failure. Backing
-    // it with /tmp instead costs a little speed and removes that failure mode.
-    launchOptions: { args: ['--disable-dev-shm-usage'] },
   },
 
   /* Configure projects for major browsers */
@@ -195,36 +192,6 @@ const baseConfig = defineConfig({
                   PIWI_STORAGE_TYPE: 'local',
                 },
                 reuseExistingServer: false,
-                timeout: 90 * 1000,
-              },
-            ]
-          : []),
-        // Auth+email server used by email-notifications.spec.ts.
-        // Requires a Mailpit instance (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit).
-        // Set PIWI_MAILPIT_URL=http://localhost:8025 to opt in; tests are skipped otherwise.
-        ...(process.env.PIWI_MAILPIT_URL
-          ? [
-              {
-                command: serverCommand,
-                url: 'http://localhost:3098/api/auth/me',
-                env: {
-                  ...authServerEnv('test-email-secret-key-for-mailpit-tests'),
-                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'email-test.db'),
-                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'email-test-storage'),
-                  NITRO_PORT: '3098',
-                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-email'),
-                  PIWI_SMTP_HOST: 'localhost',
-                  PIWI_SMTP_PORT: process.env.PIWI_MAILPIT_SMTP_PORT ?? '1025',
-                  PIWI_SMTP_USER: 'test',
-                  PIWI_SMTP_PASS: 'test',
-                  PIWI_SMTP_FROM: 'noreply@piwi.test',
-                  PIWI_SMTP_FROM_NAME: 'Piwi Test',
-                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
-                  // (inherited via process.env) can't repoint this server's backend.
-                  PIWI_DATABASE_URL: '',
-                  PIWI_STORAGE_TYPE: 'local',
-                },
-                reuseExistingServer: !process.env.CI,
                 timeout: 90 * 1000,
               },
             ]

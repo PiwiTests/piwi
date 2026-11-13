@@ -27,6 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
+| [`plan`](#plan) | Plan a run that reuses the passes whose code has not changed (experimental) |
 | [`rerun`](#rerun) | Run the tests a [CI re-run](/features/ci-rerun) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
@@ -36,6 +37,8 @@ npx @piwitests/reporter <command> [options]
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
 The commands that talk to a dashboard, all but `ai resolve`, find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). `bug`, `codegen` and `preflight` read the `.env` of the Playwright config's folder (the nearest one within the repository), the working directory and the repository root, in that order: the URL comes from the first of them that names one, with that file's API key or none, and the project from the first that sets one. A key in a `.env` that names no URL is never sent to another file's URL. The other commands read the working directory's `.env`. An empty variable counts as unset. `PIWI_DESKTOP_APP` places the desktop app with the reporter's three modes: `off` never uses it, `prefer` uses it before the environment and the `.env` outside CI (a `--server-url` flag still wins), and `fallback`, the default, uses it only when no flag, variable or `.env` names a URL or an API key. The command line reads the mode from `PIWI_DESKTOP_APP` only, not from the `desktopApp` option of the Playwright config that `init --desktop-app` writes: set `PIWI_DESKTOP_APP=prefer` in the environment to get the same behavior from the commands. `ai resolve` reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` from the environment only.
+
+The desktop app's token is held to a proof: the first request that carries it waits for the server at the address to prove it holds the token, and a command whose server does not stops with one line instead of sending it. A command the app starts marks the key it exports with `PIWI_DESKTOP_KEY=1`; a key you set yourself is sent as before.
 
 An API key goes only to the URL it came with: a key exported in the environment is never sent to a URL the `.env` names, and an `--api-key` flag is never sent to a URL that comes from a `.env` or the desktop app. The command then says so in one line on stderr; pass `--server-url` with the key to name the instance it is for.
 
@@ -120,12 +123,20 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--require-selection <key>` | Fail when a test the named selection matches did not run or failed |
 | `--max-leaks <n>` | Fail when the run left more than *n* browsers, contexts or pages open, counted per opening line |
 | `--max-new-leaks <n>` | Fail when more than *n* of those were never seen on the base branch |
+| `--max-reused <n\|p%>` | Fail when the run reused more than *n* tests, or *p*% of its tests, from earlier passes ([pass reuse](/features/reuse-forecast#skipping-reusable-tests)) |
+| `--require-executed <tags>` | Comma-separated; fail when a test carrying the tag was reused instead of executed. A reused test otherwise counts as passed for `--require-tag` and `--require-selection` |
 | `--max-uncovered-changes <n>` | Warn when more than *n* changed files are [uncovered changes](/features/uncovered-changes): no test reached them (warn-only — never fails the gate) |
 | `--min-patch-coverage <percent>` | Warn when fewer of the change's added and modified lines ran, in the head commit's [combined coverage](/features/combined-coverage) (warn-only — never fails the gate) |
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
 
 The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule is required.
+
+- **A quarantined test does not count** toward the failure rules ([CI & sharding](/guide/ci#blocking-a-merge)).
+- **A test that passed on retry satisfies `--require-tag`.**
+- **A required tag that matches no test is a violation**, so a typo cannot pass.
+- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
+  are counted; a read-only key gets the verdict only.
 
 ## `report`
 
@@ -220,6 +231,8 @@ Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwr
 | `--strict` | Fail (exit 2) instead of falling back when unreachable |
 | `--pkg-runner <cmd>` | Package runner for the printed command (default `npx`) |
 | `--json` | Print the full resolution as JSON (`select` only) |
+| `--reuse` | Experimental, `run` only: [plan](#plan) the selection with pass reuse, then run only the tests the plan keeps. `full` plans the whole suite. Not with `--shard` |
+| `--plan <id>` | Experimental, `run` only: run the tests of a stored [plan](#plan), or with `--shard` one shard of them |
 | `-h`, `--help` | Show help |
 
 Pass extra Playwright arguments after `--`: `piwi run smoke -- --headed --workers=1`.
@@ -235,6 +248,37 @@ no `--shard` of its own, since the resolved tests are already the shard's. A `se
 arguments to `playwright test` sets `PIWI_SHARD` itself, to the same `i/n` it gave `--shard`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
+
+## `plan`
+
+**Experimental.** Plan a run that skips each test whose code has not changed since it last passed, and print the
+plan's id. Needs the pass reuse capability, which an administrator turns on in Settings. `<key>` is a saved or built-in
+selection, or `full` for the whole suite. The dashboard names the commits of each test's newest reusable pass; `plan`
+diffs the working tree against each one, fetching a commit a shallow clone lacks, and the dashboard keeps a test only
+when the change reaches its code. How a test is decided: [Reuse forecast](/features/reuse-forecast#skipping-reusable-tests).
+
+```bash
+npx @piwitests/reporter plan full
+npx @piwitests/reporter run --plan 42 --shard 2/4
+```
+
+In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --plan` runs the plan's selection with
+Playwright's `--test-list-invert` naming the reused tests, so a test the dashboard has not seen yet runs, and each
+shard passes Playwright's own `--shard`. A test is skipped only in the Playwright projects its reused pass ran it in.
+A plan is kept for 24 hours. A job other than the one that made the plan uses it only when both checkouts are clean
+at the same commit. When a shard cannot use the plan (the dashboard is unreachable, the plan expired, the checkout
+differs), it runs the whole suite, not a shard of it, or exits `2` under `--strict`. `plan` diffs untracked files
+too.
+
+| Flag | Description |
+|---|---|
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
+| `--json` | Print the plan as JSON instead of its id |
+| `-h`, `--help` | Show help |
+
+**Exit codes:** `0` planned · `2` could not plan.
 
 ## `rerun`
 
@@ -450,6 +494,37 @@ npx @piwitests/reporter bug 37 --write
 **Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
 did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read, the file
 could not be written, or Playwright could not start or was stopped by a signal.
+
+## `mcp`
+
+Serve the run tools of this machine to a coding agent, as one MCP server over stdio: the runs of every editor with
+Piwi (whose runs are served to agents) and of the [desktop app](/features/desktop), under one entry for every
+repository. It finds each editor's server in the editors' discovery files, and the desktop app's in its own, once the
+app's server proved it holds the token there. It holds no run logic: `run_list` asks every host and names each run's
+host, `run_start` goes to the editor whose workspace holds the spec, else to the desktop app, which runs a spec of a
+folder it links to a project, and every other tool goes to the host of its `run`; a host that does not answer is named
+in the answer. See [Run control for agents](/features/agent-run-control).
+
+A relative `file` of `run_start` is read against the agent's working directory, else against each editor's workspace
+folders and the desktop app's linked folders, and a spec reached through a link goes to the editor under its own folder. Each host is named with its first
+folder (`Visual Studio Code (shop)`), and an agent's cancel of a call reaches its host. `@latest` runs the newest
+reporter, whichever version a repository installs.
+
+::: code-group
+
+```bash [Linux / macOS]
+claude mcp add --scope user piwi-runs -- npx -y @piwitests/reporter@latest mcp
+```
+
+```powershell [Windows (PowerShell)]
+claude mcp add --scope user piwi-runs -- cmd /c npx -y @piwitests/reporter@latest mcp
+```
+
+:::
+
+| Flag | Description |
+|---|---|
+| `-h`, `--help` | Show help |
 
 ## Related
 

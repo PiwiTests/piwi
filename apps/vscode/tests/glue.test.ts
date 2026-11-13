@@ -9,6 +9,7 @@ import type {
   FileEdit,
   LiveRun,
   RunEnded,
+  RunSession,
   RunStatusResult,
   SpecTest,
   StatusResult,
@@ -16,6 +17,13 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  OwnRunCounts,
+  STATUS_TOOLTIP_COMMANDS,
+  serviceDownView,
+  heldStops,
+  heldText,
+  NOT_CONNECTED,
+  notConnectedNotice,
   DOCUMENT_PATTERN,
   baselinePicks,
   coalesced,
@@ -35,6 +43,7 @@ import {
   recordInto,
   mcpAuthorizationNote,
   mcpConfiguration,
+  agentMcpUrl,
   RUNS_MCP_FORMATS,
   agentsTokenKey,
   runsMcpConfiguration,
@@ -70,6 +79,7 @@ import {
   liveRunName,
   resultsKey,
   resultsRunName,
+  testItemExtras,
   testOutcome,
   testRunsOf,
   testTree,
@@ -79,6 +89,13 @@ import {
   type RecordedBlock,
   type TextChange,
   type TextSpan,
+  type TreeTest,
+  runOptionPicks,
+  runOptionTarget,
+  runStartChoices,
+  runStartLine,
+  runStartOptions,
+  withRunStart,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -149,9 +166,10 @@ describe('statusBarView', () => {
     );
     expect(view).toEqual({
       text: '$(debug-disconnect) Piwi: unreachable',
-      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect](command:piwi.connect)`,
       action: 'retry',
       url: null,
+      liveUrl: null,
       error: false,
     });
     const refused = statusBarView(
@@ -161,12 +179,30 @@ describe('statusBarView', () => {
     expect(refused).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect' });
   });
 
+  test('when the desktop app does not prove its token, says to restart it, not that it is unreachable', () => {
+    const problem =
+      "The desktop app's token is not sent to http://127.0.0.1:3000: the server there did not prove it holds the token. Restart or update the desktop app.";
+    const view = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem, problemKind: 'desktop-unproven' }] },
+      null,
+    );
+    expect(view).toEqual({
+      text: '$(warning) Piwi: restart the desktop app',
+      tooltip: `${problem}\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      action: 'retry',
+      url: null,
+      liveUrl: null,
+      error: false,
+    });
+  });
+
   test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
       tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
       url: 'http://piwi/test-runs/41',
+      liveUrl: null,
       error: false,
     });
   });
@@ -234,6 +270,35 @@ describe('statusBarView', () => {
     );
   });
 
+  test('the count the editor’s own run told last, kept past its session until the instance’s reaches it or the run ends', () => {
+    const instance: LiveRun = {
+      runId: 124,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T11:00:00.000Z',
+      own: true,
+      ref: 'ed-1',
+    };
+    const told = { done: 6, total: 9, failed: 2 };
+    const counts = new OwnRunCounts();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    expect(counts.count('ed-1', told, instance)).toEqual(told);
+    expect(counts.count('ed-1', undefined, instance)).toEqual(told);
+    // Another run under the ref, a rerun, is counted by the instance alone.
+    expect(counts.count('ed-1', undefined, { ...instance, runId: 125 })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    // The instance says the run ends.
+    counts.count('ed-1', told, instance);
+    expect(counts.count('ed-1', undefined, { ...instance, status: 'finalizing' })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    // The instance's count reached it.
+    counts.count('ed-1', told, instance);
+    expect(counts.count('ed-1', undefined, { ...instance, done: 6 })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+  });
+
   test('a run in progress, the editor’s own or one on the branch, in the item and beside the latest run', () => {
     const inProgress: LiveRun = {
       runId: 124,
@@ -249,15 +314,71 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
     };
     expect(statusBarView(connected, live({}))).toMatchObject({
-      text: '$(sync~spin) Piwi: 4/9 · 1 failing · your run',
+      text: '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
       tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4/9 · 1 failing\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
+      liveUrl: null,
       error: false,
     });
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
-      text: '$(sync~spin) Piwi: 4/9',
+      text: '$(sync~spin) Piwi: run #124 · 4/9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4/9\n\n'),
     });
+    // The editor's own run counts from its own process's events, which the instance may not have heard yet.
+    const told = (ref: string) =>
+      ref === 'ed-1'
+        ? { total: 9, done: 6, failed: 2, flaky: 0, skipped: 0, status: 'running' as const, failure: null }
+        : undefined;
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, told)).toMatchObject({
+      text: '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+      tooltip: expect.stringContaining('\n\nYour run #124 is running: 6/9 · 2 failing\n\n'),
+    });
+    // Another's run, or one the events do not count, keeps the instance's count.
+    expect(statusBarView(connected, live({ ref: 'ed-2' }), false, Date.now(), null, told).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1', own: false }), false, Date.now(), null, told).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing',
+    );
+    // Its session ended: the count it told last stays until the instance's reaches it, so it never goes back.
+    const counts = new OwnRunCounts();
+    let session: typeof told = told;
+    const kept = (ref: string, instance: LiveRun) => counts.count(ref, session(ref), instance);
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+    );
+    session = () => undefined;
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1', done: 7 }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 7/9 · 1 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
+    );
+    // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
+    const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));
+    expect(linked.liveUrl).toBe('http://piwi/test-runs/124');
+    expect(linked.url).toBe('http://piwi/test-runs/41');
+    expect(linked.tooltip).toContain(
+      '[Open run #124 (running)](command:piwi.openLiveRun) · [Open run #41](command:piwi.openRun) · ',
+    );
+    // The editor's own run shows whichever config the active file belongs to; another config's run does not.
+    const other: StatusResult = {
+      contexts: [connected.contexts[0]!, { ...connected.contexts[0]!, root: '/w/admin', label: 'admin' }],
+    };
+    const runs = live({ url: 'http://piwi/test-runs/124' });
+    const elsewhere: RunStatusResult = {
+      contexts: [runs.contexts[0]!, { ...runs.contexts[0]!, root: '/w/admin', live: null }],
+    };
+    expect(statusBarView(other, elsewhere, false, Date.now(), '/w/admin/tests/a.spec.ts').text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
+    );
+    const notOwn: RunStatusResult = {
+      contexts: [{ ...elsewhere.contexts[0]!, live: { ...inProgress, own: false } }, elsewhere.contexts[1]!],
+    };
+    expect(statusBarView(other, notOwn, false, Date.now(), '/w/admin/tests/a.spec.ts').text).not.toContain('run #124');
     // Once it ended, the latest run again.
     expect(statusBarView(connected, live(null)).text).toBe('$(error) Piwi: 3 failing');
     // On a branch without a run yet.
@@ -265,7 +386,7 @@ describe('statusBarView', () => {
       contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
     };
     expect(statusBarView(connected, first)).toMatchObject({
-      text: '$(sync~spin) Piwi: 0/9 · your run',
+      text: '$(sync~spin) Piwi: run #124 · 0/9 · yours',
       tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
       action: 'refresh',
     });
@@ -439,6 +560,24 @@ describe('the runs’ MCP server', () => {
     expect(agentsTokenKey('file:///work/shop')).toBe('piwi.agentsToken file:///work/shop');
     expect(agentsTokenKey('file:///work/shop')).not.toBe(agentsTokenKey('file:///work/blog'));
     expect(agentsTokenKey(null)).toBe('piwi.agentsToken');
+  });
+});
+
+describe('agentMcpUrl', () => {
+  const desktop = {
+    label: 'Piwi (127.0.0.1:3000)',
+    url: 'http://127.0.0.1:3000/mcp',
+    headers: { Authorization: 'Bearer pd_desktop' },
+    authorization: 'key' as const,
+    desktop: true as const,
+  };
+  test('leaves the desktop app’s run tools out while the window lists its own runs’ server', () => {
+    expect(agentMcpUrl(desktop, true)).toBe('http://127.0.0.1:3000/mcp?runs=off');
+    expect(agentMcpUrl(desktop, false)).toBe('http://127.0.0.1:3000/mcp');
+  });
+  test('keeps another instance’s address whole', () => {
+    const { desktop: _desktop, ...instance } = { ...desktop, url: 'https://piwi.example.com/mcp?modules=core' };
+    expect(agentMcpUrl(instance, true)).toBe('https://piwi.example.com/mcp?modules=core');
   });
 });
 
@@ -637,7 +776,7 @@ describe('the tests of a file', () => {
         { line: 0, title: '2 tests in Piwi' },
         {
           line: 3,
-          title: 'passed 1/4 · failed',
+          title: 'failing in run #124 · passed 1 of 4 runs',
           status: 'failed',
           endLine: 6,
           failure: {
@@ -654,7 +793,7 @@ describe('the tests of a file', () => {
           },
           testCaseId: 9,
         },
-        { line: 8, title: 'passed 4/4', status: 'passed', endLine: 10 },
+        { line: 8, title: 'passed in its latest run · passed 4 of 4 runs', status: 'passed', endLine: 10 },
       ]),
     ).toEqual([
       {
@@ -662,7 +801,7 @@ describe('the tests of a file', () => {
         line: 3,
         failingUntil: 6,
         failingLine: 5,
-        hover: '**Piwi**: failing · passed 1/4 · failed',
+        hover: '**Piwi**: failing in run #124 · passed 1 of 4 runs',
         dashboardUrl: 'http://piwi/test-cases/9',
         testCaseId: 9,
       },
@@ -671,7 +810,7 @@ describe('the tests of a file', () => {
         line: 8,
         failingUntil: null,
         failingLine: null,
-        hover: '**Piwi**: passing · passed 4/4',
+        hover: '**Piwi**: passed in its latest run · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
       },
@@ -679,13 +818,17 @@ describe('the tests of a file', () => {
   });
 
   test('a test the run in progress runs shows it, without a tint', () => {
-    expect(testDecorations([{ line: 2, title: 'passed 4/4', status: 'running', endLine: 4 }])).toEqual([
+    expect(
+      testDecorations([
+        { line: 2, title: 'running in your run #130 · passed 4 of 4 runs', status: 'running', endLine: 4 },
+      ]),
+    ).toEqual([
       {
         status: 'running',
         line: 2,
         failingUntil: null,
         failingLine: null,
-        hover: '**Piwi**: running · passed 4/4',
+        hover: '**Piwi**: running in your run #130 · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
       },
@@ -696,7 +839,7 @@ describe('the tests of a file', () => {
     const [test] = testDecorations([
       {
         line: 3,
-        title: 'passed 4/4',
+        title: 'passed in its latest run · passed 4 of 4 runs',
         status: 'passed',
         command: {
           title: 'Open in dashboard',
@@ -709,15 +852,15 @@ describe('the tests of a file', () => {
     const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
     const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
-      `**Piwi**: passing · passed 4/4\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+      `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
     );
     expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
     // A service that gives neither: the result alone.
-    const [bare] = testDecorations([{ line: 3, title: 'passed 4/4', status: 'passed' }]);
-    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: passing · passed 4/4');
+    const [bare] = testDecorations([{ line: 3, title: 'never run', status: 'unknown' }]);
+    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: never run');
   });
 
-  test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
+  test('a failing test whose failing line changed since the run keeps its tint', () => {
     const failure = {
       line: 5,
       headline: 'not found',
@@ -726,32 +869,29 @@ describe('the tests of a file', () => {
       url: 'http://piwi/test-run-cases/90',
     };
     const [edited] = testDecorations([
-      { line: 3, title: 'passed 1/4 · failed', status: 'failed', endLine: 6, failure: { ...failure, state: 'edited' } },
-    ]);
-    expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
-    expect(edited!.hover).toBe('**Piwi**: failing · edited since the run · passed 1/4 · failed');
-    const [failing] = testDecorations([
       {
         line: 3,
-        title: 'passed 1/4 · failed',
+        title: 'failing in run #124, its line edited since · passed 1 of 4 runs',
         status: 'failed',
         endLine: 6,
-        failure: { ...failure, state: 'failing' },
+        failure: { ...failure, state: 'edited' },
       },
     ]);
-    expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
+    expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
+    expect(edited!.hover).toBe('**Piwi**: failing in run #124, its line edited since · passed 1 of 4 runs');
   });
 
   test('a test’s hover shows the instance’s text as written', () => {
     const [test] = testDecorations([
       {
         line: 2,
-        title: 'passed 3/4 · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
+        title:
+          'flaky in its latest run · passed 3 of 4 runs · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
         status: 'flaky',
       },
     ]);
     expect(test!.hover).toBe(
-      '**Piwi**: flaky · passed 3/4 · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
+      '**Piwi**: flaky in its latest run · passed 3 of 4 runs · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
     );
   });
 
@@ -1243,7 +1383,7 @@ describe('the test at a line', () => {
   const uri = 'file:///w/tests/checkout.spec.ts';
   const known: TestAtResult = {
     test: { id: 7, title: 'pays', file: 'tests/checkout.spec.ts', status: 'passed', url: 'http://piwi/test-cases/7' },
-    spec: { uri, testIds: [7] },
+    spec: { uri, testIds: [7], location: 'tests/checkout.spec.ts' },
     location: 'tests/checkout.spec.ts:3',
   };
   const recorded: TestAtResult = { test: null, spec: null, location: 'tests/checkout.spec.ts:12' };
@@ -1535,17 +1675,24 @@ describe('the verdict of a run started from the editor', () => {
     expect(verdict?.text).toBe(`Piwi: run #124 · 7 new failures (${titles.join(', ')} and 2 more)`);
   });
 
-  test('a run that fixed everything it ran is an information, without Re-run failing', () => {
-    expect(runVerdict({ ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 })).toEqual({
+  test('a run that fixed everything it ran is an information, without Re-run failing, offering Only on failure', () => {
+    const passing = { ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 };
+    expect(runVerdict(passing)).toEqual({
       severity: 'information',
       text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
-      actions: ['Open the failures', 'Open in dashboard'],
+      actions: ['Open the failures', 'Open in dashboard', 'Only on failure'],
     });
+    // A failing run is shown whatever the choice, so it offers none.
+    expect(runVerdict(ended)?.actions).not.toContain('Only on failure');
   });
 
   test('a run that touched no failure gives its counts', () => {
     const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
     expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
+    // The skipped that were ended at a stop are named beside them.
+    expect(runVerdict({ ...quiet, flaky: 0, passed: 3, skipped: 2, endedAtStop: 1 })?.text).toBe(
+      'Piwi: run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)',
+    );
   });
 
   test('the setting keeps it quiet: always, only when something fails, or never', () => {
@@ -1656,6 +1803,16 @@ describe('the task a test run is', () => {
   test('is named after its command, cut when long', () => {
     expect(runTaskName(['tests/login.spec.ts:12'])).toBe('playwright test tests/login.spec.ts:12');
     expect(runTaskName([])).toBe('playwright test');
+    // A command whose arguments the service did not give is named by its command: a chain whole, any other up to its
+    // first option.
+    expect(runTaskName([], 'npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000')).toBe(
+      'piwi flake 12',
+    );
+    expect(runTaskName([], 'npx @piwitests/reporter flake verify 12')).toBe('piwi flake verify 12');
+    expect(
+      runTaskName([], 'npx playwright test a.spec.ts --project=x && npx playwright test b.spec.ts --project=y'),
+    ).toBe('playwright test a.spec.ts --project=x && playwright test b.spec.ts --project=y');
+    expect(runTaskName([], 'npx playwright test')).toBe('playwright test');
     const long = runTaskName(['--grep', 'x'.repeat(200)]);
     expect(long).toHaveLength(80);
     expect(long.endsWith('…')).toBe(true);
@@ -1822,6 +1979,27 @@ describe('the Testing view', () => {
     ]);
   });
 
+  test('says flaky beside a flaky test, which the view shows as passed, and tags it so its filter finds it', () => {
+    const test = (status: TreeTest['status']): TreeTest => ({
+      title: 'pays',
+      suite: [],
+      line: 4,
+      endLine: 9,
+      location: 'checkout.spec.ts:5',
+      testCaseId: 7,
+      status,
+      failure: null,
+      url: null,
+      root: '/w',
+      uri: 'file:///w/checkout.spec.ts',
+    });
+    expect(testItemExtras(test('flaky'))).toEqual({ description: 'flaky', tags: ['flaky'] });
+    for (const status of ['passed', 'failed', 'skipped', 'running', 'unknown', null] as const) {
+      expect(testItemExtras(test(status)), String(status)).toEqual({ description: undefined, tags: [] });
+    }
+    expect(testItemExtras(null)).toEqual({ description: undefined, tags: [] });
+  });
+
   test('shows a flaky test as passed, a failure with why and where, and nothing without a result', () => {
     expect(testOutcome('flaky', null)).toEqual({ state: 'passed' });
     expect(testOutcome('skipped', null)).toEqual({ state: 'skipped' });
@@ -1923,6 +2101,10 @@ describe('the Testing view', () => {
     expect(resultsRunName(null)).toBe('Piwi: the latest runs');
     expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
     expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
+    // A CI run of the branch says so: it is not the person's tests running.
+    expect(liveRunName({ runId: 126, own: false, ci: true, branch: 'main' } as LiveRun)).toBe(
+      'Piwi: CI run #126 on main',
+    );
   });
 
   test('passes a test no run followed when every command exited with 0, and is an error otherwise', () => {
@@ -1939,5 +2121,163 @@ describe('the Testing view', () => {
     expect(
       ['/w/a.spec.ts', '/w/b.test.mjs', '/w/c.spec.tsx', '/w/d.ts', '/w/.spec.ts'].map((f) => SPEC_FILE.test(f)),
     ).toEqual([true, true, true, false, false]);
+  });
+});
+
+describe('notConnectedNotice', () => {
+  const ctx = (over: Partial<StatusResult['contexts'][number]>): StatusResult['contexts'][number] => ({
+    root: '/w',
+    connected: false,
+    serverUrl: null,
+    source: null,
+    projectId: null,
+    projectName: null,
+    branch: null,
+    locators: 0,
+    reachedFiles: 0,
+    problem: null,
+    ...over,
+  });
+
+  test('says nothing while a context is connected', () => {
+    expect(notConnectedNotice({ contexts: [ctx({ connected: true })] })).toBeNull();
+  });
+
+  test('tells an instance that does not answer, one still being read and no connection apart', () => {
+    expect(
+      notConnectedNotice({
+        contexts: [ctx({ serverUrl: 'https://piwi.corp', problem: 'Could not reach', problemKind: 'unreachable' })],
+      }),
+    ).toEqual({ message: 'Piwi: https://piwi.corp does not answer. Piwi tries again on its own.', action: 'retry' });
+    expect(notConnectedNotice({ contexts: [ctx({ serverUrl: 'https://piwi.corp' })] })).toEqual({
+      message: 'Piwi: still reading the instance.',
+      action: null,
+    });
+    expect(notConnectedNotice({ contexts: [ctx({})] })).toEqual({ message: NOT_CONNECTED, action: 'connect' });
+    expect(notConnectedNotice(null)).toEqual({ message: NOT_CONNECTED, action: 'connect' });
+  });
+});
+
+describe('how every run of the window starts', () => {
+  test('reads the settings, a value of another type or outside the choices as its default', () => {
+    expect(runStartChoices(undefined, undefined)).toEqual({ headed: false, holdFailures: 'auto' });
+    expect(runStartChoices(true, 'on')).toEqual({ headed: true, holdFailures: 'on' });
+    expect(runStartChoices('true', 'always')).toEqual({ headed: false, holdFailures: 'auto' });
+  });
+
+  test('sends headed when on, and Hold failures when on or off: Auto leaves both to the service', () => {
+    expect(runStartOptions({ headed: false, holdFailures: 'auto' })).toEqual({});
+    expect(runStartOptions({ headed: true, holdFailures: 'auto' })).toEqual({ headed: true });
+    expect(runStartOptions({ headed: false, holdFailures: 'on' })).toEqual({ holdFailures: true });
+    expect(runStartOptions({ headed: true, holdFailures: 'off' })).toEqual({ headed: true, holdFailures: false });
+  });
+
+  test('goes with every run’s arguments, a selection’s and a verification’s, but a debug run’s', () => {
+    const choices = { headed: true, holdFailures: 'off' } as const;
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', testIds: [1] }, choices)).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      testIds: [1],
+      headed: true,
+      holdFailures: false,
+    });
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', testIds: [], repeat: 3 }, choices)).toMatchObject({
+      repeat: 3,
+      headed: true,
+    });
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', key: 'smoke' }, choices)).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      key: 'smoke',
+      headed: true,
+      holdFailures: false,
+    });
+    const debug = {
+      uri: 'file:///w/a.spec.ts',
+      testIds: [],
+      debug: { stop: { uri: 'file:///w/a.spec.ts', line: 4 }, title: 'pays' },
+    };
+    expect(withRunStart(debug, choices)).toBe(debug);
+  });
+
+  test('are named in the status bar item’s tooltip, with the link that changes them', () => {
+    expect(runStartLine({ headed: true, holdFailures: 'auto' })).toBe(
+      'Run headed: on · Hold failures: Auto · [Run options…](command:piwi.runOptions)',
+    );
+    expect(runStartLine({ headed: false, holdFailures: 'off' })).toBe(
+      'Run headed: off · Hold failures: Off · [Run options…](command:piwi.runOptions)',
+    );
+  });
+
+  test('Run options… offers both, with the current choice', () => {
+    const picks = runOptionPicks({ headed: false, holdFailures: 'on' });
+    expect(picks.map((p) => [p.option, p.label, p.description])).toEqual([
+      ['headed', 'Run headed', 'Off'],
+      ['holdFailures', 'Hold failures', 'On'],
+    ]);
+    // Run headed off leaves a run with breakpoints headless, unless its reporter stops at none headless.
+    expect(picks[0]!.detail).toBe(
+      'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
+    );
+  });
+
+  test('Run options… writes to the workspace’s settings only when they hold a value', () => {
+    expect(runOptionTarget(undefined)).toBe('global');
+    expect(runOptionTarget({})).toBe('global');
+    expect(runOptionTarget({ workspaceValue: 'off' })).toBe('workspace');
+    expect(runOptionTarget({ workspaceValue: false })).toBe('workspace');
+  });
+});
+
+describe('the status item while a run holds a stop', () => {
+  const stopped = (reason: 'breakpoint' | 'failure'): RunSession => ({
+    ref: 'ed-1',
+    root: '/w',
+    ended: false,
+    workers: [
+      {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        test: null,
+        takes: [],
+        watchable: false,
+        layers: false,
+        showsWindow: false,
+        pausing: false,
+        waiting: null,
+        stop: {
+          reason,
+          title: 'Click',
+          uri: 'file:///w/a.spec.ts',
+          line: 3,
+          character: 2,
+          locator: null,
+          bar: true,
+          since: '2026-10-25T10:00:00.000Z',
+        },
+      },
+    ],
+  });
+
+  test('stops spinning: the pause icon at a stop, the error icon while every stop held is a failure', () => {
+    const live = '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours';
+    expect(heldStops([])).toBeNull();
+    expect(heldStops([stopped('breakpoint')])).toBe('stop');
+    expect(heldStops([stopped('failure')])).toBe('failure');
+    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
+    expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, null)).toBe(live);
+    expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
+  });
+});
+
+describe('the status item while the editor service is not running', () => {
+  test('says so, starts it again on a click, and offers the log from its tooltip', () => {
+    const view = serviceDownView();
+    expect(view.text).toBe('$(warning) Piwi: not running');
+    expect(view.action).toBe('restart');
+    expect(view.tooltip).toContain('[Restart the editor service](command:piwi.restartService)');
+    expect(view.tooltip).toContain('[Open the log](command:piwi.openLog)');
+    for (const command of ['piwi.restartService', 'piwi.openLog']) expect(STATUS_TOOLTIP_COMMANDS).toContain(command);
   });
 });

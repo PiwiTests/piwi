@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Run requests'],
     summary: 'Stream the run requests and stops of a connected app',
     description:
-      'For a run target (the desktop app, Piwi Runner), authenticated with the key the device flow gave it, which holds `run:receive` alone; any other credential is refused. Server-sent events, each a JSON object with a `type`: first `snapshot`, the `requests` and `stops` that `GET /api/run-targets/requests` answers; then `request` for each new request the target may take, `stop` with the `id` of a request it holds whose requester asked to stop it, `withdrawn` with the `id` of a request it was offered that no longer waits for it (stopped, or claimed by another of its owner’s apps), and `revoked` as the stream closes because the app’s key was revoked or deleted, with the app or with its owner. Each offered request carries `expiresAt`, when it stops waiting for a claim. A request can come twice, in the snapshot and as it is made: the target keys requests by id. A comment line is sent every 15 seconds, and the stream checks its key again every minute. While its stream is open the app calls `GET /api/run-targets/requests` every minute, which records it as seen: it shows as online in **Connected apps** while its stream is open and it was seen within two minutes. A target holds 3 streams at most (429). Where a proxy cuts long responses, the target polls `GET /api/run-targets/requests` instead.',
+      'For a run target (the desktop app, Piwi Runner), authenticated with the key the device flow gave it, which holds `run:receive` alone; any other credential is refused. Server-sent events, each a JSON object with a `type`: first `snapshot`, the `requests`, `stops`, `held` and `projects` that `GET /api/run-targets/requests` answers; then `request` for each new request the target may take, with `projects` naming its project, `stop` with the `id` of a request it holds whose requester asked to stop it, `withdrawn` with the `id` of a request it was offered that no longer waits for it (stopped, or claimed by another of its owner’s apps), and `revoked` as the stream closes because the app’s key was revoked or deleted, with the app or with its owner. Each offered request carries `expiresAt`, when it stops waiting for a claim. A request can come twice, in the snapshot and as it is made: the target keys requests by id. A comment line is sent every 15 seconds, and the stream checks its key again every minute. While its stream is open the app calls `GET /api/run-targets/requests` every minute, which records it as seen: it shows as online in **Connected apps** while its stream is open and it was seen within two minutes. A target holds 3 streams at most (429). Where a proxy cuts long responses, the target polls `GET /api/run-targets/requests` instead.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
@@ -25,10 +25,9 @@ defineRouteMeta({
   },
 });
 
-/** Whether a refusal says the key or its app no longer counts, as against a passing failure to read it. */
-function isRefusal(err: unknown): boolean {
-  const status = (err as { statusCode?: number } | null)?.statusCode;
-  return status === 401 || status === 403;
+/** Whether a refusal says the key no longer exists, as against a 403 or a passing failure to read it. */
+function isKeyGone(err: unknown): boolean {
+  return (err as { statusCode?: number } | null)?.statusCode === 401;
 }
 
 export default eventHandler(async (event) => {
@@ -65,7 +64,7 @@ export default eventHandler(async (event) => {
       if (ready) send(message);
       else held.push(message);
     });
-    const refused = (err: unknown) => (isRefusal(err) ? revoke() : close());
+    const refused = (err: unknown) => (isKeyGone(err) ? revoke() : close());
     const recheck = setInterval(() => {
       requireRunTarget(event, { seen: false }).catch(refused);
     }, RUN_TARGET_RECHECK_MS);
@@ -78,8 +77,8 @@ export default eventHandler(async (event) => {
     // Checked again once subscribed: a revoke between the first check and the subscription is heard by nobody.
     requireRunTarget(event, { seen: false }).then(
       (current) =>
-        requestsForTarget(current).then(({ requests, stops }) => {
-          send({ type: 'snapshot', requests, stops });
+        requestsForTarget(current).then(({ requests, stops, held: holds, projects }) => {
+          send({ type: 'snapshot', requests, stops, held: holds, projects });
           ready = true;
           for (const message of held.splice(0)) send(message);
         }, close),

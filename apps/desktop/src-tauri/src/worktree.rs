@@ -327,7 +327,9 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
 /// (`discovery`), has a reporter or a `piwi` that knows it take the address and
 /// the token together from the file, before a server the Playwright config
 /// names, outside CI. A reporter that predates `prefer` pairs a server its
-/// config names with the token.
+/// config names with the token. `PIWI_DESKTOP_KEY=1` marks `PIWI_API_KEY` as
+/// this app's token: a reporter or `piwi` that knows the marker sends it to
+/// the address only after the server there proves it holds it.
 pub(crate) fn flake_lab_env(
     server: &ServerInfo,
     discovery: Option<&Path>,
@@ -339,6 +341,7 @@ pub(crate) fn flake_lab_env(
         ),
         ("PIWI_API_KEY", server.token.clone()),
         ("PIWI_DESKTOP_APP", "prefer".into()),
+        ("PIWI_DESKTOP_KEY", "1".into()),
         (
             "PIWI_DESKTOP_CONFIG",
             discovery
@@ -352,17 +355,26 @@ pub(crate) fn flake_lab_env(
 }
 
 /// The environment a reproduction, a bisect step and `piwi flake` run with
-/// ([`flake_lab_env`]), with the bundled server as the hub of run `id`
-/// (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`), so its window and Piwi Picker can
-/// follow, pause and step it. `attended`: whether a person attends the run (a
-/// reproduction), else its failures go on at once (a bisect, a lab).
-async fn lab_env_with_hub(app: &AppHandle, id: u32, attended: bool) -> Vec<(&'static str, String)> {
+/// ([`flake_lab_env`]), in a throwaway checkout of `commit` of the linked
+/// folder `folder`, with its hub (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`): the live
+/// editor whose workspace holds the folder, which then owns its stops and shows
+/// them as the reproduction's, else the bundled server, so its window and Piwi
+/// Picker can follow, pause and step it ([`crate::runner::job_hub_env`]).
+/// `attended`: whether a person attends the run (a reproduction), else its
+/// failures go on at once (a bisect, a lab).
+async fn lab_env_with_hub(
+    app: &AppHandle,
+    id: u32,
+    attended: bool,
+    folder: &Path,
+    commit: &str,
+) -> Vec<(&'static str, String)> {
     let discovery = app.try_state::<crate::DiscoveryFile>();
     let mut env = flake_lab_env(
         &server_info(app),
         discovery.as_ref().map(|file| file.0.as_path()),
     );
-    env.extend(crate::runner::bundled_hub_env(app, id, attended).await);
+    env.extend(crate::runner::job_hub_env(app, id, attended, folder, commit).await);
     env
 }
 
@@ -942,7 +954,7 @@ async fn run_sidecar(
     keep_stdout: bool,
 ) -> (Option<i32>, String) {
     let mut stdout = String::new();
-    let command = match app.shell().sidecar("node") {
+    let command = match app.shell().sidecar(crate::NODE_SIDECAR) {
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
@@ -1153,6 +1165,7 @@ pub async fn desktop_reproduce_here(
             &folder,
             &git,
             &worktree,
+            &commit,
             &args,
             browser.as_deref(),
             origin_ref.as_deref(),
@@ -1171,6 +1184,7 @@ async fn reproduce_driver(
     folder: &Path,
     _git: &Path,
     worktree: &Path,
+    commit: &str,
     args: &[String],
     browser: Option<&str>,
     origin_ref: Option<&str>,
@@ -1196,17 +1210,20 @@ async fn reproduce_driver(
     }
     let env = origin_env("reproduce", origin_ref);
     let attended = crate::hub_env::attended_args(args);
-    run_test_phase(app, id, worktree, args, browser, &env, stop, attended).await
+    let job = (folder, commit);
+    run_test_phase(app, id, worktree, job, args, browser, &env, stop, attended).await
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
-/// runs with [`flake_lab_env`], reporting to this app, and `env`.
+/// runs with [`flake_lab_env`], reporting to this app, and `env`. `job`: the
+/// linked folder and the commit the worktree checks out, which pick its hub.
 /// `attended`: whether a person attends the run (a reproduction, not a bisect).
 #[allow(clippy::too_many_arguments)]
 async fn run_test_phase(
     app: &AppHandle,
     id: u32,
     worktree: &Path,
+    job: (&Path, &str),
     args: &[String],
     browser: Option<&str>,
     env: &[(&'static str, String)],
@@ -1226,7 +1243,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    let mut env_with_app = lab_env_with_hub(app, id, attended).await;
+    let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
@@ -1353,7 +1370,7 @@ async fn bisect_driver(
         }
         if let Some(sha) = parse_first_bad(&output) {
             let first_bad = describe_commit(git, worktree, &sha);
-            emit(
+            crate::runner::emit_verdict(
                 app,
                 RunEventPayload::bisect(
                     id,
@@ -1401,7 +1418,8 @@ async fn bisect_driver(
         let verdict = if !installed || !browser_ok {
             "skip"
         } else if let Some(test_case_id) = flake {
-            let code = run_flake_step(app, id, folder, worktree, test_case_id, stop).await;
+            let at = candidate.as_deref().unwrap_or_default();
+            let code = run_flake_step(app, id, folder, worktree, at, test_case_id, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1414,7 +1432,9 @@ async fn bisect_driver(
             }
         } else {
             let env = origin_env("bisect", origin_ref);
-            let code = run_test_phase(app, id, worktree, args, browser, &env, stop, false).await;
+            let job = (folder, candidate.as_deref().unwrap_or_default());
+            let code =
+                run_test_phase(app, id, worktree, job, args, browser, &env, stop, false).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1478,6 +1498,7 @@ async fn run_flake_step(
     id: u32,
     folder: &Path,
     worktree: &Path,
+    commit: &str,
     test_case_id: u64,
     stop: &AtomicBool,
 ) -> Option<i32> {
@@ -1489,7 +1510,7 @@ async fn run_flake_step(
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
-    let env = lab_env_with_hub(app, id, false).await;
+    let env = lab_env_with_hub(app, id, false, folder, commit).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1611,7 +1632,7 @@ async fn flake_lab_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
-    let env = lab_env_with_hub(app, id, false).await;
+    let env = lab_env_with_hub(app, id, false, folder, commit).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1756,9 +1777,9 @@ async fn lab_job_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
-    let env = lab_env_with_hub(app, id, false).await;
+    let env = lab_env_with_hub(app, id, false, folder, commit).await;
     let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
-    emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
+    crate::runner::emit_verdict(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
 }
 
@@ -1831,6 +1852,7 @@ fn finish_job(
         cleaned,
     );
     if let Some(runs) = app.try_state::<LocalRuns>() {
+        runs.note_exit(id, code.or(Some(1)));
         runs.drop_job(id);
     }
     emit(app, RunEventPayload::exit(id, code.or(Some(1))));
@@ -2037,6 +2059,7 @@ mod tests {
         assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
         assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
         assert_eq!(get("PIWI_DESKTOP_APP"), Some("prefer"));
+        assert_eq!(get("PIWI_DESKTOP_KEY"), Some("1"));
         assert_eq!(
             get("PIWI_DESKTOP_CONFIG"),
             Some("/home/dev/.piwi/desktop.json")
@@ -2044,7 +2067,7 @@ mod tests {
         assert_eq!(get("FORCE_COLOR"), Some("1"));
         assert_eq!(get("NO_COLOR"), Some(""));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 6);
+        assert_eq!(env.len(), 7);
         // With no discovery file written, the reporter looks for one at its default path.
         let without = flake_lab_env(&server, None);
         let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");

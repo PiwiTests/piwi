@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Test an integration connection',
     description:
-      'Verifies the connection by resolving the authenticated account (Jira `whoAmI`) and records the outcome. Soft-fail: a reachable provider that rejects the credentials returns HTTP 200 with `{ ok: false, error }`.',
+      'Verifies the connection with its provider’s own sign-in (Jira `whoAmI`; Zephyr Scale reads one project from its region’s host) and records the outcome. Soft-fail: a reachable provider that rejects the credentials returns HTTP 200 with `{ ok: false, error }`, and so does a test management connection the provider rate limited, which is not called until its pause ends, or one with more requests queued than the check waits for. The check of a test management connection ends within ten seconds.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'connections:manage',
   },

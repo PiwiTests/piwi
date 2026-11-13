@@ -1,8 +1,10 @@
 /**
  * The messages between the dashboard window and the window a local run's output shows in
  * (`pages/desktop/run-output.vue`), over a `BroadcastChannel` of the dashboard's origin, so the output window holds
- * no IPC grant. The output window says it is `ready` and asks to `stop` the run; the dashboard window answers with
- * the run's `state`: its header, and the lines the window does not have yet.
+ * no IPC grant. The output window says it is `ready`, with the id of the last line it has (`through`), and asks to
+ * `stop` the run; the dashboard window answers with the run's `state`: its header, and the lines the window does not
+ * have yet. A dashboard window that reloaded asks a window the page before had open whether it is still there (`ask`),
+ * and the window answers `ready` again.
  */
 import type { LocalRunLine } from '~/composables/useDesktopLocalRuns';
 import type { BadgeColor } from '~/utils';
@@ -24,11 +26,23 @@ export interface RunOutputState {
   lines: LocalRunLine[];
 }
 
-export type RunOutputMessage = RunOutputState | { type: 'ready' | 'stop'; name: string };
+export type RunOutputMessage =
+  | RunOutputState
+  | { type: 'ready'; name: string; through?: number }
+  | { type: 'ask' | 'stop'; name: string };
 
 /** The output window's name for the run of key `key`, as the shell takes one: lowercase letters, digits and dashes. */
 export function runOutputWindowName(key: number): string {
   return `piwi-run-output-${key}`;
+}
+
+/**
+ * The name of the output window a label names, as the shell labels them (`output-<name>_<n>`); null for another
+ * window's label.
+ */
+export function outputWindowNameOf(label: string): string | null {
+  const match = /^output-([a-z0-9-]{1,64})_\d+$/.exec(label);
+  return match ? match[1]! : null;
 }
 
 /**

@@ -50,6 +50,7 @@ function harness(terminal = false) {
     notice: () => {},
     rootOf: () => '/work/shop',
     terminal: () => terminal,
+    instances: () => ['https://piwi.example.com'],
     paceMs: 5,
     burstMs: 0,
     lingerMs: 50,
@@ -101,6 +102,66 @@ describe('a run’s own connection, in the run sessions', () => {
     expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
       progress: { status: 'failed' },
     });
+  });
+
+  test('counts the tests ended at a stop as its process does, and keeps the count once the run ended', async () => {
+    const { sessions, sent, main } = harness();
+    const run = main();
+    await waitFor(() => last(sent));
+    expect(sessions.endedAtStopOf('ed-1')).toBe(0);
+    run.read({ type: 'run-progress', done: 3, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1 });
+    expect(await waitFor(() => (last(sent)?.progress?.done === 3 ? last(sent) : undefined))).toMatchObject({
+      progress: { skipped: 1, endedAtStop: 1 },
+    });
+    expect(sessions.endedAtStopOf('ed-1')).toBe(1);
+    run.read({
+      type: 'run-end',
+      status: 'passed',
+      failure: null,
+      done: 9,
+      failed: 0,
+      flaky: 0,
+      skipped: 2,
+      endedAtStop: 2,
+    });
+    run.socket.destroy();
+    expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
+      progress: { status: 'passed', skipped: 2, endedAtStop: 2 },
+    });
+    // Once the run ended, for its verdict, which the instance gives later.
+    expect(sessions.endedAtStopOf('ed-1')).toBe(2);
+    expect(sessions.endedAtStopOf('ed-2')).toBe(0);
+  });
+
+  test('names the run’s page on the instance once its process does, and keeps it to the end', async () => {
+    const { sent, main } = harness();
+    const run = main();
+    await waitFor(() => last(sent));
+    expect(last(sent)).not.toHaveProperty('page');
+    // A page on an instance this host does not connect to is not linked: the test's code may name any address.
+    run.read({ type: 'run-page', id: 66, url: 'https://elsewhere.example/test-runs/66' });
+    run.read({ type: 'run-progress', done: 1, failed: 0, flaky: 0, skipped: 0 });
+    expect(await waitFor(() => (last(sent)?.progress?.done === 1 ? last(sent) : undefined))).not.toHaveProperty('page');
+    run.read({ type: 'run-page', id: 78, url: 'https://piwi.example.com/test-runs/78' });
+    expect(await waitFor(() => last(sent)?.page)).toEqual({ id: 78, url: 'https://piwi.example.com/test-runs/78' });
+    run.read({ type: 'run-end', status: 'passed', failure: null, done: 9, failed: 0, flaky: 0, skipped: 0 });
+    run.socket.destroy();
+    expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
+      page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
+    });
+  });
+
+  test('remembers that a run’s reporter connected, for a command that ends to say so', async () => {
+    const { sessions, main, worker } = harness();
+    expect(sessions.heardFrom('ed-1')).toBe(false);
+    // A worker alone is the capture fixtures', which run without the reporter.
+    worker(0);
+    expect(sessions.heardFrom('ed-1')).toBe(false);
+    const run = main();
+    expect(sessions.heardFrom('ed-1')).toBe(true);
+    run.socket.destroy();
+    expect(sessions.heardFrom('ed-1')).toBe(true);
+    expect(sessions.heardFrom('ed-2')).toBe(false);
   });
 
   test('goes on between its workers while its process is connected', async () => {
@@ -198,8 +259,131 @@ describe('a run’s own connection, through the record channel', () => {
       expect(session.progress).toMatchObject({ total: 9, done: 0, status: 'running' });
       run.write(`${JSON.stringify({ type: 'run-progress', done: 4, failed: 0, flaky: 0, skipped: 1 })}\n`);
       await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.progress?.done === 4));
+      // Its page reaches the client too, an address that is not one left out.
+      run.write(`${JSON.stringify({ type: 'run-page', id: 6, url: 'http://127.0.0.1:7494/test-runs/6' })}\n`);
+      const named = await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.page));
+      expect(named.page).toEqual({ id: 6, url: 'http://127.0.0.1:7494/test-runs/6' });
+      run.write(`${JSON.stringify({ type: 'run-page', id: 5, url: 'javascript:alert(1)' })}\n`);
+      run.write(`${JSON.stringify({ type: 'run-progress', done: 5, failed: 0, flaky: 0, skipped: 1 })}\n`);
+      const after = await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.progress?.done === 5));
+      expect(after.page).toEqual({ id: 6, url: 'http://127.0.0.1:7494/test-runs/6' });
     } finally {
       run.destroy();
     }
+  });
+});
+
+describe('this window’s runs shared live, and a teammate’s ask to watch', () => {
+  function writingSocket() {
+    const written: string[] = [];
+    const socket = Object.assign(fakeSocket(), {
+      write: (line: string) => {
+        written.push(line);
+        return true;
+      },
+    });
+    return { socket, written };
+  }
+
+  function window() {
+    const notices: string[] = [];
+    const asks: unknown[] = [];
+    const windowShared: boolean[] = [];
+    const sessions = new RunSessions({
+      notify: () => {},
+      answersStops: () => true,
+      notice: (_root, _severity, message) => void notices.push(message),
+      rootOf: () => '/work/shop',
+      instances: () => ['https://piwi.example.com'],
+      askedToWatch: (ask) => void asks.push(ask),
+      shareWindowChanged: (on) => void windowShared.push(on),
+      paceMs: 5,
+      burstMs: 0,
+      lingerMs: 50,
+    });
+    const mains = new Map<string, ReturnType<typeof writingSocket>['socket']>();
+    const main = (ref: string, run: number) => {
+      const { socket, written } = writingSocket();
+      mains.set(ref, socket);
+      const reader = sessions.attachMain(socket as unknown as net.Socket, { ...BEGIN, ref });
+      reader(JSON.stringify({ type: 'run-page', id: run, url: `https://piwi.example.com/test-runs/${run}` }));
+      return { socket, written, read: (message: unknown) => reader(JSON.stringify(message)) };
+    };
+    const worker = (ref: string) => {
+      const { socket, written } = writingSocket();
+      const reader = sessions.attach(socket as unknown as net.Socket, {
+        type: 'run-attach',
+        token: 't',
+        ref,
+        cwd: '/work/shop',
+        workerIndex: 0,
+        parallelIndex: 0,
+        pid: 2,
+        playwright: '1.64.1',
+        reporter: '0.70.0',
+        takes: [...RUN_TAKES],
+      });
+      const live = (on: boolean) =>
+        reader(
+          JSON.stringify({
+            type: 'live',
+            can: true,
+            on,
+            viewers: 0,
+            page: 'https://piwi.example.com/test-runs/1',
+            why: null,
+          }),
+        );
+      // The run's process and its worker leave: the run ends.
+      const end = () => {
+        socket.destroy();
+        mains.get(ref)?.destroy();
+      };
+      return {
+        written,
+        live,
+        end,
+        shares: () => written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share'),
+      };
+    };
+    return { sessions, notices, asks, windowShared, main, worker };
+  }
+
+  test('shares each run the window starts until stopped, each saying so and continuing the one before', async () => {
+    const { sessions, notices, windowShared, main, worker } = window();
+    expect(sessions.share({ on: true, scope: 'window' })).toMatchObject({ ok: true });
+    expect(windowShared).toEqual([true]);
+    main('ed-1', 77);
+    const first = worker('ed-1');
+    expect(first.shares()).toEqual([{ type: 'share', on: true }]);
+    first.live(true);
+    expect(notices).toEqual([
+      "Run #77 is shared live on piwi.example.com, as this window's runs are until you stop sharing them.",
+    ]);
+    // A run that starts while it runs continues nothing: it is no rerun of it.
+    main('ed-5', 80);
+    expect(worker('ed-5').shares()).toEqual([{ type: 'share', on: true }]);
+    // Once it ended having streamed, the next run continues it on the instance.
+    first.end();
+    await waitFor(() => (sessions.current().some((s) => s.ref === 'ed-1') ? undefined : true));
+    main('ed-2', 78);
+    const second = worker('ed-2');
+    expect(second.shares()).toEqual([{ type: 'share', on: true, after: 77 }]);
+    // Stopped, every run of the window stops sharing, and the next one is not shared.
+    expect(sessions.share({ on: false, scope: 'window' })).toMatchObject({ ok: true });
+    expect(windowShared).toEqual([true, false]);
+    expect(second.shares()[second.shares().length - 1]).toEqual({ type: 'share', on: false });
+    main('ed-3', 79);
+    expect(worker('ed-3').shares()).toEqual([]);
+  });
+
+  test('asks the developer as a teammate asks to watch, and sends Not now back through the run', () => {
+    const { sessions, asks, main } = window();
+    const run = main('ed-1', 77);
+    run.read({ type: 'run-ask', id: 'a1', by: 'Dana' });
+    expect(asks).toEqual([{ ref: 'ed-1', id: 'a1', by: 'Dana', run: 77 }]);
+    expect(sessions.answerAsk({ ref: 'ed-1', id: 'a1', answer: 'not-now' })).toMatchObject({ ok: true });
+    expect(run.written.map((line) => JSON.parse(line))).toEqual([{ type: 'ask-answer', id: 'a1', answer: 'not-now' }]);
+    expect(sessions.answerAsk({ ref: 'ed-9', id: 'a1', answer: 'not-now' })).toMatchObject({ ok: false });
   });
 });

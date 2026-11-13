@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { EventParser, EventStream, type OpenEvents } from '../src/run-stream';
+import type { PiwiClient } from '../src/piwi-client';
+import { EventParser, EventStream, RunStreams, type OpenEvents, type RunEvent } from '../src/run-stream';
 
 const encoder = new TextEncoder();
 
@@ -128,5 +129,67 @@ describe('an event stream', () => {
     } finally {
       stream.close();
     }
+  });
+});
+
+describe('the runs’ streams', () => {
+  /** A client whose run streams each send `init` with the number of the connection, then stay open until aborted. */
+  function stubClient(serverUrl = 'https://piwi.example') {
+    const opened: number[] = [];
+    const aborted: number[] = [];
+    const client = {
+      connection: { serverUrl, apiKey: 'pd_key' },
+      runEvents: async (runId: number, signal: AbortSignal) => {
+        opened.push(runId);
+        const n = opened.length;
+        signal.addEventListener('abort', () => aborted.push(n));
+        return body([`data: ${JSON.stringify({ type: 'init', data: { connection: n } })}\n\n`], true);
+      },
+    } as unknown as PiwiClient;
+    return { client, opened, aborted };
+  }
+
+  test('read one run on one connection, which a follower that joins opens again for its catch-up', async () => {
+    const { client, opened, aborted } = stubClient();
+    const streams = new RunStreams({ retryMs: 5 });
+    const first: RunEvent[] = [];
+    const second: RunEvent[] = [];
+    const stopFirst = streams.follow(client, 78, (e) => first.push(e));
+    await waitFor(() => (first.length ? true : undefined));
+    expect(first).toEqual([{ type: 'init', data: { connection: 1 } }]);
+
+    const stopSecond = streams.follow(client, 78, (e) => second.push(e));
+    // The first connection ends, and the new one's catch-up reaches both followers.
+    await waitFor(() => (second.length ? true : undefined));
+    expect(aborted).toEqual([1]);
+    expect(second).toEqual([{ type: 'init', data: { connection: 2 } }]);
+    expect(first[first.length - 1]).toEqual({ type: 'init', data: { connection: 2 } });
+    expect(opened).toEqual([78, 78]);
+    expect(streams.size).toBe(1);
+
+    // The stream closes with its last follower, never before.
+    stopFirst();
+    stopFirst();
+    expect(streams.size).toBe(1);
+    stopSecond();
+    expect(streams.size).toBe(0);
+    await waitFor(() => (aborted.length === 2 ? true : undefined));
+    streams.dispose();
+  });
+
+  test('keep the runs of another instance or another run apart', async () => {
+    const one = stubClient('https://one.example');
+    const other = stubClient('https://other.example');
+    const streams = new RunStreams({ retryMs: 5 });
+    const stops = [
+      streams.follow(one.client, 78, () => {}),
+      streams.follow(one.client, 79, () => {}),
+      streams.follow(other.client, 78, () => {}),
+    ];
+    await waitFor(() => (one.opened.length === 2 && other.opened.length === 1 ? true : undefined));
+    expect(streams.size).toBe(3);
+    for (const stop of stops) stop();
+    expect(streams.size).toBe(0);
+    streams.dispose();
   });
 });

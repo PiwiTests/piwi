@@ -14,6 +14,7 @@ import {
   coverageReports,
   coverageTotals,
   entityLinks,
+  entityLinkDismissals,
   bugReports,
   analyticsDailyRollups,
   handbackOutcomes,
@@ -29,6 +30,7 @@ import {
   and,
   or,
   inArray,
+  gt,
   gte,
   lte,
   isNull,
@@ -60,12 +62,14 @@ import {
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
+import { mineFlag, ownRunColumn, ownRunSql, type RunViewer } from '../own-runs';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
+import { clusterIssueChips } from './known-issues';
 import { projectHealth } from '../project-health';
 import { deleteProjectStarsOn } from './project-stars';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
@@ -371,7 +375,8 @@ function clampRunLimit(limit: number | undefined): number {
 
 /**
  * Shape run-list rows for the runs table: attach each run's reports and
- * browsers, and slim the metadata JSON down to the SCM branch and commit.
+ * browsers, slim the metadata JSON down to the SCM branch and commit, and say
+ * `mine` of a run its row selected as the viewer's own (`own`, `ownRunColumn`).
  */
 async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   // Fetch reports for all runs in a single query
@@ -416,11 +421,12 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
     browsersByRunId.set(row.testRunId, list);
   }
 
-  return runs.map((r: any) => {
+  return runs.map(({ own, ...r }: any) => {
     // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
     const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
     return {
       ...r,
+      ...mineFlag(own),
       isFullRun: r.isFullRun === 1,
       metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
       reports: reportsByRunId.get(r.id) ?? [],
@@ -436,12 +442,15 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
  * scope (the project page's filters) they are the newest runs within the
  * scope, and `unscopedRuns` lists the newest runs of any scope with the fields
  * the scope reads: the environments and branches the filters offer, and the
- * runs they hide.
+ * runs they hide. Each run says `mine` when it is the `viewer`'s own
+ * (`#shared/own-runs`), and `ownRuns` lists the viewer's newest own runs, in
+ * the scope's environments, that the scoped list does not hold, which the runs
+ * list shows whatever the filters say.
  */
 export async function getProject(
   db: DrizzleDB,
   id: number,
-  options?: { runLimit?: number; scope?: ProjectRunScope | null },
+  options?: { runLimit?: number; scope?: ProjectRunScope | null; viewer?: RunViewer | null },
 ) {
   // Bounds the run list (and the charts derived from it) — projects grow
   // unboundedly, so an uncapped select scales with total history.
@@ -455,18 +464,16 @@ export async function getProject(
   // The branch a project run scope reads when no branch is picked.
   const effectiveDefaultBranch = await resolveStoredDefaultBranch(db, project);
   const scope = options?.scope ?? null;
+  const viewer = options?.viewer ?? null;
+  const own = ownRunColumn(viewer);
+  // The scope's own conditions: none when it reads every run, which leaves no own run out.
+  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch)) : undefined;
 
   // Select only the columns needed for the run list — omit wide JSON columns
   const runs: any[] = await db
-    .select(RUN_SUMMARY_COLUMNS)
+    .select({ ...RUN_SUMMARY_COLUMNS, own })
     .from(testRuns)
-    .where(
-      and(
-        eq(testRuns.projectId, id),
-        notPrivateRun(),
-        ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : []),
-      ),
-    )
+    .where(and(eq(testRuns.projectId, id), notPrivateRun(), inScope))
     .orderBy(desc(testRuns.startTime))
     .limit(runLimit);
   const unscopedRuns: any[] | null = scope
@@ -477,12 +484,35 @@ export async function getProject(
           environment: testRuns.environment,
           branch: testRuns.branch,
           isFullRun: testRuns.isFullRun,
+          own,
         })
         .from(testRuns)
         .where(and(eq(testRuns.projectId, id), notPrivateRun()))
         .orderBy(desc(testRuns.startTime))
         .limit(runLimit)
     : null;
+  // The own runs the scoped list does not hold: those the scope leaves out, and those newer than its window, which a
+  // write between the two reads moved into the scope.
+  const listedIds = runs.map((run) => run.id as number);
+  const oldestListed = runs.length === runLimit ? runs[runs.length - 1].startTime : null;
+  const ownRuns: any[] | null =
+    scope && viewer && inScope
+      ? await db
+          .select({ ...RUN_SUMMARY_COLUMNS, own })
+          .from(testRuns)
+          .where(
+            and(
+              eq(testRuns.projectId, id),
+              notPrivateRun(),
+              ownRunSql(viewer),
+              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch),
+              listedIds.length > 0 ? notInArray(testRuns.id, listedIds) : undefined,
+              oldestListed ? or(sql`(${inScope}) IS NOT TRUE`, gt(testRuns.startTime, oldestListed)) : undefined,
+            ),
+          )
+          .orderBy(desc(testRuns.startTime))
+          .limit(runLimit)
+      : null;
 
   // Get tags for this project
   const projectTagRows: any[] = await db
@@ -510,22 +540,34 @@ export async function getProject(
             environment: (r.environment as string | null) ?? null,
             branch: (r.branch as string | null) ?? null,
             isFullRun: r.isFullRun === 1,
+            ...mineFlag(r.own),
           })),
         }
       : {}),
+    ...(ownRuns ? { ownRuns: await toRunSummaries(db, ownRuns) } : {}),
   };
+}
+
+/** A scope's environments alone: what an own run must match to be listed despite the partial-run and branch filters. */
+function environmentsOnly(scope: ProjectRunScope): ProjectRunScope {
+  return { environments: scope.environments, branches: [], allBranches: true, fullRunsOnly: false };
 }
 
 // ─── listKeptRuns ────────────────────────────────────────────────
 
 /**
- * A project's kept runs, newest first, in the run-list shape. Kept runs are
- * mostly old ones, past the window `getProject` loads, so they list on their own.
+ * A project's kept runs, newest first, in the run-list shape, each saying `mine`
+ * when it is the `viewer`'s own. Kept runs are mostly old ones, past the window
+ * `getProject` loads, so they list on their own.
  */
-export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
+export async function listKeptRuns(
+  db: DrizzleDB,
+  projectId: number,
+  options?: { limit?: number; viewer?: RunViewer | null },
+) {
   const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt), notPrivateRun());
   const runs: any[] = await db
-    .select(RUN_SUMMARY_COLUMNS)
+    .select({ ...RUN_SUMMARY_COLUMNS, own: ownRunColumn(options?.viewer ?? null) })
     .from(testRuns)
     .where(where)
     .orderBy(desc(testRuns.startTime))
@@ -632,6 +674,8 @@ export async function updateProject(
     gateStatus?: boolean;
     /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
     liveView?: boolean;
+    /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+    askToWatch?: boolean;
     /** Playwright locators of the elements the live view paints over, beside the secret fields; null or [] removes them. */
     liveViewMasks?: unknown;
     /** `GeneratedSpecSettings`; null clears them. */
@@ -668,6 +712,7 @@ export async function updateProject(
     quarantineFailsStatus,
     gateStatus,
     liveView,
+    askToWatch,
     liveViewMasks,
     generatedSpecs,
     targets,
@@ -725,6 +770,7 @@ export async function updateProject(
         quarantineFailsStatus,
         gateStatus,
         liveView,
+        askToWatch,
         liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
@@ -845,6 +891,7 @@ export async function deleteProjectData(
   const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+    await db.delete(entityLinkDismissals).where(inArray(entityLinkDismissals.failureClusterId, projectClusterIds));
   }
   const projectBugReports = await db
     .select({ id: bugReports.id })
@@ -1877,25 +1924,9 @@ export async function getProjectFailureClusters(
       : [];
   const diagnosisById = new Map(diagnosisRows.map((d: any) => [d.clusterId, d]));
 
-  // A pinned known-issue link per cluster (newest wins), carried into the list as
-  // a compact chip so a triaged cluster shows what is already tracking it.
-  const linkRows: any[] = await db
-    .select({
-      clusterId: entityLinks.failureClusterId,
-      id: entityLinks.id,
-      url: entityLinks.url,
-      provider: entityLinks.provider,
-      key: entityLinks.key,
-    })
-    .from(entityLinks)
-    .where(inArray(entityLinks.failureClusterId, clusterIds))
-    .orderBy(desc(entityLinks.id));
-  const issueByCluster = new Map<number, { url: string; provider: string; key: string | null }>();
-  for (const row of linkRows) {
-    if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
-      issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
-    }
-  }
+  // Each cluster's known issue, by the cluster page's rule, as a compact chip so a
+  // triaged cluster shows what is already tracking it.
+  const issueChips = await clusterIssueChips(db, clusterIds);
 
   return clusters.map((c: any) => {
     const runData = runDataById.get(c.lastSeenRunId) as { status: string; startTime: Date } | undefined;
@@ -1905,7 +1936,7 @@ export async function getProjectFailureClusters(
       lastSeenRunStatus: runData?.status ?? null,
       lastSeenAt: runData?.startTime ?? null,
       diagnosis: diagnosisById.get(c.id) ?? null,
-      issueLink: issueByCluster.get(c.id) ?? null,
+      issueLink: issueChips.get(c.id)?.issueLink ?? null,
     };
   });
 }

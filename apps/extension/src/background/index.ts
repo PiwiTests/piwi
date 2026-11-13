@@ -75,7 +75,7 @@ import {
 import { handleRelayLeft } from './relay-left.js';
 import { connectionChanged, syncInstanceMarker } from './instance-marker.js';
 import { RUN_COMMAND } from '../shared/runs.js';
-import { openRunsWindow, runHubs, runsSummary, startRunHubs } from './runs-window.js';
+import { openRunsWindow, runHubs, runsBadge, runsSummary, startRunHubs } from './runs-window.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -128,26 +128,46 @@ async function handleSetLanguage(code: unknown): Promise<{ ok: boolean; error?: 
 }
 
 const RECORDING_BADGE_COLOR = '#dc2626';
+/** The run shortcut's sign shows on the badge: nothing else takes the badge until its moment ends. */
+let signShowing = false;
 const REPLAY_BADGE_COLOR = '#7c3aed';
 
 /**
- * The toolbar badge for what runs now: a recording, else a replay, else
- * nothing. Decided from the stored states, never from the badge's own text,
- * which depends on the language.
+ * The toolbar badge for what runs now: a recording, else a replay, else what the editor's and the desktop app's runs
+ * ask of the person (`runsBadge`: the tests that wait for them, else the tests that failed), else nothing. Decided
+ * from the stored states and the runs, never from the badge's own text, which depends on the language. The run
+ * shortcut's sign keeps its moment.
  */
 async function showStateBadge(): Promise<void> {
   await i18nReady;
   const [recording, replay] = await Promise.all([getRecordingState(), getReplayState()]);
+  if (signShowing) return;
+  const runs = runsBadge();
   if (recording.active) {
     await chrome.action.setBadgeText({ text: t(recording.mode === 'bug' ? 'badge_bug' : 'badge_recording') });
     await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
   } else if (replay && (replay.status === 'running' || replay.status === 'paused')) {
     await chrome.action.setBadgeText({ text: t('badge_replay') });
     await chrome.action.setBadgeBackgroundColor({ color: REPLAY_BADGE_COLOR });
+  } else if (runs) {
+    await chrome.action.setBadgeText({ text: runs.text });
+    await chrome.action.setBadgeBackgroundColor({ color: runs.color });
   } else {
     await chrome.action.setBadgeText({ text: '' });
   }
 }
+
+/** The runs' badge as last shown: the runs change often, the badge only when what it says does. */
+let runsBadgeShown = '';
+runHubs.observe(() => {
+  const runs = runsBadge();
+  const key = runs ? `${runs.text}|${runs.color}` : '';
+  if (key === runsBadgeShown) return;
+  runsBadgeShown = key;
+  void showStateBadge();
+});
+// The browser keeps a badge across the worker's restarts, the runs it counted gone: the worker draws it at its start.
+void showStateBadge().catch(() => undefined);
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -160,12 +180,44 @@ async function showStateBadge(): Promise<void> {
  */
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === RUN_COMMAND) {
-    void runHubs.shortcut();
+    void runShortcut();
     return;
   }
   if (command !== 'pick-element') return;
   void runPickCommand(tab);
 });
+
+/** How long the toolbar badge says what the run shortcut did before it shows the state again. */
+const SHORTCUT_SIGN_MS = 2500;
+const SHORTCUT_BADGE_COLOR = '#475569';
+
+/**
+ * The run shortcut, then its sign on the toolbar badge for a moment: the runs paused, the stopped tests resumed, or
+ * nothing done (no run to steer, or none took it), whether a Runs window is open or not; a recording's or a replay's
+ * badge comes back after it.
+ */
+let shortcutSign: ReturnType<typeof setTimeout> | undefined;
+
+async function runShortcut(): Promise<Awaited<ReturnType<typeof runHubs.shortcut>>> {
+  const done = await runHubs.shortcut();
+  await i18nReady;
+  // A sign for what a run took: no run answered yes is nothing done.
+  const took = done.answers.some((answer) => answer.ok);
+  const sign = !took ? 'badge_runsNone' : done.action === 'pause' ? 'badge_runsPaused' : 'badge_runsResumed';
+  signShowing = true;
+  // A press while the sign shows starts its moment again.
+  clearTimeout(shortcutSign);
+  shortcutSign = setTimeout(() => {
+    signShowing = false;
+    void showStateBadge();
+  }, SHORTCUT_SIGN_MS);
+  await chrome.action.setBadgeText({ text: t(sign) });
+  await chrome.action.setBadgeBackgroundColor({ color: SHORTCUT_BADGE_COLOR });
+  return done;
+}
+
+// What the run shortcut does, sign included, for the e2e suite, which cannot press a shortcut the browser holds.
+(globalThis as { __piwiRunShortcut?: () => Promise<unknown> }).__piwiRunShortcut = () => runShortcut();
 
 async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
   // The event usually carries the tab, but not on every platform or path —

@@ -10,8 +10,10 @@
  * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
  * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
  * the input played on it) and the locator of the element under a point of an image of it; for a viewer of the
- * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`);
- * and, for an agent (the
+ * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`),
+ * and the layers of that view its viewers ask beside the images (`layers`, `lane-layer`: `@piwitests/core/live-layers`);
+ * for the hub alone, where its running attempt's trace grows (`trace`), which the hub opens in Playwright's trace
+ * viewer and names to no one; and, for an agent (the
  * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
  * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
@@ -21,6 +23,26 @@
  * Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
  * sides. A side ignores a message it cannot read.
  */
+import {
+  isLaneThumbData,
+  isLayerTime,
+  readLaneLayers,
+  readLaneText,
+  readLaneThumb,
+  readPageEvent,
+  type LaneLayer,
+  type LaneText,
+  type LaneThumb,
+  type PageEvent,
+} from './live-layers';
+import {
+  parseLiveAsk,
+  parseLiveAskAnswer,
+  readLiveCallLog,
+  type LiveAsk,
+  type LiveAskAnswer,
+  type LiveCallLog,
+} from './live-view';
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
@@ -37,6 +59,37 @@ export const RUN_REF_ENV = 'PIWI_RUN_REF';
  * the editor whose discovery file names this channel (`@piwitests/core/editor-discovery`).
  */
 export const TERMINAL_REF_PREFIX = 'terminal-';
+
+/**
+ * How the ref of a run nobody attends ends: no failure of it waits for an answer, and a stop nobody asked for goes on.
+ * The desktop app names its Flake Lab, bisect and lab runs so, and the reporter a run started in a terminal whose
+ * output goes to a file or a pipe.
+ */
+export const UNATTENDED_REF_SUFFIX = '-unattended';
+
+/** Whether the run `ref` names is one nobody attends (`UNATTENDED_REF_SUFFIX`). */
+export function isUnattendedRef(ref: string): boolean {
+  return ref.endsWith(UNATTENDED_REF_SUFFIX);
+}
+
+/**
+ * The ref of a job the desktop app runs in a throwaway checkout of a commit on an editor's run channel (a reproduction,
+ * a bisect step, a Flake Lab): `desktop-<id>-at-<commit>`, the commit's first 7 to 12 hex digits, before the
+ * `-unattended` of a job nobody attends. The editor shows its stops as the reproduction's and offers their code to
+ * copy, never to write; the desktop app knows the job by its ref without the checkout (`withoutCheckout`).
+ */
+const CHECKOUT_REF = /^(desktop-\d{1,10})-at-([0-9a-f]{7,12})((?:-unattended)?)$/;
+
+/** The commit of the throwaway checkout a desktop app's job runs in, as its ref names it (`CHECKOUT_REF`); else null. */
+export function checkoutCommitOf(ref: string): string | null {
+  return CHECKOUT_REF.exec(ref)?.[2] ?? null;
+}
+
+/** A job's ref without its checkout (`desktop-<id>[-unattended]`), as the desktop app knows it; any other as it is. */
+export function withoutCheckout(ref: string): string {
+  const match = CHECKOUT_REF.exec(ref);
+  return match ? `${match[1]}${match[3]}` : ref;
+}
 
 /**
  * A line of the user's code: its file relative to the run's working directory, with forward slashes (`..` for a file
@@ -127,18 +180,81 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
  * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
  * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
  * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
- * (`waiting`) and end the test there as asked (`give-up`).
+ * (`waiting`) and end the test there as asked (`give-up`); bring the test's window to the front at a stop its pause
+ * bar shows (`front`, **Show the browser**); send the layers of its lane view a viewer asks beside the images
+ * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages); and say where its running attempt's
+ * trace grows (`trace`: the request `trace`).
  */
-export type RunFeature = 'view-lane' | 'give-up';
+export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers' | 'trace';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers', 'trace'];
+
+/**
+ * The answer to `trace`: the absolute path of the running attempt's own trace file as the runner writes it while the
+ * test runs (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`), or
+ * why there is none (no test runs, the runner does not trace this attempt, or it wrote none of it yet). For the hub
+ * alone, which never names it to anyone: it checks that file and its folder, then opens Playwright's trace viewer on
+ * the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its files share.
+ */
+export type TraceAnswer = { ok: true; message: string; file: string } | { ok: false; message: string };
+
+/**
+ * A layer of a worker's lane view as it goes to the lane's viewers (`@piwitests/core/live-layers`): the call its test
+ * is in as Playwright logs it (`calls`), something its page or its requests said (`events`, when, `at`), the page's
+ * text (`text`), or why no text goes (`refused`), and an image of its filmstrip with its JPEG in base64 (`filmstrip`).
+ */
+export type LaneLayerData =
+  | { layer: 'calls'; log: LiveCallLog }
+  | { layer: 'events'; event: PageEvent; at: number }
+  | { layer: 'text'; text: LaneText }
+  | { layer: 'text'; refused: string }
+  | { layer: 'filmstrip'; thumb: LaneThumb; data: string };
+
+/** The longest sentence a layer's refusal carries, in characters. */
+const MAX_LAYER_REFUSAL = 500;
+
+/** A layer's data, checked field by field as `@piwitests/core/live-layers` reads each; null when it is not one. */
+export function readLaneLayerData(value: Record<string, unknown>): LaneLayerData | null {
+  switch (value.layer) {
+    case 'calls': {
+      const log = readLiveCallLog(value.log);
+      return log ? { layer: 'calls', log } : null;
+    }
+    case 'events': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at) ? { layer: 'events', event, at: value.at } : null;
+    }
+    case 'text': {
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { layer: 'text', refused: value.refused.slice(0, MAX_LAYER_REFUSAL) };
+      }
+      const text = readLaneText(value.text);
+      return text ? { layer: 'text', text } : null;
+    }
+    case 'filmstrip': {
+      const thumb = readLaneThumb(value.thumb);
+      return thumb && isLaneThumbData(value.data) ? { layer: 'filmstrip', thumb, data: value.data } : null;
+    }
+    default:
+      return null;
+  }
+}
 
 /** The longest title a `waiting` carries, in characters: a longer one is cut. */
 export const MAX_WAITING_TITLE = 500;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
+
+/**
+ * The actions in the test's window that take Escape as their own, which a worker says run (`acting`): a pick, a check
+ * and a region's pick end on it. A recording does not: it records Escape as a step of the test.
+ */
+export type RunActing = Exclude<RunIntent, 'record'>;
+
+/** Every action a worker says runs in the test's window. */
+export const RUN_ACTING: readonly RunActing[] = ['pick', 'assert', 'assert-region'];
 
 /**
  * Everything a worker takes, as its `run-attach` lists it: a worker of an older reporter lists fewer, or none. An
@@ -239,6 +355,8 @@ export interface LocatorAnswer extends IntentAnswer {
  */
 export interface PickAtAnswer extends IntentAnswer {
   locator: string | null;
+  /** Whether an editor took the locator; absent from a reporter that predates it, which says so in its message. */
+  taken?: boolean;
 }
 
 /** The longest ARIA snapshot a `snapshot` answer carries, in characters: a longer one is cut, and says so (`cut`). */
@@ -447,10 +565,10 @@ export type RunToHub =
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
   /**
-   * The answer to `view`, `view-lane` and `input`: whether the view started or stopped, the input was played, or why
-   * not.
+   * The answer to `view`, `view-lane`, `input`, `front` and `text`: whether the view started or stopped, the input was
+   * played, the test's window came to the front, the page's text is on its way, or why not.
    */
-  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input'; value: IntentAnswer }
+  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input' | 'front' | 'text'; value: IntentAnswer }
   /** The answer to `pick-at`. */
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
@@ -461,6 +579,8 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'act'; value: ActAnswer }
   /** The answer to `bind`. */
   | { type: 'answer'; request: number; what: 'bind'; value: BindAnswer }
+  /** The answer to `trace`. */
+  | { type: 'answer'; request: number; what: 'trace'; value: TraceAnswer }
   /** Something the running test did, while the editor asked for its events (`events`). */
   | { type: 'event'; event: RunEvent }
   /**
@@ -490,12 +610,25 @@ export type RunToHub =
    */
   | { type: 'lane-frame'; test: string | null; stop: number | null; refused: string }
   /**
+   * A layer of the worker's lane view (`LaneLayerData`), while its lane view is on and `layers` asked for it, for the
+   * test `test` (Playwright's id; null for the text of a page no test shows): never stored, each layer bounded as
+   * `@piwitests/core/live-layers` says, the latest call log, the test's filmstrip so far and the page's text sent again
+   * as `view-lane` asks on again (a viewer that comes later).
+   */
+  | ({ type: 'lane-layer'; test: string | null } & LaneLayerData)
+  /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
    * snapshot came of the region picked (`refused`: its locator finds several elements, its snapshot is too long).
    */
   | { type: 'region'; stop: number; locator: string; snapshot: string }
   | { type: 'region'; stop: number; refused: string }
+  /**
+   * At the stop `stop`, an action that takes Escape as its own runs in the test's window (`what`, `RUN_ACTING`): a pick,
+   * a check or a region's pick, started from the pause bar or as an intent; null once it ended. A viewer's view sends
+   * Escape there while one runs. A worker of a reporter that predates it says none.
+   */
+  | { type: 'acting'; stop: number; what: RunActing | null }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
   | { type: 'notice'; message: string }
   /**
@@ -540,6 +673,11 @@ export type HubToRun =
   | { type: 'request'; request: number; what: RunIntent; stop: number }
   /** At the stop `stop`: the responses the test kept, without their bodies. */
   | { type: 'request'; request: number; what: 'requests'; stop: number }
+  /**
+   * At the stop `stop`, to a worker that lists `front` in `features`: bring the stopped page's window to the front
+   * (**Show the browser**), at a stop its pause bar shows; refused at a headless one.
+   */
+  | { type: 'request'; request: number; what: 'front'; stop: number }
   /** At the stop `stop`: the kept response `id`, with its body and status, the one to mock. */
   | { type: 'request'; request: number; what: 'mock'; stop: number; id: number }
   /**
@@ -556,10 +694,30 @@ export type HubToRun =
   /**
    * Start the lane view (`on`), to a worker whose `run-attach` lists `view-lane` in `features`: the page of its stop
    * while it stands at one, else of its running test, its frames sent as `lane-frame` through its tests and stops until
-   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on, the worker sends its
-   * latest frame again.
+   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on (a viewer that comes
+   * later), the worker sends its latest frame again, and of the layers `layers` asks its latest call log, its test's
+   * filmstrip so far and the page's text.
    */
   | { type: 'request'; request: number; what: 'view-lane'; on: boolean }
+  /**
+   * The layers of the lane view from now on, to a worker whose `run-attach` lists `layers` in `features`, while its
+   * lane view is on (`LaneLayer`, none turning them off; they end with the lane view): each goes as `lane-layer`, a
+   * layer asked anew starting with the call log, the filmstrip so far or the page's text; one asked again sends nothing
+   * more.
+   */
+  | { type: 'layers'; layers: LaneLayer[] }
+  /**
+   * The page's text now, to a worker that lists `layers`, while its lane view is on and `layers` asks for `text`, at a
+   * stop or not: the trace's latest of its running test where the trace writes one, else an ARIA snapshot taken now,
+   * sent as `lane-layer` (`text`), one take at a time and `LANE_TEXTS_PER_SECOND` at most, asks that come meanwhile
+   * taken once; answered at once, saying whether it is on its way.
+   */
+  | { type: 'request'; request: number; what: 'text' }
+  /**
+   * Where the running attempt's own trace file grows, to a worker that lists `trace` in `features`, at a stop or not;
+   * answered at once (`TraceAnswer`).
+   */
+  | { type: 'request'; request: number; what: 'trace' }
   /**
    * At the stop `stop`, while its view or the lane view shows its page: play a viewer's input on its page, in order, as trusted input
    * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
@@ -599,9 +757,11 @@ export type HubToRun =
   | { type: 'events'; on: boolean }
   /**
    * Share the run on the team instance from now on (`on`): open the live view stream with the run's key, or close it,
-   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`.
+   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`. `after`
+   * names the run on the instance this one continues, shared before it from the same editor window
+   * (`LIVE_VIEW_AFTER_PARAM`).
    */
-  | { type: 'share'; on: boolean };
+  | { type: 'share'; on: boolean; after?: number };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -671,6 +831,15 @@ function readHolds(value: unknown): RunHold[] | undefined {
 function readAnswer(value: unknown): IntentAnswer | null {
   if (!isObject(value) || typeof value.ok !== 'boolean' || typeof value.message !== 'string') return null;
   return { ok: value.ok, message: value.message.slice(0, 500) };
+}
+
+/** A `trace` answer: its file only when it says yes, a path of the run; null when it is not one. */
+function readTraceAnswer(value: unknown): TraceAnswer | null {
+  const said = readAnswer(value);
+  if (!said) return null;
+  if (!said.ok) return { ok: false, message: said.message };
+  const file = isObject(value) ? value.file : undefined;
+  return filePath(file) ? { ok: true, message: said.message, file } : null;
 }
 
 /** An HTTP method: letters only, at most 16. */
@@ -860,6 +1029,7 @@ const QUERIES = [
   'act',
   'ref-locator',
   'bind',
+  'front',
 ] as const;
 
 /** Base64, as an image's data is written. */
@@ -982,7 +1152,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (outlined !== undefined) value.outlined = outlined;
         return { type: 'answer', request, what, value };
       }
-      if (what === 'view' || what === 'view-lane' || what === 'input') {
+      if (what === 'view' || what === 'view-lane' || what === 'input' || what === 'front' || what === 'text') {
         const said = readAnswer(answered);
         return said ? { type: 'answer', request, what, value: said } : null;
       }
@@ -990,7 +1160,8 @@ export function parseRunToHub(line: string): RunToHub | null {
         const said = readAnswer(answered);
         const locator = isObject(answered) ? answered.locator : undefined;
         if (!said || (locator !== null && !isLocatorText(locator))) return null;
-        return { type: 'answer', request, what, value: { ...said, locator: locator as string | null } };
+        const taken = isObject(answered) && typeof answered.taken === 'boolean' ? { taken: answered.taken } : {};
+        return { type: 'answer', request, what, value: { ...said, locator: locator as string | null, ...taken } };
       }
       if (what === 'snapshot') {
         const read = readSnapshotAnswer(answered);
@@ -1007,6 +1178,10 @@ export function parseRunToHub(line: string): RunToHub | null {
       }
       if (what === 'bind') {
         const read = readBindAnswer(answered);
+        return read ? { type: 'answer', request, what, value: read } : null;
+      }
+      if (what === 'trace') {
+        const read = readTraceAnswer(answered);
         return read ? { type: 'answer', request, what, value: read } : null;
       }
       if (what !== 'image') return null;
@@ -1037,6 +1212,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (!shown || !isViewSize(width, height) || !isViewFrameData(data)) return null;
       return { type: 'lane-frame', test: shown, stop, width: width as number, height: height as number, data };
     }
+    case 'lane-layer': {
+      const { test } = value;
+      if (test !== null && (typeof test !== 'string' || !test || test.length > 256)) return null;
+      const data = readLaneLayerData(value);
+      return data ? { type: 'lane-layer', test: test as string | null, ...data } : null;
+    }
     case 'region': {
       const { stop, locator, snapshot, refused } = value;
       if (isInt(stop, 1) && typeof refused === 'string' && refused.trim()) {
@@ -1045,6 +1226,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (!isInt(stop, 1) || !isLocatorText(locator)) return null;
       if (typeof snapshot !== 'string' || !snapshot.trim() || snapshot.length > MAX_REGION_SNAPSHOT) return null;
       return { type: 'region', stop, locator, snapshot };
+    }
+    case 'acting': {
+      const { stop, what } = value;
+      if (!isInt(stop, 1)) return null;
+      if (what === null) return { type: 'acting', stop, what: null };
+      return RUN_ACTING.includes(what as RunActing) ? { type: 'acting', stop, what: what as RunActing } : null;
     }
     case 'notice':
       return typeof value.message === 'string' ? { type: 'notice', message: value.message.slice(0, 500) } : null;
@@ -1122,10 +1309,11 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       if (what === 'view-lane') {
         return typeof value.on === 'boolean' ? { type: 'request', request, what, on: value.on } : null;
       }
+      if (what === 'text' || what === 'trace') return { type: 'request', request, what };
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;
-      if (isIntent(what) || what === 'requests') return { type: 'request', request, what, stop };
+      if (isIntent(what) || what === 'requests' || what === 'front') return { type: 'request', request, what, stop };
       if (what === 'mock') return isInt(value.id, 1) ? { type: 'request', request, what, stop, id: value.id } : null;
       if (what === 'view')
         return typeof value.on === 'boolean' ? { type: 'request', request, what, stop, on: value.on } : null;
@@ -1161,8 +1349,16 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'events':
       return typeof value.on === 'boolean' ? { type: 'events', on: value.on } : null;
-    case 'share':
-      return typeof value.on === 'boolean' ? { type: 'share', on: value.on } : null;
+    case 'layers': {
+      const layers = readLaneLayers(value.layers);
+      return layers ? { type: 'layers', layers } : null;
+    }
+    case 'share': {
+      if (typeof value.on !== 'boolean') return null;
+      return isInt(value.after, 1)
+        ? { type: 'share', on: value.on, after: value.after }
+        : { type: 'share', on: value.on };
+    }
     default:
       return typeof value.type === 'string' && value.type ? unknown(value.type) : null;
   }
@@ -1202,14 +1398,82 @@ export type RunEndStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'o
 const RUN_END_STATUSES: readonly string[] = ['passed', 'failed', 'timedout', 'interrupted'];
 
 /**
+ * Why a test ended at a stop (End the test) is skipped, as the `skip` annotation of its attempt reads: the reporter's
+ * `testInfo.skip(true, ENDED_AT_STOP_REASON)`. A result carrying it is marked ended at a stop wherever it shows, its
+ * status staying `skipped`.
+ */
+export const ENDED_AT_STOP_REASON = 'Ended from Piwi';
+
+/** Whether a result's annotations hold the skip of a test ended at a stop (`ENDED_AT_STOP_REASON`). */
+export function endedAtStopIn(
+  annotations: ReadonlyArray<{ type: string; description?: string | null }> | null | undefined,
+): boolean {
+  return (annotations ?? []).some((a) => a.type === 'skip' && a.description === ENDED_AT_STOP_REASON);
+}
+
+/**
  * How many of a run's tests ended, each once, by the outcome of its last attempt: `done` counts them all, `failed`,
- * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed.
+ * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed. `endedAtStop` counts
+ * those of `skipped` whose last attempt was ended at a stop (`ENDED_AT_STOP_REASON`); absent from a reporter that
+ * predates it.
  */
 export interface RunCounts {
   done: number;
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
+}
+
+/**
+ * A run's page on the instance it reports to: its number there (`id`, as `#78`) and its address (`url`), under the
+ * instance's public address when the instance names one. The longest address kept is `MAX_RUN_PAGE_URL` characters.
+ */
+export interface RunPage {
+  id: number;
+  url: string;
+}
+
+export const MAX_RUN_PAGE_URL = 2048;
+
+/**
+ * A run's page, field by field: a positive number and an http(s) address with no space, quote, control character or
+ * credentials; null when it is not one.
+ */
+export function readRunPage(value: unknown): RunPage | null {
+  if (!isObject(value)) return null;
+  const { id, url } = value;
+  if (!isInt(id, 1) || typeof url !== 'string' || url.length > MAX_RUN_PAGE_URL) return null;
+  // eslint-disable-next-line no-control-regex -- matches the control characters an address must not hold
+  if (!/^https?:\/\/[^\s"'<>`\\\u0000-\u001f\u007f]+$/.test(url) || !isPageUrl(url)) return null;
+  return { id, url };
+}
+
+/** The hosts of this machine, whose pages a host links whatever instance they are: the desktop app's, a local one. */
+const THIS_MACHINE = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Whether a run's page (`readRunPage`) is a page a host may link: on this machine, or under the origin of one of the
+ * `instances` the host itself connects to. A page a run's process names elsewhere is not shown: that process is the
+ * test's, whose code may name any address.
+ */
+export function isPageOfInstance(url: string, instances: Iterable<string | null | undefined>): boolean {
+  let page: URL;
+  try {
+    page = new URL(url);
+  } catch {
+    return false;
+  }
+  if (THIS_MACHINE.has(page.hostname)) return true;
+  for (const instance of instances) {
+    if (!instance) continue;
+    try {
+      if (new URL(instance).origin === page.origin) return true;
+    } catch {
+      // Not an address: it names no instance.
+    }
+  }
+  return false;
 }
 
 /** The longest title and error a `run-end`'s first failure carries, in characters: a longer one is cut. */
@@ -1221,7 +1485,10 @@ export const MAX_RUN_FAILURE_TEXT = 500;
  * channel's token, the run's ref and working directory, the process and the versions as a worker's `run-attach` names
  * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
  * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
- * `run-attach` says it (absent otherwise). `run-progress` follows each test that ended for good, at most four times a
+ * `run-attach` says it (absent otherwise). `run-page` names the run's page on the instance once the run's process
+ * knows it (at its start from the global setup, else as its stream opens), and again when the stream opens another
+ * run than the global setup's: the hub keeps the last.
+ * `run-progress` follows each test that ended for good, at most four times a
  * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
  * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them
  * closes the connection at its first line, and the run goes on as without it.
@@ -1240,6 +1507,9 @@ export type RunMainToHub =
       shard: { current: number; total: number } | null;
       runner?: true;
     }
+  | ({ type: 'run-page' } & RunPage)
+  /** A teammate asks to watch the run (`LiveAsk`): the hub's tool asks the developer. */
+  | ({ type: 'run-ask' } & LiveAsk)
   | ({ type: 'run-progress' } & RunCounts)
   | ({
       type: 'run-end';
@@ -1247,11 +1517,31 @@ export type RunMainToHub =
       failure: { title: string; error: string | null } | null;
     } & RunCounts);
 
-/** The counts of a message, checked: each a whole number, none above `done`; null when one is not. */
+/**
+ * The counts of a message, checked: each a whole number, none above `done`; null when one is not. `endedAtStop` is
+ * kept when it is a whole number within `skipped`, and left out otherwise.
+ */
 function readCounts(value: Record<string, unknown>): RunCounts | null {
   const { done, failed, flaky, skipped } = value;
   if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
-  return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+  if (failed + flaky + skipped > done) return null;
+  return { done, failed, flaky, skipped, ...endedAtStopWithin(value.endedAtStop, skipped) };
+}
+
+/** `endedAtStop` as a count may hold it: a whole number within `skipped`; nothing otherwise. */
+export function endedAtStopWithin(value: unknown, skipped: number): { endedAtStop?: number } {
+  return isInt(value, 0) && value <= skipped ? { endedAtStop: value } : {};
+}
+
+/** What the hub tells the run's own process: the developer's answer to a teammate's ask to watch. */
+export type HubToMain = { type: 'ask-answer' } & LiveAskAnswer;
+
+/** A line the hub sent the run's own process; null when it is not one. */
+export function parseHubToMain(line: string): HubToMain | null {
+  const value = readJson(line);
+  if (!value || value.type !== 'ask-answer') return null;
+  const answer = parseLiveAskAnswer(value);
+  return answer ? { type: 'ask-answer', ...answer } : null;
 }
 
 /** A line the run's own process sent, checked field by field; null when it is not one. */
@@ -1281,6 +1571,14 @@ export function parseRunMainToHub(line: string): RunMainToHub | null {
         shard: shardOf,
         ...(value.runner === true ? { runner: true as const } : {}),
       };
+    }
+    case 'run-page': {
+      const page = readRunPage(value);
+      return page ? { type: 'run-page', ...page } : null;
+    }
+    case 'run-ask': {
+      const ask = parseLiveAsk(value);
+      return ask ? { type: 'run-ask', ...ask } : null;
     }
     case 'run-progress': {
       const counts = readCounts(value);

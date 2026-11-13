@@ -46,11 +46,6 @@ export const PROJECT = {
   COMBINED_COVERAGE_RESTART: 'combined-coverage-restart-test',
   COVERAGE_INSIGHTS: 'coverage-insights-test',
   COVERAGE_INSIGHTS_OFF: 'coverage-insights-off-test',
-  // Deliberately does not contain "projects" (case-insensitive substring) — the
-  // sidebar's static "Projects" nav link is matched with getByRole('link', {
-  // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches
-  // accessible names by substring and would pick up a project literally named
-  // "...projects...", causing a strict-mode violation in unrelated tests.
   DASHBOARD_OVERVIEW: 'dashboard-overview-test',
   DASHBOARD_PERF: 'dashboard-perf-tracking',
   DASHBOARDS_OPEN: 'saved-dashboards-open',
@@ -138,6 +133,7 @@ export const PROJECT = {
   LATEST_EXECUTION_LINE: 'latest-execution-line-test',
   LATEST_RUN_TEST: 'latest-run-test',
   LIST_VISIBLE: 'list-visible-project',
+  LIVE_RUN_LISTS: 'live-run-lists-test',
   LIVE_VIEW_OFF: 'live-view-off-test',
   LIVE_VIEW_ON: 'live-view-on-test',
   LIVE_VIEW_READINESS: 'live-view-readiness-test',
@@ -230,6 +226,8 @@ export const PROJECT = {
   URL_PATTERNS_GOTO: 'url-patterns-goto-test',
   URL_PATTERNS: 'url-patterns-test',
   USER_PROJECT_ROLES: 'user-project-roles-test',
+  VIDEO_ACTIONS: 'video-actions-test',
+  VIDEO_REVIEW_FIT: 'video-review-fit-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

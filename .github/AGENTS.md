@@ -51,11 +51,13 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
   does not redirect when the repository is renamed.
-- **A release becomes GitHub's latest only once its installers are attached.** The desktop updater reads its manifests
-  from `releases/latest/download/`, and the download links open `releases/latest`. `release-please.yml` marks the
-  previous release the latest again as soon as it creates one, and the `latest` job of `reusable-publish-desktop.yml`
-  marks the new one once every leg has uploaded, when its tag is the newest. tauri-action gets the release's id, never
-  its tag: given a tag, it rewrites the release's name and empties its body.
+- **A release becomes GitHub's latest only once the desktop app's installers are attached.** Both apps' updaters read
+  their manifests from `releases/latest/download/`, and the download links open `releases/latest`.
+  `release-please.yml` marks the previous release the latest again as soon as it creates one, and the `latest` job of
+  `reusable-publish-desktop.yml` marks the new one once every desktop leg has uploaded, when its tag is the newest.
+  Piwi Runner's legs (`reusable-publish-runner.yml`) and its `latest-runner.json` hold nothing back: a failed Runner leg
+  leaves the latest release without that package until it is re-run. tauri-action gets the release's id, never its
+  tag: given a tag, it rewrites the release's name and empties its body.
 - **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path is longer than 259
   characters, so `ci.yml`'s `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. The
   usual cause is a dependency installed in two versions, one nested under the other.

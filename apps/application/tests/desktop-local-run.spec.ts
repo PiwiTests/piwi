@@ -279,7 +279,9 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Run this test · by title · ×20 until a failure · trace', exact: true })
+      .click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Running 0/1…' })).toBeVisible();
 
@@ -299,7 +301,7 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // Leave the run page entirely — the store, not the page, owns the run.
-    await page.getByRole('link', { name: 'Projects' }).first().click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).first().click();
     await expect(page).toHaveURL(/\/projects/);
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();
@@ -419,7 +421,7 @@ test.describe('Desktop local run', () => {
     const output = outputPage.getByRole('region', { name: 'Run output' });
     await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect(output.getByRole('heading', { name: `1 failed test of run #${runId}` })).toBeVisible();
-    await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Dashboard`);
+    await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Desktop`);
 
     // Lines keep arriving in the window, and the run stops from it.
     await page.evaluate(() => window.__piwiFakeTauri.emitLine('  \u001b[32m1 passed\u001b[39m (2.0s)'));
@@ -488,8 +490,11 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     const defaults = page.locator('[data-shot="local-folder-run-defaults"]');
-    await defaults.getByRole('switch').click();
-    await expect(defaults.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    const trace = defaults.getByRole('switch', { name: 'Trace' });
+    await trace.click();
+    await expect(trace).toHaveAttribute('aria-checked', 'true');
+    // A run that does not repeat has nothing to stop at: its switch waits for a repeat count.
+    await expect(defaults.getByRole('switch', { name: 'Stop at the first failing repetition' })).toBeDisabled();
 
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -602,7 +607,7 @@ test.describe('Desktop local run', () => {
     expect(res.ok()).toBeTruthy();
     const { runId: testRunId } = await res.json();
 
-    await expect(tray(page).getByRole('link', { name: `Live in Piwi — Run #${testRunId}` })).toBeVisible({
+    await expect(tray(page).getByRole('link', { name: `Open run #${testRunId}` })).toBeVisible({
       timeout: 15000,
     });
     // The run it produced compares with the run its tests come from.
@@ -620,7 +625,9 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Run this test · by title · ×20 until a failure · trace', exact: true })
+      .click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
 
     const invocations = await runInvocations(page);
@@ -631,6 +638,7 @@ test.describe('Desktop local run', () => {
       '--trace=on',
       '--repeat-each=20',
       '--retries=0',
+      '--max-failures=1',
     ]);
 
     // The preset stays out of the project's saved defaults.
@@ -673,10 +681,25 @@ test.describe('Desktop local run', () => {
     await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
+    await page.getByRole('button', { name: 'Run this test · by title · ×20 until a failure', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
-    const invocations = await runInvocations(page);
-    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
+    let invocations = await runInvocations(page);
+    expect(invocations[0]!.args!.args).toEqual([
+      '--grep',
+      'checkout completes',
+      '--repeat-each=20',
+      '--retries=0',
+      '--max-failures=1',
+    ]);
+
+    // Without stopping at the first failing repetition, the run repeats every time.
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Stop at the first failing repetition' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
+    invocations = await runInvocations(page);
+    expect(invocations[1]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
   });
 
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {

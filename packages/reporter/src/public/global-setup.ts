@@ -1,6 +1,6 @@
 import { errorMessage } from '../internal/support/errors.js';
 import type { PiwiDashboardOptions } from './options.js';
-import { resolveOptions } from '../internal/config/env.js';
+import { resolveOptions, usedDesktopToken } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
@@ -20,6 +20,7 @@ import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
 import { isPiwiReporterModule } from '../internal/support/reporter-entry.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { relayRunLog } from '../internal/support/run-log.js';
+import { announceLiveRun } from '../internal/support/ci-output.js';
 
 /** Whether this process relays its workers' lines to the run's log already. */
 let relaying = false;
@@ -105,7 +106,13 @@ export function createGlobalSetup(
       return;
     }
 
-    const httpClient = new HttpClient(opts.serverUrl, logger);
+    const httpClient = new HttpClient(
+      opts.serverUrl,
+      logger,
+      undefined,
+      undefined,
+      usedDesktopToken() ? (opts.apiKey ?? null) : null,
+    );
     // The run registered here is the one the reporter streams into. A run sent in one batch at its end creates its
     // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
     const registers = opts.streaming !== false;
@@ -235,7 +242,7 @@ async function registerRun(
     runUrl,
   });
   // The run is on the dashboard from now on, through a long global setup too.
-  logger.info(`View live progress: ${runUrl}`);
+  announceLiveRun(runUrl, logger);
   // A CI run's workers say in its log when their live view is lost and when it is back, outside any test's output;
   // without the relay's file the run goes on without those lines.
   if (isLiveViewKey(liveViewKey) && detectCi(process.env) && !relaying) {

@@ -174,6 +174,20 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
   (`shared/snapshot-picker-extras.ts`) applies in the frame. That script is serialized, so both name each marker: a
   new marker goes in both, and in `tests/dom-snapshot-state.spec.ts`.
 - **A password field's value is always masked** (`PASSWORD_MASK`); every other field value is shown.
+- **No rendered snapshot keeps a script**: a script's body and source, an inline handler and a `javascript:` or
+  `vbscript:` URL in an attribute that holds a URL (`holdsScriptUrl`; any other attribute is text) are dropped by
+  `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the page through
+  `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
+- **Nothing the snapshot holds is written where the browser would read it as markup**: a style's text is raw only in
+  HTML (escaped inside `svg`/`math`), an element whose content is text (`TEXT_ELEMENTS`) keeps its escaped text alone,
+  attribute values escape `<` and `>`, and a doctype is a plain name. `stripNetworkReferences` also leaves no
+  `http-equiv` anywhere (`tests/unit/dom-snapshot.test.ts`, `tests/unit/snapshot-picker-script.test.ts`).
+- **What reads a snapshot's CSS or markup runs in linear time**: `url(...)` and `@import` are read by
+  `shared/css-urls.ts`, never a pattern that scans on at each start, and a pattern for tags reads the markup between
+  style elements alone (`editMarkup`), never a style's text (`tests/unit/css-urls.test.ts`, `tests/unit/dom-snapshot.test.ts`).
+- **A render counts what it costs as it goes**: `renderSnapshotHtml` gives up past `MAX_RENDER_NODES` visited,
+  `MAX_RENDER_REFERENCES` followed or `MAX_RENDER_CHARS` written, since references can name the same nodes again and
+  again; a new piece of output goes through its `write` (`tests/unit/dom-snapshot.test.ts`).
 - **`restoreSnapshotState` runs first in every frame document** (picker and read-only), before anything installs over
   the page, and moves no keyboard focus out of the dashboard.
 - **The reporter's focus, hover and selection apply to the failure-time snapshot only** (`atFailure`,
@@ -192,6 +206,10 @@ message, a page's text), which must never make it run a command, read a file or 
   `ai-claude-cli.ts`): a CLI without them is refused; `--max-turns` is a print-mode option `--help` does not list. An
   assistant turn adds only the turn's MCP endpoint (in an `--mcp-config` file, so its token stays off the command line)
   and its tools.
+- **Claude Code's sign-in is its own, and a Claude subscription runs only in the desktop app** (Anthropic's terms for
+  Claude Code): Piwi never starts a sign-in or sign-out, never reads a credential, and passes every sign-in variable
+  through (`cliEnv`); outside the desktop app `usesApiCredentials` must hold (an API key, a gateway token or a cloud
+  provider), or `assertReady` refuses the call. `tests/unit/ai-claude-cli.test.ts` checks both.
 - **Codex runs isolated** (`ai-codex-cli.ts`): every invocation has a private home and working directory, a file-backed
   ChatGPT login snapshot, an allowlisted environment (`codexCliEnv`), disabled feature flags and model metadata with no
   built-in execution or filesystem tools. An assistant turn configures only its `piwi` MCP server and allowed tools.
@@ -219,13 +237,17 @@ The desktop build's server is the hub of the Playwright runs its shell starts (`
 runs (`@piwitests/editor/run-host`), plus these:
 
 - **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
-  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`; this server only wires their callbacks.
-  What the desktop needs that they lack is an option of theirs (`declines`, `host`, `token`, `words`, `RunHub.join`),
-  added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
+  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by the editor's `ShellRuns`, which
+  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs, the agents' tools and
+  Inspect, through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`, `sendToWindow`),
+  and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call `@piwitests/editor/shell-runs-routes`.
+  What the desktop needs that they lack is an option or a hook of theirs that names no app feature (`declines`,
+  `host`, `token`, `words`, `RunHub.join`), added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
   (a real run through the built reporter) drive the wiring.
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
-  `Host`, extension `Origin`, limits and closed command set; the window reaches the same hub as a joined peer through
-  `/api/desktop/runs/*`, behind the desktop guard. None of the routes is an open route (`isOpenDesktopRoute`).
+  `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
+  the window reaches the same hub as a joined peer through `/api/desktop/runs/*`, behind the desktop guard. None of the
+  routes is an open route (`isOpenDesktopRoute`).
 - **The window's stream counts what the window has not read.** `runs/events.get.ts` writes to the response itself, its
   sink's `buffered()` being `res.writableLength`, so a frame waits past 1 MB unread and the stream is cut past 32 MB, as
   the hub does with a WebSocket; a `ReadableStream` handed to h3 counts nothing (`desktop-runs-events.test.ts`).
@@ -235,17 +257,34 @@ runs (`@piwitests/editor/run-host`), plus these:
   say or of the token check. These streams hand h3 a `ReadableStream`, so they count nothing unread, unlike
   `runs/events.get.ts` (`desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
-  (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
+  (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel. So does the editor's
+  run channel it names for a job in a throwaway checkout (`editor`, `desktop-editor-hub.ts`): never in a window's
+  stream (`desktop-runs.test.ts`, "names an editor’s channel to the shell alone").
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
   its disk text, and refused once the file was written since the run's first connection opened.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
-  **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref
-  ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab
-  job, and a run with `--repeat-each` above 1 or `--ui`.
+  **Hold failures** switch is on) or whose Hold failures Piwi Picker or an agent turned on, and never in a run nobody
+  attends: its ref ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a
+  bisect, a lab job, a run with `--ui`, and one with `--repeat-each` above 1 unless it stops at its first failure.
+- **Inspect reads a lane's trace from the file its worker named to the hub alone, checked (`RunSessions.laneTrace`),
+  and no path reaches a window.** `desktop-inspect.ts` reads that folder's attempt files and `resources/`, never through
+  a link (each folder's real path checked again as each file opens, which opens without waiting on a pipe), into
+  `RunInspect` with the reporter's secret removal (what every frame's secret fields held, learned from each snapshot as
+  it is read, before any is let go) and resource allow list, served by `snapshotFrameDocument`; nothing is kept past
+  the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`). Its event and command are the app's
+  (`shared/desktop-runs.ts`); Piwi Runner's host has no Inspect.
+- **An agent's run starts only in the main window, as a person's run of a spec of a linked folder.** `ShellRuns`
+  checks the spec and builds what the run is (`ShellRunStart`), `desktop-agent-runs.ts` hands it to the windows on the
+  desktop event stream (`agent-run`) and waits for the ref the window answers, refusing at once with no window open;
+  the window's tray starts it through the shell (`plugins/desktop-agent-runs.client.ts`). `tests/unit/desktop-runs.test.ts`.
+- **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
+  editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
+  it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)
+  (`tests/unit/desktop-editor-runs.test.ts`).
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
-  copy (`pick`), and a pick on the image answers that it goes there (`DesktopRunSessions`). The guard takes that token
+  copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).

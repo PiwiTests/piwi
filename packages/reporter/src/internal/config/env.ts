@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
-import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
 import { applyRequestedRunEnv, namesRequestedRun, readRequestedRun } from './requested-run.js';
@@ -53,6 +53,7 @@ const DEFAULTS: PiwiDashboardOptions = {
 export const PIWI_ENV_KEYS = {
   serverUrl: 'PIWI_DASHBOARD_URL',
   desktopApp: 'PIWI_DESKTOP_APP',
+  desktopKey: 'PIWI_DESKTOP_KEY',
   projectName: 'PIWI_PROJECT_NAME',
   verbose: 'PIWI_VERBOSE',
   apiKey: 'PIWI_API_KEY',
@@ -192,6 +193,13 @@ export function originEnv(kind: string, ref?: string | number): Record<string, s
 export const PIWI_SHARD_ENV = 'PIWI_SHARD';
 
 /**
+ * The pass reuse plan a run executes, set by `piwi run --plan` / `--reuse` on
+ * the Playwright process: the reporter records it as `metadata.piwiPlan`, and
+ * the dashboard records the tests the plan skipped as the run's reused results.
+ */
+export const PIWI_PLAN_ENV = 'PIWI_PLAN';
+
+/**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
  * capture fixtures run in probe mode. Not options — the probe CLI writes them and
  * the probe module reads them directly:
@@ -242,6 +250,20 @@ export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
  * starts (`internal/support/stop-notes.ts`). Not an option.
  */
 export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
+
+/**
+ * `PIWI_SHARE_LIVE=1` shares a run outside CI that no editor or app follows (no run channel) live from its start, the
+ * person's own choice for that run, set where they start it: never an option a config file sets for everyone. The
+ * reporter sets it to `true` for the workers, which open their live view stream at once, or removes it. Not an option.
+ */
+export const PIWI_SHARE_LIVE_ENV = 'PIWI_SHARE_LIVE';
+
+/**
+ * The terminal's own integrations of a run outside CI (`internal/support/terminal.ts`): `off` turns off the link around
+ * the run's page and the run's progress in the terminal's tab or taskbar, `on` shows the progress in any terminal.
+ * Not an option.
+ */
+export const PIWI_TERMINAL_PROGRESS_ENV = 'PIWI_TERMINAL_PROGRESS';
 
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
@@ -364,6 +386,7 @@ export function desktopAppMode(option: unknown, envValue: string | undefined): D
 }
 
 let desktopDiscovered = false;
+let desktopTokenHeld = false;
 let requestedRunInstance: string | null = null;
 let requestedRunError: string | null = null;
 let desktopReplacedServerUrl: string | null = null;
@@ -389,6 +412,15 @@ export function ignoredEnvValues(): readonly IgnoredEnvValue[] {
  */
 export function usedDesktopDiscovery(): boolean {
   return desktopDiscovered;
+}
+
+/**
+ * Whether the API key of the last `resolveOptions` call is the desktop app's token: the discovery file gave it, or
+ * the run was started by the app, which sets `PIWI_DESKTOP_KEY=1` beside its `PIWI_API_KEY`. The reporter sends such
+ * a key only to a server that proved it holds the token.
+ */
+export function usedDesktopToken(): boolean {
+  return desktopTokenHeld;
 }
 
 /**
@@ -483,6 +515,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   // an explicit config, a `.env` value or a CI secret is never redirected;
   // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
+  desktopTokenHeld = false;
   desktopReplacedServerUrl = null;
   // Over everything else: a run a team instance asked for goes to that instance, with its request token alone.
   const requested = readRequestedRun(env);
@@ -505,6 +538,16 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
       desktopDiscovered = true;
     }
   }
+  // A key equal to the token in the discovery file is the app's, wherever it was set: it is held to the proof too,
+  // also when the pid in the file is gone, since something else may hold the port by then.
+  desktopTokenHeld =
+    desktopDiscovered ||
+    (env[PIWI_ENV_KEYS.desktopKey] === '1' &&
+      !!env[PIWI_ENV_KEYS.apiKey] &&
+      mergedRaw.apiKey === env[PIWI_ENV_KEYS.apiKey]) ||
+    (typeof mergedRaw.apiKey === 'string' &&
+      mergedRaw.apiKey !== '' &&
+      readDesktopToken(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) === mergedRaw.apiKey);
 
   // Coverage is nested, so each of its variables fills the member the options leave unset.
   type CoverageOptions = NonNullable<PiwiDashboardOptions['coverage']>;
@@ -531,6 +574,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   if (Object.keys(externalId).length > 0) mergedRaw.externalId = externalId;
 
   if (requested && 'instance' in requested) {
+    desktopTokenHeld = false;
     mergedRaw.serverUrl = requested.instance;
     mergedRaw.apiKey = requested.token;
     mergedRaw.username = null;

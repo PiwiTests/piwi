@@ -1,4 +1,4 @@
-# Piwi Dashboard — Desktop app
+# Piwi Desktop
 
 A [Tauri](https://tauri.app) shell that bundles the **same** Nuxt/Nitro server
 shipped as the Docker image and `@piwitests/server`, and runs it locally. No
@@ -18,7 +18,7 @@ channel, so a per-user install pulls a per-user update.
    (`serverPort` in the app's `settings.json`, 3000 by default; a free port
    when that one is taken), resolves a per-user data
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
-   sidecar** (`src-tauri/binaries/node-<triple>` running
+   sidecar** (`src-tauri/binaries/piwi-desktop-node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
    compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
    other versions' folders are deleted in the background). The retention the
@@ -29,14 +29,15 @@ channel, so a per-user install pulls a per-user update.
    answers the probe's fresh challenge with the proof of the desktop token
    (`X-Piwi-Desktop-Proof`), so another process that took the port never
    receives the token, then points the window
-   at the server via a one-time token bootstrap (`/__piwi/session`). The
+   at the server via a single-use session code (`/__piwi/session?code=…`). The
    window may only navigate to its bundled pages and that server's exact origin,
    and the app's IPC commands are granted to that origin alone
    (`src-tauri/runtime-capabilities/remote.json`, added at startup for the port).
    The splash says when the server takes longer than a minute and keeps waiting;
    it says the server stopped once the supervisor, which restarts a crashed server
-   with a backoff, gives up. The dashboard shows the restarts as a toast
-   (`server-status` events).
+   with a backoff, gives up. While the server restarts, the window shows the
+   splash with that status and the other windows close; the dashboard loads again
+   once the new process proves it holds the token.
 3. The tray offers **Run in background** (keep serving after the window closes;
    on macOS a click on the Dock icon brings the window back), **Start on login**,
    **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
@@ -46,7 +47,11 @@ channel, so a per-user install pulls a per-user update.
    by `watch_local_runs`). A Stop goes to the dashboard window as
    `piwi:tray-stop`, which stops the run as its own Stop does (`stopRun`, so a
    run of several steps ends as stopped); a process no window run owns is
-   stopped by the shell directly.
+   stopped by the shell directly. While a test of the app's runs waits at a
+   stop for the person, **Show the stopped test** comes first in the menu
+   (`refresh_tray_stop`, from the `waiting` count the dashboard sends with its
+   progress): it brings the window up and goes to it as `piwi:tray-show-stop`,
+   which opens the Local runs tray on the first test that waits.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
@@ -63,7 +68,7 @@ channel, so a per-user install pulls a per-user update.
    the server's hub WebSocket, with the desktop token) can follow, pause,
    step and watch it (`apps/application/server/utils/desktop-runs.ts`), the
    window in its Local runs tray. A run nobody attends (Flake Lab, a bisect,
-   a lab job, a run repeating its tests or in UI mode) is named apart
+   a lab job, a run in UI mode or repeating its tests past a failure) is named apart
    (`-unattended`), and its failures never wait. The locators the tests pick
    go back to the server (`PIWI_EDITOR_SEND`, with a token that opens that
    route alone), which shows them in the window to copy.
@@ -156,12 +161,14 @@ channel, so a per-user install pulls a per-user update.
     none. A link that launched the app (its one argument on Windows and Linux)
     or came while the server started waits in `LinkedPage` and reaches the
     session bootstrap as `to`, which redirects to it once `desktopPagePath`
-    accepts it. One that comes while the dashboard page loads waits until the
-    page listens and takes it (`desktop_take_linked_page`); after that, a link
-    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
-    its link to the running app through single-instance's `deep-link` feature.
-    Only the `open` host is read, so a link shows a page and never acts, and a
-    launch whose first argument is a link acts on no other argument
+    accepts it. One that comes while the dashboard page loads, or after the
+    server exits (`SessionWindows::hold_links`), waits until the page listens
+    and takes it (`desktop_take_linked_page`), the restarted session's page
+    included; while the session is not live, no page takes it. After that, a
+    link goes to the window as `piwi:open-page` (`open_links`). A second launch
+    hands its link to the running app through single-instance's `deep-link`
+    feature. Only the `open` host is read, so a link shows a page and never
+    acts, and a launch whose first argument is a link acts on no other argument
     (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
     it can split.
 
@@ -323,6 +330,14 @@ keeps the previous release the latest when it creates one, and the `latest` job 
 a release builds, or when one of its legs failed, the app keeps finding the
 previous release and its complete manifests.
 
+**Piwi Runner** updates from a manifest of its own, `latest-runner.json`, in the
+same release. One manifest serves every Runner install, since the updater looks
+for `{os}-{arch}-{installer}` before `{os}-{arch}`: the `manifest` job of
+`reusable-publish-runner.yml` writes an entry per package from the signatures the
+legs uploaded (`apps/runner/scripts/update-manifest.mjs`). Runner's build merges
+`runner.updater.conf.json`, which holds the same public key, and its tray's
+**Check for updates…** drives the same plugin (`updates::check_from_tray`).
+
 When a check finds an update, the card asks the shell for the notes of every
 release after the installed version up to the offered one
 (`desktop_get_release_notes`): the shell reads GitHub's public releases API
@@ -348,5 +363,50 @@ updater's pre-exit hook (`updates.rs`) runs the quit cleanup instead
 (`shut_down` in `lib.rs`) and waits for the Node sidecar to be gone — left
 running, it holds the bundled native modules (sharp's libvips DLLs) and the
 installer fails with "Error opening file for writing". Builds up to 0.37 lacked
-that hook, so the NSIS installer also stops a `node.exe` still running from its
+that hook, so the NSIS installer also stops a sidecar still running from its
 install folder (`src-tauri/windows/installer-hooks.nsh`) before copying files.
+
+### From Piwi Dashboard to Piwi Desktop
+
+Releases up to 0.68 were installed as **Piwi Dashboard** (`productName`). The
+installed product is **Piwi Desktop**, and every installer upgrades an install
+of the former name, by hand or through its update channel, keeping the app's
+data: the `identifier` (`io.piwitests.dashboard`) is unchanged, and with it the
+app data folder, `settings.json` and the installer's `PIWI_APP_DATA`. The
+keychain service (`DESKTOP_KEYCHAIN_SERVICE`) is a name of its own.
+
+- **`.msi`**: `bundle.windows.wix.upgradeCode` pins the code the bundler derived
+  from the former name (UUIDv5 of `Piwi Dashboard.exe.app.x64`), so the new
+  `.msi` major-upgrades the old one: `Program Files\Piwi Dashboard` is removed
+  and the app installs in `Program Files\Piwi Desktop`.
+- **`.exe`**: the install folder and the uninstall key follow the product name,
+  so once the new files are in, `NSIS_HOOK_POSTINSTALL` (`installer-hooks.nsh`)
+  removes the former per-user install: the files its installer wrote, its
+  uninstall key, its own registry values and its shortcuts, which the updater's
+  `/UPDATE` run makes again under the new name. Its uninstaller is not run, since
+  it would delete the file associations the new install wrote. App data and the
+  start-on-login entry are left for the app. A failed install leaves the former
+  one in place, and one in a folder of the user's choice is replaced by one in
+  `%LOCALAPPDATA%\Piwi Desktop`. The `.exe` does not find a per-machine `.msi`
+  of the former name, as Tauri's installer finds only one of its own name: a
+  user who switches channels by hand uninstalls it from Windows' app list.
+- **`.deb` / `.rpm`**: the package is `piwi-desktop`, which `Conflicts` with and
+  `Replaces` `piwi-dashboard` (`.rpm`: `Obsoletes`), so `dpkg -i`, `apt` and the
+  updater's `dpkg` remove the old package and take over its files
+  (`/usr/bin/piwi-desktop`).
+- **macOS**: the updater replaces the bundle where it is, so an updated install
+  keeps the file name `Piwi Dashboard.app` while its menu bar and Dock show
+  Piwi Desktop; a new `.dmg` install is `Piwi Desktop.app`. The bundle is never
+  renamed while it runs.
+- **AppImage**: the updater replaces the file in place, under its old name. The
+  MCP client configs know an AppImage by either name (`APP_PRODUCTS` in
+  `mcp_clients.rs`).
+- **Start on login**: the autostart plugin names its entry after the product.
+  At startup an installed build moves an entry left under Piwi Dashboard (a
+  Windows `Run` value, a macOS LaunchAgent, a Linux `~/.config/autostart` file)
+  to its own name, pointing at the running executable (`src-tauri/src/login_item.rs`).
+  It turns the new entry on only once the old one is gone, and removes an old
+  entry that is off (a `Run` value disabled in Task Manager) without turning
+  anything on. On macOS an entry is on while its LaunchAgent exists, so one the
+  user switched off in System Settings › Login Items comes back on under the new
+  name.

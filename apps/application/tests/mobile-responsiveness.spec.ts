@@ -222,7 +222,7 @@ test.describe('Mobile responsiveness', () => {
           await page.getByRole('button', { name: 'Show navigation path' }).click();
           await expect(page.getByRole('menuitem', { name: 'Projects' })).toBeVisible();
         } else {
-          await expect(page.getByRole('link', { name: 'Projects' })).toBeVisible();
+          await expect(page.getByRole('link', { name: 'Projects', exact: true })).toBeVisible();
         }
         await expectNoHorizontalOverflow(page, 'run detail breadcrumb');
       });

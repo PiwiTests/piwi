@@ -9,10 +9,19 @@ import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src/host-guard';
 import type * as RunTargetStream from '../src/run-target-stream';
 import { MAX_HUB_BUFFERED } from '../src/run-hub';
-import { resetDesktopRunTarget } from '../src/run-target';
+import { resetDesktopRunTarget, subscribeRunTargetWindow } from '../src/run-target';
+import type { RunTargetMessage } from '../src/run-target-view';
 import { MAX_RUN_TARGET_BODY, serveRunTarget } from '../src/run-target-http';
 import { matchRunTargetRoute, RUN_TARGET_BASE, RUN_TARGET_ROUTES } from '../src/run-target-routes';
-import { answerSession, queryOf, SESSION_PATH, sessionCookieHeader } from '../src/run-target-session';
+import {
+  answerSession,
+  mintSessionCode,
+  queryOf,
+  SESSION_CODE_TTL_MS,
+  SESSION_PATH,
+  sessionCookieHeader,
+  takeSessionCode,
+} from '../src/run-target-session';
 import {
   limitedSend,
   matchStream,
@@ -62,9 +71,12 @@ const REQUEST_ID = 'c'.repeat(32);
 const SHELL = { 'x-piwi-token': TOKEN };
 const BROWSER = { ...SHELL, origin: 'http://127.0.0.1:3000' };
 
-function offer(): RunRequestOffer {
+/** The requests the fake instance offers, by id. */
+let offered = [REQUEST_ID];
+
+function offer(id = REQUEST_ID): RunRequestOffer {
   return {
-    id: REQUEST_ID,
+    id,
     kind: 'run',
     projectId: 3,
     tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: 'chromium' }],
@@ -83,14 +95,16 @@ async function fakeInstance() {
       const url = req.url ?? '';
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [offer()], stops: [] })}\n\n`);
+        res.write(
+          `data: ${JSON.stringify({ type: 'snapshot', requests: offered.map((id) => offer(id)), stops: [] })}\n\n`,
+        );
         streams.push(res);
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (url === '/api/run-targets/requests') res.end(JSON.stringify({ requests: [], stops: [] }));
       else if (url.endsWith('/claim')) {
-        const { expiresAt: _expiresAt, ...request } = offer();
+        const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
       else res.end('{}');
@@ -245,6 +259,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  offered = [REQUEST_ID];
   resetDesktopRunTarget();
   await host.close();
   await instance.close();
@@ -312,6 +327,9 @@ describe('every host of the run-target routes', () => {
     expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: 'secret', links: {} })).status).toBe(
       400,
     );
+    for (const running of ['x', ['x'], Array.from({ length: 201 }, () => REQUEST_ID)]) {
+      expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, running })).status).toBe(400);
+    }
     expect((await host.call('PUT', '/links', SHELL, { links: { x: folder } })).status).toBe(400);
     expect((await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'yes' })).status).toBe(400);
     for (const call of ROUTE_CALLS.filter((c) => c.route.includes(REQUEST_ID))) {
@@ -380,7 +398,7 @@ describe('every host of the run-target routes', () => {
 
   test('answers launch once, after Run, and keeps the shell’s answers out of caches', async () => {
     const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
-    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true } });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [] } });
     await until(async () => {
       const status = await host.call('GET', '', SHELL);
       return ((status.body?.requests ?? []) as unknown[]).length === 1;
@@ -407,20 +425,149 @@ describe('every host of the run-target routes', () => {
   });
 });
 
+describe('the end of a requested run', () => {
+  const ENDED_ID = 'f'.repeat(32);
+
+  test('answers 404 for a run this server does not hold, so the shell keeps its end', async () => {
+    expect(await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 0 })).toEqual({
+      status: 404,
+      noStore: true,
+      body: { message: 'This server holds no run of this request' },
+    });
+  });
+
+  test('takes an end the shell hands with the key, once, and names it back', async () => {
+    const ended = [{ id: ENDED_ID, code: 1, stopped: false }];
+    const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [ENDED_ID] } });
+    expect((await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 1 })).status).toBe(404);
+  });
+
+  test('the shell hands at most 200 ends, each with its request id, exit code and stop', async () => {
+    const one = { id: ENDED_ID, code: 0, stopped: false };
+    for (const ended of [
+      'x',
+      [{ ...one, id: 'x' }],
+      [{ ...one, code: 1.5 }],
+      [{ ...one, code: '0' }],
+      [{ ...one, stopped: 'yes' }],
+      [null],
+      Array.from({ length: 201 }, () => one),
+    ]) {
+      const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+      expect(used.status, JSON.stringify(ended).slice(0, 80)).toBe(400);
+    }
+  });
+});
+
+describe('a request waiting for a folder another run is going in', () => {
+  const OTHER_ID = 'e'.repeat(32);
+  type Asked = { id: string; command: string; runnable: boolean; checks: { id: string }[] };
+  const waiting = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as Asked[];
+  const busy = (asked: Asked | undefined) => !!asked && !asked.runnable && asked.checks.some((c) => c.id === 'busy');
+  /** The window's last word on each request, as the window hears it. */
+  const shown = (heard: RunTargetMessage[], id: string) =>
+    [...heard]
+      .reverse()
+      .find((m) => (m.type === 'run-request' && m.request.id === id) || (m.type === 'run-request-gone' && m.id === id));
+
+  test('is shown runnable again once the requested run there ends', async () => {
+    offered = [REQUEST_ID, OTHER_ID];
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    await until(async () => (await waiting()).length === 2);
+    const first = (await waiting()).find((r) => r.id === REQUEST_ID)!;
+    const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+      decision: 'run',
+      command: first.command,
+    });
+    expect(answered.body).toEqual({ launch: true });
+    await until(async () => busy((await waiting()).find((r) => r.id === OTHER_ID)));
+    expect(shown(heard, OTHER_ID)).toMatchObject({ type: 'run-request', request: { runnable: false } });
+
+    expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(200);
+    await host.call('POST', `/requests/${REQUEST_ID}/started`, SHELL, {});
+    expect((await host.call('POST', `/requests/${OTHER_ID}/plan`, SHELL)).body).toMatchObject({ runnable: false });
+    await host.call('POST', `/requests/${REQUEST_ID}/ended`, SHELL, { code: 0 });
+    await until(async () => (await waiting()).find((r) => r.id === OTHER_ID)?.runnable === true);
+    expect(shown(heard, OTHER_ID)).toMatchObject({ type: 'run-request', request: { runnable: true } });
+  });
+
+  test('is shown runnable again once the person’s own run there ends', async () => {
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    await host.call('PUT', '/key', SHELL, {
+      instance: instance.url,
+      key: KEY,
+      links: { 3: folder },
+      localRuns: [folder],
+    });
+    await until(async () => (await waiting()).length === 1);
+    expect(busy((await waiting())[0])).toBe(true);
+
+    expect(await host.call('PUT', '/local-runs', SHELL, { folders: [] })).toEqual({
+      status: 200,
+      noStore: true,
+      body: { ok: true },
+    });
+    await until(async () => (await waiting())[0]?.runnable === true);
+    expect(shown(heard, REQUEST_ID)).toMatchObject({ type: 'run-request', request: { runnable: true } });
+
+    await host.call('PUT', '/local-runs', SHELL, { folders: [path.join(folder, '.')] });
+    await until(async () => busy((await waiting())[0]));
+    expect(shown(heard, REQUEST_ID)).toMatchObject({ type: 'run-request', request: { runnable: false } });
+  });
+
+  test('the shell names at most 200 folders, each a path', async () => {
+    for (const folders of [undefined, 'x', [''], [5], Array.from({ length: 201 }, () => folder)]) {
+      expect((await host.call('PUT', '/local-runs', SHELL, { folders })).status, JSON.stringify(folders)).toBe(400);
+    }
+    expect(
+      (await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, localRuns: 'x' })).status,
+    ).toBe(400);
+  });
+});
+
 describe('every host of the window session', () => {
   const session = (query: string) => `${SESSION_PATH}${query}`;
+  /** A session code as the shell gets one, over the shell-only route. */
+  const mint = async (): Promise<string> => {
+    const answer = await host.call('POST', '/session-code', SHELL, {});
+    expect(answer.status).toBe(200);
+    return (answer.body as { code: string }).code;
+  };
 
-  test('answers 403 to a token that is missing, wrong or sent twice', async () => {
-    for (const query of ['', '?token=', `?token=${TOKEN}0`, `?token=${TOKEN}&token=${TOKEN}`, `?token[]=${TOKEN}`]) {
+  test('gives a session code to the shell only, and never stores it', async () => {
+    const answer = await host.call('POST', '/session-code', SHELL, {});
+    expect(answer).toMatchObject({ status: 200, noStore: true });
+    expect((answer.body as { code: string }).code).toMatch(/^pds_[0-9a-f]{64}$/);
+    expect((await host.call('POST', '/session-code', BROWSER, {})).status).toBe(403);
+    expect((await host.call('POST', '/session-code', { 'x-piwi-token': 'pd_wrong' }, {})).status).toBe(401);
+    expect((await host.call('POST', '/session-code', {}, {})).status).toBe(401);
+    expect(await mint()).not.toBe(await mint());
+  });
+
+  test('answers 403 to a code that is missing, unknown or sent twice', async () => {
+    const code = await mint();
+    for (const query of ['', '?code=', `?code=${code}0`, `?code=${code}&code=${code}`, `?code[]=${code}`]) {
       const answer = await host.get(session(query));
       expect(answer.status, query).toBe(403);
-      expect(answer.body, query).toEqual({ message: 'Invalid desktop token' });
+      expect(answer.body, query).toEqual({ message: 'Invalid session code' });
       expect(answer.headers['set-cookie'], query).toBeUndefined();
     }
   });
 
-  test('exchanges the token for the cookie and redirects to the home page', async () => {
-    const answer = await host.get(session(`?token=${TOKEN}`));
+  test('opens nothing for the access token on the URL, as `token` or as `code`', async () => {
+    for (const query of [`?token=${TOKEN}`, `?code=${TOKEN}`, `?token=${TOKEN}&code=${TOKEN}`]) {
+      const answer = await host.get(session(query));
+      expect(answer.status, query).toBe(403);
+      expect(answer.headers['set-cookie'], query).toBeUndefined();
+    }
+  });
+
+  test('exchanges the code for the cookie and redirects to the home page', async () => {
+    const answer = await host.get(session(`?code=${await mint()}`));
     expect(answer.status).toBe(302);
     expect(answer.headers.location).toBe('/');
     expect(answer.headers['set-cookie']).toEqual([
@@ -428,9 +575,44 @@ describe('every host of the window session', () => {
     ]);
   });
 
+  test('takes a code once: the second use is refused and sets no cookie', async () => {
+    const code = await mint();
+    expect((await host.get(session(`?code=${code}`))).status).toBe(302);
+    const again = await host.get(session(`?code=${code}`));
+    expect(again.status).toBe(403);
+    expect(again.headers['set-cookie']).toBeUndefined();
+  });
+
+  test('uses up a code that fails, so a refused page does not leave it to try again', async () => {
+    const code = await mint();
+    expect((await host.get(session(`?code=${code}&to=${encodeURIComponent('/日本')}`))).status).toBe(400);
+    expect((await host.get(session(`?code=${code}`))).status).toBe(403);
+  });
+
+  test('refuses a code after its lifetime, and a code before it has run out is still good', () => {
+    const at = 1_000_000;
+    const late = mintSessionCode(at);
+    expect(answerSession({ code: late }, TOKEN, at + SESSION_CODE_TTL_MS)).toEqual({
+      status: 403,
+      message: 'Invalid session code',
+    });
+    expect(answerSession({ code: late }, TOKEN, at)).toEqual({ status: 403, message: 'Invalid session code' });
+    const timely = mintSessionCode(at);
+    expect(answerSession({ code: timely }, TOKEN, at + SESSION_CODE_TTL_MS - 1)).toMatchObject({ status: 302 });
+  });
+
+  test('keeps at most a few codes: a new one past the cap drops the oldest', () => {
+    const codes = Array.from({ length: 9 }, () => mintSessionCode());
+    expect(takeSessionCode(codes[0])).toBe(false);
+    expect(takeSessionCode(codes[8])).toBe(true);
+    expect(takeSessionCode(codes[1])).toBe(true);
+    expect(takeSessionCode(undefined)).toBe(false);
+    expect(takeSessionCode(['x'])).toBe(false);
+  });
+
   test('redirects to the dashboard page `to` names, and to the home page for anything else', async () => {
     const to = async (page: string) =>
-      (await host.get(session(`?token=${TOKEN}&to=${encodeURIComponent(page)}`))).headers.location;
+      (await host.get(session(`?code=${await mint()}&to=${encodeURIComponent(page)}`))).headers.location;
     expect(await to('/projects/3/runs?tab=failed#top')).toBe('/projects/3/runs?tab=failed');
     for (const refused of [
       '//evil.example',
@@ -446,27 +628,30 @@ describe('every host of the window session', () => {
   });
 
   test('answers 400 to a page a Location header cannot hold, and sets no cookie', async () => {
-    for (const page of ['/日本', '/caf\u00e9', '/a\u2028b']) {
-      const answer = await host.get(session(`?token=${TOKEN}&to=${encodeURIComponent(page)}`));
+    for (const page of ['/日本', '/café', '/a b']) {
+      const answer = await host.get(session(`?code=${await mint()}&to=${encodeURIComponent(page)}`));
       expect(answer.status, page).toBe(400);
       expect(answer.body, page).toEqual({ message: 'Invalid page' });
       expect(answer.headers['set-cookie'], page).toBeUndefined();
     }
-    expect(answerSession({ token: TOKEN, to: '/日本' }, TOKEN)).toEqual({ status: 400, message: 'Invalid page' });
+    expect(answerSession({ code: mintSessionCode(), to: '/日本' }, TOKEN)).toEqual({
+      status: 400,
+      message: 'Invalid page',
+    });
   });
 
   test('answers without the guard, and the cookie it sets passes the guard of the streams', async () => {
     expect((await host.get(WINDOW_STREAM_PATH)).status).toBe(401);
-    const set = (await host.get(session(`?token=${TOKEN}`))).headers['set-cookie']![0]!;
+    const set = (await host.get(session(`?code=${await mint()}`))).headers['set-cookie']![0]!;
     const stream = await host.stream(WINDOW_STREAM_PATH, { cookie: set.split(';')[0]! });
     expect(stream.status).toBe(200);
     stream.close();
   });
 
   test('answers 404 on a host without a token, and builds the cookie header as the hosts send it', () => {
-    expect(answerSession({ token: TOKEN }, undefined)).toEqual({ status: 404, message: 'Not found' });
-    expect(answerSession({ token: TOKEN }, '')).toEqual({ status: 404, message: 'Not found' });
-    const answer = answerSession({ token: TOKEN, to: '/runs' }, TOKEN);
+    expect(answerSession({ code: mintSessionCode() }, undefined)).toEqual({ status: 404, message: 'Not found' });
+    expect(answerSession({ code: mintSessionCode() }, '')).toEqual({ status: 404, message: 'Not found' });
+    const answer = answerSession({ code: mintSessionCode(), to: '/runs' }, TOKEN);
     expect(answer).toMatchObject({ status: 302, location: '/runs' });
     if (answer.status !== 302) throw new Error('not signed in');
     expect(sessionCookieHeader({ ...answer.cookie, value: 'a b;c' })).toBe(

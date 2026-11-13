@@ -81,7 +81,7 @@ fn spec_dir_in_repo(root: &Path, spec: &Path) -> Option<String> {
 }
 
 /// Percent-encodes a query value, keeping unreserved characters and `/`.
-fn query_escape(value: &str) -> String {
+pub(crate) fn query_escape(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {
@@ -275,7 +275,7 @@ pub async fn desktop_run_repro(
 
     let listed = app
         .shell()
-        .sidecar("node")
+        .sidecar(crate::NODE_SIDECAR)
         .map_err(|e| e.to_string())?
         .args([
             node_path(&cli),
@@ -316,7 +316,7 @@ pub async fn desktop_run_repro(
         repro_file_filter(&request_id),
     ];
     cmd_args.extend(args);
-    let sidecar = app.shell().sidecar("node").map_err(|e| e.to_string())?;
+    let sidecar = app.shell().sidecar(crate::NODE_SIDECAR).map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();
@@ -353,7 +353,9 @@ pub async fn desktop_run_repro(
         }
     };
     state.label(id, crate::runner::run_label("the bug report", &folder));
+    state.track_folder(id, &folder);
     state.track_child(id, child);
+    crate::run_target::hand_local_runs(&app);
 
     let emit_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -371,15 +373,19 @@ pub async fn desktop_run_repro(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
-                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        runs.forget_child(id);
-                        runs.remove_spec(id);
-                    }
                     let recorded = std::fs::read(&result_file)
                         .ok()
                         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
                     let _ = std::fs::remove_dir_all(&result_dir);
-                    let _ = emit_app.emit(RUN_EVENT, &RunEventPayload::repro(id, recorded));
+                    let verdict = RunEventPayload::repro(id, recorded);
+                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                        runs.keep_verdict(id, verdict.clone());
+                        runs.note_exit(id, status.code);
+                        runs.forget_child(id);
+                        runs.remove_spec(id);
+                    }
+                    crate::run_target::hand_local_runs(&emit_app);
+                    let _ = emit_app.emit(RUN_EVENT, &verdict);
                     RunEventPayload::exit(id, status.code)
                 }
                 _ => continue,

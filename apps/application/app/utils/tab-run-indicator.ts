@@ -8,7 +8,7 @@
  * the page's live counts and writes the result into the document head.
  */
 import { aggregateRunProgress, finishedRunFlash } from './desktop-run-progress';
-import type { StatusPaletteKey } from './status-palette';
+import type { StatusPaletteKey } from '@piwitests/run-ui/status-palette';
 
 export interface TabRunIndicator {
   /** The outcome the badge is painted in (a `--color-status-*` token). */

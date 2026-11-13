@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * **Your runs on my machine**: the person's own run requests, newest first, each with where it stands, the app that
- * holds it and the run it started, which only they see; **Stop** ends one still going on. Shown while **Run on my
- * machine** is on, or while the person has requests to show. Read again every 5 seconds while one goes on.
+ * **Your runs on my machine**: the person's own run requests, newest first, each with where it stands, its project, the
+ * app that holds it and the run it started, which only they see; **Stop** ends one still going on. Shown while **Run on
+ * my machine** is on, or while the person has requests to show. Read again every 5 seconds while one goes on.
  */
 import type { RunRequestView } from '#shared/handlers/run-requests';
 
@@ -68,12 +68,10 @@ function what(request: RunRequestView): string {
     v-if="shown"
     icon="i-lucide-monitor-play"
     title="Your runs on my machine"
+    help="settings.run-requests"
     data-shot="account-run-requests"
+    data-tour="account-run-requests"
   >
-    <p class="text-sm text-muted mb-4">
-      The runs you asked your own apps for, from a run or a test page. Each one reports here, and only you see it.
-    </p>
-
     <LoadingState v-if="!loaded" />
     <div v-else-if="requests.length" class="space-y-2" data-testid="run-requests-list">
       <div
@@ -90,6 +88,7 @@ function what(request: RunRequestView): string {
             <span class="text-sm text-highlighted min-w-0 break-words">{{ runRequestSentence(request) }}</span>
           </div>
           <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
+            <span class="min-w-0 break-words">{{ request.projectName || `Project ${request.projectId}` }}</span>
             <span class="min-w-0 break-words">{{ what(request) }}</span>
             <ClientOnly>
               <span :title="prettyDateFormat(request.createdAt)"

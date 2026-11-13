@@ -8,7 +8,7 @@
 import { eq } from 'drizzle-orm';
 import { projects, testRuns } from '../../database/schema';
 import type { DbClient } from '../../database';
-import { isEligibleRun } from '#shared/run-eligibility';
+import { isEligibleRun, type RunUse } from '#shared/run-eligibility';
 import { runInScope, type ScopedRun, type TrackerRunScope } from '#shared/integrations/automation';
 import { resolveRunBranch } from '../run-branch';
 import { resolveDefaultBranch } from '../scm/default-branch';
@@ -17,7 +17,7 @@ import type { RunMetadata } from '../run-json-types';
 export interface TrackerRun extends ScopedRun {
   id: number;
   projectId: number;
-  /** The run may drive automatic tracker writes. */
+  /** The run may drive the writes of the use it was loaded for. */
   eligible: boolean;
   /** The project's default branch, as resolved for this run. */
   defaultBranch: string | null;
@@ -26,8 +26,8 @@ export interface TrackerRun extends ScopedRun {
   startedAt: number | null;
 }
 
-/** The run's facts, or null when the run is gone. */
-export async function loadTrackerRun(db: DbClient, runId: number): Promise<TrackerRun | null> {
+/** The run's facts, with whether the run may drive the writes of `use`; null when the run is gone. */
+export async function loadTrackerRun(db: DbClient, runId: number, use: RunUse = 'tracker'): Promise<TrackerRun | null> {
   const [run] = await db
     .select({
       id: testRuns.id,
@@ -51,7 +51,7 @@ export async function loadTrackerRun(db: DbClient, runId: number): Promise<Track
   return {
     id: run.id,
     projectId: run.projectId,
-    eligible: isEligibleRun(run, 'tracker'),
+    eligible: isEligibleRun(run, use),
     branch,
     environment: run.environment ?? null,
     isDefaultBranch: branch != null && branch === defaultBranch,

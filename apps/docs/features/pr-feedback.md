@@ -28,6 +28,12 @@ partial run from a developer's machine or the desktop app ([run origin](/referen
   the [uncovered changes](./uncovered-changes) section names. When the run has a
   diff to read, a second status that never fails joins it, `/change-coverage`
   ([what it counts](./uncovered-changes#on-the-pull-request)).
+- **A pending status while a CI run runs**, under the same context: how many of its tests have a result and how many
+  results failed (`Running: 120 of 400 tests, 2 failed`; a retry counts its failed attempt until the run ends), linking
+  the live run, the first as the run reports and then at most once a minute. Bitbucket shows it as in progress. The
+  run's final status replaces it; a run cancelled, deleted, interrupted or with no result to report ends it with an
+  error status that says so. A pending status an instance posted before it restarted is replaced by the run's final
+  status alone.
 
 What the comment says, in this order:
 

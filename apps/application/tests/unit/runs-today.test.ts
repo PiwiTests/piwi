@@ -11,6 +11,7 @@ delete process.env.PIWI_DATABASE_URL;
 const { countRunsLast24h, getRecentTestRuns } = await import('../../shared/handlers/test-runs');
 const { runOrigin } = await import('../../shared/run-eligibility');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { SOLE_USER } = await import('../../shared/own-runs');
 
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.now();
@@ -51,20 +52,28 @@ beforeAll(async () => {
 describe("home's runs today", () => {
   test('counts every run of the last 24 hours, past the 30 the recent list holds, lab runs left out', async () => {
     expect((await getRecentTestRuns(db as never)).length).toBe(30);
-    const counts = await countRunsLast24h(db as never, 'all', NOW);
+    const counts = await countRunsLast24h(db as never, 'all', null, NOW);
     expect(runsInFilters(counts, { environments: [], fullRunsOnly: false })).toBe(45);
   });
 
   test("follows home's filters", async () => {
-    const counts = await countRunsLast24h(db as never, 'all', NOW);
+    const counts = await countRunsLast24h(db as never, 'all', null, NOW);
     expect(runsInFilters(counts, { environments: [], fullRunsOnly: true })).toBe(42);
     expect(runsInFilters(counts, { environments: ['production'], fullRunsOnly: false })).toBe(5);
     expect(runsInFilters(counts, { environments: ['production'], fullRunsOnly: true })).toBe(2);
   });
 
   test('counts only the projects the viewer may read', async () => {
-    const counts = await countRunsLast24h(db as never, new Set([2]), NOW);
+    const counts = await countRunsLast24h(db as never, new Set([2]), null, NOW);
     expect(runsInFilters(counts, { environments: [], fullRunsOnly: false })).toBe(2);
-    expect(await countRunsLast24h(db as never, new Set(), NOW)).toEqual([]);
+    expect(await countRunsLast24h(db as never, new Set(), null, NOW)).toEqual([]);
+  });
+
+  test('counts the viewer’s own partial runs under "Full runs only", as the recent list shows them', async () => {
+    const counts = await countRunsLast24h(db as never, 'all', SOLE_USER, NOW);
+    expect(runsInFilters(counts, { environments: [], fullRunsOnly: true })).toBe(45);
+    expect(runsInFilters(counts, { environments: ['production'], fullRunsOnly: true })).toBe(5);
+    const others = await countRunsLast24h(db as never, 'all', { authEnabled: true, userId: 7 }, NOW);
+    expect(runsInFilters(others, { environments: [], fullRunsOnly: true })).toBe(42);
   });
 });

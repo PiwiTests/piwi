@@ -36,6 +36,17 @@ class GlueTest {
     }
 
     @Test
+    fun `a project in safe mode says Piwi waits for its trust, wherever the connection shows`() {
+        val view = Glue.statusView(null, null, startProblem = "Node.js 18 is too old", trusted = false)
+        assertEquals("Piwi: waiting for trust", view.text)
+        assertEquals(Glue.WAITING_FOR_TRUST, view.tooltip)
+        assertEquals(Glue.StatusIcon.WARNING, view.icon)
+        assertEquals(Glue.StatusAction.NONE, view.action)
+        assertEquals(Glue.WAITING_FOR_TRUST, Glue.connectionSummary(null, trusted = false))
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null, trusted = true))
+    }
+
+    @Test
     fun `without a Playwright config, says so`() {
         assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null).text)
     }
@@ -94,6 +105,16 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
         assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
+        // A Run tab is named after what it runs: the tests, a chain's included, else the command up to its first option.
+        assertEquals("Piwi: a.spec.ts:3", Glue.runTabName("npx playwright test tests/a.spec.ts:3 --repeat-each=3"))
+        val chain = "npx playwright test tests/a.spec.ts --project=chromium && npx playwright test tests/b.spec.ts --project=firefox"
+        assertEquals("Piwi: a.spec.ts and 1 more", Glue.runTabName(chain))
+        assertEquals("Piwi: piwi flake 12", Glue.runTabName("npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000"))
+        assertEquals("Piwi: piwi flake verify 12", Glue.runTabName("npx @piwitests/reporter flake verify 12"))
+        // A chain is the shell's: the IDE's runner takes none.
+        assertTrue(Glue.chained(chain))
+        assertNull(Glue.playwrightTestArgs(chain))
+        assertFalse(Glue.chained("npx playwright test tests/a.spec.ts"))
     }
 
     @Test
@@ -115,6 +136,29 @@ class GlueTest {
     }
 
     @Test
+    fun `every Code Vision entry of a line is drawn, one slot each, in the service's order`() {
+        fun entry(line: Int, title: String?, status: String? = null) = SummaryLine(line = line, title = title, status = status)
+        val summary = FileSummary(
+            file = entry(0, "3 tests in Piwi · 1 failing"),
+            lines = listOf(
+                entry(9, "✗ locator('#pay') was not found"),
+                entry(9, "Run this test"),
+                entry(9, "Screenshot"),
+                entry(9, "Trace"),
+                entry(4, "passed 44 of 48 runs", status = "failing"),
+                entry(4, "Flaky · Flake Lab"),
+                entry(12, ""),
+            ),
+        )
+        val slots = (0 until Glue.CODE_VISION_SLOTS).map { slot -> Glue.codeVisionSlot(summary, slot).map { it.line to it.title } }
+        assertEquals(listOf(0 to "3 tests in Piwi · 1 failing", 9 to "✗ locator('#pay') was not found", 4 to "Flaky · Flake Lab"), slots[0])
+        assertEquals(listOf(9 to "Run this test"), slots[1])
+        assertEquals(listOf(9 to "Screenshot"), slots[2])
+        assertEquals(listOf(9 to "Trace"), slots[3])
+        assertEquals(emptyList<Pair<Int, String?>>(), slots[4])
+    }
+
+    @Test
     fun `when the instance does not answer, says so and reads it again on a click rather than Connect`() {
         val problem = "Could not reach http://piwi: fetch failed"
         val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "unreachable")))
@@ -131,6 +175,19 @@ class GlueTest {
         assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
         val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
         assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
+    }
+
+    @Test
+    fun `when the desktop app does not prove its token, says to restart it, not that it is unreachable`() {
+        val problem = "The desktop app's token is not sent to http://127.0.0.1:3000: the server there did not prove it holds the token. Restart or update the desktop app."
+        val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "desktop-unproven")))
+        assertEquals(
+            Glue.StatusView("Piwi: restart the desktop app", problem, null, Glue.StatusAction.RETRY, Glue.StatusIcon.WARNING),
+            Glue.statusView(status, null),
+        )
+        // Beside a config with no project, the tool window and the settings page quote the desktop app's problem too.
+        val two = StatusResult(listOf(ContextStatus(root = "/a", problem = "No project.", problemKind = "no-project"), status.contexts!!.single()))
+        assertEquals("Not connected. $problem", Glue.connectionSummary(two))
     }
 
     @Test
@@ -237,20 +294,20 @@ class GlueTest {
         fun live(run: RunInfo?, live: LiveRun?) =
             RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run, failingTests = 3, live = live)))
         val own = Glue.statusView(connected, live(failed, inProgress))
-        assertEquals("Piwi: 4/9 · 1 failing · your run", own.text)
+        assertEquals("Piwi: run #124 · 4/9 · 1 failing · yours", own.text)
         assertEquals(
             "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
                 "Your run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env",
             own.tooltip,
         )
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
-        assertEquals("Piwi: 4/9", other.text)
+        assertEquals("Piwi: run #124 · 4/9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4/9\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.
         val first = Glue.statusView(connected, live(null, inProgress.copy(done = 0, failed = 0)))
-        assertEquals("Piwi: 0/9 · your run", first.text)
+        assertEquals("Piwi: run #124 · 0/9 · yours", first.text)
         assertEquals(
             "No run of Acme on feature/pay yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env",
             first.tooltip,
@@ -514,7 +571,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
         )
         assertEquals(
-            "The picked locator was inserted at the caret: the Piwi editor service is not running in this project.",
+            "The picked locator was inserted at the caret. ${Glue.SERVICE_NOT_RUNNING}",
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
@@ -598,6 +655,57 @@ class GlueTest {
     private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
 
     @Test
+    fun `the running line of a watched slot is marked until its test ends or stops, or its run ends`() {
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Pay' })", specUri, 7)
+        val line = RunningLine("ed-1", 1, 3, call)
+        val lines = Glue.withRunningLine(emptyMap(), line)
+        assertEquals(mapOf(("ed-1" to 1) to line), lines)
+        // A line with no call goes; another slot's stays.
+        val other = RunningLine("ed-1", 0, 2, call.copy(line = 9))
+        assertEquals(mapOf(("ed-1" to 0) to other), Glue.withRunningLine(lines + (("ed-1" to 0) to other), line.copy(call = null)))
+        assertEquals("Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })", Glue.runningLineText(line))
+        assertEquals("Piwi: Worker 2 runs ${"x".repeat(59)}…", Glue.runningLineText(line.copy(call = call.copy(title = "x".repeat(80)))))
+
+        val running = mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest())))
+        assertEquals(listOf(line), Glue.runningLinesShown(lines, running))
+        // The test ended: its worker runs another, or none.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest().copy(id = "t2"))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "between")))))
+        // Another worker took the slot (a retry), the test stopped, or the run ended.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(4, 1, "running", runTest())))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "stopped", runTest(), stopAt(specUri, 7))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest()), ended = true))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, emptyMap()))
+    }
+
+    @Test
+    fun `the Page tab says what the watched slot's page says, each test named before its first line`() {
+        val output = Glue.PageOutput()
+        output.watching("ed-1", 1)
+        fun event(kind: String, text: String? = null, test: String? = "t1", worker: Int = 3) =
+            LaneViewLayer("ed-1", 1, worker, test, "events", event = PageEvent(kind, text))
+        assertEquals(
+            listOf("Worker 2 · checkout › pays", "  Console error: TypeError: x is undefined"),
+            output.layer(event("console", "TypeError: x is undefined"), runTest()),
+        )
+        assertEquals(listOf("  Uncaught error: boom"), output.layer(event("page-error", "boom"), runTest()))
+        // A request's lines and the other layers are not the page's own words.
+        assertEquals(emptyList<String>(), output.layer(event("request-failed"), runTest()))
+        assertEquals(emptyList<String>(), output.layer(LaneViewLayer("ed-1", 1, 3, "t1", "calls"), runTest()))
+        // The next test is named, by its id while the session does not name it yet.
+        assertEquals(listOf("Worker 2 · t2", "  Console error: again"), output.layer(event("console", "again", test = "t2"), runTest()))
+        assertEquals(
+            listOf("  12 more events were not sent: too many at once."),
+            output.layer(LaneViewLayer("ed-1", 1, 3, "t2", "events", event = PageEvent("dropped", count = 12)), null),
+        )
+        // A watch of the same slot keeps going; another slot's names its test again.
+        output.watching("ed-1", 1)
+        assertEquals(listOf("  Console error: still"), output.layer(event("console", "still", test = "t2"), null))
+        output.watching("ed-1", 0)
+        assertEquals("Worker 1 · t2", output.layer(event("console", "other", test = "t2"), null).first())
+    }
+
+    @Test
     fun `a run's session is kept until it ends`() {
         val running = session("ed-1", RunWorker(0, 0, "running", runTest()))
         val stopped = session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))
@@ -626,6 +734,15 @@ class GlueTest {
         assertEquals(true, Glue.runControls(sharing).shareable)
         assertTrue(Glue.canShare(Glue.stopsOf(sharing).single()))
         assertFalse(Glue.canShare(Glue.stopsOf(stopped).single()))
+        // A stop its pause bar shows can bring its window forward, when its reporter does; a headless one cannot.
+        val showing = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4), showsWindow = true)))
+        assertEquals(true, Glue.runControls(showing).browserShowable)
+        assertTrue(Glue.canShowBrowser(Glue.stopsOf(showing).single()))
+        assertFalse(Glue.canShowBrowser(Glue.stopsOf(stopped).single()))
+        val headless = mapOf(
+            "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4, bar = false), showsWindow = true)),
+        )
+        assertFalse(Glue.canShowBrowser(Glue.stopsOf(headless).single()))
         assertEquals(
             "Shared. Join it with: npx playwright cli attach piwi-ed-1-w0",
             Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
@@ -673,6 +790,17 @@ class GlueTest {
         assertEquals("Piwi: shared live · 3 views", Glue.liveStatus(two))
         assertEquals("Piwi: shared live · 1 view", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to shared.copy(live = RunLive(true, null, page, 1))))))
         assertEquals(null, Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready))))
+        // While the project's runs are shared, the status bar says so, with or without a shared run.
+        assertEquals("Piwi: this project's runs shared live", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready)), windowShared = true))
+        assertEquals("Piwi: this project's runs shared live · 2 views", Glue.liveStatus(controls, windowShared = true))
+        assertTrue(
+            Glue.shareLiveWarning(page, window = true)
+                .startsWith(
+                    "Each run this project follows from now on (those you start here, and those of a terminal it follows) is shared until you stop or close the project. While a run is shared on piwi.example.com, ",
+                ),
+        )
+        assertEquals("Dana asks to watch run #77 live.", Glue.askToWatchText("Dana", 77))
+        assertEquals("Dana asks to watch this run live.", Glue.askToWatchText("Dana", null))
         assertEquals(shared.live, Glue.sharedLive(mapOf("ed-1" to shared, "ed-2" to refused)))
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
@@ -683,10 +811,64 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // A failure so far takes the error color, as the hub counts it.
+        assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
+        assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // A test ended at a stop is marked so, not counted as a plain pass.
+        val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
+        assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
+        )
+    }
+
+    @Test
+    fun `the status bar's menu on a share opens the run page, copies its link and stops sharing after asking`() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val shared = RunSession("ed-1", root = "/w/shop", live = RunLive(true, null, page, 2), page = RunPage(78, page))
+        val ready = RunSession("ed-2", live = RunLive(false, null, page, 0))
+        assertEquals(emptyList<Glue.LiveEntry>(), Glue.liveMenu(mapOf("ed-2" to ready), windowShared = false))
+        assertEquals(
+            listOf(
+                Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the Run Page", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the Run Page's Link", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1"),
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-2" to ready), windowShared = false),
+        )
+        // A run shared before its page is known offers Stop Sharing alone.
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1")),
+            Glue.liveMenu(mapOf("ed-1" to shared.copy(live = RunLive(true, null, null, 0))), windowShared = false),
+        )
+        // Several shared runs are each named; the project's runs shared add their own stop.
+        val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
+        assertEquals(
+            listOf(
+                "Open the Page of Run #78", "Copy the Link of Run #78", "Stop Sharing Run #78…",
+                "Open the Page of Run in admin (ed-3)", "Copy the Link of Run in admin (ed-3)", "Stop Sharing Run in admin (ed-3)…",
+                "Stop Sharing This Project's Runs…",
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
+        )
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…")),
+            Glue.liveMenu(emptyMap(), windowShared = true),
+        )
+        // What Stop Sharing asks first.
+        assertEquals(
+            "Stop sharing the run live on piwi.example.com? The 2 views open there end, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(shared.live),
+        )
+        assertEquals(
+            "Stop sharing the run live? Its page there stops showing it live, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(RunLive(true, null, null, 0)),
+        )
+        assertEquals(
+            "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow are not shared.",
+            Glue.stopSharingQuestion(null),
         )
     }
 
@@ -715,7 +897,95 @@ class GlueTest {
         assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
         val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
         assertEquals(stops.single(), stopped.stop)
-        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+        assertEquals("Worker 2 · Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+    }
+
+    @Test
+    fun `what each worker runs now is said by its lane, each run named when several run`() {
+        val one = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5)),
+            RunWorker(0, 0, "running", runTest()),
+            RunWorker(2, 2, "between"),
+        )
+        assertEquals(
+            "Worker 1 · checkout › pays\nWorker 2 · checkout › pays · stopped\nWorker 3 · between tests",
+            Glue.workersNowText(mapOf("ed-1" to one)),
+        )
+        val two = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest())), "ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))
+        assertEquals(
+            "Run in shop (ed-1) · Worker 1 · checkout › pays\nRun in shop (ed-2) · Worker 1 · checkout › pays",
+            Glue.workersNowText(two),
+        )
+        assertNull(Glue.workersNowText(mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest()), ended = true))))
+        // Many workers: the first seven, then how many more; a title's line break as a space.
+        val wrapped = runTest().copy(title = listOf("cart", "adds\na mug"))
+        val many = session("ed-1", *Array(12) { RunWorker(it, it, "running", wrapped) })
+        val listed = Glue.workersNowText(mapOf("ed-1" to many))!!.split("\n")
+        assertEquals(8, listed.size)
+        assertEquals("Worker 1 · cart › adds a mug", listed.first())
+        assertEquals("and 5 more workers", listed.last())
+    }
+
+    @Test
+    fun `who else is on a run, a worker's page and a stop is said, this IDE as you or left out`() {
+        val picker = RunPresence("picker", "Piwi Picker")
+        val desktop = RunPresence("desktop", "the desktop app")
+        val agent = RunPresence("agent", "an agent")
+        val me = RunPresence("editor", "WebStorm", self = true)
+        // The service's JSON reads with Gson: `self` only on this IDE's own entries.
+        val heard = Gson().fromJson(
+            """{"ref":"ed-1","root":"/w","workers":[{"worker":0,"parallelIndex":0,"state":"running","watchers":[{"kind":"editor","name":"WebStorm","self":true}]}],"ended":false,"presence":[{"kind":"picker","name":"Piwi Picker"}]}""",
+            RunSession::class.java,
+        )
+        assertEquals(listOf(picker), heard.presence)
+        assertEquals(listOf(me), heard.workers!!.single().watchers)
+        val run = session("ed-1", RunWorker(0, 0, "running", runTest()))
+        assertNull(Glue.presenceText(run))
+        assertNull(Glue.presenceText(run.copy(presence = listOf(me))))
+        assertEquals("Also open in Piwi Picker", Glue.presenceText(run.copy(presence = listOf(picker))))
+        assertEquals(
+            "Also open in Piwi Picker and the desktop app · An agent follows this run",
+            Glue.presenceText(run.copy(presence = listOf(picker, picker, desktop, agent, me))),
+        )
+        assertEquals("An agent follows this run", Glue.presenceText(run.copy(presence = listOf(agent))))
+        assertEquals(
+            "Run in shop (ed-1): Also open in Piwi Picker\nRun in shop (ed-2): An agent follows this run",
+            Glue.runsPresenceText(
+                mapOf("ed-1" to run.copy(presence = listOf(picker)), "ed-2" to session("ed-2").copy(presence = listOf(agent)), "ed-3" to session("ed-3")),
+            ),
+        )
+        assertEquals("Also open in Piwi Picker", Glue.runsPresenceText(mapOf("ed-1" to run.copy(presence = listOf(picker)))))
+        assertNull(Glue.runsPresenceText(mapOf("ed-1" to run)))
+        // Watchers: this IDE last as you, nothing while it alone watches.
+        assertNull(Glue.watchersText(null))
+        assertNull(Glue.watchersText(listOf(me)))
+        assertEquals("Watched by Piwi Picker and you", Glue.watchersText(listOf(me, picker)))
+        assertEquals("Watched by Piwi Picker, an agent and the desktop app", Glue.watchersText(listOf(picker, agent, desktop)))
+        // The driver: Interact takes a stop from the agent.
+        val stop = stopAt(specUri, 5, bar = false)
+        assertNull(Glue.driverText(stop))
+        assertEquals("You drive this stop", Glue.driverText(stop.copy(driver = me), interact = true))
+        assertEquals("Piwi Picker drives this stop", Glue.driverText(stop.copy(driver = picker), interact = true))
+        assertEquals("An agent drives this stop", Glue.driverText(stop.copy(driver = agent)))
+        assertEquals("An agent drives this stop: your input takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
+        // The Paused Page tab's and the Worker tab's captions.
+        val stopped = RunWorker(5, 1, "stopped", runTest(), stop.copy(by = "agent", driver = agent), takes = listOf("input"), watchers = listOf(picker, me))
+        val sessions = mapOf("ed-1" to session("ed-1", stopped))
+        val shown = Glue.stopsOf(sessions).single()
+        val said = "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6"
+        val present = "An agent drives this stop: your input takes control · Watched by Piwi Picker and you"
+        assertEquals(present, Glue.stopPresence(shown, sessions))
+        assertEquals("$said · $present", Glue.stopCaption(shown, sessions))
+        assertEquals("Worker 2 · $said · $present", Glue.laneShown(sessions["ed-1"], 1, listOf(shown)).caption)
+        // A stop nobody drives and no other tool watches says neither.
+        val alone = mapOf("ed-1" to session("ed-1", RunWorker(5, 1, "stopped", runTest(), stop, watchers = listOf(me))))
+        val quiet = Glue.stopsOf(alone).single()
+        assertNull(Glue.stopPresence(quiet, alone))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", Glue.stopCaption(quiet, alone))
+        // A running worker's tab says who else watches it.
+        val running = session("ed-1", RunWorker(5, 1, "running", runTest(), watchers = listOf(desktop, me)))
+        assertEquals("Worker 2 · Running · checkout › pays · Watched by the desktop app and you", Glue.laneShown(running, 1, emptyList()).caption)
     }
 
     @Test
@@ -728,7 +998,10 @@ class GlueTest {
             "Piwi: pausing… · waits in Click getByRole('button', { name: 'Pay' })",
             Glue.runControlStatus(controls, Glue.stopsOf(sessions)),
         )
-        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting)), Glue.waitingWorkers(sessions))
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting, 0)), Glue.waitingWorkers(sessions))
+        // A worker Playwright started again in its slot is named by the slot, as the worker views name it.
+        val restarted = mapOf("ed-1" to session("ed-1", RunWorker(2, 0, "running", runTest(), pausing = true, waiting = waiting)))
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 2, waiting, 0)), Glue.waitingWorkers(restarted))
         assertEquals(
             "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
             Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
@@ -746,8 +1019,8 @@ class GlueTest {
 
     @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
         // A stop an agent asked for says so.
         assertEquals(
             "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon')",
@@ -755,12 +1028,12 @@ class GlueTest {
         )
         val sessions = mapOf(
             "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
-            "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),
+            "ed-2" to session("ed-2", RunWorker(3, 1, "stopped", runTest(), stopAt(pageUri, 8))),
         )
         val stops = Glue.stopsOf(sessions)
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · Worker 2", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 
@@ -1182,6 +1455,25 @@ class GlueTest {
     }
 
     @Test
+    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch stays on`() {
+        val live = listOf("view", "input", "pick-at")
+        fun at(ref: String, slot: Int, takes: List<String>, line: Int = 7) =
+            Glue.ShownStop(ref, slot + 4, stopAt(specUri, line), runTest(), takes, slot = slot)
+        val shown = "ed-1" to 1
+        // The slot's next stop, the worker Playwright starts in its place included.
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live, 8), watchLive = true))
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live).copy(worker = 11), watchLive = true))
+        // Interact or Watch off, another slot or run, or a stop that takes no input on a live view: off.
+        assertFalse(Glue.keepsInteract(false, shown, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, live), watchLive = false))
+        assertFalse(Glue.keepsInteract(true, null, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 2, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-2", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("view", "pick-at")), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("input")), watchLive = true))
+    }
+
+    @Test
     fun `a new page selects the Paused Page tab unless the Worker tab is selected in a tool window that shows`() {
         assertFalse(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = true))
         assertTrue(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = false))
@@ -1234,7 +1526,26 @@ class GlueTest {
         val stop = Glue.stopsOf(sessions).single()
         assertTrue(stop.terminal)
         assertFalse(stop.runner)
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
+    }
+
+    @Test
+    fun `a job the desktop app runs in a throwaway checkout is none to stop, and says so where it stops`() {
+        val job = RunSession(
+            "desktop-3-at-abc1234def01",
+            null,
+            listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5))),
+            checkout = RunCheckout("abc1234def01"),
+        )
+        val sessions = mapOf("desktop-3-at-abc1234def01" to job)
+        assertFalse(Glue.runControls(sessions).stoppable)
+        val stop = Glue.stopsOf(sessions).single()
+        assertEquals("abc1234def01", stop.checkout)
+        assertEquals(
+            "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · the desktop app's reproduction at commit abc1234, in a throwaway checkout",
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout),
+        )
+        assertNull(Glue.ownRunInProgress(emptyList(), mapOf("desktop-3-at-abc1234def01" to job.copy(progress = RunProgress(done = 1, total = 3, status = "running")))))
     }
 
     @Test
@@ -1246,7 +1557,7 @@ class GlueTest {
         assertTrue(stop.terminal)
         assertTrue(stop.runner)
         assertEquals(
-            "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+            "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
             Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
         )
         // Said of a run the IDE started, it says nothing.
@@ -1568,6 +1879,90 @@ class GlueTest {
     }
 
     @Test
+    fun `a debug request carries the name the dashboard gave the run, and refuses another`() {
+        val named = Glue.parseOpenRequest(debugQuery("ref" to "ed-0123456789abcdef")) as Glue.OpenRequest.File
+        assertEquals("ed-0123456789abcdef", named.debug?.ref)
+        assertEquals("ed-0123456789abcdef", Glue.debugRunArgs("file:///s", "file:///f", 5, named.debug!!).debug?.ref)
+        for (ref in listOf("ed-1", "ed-01234567", "terminal-1-2", "ed-0123456789ABCDEF")) {
+            val refused = Glue.parseOpenRequest(debugQuery("ref" to ref)) as Glue.OpenRequest.Refused
+            assertEquals(ref, "ref must be a run name the dashboard gives", refused.error)
+        }
+    }
+
+    @Test
+    fun `A run another tool asks to stop ends when this IDE started it, else is refused saying where to stop it`() {
+        assertEquals(RunControlResult(ok = true, message = "The IDE stops the run."), Glue.stopRunAnswer(true))
+        assertEquals(
+            RunControlResult(ok = false, message = "The run was not started in this IDE: stop it where it was started."),
+            Glue.stopRunAnswer(false),
+        )
+    }
+
+    @Test
+    fun `Hold failures turns the only live run's over, asks among several, and says who set it when an agent did`() {
+        fun held(ref: String, on: Boolean, ended: Boolean = false) =
+            RunSession(ref = ref, ended = ended, hold = RunHoldFailures(on = on, by = "start"))
+        assertEquals(Glue.HoldTarget.None("No run of this project can hold its failures now."), Glue.holdTarget(emptyMap()))
+        assertEquals(Glue.HoldTarget.One("ed-1", true), Glue.holdTarget(mapOf("ed-1" to held("ed-1", false))))
+        assertEquals(Glue.HoldTarget.One("ed-1", false), Glue.holdTarget(mapOf("ed-1" to held("ed-1", true))))
+        // A run nobody attends has none, and an ended run is not turned over.
+        val unattended = RunSession(ref = "lab-1")
+        assertEquals(
+            Glue.HoldTarget.Choose(listOf("ed-1", "ed-2")),
+            Glue.holdTarget(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true), "lab-1" to unattended, "ed-3" to held("ed-3", true, ended = true))),
+        )
+        assertEquals("Hold failures on: a failed test waits at its line", Glue.holdText(RunHoldFailures(true, "start")))
+        assertEquals("Hold failures off", Glue.holdText(RunHoldFailures(false, "person")))
+        assertEquals("Hold failures on: a failed test waits at its line, as an agent set it", Glue.holdText(RunHoldFailures(true, "agent")))
+        // The action is offered only while a run has one, and says what a click does to the only one.
+        assertEquals(false, Glue.runControls(mapOf("lab-1" to unattended)).holdable)
+        assertEquals("Turn Hold Failures Off", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", true)))))
+        assertEquals("Turn Hold Failures On", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", false)))))
+        val two = Glue.runControls(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true)))
+        assertEquals(true, two.holdable)
+        assertEquals("Turn Hold Failures On or Off", Glue.holdActionText(two))
+        // The chooser names each run apart: its page, else its folder and ref.
+        assertEquals("Run #42", Glue.runLabel(held("ed-1", true).copy(page = RunPage(42, "https://piwi.example/test-runs/42"))))
+        assertEquals("Run in shop (ed-2)", Glue.runLabel(held("ed-2", true).copy(root = "/work/shop")))
+        assertEquals("Run ed-3", Glue.runLabel(held("ed-3", true)))
+    }
+
+    @Test
+    fun `a run in progress names its number, a CI run says so, and the editor's own stays in view from another config`() {
+        val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 0, own = false, ci = true)
+        fun live(vararg contexts: RunStatus) = RunStatusResult(contexts.toList())
+        val ci = Glue.statusView(connected, live(RunStatus(root = "/w", branch = "main", live = inProgress)))
+        assertEquals("Piwi: CI run #124 · 4/9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 is running: 4/9"))
+        // Two configs: the file is in the second, the editor's own run in the first.
+        val two = StatusResult(listOf(connected.contexts!!.single(), connected.contexts!!.single().copy(root = "/w/admin")))
+        val own = inProgress.copy(own = true, ci = false, url = "http://piwi/test-runs/124")
+        val runs = live(RunStatus(root = "/w", live = own), RunStatus(root = "/w/admin"))
+        assertEquals("Piwi: run #124 · 4/9 · yours", Glue.statusView(two, runs, file = "/w/admin/tests/a.spec.ts").text)
+        assertEquals(own, Glue.liveRun(two, runs, "/w/admin/tests/a.spec.ts"))
+        val notOwn = live(RunStatus(root = "/w", live = own.copy(own = false)), RunStatus(root = "/w/admin"))
+        assertEquals(null, Glue.liveRun(two, notOwn, "/w/admin/tests/a.spec.ts"))
+        // A config that is not connected counts none, as its status bar asks to connect.
+        val unconnected = StatusResult(listOf(connected.contexts!!.single().copy(connected = false)))
+        assertEquals(null, Glue.liveRun(unconnected, live(RunStatus(root = "/w", live = own)), "/w/tests/a.spec.ts"))
+        // With one config, its run counts whatever the root it reports.
+        assertEquals(own, Glue.liveRun(connected, live(RunStatus(root = "/elsewhere", live = own)), "/w/tests/a.spec.ts"))
+    }
+
+    @Test
+    fun `the progress names the run's number, and a stop or a share keeps it beside them`() {
+        val page = RunPage(78, "https://piwi.example.com/test-runs/78")
+        val run = RunSession("ed-1", "/w", emptyList(), false, progress = RunProgress(total = 9, done = 3), page = page)
+        assertEquals("Piwi: run #78 · 3 of 9", Glue.runProgressText(mapOf("ed-1" to run)))
+        assertEquals(listOf("ed-1" to page), Glue.runPages(mapOf("ed-1" to run, "ed-2" to run.copy(ref = "ed-2", page = null))))
+        assertEquals(
+            "Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9",
+            Glue.withProgress("Piwi: paused · cart.spec.ts:12", Glue.runProgressText(mapOf("ed-1" to run))),
+        )
+        assertEquals("Piwi: shared live", Glue.withProgress("Piwi: shared live", null))
+    }
+
+    @Test
     fun `a debug request refuses every field it does not take, and a field given twice`() {
         fun refused(query: Map<String, List<String>>) = (Glue.parseOpenRequest(query) as Glue.OpenRequest.Refused).error
         for (line in listOf("0", "-1", "1.5", "1e3", "05", "+5", "five", "99999999999")) {
@@ -1620,6 +2015,35 @@ class GlueTest {
         assertEquals("named.ts is under no Playwright config's folder", refusal("/home/me/shop/scripts/seed.spec.ts", true))
         assertEquals("named.ts is not a spec", refusal("/home/me/shop/e2e/tests/pages/checkout.page.ts", true))
         assertEquals("named.ts is not a JavaScript or TypeScript file", refusal("/home/me/shop/e2e/tests/data.json", false))
+    }
+
+    @Test
+    fun `a spec beside a Rider solution is found and debugged from one list of the project's folders`() {
+        // Rider's project folder is under the solution's .idea; the Playwright config is in a sibling folder, found
+        // through Git (the search roots), and the content roots name the backend alone.
+        val roots = Glue.openRoots(
+            contextRoots = listOf("/home/me/shop/e2e"),
+            configDirs = listOf("/home/me/shop/e2e"),
+            searchRoots = listOf("/home/me/shop"),
+            basePath = "/home/me/shop/backend/.idea/.idea.Shop",
+            contentRoots = listOf("/home/me/shop/backend"),
+        )
+        assertEquals(
+            listOf("/home/me/shop/e2e", "/home/me/shop", "/home/me/shop/backend", "/home/me/shop/backend/.idea/.idea.Shop"),
+            roots,
+        )
+        val spec = "/home/me/shop/e2e/tests/checkout.spec.ts"
+        assertEquals(null, Glue.debugFileRefusal("checkout.spec.ts", spec, roots, listOf("/home/me/shop/e2e"), true))
+        // Within the project's folders, a file still needs a Playwright config's folder above it.
+        assertEquals(
+            "tools.spec.ts is under no Playwright config's folder",
+            Glue.debugFileRefusal("tools.spec.ts", "/home/me/shop/backend/tools.spec.ts", roots, listOf("/home/me/shop/e2e"), true),
+        )
+        // Nothing outside them.
+        assertEquals(
+            "evil.spec.ts is outside the project's folders",
+            Glue.debugFileRefusal("evil.spec.ts", "/home/me/elsewhere/evil.spec.ts", roots, listOf("/home/me/shop/e2e"), true),
+        )
     }
 
     @Test
@@ -1685,6 +2109,72 @@ class GlueTest {
             "Forget https://piwi.corp, the project, and the API key saved for it, and the choice of the desktop app?",
             Glue.disconnectQuestion("https://piwi.corp", "Shop", desktop = true),
         )
+    }
+
+    @Test
+    fun `the status item shows the error's icon while every stop held is a failure`() {
+        val stop = RunStop("pause", "Click", "file:///w/a.spec.ts", 3, 2, null, true, "2026-10-25T10:00:00.000Z")
+        val paused = Glue.ShownStop("ed-1", 0, stop, null)
+        val failed = Glue.ShownStop("ed-1", 1, stop.copy(reason = "failure"), null)
+        assertFalse(Glue.heldFailuresOnly(emptyList()))
+        assertTrue(Glue.heldFailuresOnly(listOf(failed)))
+        assertFalse(Glue.heldFailuresOnly(listOf(failed, paused)))
+    }
+
+    @Test
+    fun `a failing test's tint takes its lines' breaks, so it runs to the editor's edge`() {
+        // "a\nbc\n" (6 characters): the first line ends at 1, the second at 4, the empty last line at 6.
+        assertEquals(2, Glue.lineEndWithBreak(1, 6))
+        assertEquals(5, Glue.lineEndWithBreak(4, 6))
+        assertEquals(6, Glue.lineEndWithBreak(6, 6))
+    }
+
+    @Test
+    fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
+        val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
+        assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
+        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.SETTINGS), down.links)
+        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
+        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
+        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
+        assertEquals(Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT)), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
+        assertEquals(
+            Glue.EmptyText("Piwi is not connected to an instance, so it has no run to show.", listOf(Glue.EmptyLink.CONNECT)),
+            Glue.failuresEmpty(FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show."), null, null),
+        )
+        assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
+        assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
+        assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
+    }
+
+    @Test
+    fun `connect says why it failed in words, a certificate naming its host and where to trust it`() {
+        val pkix = javax.net.ssl.SSLHandshakeException("PKIX path building failed: unable to find valid certification path")
+        val certificate = Glue.connectFailure(java.io.IOException("handshake", pkix), null, "https://piwi.corp:8443")
+        assertTrue(certificate, certificate.startsWith("the IDE does not trust the certificate of piwi.corp."))
+        assertTrue(certificate, certificate.endsWith("Settings → Tools → Server Certificates"))
+        assertFalse(certificate, certificate.contains("PKIX"))
+        assertEquals(
+            "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+            Glue.connectFailure(Exception("the instance answered 404"), 404, "https://example.com"),
+        )
+        assertEquals("the instance refused the key (401)", Glue.connectFailure(Exception(), 401, null))
+        assertEquals("the instance answered 502", Glue.connectFailure(Exception(), 502, null))
+        assertEquals(
+            "nothing answers there. Is the instance running, on that port?",
+            Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
+        )
+        // The JDK's connect timeout carries a ConnectException as its cause.
+        val timeout = java.net.http.HttpConnectTimeoutException("HTTP connect timed out")
+        timeout.initCause(java.net.ConnectException("HTTP connect timed out"))
+        assertEquals("no answer within 10 seconds", Glue.connectFailure(timeout, null, "https://piwi.corp"))
+        // A handshake that fails for another reason than the certificate gives its own message.
+        assertEquals(
+            "Remote host terminated the handshake",
+            Glue.connectFailure(javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake"), null, "https://piwi.corp"),
+        )
+        assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
+        assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
     }
 
     @Test
@@ -1898,20 +2388,6 @@ class GlueTest {
     }
 
     @Test
-    fun `the failing line's tooltip says why, with the message escaped`() {
-        assertEquals(
-            "<html><b>Piwi: failed here</b><br>Timeout waiting for &lt;button&gt;<pre>Error: click\n  - waiting for &lt;button&gt; &amp; more</pre></html>",
-            Glue.failureTooltip("Timeout waiting for <button>", "Error: click\n  - waiting for <button> & more\n"),
-        )
-        assertEquals("<html><b>Piwi: failed here</b><br>Failed</html>", Glue.failureTooltip(null, " "))
-        assertEquals("<html><b>Piwi: failed here</b><br>boom</html>", Glue.failureTooltip("boom", "boom"))
-        assertEquals(
-            "<html><b>Piwi: failed here, edited since the run</b><br>boom</html>",
-            Glue.failureTooltip("boom", null, edited = true),
-        )
-    }
-
-    @Test
     fun `a Rider solution's files are in the folder above its idea folder`() {
         assertEquals("C:/src/Shop", Glue.projectFolder("C:\\src\\Shop\\.idea\\.idea.Shop"))
         assertEquals("/home/me/Shop", Glue.projectFolder("/home/me/Shop/.idea/.idea.Shop.dir/"))
@@ -1938,6 +2414,98 @@ class GlueTest {
             "src/Shop/bin/playwright.config.txt",
         )
         assertEquals(listOf(dir, dir.resolve("apps/web/e2e/tests")), Glue.playwrightConfigDirs(listOf(dir)))
+    }
+
+    @Test
+    fun `reads a Playwright for dotnet reference in any form MSBuild takes`() {
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.Playwright.NUnit" Version="1.49.0" />""",
+            """<PackageReference Version="1.49.0" Include="Microsoft.Playwright"/>""",
+            """<PackageReference Include="Microsoft.Playwright.Xunit.v3" Version="1.55.0" />""",
+            """<PackageReference Include='Microsoft.Playwright.MSTest.v4' />""",
+            """<PackageReference Include="NUnit; Microsoft.Playwright.NUnit" />""",
+            """<PackageReference Condition="${'$'}(X) > 1" Include="Microsoft.Playwright" />""",
+        )) {
+            assertTrue(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.PlaywrightSharp" />""",
+            """<PackageReference Include="NUnit" />""",
+            """<PackageReference Update="Microsoft.Playwright" Version="1.49.0" />""",
+            """<!-- <PackageReference Include="Microsoft.Playwright" /> -->""",
+        )) {
+            assertFalse(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+    }
+
+    @Test
+    fun `the settings page names what overrides its instance, the environment or a dotenv`() {
+        val named = NamedInstance("https://ci.example.com", "environment")
+        val env = ContextStatus(
+            connected = true, serverUrl = "https://ci.example.com", source = "environment", projectName = "Acme", instance = named,
+        )
+        val overriding = Glue.overriding(StatusResult(contexts = listOf(env)), "https://piwi.example.com")
+        assertEquals(Glue.Overriding("https://ci.example.com", "Acme", "the environment (PIWI_DASHBOARD_URL)"), overriding)
+        assertEquals(
+            "Overridden by the environment (PIWI_DASHBOARD_URL): Piwi reads https://ci.example.com, project Acme, not the " +
+                "server URL below.",
+            Glue.overriddenText(overriding!!),
+        )
+        // The same address as the page's overrides nothing.
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(env)), "https://ci.example.com/"))
+        // The desktop app in use: the .env's instance comes before the page's only while the app is not.
+        val desktop = ContextStatus(
+            connected = true, serverUrl = "http://127.0.0.1:3000", source = "desktop", projectName = "Local",
+            instance = NamedInstance("https://team.example.com", "dotenv"),
+        )
+        val behind = Glue.overriding(StatusResult(contexts = listOf(desktop)), "")
+        assertEquals(Glue.Overriding("https://team.example.com", null, "the workspace .env", desktopFirst = true), behind)
+        assertEquals(
+            "The workspace .env names https://team.example.com, which Piwi reads before the server URL below while the " +
+                "desktop app is not in use.",
+            Glue.overriddenText(behind!!),
+        )
+        // With several configs, the one whose environment names it.
+        val settings = ContextStatus(
+            connected = true, serverUrl = "https://piwi.example.com", source = "editor", label = "api",
+            instance = NamedInstance("https://piwi.example.com", "editor"),
+        )
+        val web = ContextStatus(
+            connected = false, serverUrl = "https://ci.example.com", source = "dotenv", label = "web",
+            instance = NamedInstance("https://ci.example.com", "dotenv"),
+        )
+        val several = Glue.overriding(StatusResult(contexts = listOf(settings, web)), "https://piwi.example.com")
+        assertEquals(
+            "Overridden by the workspace .env for web: Piwi reads https://ci.example.com, not the server URL below.",
+            Glue.overriddenText(several!!),
+        )
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(settings)), "https://piwi.example.com"))
+        assertNull(Glue.overriding(null, ""))
+    }
+
+    @Test
+    fun `finds a project referencing Playwright for dotnet where the configs are searched`() {
+        val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.fsproj", "node_modules/x/Other.csproj")
+        assertFalse(Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("node_modules/x/Other.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        assertFalse("a dependency's project is skipped", Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("tests/Shop.E2E/Shop.E2E.fsproj"), """<ItemGroup>
+            <PackageReference Include="Microsoft.Playwright.MSTest" Version="1.49.0" />
+        </ItemGroup>""")
+        assertTrue(Glue.holdsDotnetPlaywright(listOf(dir)))
+        val props = tree("Directory.Build.props")
+        Files.writeString(props.resolve("Directory.Build.props"), """<PackageReference Include="Microsoft.Playwright.NUnit" />""")
+        assertTrue("the props every project imports", Glue.holdsDotnetPlaywright(listOf(props)))
+    }
+
+    @Test
+    fun `searches a solution's repository for its dotnet tests`() {
+        val repo = tree(".git/HEAD", "backend/Shop.sln", "tests/Shop.E2E/Shop.E2E.csproj")
+        Files.writeString(repo.resolve("tests/Shop.E2E/Shop.E2E.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        val backend = repo.resolve("backend")
+        assertEquals(listOf(repo), Glue.searchedFolders(listOf(backend), null))
+        assertTrue(Glue.holdsDotnetPlaywright(Glue.searchedFolders(listOf(backend), null)))
+        assertEquals("the home folder's repository holds other projects", listOf(backend), Glue.searchedFolders(listOf(backend), repo))
     }
 
     @Test
@@ -2186,7 +2754,8 @@ class GlueTest {
         url: String? = null,
         executionId: Int? = null,
         children: List<FailureTreeNode> = emptyList(),
-    ) = FailureTreeNode(key, kind, label, description, startTime, listOf(label), note, icon, expanded, url, executionId, children)
+        tooltip: List<String> = listOf(label),
+    ) = FailureTreeNode(key, kind, label, description, startTime, tooltip, note, icon, expanded, url, executionId, children)
 
     private val loginFailure = WorkspaceFailure(
         uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", headline = "not visible", executionId = 1,
@@ -2241,6 +2810,7 @@ class GlueTest {
                             node(
                                 "failure:1", "failure", "logs in", "failing", description = "tests/login.spec.ts:42 · chromium · new",
                                 url = "http://piwi/test-run-cases/1", executionId = 1,
+                                tooltip = listOf("logs in", "locator('#login') was not found", "Cluster: Login button", "Owner: @qa"),
                             ),
                         ),
                     ),
@@ -2272,6 +2842,12 @@ class GlueTest {
         assertEquals(editedFailure to "edited since your run #124", edited.failure to edited.note)
         assertEquals(loginFailure to null, failing.failure to failing.note)
         assertEquals("tests/login.spec.ts:42 · chromium · new", failing.description)
+        // Each node keeps the service's hover lines, drawn as the tree's tooltip.
+        assertEquals(listOf("logs in", "locator('#login') was not found", "Cluster: Login button", "Owner: @qa"), failing.tooltip)
+        assertEquals(
+            "<html>logs in<br>locator('#login') was not found<br>Cluster: Login button<br>Owner: @qa</html>",
+            Glue.htmlTooltip(failing.tooltip.joinToString("\n")),
+        )
     }
 
     @Test
@@ -2279,6 +2855,35 @@ class GlueTest {
         val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live).single().description)
         assertEquals("4 min ago", Glue.failureNodes(treeFailures, treeNow, live.copy(own = false)).single().description)
+        assertEquals("running 4/9 · 1 failed", Glue.failureNodes(treeFailures, treeNow, live.copy(failed = 1)).single().description)
+    }
+
+    @Test
+    fun `the editor's own run is counted from what its process tells the hub, else from the instance`() {
+        val instance = LiveRun(runId = 125, status = "running", done = 2, total = 9, own = true, ref = "ed-1")
+        val contexts = listOf(RunStatus(root = "/w/shop", live = instance))
+        val told = RunSession("ed-1", root = "/w/shop", progress = RunProgress(total = 9, done = 5, failed = 1))
+        // The hub's count wins over the instance's, which lags behind it.
+        assertEquals(
+            instance.copy(done = 5, failed = 1) to "/w/shop",
+            Glue.ownRunInProgress(contexts, mapOf("ed-1" to told)),
+        )
+        // A reporter that tells nothing: the instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-1" to told.copy(progress = null))))
+        // Another run of the same config is not the instance's run, nor is any run when the instance names none: the
+        // instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-2" to told.copy(ref = "ed-2"))))
+        val unnamed = instance.copy(ref = null)
+        assertEquals(unnamed to "/w/shop", Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = unnamed)), mapOf("ed-1" to told)))
+        // Offline, or with the desktop app hosting the run: the hub's count alone.
+        assertEquals(
+            LiveRun(status = "running", done = 5, total = 9, failed = 1, own = true, ref = "ed-1") to "/w/shop",
+            Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told)),
+        )
+        // A run of a terminal is not the editor's own; one that ended counts no more.
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("t-1" to told.copy(ref = "t-1", terminal = true))))
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told.copy(progress = told.progress!!.copy(status = "failed")))))
+        assertEquals(null, Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = instance.copy(own = false))), emptyMap()))
     }
 
     @Test
@@ -2452,10 +3057,21 @@ class GlueTest {
     fun `a run that fails nothing is an information, and one that touched no failure gives its counts`() {
         val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
         assertEquals(
-            Glue.RunVerdict(false, "Run #124 · 1 of 1 CI failure fixed", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.RunVerdict(
+                false,
+                "Run #124 · 1 of 1 CI failure fixed",
+                listOf("Open the Failures", "Open in Dashboard", "Only on Failure"),
+            ),
             Glue.runVerdict(passing),
         )
+        // Only on Failure is offered while every run says what it changed, and on a run that fails nothing.
+        assertEquals(listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"), Glue.runVerdict(ended)?.actions)
         assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
+        // The skipped that were ended at a stop are named beside them.
+        assertEquals(
+            "Run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)",
+            Glue.runVerdict(passing.copy(fixed = 0, passed = 3, skipped = 2, endedAtStop = 1))?.text,
+        )
         // Without the counts: the titles count.
         assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)
     }
@@ -2497,13 +3113,42 @@ class GlueTest {
     }
 
     @Test
+    fun `every run starts as the person chose, headed and with Hold failures on or off, but a debug run`() {
+        val uri = "file:///w/tests/checkout.spec.ts"
+        val args = RunTestsArgs(uri, listOf(7))
+        assertEquals(args, Glue.withRunStart(args, headed = false, holdFailures = "auto"))
+        assertEquals(args.copy(headed = true), Glue.withRunStart(args, headed = true, holdFailures = "auto"))
+        assertEquals(args.copy(holdFailures = true), Glue.withRunStart(args, headed = false, holdFailures = "on"))
+        assertEquals(args.copy(headed = true, holdFailures = false), Glue.withRunStart(args, headed = true, holdFailures = "off"))
+        // A value outside the choices reads as Auto.
+        assertEquals(args, Glue.withRunStart(args, headed = false, holdFailures = "always"))
+        // A verification takes them too: the service keeps `headed` alone.
+        val verify = RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:3"), repeat = 3)
+        assertEquals(verify.copy(headed = true, holdFailures = true), Glue.withRunStart(verify, headed = true, holdFailures = "on"))
+        val selection = RunSelectionParams(uri, "smoke")
+        assertEquals(selection.copy(headed = true, holdFailures = false), Glue.withRunStart(selection, headed = true, holdFailures = "off"))
+        assertEquals(selection, Glue.withRunStart(selection, headed = false, holdFailures = "auto"))
+        val debug = Glue.debugRunArgs(uri, uri, 4, Glue.DebugRequest(spec = "tests/checkout.spec.ts", title = "pays", project = null, execution = null))
+        assertSame(debug, Glue.withRunStart(debug, headed = true, holdFailures = "off"))
+        // What the service reads: an option left out is no field at all.
+        assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\"}", Gson().toJson(Glue.withRunStart(selection, false, "auto")))
+        assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\",\"headed\":true,\"holdFailures\":false}", Gson().toJson(Glue.withRunStart(selection, true, "off")))
+        assertEquals(listOf("auto", "on", "off"), Glue.HOLD_FAILURES_CHOICES)
+        assertEquals("Off from each run's start", Glue.holdFailuresLabel("off"))
+    }
+
+    @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
-        assertEquals("<html>Piwi: running · passed 4/4</html>", Glue.testResultTooltip("running", "passed 4/4"))
+        assertEquals(
+            "<html>Piwi: running in your run #130 · passed 4 of 4 runs</html>",
+            Glue.testResultTooltip("running in your run #130 · passed 4 of 4 runs"),
+        )
         // The service's text is shown as text, never as markup.
         assertEquals(
-            "<html>Piwi: failing · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
-            Glue.testResultTooltip("failed", "<img src=x onerror=alert(1)> & more"),
+            "<html>Piwi: failing in run #124 · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
+            Glue.testResultTooltip("failing in run #124 · <img src=x onerror=alert(1)> & more"),
         )
+        assertEquals("<html>Piwi</html>", Glue.testResultTooltip(null))
         val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
         val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1))))
         val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
@@ -2706,5 +3351,437 @@ class GlueTest {
         assertEquals(true, "cs" in Glue.SUPPORTED_EXTENSIONS)
         val args = Gson().fromJson("""{"uri":"file:///w/a.cs","testIds":[1,2],"coverage":"server"}""", RunTestsArgs::class.java)
         assertEquals("server", args.coverage)
+    }
+
+    @Test
+    fun theLogWritesEachLineUnderItsTimeAndKeepsTheLatestOnes() {
+        val at = java.time.LocalTime.of(9, 5, 7, 42_000_000)
+        assertEquals(listOf("09:05:07.042 The editor service stopped (exit code 1)."), Glue.logLines(at, "The editor service stopped (exit code 1).\n"))
+        assertEquals(
+            listOf("09:05:07.042 Piwi: boom", "                 at main (server.js:1:1)"),
+            Glue.logLines(at, "Piwi: boom\n    at main (server.js:1:1)\n\n"),
+        )
+        assertEquals(emptyList<String>(), Glue.logLines(at, "\n"))
+        // A stack's frame, written to stderr as a line of its own, continues the line before it.
+        assertEquals(listOf("                 at main (server.js:1:1)"), Glue.logLines(at, "    at main (server.js:1:1)\n"))
+        val buffer = Glue.LogBuffer(max = 3)
+        buffer.add(listOf("a", "b"))
+        buffer.add(listOf("c", "d"))
+        assertEquals(listOf("b", "c", "d"), buffer.lines())
+    }
+
+    @Test
+    fun aFailedRequestOfOneMethodIsWrittenOnceAMinute() {
+        val buffer = Glue.LogBuffer()
+        assertTrue(buffer.writesFailure("piwi/fileSummary", 1_000))
+        assertFalse(buffer.writesFailure("piwi/fileSummary", 1_000 + Glue.LOG_REPEAT_MILLIS - 1))
+        assertTrue(buffer.writesFailure("piwi/status", 2_000))
+        assertTrue(buffer.writesFailure("piwi/fileSummary", 1_000 + Glue.LOG_REPEAT_MILLIS))
+    }
+
+    @Test
+    fun theToolWindowOffersToRestartAServiceThatStoppedAndShowsTheLogOfOneThatCouldNotStart() {
+        assertEquals(Glue.EmptyText(Glue.WAITING_FOR_TRUST), Glue.serviceDownText(trusted = false, startProblem = "no node", stopped = true))
+        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG)), Glue.serviceDownText(true, "no node", stopped = true))
+        assertEquals(
+            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE, Glue.EmptyLink.OPEN_LOG)),
+            Glue.serviceDownText(true, null, stopped = true),
+        )
+        assertEquals(Glue.EmptyText(Glue.NOT_STARTED), Glue.serviceDownText(true, null, stopped = false))
+        assertEquals("Piwi.RestartService", Glue.EmptyLink.RESTART_SERVICE.actionId)
+        assertEquals("Piwi.OpenLog", Glue.EmptyLink.OPEN_LOG.actionId)
+    }
+
+    @Test
+    fun aMessageThatTheServiceDoesNotRunOrAnswerOffersItsFixes() {
+        assertTrue(Glue.offersServiceFixes(Glue.SERVICE_NOT_RUNNING))
+        assertTrue(Glue.offersServiceFixes(Glue.SERVICE_NO_ANSWER))
+        assertFalse(Glue.offersServiceFixes("The run did not take it."))
+        assertTrue(Glue.SERVICE_NOT_RUNNING.endsWith("Tools → Piwi → ${Glue.EmptyLink.RESTART_SERVICE.label}."))
+        assertTrue(Glue.SERVICE_NO_ANSWER.contains("Tools → Piwi → ${Glue.EmptyLink.OPEN_LOG.label}"))
+    }
+
+    private val spec = "file:///work/shop/tests/checkout.spec.ts"
+    private val page = "file:///work/shop/tests/pages/checkout.page.ts"
+
+    private fun ci(runId: Int, ended: Boolean = false, summary: String = "1 of 4 tests · 1 failed") = CiSession(
+        runId = runId,
+        root = "/work/shop",
+        url = "https://piwi.example/test-runs/$runId",
+        name = "CI run #$runId",
+        branch = "feature/pay",
+        progress = CiProgress(total = 4, done = 1, failed = 1),
+        summary = summary,
+        tests = listOf(
+            CiTest(
+                title = listOf("checkout", "pays"), uri = spec, line = 2, project = "chromium", status = "running", lane = 2,
+                at = CiPosition("Click getByRole('button')", page, 8, 21, "CI run #$runId · worker 2: Click getByRole('button')"),
+                watch = "https://piwi.example/test-runs/$runId?watch=2",
+            ),
+            CiTest(title = listOf("refunds"), uri = spec, line = 10, project = "chromium", status = "failed", retry = 1, lane = 1),
+        ),
+        watchable = true,
+        ended = ended,
+    )
+
+    @Test
+    fun theCiRunsOfTheBranchAreKeptTheLatestOfEachUntilOneEnded() {
+        var kept = Glue.withCiSession(emptyMap(), ci(78))
+        kept = Glue.withCiSession(kept, ci(79))
+        kept = Glue.withCiSession(kept, ci(78, summary = "2 of 4 tests · 1 failed"))
+        assertEquals(listOf(78 to "2 of 4 tests · 1 failed", 79 to "1 of 4 tests · 1 failed"), kept.values.map { it.runId to it.summary })
+        kept = Glue.withCiSession(kept, ci(78, ended = true))
+        assertEquals(listOf(79), kept.values.map { it.runId })
+    }
+
+    @Test
+    fun aCiPositionIsAPlainMarkAtTheLineOfEachRunningTestNeverOneThatEnded() {
+        val sessions = listOf(ci(78), ci(79))
+        assertEquals(setOf(page), Glue.ciMarkedFiles(sessions))
+        assertEquals(
+            listOf(Glue.CiMark(8, "CI run #78 · worker 2: Click getByRole('button') · CI run #79 · worker 2: Click getByRole('button')")),
+            Glue.ciMarksIn(sessions, page),
+        )
+        assertEquals(emptyList<Glue.CiMark>(), Glue.ciMarksIn(sessions, spec))
+    }
+
+    @Test
+    fun theCiRunsTabNamesEachRunAsOtherRunsAreWithItsProgressOpenItsTestsAndWatchReadOnly() {
+        val rows = Glue.ciRows(listOf(ci(78)))
+        assertEquals(
+            listOf(
+                Glue.CiRow("run", "CI run #78", "feature/pay · 1 of 4 tests · 1 failed"),
+                Glue.CiRow("open", "Open run #78", "on the dashboard", url = "https://piwi.example/test-runs/78"),
+                Glue.CiRow("test", "checkout › pays", "chromium · worker 2 · Click getByRole('button')", "running", page, 8, 21),
+                // Watch opens the lane in the Worker tab; the dashboard's view is the second choice.
+                Glue.CiRow(
+                    "ci-watch",
+                    "Watch",
+                    "worker 2 · read-only",
+                    lane = Glue.CiLane("/work/shop", 78, null, 2, "https://piwi.example/test-runs/78?watch=2"),
+                ),
+                Glue.CiRow("watch", "Watch on the dashboard", "read-only", url = "https://piwi.example/test-runs/78?watch=2"),
+                Glue.CiRow("test", "refunds", "chromium · retry 1 · failed", "failed", spec, 10),
+            ),
+            rows.map { it.copy(key = "") },
+        )
+        // The newest run first.
+        assertEquals(listOf("CI run #79", "CI run #78"), Glue.ciRows(listOf(ci(78), ci(79))).filter { it.kind == "run" }.map { it.text })
+    }
+
+    @Test
+    fun aCiRowKeepsItsKeyAsTheRunProgressesAndTheRowsMoveSoTheTabKeepsItSelected() {
+        val rows = Glue.ciRows(listOf(ci(78)))
+        assertEquals(rows.size, rows.map { it.key }.toSet().size)
+        assertTrue(rows.none { it.key.isEmpty() })
+        // A newer run listed above it, and its progress and call changed: each row keeps its key.
+        val moved = ci(78, summary = "2 of 4 tests · 1 failed").let { s ->
+            s.copy(tests = s.tests.orEmpty().map { it.copy(at = it.at?.copy(title = "Fill", text = "CI run #78 · worker 2: Fill")) })
+        }
+        val after = Glue.ciRows(listOf(moved, ci(79)))
+        val selected = rows.first { it.kind == "test" && it.status == "running" }
+        val now = after.first { it.key == selected.key }
+        assertEquals("checkout › pays", now.text)
+        assertTrue(after.indexOf(now) > rows.indexOf(selected))
+        assertEquals(rows.map { it.key }, after.filter { it.key.startsWith("/work/shop\n78") }.map { it.key })
+        // Two tests of one name and project in one run keep keys apart.
+        val twice = ci(78).let { s -> s.copy(tests = s.tests.orEmpty() + s.tests.orEmpty().last()) }
+        val keys = Glue.ciRows(listOf(twice)).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun aCiSessionReadsAsTheServiceSendsIt() {
+        val json = """{"runId":78,"root":"/work/shop","url":"https://piwi.example/test-runs/78","name":"CI run #78",
+            "branch":"feature/pay","startedAt":"2026-11-12T10:00:00.000Z",
+            "progress":{"total":4,"done":1,"failed":1,"flaky":0,"skipped":0,"status":"running"},
+            "summary":"1 of 4 tests · 1 failed","watchable":true,"ended":false,
+            "tests":[{"title":["pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,"lane":null,
+            "shard":null,"at":{"title":"Click","uri":"$page","line":8,"character":null,"text":"CI run #78: Click"},
+            "watch":null}]}"""
+        val session = Gson().fromJson(json, CiSession::class.java)
+        assertEquals(listOf(Glue.CiMark(8, "CI run #78: Click")), Glue.ciMarksIn(listOf(session), page))
+        assertEquals(Glue.CiRow("test", "pays", "Click", "running", page, 8, 0), Glue.ciRows(listOf(session))[2].copy(key = ""))
+    }
+
+    @Test
+    fun aCiRunsLaneInTheWorkerTabSaysWhatRunsThereAndThatItIsReadOnly() {
+        val kept = Glue.withCiSession(emptyMap(), ci(78))
+        val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
+        assertEquals("CI run #78 · worker 2", Glue.ciLaneTitle(lane))
+        assertEquals("CI run #78 · shard 3, worker 2", Glue.ciLaneTitle(lane.copy(shard = 3)))
+        assertEquals(
+            "CI run #78 · worker 2 · Running checkout › pays · Click getByRole('button') · read-only",
+            Glue.ciLaneCaption(kept, lane),
+        )
+        assertEquals("CI run #78 · worker 1 · between tests · read-only", Glue.ciLaneCaption(kept, lane.copy(lane = 1)))
+        assertEquals("CI run #78 · worker 2 · the run ended.", Glue.ciLaneCaption(emptyMap(), lane))
+        // No Watch while the run cannot be watched.
+        val unwatched = ci(78).copy(watchable = false, tests = ci(78).tests.orEmpty().map { it.copy(watch = null) })
+        assertTrue(Glue.ciRows(listOf(unwatched)).none { it.kind == "ci-watch" || it.kind == "watch" })
+    }
+
+    @Test
+    fun aCiFrameIsOfTheLaneWatchedAndReadsAsTheServiceSendsIt() {
+        val watching = CiWatchParams("/work/shop", 78, null, 2, true)
+        val frame = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"data":"/9j/","test":"pays","call":null}""",
+            CiFrame::class.java,
+        )
+        assertTrue(Glue.sameCiLane(watching, frame))
+        assertEquals("/9j/", frame.data)
+        assertFalse(Glue.sameCiLane(watching, frame.copy(lane = 1)))
+        assertFalse(Glue.sameCiLane(watching, frame.copy(runId = 79)))
+        assertFalse(Glue.sameCiLane(watching.copy(shard = 1), frame))
+        val ended = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"ended":"The CI run ended."}""",
+            CiFrame::class.java,
+        )
+        assertEquals("The CI run ended.", ended.ended)
+        assertEquals(null, ended.data)
+    }
+
+    private fun layer(json: String): LaneViewLayer = Gson().fromJson(json, LaneViewLayer::class.java)
+
+    @Test
+    fun theWorkerTabAsksForTheCallLogAndTheEventsAlwaysAndTheTextAndTheFilmstripWhileSelected() {
+        assertEquals(listOf("calls", "events"), Glue.laneLayersAsked(text = false, filmstrip = false))
+        assertEquals(listOf("calls", "events", "text"), Glue.laneLayersAsked(text = true, filmstrip = false))
+        assertEquals(listOf("calls", "events", "filmstrip"), Glue.laneLayersAsked(text = false, filmstrip = true))
+    }
+
+    @Test
+    fun whyItWaitsSaysTheCallHowLongWhatItsLocatorMatchesAndTheLogsLastLines() {
+        val running = layer(
+            """{"ref":"ed-1","lane":1,"worker":3,"test":"t1","layer":"calls","log":{"id":"c3","call":{"title":"Click getByRole('button')","file":"a.spec.ts","line":9},"status":"running","lines":["waiting for getByRole","  locator resolved to <button disabled>","  element is not enabled","retrying"],"point":null,"target":{"count":1,"box":null,"enabled":false},"viewport":null,"ms":4200,"error":null}}""",
+        )
+        assertEquals(
+            Glue.WaitsView(
+                "Click getByRole('button') · waiting 4.2 s",
+                "1 element matches, disabled",
+                listOf("  locator resolved to <button disabled>", "  element is not enabled", "retrying"),
+                false,
+            ),
+            Glue.waitsView(running.log!!),
+        )
+        val log = running.log!!
+        assertEquals("No element matches yet", Glue.waitsView(log.copy(target = LiveCallTarget(0, null))).target)
+        assertEquals("3 elements match, the first enabled", Glue.waitsView(log.copy(target = LiveCallTarget(3, true))).target)
+        val failed = Glue.waitsView(log.copy(status = "failed", ms = 30_000, lines = listOf("a"), error = "Timeout 30000ms exceeded."))
+        assertEquals(Glue.WaitsView("Click getByRole('button') · failed after 30 s", null, listOf("a", "Timeout 30000ms exceeded."), true), failed)
+        assertEquals("999 ms", Glue.laneDuration(999))
+        assertEquals("17 s", Glue.laneDuration(17_400))
+    }
+
+    @Test
+    fun eachPageEventIsALineOfItsOwnARequestsPendingTimeByItsAddresssPath() {
+        val pending = PageEvent("request-pending", method = "POST", url = "https://shop.test/api/checkout?x=1", id = 4, ms = 17_000, done = false)
+        assertEquals(
+            Glue.EventLine("pending 2:4", "POST /api/checkout?x=1 pending 17 s", "warning", "https://shop.test/api/checkout?x=1", 9),
+            Glue.eventLine(pending, 9, 2, 1),
+        )
+        fun text(event: PageEvent) = Glue.eventLine(event, 0, 0, 1).text
+        assertEquals("Console error: Oops", text(PageEvent("console", text = "Oops")))
+        assertEquals("Uncaught error: x is undefined", text(PageEvent("page-error", text = "x is undefined")))
+        assertEquals("GET /cart answered 503", text(PageEvent("request-failed", method = "GET", url = "https://shop.test/cart", status = 503)))
+        assertEquals("GET /x failed: net::ERR_ABORTED", text(PageEvent("request-failed", method = "GET", url = "/x", failure = "net::ERR_ABORTED")))
+        assertEquals(
+            "Backend error on POST /pay (500): Card",
+            text(PageEvent("backend", method = "POST", url = "https://shop.test/pay", status = 500, level = "error", text = "Card")),
+        )
+        assertEquals("API POST /orders answered 201 in 85 ms", text(PageEvent("api", method = "POST", url = "https://api.test/orders", status = 201, ms = 85)))
+        assertEquals("12 more events were not sent: too many at once.", text(PageEvent("dropped", count = 12)))
+    }
+
+    @Test
+    fun theNewestEventsComeFirstCappedOneLinePerPendingRequestItsLastTimeInPlace() {
+        var shown = Glue.NO_LANE_LAYERS
+        fun event(json: String): Set<String> {
+            val (next, changed) = Glue.withLaneLayer(shown, layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"events","at":1800000000000,"event":$json}"""))
+            shown = next
+            return changed
+        }
+        val request = """{"kind":"request-pending","id":1,"method":"POST","url":"/api/checkout","ms":%d,"done":%b}"""
+        assertEquals(setOf("events"), event(request.format(5000, false)))
+        event("""{"kind":"console","text":"Oops"}""")
+        event(request.format(10_000, false))
+        assertEquals(listOf("POST /api/checkout pending 10 s", "Console error: Oops"), shown.events.map { it.text })
+        event(request.format(12_300, true))
+        assertEquals("POST /api/checkout answered after 12 s", shown.events.first().text)
+        assertEquals(2, shown.events.size)
+        repeat(Glue.MAX_LANE_EVENTS + 5) { event("""{"kind":"console","text":"n$it"}""") }
+        assertEquals(Glue.MAX_LANE_EVENTS, shown.events.size)
+        assertEquals("Console error: n${Glue.MAX_LANE_EVENTS + 4}", shown.events.first().text)
+    }
+
+    @Test
+    fun theFilmstripKeepsOneImagePerCallInTheTestsOrderAndStartsAnewWithAnotherTest() {
+        var shown = Glue.NO_LANE_LAYERS
+        fun hear(json: String): Set<String> {
+            val (next, changed) = Glue.withLaneLayer(shown, layer(json))
+            shown = next
+            return changed
+        }
+        fun thumb(call: String, index: Int, data: String = "/9j/$call==") =
+            """{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"filmstrip","thumb":{"call":"$call","title":"Call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"$data"}"""
+        assertEquals(setOf("strip"), hear(thumb("c1", 1)))
+        assertEquals(setOf("strip"), hear(thumb("c2", 2)))
+        // The strip sent again, as the tab asks for it again, changes nothing; nor does an image that is no JPEG.
+        assertEquals(emptySet<String>(), hear(thumb("c1", 1)))
+        assertEquals(emptySet<String>(), hear(thumb("c2", 2)))
+        assertEquals(emptySet<String>(), hear(thumb("c9", 9, "iVBORw0KGgo=")))
+        assertEquals(listOf("c1", "c2"), shown.strip.map { it.call })
+        hear("""{"ref":"ed-1","lane":0,"worker":0,"test":null,"layer":"text","text":{"call":null,"source":"snapshot","text":"- heading \"Shop\"","cut":false,"at":1800000000000}}""")
+        // Another test's call log clears the strip; the page's text stays.
+        val changed = hear("""{"ref":"ed-1","lane":0,"worker":0,"test":"t2","layer":"calls","log":{"id":"d1","call":{"title":"Click"},"status":"running","lines":[],"ms":0}}""")
+        assertEquals(setOf("strip", "waits"), changed)
+        assertTrue(shown.strip.isEmpty())
+        assertEquals("- heading \"Shop\"", shown.text?.text)
+        assertEquals("Read from the page.", Glue.laneTextNote(shown.text))
+        hear("""{"ref":"ed-1","lane":0,"worker":0,"test":"t2","layer":"text","refused":"The page is closed."}""")
+        assertEquals("The page is closed.", Glue.laneTextNote(shown.text))
+        assertEquals("From the test’s trace. Cut at 96 K characters.", Glue.laneTextNote(Glue.LaneTextShown("x", true, "trace", null)))
+        assertEquals("Nothing yet.", Glue.laneTextNote(null))
+    }
+
+    @Test
+    fun aRetryOfTheTestInAnotherWorkerOrFromItsFirstCallStartsTheFilmstripAndTheCallLogAnew() {
+        fun attempt(worker: Int, call: String, index: Int) = layer(
+            """{"ref":"ed-1","lane":0,"worker":$worker,"test":"same-test-id","layer":"filmstrip","thumb":{"call":"$call","title":"Attempt $worker call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"/9j/${call.filter { it.isLetterOrDigit() }}$worker=="}""",
+        )
+        fun strip(shown: Glue.LaneLayersShown) = shown.strip.map { "${it.call} ${it.title}" }
+        var shown = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("abcd@1" to 1, "abcd@2" to 2, "abcd@3" to 3)) shown = Glue.withLaneLayer(shown, attempt(0, call, index)).first
+        shown = Glue.withLaneLayer(
+            shown,
+            layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"same-test-id","layer":"calls","log":{"id":"c3","call":{"title":"Click"},"status":"running","lines":[],"ms":0}}"""),
+        ).first
+        // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+        val (retry, changed) = Glue.withLaneLayer(shown, attempt(1, "wxyz@1", 1))
+        assertEquals(setOf("strip", "waits"), changed)
+        assertNull(retry.waits)
+        shown = Glue.withLaneLayer(retry, attempt(1, "wxyz@2", 2)).first
+        assertEquals(listOf("wxyz@1 Attempt 1 call 1", "wxyz@2 Attempt 1 call 2"), strip(shown))
+
+        // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+        var restarted = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("pw:api@1" to 1, "pw:api@2" to 2, "pw:api@3" to 3)) restarted = Glue.withLaneLayer(restarted, attempt(0, call, index)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@1", 1)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@2", 2)).first
+        assertEquals(listOf("pw:api@1 Attempt 1 call 1", "pw:api@2 Attempt 1 call 2"), strip(restarted))
+        // An image placed at or before the strip's last, of a call it does not hold, is another attempt's, whatever
+        // worker names it.
+        assertEquals(listOf("qq@2 Attempt 1 call 2"), strip(Glue.withLaneLayer(restarted, attempt(1, "qq@2", 2)).first))
+    }
+
+    @Test
+    fun aFilmstripImageIsSizedFromItsJpegHeaderAndOneLargerThanTwiceAThumbnailIsLetGoBeforeItIsDecoded() {
+        fun jpeg(width: Int, height: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB), "jpg", out)
+            return out.toByteArray()
+        }
+        fun base64(bytes: ByteArray) = java.util.Base64.getEncoder().encodeToString(bytes)
+        val thumb = jpeg(320, 180)
+        assertEquals(320 to 180, Glue.jpegSize(thumb))
+        assertTrue(Glue.stripImageBytes(base64(thumb))!!.contentEquals(thumb))
+        assertEquals(640 to 400, Glue.jpegSize(jpeg(640, 400)))
+        assertTrue(Glue.stripImageBytes(base64(jpeg(640, 400))) != null)
+        assertNull(Glue.stripImageBytes(base64(jpeg(641, 100))))
+        assertNull(Glue.stripImageBytes(base64(jpeg(100, 401))))
+        // A progressive JPEG of a few bytes naming 4000 by 4000 pixels: refused from its header, never decoded.
+        fun u16(n: Int) = byteArrayOf((n shr 8).toByte(), n.toByte())
+        val huge = byteArrayOf(0xFF.toByte(), 0xD8.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xE0.toByte()) + u16(16) + "JFIF".toByteArray() + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xFF.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xC2.toByte()) + u16(17) + byteArrayOf(8) + u16(4000) + u16(4000) + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertEquals(4000 to 4000, Glue.jpegSize(huge))
+        assertNull(Glue.stripImageBytes(base64(huge)))
+        // No size before the scan, no JPEG, nothing past the thumbnail's bound in base64.
+        val scanFirst = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertNull(Glue.jpegSize(scanFirst))
+        assertNull(Glue.jpegSize("iVBORw0KGgo".toByteArray()))
+        assertNull(Glue.stripImageBytes("iVBORw0KGgo="))
+        assertNull(Glue.stripImageBytes("/9j/" + "A".repeat(180_000)))
+        assertNull(Glue.stripImageBytes(null))
+    }
+
+    @Test
+    fun aCiLayerReadsAsTheServiceSendsItAndAnOlderReporterIsNamed() {
+        val ci = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays","layer":"events","event":{"kind":"console","text":"Oops"},"at":1800000000000}""",
+            CiLayer::class.java,
+        )
+        assertEquals(4, ci.worker)
+        assertEquals("Console error: Oops", Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci).first.events.single().text)
+        assertTrue(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = false))!!.startsWith("This worker’s reporter sends its images alone"))
+        assertNull(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = true)))
+        assertNull(Glue.laneLayersNote(null))
+    }
+
+    @Test
+    fun theWorkerTabOffersTheTraceSoFarOnlyForARunningTestWhoseReporterAnswersTraceAsks() {
+        val test = RunTest("t1", listOf("checkout", "pays"))
+        assertTrue(Glue.canOpenTrace(RunWorker(0, 1, "running", test, traces = true)))
+        // At a stop, the test runs on: its trace so far opens too.
+        assertTrue(Glue.canOpenTrace(RunWorker(0, 1, "stopped", test, traces = true)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "between", null, traces = true)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "running", test)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "running", test, traces = false)))
+        assertFalse(Glue.canOpenTrace(null))
+        // The protocol's field, as the service sends it.
+        val heard = Gson().fromJson("""{"worker":0,"parallelIndex":1,"state":"running","test":{"id":"t1"},"traces":true}""", RunWorker::class.java)
+        assertTrue(Glue.canOpenTrace(heard))
+        assertEquals(OpenTraceParams("r1", 1), Gson().fromJson("""{"ref":"r1","lane":1}""", OpenTraceParams::class.java))
+    }
+
+    @Test
+    fun aTraceAnswerNamesItsWorkerOnceTheWorkerTabShowsAnotherSlot() {
+        val said = "Playwright's trace viewer opened on the trace so far."
+        assertEquals(said, Glue.traceAnswerText("r1" to 0, "r1" to 0, said))
+        assertEquals("Worker 1: $said", Glue.traceAnswerText("r1" to 0, "r1" to 1, said))
+        assertEquals("Worker 3: $said", Glue.traceAnswerText("r1" to 2, "r2" to 2, said))
+        // The tab closed, or shows a CI run's lane.
+        assertEquals("Worker 2: $said", Glue.traceAnswerText("r1" to 1, null, said))
+    }
+
+    @Test
+    fun aCiLaneSaysWhyItMayShowNoneOfItsLayersUntilTheFirstComes() {
+        assertTrue(Glue.ciLaneLayersNote(Glue.NO_LANE_LAYERS)!!.endsWith("older than the IDE’s sends the images alone."))
+        fun ci(fields: String) = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays",$fields}""",
+            CiLayer::class.java,
+        )
+        // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+        val calls = Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci(""""layer":"calls","log":{"id":"c1","call":{"title":"Click"},"status":"running","lines":[],"ms":0}""")).first
+        assertTrue(Glue.ciLaneLayersNote(calls) != null)
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"events","at":1800000000000,"event":{"kind":"console","text":"Oops"}""")).first))
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"text","refused":"No page."""")).first))
+        assertNull(
+            Glue.ciLaneLayersNote(
+                Glue.withLaneLayer(calls, ci(""""layer":"filmstrip","thumb":{"call":"c1","title":"Click","index":1,"width":320,"height":200,"at":1800000000000},"data":"/9j/AA=="""")).first,
+            ),
+        )
+    }
+
+    @Test
+    fun aChangeOfTheLayersIsHeldAsAskedUnlessTheServiceRefusedThatVeryChange() {
+        val asked = listOf("calls", "events", "text")
+        assertEquals(asked, Glue.layersAfterAnswer(asked, asked, ok = true))
+        assertEquals(emptyList<String>(), Glue.layersAfterAnswer(asked, asked, ok = false))
+        // A later change asked meanwhile stays held: its own answer decides.
+        assertEquals(listOf("calls", "events"), Glue.layersAfterAnswer(listOf("calls", "events"), asked, ok = false))
+    }
+
+    @Test
+    fun theTextTabsSearchFindsTheNextMatchIgnoringCaseAndWrapsToTheStart() {
+        val text = "- heading \"Shop\"\n- button \"Pay\"\n- link \"pay later\""
+        assertEquals(text.indexOf("\"Pay\"") + 1, Glue.findIn(text, "pay", 0))
+        val first = Glue.findIn(text, "pay", 0)
+        assertEquals(text.indexOf("pay later"), Glue.findIn(text, "pay", first + 1))
+        assertEquals(first, Glue.findIn(text, "PAY", text.indexOf("pay later") + 1))
+        assertEquals(-1, Glue.findIn(text, "checkout", 0))
+        assertEquals(-1, Glue.findIn(text, "", 0))
     }
 }

@@ -4,17 +4,22 @@
 //   1. creates a per-user data folder for the folder links, the log and the settings,
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
 //   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
-//   4. points the window at the host through the one-time token bootstrap (`/__piwi/session`).
-// There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
-// this machine may take it for one. Everything binds 127.0.0.1.
+//   4. points the window at the host through a single-use session code (`/__piwi/session?code=…`).
+// There is no database or reporter discovery file: Runner is not a Piwi server, and nothing on this machine
+// may take it for one. Everything binds 127.0.0.1. Its tray icon keeps it reachable by the team instance once the
+// window closes, while Run in background is on (the default), and Start on login launches it hidden in the tray. A build
+// made with the update signing key checks for updates at startup and from the tray (`updates::check_from_tray`).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::json;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_deep_link::DeepLinkExt as _;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
@@ -22,21 +27,46 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
-    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs,
-    random_hex_32, run_app_menu_action, show_server_stopped, show_splash_status, shut_down, supervise_server,
-    LogFile, QuitConfirmed, ServerGaveUp, ServerLastError, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
+    app_menu_action, append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray,
+    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
+    quit_after_confirming, random_hex_32, reapply_splash_status, reveal_log, run_app_menu_action, show_splash_status,
+    shut_down, supervise_server, toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed,
+    RunInBackground, ServerGaveUp, ServerLastError, ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID,
+    TRAY_START_ON_LOGIN_ID,
 };
-use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
+use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
+use crate::{
+    desktop_bring_to_front, desktop_get_service_settings, desktop_open_external, desktop_set_run_in_background,
+    desktop_set_start_on_login, run_target, runner, updates,
+};
 
 /// The app's name, in its menu and in the questions it asks.
 const APP_NAME: &str = "Piwi Runner";
+
+/// The tray icon's tooltip.
+const TRAY_TOOLTIP: &str = "Piwi Runner (click to open)";
+/// The argument Start on login launches the app with: it starts in the tray, its window hidden.
+const HIDDEN_ARG: &str = "--hidden";
+
+/// Whether this launch starts in the tray: Start on login passes `--hidden`. A link that launched the app is one
+/// argument of its own, never `--hidden`, and Windows may hand the unquoted path of the Run entry over in pieces.
+fn launched_hidden(args: &[String]) -> bool {
+    args.iter().skip(1).any(|a| a == HIDDEN_ARG)
+}
 
 /// The log of the shell and of the host's output, in the app's data folder.
 const LOG_FILE: &str = "runner.log";
 /// The splash's status line once the host takes longer than `READY_TIMEOUT_SECS`.
 const SPLASH_SLOW: &str =
     "The local host is taking longer than usual to start. Still waiting: the window opens once it is up.";
+/// The splash's status line while the host restarts.
+const SPLASH_RESTARTING: &str = "The local host stopped. Restarting it: the window opens again once it is up.";
+/// How the wait for the host's proof paces itself.
+const PROOF_PACE: ProofPace = ProofPace {
+    slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
+    poll: Duration::from_millis(250),
+    slow_poll: Duration::from_millis(1000),
+};
 /// The splash's status line once the supervisor stopped restarting the host.
 const SPLASH_STOPPED: &str =
     "The local host stopped and could not be restarted. Quit and relaunch Piwi Runner.";
@@ -85,10 +115,10 @@ fn spawn_host(
     app: &AppHandle,
     cfg: &HostConfig,
 ) -> Option<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild)> {
-    let cmd = match app.shell().sidecar("node") {
+    let cmd = match app.shell().sidecar(NODE_SIDECAR) {
         Ok(cmd) => cmd,
         Err(e) => {
-            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            append_log(&cfg.log_path, &format!("sidecar '{NODE_SIDECAR}' not found: {e}"));
             return None;
         }
     };
@@ -174,12 +204,69 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
     Ok(menu)
 }
 
+/// The tray icon: a click opens the window, and its menu holds Open, Show logs, Run in background, Start on login and
+/// Quit, and Check for updates in a build that can update itself.
+fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
+    let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
+    let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+    let (bg_i, login_i) = background_menu_items(app)?;
+    let update_i = MenuItemBuilder::with_id("check_update", "Check for updates…").build(app)?;
+    let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+    let mut menu = MenuBuilder::new(app)
+        .item(&open_i)
+        .item(&logs_i)
+        .separator()
+        .item(&bg_i)
+        .item(&login_i)
+        .separator();
+    if can_update {
+        menu = menu.item(&update_i);
+    }
+    let menu = menu.item(&quit_i).build()?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip(TRAY_TOOLTIP)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(w) = tray.app_handle().get_webview_window("main") {
+                    bring_to_front(&w);
+                }
+            }
+        })
+        .on_menu_event(move |app, event| match event.id().as_ref() {
+            "open" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    bring_to_front(&w);
+                }
+            }
+            "show_logs" => reveal_log(app),
+            TRAY_RUN_BG_ID => toggle_run_in_background(app),
+            TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
+            "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP),
+            "quit" => quit_after_confirming(app, APP_NAME),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
 pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
     if let Some(refusal) = identifier_refusal(&context.config().identifier) {
         eprintln!("{refusal}");
         std::process::exit(2);
     }
-    #[allow(unused_mut)]
+    // A release built with the update signing key carries `runner.updater.conf.json`, which puts an `updater` entry
+    // in the compiled config; without it the plugin stays out and the tray offers no update.
+    let can_update = context.config().plugins.0.contains_key("updater");
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // A second launch focuses the running window and starts no second host.
@@ -195,6 +282,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![HIDDEN_ARG]),
+        ))
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -212,11 +303,12 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
+                })
+                .on_page_load(|webview, payload| {
+                    if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        reapply_splash_status(webview);
+                    }
                 })
                 .build(),
         );
@@ -224,11 +316,17 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
     {
         builder = builder.plugin(tauri_plugin_playwright::init());
     }
+    if can_update {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
 
     builder
         .invoke_handler(tauri::generate_handler![
             desktop_bring_to_front,
             desktop_open_external,
+            desktop_get_service_settings,
+            desktop_set_run_in_background,
+            desktop_set_start_on_login,
             runner::desktop_stop_local_tests,
             run_target::desktop_keep_run_target_key,
             run_target::desktop_forget_run_target,
@@ -244,7 +342,11 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
         .manage(QuitConfirmed::default())
-        .setup(|app| {
+        .manage(updates::UpdaterSupport(can_update))
+        .manage(updates::PendingUpdate::default())
+        .manage(updates::ReleaseNotesState::default())
+        .manage(updates::TrayUpdateBusy::default())
+        .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
             private_fs::create_private_dir(&app_data_dir)?;
             let log_dir = app_data_dir.join("logs");
@@ -252,6 +354,11 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let log_path = log_dir.join(LOG_FILE);
             append_log(&log_path, "----- launch -----");
             app.manage(LogFile(log_path.clone()));
+            run_target::sweep_leftover_request_dirs(app.handle());
+            app.manage(Session::new(
+                app.get_webview_window("main").and_then(|w| w.url().ok()),
+                app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
+            ));
 
             // Nothing outlives this launch: the token is made now and kept nowhere.
             let token = random_hex_32();
@@ -295,6 +402,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     move |app| spawn_host(app, &host),
                     initial,
                     shutting_down.clone(),
+                    ServerSession {
+                        port,
+                        token: token.clone(),
+                        texts: SplashTexts {
+                            restarting: SPLASH_RESTARTING,
+                            slow: SPLASH_SLOW,
+                            stopped: SPLASH_STOPPED,
+                        },
+                        pace: &PROOF_PACE,
+                    },
                 );
             } else {
                 crate::give_up_server(app.handle());
@@ -306,23 +423,23 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let nav_handle = app.handle().clone();
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let started = Instant::now();
-                let mut slow = false;
-                let ready = loop {
-                    if health_ok(port, &token) {
-                        break true;
-                    }
-                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-                    if gave_up || quitting.load(Ordering::SeqCst) {
-                        break false;
-                    }
-                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
-                        slow = true;
+                let proved = session::await_first_proof(
+                    port,
+                    &token,
+                    &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<Session>() {
+                            session.mark_opened();
+                        }
+                    },
+                    || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
+                    || {
                         append_log(&log_path, "host not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
-                    }
-                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
-                };
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
+                    },
+                );
+                let ready = proved.is_some();
                 append_log(
                     &log_path,
                     if ready {
@@ -333,19 +450,36 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 );
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_server_stopped(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
-                follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
-                let bootstrap_url = bootstrap_url(port, &token, None);
-                let inner = nav_handle.clone();
-                let _ = nav_handle.run_on_main_thread(move || {
-                    if let Some(w) = inner.get_webview_window("main") {
-                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                    }
-                });
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
+                tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
+                let server = ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, None, holds) {
+                    append_log(&log_path, &format!("no session code: {error}"));
+                }
             });
+
+            // Run in background is on until the person turns it off, in the tray or the window.
+            app.manage(RunInBackground::from_saved(app.handle(), true));
+            tray(app, can_update)?;
+            if launched_hidden(&std::env::args().collect::<Vec<_>>()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
 
             #[cfg(target_os = "macos")]
             {
@@ -389,9 +523,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // The window is the app: closing it quits, once the user agrees to stop the runs still going.
+            // Closing the window hides it to the tray while Run in background is on, and otherwise quits, once the
+            // user agrees to stop the runs still going.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && hold_close_for_local_runs(window, APP_NAME) {
+                if window.label() == "main" && (hide_to_tray(window) || hold_close_for_local_runs(window, APP_NAME)) {
                     api.prevent_close();
                 }
             }
@@ -400,6 +535,15 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .expect("error while building the Piwi Runner app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } | RunEvent::Exit => shut_down(app_handle, None),
+            // macOS: a click on the Dock icon brings back the window Run in background hid.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(true) || w.is_minimized().unwrap_or(false) {
+                        bring_to_front(&w);
+                    }
+                }
+            }
             _ => {}
         });
 }
@@ -432,6 +576,17 @@ mod tests {
     fn the_desktop_apps_links_are_not_answered() {
         assert!(!is_connect_link(&url("piwi://connect")));
         assert!(!is_connect_link(&url("piwi://open/runs")));
+    }
+
+    #[test]
+    fn only_start_on_logins_launch_starts_in_the_tray() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        assert!(launched_hidden(&args(&["piwi-runner", "--hidden"])));
+        assert!(launched_hidden(&args(&[r"C:\Users\dana\AppData\Local\Piwi", r"Runner\piwi-runner.exe", "--hidden"])));
+        assert!(!launched_hidden(&args(&["piwi-runner"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect?--hidden"])));
+        assert!(!launched_hidden(&args(&["--hidden"])));
     }
 
     #[test]
@@ -469,7 +624,7 @@ mod tests {
     #[test]
     fn the_quit_question_names_the_app() {
         assert_eq!(crate::quit_question(APP_NAME), "Quit Piwi Runner?");
-        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi?");
+        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi Desktop?");
     }
 
     #[test]
@@ -522,6 +677,36 @@ mod tests {
             .collect();
         registered.sort();
         assert_eq!(granted, registered);
+    }
+
+    #[test]
+    fn a_requested_run_names_the_hosts_hub_and_nothing_else() {
+        // A requested run starts through `spawn_tests`, which adds the hub's environment (`bundled_hub_env`): the run
+        // channel it reads from the host this launch spawned, whose port and token Runner keeps (`ServerInfo`).
+        // Without them every run starts with its name alone.
+        let body_of = |source: &'static str, start: &str| {
+            source
+                .split(start)
+                .nth(1)
+                .and_then(|rest| rest.split("\n}\n").next())
+                .unwrap_or_else(|| panic!("{start} not found"))
+        };
+        let requested = body_of(
+            include_str!("run_target.rs"),
+            "pub async fn desktop_run_requested_tests",
+        );
+        assert!(requested.contains("crate::runner::spawn_tests("));
+        let runner = include_str!("runner.rs");
+        assert!(body_of(runner, "pub(crate) async fn spawn_tests(").contains("bundled_hub_env("));
+        assert!(body_of(runner, "fn bundled_run_channel(").contains("\"/api/desktop/run-channel\""));
+        let code = include_str!("runner_app.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(code.contains("app.manage(ServerInfo {"));
+        // The hub is this app's alone: it is published to no discovery file or other tool.
+        assert!(!code.contains("publish_discovery_hub"));
+        assert!(!code.contains("DiscoveryHub"));
     }
 
     #[test]

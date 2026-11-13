@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
+import { runReporterId } from '../../../utils/run-viewer';
 import { checkSubmitBody } from '../../../utils/batch-payload';
 import { createBatchRun, renewHeldRunToken } from '../../../utils/batch-run';
 import { deliverOnce, readDeliveryKey } from '../../../utils/run-deliveries';
@@ -56,7 +57,10 @@ export default eventHandler(async (event) => {
 
   const delivered = await deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
     const streamToken = randomBytes(32).toString('hex');
-    const testRun = await createBatchRun(db, project.id, body, { streamToken });
+    const testRun = await createBatchRun(db, project.id, body, {
+      awaitingFiles: { streamToken },
+      reporterId: runReporterId(event, user),
+    });
 
     runEventBus.publishGlobal({
       type: 'run-finalizing',

@@ -6,7 +6,16 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import { join, resolve } from 'node:path';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import type { LiveStop } from '@piwitests/core/live-view';
+import {
+  LIVE_FRAME_TYPE,
+  encodeLiveMessage,
+  liveResourceHeader,
+  liveSnapshotHeader,
+  liveSnapshotRefusalHeader,
+  liveThumbHeader,
+  type LiveStop,
+} from '@piwitests/core/live-view';
+import type { LiveSnapshot } from '@piwitests/core/live-inspect';
 import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
@@ -21,10 +30,18 @@ import { holdWorkerStream } from './utils/live-view';
  * nothing; a run outside CI its editor shares (Share live, played by this spec on the run channel) shows Watch, and
  * its view ends, saying why, as the sharing stops. A worker of the run's live view, played by this spec, shows
  * where it stopped on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
- * as the project turns the live view off.
+ * as the project turns the live view off. **Watch all** shows a tile of each worker on one watch, and a click shows one
+ * in full on it, each worker hearing what the page asks of its images; a worker that says no lane stays in full view on
+ * the test it runs. The lane panel asks a worker for the layers it shows, and shows the page's events, its text,
+ * masked and searchable, and the test's filmstrip, one image a call, as the worker posts them. Inspect asks the worker
+ * for its page's snapshots and shows the page at the latest call, rendered by the instance with its stylesheet and
+ * without its script, follows each new call until the reader chooses an older one, and picks a locator on it; it
+ * starts afresh with each next test of the lane, saying why that test sends no page when the worker says so.
  */
 
 const target = resolveE2ETarget();
+/** The Tests toolbar's status while it says the run is not shared live. */
+const NOT_SHARED = '[data-testid="live-view-readiness"][data-state="unshared"]';
 const reporter = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
 const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
@@ -142,9 +159,13 @@ module.exports = wrapConfig(defineConfig({
   };
 }
 
+/** End a run: its Playwright stops, 10 s at most, before its folder goes, a write still finishing tried again. */
 async function endRun(run: Run): Promise<void> {
-  if (run.child.exitCode === null) run.child.kill();
-  fs.rmSync(run.folder, { recursive: true, force: true });
+  if (run.child.exitCode === null) {
+    run.child.kill();
+    await Promise.race([run.exited, new Promise((done) => setTimeout(done, 10_000))]);
+  }
+  fs.rmSync(run.folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 /** The id of a project, made by reporting an empty run when it does not exist yet. */
@@ -191,10 +212,115 @@ async function latestRunId(request: APIRequestContext, project: number): Promise
   return ((await (await request.get(`/api/projects/${project}/latest-run`)).json()) as { id: number }).id;
 }
 
-type Workers = { enabled: boolean; workers: Array<{ worker: number }>; received: Record<string, number> };
+type Workers = {
+  enabled: boolean;
+  workers: Array<{ worker: number }>;
+  viewers: number;
+  received: Record<string, number>;
+};
 
 async function liveWorkers(request: APIRequestContext, runId: number): Promise<Workers> {
   return (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Workers;
+}
+
+/**
+ * A live run in the project with the live view on, its workers played by this spec: worker `i` runs `tests[i]`, in lane
+ * `i` when the test says so, its row begun when it says so, and holds its stream, sending `shots[i]` twice a second
+ * in JSON, as a reporter that predates live messages does. `key` is the run's live view key, for what else they post.
+ */
+async function playWorkers(
+  request: APIRequestContext,
+  tests: Array<{ title: string; lane: boolean; row: boolean }>,
+  shot: Buffer,
+): Promise<{
+  runId: number;
+  key: string;
+  workers: Array<ReturnType<typeof holdWorkerStream>>;
+  shots: Buffer[];
+  /** The workers send no frame from now on, as a test with no page, once the frames on their way came. */
+  stopFrames: () => Promise<void>;
+  /** The worker's lane goes on with its next test, `title`: its frames name it, sent again if they stopped. */
+  nextTest: (worker: number, title: string) => void;
+  end: () => Promise<void>;
+}> {
+  const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+  expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+  const setup = await request.post('/api/test-runs/setup', {
+    data: { projectName: PROJECT.LIVE_VIEW_ON, startTime: new Date().toISOString(), liveView: true },
+  });
+  expect(setup.ok()).toBeTruthy();
+  const { runId, setupToken, liveView } = (await setup.json()) as {
+    runId: number;
+    setupToken: string;
+    liveView: { key: string };
+  };
+  const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: tests.length } });
+  const { streamToken } = (await begun.json()) as { streamToken: string };
+  const now = Date.now();
+  await request.post(`/api/test-runs/${runId}/events`, {
+    data: {
+      streamToken,
+      testCases: tests.flatMap(({ title, lane, row }, worker) =>
+        row
+          ? [
+              {
+                type: 'begin',
+                title,
+                location: `tests/live.spec.ts:${worker * 5 + 3}:1`,
+                workerIndex: worker,
+                ...(lane ? { parallelIndex: worker } : {}),
+                startedAt: now - 1000,
+              },
+            ]
+          : [],
+      ),
+    },
+  });
+  const workers = tests.map(({ lane }, worker) =>
+    holdWorkerStream(target.baseUrl, runId, liveView.key, lane ? { worker, slot: worker } : { worker }),
+  );
+  const shots = tests.map(() => shot);
+  const send = () =>
+    Promise.all(
+      tests.map(({ title, lane }, worker) =>
+        request.post(`/api/test-runs/${runId}/live-view`, {
+          headers: { Authorization: `Bearer ${liveView.key}` },
+          data: {
+            type: 'frame',
+            shard: null,
+            worker,
+            ...(lane ? { slot: worker } : {}),
+            data: shots[worker]!.toString('base64'),
+            call: { title: 'Click', file: 'tests/live.spec.ts', line: worker * 5 + 4 },
+            test: title,
+          },
+        }),
+      ),
+    );
+  let sent: Promise<unknown> = Promise.resolve();
+  const sendEvery = () => setInterval(() => void (sent = send().catch(() => undefined)), 500);
+  let sending: ReturnType<typeof setInterval> | null = sendEvery();
+  return {
+    runId,
+    key: liveView.key,
+    workers,
+    shots,
+    stopFrames: async () => {
+      if (sending) clearInterval(sending);
+      sending = null;
+      await sent;
+    },
+    nextTest: (worker, title) => {
+      tests[worker] = { ...tests[worker]!, title };
+      sending ??= sendEvery();
+    },
+    end: async () => {
+      if (sending) clearInterval(sending);
+      sending = null;
+      for (const worker of workers) worker.close();
+      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+    },
+  };
 }
 
 /**
@@ -313,7 +439,7 @@ test.describe('Live view of a run', () => {
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
       // A CI run's workers join at once: nothing says it is not shared.
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
       const view = page.getByTestId('lane-panel');
@@ -321,7 +447,8 @@ test.describe('Live view of a run', () => {
       await expect(view.getByRole('heading', { name: /^Worker \d+ · live$/ })).toBeVisible();
       const frame = view.getByTestId('live-frame');
       await expect(frame).toBeVisible({ timeout: 20_000 });
-      await expect(frame).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+      // The image is the JPEG's bytes the watch carried, shown from memory.
+      await expect(frame).toHaveAttribute('src', /^blob:/);
       // The call's place opens in the editor.
       await expect(view.getByTestId('live-call').getByText(/^live\.spec\.cjs:\d+$/)).toBeVisible();
       // A CI run's call log says why the click waits, and the element it waits on is outlined on the image.
@@ -467,7 +594,7 @@ test.describe('Live view of a run', () => {
       // While the test runs on its slow page, nothing offers to watch it, and nothing reached this server.
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
@@ -504,16 +631,18 @@ test.describe('Live view of a run', () => {
       });
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
-      // Its running row says it is not shared, where Watch would be, and how to share it.
-      const unshared = page.getByTestId('live-unshared');
-      await expect(unshared).toHaveText('Not shared live');
+      // The Tests toolbar says once that it is not shared, and how to share it; no row repeats it, and with sign-in
+      // off nobody is offered to ask.
+      const unshared = page.locator(NOT_SHARED);
+      await expect(unshared).toContainText('Not shared live');
+      await expect(page.getByTestId('ask-to-watch')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared.png') });
       const wide = page.viewportSize()!;
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(unshared).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared-narrow.png') });
       await page.setViewportSize(wide);
-      await unshared.getByRole('button').click();
+      await unshared.getByRole('button', { name: 'Help: Not shared live' }).click();
       const hint = page.getByRole('dialog');
       await expect(hint).toContainText('Tools → Piwi → Share the Run Live');
       await expect(hint).toContainText('Piwi: Share the run live on the team instance');
@@ -559,12 +688,14 @@ test.describe('Live view of a run', () => {
       await page.goto(`/test-runs/${runId}`);
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       await watch.click();
       const view = page.getByTestId('lane-panel');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
       // The editor hears someone watches.
       await expect.poll(() => hub.heard().at(-1)?.viewers, { timeout: 10_000 }).toBe(1);
+      // A shared run's call log, read inside the worker, says why the click waits.
+      await expect(view.getByTestId('live-call-log')).toContainText('element is not enabled', { timeout: 20_000 });
 
       hub.share(false);
       await expect(view.getByTestId('live-status')).toHaveText(
@@ -573,8 +704,8 @@ test.describe('Live view of a run', () => {
       );
       await page.keyboard.press('Escape');
       await expect(watch).toHaveCount(0, { timeout: 10_000 });
-      // No longer shared, its running row says so again.
-      await expect(page.getByTestId('live-unshared')).toHaveText('Not shared live');
+      // No longer shared, the Tests toolbar says so again.
+      await expect(page.locator(NOT_SHARED)).toContainText('Not shared live');
       await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(0);
 
       run.release();
@@ -743,6 +874,554 @@ test.describe('Live view of a run', () => {
       worker.close();
       await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
       await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+    }
+  });
+
+  test('Watch all shows a tile of each worker, a click shows one in full, and each worker hears what the page asks', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(
+      request,
+      [
+        { title: 'pays on a slow page', lane: true, row: true },
+        { title: 'searches the catalog', lane: true, row: true },
+      ],
+      shot,
+    );
+    const last = (worker: number, type: string) =>
+      run.workers[worker]!.heard()
+        .filter((message) => message.type === type)
+        .at(-1) ?? null;
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(2);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByTestId('watch-all-toggle').click({ timeout: 30_000 });
+      // A tile of each worker, its image, its test: the workers send tiles, one a second.
+      const images = page.getByTestId('watch-all-image');
+      await expect(images).toHaveCount(2, { timeout: 30_000 });
+      await expect(page.getByTestId('watch-all-tile').nth(1)).toContainText('searches the catalog');
+      await expect.poll(() => last(0, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect(last(1, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
+      await page.screenshot({ path: testInfo.outputPath('watch-all.png') });
+
+      // A click shows worker 2 in full, on the same watch: that worker is asked for full images.
+      await page.getByRole('button', { name: /^Show worker 2 in full/ }).click();
+      const panel = page.getByTestId('lane-panel');
+      const frame = panel.getByTestId('live-frame');
+      await expect(frame).toBeVisible({ timeout: 30_000 });
+      await expect(panel).toContainText('searches the catalog');
+      await expect.poll(() => (last(1, 'view') as { fps?: number } | null)?.fps).toBe(4);
+      expect(last(0, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect((await liveWorkers(request, run.runId)).viewers).toBe(1);
+      // Worker 2's next image, another JPEG, is the one the full view shows.
+      const before = await frame.getAttribute('src');
+      const next = await page.screenshot({ type: 'jpeg', quality: 40, clip: { x: 0, y: 0, width: 160, height: 100 } });
+      run.shots[1] = next;
+      await expect
+        .poll(() =>
+          frame.evaluate(async (image: HTMLImageElement) => {
+            const response = await fetch(image.src).catch(() => null);
+            return response ? (await response.arrayBuffer()).byteLength : 0;
+          }),
+        )
+        .toBe(next.length);
+      expect(await frame.getAttribute('src')).not.toBe(before);
+
+      // Watch all off: worker 1 is watched by nobody, and worker 2's full view stays, at its size and pace.
+      await page.getByTestId('watch-all-toggle').click();
+      await expect(images).toHaveCount(0);
+      await expect.poll(() => last(0, 'viewers')).toEqual({ type: 'viewers', count: 0 });
+      expect(last(1, 'viewers')).toEqual({ type: 'viewers', count: 1 });
+      expect(last(1, 'view')).toMatchObject({ type: 'view', fps: 4 });
+      expect(last(1, 'view')).not.toMatchObject({ width: 320, height: 200 });
+      await expect(frame).toBeVisible();
+      await expect(panel.getByRole('heading', { name: 'Worker 2 · live' })).toBeVisible();
+    } finally {
+      await run.end();
+    }
+  });
+
+  test('Watch all shows a worker that says no lane in full from its tile, on the test it runs', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    // Two workers of a reporter that says no lane: the first's test has its row, the second's has none yet.
+    const run = await playWorkers(
+      request,
+      [
+        { title: 'pays on a slow page', lane: false, row: true },
+        { title: 'searches the catalog', lane: false, row: false },
+      ],
+      shot,
+    );
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(2);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByTestId('watch-all-toggle').click({ timeout: 30_000 });
+      await expect(page.getByTestId('watch-all-image')).toHaveCount(2, { timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      const frame = panel.getByTestId('live-frame');
+      for (const [worker, title] of [
+        [0, 'pays on a slow page'],
+        [1, 'searches the catalog'],
+      ] as const) {
+        await page.getByRole('button', { name: new RegExp(`^Show worker ${worker} in full`) }).click();
+        const live = panel.getByRole('heading', { name: `Worker ${worker} · live` });
+        await expect(live).toBeVisible({ timeout: 30_000 });
+        await expect(panel).toContainText(title);
+        await expect(frame).toBeVisible({ timeout: 30_000 });
+        // The worker's next images show, and the view stays live on its test.
+        const before = await frame.getAttribute('src');
+        await expect.poll(() => frame.getAttribute('src'), { timeout: 10_000 }).not.toBe(before);
+        await expect(live).toBeVisible();
+        await expect(panel.getByTestId('live-status')).toHaveText('');
+      }
+    } finally {
+      await run.end();
+    }
+  });
+
+  test('the lane panel asks a worker for the layers it shows, and shows its page’s events, text and filmstrip', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const title = 'pays on a slow page';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title, lane: true, row: true }], shot);
+    const worker = run.workers[0]!;
+    const asked = () =>
+      (worker
+        .heard()
+        .filter((message) => message.type === 'view')
+        .at(-1)?.layers as string[] | undefined) ?? null;
+    const id = { shard: null, worker: 0, slot: 0 };
+    const post = async (message: Record<string, unknown>) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}` },
+        data: { ...id, test: title, ...message },
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    const postThumb = async (call: string, index: number, image: Buffer) => {
+      const thumb = {
+        call,
+        title: `Click getByRole('link', { name: 'Step ${index}' })`,
+        index,
+        width: 160,
+        height: 100,
+        at: Date.now(),
+      };
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': LIVE_FRAME_TYPE },
+        data: Buffer.from(encodeLiveMessage(liveThumbHeader(id, thumb, title), image)),
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      // The events show by default and the filmstrip always: the worker is asked for both, and not for the text.
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['events', 'filmstrip']);
+      await post({
+        type: 'call-log',
+        log: {
+          id: 'call@4',
+          call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/live.spec.ts', line: 4 },
+          status: 'running',
+          lines: ["- waiting for getByRole('button', { name: 'Pay' })"],
+          point: null,
+          target: null,
+          viewport: null,
+          ms: 3_000,
+          error: null,
+        },
+      });
+
+      // The page's events, newest first: a request pending long on one line, a backend's log under its request.
+      const at = Date.now();
+      const orders = { method: 'POST', url: 'https://shop.test/api/orders' };
+      for (const event of [
+        { kind: 'console', text: 'TypeError: price is undefined' },
+        { kind: 'request-pending', id: 7, ...orders, ms: 5_000, done: false },
+        { kind: 'request-pending', id: 7, ...orders, ms: 17_000, done: false },
+        { kind: 'request-failed', ...orders, status: 500, failure: null },
+        { kind: 'backend', ...orders, status: 500, level: 'error', text: 'NullReferenceException in OrderService' },
+      ]) {
+        await post({ type: 'page-event', event, at });
+      }
+      const events = panel.getByTestId('live-event');
+      await expect(events).toHaveCount(3);
+      await expect(events.nth(0)).toContainText('Failed request');
+      await expect(events.nth(0).getByTestId('live-event-backend')).toContainText(
+        'Backend error: NullReferenceException in OrderService',
+      );
+      await expect(events.nth(1)).toContainText('Pending request');
+      await expect(events.nth(1)).toContainText('Pending for 17s');
+      await expect(events.nth(2)).toContainText('TypeError: price is undefined');
+
+      // The filmstrip: one image a call, in the order of its calls, whatever the worker sends again.
+      const small = await page.screenshot({ type: 'jpeg', quality: 40, clip: { x: 0, y: 0, width: 160, height: 100 } });
+      await postThumb('call@3', 2, small);
+      await postThumb('call@1', 1, small);
+      await postThumb('call@3', 2, small);
+      const shots = panel.getByTestId('live-filmstrip-shot');
+      await expect(shots).toHaveCount(2);
+      await expect(shots.nth(0)).toHaveAttribute('title', "Click getByRole('link', { name: 'Step 1' })");
+      await shots.nth(1).click();
+      await expect(panel.getByTestId('live-filmstrip-large')).toContainText(
+        "After Click getByRole('link', { name: 'Step 2' })",
+      );
+
+      // The text opened: the worker is asked for it and for its text now.
+      await panel.getByRole('button', { name: 'Page text' }).click();
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['events', 'text', 'filmstrip']);
+      await expect
+        .poll(() => worker.heard().some((message) => message.type === 'text'), { timeout: 10_000 })
+        .toBe(true);
+      await expect(panel.getByTestId('live-text-waiting')).toHaveText('Reading the page’s text…');
+      await post({
+        type: 'text',
+        text: {
+          call: null,
+          source: 'snapshot',
+          cut: false,
+          at: Date.now(),
+          text: [
+            '- heading "Checkout" [level=1] [ref=e2]',
+            '- textbox "Password" [ref=e3]: S3cr3t-pass',
+            '- paragraph [ref=e4]: Résumé of your order',
+            '- button "Pay €84.90" [disabled] [ref=e5]',
+          ].join('\n'),
+        },
+      });
+      const text = panel.getByTestId('live-text');
+      await expect(text).toContainText('- textbox "Password" [ref=e3]: <hidden>');
+      await expect(text).not.toContainText('S3cr3t');
+      // The call's element is marked; the search ignores case and accents.
+      await expect(text.locator('[data-target]')).toHaveText('- button "Pay €84.90" [disabled] [ref=e5]');
+      await panel.getByTestId('live-text-search').fill('resume');
+      await expect(panel.getByTestId('live-text-count')).toHaveText('1 match');
+      await expect(text.locator('mark')).toHaveText('Résumé');
+
+      // The lane's next test calls its backend with no page: its first event moves the view on to it.
+      await run.stopFrames();
+      await post({ type: 'ended', outcome: { test: title, status: 'passed', ms: 4_000 } });
+      await expect(panel.getByTestId('live-outcome')).toBeVisible();
+      await post({
+        type: 'page-event',
+        test: 'refunds by API',
+        event: {
+          kind: 'api',
+          method: 'POST',
+          url: 'https://shop.test/api/refunds',
+          status: 201,
+          ms: 40,
+          failure: null,
+        },
+        at: Date.now(),
+      });
+      await expect(events).toHaveCount(1);
+      await expect(events.nth(0)).toContainText('POST https://shop.test/api/refunds');
+      await expect(panel.getByTestId('live-outcome')).toHaveCount(0);
+
+      // The events folded: the worker is no longer asked for them.
+      await panel.getByRole('button', { name: /^Page events/ }).click();
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['text', 'filmstrip']);
+      await expect(events).toHaveCount(0);
+    } finally {
+      await run.end();
+    }
+  });
+  test('Inspect shows the page at the latest call, follows each new one, keeps the call chosen, and picks a locator', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const title = 'pays on a slow page';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title, lane: true, row: true }], shot);
+    const worker = run.workers[0]!;
+    const inspects = () =>
+      (worker
+        .heard()
+        .filter((message) => message.type === 'view')
+        .at(-1)?.inspect as boolean | undefined) ?? null;
+    const id = { shard: null, worker: 0, slot: 0 };
+    const CSS = `${'c'.repeat(40)}.css`;
+    const send = async (header: Record<string, unknown>, data: Uint8Array) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': LIVE_FRAME_TYPE },
+        data: Buffer.from(encodeLiveMessage(header, data)),
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    let index = 0;
+    /** A full snapshot of the checkout page, its heading saying where the test is, after `call`'s `phase`. */
+    const snapshot = async (call: string, phase: LiveSnapshot['phase'], heading: string) => {
+      const header: LiveSnapshot = {
+        call,
+        title: `Click getByRole('button', { name: 'Step ${call}' })`,
+        phase,
+        page: 'page@1',
+        frame: 'frame@1',
+        main: true,
+        full: true,
+        index: index++,
+        at: Date.now(),
+        resources: [{ url: 'https://shop.test/app.css', sha1: CSS }],
+      };
+      const html = [
+        'HTML',
+        {},
+        ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css' }]],
+        [
+          'BODY',
+          {},
+          ['H1', {}, heading],
+          ['SCRIPT', {}, 'document.body.dataset.ran = "yes"'],
+          ['LABEL', {}, 'Password', ['INPUT', { type: 'password', __playwright_value_: 'hunter2' }]],
+          [
+            'DIV',
+            { style: 'margin-top: 240px' },
+            ['BUTTON', { 'data-testid': 'pay', onclick: 'document.body.dataset.ran = "yes"' }, 'Pay'],
+          ],
+        ],
+      ];
+      const json = { html, frameUrl: 'https://shop.test/checkout', viewport: { width: 800, height: 500 } };
+      await send(liveSnapshotHeader(id, header, title), new TextEncoder().encode(JSON.stringify(json)));
+    };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      // Inspect opened: the worker is asked for its page's snapshots, and says there are none yet.
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(false);
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(true);
+      const inspect = panel.getByTestId('live-inspect');
+      await expect(inspect.getByTestId('live-inspect-waiting')).toContainText('Waiting for the page');
+
+      // The stylesheet, then the page at two calls: the view shows the latest, styled, its script and secret gone.
+      await send(
+        liveResourceHeader(id, { sha1: CSS, contentType: 'text/css' }),
+        Buffer.from('h1 { color: rgb(124, 58, 237) }'),
+      );
+      await snapshot('call@1', 'before', 'Cart');
+      await snapshot('call@2', 'before', 'Checkout');
+      const frame = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+      await expect(frame.getByRole('heading', { name: 'Checkout' })).toBeVisible({ timeout: 15_000 });
+      await expect(frame.getByRole('heading', { name: 'Checkout' })).toHaveCSS('color', 'rgb(124, 58, 237)');
+      // The secret field's value never reaches the page: the instance hides it again, whatever the worker sent.
+      await expect(frame.locator('input[type="password"]')).toHaveValue('');
+      expect(await frame.locator('html').innerHTML()).not.toContain('hunter2');
+      expect(await frame.locator('body').getAttribute('data-ran')).toBeNull();
+      await frame.getByTestId('pay').click();
+      expect(await frame.locator('body').getAttribute('data-ran')).toBeNull();
+      const calls = inspect.getByTestId('live-inspect-call');
+      await expect(calls).toHaveCount(2);
+      await expect(inspect.getByTestId('live-inspect-at')).toContainText('Step call@2');
+
+      // Following: the next call shows as it comes.
+      await snapshot('call@3', 'before', 'Paying');
+      await snapshot('call@3', 'after', 'Paid');
+      await expect(frame.getByRole('heading', { name: 'Paid' })).toBeVisible({ timeout: 15_000 });
+      await inspect.getByTestId('live-inspect-before').click();
+      await expect(frame.getByRole('heading', { name: 'Paying' })).toBeVisible({ timeout: 15_000 });
+
+      // An older call chosen: the view no longer follows, and stays on it as the next call comes.
+      await calls.nth(0).click();
+      await expect(inspect.getByRole('checkbox', { name: 'Follow the latest call' })).not.toBeChecked();
+      await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible({ timeout: 15_000 });
+      await snapshot('call@4', 'before', 'Receipt');
+      await expect(calls).toHaveCount(4);
+      await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible();
+
+      // A locator picked on the page shown.
+      await inspect.getByTestId('live-inspect-pick').click();
+      const picker = page.getByRole('dialog').filter({ hasText: 'Find a locator on the page at this call' });
+      await expect(picker).toBeVisible();
+      const pickFrame = picker.locator('iframe').contentFrame();
+      await pickFrame.getByRole('button', { name: 'Pay' }).click();
+      await expect(picker.getByRole('radiogroup', { name: 'Locator alternatives' })).toContainText(
+        "getByRole('button', { name: 'Pay' })",
+        { timeout: 15_000 },
+      );
+      await picker.getByRole('button', { name: 'Cancel' }).click();
+
+      // Inspect closed: the worker is no longer asked for snapshots.
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(false);
+    } finally {
+      await run.end();
+    }
+  });
+
+  test('Inspect follows calls that keep coming, starts afresh with each next test of the lane, and says why one sends no page', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const first = 'pays on a slow page';
+    const second = 'shows the receipt';
+    const MASKED = 'This project masks elements: Inspect sends no page of it.';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title: first, lane: true, row: true }], shot);
+    const id = { shard: null, worker: 0, slot: 0 };
+    const send = async (header: Record<string, unknown>, data: Uint8Array) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': LIVE_FRAME_TYPE },
+        data: Buffer.from(encodeLiveMessage(header, data)),
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    const post = async (data: Record<string, unknown>) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}` },
+        data: { ...id, ...data },
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    let index = 0;
+    /** A full snapshot of the page of `test` at `call`, its heading naming it. */
+    const snapshot = async (test: string, call: string, heading: string) => {
+      const header: LiveSnapshot = {
+        call,
+        title: `Click getByRole('button', { name: '${heading}' })`,
+        phase: 'before',
+        page: 'page@1',
+        frame: 'frame@1',
+        main: true,
+        full: true,
+        index: index++,
+        at: Date.now(),
+        resources: [],
+      };
+      const json = {
+        html: ['HTML', {}, ['BODY', {}, ['H1', {}, heading], ['BUTTON', {}, 'Pay']]],
+        frameUrl: 'https://shop.test/checkout',
+        viewport: { width: 800, height: 500 },
+      };
+      await send(liveSnapshotHeader(id, header, test), new TextEncoder().encode(JSON.stringify(json)));
+    };
+    /** The lane's test `title` ended, its frames stopped: the view says how, and waits for the next. */
+    const endTest = async (title: string) => {
+      await run.stopFrames();
+      await post({ type: 'ended', outcome: { test: title, status: 'passed', ms: 2_000 } });
+      await expect(panel.getByTestId('live-outcome')).toBeVisible();
+    };
+    /** The lane's next test, `title`, runs: its first frame moves the view on to it. */
+    const startTest = async (title: string) => {
+      run.nextTest(0, title);
+      await expect(panel.getByTestId('live-outcome')).toHaveCount(0, { timeout: 10_000 });
+    };
+    const panel = page.getByTestId('lane-panel');
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      const inspect = panel.getByTestId('live-inspect');
+      await expect(inspect.getByTestId('live-inspect-waiting')).toContainText('Waiting for the page');
+      const frame = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+      const heading = () =>
+        frame
+          .locator('h1')
+          .textContent({ timeout: 500 })
+          .catch(() => null);
+      const calls = inspect.getByTestId('live-inspect-call');
+      const follow = inspect.getByRole('checkbox', { name: 'Follow the latest call' });
+      const pick = inspect.getByTestId('live-inspect-pick');
+      await snapshot(first, 'call@1', 'Cart');
+      await snapshot(first, 'call@2', 'Checkout');
+      await expect(frame.getByRole('heading', { name: 'Checkout' })).toBeVisible({ timeout: 15_000 });
+
+      // Calls that keep coming: the page moves on while they come, not once they stop.
+      let coming = true;
+      const keepComing = (async () => {
+        for (let step = 3; step <= 24; step++) {
+          await snapshot(first, `call@${step}`, `Step ${step}`);
+          await new Promise((done) => setTimeout(done, 150));
+        }
+        coming = false;
+      })();
+      await expect
+        .poll(async () => coming && /^Step \d+$/.test((await heading()) ?? ''), { timeout: 10_000 })
+        .toBe(true);
+      await keepComing;
+      await expect(frame.getByRole('heading', { name: 'Step 24' })).toBeVisible({ timeout: 15_000 });
+
+      // An older call pinned, then the lane's next test: the view follows its calls, the page before it gone.
+      await calls.nth(0).click();
+      await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible({ timeout: 15_000 });
+      await expect(follow).not.toBeChecked();
+      await endTest(first);
+      // The test ended: the instance let its pages go, and Pick a locator is off until the next test's come.
+      await expect(inspect.getByTestId('live-inspect-test-ended')).toBeVisible();
+      await expect(pick).toBeDisabled();
+      await expect(pick).toHaveAttribute('title', /The test ended/);
+      await startTest(second);
+      await expect(follow).toBeChecked();
+      await expect(inspect.getByTestId('live-inspect-frame')).toHaveCount(0);
+      await expect(pick).toBeDisabled();
+      await snapshot(second, 'call@30', 'Receipt');
+      await expect(frame.getByRole('heading', { name: 'Receipt' })).toBeVisible({ timeout: 15_000 });
+      await expect(calls).toHaveCount(1);
+      await expect(pick).toBeEnabled();
+
+      // The watch's changes fail until it drops its stream and opens again: meanwhile Pick a locator is off, saying why.
+      const watchPath = (url: URL) => url.pathname.endsWith('/live-view/watch');
+      await page.route(watchPath, (route) => route.abort());
+      await panel.getByRole('button', { name: 'Page text' }).click();
+      await expect(pick).toBeDisabled({ timeout: 15_000 });
+      await expect(pick).toHaveAttribute('title', /connection is opening again/);
+      await page.unroute(watchPath);
+      await expect(pick).toBeEnabled({ timeout: 20_000 });
+      await expect(frame.getByRole('heading', { name: 'Receipt' })).toBeVisible({ timeout: 15_000 });
+
+      // The worker says why it sends no more page of the test: said beside the calls listed.
+      await send(liveSnapshotRefusalHeader(id, MASKED, second), new Uint8Array());
+      await expect(inspect.getByTestId('live-inspect-refused')).toHaveText(MASKED);
+
+      // The lane's next test has the same title: the test before's calls do not come back, Inspect opened again.
+      await endTest(second);
+      await startTest(second);
+      await expect(inspect.getByTestId('live-inspect-waiting')).toContainText('Waiting for the page');
+      await snapshot(second, 'call@40', 'Receipt again');
+      await expect(frame.getByRole('heading', { name: 'Receipt again' })).toBeVisible({ timeout: 15_000 });
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect(inspect).toHaveCount(0);
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect(frame.getByRole('heading', { name: 'Receipt again' })).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(1_000);
+      await expect(calls).toHaveText(["Click getByRole('button', { name: 'Receipt again' })"]);
+
+      // The next test's refusal comes before its first image: said once the view shows that test.
+      await endTest(second);
+      await send(liveSnapshotRefusalHeader(id, MASKED, 'refunds the order'), new Uint8Array());
+      await startTest('refunds the order');
+      await expect(inspect.getByTestId('live-inspect-waiting')).toHaveText(MASKED);
+
+      // The run ended: Inspect says so, and offers nothing it cannot do.
+      await run.end();
+      await expect(inspect.getByTestId('live-inspect-waiting')).toHaveText(
+        'The run ended: the instance let its pages go.',
+        { timeout: 15_000 },
+      );
+      await expect(pick).toBeDisabled();
+    } finally {
+      await run.end();
     }
   });
 });

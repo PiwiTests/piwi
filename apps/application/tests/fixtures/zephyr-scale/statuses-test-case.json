@@ -1,0 +1,46 @@
+{
+  "_spec": "StatusList",
+  "next": null,
+  "startAt": 0,
+  "maxResults": 1000,
+  "total": 3,
+  "isLast": true,
+  "values": [
+    {
+      "id": 10000,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Draft",
+      "index": 0,
+      "color": "#cccccc",
+      "archived": false,
+      "default": true
+    },
+    {
+      "id": 10001,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Approved",
+      "index": 1,
+      "color": "#cccccc",
+      "archived": false,
+      "default": false
+    },
+    {
+      "id": 10005,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Deprecated",
+      "index": 5,
+      "color": "#cccccc",
+      "archived": true,
+      "default": false
+    }
+  ]
+}

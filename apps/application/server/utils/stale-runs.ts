@@ -1,3 +1,4 @@
+import { closePendingStatus } from './scm/pending-status';
 import { eq, and, lt, ne, or, isNull, isNotNull, not, notInArray, sql } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
@@ -220,6 +221,10 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now(), reachab
     // App-wide consumers (run lists, the desktop shell's OS progress) track
     // in-flight runs from the global stream and only drop one on its end event.
     runEventBus.publishGlobal({ type: 'run-finished', runId: run.id, projectId: run.projectId, status: 'interrupted' });
+    // Its pending commit status is closed; the run may go on, and its pending status with it.
+    closePendingStatus(run.id, 'interrupted', false).catch((e) =>
+      console.error('[pr-feedback] closePendingStatus failed', e),
+    );
 
     // Subscribers hear of the interruption. The finish-time side effects do not
     // run: a later event carrying the run's stream token revives it (revive-run.ts).

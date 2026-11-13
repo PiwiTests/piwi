@@ -13,31 +13,37 @@
  * picks the element under a point of an image of a stopped page (`pickAt`). A worker names places relative to the run's
  * working directory; the client, by their file's URI as the workspace names it: the session converts both ways. A stop
  * that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the runs) is
- * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only in a run
- * started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window of Piwi
- * Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at once and
- * no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the bar shows
+ * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only while its
+ * run's **Hold failures** is on (`hold`: from its start in a run started to be watched, `watched`, with the editor's
+ * breakpoints or a `page.pause()`; else as a person or an agent set it), and never in a run its host says holds none
+ * (`holdsFailures`); otherwise its worker does not stop at it, and no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the bar shows
  * waits there for its answer. An agent (the service's MCP server, `run-agent.ts`) hears what each worker says
  * (`heard`), has a run's workers tell what their tests do (`followRun`), and, at a stop, reads the page's ARIA snapshot
  * (`snapshot`), acts on an element of it by its ref (`act`), ranks an element's locators (`refLocator`) and shares the
  * browser with Playwright's own tools (`bind`); a stop it asked for (Pause, Step, Run to) is said to be the agent's
  * (`RunStop.by`). Every surface can end the test at a stop (`end`, for a worker that takes it). A run started in a
  * terminal attaches as the editor's own do, under a ref the host never built (`terminal`): it starts with the editor's
- * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only while a Runs
- * window follows the runs. A person shares a run live on the team instance its reporter reports to (`share`, **Share
+ * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only once its Hold
+ * failures is turned on. A person shares a run live on the team instance its reporter reports to (`share`, **Share
  * live**, never an agent): each worker that takes it opens its live view stream there, a worker that connects later
- * too, and says how it stands (`live`), which the session sums up (`RunSession.live`).
+ * too, and says how it stands (`live`), which the session sums up (`RunSession.live`). Any surface opens a lane's
+ * running test's trace so far in Playwright's trace viewer on this machine (`openTrace`): its worker names the file to
+ * the sessions alone, which check it and answer in a sentence; the host alone hears the checked file (`laneTrace`),
+ * which the desktop app's server reads for its window's **Inspect**.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   RUN_INTENT_NAMES,
+  checkoutCommitOf,
   parseRunMainToHub,
   parseRunToHub,
   type ActAnswer,
   type BindAnswer,
+  type HubToMain,
   type HubToRun,
+  isPageOfInstance,
   type IntentAnswer,
   type LocatorAnswer,
   type MockAnswer,
@@ -56,9 +62,14 @@ import {
   type RunTake,
   type RunToHub,
   type SnapshotAnswer,
+  type TraceAnswer,
 } from '@piwitests/core/run-channel';
+import { parseLiveAskAnswer } from '@piwitests/core/live-view';
+import { emptyLane, reduceLane, type Lane, type LaneEvent } from '@piwitests/core/live-lane';
+import { LANE_LAYERS, LANE_TEXTS_PER_SECOND, type LaneLayer } from '@piwitests/core/live-layers';
 import { isViewPoint, type ViewInput } from '@piwitests/core/run-view';
 import type {
+  HoldRunParams,
   PausedImage,
   PausedPageParams,
   PausedPageResult,
@@ -66,7 +77,10 @@ import type {
   PickAtResult,
   RunControlParams,
   RunControlResult,
+  RunHoldFailures,
   RunLive,
+  RunPage,
+  RunPresence,
   RunProgress,
   RunSession,
   RunStop,
@@ -75,10 +89,15 @@ import type {
   SetBreakpointsParams,
   SetRunBreakpointsParams,
   ShareRunParams,
+  AskToWatchParams,
+  AnswerAskParams,
+  LaneViewLayer,
+  OpenTraceParams,
 } from './protocol.js';
-import type { HubAction } from '@piwitests/core/run-hub';
+import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
 import { breakpointLines, runToLine } from './recorder/page-candidates.js';
+import { checkTraceFile, hasDisplay, type TraceViewerLauncher } from './trace-viewer.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
@@ -90,6 +109,8 @@ export const SESSION_LINGER_MS = 5_000;
 export const PAUSED_PAGE_WAIT_MS = 10_000;
 /** The runs whose breakpoints (for workers that connect later) and whose command's end the service keeps, at most. */
 const MAX_KEPT_RUNS = 50;
+/** The stops nobody asked for, which a run nobody attends lets go on: a breakpoint, a `page.pause()`, any other. */
+const UNASKED_STOPS: ReadonlySet<string> = new Set(['breakpoint', 'page-pause', 'other']);
 /** The stops the service shows and answers among those a worker holds only then (`attached`): a held failure. */
 const SHOWN_HOLDS: readonly RunHold[] = ['failure'];
 
@@ -107,6 +128,7 @@ type Answered =
   | SnapshotAnswer
   | RefLocatorAnswer
   | BindAnswer
+  | TraceAnswer
   | null;
 
 /**
@@ -122,6 +144,10 @@ export type RunHeard =
   | { type: 'stopped'; stop: RunStop }
   | { type: 'running'; since: string }
   | { type: 'event'; event: RunEvent }
+  /** A person took the stop the agent drove (`by`: the tool, as presence names it). */
+  | { type: 'taken'; by: string }
+  /** The person who drove the stop gave it back: an agent may act on it again. */
+  | { type: 'given-back' }
   | { type: 'ended' };
 
 /**
@@ -149,19 +175,79 @@ export type LaneViewFrame = { ref: string; lane: number; worker: number; since: 
 );
 
 /**
- * Who watches the live view of a stop: each frame of it goes to `frame`, while it watches; and the frames of a lane it
- * watches to `laneFrame`, which a viewer that watches no lane leaves out.
+ * A layer of a lane a viewer watches and asked for (`LaneParams.layers`, `@piwitests/core/live-layers`), as the worker
+ * sent it: the shape of `piwi/laneLayer`.
+ */
+export type { LaneViewLayer };
+
+/**
+ * Who watches the live view of a stop: each frame of it goes to `frame`, while it watches; the frames of a lane it
+ * watches to `laneFrame`, which a viewer that watches no lane leaves out; and the layers of that lane it asked for to
+ * `laneLayer`, which a viewer that asks for none leaves out.
  */
 export interface Viewer {
   frame(frame: ViewFrame): void;
   laneFrame?(frame: LaneViewFrame): void;
+  laneLayer?(layer: LaneViewLayer): void;
+  /** The tool it is, as presence names it; a viewer without one is in no presence list and drives no stop. */
+  who?: Omit<RunPresence, 'self'>;
 }
 
-/** A lane as a viewer names it: the run, and Playwright's `parallelIndex`. */
+/** The agent, as presence names it: on a run it follows, and as the driver of a stop it asked for or acted on. */
+export const AGENT_VIEWER: Viewer = { frame: () => undefined, who: { kind: 'agent', name: 'an agent' } };
+
+/** A worker's `watchers`, absent while none watches. */
+function watchersField(watchers: RunPresence[]): { watchers?: RunPresence[] } {
+  return watchers.length ? { watchers } : {};
+}
+
+/** The viewers that are someone, as one viewer (`self`) hears them: else as the editor's client hears them. */
+function presenceList(viewers: Iterable<Viewer>, self: Viewer | null): RunPresence[] {
+  const list = new Map<string, RunPresence>();
+  for (const viewer of viewers) {
+    if (!viewer.who || list.size >= MAX_HUB_PRESENCE) continue;
+    const presence = presenceOf(viewer, self);
+    // A tool's panels are one tool: its page view and its lane view of a worker are named once.
+    list.set(`${presence.kind}\n${presence.name}\n${presence.self ?? ''}`, presence);
+  }
+  return [...list.values()];
+}
+
+/** A viewer as `self` hears it: marked `self` when it is that viewer, or, for the editor's client, when it is an editor. */
+function presenceOf(viewer: Viewer, self: Viewer | null): RunPresence {
+  const own = self ? viewer === self : viewer.who!.kind === 'editor';
+  return { kind: viewer.who!.kind, name: viewer.who!.name, ...(own ? { self: true as const } : {}) };
+}
+
+/**
+ * A lane as a viewer names it: the run, and Playwright's `parallelIndex`; and the layers it takes of the lane beside its
+ * frames, none when left out.
+ */
 export interface LaneParams {
   ref: string;
   lane: number;
   on: boolean;
+  layers?: readonly LaneLayer[];
+}
+
+/**
+ * A lane's running attempt's trace, as its worker named it to the host and `checkTraceFile` passed it (`laneTrace`),
+ * for the host to read itself: no surface hears it.
+ */
+export interface LaneTrace {
+  ok: true;
+  /** The run's folder, as the host knows it (`rootOf`). */
+  root: string;
+  /** The runner's trace folder of the lane's worker, as the file system spells it: the attempt's files are in it. */
+  traces: string;
+  /** The name the attempt's files start with: `<testId>[-retry<k>]` (`attemptName`). */
+  base: string;
+  /** The trace file the worker named, which passed the checks. */
+  file: string;
+  /** The lane's worker's index. */
+  worker: number;
+  /** The attempt: Playwright's id of its test, and its retry. */
+  test: { id: string; retry: number };
 }
 
 /** A stop as a client names it: the run, the one stopped worker or `worker`, and the stop it showed (`since`). */
@@ -213,6 +299,10 @@ const NO_ANSWER_YET = 'The test did not answer.';
 const LATE_ANSWER_MS = 60_000;
 /** The most lanes of a run watched at once: a run's workers, and a few more Playwright may start. */
 const MAX_WATCHED_LANES = 64;
+/** How long after a worker was asked for its page's text another ask shares that one's answer. */
+const LANE_TEXT_MS = 1000 / LANE_TEXTS_PER_SECOND;
+/** The answer to an ask of the page's text the layers just made, which the worker takes as it hears them. */
+const TEXT_ON_ITS_WAY: RunControlResult = { ok: true, message: 'The page’s text is on its way.' };
 
 /** The service's refusal of an agent's request about an element, in its own words: no element, no locator. */
 function noElement(message: string): AgentAnswer<RefLocatorAnswer> {
@@ -247,6 +337,39 @@ const QUERY_WORDS: Record<Query, string> = {
   bind: 'share its browser with Playwright tools',
 };
 
+/** Why **Open the trace so far** is refused for a worker whose reporter does not say where its trace grows. */
+const CANNOT_TRACE = "This worker's reporter cannot open its trace: update @piwitests/reporter.";
+
+/** Why **Open the trace so far** is refused between two tests. */
+const NO_TEST = 'No test runs on this worker now.';
+
+/** Why **Open the trace so far** is refused on a machine that shows no window (`traceDisplay`). */
+const NO_DISPLAY = "This machine has no display for Playwright's trace viewer.";
+
+/** Why **Open the trace so far** is refused in a run whose folder the host does not know (`rootOf`). */
+const NO_ROOT = "This run's folder is not known here: open its trace from the editor or the app that started it.";
+
+/** `text` with its first letter in capitals. */
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The longest reason a viewer that did not start gives a surface, in characters. */
+const MAX_TRACE_REASON = 300;
+
+/**
+ * A viewer's reason with the trace's path and its folders left out, with either separator, then cut to
+ * `MAX_TRACE_REASON`: the reason goes to every surface, the path to none, whole or in part. Its trailing period is left
+ * out: the sentence ends it.
+ */
+function withoutPaths(reason: string, paths: readonly string[]): string {
+  let said = reason;
+  for (const known of paths.flatMap((p) => [p, p.split(path.sep).join('/')]).sort((a, b) => b.length - a.length)) {
+    if (known) said = said.split(known).join("the test's trace");
+  }
+  return said.slice(0, MAX_TRACE_REASON).replace(/[.\s]+$/, '') || 'it did not say why';
+}
+
 /** Why the input of a viewer that does not watch the stop is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
@@ -269,6 +392,16 @@ export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
   /**
+   * Who is present on the run changed though its view did not (a second tool of a kind and name already named, or a
+   * stop driven by another of them): the hub, whose connections each hear their own entries, tells them again.
+   */
+  presenceChanged?(session: RunSession): void;
+  /**
+   * The addresses of the instances this host connects to: a run's page (`run-page`) is kept only on this machine or
+   * under one of them (`isPageOfInstance`). None by default.
+   */
+  instances?(): Iterable<string | null | undefined>;
+  /**
    * Whether a surface shows the stops and answers them: the client (`InitializationOptions.runControl`), or a Piwi
    * Picker subscribed to the hub.
    */
@@ -285,19 +418,17 @@ export interface RunSessionsOptions {
    */
   onRegion?(stop: StopRef, region: { locator: string; snapshot: string } | { refused: string }): void;
   /**
-   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
-   * or for a spec that calls `page.pause()` (both headed). A failure no bar shows is held in such a run.
+   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints or
+   * for a spec that calls `page.pause()` (both headed), or the person's start options hold its failures. Its **Hold
+   * failures** is on from its start, until a person or an agent turns it off (`hold`).
    */
   watched?(ref: string): boolean;
   /**
-   * Whether a person follows the runs in Piwi Picker now (a Runs window open, its hub connection saying so): a failure
-   * no bar shows is held while one does.
-   */
-  followed?(): boolean;
-  /**
    * Whether a failure of the run of `ref` may be held at all, whoever watches it: true by default. A run nobody attends
-   * (the desktop app's Flake Lab, bisect and lab runs, a run repeating its tests or in UI mode) holds none: its workers
-   * hear that they hold no failure (`attached`), and a failure that stops one anyway goes on at once.
+   * (the desktop app's Flake Lab, bisect and lab runs, a run in UI mode or repeating its tests past a failure, the
+   * editor's Verify ×3, fix plan verifications and Flake Lab lines) holds none: its workers hear that they hold no
+   * failure (`attached`), and a failure that stops one anyway goes on at once. It stops at no breakpoint either, and a
+   * stop no one asked for (a `page.pause()`) goes on at once; a Pause, a Step or a Run to someone asked for waits.
    */
   holdsFailures?(ref: string): boolean;
   /**
@@ -306,10 +437,15 @@ export interface RunSessionsOptions {
    * they were, whose code is the files as they stand now).
    */
   sessionStarted?(ref: string, again: boolean): void;
+  /** A teammate asks to watch the run of `ref` (`run-ask`): the client asks the developer. */
+  askedToWatch?(ask: AskToWatchParams): void;
+  /** This window's runs are shared live from now on, or no longer (`share` with `scope: 'window'`). */
+  shareWindowChanged?(on: boolean): void;
   /**
    * Whether the run of `ref` was started in a terminal, by no command of the host's (a ref it never built): it is shown
    * as one (`RunSession.terminal`), starts with the editor's breakpoints (`setEditorBreakpoints`), and holds a failure
-   * only while a person follows the runs in Piwi Picker (`followed`), so it never waits for nobody. False by default.
+   * only once a person or an agent turns its **Hold failures** on (`hold`), so it never waits for nobody. False by
+   * default.
    */
   terminal?(ref: string): boolean;
   /**
@@ -320,6 +456,11 @@ export interface RunSessionsOptions {
   declines?(what: RunIntent): string | null;
   /** What the sentences call the host the workers connect to: `the editor` by default. */
   host?: string;
+  /**
+   * What the workers' own lines call the host, told in `attached` (the editor's name, `Visual Studio Code`); `host`
+   * when it gives none.
+   */
+  workerHost?: () => string | null;
   /** What the sentences call the surfaces of this host that show where a run stops: `this editor` by default. */
   surfaces?: string;
   /**
@@ -337,6 +478,18 @@ export interface RunSessionsOptions {
   burstMs?: number;
   lingerMs?: number;
   requestMs?: number;
+  /** How long after a worker was asked for its page's text another ask of it is merged with that one. */
+  laneTextMs?: number;
+  /**
+   * Starts Playwright's trace viewer on a lane's running test's trace (`openTrace`, **Open the trace so far**): the
+   * service's and the desktop app's server's `startTraceViewer`. Absent, no trace is opened.
+   */
+  traceViewer?: TraceViewerLauncher;
+  /**
+   * Whether this machine shows the trace viewer's window: `hasDisplay` by default. Without one, no worker says it opens
+   * its trace (`RunWorker.traces`), the hub leaves `trace` out of its features, and `openTrace` is refused.
+   */
+  traceDisplay?(): boolean;
 }
 
 interface Worker {
@@ -345,12 +498,14 @@ interface Worker {
   parallelIndex: number;
   /** The run's working directory, which the worker's places are relative to. */
   cwd: string;
-  test: RunTest | null;
-  /** Where it stands stopped, and the worker's number for that stop and its place. */
-  stop: { id: number; place: Place; view: RunStop } | null;
-  pausing: boolean;
-  /** While pausing, the call its test waits in, as its reporter said it (`waiting`); null otherwise. */
-  waiting: RunWaiting | null;
+  /**
+   * Its lane's test, stop, Pause and the call that Pause waits in, read from its lane (`Session.laneStates`) while it
+   * is the lane's worker: what it says changes them through `RunSessions.hear` alone.
+   */
+  readonly test: RunTest | null;
+  readonly stop: HeldStop | null;
+  readonly pausing: boolean;
+  readonly waiting: RunWaiting | null;
   /** What its reporter takes at a stop, what it does beyond that (`features`), and its version. */
   takes: Set<RunTake>;
   features: Set<RunFeature>;
@@ -360,10 +515,26 @@ interface Worker {
    * shares, and whether it started. Null when nobody watches the lane.
    */
   lane: { started: Promise<IntentAnswer>; on: boolean } | null;
+  /** The layers its lane's viewers ask together as it last heard them (`layers`), comma-separated. */
+  layersSent: string;
+  /**
+   * Its page's text as last asked of it, by a `text` request or by `layers` listing `text` anew: when, its answer, and
+   * whether that answer is still to come. Another ask meanwhile, or within `laneTextMs` of it, shares its answer.
+   */
+  textAsk: { at: number; answer: Promise<RunControlResult>; pending: boolean } | null;
   /** The requests waiting for the worker's answer, by what they ask. */
   requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
   askedBy: 'agent' | null;
+  /**
+   * Who drives its stop now (`AGENT_VIEWER` for the agent); null while nobody does. Read only while it stands at a
+   * stop: the next stop sets it again.
+   */
+  driver: Viewer | null;
+  /** The person who drove its stop and asked for a Step or a Run to: they drive the stop it comes to. */
+  carried: Viewer | null;
+  /** The stops its attach listed as held only while the service shows them (`RunAttach.holds`); null for none listed. */
+  asksHolds: readonly RunHold[] | null;
   /** How its run stands on the team instance's live view, as it last said (`live`); null before it said. */
   live: RunLiveState | null;
   /**
@@ -373,10 +544,23 @@ interface Worker {
   view: { stop: number; viewers: Set<Viewer>; started: Promise<IntentAnswer>; on: boolean } | null;
 }
 
+/** Where a worker stands stopped: the worker's number for that stop, its place, and the stop as the client hears it. */
+interface HeldStop {
+  id: number;
+  place: Place;
+  view: RunStop;
+}
+
+/** A lane of a run as the hub keeps it (`@piwitests/core/live-lane`), with its own test, stop and call. */
+type HubLane = Lane<RunTest, HeldStop, RunWaiting>;
+type HubLaneEvent = LaneEvent<RunTest, HeldStop, RunWaiting>;
+
 interface Session {
   ref: string;
   root: string | null;
   workers: Map<number, Worker>;
+  /** Who was present on the run when it was last told (`presentKey`). */
+  present: string;
   ended: boolean;
   /** Started in a terminal (`RunSessionsOptions.terminal`). */
   terminal: boolean;
@@ -401,15 +585,30 @@ interface Session {
    * streaming worker stopped though nobody asked, `stopped` saying why.
    */
   share: boolean | null;
+  /**
+   * Shared as one of this window's runs (`scope: 'window'`), said to the person once it is (`announced`); `streamed`
+   * once a worker of it streamed to the instance.
+   */
+  byWindow: boolean;
+  announced: boolean;
+  streamed: boolean;
+  /** The run on the instance this one continues, as the window shared it before; undefined until known. */
+  after?: number | null;
   stopped: string | null;
   /** The run's live view as it was last summed up, kept while no worker that says it is connected. */
   live: RunLive | null;
   /** Who watches each lane (`parallelIndex`), through its tests and the workers Playwright starts in it. */
   lanes: Map<number, Set<Viewer>>;
+  /** Each lane (`parallelIndex`) as it stands, reduced from what its workers say (`RunSessions.hear`). */
+  laneStates: Map<number, HubLane>;
+  /** The layers each viewer of a lane asked for, by lane. */
+  laneLayers: Map<number, Map<Viewer, ReadonlySet<LaneLayer>>>;
   /** The run's own connection (`run-begin`), while it is open: the run goes on between its workers. */
   main: net.Socket | null;
   /** How far the run is, as its own process said; null before it said, and from a reporter that predates it. */
   progress: RunProgress | null;
+  /** The run's page on the instance, as its own process named it (`run-page`); null before, or without one. */
+  page: RunPage | null;
 }
 
 /**
@@ -419,6 +618,9 @@ interface Session {
 type Asked =
   | 'image'
   | 'view-lane'
+  | 'text'
+  | 'trace'
+  | 'front'
   | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end' | 'share'>
   | AgentQuery;
 
@@ -426,6 +628,8 @@ type Asked =
 function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
   switch (what) {
     case 'image':
+    case 'text':
+    case 'trace':
       return { type: 'request', request, what };
     case 'view-lane':
       return { type: 'request', request, what, on: extra.on ?? false };
@@ -492,8 +696,18 @@ function uriToPath(uri: string): string | null {
   }
 }
 
+/** The refs of runs that connected the service keeps, for a command that ended to say whether its reporter ran. */
+const HEARD_REFS = 200;
+
 export class RunSessions {
   private readonly sessions = new Map<string, Session>();
+  /**
+   * How many tests of each run that ended were ended at a stop, as its own process counted them, by ref: the latest
+   * `MAX_KEPT_RUNS` that ended any (`endedAtStopOf`).
+   */
+  private readonly endedAtStop = new Map<string, number>();
+  /** The refs of the runs whose reporter connected, latest last, `HEARD_REFS` at most (`heardFrom`). */
+  private readonly heard = new Set<string>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
   private readonly breakpoints = new Map<string, Array<{ file: string; line: number }>>();
   /**
@@ -502,11 +716,40 @@ export class RunSessions {
   private editorBreakpoints: Array<{ file: string; line: number }> = [];
   /** The refs whose command ended (`commandEnded`), the latest 50: a session of one is a rerun's. */
   private readonly endedCommands = new Set<string>();
+  /** This window's runs are shared live (`share` with `scope: 'window'`), until the person stops or the window closes. */
+  private shareAll = false;
+  /**
+   * The window's latest shared run that ended having streamed, by its instance's origin: the run on that instance the
+   * window's next shared run continues.
+   */
+  private readonly lastShared = new Map<string, number>();
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
   private readonly followedRuns = new Set<string>();
+  /** The surfaces that have the runs open (`presentOn`). */
+  private readonly present = new Set<Viewer>();
+  /** A number for each viewer, for what is present on a run (`presentKey`). */
+  private readonly viewerIds = new WeakMap<Viewer, number>();
+  private viewersNamed = 0;
+  /** Each run's **Hold failures** as a person or an agent set it, by ref, the latest `MAX_KEPT_RUNS`. */
+  private readonly holdsSet = new Map<string, RunHoldFailures>();
+  /** The live traces a trace viewer is open on, or starting on, by what it opens: one viewer for each attempt. */
+  private readonly traceViewers = new Set<string>();
   private lastRequest = 0;
 
   constructor(private readonly options: RunSessionsOptions) {}
+
+  /**
+   * Whether this host opens a lane's running test's trace in Playwright's trace viewer (`openTrace`): it starts one, on
+   * a machine that shows its window.
+   */
+  get opensTraces(): boolean {
+    return !!this.options.traceViewer && this.showsTraceViewer();
+  }
+
+  /** Whether this machine shows the trace viewer's window (`traceDisplay`). */
+  private showsTraceViewer(): boolean {
+    return this.options.traceDisplay ? this.options.traceDisplay() : hasDisplay();
+  }
 
   /** What the sentences call the host the workers connect to. */
   private get host(): string {
@@ -524,6 +767,19 @@ export class RunSessions {
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
+  /**
+   * How many tests of the run of `ref` were ended at a stop (End the test), as its own process counted them: the live
+   * run's, else the last that ended under the ref; 0 for none, and for a reporter that predates the count.
+   */
+  endedAtStopOf(ref: string): number {
+    return this.sessions.get(ref)?.progress?.endedAtStop ?? this.endedAtStop.get(ref) ?? 0;
+  }
+
+  /** Whether the reporter of a run of `ref` ran: the run's own process reached the service (`run-begin`). */
+  heardFrom(ref: string): boolean {
+    return this.heard.has(ref);
+  }
+
   /** A new session of the run `ref`, whose working directory is `cwd`. */
   private open(ref: string, cwd: string, runner: boolean): Session {
     const terminal = !!this.options.terminal?.(ref);
@@ -537,22 +793,31 @@ export class RunSessions {
       workersSeen: false,
       heard: null,
       sent: '',
+      present: '',
       sentAt: 0,
       paced: null,
       pacedAt: 0,
       linger: null,
       stoppedAt: 0,
       resumedSaid: false,
-      share: null,
+      // While this window's runs are shared, each new one is.
+      share: this.shareAll ? true : null,
+      byWindow: this.shareAll,
+      announced: false,
+      streamed: false,
       stopped: null,
       live: null,
       lanes: new Map(),
+      laneStates: new Map(),
+      laneLayers: new Map(),
       main: null,
       progress: null,
+      page: null,
     };
     this.sessions.set(ref, session);
-    // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
-    if (terminal && !this.breakpoints.has(ref)) this.keepBreakpoints(ref, this.editorBreakpoints);
+    // A terminal's run a person attends starts with the editor's breakpoints, as lines of its code: the files as they
+    // stand now.
+    if (terminal && this.holds(ref) && !this.breakpoints.has(ref)) this.keepBreakpoints(ref, this.editorBreakpoints);
     this.options.sessionStarted?.(ref, this.endedCommands.delete(ref));
     return session;
   }
@@ -563,12 +828,16 @@ export class RunSessions {
    * goes on while it is connected, between workers too. A second connection of a run while one is open is closed.
    */
   attachMain(socket: net.Socket, begin: RunBegin): (line: string) => void {
+    this.heard.delete(begin.ref);
+    this.heard.add(begin.ref);
+    if (this.heard.size > HEARD_REFS) this.heard.delete(this.heard.values().next().value!);
     const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, begin.runner === true);
     if (session.main && !session.main.destroyed) {
       socket.destroy();
       return () => {};
     }
     if (session.terminal && begin.runner === true) session.runner = true;
+    this.anotherRun(session);
     session.main = socket;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -595,10 +864,40 @@ export class RunSessions {
     return (line) => {
       const message = parseRunMainToHub(line);
       if (!message || message.type === 'run-begin' || session.main !== socket || !session.progress) return;
+      if (message.type === 'run-page') {
+        const { type: _page, ...page } = message;
+        if (!isPageOfInstance(page.url, this.options.instances?.() ?? [])) return;
+        session.page = page;
+        return this.changed(session, true);
+      }
+      if (message.type === 'run-ask') {
+        this.options.askedToWatch?.({
+          ref: session.ref,
+          id: message.id,
+          by: message.by,
+          run: session.page?.id ?? null,
+        });
+        return;
+      }
       const { type: _type, ...said } = message;
       session.progress = { ...session.progress, ...said, total: Math.max(session.progress.total, said.done) };
+      if (message.type === 'run-end') {
+        for (const [index, lane] of session.laneStates)
+          session.laneStates.set(index, reduceLane(lane, { type: 'run-end' }));
+      }
       this.changed(session, message.type === 'run-end');
     };
+  }
+
+  /**
+   * A run's process, or a worker while the session lingers, reaches a session whose run's process connected before
+   * and left: that run is over, and the run under its ref that starts holds lanes of its own, from nothing heard
+   * (Playwright counts a run's workers from 0), and no progress until its process says it.
+   */
+  private anotherRun(session: Session): void {
+    if (session.progress === null || (session.main && !session.main.destroyed)) return;
+    session.laneStates.clear();
+    session.progress = null;
   }
 
   /** The run ends once `SESSION_LINGER_MS` passed with no worker and no run process connected. */
@@ -627,46 +926,59 @@ export class RunSessions {
     // A run its own process announced first learns from its workers that an editor's test runner started it.
     if (session.terminal && attach.runner === true) session.runner = true;
     session.workersSeen = true;
+    if (session.linger) this.anotherRun(session);
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
+    const own = session;
+    /** Its lane as it stands while it is the lane's worker; null otherwise. */
+    const lane = () => laneOfWorker(own, attach.workerIndex, attach.parallelIndex);
     const worker: Worker = {
       socket,
       index: attach.workerIndex,
       parallelIndex: attach.parallelIndex,
       cwd: attach.cwd,
-      test: null,
-      stop: null,
-      pausing: false,
-      waiting: null,
+      get test() {
+        return lane()?.test ?? null;
+      },
+      get stop() {
+        return lane()?.stop ?? null;
+      },
+      get pausing() {
+        return lane()?.state === 'pausing';
+      },
+      get waiting() {
+        return lane()?.waiting ?? null;
+      },
       takes: new Set(attach.takes),
       features: new Set(attach.features ?? []),
       reporter: attach.reporter,
       lane: null,
+      layersSent: '',
+      textAsk: null,
       requests: new Map(),
       view: null,
       askedBy: null,
+      driver: null,
+      carried: null,
+      asksHolds: attach.holds ?? null,
       live: null,
     };
     session.workers.set(worker.index, worker);
+    this.hear(session, worker, { type: 'joined', worker: worker.index });
     // A worker of that index whose connection closed, before its close was heard.
     if (holder) this.closeWorker(holder);
-    const own = session;
     socket.on('close', () => this.detach(own, worker));
-    if (attach.holds) {
-      // A terminal's run holds a failure only while someone follows the runs: nobody may be there to answer it.
-      const failures = this.holds(attach.ref) && (!session.terminal || !!this.options.followed?.());
-      const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || failures));
-      this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
-    }
+    this.tellHolds(session, worker);
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, attach.ref, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
       this.send(worker, { type: 'events', on: true });
     // A worker that comes later follows the sharing as a person left it.
-    if (session.share !== null && worker.takes.has('share')) this.send(worker, { type: 'share', on: session.share });
+    if (session.share !== null && worker.takes.has('share')) this.send(worker, this.shareMessage(session));
     // A worker Playwright starts in a lane someone watches shows it from its first test.
     if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
       void this.startLane(worker);
+      this.sendLayers(session, worker);
     }
     this.changed(session);
     this.options.heard?.(attach.ref, worker.index, { type: 'joined' }, session.root);
@@ -685,11 +997,234 @@ export class RunSessions {
       this.unfollowRun(oldest);
     }
     this.tellEvents(ref, true);
+    const session = this.sessions.get(ref);
+    if (session) this.changed(session);
   }
 
-  /** No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too. */
+  /**
+   * No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too, and the
+   * stops it drove are nobody's.
+   */
   unfollowRun(ref: string): void {
-    if (this.followedRuns.delete(ref)) this.tellEvents(ref, false);
+    if (!this.followedRuns.delete(ref)) return;
+    this.tellEvents(ref, false);
+    const session = this.sessions.get(ref);
+    if (!session) return;
+    for (const worker of session.workers.values()) if (worker.driver === AGENT_VIEWER) worker.driver = null;
+    this.changed(session);
+  }
+
+  /**
+   * A surface has the runs open (`on`: a Runs window that follows them, the desktop app's window), or not any more:
+   * each run names it in its `presence`.
+   */
+  presentOn(viewer: Viewer, on: boolean): void {
+    if (on === this.present.has(viewer)) return;
+    if (on) this.present.add(viewer);
+    else this.present.delete(viewer);
+    for (const session of this.sessions.values()) {
+      // A surface that closes gives back the stops it drove.
+      if (!on) {
+        for (const worker of session.workers.values()) if (worker.driver === viewer) this.giveBack(session, worker);
+      }
+      this.changed(session);
+    }
+  }
+
+  /**
+   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer: who has the run open, who
+   * watches each worker's page, and who drives each worker's stop. Null for a run that is not live.
+   */
+  presenceFor(
+    ref: string,
+    viewer: Viewer,
+  ): { presence: RunPresence[]; workers: Map<number, { watchers: RunPresence[]; driver: RunPresence | null }> } | null {
+    const session = this.sessions.get(ref);
+    if (!session) return null;
+    const workers = new Map<number, { watchers: RunPresence[]; driver: RunPresence | null }>();
+    for (const worker of session.workers.values()) {
+      workers.set(worker.index, {
+        watchers: this.watchersOf(session, worker, viewer),
+        driver: worker.stop && worker.driver?.who ? presenceOf(worker.driver, viewer) : null,
+      });
+    }
+    return { presence: this.presenceIn(session, viewer), workers };
+  }
+
+  /** Who is present on the run, viewer by viewer: what changes when any of them comes, goes or drives. */
+  private presentKey(session: Session): string {
+    const id = (viewer: Viewer) => {
+      let known = this.viewerIds.get(viewer);
+      if (known === undefined) this.viewerIds.set(viewer, (known = ++this.viewersNamed));
+      return known;
+    };
+    const ids = (viewers: Iterable<Viewer>) => [...viewers].map(id).join(',');
+    const workers = [...session.workers.values()].map(
+      (w) =>
+        `${w.index}:${ids(session.lanes.get(w.parallelIndex) ?? [])}/${ids(w.view?.viewers ?? [])}/` +
+        `${w.driver ? id(w.driver) : ''}`,
+    );
+    return `${ids(this.present)}|${this.followedRuns.has(session.ref)}|${workers.join(';')}`;
+  }
+
+  /** Who has the run open: the surfaces present, and the agent while it follows the run. */
+  private presenceIn(session: Session, self: Viewer | null): RunPresence[] {
+    const viewers = [...this.present];
+    if (this.followedRuns.has(session.ref)) viewers.push(AGENT_VIEWER);
+    return presenceList(viewers, self);
+  }
+
+  /** Who watches a worker's page: its lane's viewers and its stop's. */
+  private watchersOf(session: Session, worker: Worker, self: Viewer | null): RunPresence[] {
+    const lane = session.lanes.get(worker.parallelIndex) ?? [];
+    return presenceList([...lane, ...(worker.view?.viewers ?? [])], self);
+  }
+
+  /**
+   * `by` drives the worker's stop: a person takes it from the agent, which hears so; the agent is refused while a
+   * person drives it, with why. Null once `by` drives it.
+   */
+  private drive(session: Session, worker: Worker, by: Viewer): string | null {
+    const now = worker.driver;
+    if (now === by || !by.who) return null;
+    if (by === AGENT_VIEWER && now) {
+      const name = now.who?.name ?? 'a person';
+      return (
+        `${name.charAt(0).toUpperCase()}${name.slice(1)} drives this stop: a person took control there. ` +
+        'Wait for them to answer it or give it back.'
+      );
+    }
+    worker.driver = by;
+    if (now === AGENT_VIEWER) {
+      this.options.heard?.(session.ref, worker.index, { type: 'taken', by: by.who.name }, session.root);
+    }
+    this.changed(session);
+    return null;
+  }
+
+  /** A viewer that no longer watches a worker's page gives its stop back, when it drove it. */
+  private letGo(session: Session, worker: Worker, viewer: Viewer): void {
+    if (worker.driver !== viewer || this.watching(worker, viewer)) return;
+    this.giveBack(session, worker);
+  }
+
+  /** The person who drove a worker's stop gives it back: nobody drives it, and the agent hears so. */
+  private giveBack(session: Session, worker: Worker): void {
+    const was = worker.driver;
+    worker.driver = null;
+    if (worker.carried === was) worker.carried = null;
+    if (was && was !== AGENT_VIEWER && worker.stop) {
+      this.options.heard?.(session.ref, worker.index, { type: 'given-back' }, session.root);
+    }
+    this.changed(session);
+  }
+
+  /** The person who drives a worker's stop; null for nobody, or the agent. */
+  private personDriving(worker: Worker): Viewer | null {
+    return worker.driver && worker.driver !== AGENT_VIEWER ? worker.driver : null;
+  }
+
+  /**
+   * The hub's `drive` and the editors' `piwi/driveStop`: at the stop `since` names, `viewer` drives it (`on`: an agent's
+   * actions there are refused until it gives it back), or gives it back, as does any of the same tool's `others` that
+   * drives it. Refused without the stop.
+   */
+  driveStop(
+    params: StopParams & { since: string },
+    viewer: Viewer,
+    on: boolean,
+    others: readonly Viewer[] = [],
+  ): RunControlResult {
+    if (typeof params?.since !== 'string' || !params.since) {
+      return { ok: false, message: 'The command needs the stop it answers.' };
+    }
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    const { session, worker } = at;
+    if (!viewer.who) return { ok: false, message: 'Only a tool a person uses drives a stop.' };
+    if (on) {
+      const fromAgent = worker.driver === AGENT_VIEWER;
+      this.drive(session, worker, viewer);
+      return {
+        ok: true,
+        message: fromAgent
+          ? 'You drive this stop: the agent waits until you give it back.'
+          : 'You drive this stop: an agent would wait until you give it back.',
+      };
+    }
+    if (worker.driver !== viewer && !others.includes(worker.driver!)) {
+      return { ok: true, message: 'You did not drive this stop.' };
+    }
+    this.giveBack(session, worker);
+    return { ok: true, message: 'You gave this stop back: an agent may act on it.' };
+  }
+
+  /**
+   * `piwi/holdRun`, the hub's `hold` and an agent's `run_follow`: the run's **Hold failures**, kept for the run of `ref`
+   * whoever set it (`by`), a run whose first worker has not connected yet included. Off, a failure held now goes on.
+   * Refused for a run nobody attends (`holdsFailures`).
+   */
+  hold(params: HoldRunParams, by: 'person' | 'agent'): RunControlResult {
+    if (typeof params?.on !== 'boolean' || typeof params.ref !== 'string' || !params.ref) {
+      return { ok: false, message: 'Hold failures needs the run and on: true or false.' };
+    }
+    if (!this.holds(params.ref)) {
+      return {
+        ok: false,
+        message: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+      };
+    }
+    this.holdsSet.delete(params.ref);
+    this.holdsSet.set(params.ref, { on: params.on, by });
+    // Past the bound, the oldest set for a run that is not live goes first, then the oldest.
+    for (const ref of [...this.holdsSet.keys()].filter((r) => !this.sessions.has(r))) {
+      if (this.holdsSet.size <= MAX_KEPT_RUNS) break;
+      this.holdsSet.delete(ref);
+    }
+    for (const oldest of this.holdsSet.keys()) {
+      if (this.holdsSet.size <= MAX_KEPT_RUNS) break;
+      this.holdsSet.delete(oldest);
+    }
+    const session = this.sessions.get(params.ref);
+    if (session) {
+      for (const worker of session.workers.values()) this.tellHolds(session, worker);
+      if (!params.on) {
+        for (const worker of session.workers.values()) {
+          // A stop a person drives is theirs to answer: an agent's turning the hold off leaves it held.
+          if (by === 'agent' && this.personDriving(worker)) continue;
+          if (worker.stop && !worker.stop.view.bar && worker.stop.view.reason === 'failure') {
+            this.resumeUnanswered(session, worker, worker.stop.place);
+          }
+        }
+      }
+      this.changed(session, true);
+    }
+    return {
+      ok: true,
+      message: params.on
+        ? 'A failure no pause bar shows waits at its line in this run until someone answers it.'
+        : 'A failure of this run no pause bar shows goes on at once.',
+    };
+  }
+
+  /**
+   * Tell a worker that listed them which stops it holds (`attached`), with what the service is called when it is not the
+   * editor (`host`): a failure's only while its run's Hold failures is on.
+   */
+  private tellHolds(session: Session, worker: Worker): void {
+    if (!worker.asksHolds) return;
+    const failures = this.watches(session);
+    const holds = SHOWN_HOLDS.filter((h) => worker.asksHolds!.includes(h) && (h !== 'failure' || failures));
+    const named = this.options.workerHost?.() ?? this.options.host;
+    this.send(worker, { type: 'attached', holds, ...(named ? { host: named } : {}) });
+  }
+
+  /**
+   * The run's **Hold failures** now: as a person or an agent set it, else on from its start when built to be watched.
+   * The same object until it is set again, so a caller can tell whether anyone set it since.
+   */
+  holdOf(ref: string): RunHoldFailures {
+    return this.holdsSet.get(ref) ?? { on: !!this.options.watched?.(ref), by: 'start' };
   }
 
   /** Have the workers of the run `ref` whose reporter takes it tell their tests' events, or stop. */
@@ -708,6 +1243,7 @@ export class RunSessions {
   share(params: ShareRunParams): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     if (typeof params?.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
+    if (params.scope === 'window') return this.shareWindow(params);
     const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     if (!session) return refuse(this.noWorker(session));
     const live = this.liveOf(session);
@@ -723,7 +1259,7 @@ export class RunSessions {
     }
     session.share = params.on;
     session.stopped = null;
-    for (const worker of workers) this.send(worker, { type: 'share', on: params.on });
+    for (const worker of workers) this.send(worker, this.shareMessage(session));
     this.changed(session, true);
     return {
       ok: true,
@@ -731,6 +1267,82 @@ export class RunSessions {
         ? `Sharing the run live on ${instance}: whoever may open it there can watch its tests' pages while someone does.`
         : `Stopped sharing the run: nothing more goes to ${instance}.`,
     };
+  }
+
+  /**
+   * `share` with `scope: 'window'`: this window's runs are shared until the person stops or the window closes, the run
+   * of `ref` too when one is named; stopping stops every run of the window that is shared.
+   */
+  private shareWindow(params: ShareRunParams): RunControlResult {
+    this.shareAll = params.on;
+    // Said whether it changed or not, so a client that holds it otherwise hears how it stands.
+    this.options.shareWindowChanged?.(params.on);
+    if (!params.on) {
+      for (const session of this.sessions.values()) {
+        session.byWindow = false;
+        if (session.share) this.share({ ref: session.ref, on: false });
+      }
+      this.lastShared.clear();
+      return { ok: true, message: "Stopped sharing this window's runs live." };
+    }
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    if (session && !session.ended) {
+      session.byWindow = true;
+      const shared = this.share({ ref: session.ref, on: true });
+      if (!shared.ok) {
+        return { ok: true, message: `This window's runs are shared live from the next one on: ${shared.message}` };
+      }
+    }
+    return {
+      ok: true,
+      message:
+        "Sharing this window's runs live until you stop or close the window: whoever may open them on the team instance can watch their tests' pages, each run continuing the one before.",
+    };
+  }
+
+  /** Whether this window's runs are shared live. */
+  get sharingWindow(): boolean {
+    return this.shareAll;
+  }
+
+  /**
+   * The share message a worker of `session` hears: with the run on its instance it continues, the window's latest
+   * shared run there that ended, fixed for the run once its page is known; none before.
+   */
+  private shareMessage(session: Session): HubToRun {
+    const on = session.share === true;
+    if (on && session.byWindow && session.page && session.after === undefined) {
+      const before = this.lastShared.get(pageOrigin(session.page.url));
+      session.after = before !== undefined && before < session.page.id ? before : null;
+    }
+    const after = on && session.byWindow ? (session.after ?? null) : null;
+    return after !== null ? { type: 'share', on, after } : { type: 'share', on };
+  }
+
+  /** A run of the window that ended having streamed is the one the window's next shared run continues. */
+  private noteShared(session: Session): void {
+    if (!session.byWindow || !session.streamed || !session.page) return;
+    const origin = pageOrigin(session.page.url);
+    this.lastShared.delete(origin);
+    this.lastShared.set(origin, session.page.id);
+    for (const oldest of this.lastShared.keys()) {
+      if (this.lastShared.size <= MAX_KEPT_RUNS) break;
+      this.lastShared.delete(oldest);
+    }
+  }
+
+  /** `piwi/answerAsk`: the developer's **Not now** goes back to the teammate through the run's own process. */
+  answerAsk(params: AnswerAskParams): RunControlResult {
+    const answer = parseLiveAskAnswer(params);
+    if (!answer) return { ok: false, message: 'Not an answer to an ask to watch.' };
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const main = session?.main;
+    if (!main || main.destroyed) {
+      return { ok: false, message: 'The run no longer reaches the instance: its teammate sees no answer.' };
+    }
+    const line: HubToMain = { type: 'ask-answer', ...answer };
+    main.write(`${JSON.stringify(line)}\n`);
+    return { ok: true, message: 'They see “Not now”.' };
   }
 
   /**
@@ -780,7 +1392,7 @@ export class RunSessions {
         }
         for (const worker of asked) {
           this.send(worker, { type: 'control', action: 'pause' });
-          worker.pausing = true;
+          this.hear(session, worker, { type: 'pause' });
           worker.askedBy = by;
         }
         this.changed(session, true);
@@ -810,8 +1422,7 @@ export class RunSessions {
         const worker = waiting[0]!;
         const call = worker.waiting;
         this.send(worker, { type: 'control', action: 'give-up', testId: worker.test!.id });
-        worker.pausing = false;
-        worker.waiting = null;
+        this.hear(session, worker, { type: 'pause-ended' });
         worker.askedBy = null;
         this.changed(session, true);
         return {
@@ -828,6 +1439,9 @@ export class RunSessions {
       case 'end': {
         const worker = this.stoppedWorker(workers, named, params.since);
         if ('message' in worker) return worker;
+        if (by === 'agent' && worker.driver && worker.driver !== AGENT_VIEWER) {
+          return refuse(this.drive(session, worker, AGENT_VIEWER)!);
+        }
         const stop = worker.stop!.id;
         if (params.action === 'end') {
           if (!worker.takes.has('end')) {
@@ -835,6 +1449,7 @@ export class RunSessions {
           }
           this.send(worker, { type: 'control', action: 'end', stop });
           worker.askedBy = null;
+          worker.carried = null;
           return {
             ok: true,
             message:
@@ -855,10 +1470,12 @@ export class RunSessions {
           const to = text ? runToLine(text, line) : line;
           this.send(worker, { type: 'run-to', stop, place: { file: relative, line: to + 1 } });
           worker.askedBy = by;
+          worker.carried = by === 'agent' ? null : this.personDriving(worker);
           return { ok: true, message: `Running to ${path.basename(file)}:${line + 1}.` };
         }
         this.send(worker, { type: 'control', action: params.action, stop });
         worker.askedBy = params.action === 'step' ? by : null;
+        worker.carried = params.action === 'step' && by !== 'agent' ? this.personDriving(worker) : null;
         return {
           ok: true,
           message:
@@ -938,9 +1555,13 @@ export class RunSessions {
           ` cannot start ${name} from outside the test's window: update it.`,
       );
     }
-    return this.ask(worker, params.what, worker.stop!.id).then(
-      (answer) => (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' },
-    );
+    const stop = worker.stop!.id;
+    return this.ask(worker, params.what, stop).then((answer) => {
+      const said = (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' };
+      // An intent started from a surface is its person driving the stop, while the worker still stands at it.
+      if (said.ok && params.viewer && worker.stop?.id === stop) this.drive(at.session, worker, params.viewer);
+      return said;
+    });
   }
 
   /**
@@ -978,7 +1599,11 @@ export class RunSessions {
    * its tests and the workers Playwright starts in it, its frames going to `viewer.laneFrame` until it stops watching,
    * the run ends or it leaves. The lane's worker starts its lane view with the first viewer and stops it with the last;
    * a viewer that comes later is sent its latest frame again. Refused for a worker whose reporter does not show its
-   * lane. A lane with no worker connected now is watched from the next one Playwright starts in it.
+   * lane. A lane with no worker connected now is watched from the next one Playwright starts in it. The layers it asks
+   * (`layers`, none when left out) go to `viewer.laneLayer` alone, from a worker that sends them: the worker hears what
+   * the viewers ask together (`layers`) as it changes, which takes the page's text as it first lists it, and again as a
+   * viewer asks for the call log or the filmstrip anew, which has it send them again. The page's text it takes again
+   * only as asked (`laneText`).
    */
   async watchLane(params: LaneParams, viewer: Viewer): Promise<RunControlResult> {
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
@@ -1004,12 +1629,22 @@ export class RunSessions {
     session.lanes.set(lane, viewers);
     const came = !viewers.has(viewer);
     viewers.add(viewer);
+    const layered = session.laneLayers.get(lane) ?? new Map<Viewer, ReadonlySet<LaneLayer>>();
+    session.laneLayers.set(lane, layered);
+    const before = layered.get(viewer);
+    const asked = new Set(LANE_LAYERS.filter((layer) => params.layers?.includes(layer)));
+    layered.set(viewer, asked);
+    // A viewer that newly asks for the call log or the filmstrip needs the latest call log and the filmstrip kept.
+    const again = (['calls', 'filmstrip'] as const).some((layer) => asked.has(layer) && !before?.has(layer));
     const next = { ok: true, message: `You watch worker ${lane + 1} from its next test.` };
     if (!worker) return next;
     const own = worker.lane;
-    // A viewer that comes to a lane view on: the worker sends the frame it sent last again.
-    if (own?.on && came) void this.ask(worker, 'view-lane', undefined, { on: true });
-    const answer = await (own ? own.started : this.startLane(worker));
+    // A viewer that comes to a lane view on, or newly asks for those layers: the worker sends again what it sent last,
+    // the frame and the layers it keeps.
+    if (own?.on && (came || again)) void this.ask(worker, 'view-lane', undefined, { on: true });
+    const starting = own ? own.started : this.startLane(worker);
+    this.sendLayers(session, worker);
+    const answer = await starting;
     if (answer.ok || !session.lanes.get(lane)?.has(viewer)) return answer;
     // A worker that left before it answered: the viewer watches the next one Playwright starts in the lane.
     if (session.workers.get(worker.index) !== worker && !session.ended) return next;
@@ -1039,17 +1674,54 @@ export class RunSessions {
     return started;
   }
 
-  /** Have a worker stop its lane view, whatever it answers. */
+  /** Have a worker stop its lane view and its layers, whatever it answers. */
   private stopLane(worker: Worker): void {
-    if (!worker.socket.destroyed)
-      this.send(worker, { type: 'request', request: ++this.lastRequest, what: 'view-lane', on: false });
+    if (worker.socket.destroyed) return;
+    if (worker.features.has('layers') && worker.layersSent) this.send(worker, { type: 'layers', layers: [] });
+    worker.layersSent = '';
+    this.send(worker, { type: 'request', request: ++this.lastRequest, what: 'view-lane', on: false });
+  }
+
+  /**
+   * Tell a worker that sends layers which its lane's viewers ask, together, in `LANE_LAYERS`' order, when that changed
+   * since it last heard it: it takes the page's text as the list names it anew, which counts as that worker's latest ask
+   * of it (`textAsk`).
+   */
+  private sendLayers(session: Session, worker: Worker): void {
+    if (!worker.features.has('layers') || worker.socket.destroyed) return;
+    const asked = new Set<LaneLayer>();
+    for (const layers of session.laneLayers.get(worker.parallelIndex)?.values() ?? []) {
+      for (const layer of layers) asked.add(layer);
+    }
+    const layers = LANE_LAYERS.filter((layer) => asked.has(layer));
+    const sent = worker.layersSent;
+    if (layers.join() === sent) return;
+    worker.layersSent = layers.join();
+    if (asked.has('text') && !sent.split(',').includes('text')) {
+      worker.textAsk = { at: Date.now(), answer: Promise.resolve(TEXT_ON_ITS_WAY), pending: false };
+    }
+    this.send(worker, { type: 'layers', layers });
   }
 
   /** A viewer stops watching a lane: the last one to go has its worker stop the lane view. */
   private unwatchLane(session: Session, lane: number, viewer: Viewer): void {
     const viewers = session.lanes.get(lane);
-    if (!viewers?.delete(viewer) || viewers.size) return;
+    if (!viewers?.delete(viewer)) return;
+    const layered = session.laneLayers.get(lane);
+    layered?.delete(viewer);
+    if (!layered?.size) session.laneLayers.delete(lane);
+    for (const worker of session.workers.values()) {
+      if (worker.parallelIndex === lane) this.letGo(session, worker, viewer);
+    }
+    if (viewers.size) {
+      for (const worker of session.workers.values()) {
+        if (worker.parallelIndex === lane && worker.lane) this.sendLayers(session, worker);
+      }
+      this.changed(session);
+      return;
+    }
     session.lanes.delete(lane);
+    this.changed(session);
     for (const worker of session.workers.values()) {
       if (worker.parallelIndex !== lane || !worker.lane) continue;
       worker.lane = null;
@@ -1057,10 +1729,149 @@ export class RunSessions {
     }
   }
 
+  /**
+   * Ask the worker of a lane `viewer` watches with its page's text (`layers` lists `text`) for that text now: it comes
+   * as a `lane-layer` to the lane's viewers that asked for the text. Answered as the worker answers, or with why not.
+   * An ask while the worker's latest is answered, or within `laneTextMs` of it, is that one's: the worker hears none.
+   */
+  async laneText(params: Omit<LaneParams, 'on' | 'layers'>, viewer: Viewer): Promise<RunControlResult> {
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const lane = params?.lane;
+    if (!session || session.ended || !Number.isInteger(lane) || !session.lanes.get(lane)?.has(viewer)) {
+      return { ok: false, message: 'Watch the worker first.' };
+    }
+    if (!session.laneLayers.get(lane)?.get(viewer)?.has('text')) {
+      return { ok: false, message: 'Show the page’s text first.' };
+    }
+    const worker = [...session.workers.values()].find((w) => w.parallelIndex === lane && w.lane?.on);
+    if (!worker) return { ok: false, message: `Worker ${lane + 1} shows no page now.` };
+    if (!worker.features.has('layers')) {
+      return { ok: false, message: 'Update the reporter to read the page’s text: this one sends its images alone.' };
+    }
+    const last = worker.textAsk;
+    const now = Date.now();
+    if (last && (last.pending || now - last.at < (this.options.laneTextMs ?? LANE_TEXT_MS))) return last.answer;
+    const asked: NonNullable<Worker['textAsk']> = {
+      at: now,
+      pending: true,
+      answer: (this.ask(worker, 'text') as Promise<IntentAnswer | null>).then((answer) => {
+        asked.pending = false;
+        return answer ?? { ok: false, message: 'The test did not answer.' };
+      }),
+    };
+    worker.textAsk = asked;
+    return asked.answer;
+  }
+
+  /**
+   * **Open the trace so far** of the lane `lane` of the run `ref`: the trace this host reads (`laneTrace`), and
+   * Playwright's trace viewer started on it from the run's folder as this host knows it, one for each attempt at a time
+   * (`traceViewer`). Answered in a sentence that never names the file, which no message, log or answer of the host
+   * carries.
+   */
+  async openTrace(params: OpenTraceParams): Promise<RunControlResult> {
+    const launch = this.options.traceViewer;
+    const lane = params?.lane;
+    if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
+    if (!launch) return { ok: false, message: `${capitalized(this.host)} cannot open a trace.` };
+    if (!this.showsTraceViewer()) return { ok: false, message: NO_DISPLAY };
+    const found = await this.laneTrace(params);
+    if (!found.ok) return found;
+    const live = path.join(found.traces, `${found.base}.json`);
+    if (this.traceViewers.has(live)) {
+      return {
+        ok: false,
+        message:
+          "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+      };
+    }
+    this.traceViewers.add(live);
+    const started = await launch({ folder: found.root, trace: live }).catch(
+      (error: unknown): { ok: false; reason: string } => ({
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    if (!started.ok) {
+      this.traceViewers.delete(live);
+      const reason = withoutPaths(started.reason, [found.file, path.dirname(found.file), found.traces]);
+      return { ok: false, message: `Playwright's trace viewer could not start: ${reason}.` };
+    }
+    void started.closed.finally(() => this.traceViewers.delete(live));
+    return { ok: true, message: "Playwright's trace viewer opened on the trace so far." };
+  }
+
+  /**
+   * The trace of the running attempt of the lane `lane` of the run `ref`, for this host to read itself: its worker names
+   * where it grows, to this host alone, and the file passes `checkTraceFile` from the run's folder as this host knows
+   * it (`session.root`, never the folder the worker names; a run without one has none); else why not, in a sentence
+   * that never names the file. No hub command, client request nor agent's tool answers with it: `openTrace` starts the
+   * viewer on it, and the desktop app's server reads its snapshots for its own window's **Inspect**.
+   */
+  async laneTrace(params: OpenTraceParams): Promise<LaneTrace | { ok: false; message: string }> {
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const lane = params?.lane;
+    if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
+    if (!session || session.ended) return { ok: false, message: this.noWorker(session) };
+    const root = session.root;
+    if (root === null) return { ok: false, message: NO_ROOT };
+    const worker = [...session.workers.values()].find((w) => w.parallelIndex === lane);
+    if (!worker) return { ok: false, message: `This run has no worker ${lane + 1} now.` };
+    if (!worker.features.has('trace')) return { ok: false, message: CANNOT_TRACE };
+    if (!worker.test) return { ok: false, message: NO_TEST };
+    const test = worker.test;
+    const answer = (await this.ask(worker, 'trace')) as TraceAnswer | null;
+    if (!answer) return { ok: false, message: 'The test did not answer.' };
+    if (!answer.ok) return { ok: false, message: answer.message };
+    if (worker.test?.id !== test.id || worker.test.retry !== test.retry) {
+      return { ok: false, message: 'The test ended: open the trace of the one that runs now.' };
+    }
+    const checked = checkTraceFile(answer.file, {
+      folder: root,
+      worker: worker.index,
+      testId: test.id,
+      retry: test.retry,
+    });
+    if (!checked.ok) return { ok: false, message: checked.message };
+    return {
+      ok: true,
+      root,
+      traces: checked.traces,
+      base: checked.base,
+      file: answer.file,
+      worker: worker.index,
+      test: { id: test.id, retry: test.retry },
+    };
+  }
+
   /** Whether `viewer` watches the lane `lane` of the run `ref`, which ends with the run. */
   watchesLane(viewer: Viewer, ref: string, lane: number): boolean {
     const session = this.sessions.get(ref);
     return !!session && !session.ended && !!session.lanes.get(lane)?.has(viewer);
+  }
+
+  /**
+   * The test the lane `lane` of the run `ref` runs now and its worker, while it runs it, a Pause waiting for it
+   * included; null between tests, at a stop, once the run ended, and while no worker of the lane is connected.
+   */
+  laneRunning(ref: string, lane: number): { worker: number; test: string } | null {
+    const session = this.sessions.get(ref);
+    const state = session?.laneStates.get(lane);
+    if (!session || session.ended || !state?.test || state.worker === null) return null;
+    if (state.state !== 'running' && state.state !== 'pausing') return null;
+    return session.workers.get(state.worker)?.parallelIndex === lane
+      ? { worker: state.worker, test: state.test.id }
+      : null;
+  }
+
+  /**
+   * A place a worker of the run `ref` named (`file`, relative to the run's working directory) as a file URI under the
+   * run's folder as the workspace spells it; null for a worker not connected now.
+   */
+  placeUri(ref: string, workerIndex: number, file: string): string | null {
+    const session = this.sessions.get(ref);
+    const worker = session?.workers.get(workerIndex);
+    return session && worker ? this.uri(worker, file, session.root) : null;
   }
 
   /** Whether `viewer` watches the live view of the stop `since` names, of the run's worker `workerIndex`. */
@@ -1084,7 +1895,7 @@ export class RunSessions {
     if ('message' in at) return params.on ? at : { ok: true, message: 'You no longer watch the page.' };
     const { worker } = at;
     if (!params.on) {
-      this.unwatch(worker, viewer);
+      this.unwatch(at.session, worker, viewer);
       return { ok: true, message: 'You no longer watch the page.' };
     }
     const refused = this.refusesQuery(worker, 'view');
@@ -1108,9 +1919,11 @@ export class RunSessions {
       void this.ask(worker, 'view', stop, { on: true });
     }
     view.viewers.add(viewer);
+    this.changed(at.session);
     const answer = await view.started;
     if (!answer.ok) {
       view.viewers.delete(viewer);
+      this.changed(at.session);
       return { ok: false, message: answer.message };
     }
     if (worker.view === view) return { ok: true, message: answer.message };
@@ -1118,19 +1931,30 @@ export class RunSessions {
     return { ok: false, message: worker.stop?.id === stop ? 'You no longer watch the page.' : 'The test went on.' };
   }
 
-  /** A viewer stops watching a worker's stop: the last one to go has the worker stop the view. */
-  private unwatch(worker: Worker, viewer: Viewer): void {
+  /**
+   * A viewer stops watching a worker's stop, giving it back when it drove it: the last one to go has the worker stop
+   * the view.
+   */
+  private unwatch(session: Session, worker: Worker, viewer: Viewer): void {
     const view = worker.view;
-    if (!view?.viewers.delete(viewer) || view.viewers.size) return;
+    if (!view?.viewers.delete(viewer)) return;
+    this.letGo(session, worker, viewer);
+    this.changed(session);
+    if (view.viewers.size) return;
     worker.view = null;
     void this.ask(worker, 'view', view.stop, { on: false });
   }
 
-  /** A viewer left (its connection closed): it watches nothing any more. */
+  /** A viewer left (its connection closed): it watches nothing any more, drives no stop, and has no run open. */
   unwatchAll(viewer: Viewer): void {
+    this.presentOn(viewer, false);
     for (const session of this.sessions.values()) {
-      for (const worker of session.workers.values()) this.unwatch(worker, viewer);
-      for (const lane of session.lanes.keys()) this.unwatchLane(session, lane, viewer);
+      for (const worker of session.workers.values()) this.unwatch(session, worker, viewer);
+      for (const lane of [...session.lanes.keys()]) this.unwatchLane(session, lane, viewer);
+      for (const worker of session.workers.values()) {
+        if (worker.driver === viewer) this.giveBack(session, worker);
+        if (worker.carried === viewer) worker.carried = null;
+      }
     }
   }
 
@@ -1144,6 +1968,8 @@ export class RunSessions {
     const refused = this.refusesQuery(at.worker, 'input');
     if (refused) return { ok: false, message: refused };
     if (!this.watching(at.worker, viewer)) return { ok: false, message: NEEDS_VIEW };
+    // A person's click, key, text or wheel drives the stop, taking it from the agent; a pointer passing over does not.
+    if (events.some((e) => !(e.type === 'mouse' && e.action === 'move'))) this.drive(at.session, at.worker, viewer);
     const answer = (await this.ask(at.worker, 'input', at.worker.stop!.id, { events })) as IntentAnswer | null;
     return answer ?? { ok: false, message: 'The test did not answer.' };
   }
@@ -1152,7 +1978,7 @@ export class RunSessions {
    * `piwi/pickAt`, and the hub's `pick-at`: the element under the point `x`, `y` (CSS pixels of the stopped page's
    * viewport) of the stop a client names, its locator sent where a pick goes; why there is none otherwise.
    */
-  async pickAt(params: PickAtParams): Promise<PickAtResult> {
+  async pickAt(params: PickAtParams, viewer?: Viewer): Promise<PickAtResult> {
     const refuse = (message: string): PickAtResult => ({ ok: false, message, locator: null });
     if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
     const { x, y } = params;
@@ -1161,8 +1987,36 @@ export class RunSessions {
     if ('message' in at) return refuse(at.message);
     const refused = this.refusesQuery(at.worker, 'pick-at');
     if (refused) return refuse(refused);
+    if (viewer) this.drive(at.session, at.worker, viewer);
     const answer = (await this.ask(at.worker, 'pick-at', at.worker.stop!.id, { x, y })) as PickAtAnswer | null;
     return answer ?? refuse('The test did not answer.');
+  }
+
+  /**
+   * Show the browser: at the stop a client names, the test's window comes to the front. Refused at a stop no pause bar
+   * shows (a headless run, whose browser has no window, or a stop whose page is not known), and for a reporter that
+   * does not take it. Answers once the
+   * worker did, or after `PAUSED_PAGE_WAIT_MS`.
+   */
+  async front(params: StopParams): Promise<RunControlResult> {
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    if (!at.worker.stop!.view.bar) {
+      return {
+        ok: false,
+        message: "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.",
+      };
+    }
+    if (!at.worker.features.has('front')) {
+      return {
+        ok: false,
+        message:
+          `@piwitests/reporter ${at.worker.reporter || ''}`.trimEnd() +
+          " cannot bring the test's window forward: update it.",
+      };
+    }
+    const answer = (await this.ask(at.worker, 'front', at.worker.stop!.id)) as IntentAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.' };
   }
 
   /**
@@ -1199,6 +2053,12 @@ export class RunSessions {
   ): Promise<AgentAnswer<ActAnswer>> {
     if (typeof params?.since !== 'string' || !params.since) {
       return noElement('The command needs the stop it answers.');
+    }
+    const at = this.stopped(params);
+    if (!('message' in at) && !this.refusesQuery(at.worker, 'act')) {
+      // One driver at a time: the agent acts only while no person drives the stop, and drives it as it does.
+      const taken = this.drive(at.session, at.worker, AGENT_VIEWER);
+      if (taken) return noElement(taken);
     }
     const late = played
       ? (value: Answered) => (value as ActAnswer | null)?.ok && played(value as ActAnswer)
@@ -1323,7 +2183,9 @@ export class RunSessions {
     if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
     return [
       ...intents,
-      ...(['view', 'input', 'input-clicks', 'pick-at', 'end'] as const).filter((what) => found.takes.has(what)),
+      ...(['view', 'input', 'input-clicks', 'pick-at'] as const).filter((what) => found.takes.has(what)),
+      ...(found.features.has('front') ? (['front'] as const) : []),
+      ...(found.takes.has('end') ? (['end'] as const) : []),
       ...(found.features.has('view-lane') ? (['watch'] as const) : []),
       // End the test while a Pause waits for its call.
       ...(found.waiting ? (['give-up'] as const) : []),
@@ -1348,7 +2210,9 @@ export class RunSessions {
           ? watching
           : what === 'end'
             ? found.stop!.view.reason !== 'failure'
-            : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
+            : what === 'front'
+              ? found.stop!.view.bar
+              : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
     );
   }
 
@@ -1376,21 +2240,14 @@ export class RunSessions {
     }
   }
 
-  /**
-   * Whether a worker stands at a failure nobody watches: no bar shows it, its run was not started to be watched, and
-   * no Runs window follows the runs. It goes on at once.
-   */
+  /** Whether a worker stands at a failure no bar shows in a run whose **Hold failures** is off: it goes on at once. */
   private unwatchedFailure(session: Session, worker: Worker): boolean {
     return worker.stop?.view.reason === 'failure' && !this.watches(session);
   }
 
-  /**
-   * Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs; never
-   * for a run that holds no failure (`holdsFailures`).
-   */
+  /** Whether the run's failures wait for an answer: its **Hold failures** is on, in a run that may hold one. */
   private watches(session: Session): boolean {
-    if (!this.holds(session.ref)) return false;
-    return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
+    return this.holds(session.ref) && this.holdOf(session.ref).on;
   }
 
   /** Whether a failure of the run of `ref` may be held at all. */
@@ -1398,9 +2255,12 @@ export class RunSessions {
     return this.options.holdsFailures?.(ref) ?? true;
   }
 
-  /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
+  /**
+   * `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. A run
+   * nobody attends (`holdsFailures`) stops at none.
+   */
   setBreakpoints(params: SetRunBreakpointsParams): void {
-    if (typeof params?.ref !== 'string' || !Array.isArray(params.places)) return;
+    if (typeof params?.ref !== 'string' || !Array.isArray(params.places) || !this.holds(params.ref)) return;
     const files = filesOf(params.places);
     this.keepBreakpoints(params.ref, files);
     const session = this.sessions.get(params.ref);
@@ -1507,8 +2367,8 @@ export class RunSessions {
     const message = parseRunToHub(line);
     if (!message) return;
     switch (message.type) {
-      case 'test-begin':
-        worker.test = {
+      case 'test-begin': {
+        const test: RunTest = {
           id: message.testId,
           title: message.title,
           uri: this.uri(worker, message.file, session.root),
@@ -1517,19 +2377,18 @@ export class RunSessions {
           retry: message.retry,
           cannotPause: message.cannotPause,
         };
-        worker.stop = null;
+        this.hear(session, worker, { type: 'test-begin', test, endsPause: !!message.cannotPause });
         worker.view = null;
-        worker.waiting = null;
-        if (message.cannotPause) worker.pausing = false;
-        this.options.heard?.(session.ref, worker.index, { type: 'test-begin', test: worker.test }, session.root);
+        this.options.heard?.(session.ref, worker.index, { type: 'test-begin', test }, session.root);
         return this.changed(session);
+      }
       case 'stopped':
         // A failure nobody watches goes on at once, unseen: no client hears of it.
         if (message.reason === 'failure' && !message.bar && (!this.options.answersStops() || !this.watches(session))) {
           return this.send(worker, { type: 'control', action: 'resume', stop: message.stop });
         }
         worker.view = null;
-        worker.stop = {
+        const stop: HeldStop = {
           id: message.stop,
           place: message.place,
           view: {
@@ -1545,45 +2404,49 @@ export class RunSessions {
             ...(worker.askedBy ? { by: worker.askedBy } : {}),
           },
         };
-        worker.pausing = false;
-        worker.waiting = null;
+        this.hear(session, worker, { type: 'stopped', stop });
+        // The agent drives a stop it asked for, a person the stop their Step or Run to came to; nobody drives any other
+        // until someone acts on it.
+        worker.driver = worker.askedBy === 'agent' ? AGENT_VIEWER : worker.carried;
+        worker.carried = null;
         worker.askedBy = null;
         this.changed(session, true);
-        this.options.heard?.(session.ref, worker.index, { type: 'stopped', stop: worker.stop.view }, session.root);
-        if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
+        this.options.heard?.(session.ref, worker.index, { type: 'stopped', stop: stop.view }, session.root);
+        if (!message.bar && !this.holds(session.ref) && UNASKED_STOPS.has(message.reason)) {
+          this.resumeUnattended(session, worker, message.place);
+        } else if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
         return;
       case 'waiting': {
         // Said while a Pause waits for the call, by a reporter that ends a test there; a null title once it waits in
         // none.
         if (message.title === null) {
           if (!worker.waiting) return;
-          worker.waiting = null;
+          this.hear(session, worker, { type: 'waiting', call: null });
           return this.changed(session, true);
         }
         if (!worker.pausing || worker.stop || !worker.test || !worker.features.has('give-up')) return;
         const { place, ms } = message;
-        worker.waiting = {
+        const call: RunWaiting = {
           title: message.title,
           uri: place ? this.uri(worker, place.file, session.root) : null,
           line: place ? place.line - 1 : null,
           since: ms === null ? null : new Date(Date.now() - ms).toISOString(),
           endable: message.endable,
         };
+        this.hear(session, worker, { type: 'waiting', call });
         return this.changed(session, true);
       }
       case 'running': {
         if (worker.stop?.id !== message.stop) return;
         const since = worker.stop.view.since;
-        worker.stop = null;
+        this.hear(session, worker, { type: 'resumed', stop: message.stop });
         worker.view = null;
         this.changed(session, true);
         return this.options.heard?.(session.ref, worker.index, { type: 'running', since }, session.root);
       }
       case 'test-end':
-        if (worker.test?.id === message.testId) worker.test = null;
-        worker.stop = null;
+        this.hear(session, worker, { type: 'test-end', test: message.testId, status: message.status });
         worker.view = null;
-        worker.waiting = null;
         worker.askedBy = null;
         this.changed(session);
         return this.options.heard?.(
@@ -1607,6 +2470,18 @@ export class RunSessions {
         for (const viewer of viewers) viewer.laneFrame?.(frame);
         return;
       }
+      case 'lane-layer': {
+        // A layer of the worker's lane, for the lane's viewers that asked for it alone.
+        const viewers = session.lanes.get(worker.parallelIndex);
+        const layered = session.laneLayers.get(worker.parallelIndex);
+        if (!viewers?.size || !layered?.size || !worker.lane) return;
+        const { type: _type, ...data } = message;
+        const layer = { ref: session.ref, lane: worker.parallelIndex, worker: worker.index, ...data } as LaneViewLayer;
+        for (const [viewer, layers] of layered) {
+          if (layers.has(message.layer) && viewers.has(viewer)) viewer.laneLayer?.(layer);
+        }
+        return;
+      }
       case 'frame': {
         // A frame of the stop the worker stands at, for its viewers alone, or why none comes.
         const view = worker.view;
@@ -1624,6 +2499,14 @@ export class RunSessions {
         if (asked?.what !== message.what) return;
         worker.requests.delete(message.request);
         return asked.settle(message.value);
+      }
+      case 'acting': {
+        // An action that takes Escape as its own runs in the test's window at the stop the worker stands at.
+        const stop = worker.stop;
+        if (stop?.id !== message.stop || (stop.view.acting ?? null) === message.what) return;
+        const { acting: _acting, ...view } = stop.view;
+        stop.view = message.what ? { ...view, acting: message.what } : view;
+        return this.changed(session, true);
       }
       case 'region': {
         const region = 'refused' in message ? { refused: message.refused } : message;
@@ -1646,6 +2529,18 @@ export class RunSessions {
           session.stopped = state.why;
           this.options.notice(session.root ?? worker.cwd, 'warning', state.why);
         }
+        if (state.on) session.streamed = true;
+        // A run of the window's shared runs says so as it is shared.
+        if (session.byWindow && state.on && !session.announced) {
+          session.announced = true;
+          const run = session.page ? `Run #${session.page.id}` : 'This run';
+          const where = state.page ? ` on ${instanceOf(state.page)}` : '';
+          this.options.notice(
+            session.root ?? worker.cwd,
+            'information',
+            `${run} is shared live${where}, as this window's runs are until you stop sharing them.`,
+          );
+        }
         return this.changed(session, true);
       }
     }
@@ -1655,6 +2550,21 @@ export class RunSessions {
    * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker hears the runs. It
    * goes on, said once a run.
    */
+  /**
+   * A run nobody attends lets a stop no one asked for go on (a breakpoint, a `page.pause()`): said once per run. A Pause,
+   * a Step or a Run to someone asked for waits for them.
+   */
+  private resumeUnattended(session: Session, worker: Worker, place: Place): void {
+    this.send(worker, { type: 'control', action: 'resume', stop: worker.stop!.id });
+    if (session.resumedSaid) return;
+    session.resumedSaid = true;
+    this.options.notice(
+      session.root ?? worker.cwd,
+      'information',
+      `Piwi let the test stopped at ${path.basename(place.file)}:${place.line} go on: nobody attends this run.`,
+    );
+  }
+
   private resumeUnanswered(session: Session, worker: Worker, place: Place): void {
     this.send(worker, { type: 'control', action: 'resume', stop: worker.stop!.id });
     // A failure held for a surface that is not there ends as it would have: nothing to say.
@@ -1675,6 +2585,16 @@ export class RunSessions {
     return new Date(session.stoppedAt).toISOString();
   }
 
+  /** What `worker` said of its lane: the lane as it stands after it (`@piwitests/core/live-lane`). */
+  private hear(session: Session, worker: Worker, event: HubLaneEvent): void {
+    const lanes = session.laneStates;
+    const lane =
+      lanes.get(worker.parallelIndex) ??
+      emptyLane<RunTest, HeldStop, RunWaiting>({ run: session.ref, shard: null, lane: worker.parallelIndex });
+    const said: HubLaneEvent = event.type === 'run-end' ? event : { ...event, worker: worker.index };
+    lanes.set(worker.parallelIndex, reduceLane(lane, said));
+  }
+
   /**
    * A worker's connection closes, which lets a stop no pause bar shows go on, and its requests are answered with
    * nothing.
@@ -1689,6 +2609,7 @@ export class RunSessions {
 
   private detach(session: Session, worker: Worker): void {
     if (session.workers.get(worker.index) !== worker) return;
+    this.hear(session, worker, { type: 'left', worker: worker.index });
     session.workers.delete(worker.index);
     this.closeWorker(worker);
     if (session.ended) return;
@@ -1702,17 +2623,31 @@ export class RunSessions {
   private end(session: Session): void {
     if (session.ended) return;
     session.ended = true;
+    this.noteShared(session);
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     const workers = [...session.workers.values()];
     session.workers.clear();
     session.lanes.clear();
+    session.laneLayers.clear();
     session.main?.destroy();
     session.main = null;
     // A run that ends before its process said how: its command ended, or nothing connected for a while.
     if (session.progress?.status === 'running') session.progress = { ...session.progress, status: 'interrupted' };
+    this.endedAtStop.delete(session.ref);
+    if (session.progress?.endedAtStop) {
+      this.endedAtStop.set(session.ref, session.progress.endedAtStop);
+      for (const oldest of this.endedAtStop.keys()) {
+        if (this.endedAtStop.size <= MAX_KEPT_RUNS) break;
+        this.endedAtStop.delete(oldest);
+      }
+    }
     for (const worker of workers) this.closeWorker(worker);
-    if (this.sessions.get(session.ref) === session) this.sessions.delete(session.ref);
+    if (this.sessions.get(session.ref) === session) {
+      this.sessions.delete(session.ref);
+      // A rerun under the ref starts from its own start's Hold failures.
+      this.holdsSet.delete(session.ref);
+    }
     this.flush(session);
     this.options.heard?.(session.ref, null, { type: 'ended' }, session.root);
   }
@@ -1743,21 +2678,36 @@ export class RunSessions {
         .map((worker) => ({
           worker: worker.index,
           parallelIndex: worker.parallelIndex,
-          state: worker.stop ? 'stopped' : worker.test ? 'running' : 'between',
+          state: workerState(laneOfWorker(session, worker.index, worker.parallelIndex)),
           test: worker.test,
-          stop: worker.stop?.view ?? null,
+          stop: worker.stop
+            ? {
+                ...worker.stop.view,
+                ...(worker.driver?.who ? { driver: presenceOf(worker.driver, null) } : {}),
+              }
+            : null,
           pausing: worker.pausing,
           waiting: worker.waiting,
           takes: [...worker.takes],
           watchable: worker.features.has('view-lane'),
+          layers: worker.features.has('view-lane') && worker.features.has('layers'),
+          showsWindow: worker.features.has('front'),
+          ...(worker.features.has('trace') && session.root !== null && this.opensTraces ? { traces: true } : {}),
+          ...watchersField(this.watchersOf(session, worker, null)),
         })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
       ...(session.runner ? { runner: true } : {}),
     };
+    const commit = checkoutCommitOf(session.ref);
+    if (commit) view.checkout = { commit };
     const live = this.liveOf(session);
     if (live) view.live = live;
     if (session.progress) view.progress = { ...session.progress };
+    if (session.page) view.page = { ...session.page };
+    if (this.holds(session.ref)) view.hold = { ...this.holdOf(session.ref) };
+    const presence = this.presenceIn(session, null);
+    if (presence.length) view.presence = presence;
     return view;
   }
 
@@ -1766,7 +2716,13 @@ export class RunSessions {
     session.paced = null;
     const view = this.view(session);
     const text = JSON.stringify(view);
-    if (text === session.sent) return;
+    const present = this.presentKey(session);
+    const moved = present !== session.present;
+    session.present = present;
+    if (text === session.sent) {
+      if (moved) this.options.presenceChanged?.(view);
+      return;
+    }
     session.heard = view;
     session.sent = text;
     session.sentAt = Date.now();
@@ -1810,5 +2766,26 @@ export class RunSessions {
     const absolute = path.resolve(worker.cwd, file);
     const relative = root ? relativeTo(worker.cwd, absolute) : null;
     return pathToFileURL(relative ? path.join(root!, relative) : absolute).href;
+  }
+}
+
+/** The lane `parallelIndex` of a run as it stands while the worker `index` is its worker; null otherwise. */
+function laneOfWorker(session: Session, index: number, parallelIndex: number): HubLane | null {
+  const lane = session.laneStates.get(parallelIndex);
+  return lane?.worker === index ? lane : null;
+}
+
+/** A lane's state as a worker of the session says it: `running` while a Pause waits for its test too. */
+function workerState(lane: HubLane | null): RunSession['workers'][number]['state'] {
+  if (lane?.state === 'stopped') return 'stopped';
+  return lane?.test ? 'running' : 'between';
+}
+
+/** The origin of a run's page on its instance, which names the instance: its URL as given when it does not read. */
+function pageOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
   }
 }

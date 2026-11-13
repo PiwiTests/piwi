@@ -21,6 +21,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
+import { cssUrls, replaceCssUrls } from '#shared/css-urls';
 import { sanitizePageInteraction } from '#shared/page-interaction';
 import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSnapshot } from './trace-events';
 
@@ -30,6 +31,18 @@ import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSn
  * inline `<style>` only when a page exceeds it.
  */
 export const DOM_SNAPSHOT_CAP_CHARS = 1_500_000;
+
+/**
+ * What one render of a snapshot may cost: the nodes it visits, the back-references it follows, and the characters it
+ * writes, counted as it goes. A chain whose references name the same nodes again and again writes far more than it
+ * holds: past any of these, the render gives up (null).
+ */
+export const MAX_RENDER_NODES = 500_000;
+export const MAX_RENDER_REFERENCES = 250_000;
+export const MAX_RENDER_CHARS = 16_000_000;
+
+/** Thrown inside a render past its budget, and caught where it began. */
+class RenderTooLarge extends Error {}
 
 const VOID_ELEMENTS = new Set([
   'AREA',
@@ -78,6 +91,14 @@ export interface RenderOptions {
    * kept, so pages with external CSS still render styled either way.
    */
   dropStyles?: boolean;
+  /**
+   * Called for each back-reference that names a snapshot the list does not
+   * hold: a list cut short of the frame's last full snapshot renders a
+   * placeholder in its place.
+   */
+  onUnresolved?: () => void;
+  /** Called when the render gives up past its budget (`MAX_RENDER_NODES` and the others), returning null. */
+  onTooLarge?: () => void;
 }
 
 function escapeText(text: string): string {
@@ -111,6 +132,46 @@ const LIVE = {
 /** What a password field shows: that it holds something, never what. */
 export const PASSWORD_MASK = '••••••••';
 
+/**
+ * A URL that runs code when followed (`javascript:`, `vbscript:`), as a browser
+ * reads it: ASCII whitespace and control characters ignored.
+ */
+function isScriptUrl(value: string): boolean {
+  let read = '';
+  for (const char of value) if (char > ' ') read += char;
+  return /^(?:javascript|vbscript):/i.test(read);
+}
+
+/** The attributes that hold a URL, a script URL in one of which would run when followed or loaded. */
+const URL_ATTRIBUTES = new Set([
+  'href',
+  'src',
+  'action',
+  'formaction',
+  'xlink:href',
+  'data',
+  'poster',
+  'background',
+  'cite',
+  // SVG animation, which can set `href` to its value.
+  'to',
+  'from',
+  'by',
+]);
+
+/**
+ * Whether an attribute holds a script URL: one of `URL_ATTRIBUTES`, a candidate of a `srcset`, or one of an SVG
+ * animation's `values`. Any other attribute holds text, whatever it reads like.
+ */
+function holdsScriptUrl(name: string, value: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower === 'srcset' || lower === 'imagesrcset') {
+    return value.split(',').some((candidate) => isScriptUrl(candidate.trim().split(/\s+/)[0] ?? ''));
+  }
+  if (lower === 'values') return value.split(';').some(isScriptUrl);
+  return URL_ATTRIBUTES.has(lower) && isScriptUrl(value);
+}
+
 /** Input types whose `value` is not what the field shows: a checkbox's or radio's submitted value, a file's fake path. */
 const VALUELESS_INPUT_TYPES = new Set(['checkbox', 'radio', 'file']);
 
@@ -118,7 +179,7 @@ type Attrs = Record<string, unknown>;
 
 /**
  * One element's attributes as the renderer writes them: its recorded ones,
- * less inline handlers and unsafe names, with its live state applied. What
+ * less inline handlers, script URLs and unsafe names, with its live state applied. What
  * markup can say is written as markup: a field's value (masked in a password
  * field), a checkbox's or option's state, the image the page chose from a
  * `srcset`, an open dialog. The rest becomes a `data-piwi-*` marker the frame
@@ -130,8 +191,9 @@ function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value
   const out = new Map<string, string>();
   for (const [name, value] of Object.entries(attrs)) {
     if (name.startsWith('__playwright')) continue;
-    // Inline handlers are noise for diagnosis and unsafe to re-emit.
+    // Inline handlers and script URLs are noise for diagnosis and unsafe to re-emit.
     if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
+    if (holdsScriptUrl(name, String(value))) continue;
     out.set(name, String(value));
   }
   const live = (name: string): string | undefined => {
@@ -179,9 +241,22 @@ function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value
   return out;
 }
 
+/** An attribute's value, double-quoted: its angle brackets escaped too, so no context the browser reads it in ends early. */
 function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/**
+ * Where a node is written, as the browser parses it there: HTML markup, SVG or MathML markup (`foreign`, where a
+ * `style` holds markup rather than raw text), or the text of an element whose content the browser reads as text.
+ */
+type Place = 'html' | 'foreign' | 'text';
+
+/** HTML elements whose content the browser reads as text: their markup would be text, so their text alone is written. */
+const TEXT_ELEMENTS = new Set(['TITLE', 'TEXTAREA', 'XMP', 'IFRAME', 'NOEMBED', 'NOFRAMES', 'NOSCRIPT']);
+
+/** A doctype the renderer writes: a plain name (`html`); anything else is left out. */
+const DOCTYPE_RE = /^[a-z]+$/i;
 
 /**
  * Post-order node list of one snapshot's tree — the indexing space that
@@ -205,14 +280,15 @@ function collectNodes(html: unknown): unknown[] {
 /**
  * Render one named snapshot to an HTML string, resolving back-references
  * against the earlier snapshots of the same frame. Returns null when the
- * snapshot is missing or the tree is entirely unrenderable.
+ * snapshot is missing, the tree is entirely unrenderable, or the render costs
+ * more than its budget (`onTooLarge`).
  */
 export function renderSnapshotHtml(
   snapshots: TraceFrameSnapshot[],
   snapshotName: string,
   options: RenderOptions = {},
 ): string | null {
-  const { dropStyles = false } = options;
+  const { dropStyles = false, onUnresolved, onTooLarge } = options;
   const target =
     snapshots.find((s) => s.snapshotName === snapshotName && s.isMainFrame !== false) ??
     snapshots.find((s) => s.snapshotName === snapshotName);
@@ -235,12 +311,26 @@ export function renderSnapshotHtml(
   // empty value; an id of another action is a mark an earlier snapshot left.
   const isTargetMark = (value: unknown) => value === '' || (!!target.callId && value === target.callId);
 
+  // What the render has spent: past any budget, it gives up.
+  let nodes = 0;
+  let references = 0;
+  let chars = 0;
+  const visit = () => {
+    if (++nodes > MAX_RENDER_NODES) throw new RenderTooLarge();
+  };
+  const write = (piece: string): string => {
+    chars += piece.length;
+    if (chars > MAX_RENDER_CHARS) throw new RenderTooLarge();
+    return piece;
+  };
+
   /**
    * The node a back-reference names, in the earlier snapshot's node space —
    * rendering continues in THAT snapshot's context, whose own refs go further
    * back. Null when it can't be resolved.
    */
   const deref = (ref: unknown[], snapshotIndex: number): { node: unknown; snapshotIndex: number } | null => {
+    if (++references > MAX_RENDER_REFERENCES) throw new RenderTooLarge();
     const delta = typeof ref[0] === 'number' ? ref[0] : NaN;
     const nodeIndex = typeof ref[1] === 'number' ? ref[1] : NaN;
     const refSnapshotIndex = snapshotIndex - delta;
@@ -252,74 +342,94 @@ export function renderSnapshotHtml(
 
   /** The text a child node stands for, following back-references; null for an element. */
   const textOf = (n: unknown, snapshotIndex: number): string | null => {
+    visit();
     if (typeof n === 'string') return n;
     if (!Array.isArray(n) || !Array.isArray(n[0])) return null;
     const ref = deref(n[0], snapshotIndex);
+    if (!ref) onUnresolved?.();
     return ref ? textOf(ref.node, ref.snapshotIndex) : null;
   };
 
-  const render = (n: unknown, snapshotIndex: number): string => {
-    if (typeof n === 'string') return escapeText(n);
+  /** A node written at `place`: a reference is written where it is named, whatever it was in its own snapshot. */
+  const render = (n: unknown, snapshotIndex: number, place: Place): string => {
+    visit();
+    if (typeof n === 'string') return write(escapeText(n));
     if (!Array.isArray(n) || n.length === 0) return '';
 
     if (Array.isArray(n[0])) {
       const ref = deref(n[0], snapshotIndex);
-      return ref ? render(ref.node, ref.snapshotIndex) : '<!-- [unresolved snapshot reference] -->';
+      if (!ref) onUnresolved?.();
+      return ref ? render(ref.node, ref.snapshotIndex, place) : write('<!-- [unresolved snapshot reference] -->');
     }
 
+    // An element where the browser reads text would be text: it goes.
+    if (place === 'text') return '';
     if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
     // HTML tags are recorded upper case, SVG ones as authored (`svg`, `script`).
     const tagUpper = (n[0] as string).toUpperCase();
-    const tag = tagUpper.toLowerCase();
+    // `plaintext` would read the rest of the document, the frame's own script included, as text.
+    const tag = tagUpper === 'PLAINTEXT' ? 'pre' : tagUpper.toLowerCase();
     const attrs: Attrs = n[1] && typeof n[1] === 'object' && !Array.isArray(n[1]) ? (n[1] as Attrs) : {};
 
     // A script is an empty marker — no `src`, no body — so nothing the page
     // shipped ever runs in the rendered frame. Playwright drops HTML scripts when
     // recording but keeps SVG ones, whose tag is lower case.
-    if (tagUpper === 'SCRIPT') return '<script></script>';
+    if (tagUpper === 'SCRIPT') return write('<script></script>');
     if (tagUpper === 'LINK' && isResourceHint(attrs)) return '';
 
     // An adopted stylesheet (the document's or a shadow root's) is recorded as a
     // `template` holding its CSS, where it applies: written there as a `<style>`.
     const adopted = attrs[LIVE.styleSheet];
     if (tagUpper === 'TEMPLATE' && typeof adopted === 'string') {
-      return dropStyles ? '<style></style>' : `<style>${rawStyleText(adopted)}</style>`;
+      if (dropStyles) return write('<style></style>');
+      return write(`<style>${place === 'html' ? rawStyleText(adopted) : escapeText(adopted)}</style>`);
     }
 
-    let out = `<${tag}`;
+    let open = `<${tag}`;
     // A shadow root is recorded as a `template` first in its host; as a
     // declarative shadow root, the browser attaches it while parsing.
-    if (tagUpper === 'TEMPLATE' && attrs[LIVE.shadowRoot] !== undefined) out += ' shadowrootmode="open"';
+    if (tagUpper === 'TEMPLATE' && attrs[LIVE.shadowRoot] !== undefined) open += ' shadowrootmode="open"';
     for (const [name, value] of renderedAttributes(tagUpper, attrs, isTargetMark)) {
-      out += ` ${name}="${escapeAttr(value)}"`;
+      open += ` ${name}="${escapeAttr(value)}"`;
     }
-    out += '>';
+    let out = write(`${open}>`);
     if (VOID_ELEMENTS.has(tagUpper)) return out;
 
     const value = attrs[LIVE.value];
     if (tagUpper === 'TEXTAREA' && typeof value === 'string') {
       // The parser drops one newline right after `<textarea>`.
-      return `${out}${value.startsWith('\n') ? '\n' : ''}${escapeText(value)}</${tag}>`;
+      return out + write(`${value.startsWith('\n') ? '\n' : ''}${escapeText(value)}</${tag}>`);
     }
 
     // `<style>` bodies are dropped only under the lean fallback; the tag stays
     // as a marker. An HTML `<style>` holds raw text, so its CSS is written as
-    // is; an SVG `style` (recorded lower case) is parsed as markup and stays escaped.
-    if (dropStyles && tagUpper === 'STYLE') return `${out}</${tag}>`;
-    const rawText = n[0] === 'STYLE';
-    for (let i = 2; i < n.length; i++) {
-      const text = rawText ? textOf(n[i], snapshotIndex) : null;
-      out += text !== null ? rawStyleText(text) : render(n[i], snapshotIndex);
+    // is, anything else in it left out; inside SVG or MathML a `style` is parsed
+    // as markup, whatever case it was recorded in, and stays escaped.
+    if (dropStyles && tagUpper === 'STYLE') return out + write(`</${tag}>`);
+    if (tagUpper === 'STYLE' && place === 'html') {
+      for (let i = 2; i < n.length; i++) {
+        const text = textOf(n[i], snapshotIndex);
+        if (text !== null) out += write(rawStyleText(text));
+      }
+      return out + write(`</${tag}>`);
     }
-    return `${out}</${tag}>`;
+    const inner: Place =
+      place === 'foreign' || tagUpper === 'SVG' || tagUpper === 'MATH'
+        ? 'foreign'
+        : TEXT_ELEMENTS.has(tagUpper)
+          ? 'text'
+          : 'html';
+    for (let i = 2; i < n.length; i++) out += render(n[i], snapshotIndex, inner);
+    return out + write(`</${tag}>`);
   };
 
   try {
-    const body = render(target.html, targetIndex);
+    const body = render(target.html, targetIndex, 'html');
     if (!body) return null;
-    const doctype = target.doctype ? `<!DOCTYPE ${target.doctype}>\n` : '';
-    return doctype + body;
-  } catch {
+    const doctype = typeof target.doctype === 'string' && DOCTYPE_RE.test(target.doctype) ? target.doctype : null;
+    return (doctype ? `<!DOCTYPE ${doctype}>\n` : '') + body;
+  } catch (error) {
+    if (error instanceof RenderTooLarge) onTooLarge?.();
     return null;
   }
 }
@@ -470,22 +580,43 @@ function parseStylesheetLink(tag: string): { href: string; media: string | null 
   const href = quoted ? quoted[2]! : (/\bhref\s*=\s*([^\s"'>]+)/i.exec(tag)?.[1] ?? null);
   if (!href) return null;
   const media = /\bmedia\s*=\s*("|')(.*?)\1/i.exec(tag)?.[2] ?? null;
-  return { href, media };
+  // The values as the browser reads them, their characters escaped by the renderer put back.
+  return { href: unescapeAttr(href), media: media === null ? null : unescapeAttr(media) };
+}
+
+// A style element of rendered HTML, its text whole: CSS, raw, which may hold
+// anything but its closing tag, and which a pattern for markup must pass over.
+const STYLE_ELEMENT_RE = /<style(?=[\s/>])[^>]*>[\s\S]*?(?:<\/style\s*>|$)/gi;
+
+/**
+ * `html` with `edit` applied to its markup between its style elements, their
+ * text kept as it is: out of a style, the renderer writes no `<` but a tag's,
+ * so a pattern for tags reads each once.
+ */
+function editMarkup(html: string, edit: (markup: string) => string): string {
+  let out = '';
+  let last = 0;
+  for (const style of html.matchAll(STYLE_ELEMENT_RE)) {
+    out += edit(html.slice(last, style.index)) + style[0];
+    last = style.index + style[0].length;
+  }
+  return out + edit(html.slice(last));
 }
 
 /** Every `<link rel="stylesheet">` in the HTML, unique by original `href`, with its `media`. Pure. */
 export function collectStylesheetLinks(html: string): { href: string; media: string | null }[] {
   const out: { href: string; media: string | null }[] = [];
   const seen = new Set<string>();
-  const re = /<link\b[^>]*>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const link = parseStylesheetLink(m[0]);
-    if (link && !seen.has(link.href)) {
-      seen.add(link.href);
-      out.push(link);
+  editMarkup(html, (markup) => {
+    for (const m of markup.matchAll(/<link\b[^>]*>/gi)) {
+      const link = parseStylesheetLink(m[0]);
+      if (link && !seen.has(link.href)) {
+        seen.add(link.href);
+        out.push(link);
+      }
     }
-  }
+    return markup;
+  });
   return out;
 }
 
@@ -508,19 +639,18 @@ export function collectStylesheetLinks(html: string): { href: string; media: str
 export function inlineStylesheets(html: string, cssByHref: Record<string, string>, maxTotalChars = 8_000_000): string {
   if (!html || Object.keys(cssByHref).length === 0) return html;
   let budget = maxTotalChars;
-  return html.replace(/<link\b[^>]*>/gi, (tag) => {
-    const link = parseStylesheetLink(tag);
-    if (!link) return tag;
-    const css = cssByHref[link.href];
-    if (typeof css !== 'string' || css.length === 0 || css.length > budget) return tag;
-    budget -= css.length;
-    const media = link.media ? ` media="${escapeAttr(link.media)}"` : '';
-    return `<style${media}>${rawStyleText(css)}</style>`;
-  });
+  return editMarkup(html, (markup) =>
+    markup.replace(/<link\b[^>]*>/gi, (tag) => {
+      const link = parseStylesheetLink(tag);
+      if (!link) return tag;
+      const css = cssByHref[link.href];
+      if (typeof css !== 'string' || css.length === 0 || css.length > budget) return tag;
+      budget -= css.length;
+      const media = link.media ? ` media="${escapeAttr(link.media)}"` : '';
+      return `<style${media}>${rawStyleText(css)}</style>`;
+    }),
+  );
 }
-
-// A `url(...)` target: single/double quoted (group 2) or bare (group 3).
-const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /**
  * Every `url(...)` target in a CSS body worth resolving — quotes stripped, and
@@ -530,14 +660,12 @@ const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
  */
 export function collectCssUrls(css: string): Map<string, number> {
   const uses = new Map<string, number>();
-  const re = new RegExp(CSS_URL_RE.source, 'gi');
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(css)) !== null) {
-    const raw = (m[2] ?? m[3] ?? '').trim();
-    // Skip already-inline data: URIs and any fragment ref (`#blur` filters,
-    // `sprite.svg#icon`) — a data: URI can't carry the fragment that addresses
-    // the resource, so inlining would break them; leaving them alone is safer.
-    if (!raw || raw.startsWith('data:') || raw.includes('#')) continue;
+  for (const url of cssUrls(css)) {
+    const raw = url.target.trim();
+    // Skip already-inline data: URIs and in-document refs (`#blur` filters).
+    // One addressed by a fragment is resolved without it (`font.eot?#iefix`),
+    // and an SVG one is left as it is (`assetDataUri`).
+    if (!raw || raw.startsWith('data:') || raw.startsWith('#')) continue;
     uses.set(raw, (uses.get(raw) ?? 0) + 1);
   }
   return uses;
@@ -551,10 +679,9 @@ export function collectCssUrls(css: string): Map<string, number> {
  */
 export function inlineCssUrls(css: string, replacements: Record<string, string>): string {
   if (!css || Object.keys(replacements).length === 0) return css;
-  return css.replace(new RegExp(CSS_URL_RE.source, 'gi'), (full, _q, quoted, bare) => {
-    const raw = (quoted ?? bare ?? '').trim();
-    const repl = replacements[raw];
-    return repl ? `url("${repl}")` : full;
+  return replaceCssUrls(css, (url) => {
+    const repl = replacements[url.target.trim()];
+    return repl ? `url("${repl}")` : null;
   });
 }
 
@@ -563,7 +690,11 @@ export function inlineCssUrls(css: string, replacements: Record<string, string>)
 const IMG_SRC_RE = /(<img(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*?\ssrc=")([^"]*)(")/gi;
 
 function unescapeAttr(value: string): string {
-  return value.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 /**
@@ -572,10 +703,13 @@ function unescapeAttr(value: string): string {
  */
 export function collectImageSources(html: string): Map<string, number> {
   const uses = new Map<string, number>();
-  for (const m of html.matchAll(IMG_SRC_RE)) {
-    const src = unescapeAttr(m[2]!).trim();
-    if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
-  }
+  editMarkup(html, (markup) => {
+    for (const m of markup.matchAll(IMG_SRC_RE)) {
+      const src = unescapeAttr(m[2]!).trim();
+      if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
+    }
+    return markup;
+  });
   return uses;
 }
 
@@ -586,10 +720,12 @@ export function collectImageSources(html: string): Map<string, number> {
  */
 export function inlineImageSources(html: string, replacements: Record<string, string>): string {
   if (!html || Object.keys(replacements).length === 0) return html;
-  return html.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
-    const repl = replacements[unescapeAttr(value).trim()];
-    return repl ? `${open}${escapeAttr(repl)}${close}` : full;
-  });
+  return editMarkup(html, (markup) =>
+    markup.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
+      const repl = replacements[unescapeAttr(value).trim()];
+      return repl ? `${open}${escapeAttr(repl)}${close}` : full;
+    }),
+  );
 }
 
 /** The two representations a case can be viewed as: trace-derived DOM or the ARIA tree. */
@@ -667,6 +803,32 @@ export function pointerAt(
 }
 
 /**
+ * Render one named snapshot and sanitize it within `capChars`: full fidelity
+ * first (inline `<style>` kept), and, when keeping styles blows the cap and
+ * would cut the real `<body>` away, lean (inline CSS dropped), which reliably
+ * fits and keeps the whole DOM; lean too when the styled render costs more
+ * than its budget. Null when the snapshot does not render, or costs more than
+ * its budget lean too (`onTooLarge`). `onUnresolved` hears each back-reference
+ * the list cannot resolve.
+ */
+export function renderSanitizedSnapshot(
+  snapshots: TraceFrameSnapshot[],
+  snapshotName: string,
+  capChars: number,
+  options: SanitizeOptions = {},
+  onUnresolved?: () => void,
+  onTooLarge?: () => void,
+): { html: string; truncated: boolean } | null {
+  let tooLarge = false;
+  const styled = renderSnapshotHtml(snapshots, snapshotName, { onUnresolved, onTooLarge: () => (tooLarge = true) });
+  if (!styled && !tooLarge) return null;
+  const result = styled ? sanitizeDomSnapshot(styled, capChars, options) : null;
+  if (result && !result.truncated) return result;
+  const lean = renderSnapshotHtml(snapshots, snapshotName, { dropStyles: true, onUnresolved, onTooLarge });
+  return lean ? sanitizeDomSnapshot(lean, capChars, options) : result;
+}
+
+/**
  * Pick and render the failure-time DOM from parsed trace data: the failing
  * action's after-snapshot (the page when the error was raised, the moment the
  * failure screenshot and the failing aria tree show), falling back to its
@@ -704,16 +866,8 @@ export function extractDomSnapshot(
   const candidates = asked ? [asked, ...failureCandidates] : failureCandidates;
 
   for (const name of candidates) {
-    // Full-fidelity first (inline <style> kept). If keeping styles blows the
-    // cap the real <body> can get truncated away, so re-render lean (inline
-    // CSS dropped) — that reliably fits and preserves the whole DOM.
-    const styled = renderSnapshotHtml(data.frameSnapshots, name);
-    if (!styled) continue;
-    let result = sanitizeDomSnapshot(styled, capChars, options);
-    if (result.truncated) {
-      const lean = renderSnapshotHtml(data.frameSnapshots, name, { dropStyles: true });
-      if (lean) result = sanitizeDomSnapshot(lean, capChars, options);
-    }
+    const result = renderSanitizedSnapshot(data.frameSnapshots, name, capChars, options);
+    if (!result) continue;
     // The viewport of the snapshot we rendered (main frame preferred, mirroring
     // renderSnapshotHtml) so the client can render it at its true proportions.
     const rendered =

@@ -176,9 +176,11 @@ describe("an agent's tools for the runs of the editor window", () => {
         {
           run: ref,
           ended: false,
+          launcher: 'editor',
           workers: [
             {
               worker: 0,
+              lane: 1,
               state: 'running',
               test: {
                 title: 'cart › adds a mug',
@@ -194,6 +196,25 @@ describe("an agent's tools for the runs of the editor window", () => {
       ],
     });
     expect((await call('run_list', { run: ref })).piwi).toEqual({ ok: false, message: 'Unknown argument: run.' });
+  });
+
+  test('turn a run’s Hold failures on or off as it follows the run, as a person would on a surface', async () => {
+    const held = await call('run_follow', { run: ref, wait: 0, hold: true });
+    expect(held.piwi).toMatchObject({
+      ok: true,
+      hold: 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+    });
+    expect(await waitFor(() => (ide.latest(ref)?.hold?.by === 'agent' ? ide.latest(ref) : undefined))).toMatchObject({
+      hold: { on: true, by: 'agent' },
+    });
+    expect((await call('run_follow', { run: ref, wait: 0, hold: false })).piwi).toMatchObject({
+      hold: 'A failure of this run no pause bar shows goes on at once.',
+    });
+    expect((await call('run_follow', { run: ref, wait: 0 })).piwi).not.toHaveProperty('hold');
+    expect((await call('run_follow', { run: ref, wait: 0, hold: 'yes' })).piwi).toEqual({
+      ok: false,
+      message: '`hold` is true or false.',
+    });
   });
 
   test('follow a run: its events since a cursor, the page’s text apart, answered at once at a stop', async () => {
@@ -386,6 +407,86 @@ describe("an agent's tools for the runs of the editor window", () => {
       expect((await call('page_act', args)).piwi.message, JSON.stringify(args)).toContain(says);
     }
     expect(requests('act')).toHaveLength(1);
+  });
+
+  test('drive a stop until a person takes it there, then hear so and wait for them to give it back', async () => {
+    const acted = () => ({
+      ok: true,
+      message: 'Clicked e2.',
+      element: { ...BUTTON },
+      locators: [
+        { locator: "getByRole('button', { name: 'Add a mug' })", method: 'getByRole', score: 90, unique: true },
+      ],
+    });
+    const page = () => ({
+      ok: true,
+      message: 'The stopped page.',
+      url: 'http://shop.test/',
+      title: 'Shop',
+      snapshot: PAGE_ONE,
+      cut: false,
+      image: null,
+    });
+    const { run, since, other } = await stoppedRun({
+      act: acted,
+      snapshot: page,
+      view: () => ({ ok: true, message: 'The live view is on.' }),
+      input: () => ({ ok: true, message: 'Played.' }),
+    });
+    try {
+      expect((await call('page_act', { run, stop: since, target: 'e2', action: 'click' })).piwi).toMatchObject({
+        ok: true,
+      });
+      expect(await waitFor(() => ide.latest(run)?.workers[0]?.stop?.driver)).toEqual({
+        kind: 'agent',
+        name: 'an agent',
+      });
+      // The editor's panel watches the page and its person clicks: they drive it, and the agent hears so.
+      const at = { ref: run, worker: 0, since };
+      expect(await ide.client.sendRequest('piwi/pageView', { ...at, on: true })).toMatchObject({ ok: true });
+      await ide.client.sendRequest('piwi/pageInput', { ...at, events: [{ type: 'text', text: 'a' }] });
+      expect(
+        await waitFor(() =>
+          ide.latest(run)?.workers[0]?.stop?.driver?.kind === 'editor' ? ide.latest(run) : undefined,
+        ),
+      ).toMatchObject({ workers: [{ stop: { driver: { kind: 'editor', name: 'Test Editor', self: true } } }] });
+      const followed = await call('run_follow', { run, wait: 0 });
+      expect(followed.piwi.events).toContainEqual(
+        expect.objectContaining({ kind: 'taken', worker: 0, by: 'Test Editor' }),
+      );
+      const refused = await call('page_act', { run, stop: since, target: 'e2', action: 'click' });
+      expect(refused.piwi.message).toBe(
+        'Test Editor drives this stop: a person took control there. Wait for them to answer it or give it back.',
+      );
+      expect((await call('run_control', { run, action: 'resume', stop: since, wait: 0 })).piwi).toMatchObject({
+        ok: false,
+      });
+      // Esc gives it back while the panel still watches, and Interact takes it again.
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: false })).toMatchObject({
+        ok: true,
+        message: 'You gave this stop back: an agent may act on it.',
+      });
+      expect(await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver ? undefined : true))).toBe(true);
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: true })).toMatchObject({ ok: true });
+      expect(
+        await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver?.kind === 'editor' ? true : undefined)),
+      ).toBe(true);
+      const retaken = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });
+      // The panel no longer watches it: the agent hears it is given back, and may act again.
+      await ide.client.sendRequest('piwi/pageView', { ...at, on: false });
+      const given = await call('run_follow', { run, after: retaken.piwi.next, wait: 0 });
+      expect(given.piwi.events).toContainEqual(expect.objectContaining({ kind: 'given-back', worker: 0 }));
+      // Unwatched, the editor takes it no more.
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: true })).toMatchObject({
+        ok: false,
+        message: 'Watch the stopped page first: you drive the stop you watch.',
+      });
+      expect((await call('page_act', { run, stop: since, target: 'e2', action: 'click' })).piwi).toMatchObject({
+        ok: true,
+      });
+    } finally {
+      other.socket.destroy();
+    }
   });
 
   test('write the steps it took through the editor, said to be the agent’s, then an assertion and a locator', async () => {

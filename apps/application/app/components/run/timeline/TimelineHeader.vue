@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { ResourceTrackKind, WorkerMetricKind } from '~/utils/resource-tracks';
+import { shardsStartedText } from '~/utils/timeline';
 
 const props = defineProps<{
   workerCount: number;
@@ -41,7 +42,22 @@ const props = defineProps<{
   lingeringCount?: number;
   /** Current state of the tails toggle. */
   showLeaks?: boolean;
+  /** While a sharded run is live: the shards, from 1, that have a test on the timeline. */
+  shardsStarted?: number[] | null;
+  /** While the run is live: the running attempts the Stuck? rule marks. */
+  stuckCount?: number;
 }>();
+
+/** The stuck tests' count, in the warning tone of their bars. */
+const STUCK_TEXT_CLASS = STATUS_PALETTE.running.stuck!.text;
+
+/** What the header says of the shards: which have started while the run is live, else how many there are. */
+const shardsText = computed(() => {
+  const total = props.shardTotal ?? 0;
+  if (total <= 1) return null;
+  if (props.live && props.shardsStarted) return shardsStartedText(props.shardsStarted, total);
+  return `${total} shards`;
+});
 
 const emit = defineEmits<{
   reset: [];
@@ -101,13 +117,19 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
     <span class="text-xs text-gray-500 inline-flex items-center gap-1"
       ><span
         >{{ workerCount }} worker{{ workerCount > 1 ? 's' : '' }}
-        <template v-if="shardTotal && shardTotal > 1">
-          &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
+        <template v-if="shardsText">
+          &middot; <span data-testid="timeline-shards">{{ shardsText }}</span>
         </template>
         &middot; {{ testCount }} test{{ testCount === 1 ? '' : 's' }}
         <template v-if="retryCount && retryCount > 0">
           &middot;
           <span data-testid="timeline-retries">{{ retryCount }} {{ retryCount > 1 ? 'retries' : 'retry' }}</span>
+        </template>
+        <template v-if="stuckCount && stuckCount > 0">
+          &middot;
+          <span class="whitespace-nowrap" :class="STUCK_TEXT_CLASS" data-testid="timeline-stuck"
+            >{{ stuckCount }} stuck</span
+          >
         </template>
         <template v-if="hookFailureCount > 0">
           &middot;

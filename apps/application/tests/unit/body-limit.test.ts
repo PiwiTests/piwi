@@ -53,6 +53,7 @@ describe('the desktop app’s run-target routes', () => {
     { method: 'POST', path: '/api/desktop/run-target/connect' },
     { method: 'PUT', path: '/api/desktop/run-target/key' },
     { method: 'PUT', path: '/api/desktop/run-target/links' },
+    { method: 'PUT', path: '/api/desktop/run-target/local-runs' },
     { method: 'POST', path: '/api/desktop/run-target/requests/12/answer' },
     { method: 'POST', path: '/api/desktop/run-target/requests/12/plan' },
   ];

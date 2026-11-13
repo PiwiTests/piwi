@@ -18,10 +18,11 @@
  * which runs their trays own on a `BroadcastChannel`, again every `CLAIM_BEAT_MS`; a claim not renewed for
  * `CLAIM_MS` lapses, as a window that closed without saying so. A stop from before the page loaded (`since`), heard
  * again after a reload, opens the tray but is not told again. A run's output window shows no runs of its own and holds
- * nothing.
+ * nothing; a worker's window holds the stream for its worker itself.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { desktopRunOf, desktopShownRefs, desktopStopSaid } from '~/utils/desktop-run-view';
+import { desktopRunOf, desktopRunRef, desktopShellIdOf, desktopShownRefs } from '~/utils/desktop-run-view';
+import { desktopStopSaid } from '@piwitests/run-ui/run-view';
 
 /** The channel on which the app's windows say which runs their trays own. */
 const OWNERS_CHANNEL = 'piwi-desktop-run-owners';
@@ -40,7 +41,8 @@ const STOP_TITLES: Partial<Record<string, string>> = {
 
 export default defineNuxtPlugin(() => {
   const label = tauriWindowLabel();
-  if (!tauriCore() || label?.startsWith('output-')) return;
+  // A run's output window shows no runs; a worker's window holds the stream itself (`pages/desktop/run-worker.vue`).
+  if (!tauriCore() || label?.startsWith('output-') || label?.startsWith('worker-')) return;
   const loadedAt = Date.now();
   // Another window holds the stream for the runs it started itself alone.
   const main = label === null || label === 'main';
@@ -59,6 +61,14 @@ export default defineNuxtPlugin(() => {
   watch(
     () => store.activeCount.value > 0 || hubLive.value > 0 || sessions.value.length > 0,
     (on) => hub.want(on),
+    { immediate: true },
+  );
+
+  // The window is present on the runs while its tray shows them to a person.
+  const visibility = useDocumentVisibility();
+  watch(
+    () => trayShown.value && visibility.value === 'visible',
+    (on) => hub.present(on),
     { immediate: true },
   );
 
@@ -100,6 +110,27 @@ export default defineNuxtPlugin(() => {
     const now = Date.now();
     return main && ![...others.values()].some((claim) => now - claim.at < CLAIM_MS && claim.refs.has(run));
   }
+
+  // Another tool asked through the hub to stop a run: the window whose tray holds it stops it as its own Stop does; with
+  // none, the main window has the shell stop the process. Once a run, whoever asks again: a second stop of the shell's
+  // is the tray's Force stop, which only the tray offers.
+  const stopsAsked = new Set<number>();
+  hub.onStopRun((ref) => {
+    if (!tellsSystem(ref)) return;
+    const run = store.runs.value.find((r) => r.hubRefs.includes(desktopRunOf(ref)));
+    if (run) {
+      // A step of the run that ended, its session left a moment longer, stops nothing: the step running now is another.
+      const current = run.shellId != null && desktopRunRef(run.shellId) === desktopRunOf(ref);
+      if (current && !run.stopRequested) void store.stopRun(run);
+      return;
+    }
+    const runId = desktopShellIdOf(ref);
+    if (runId === null || stopsAsked.has(runId)) return;
+    stopsAsked.add(runId);
+    void tauriCore()
+      ?.invoke('desktop_stop_local_tests', { runId })
+      .catch(() => {});
+  });
 
   hub.onStop((session: HubSession, worker: HubWorker) => {
     const stop = worker.stop;

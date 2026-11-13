@@ -90,6 +90,10 @@ How the server merges shards:
   (`withRequestOrigin`), set `requester_id` and ignore `keep`. `sanitizeMetadata` drops a `request` origin the reporter
   sends, every later write of the reporter's metadata goes through `carryRequestOrigin`, and `runOrigin` reads `request`
   before any lab stamp (`tests/unit/request-tokens.test.ts`).
+- **Every route that creates a run stores its reporter**: `reporter_id` from `runReporterId(event, signedIn)`
+  (`server/utils/run-viewer.ts`), null with sign-in off and for a request token. It decides only a list's `mine`
+  (`#shared/own-runs`) and never leaves the server: a handler that spreads a run row drops it, as `getTestRun` does
+  (`tests/unit/own-runs.test.ts`).
 - **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
   `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
   with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload
@@ -124,7 +128,25 @@ How the server merges shards:
   (a restart, the setting turned off and on) is taken back only for that run, compared in constant time, while it is
   initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
-  export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
+  export, and the relay holds one waiting frame per worker a watch shows at most (`tests/unit/live-view-relay.test.ts`).
+- **What Inspect keeps lives in memory, bounded, and goes with the run** (`RunInspect`, `server/utils/live-inspect.ts`):
+  a worker's snapshots of its running test (they go as it ends) and the run's resources of `inspectResourceType`
+  alone, within a worker's, a run's and every run's bounds (`InspectBudget`), never a database row, a file or a log
+  line. It takes them only from a worker a watch inspects, of a project that masks nothing (masks set drop what it
+  kept), and serves a page to the person's own watch with Inspect open as the stored trace's snapshot frame is
+  (`snapshotFrameDocument`; `tests/unit/live-inspect-store.test.ts`, `tests/unit/live-view-relay.test.ts`).
+- **A path that forgets a run's live view clears its Inspect store** (`run.inspect?.clear()`, as `closeRun` and
+  `forgetIfIdle` do): the instance's `InspectBudget` counts its bytes until then (`tests/unit/live-view-relay.test.ts`).
+- **A watch is changed by its own person alone**: `[id]/live-view/watch`'s `POST` names the watch by the random id its
+  stream opened with (`hello`, said on that stream alone), and `changeWatch` refuses another person's or another run's
+  as missing (`tests/unit/live-view-relay.test.ts`). It answers what the watch shows then (`watch`, and `data.watch` of
+  the 404 that refuses a full view, the change's other fields applied), which the page holds as shown
+  (`readLiveWatchShown`, `tests/unit/live-view-routes.test.ts`).
+- **An ask to watch reaches its run's reporter once, and its changes the person who asked alone**
+  (`server/utils/live-asks.ts`): only a signed-in session asks (`isSignedInPerson`), the `events`, `heartbeat` and
+  `live-resources` answers hand each ask over once (`handOverAnswer`), an `askAnswer` answers an ask of that run alone,
+  and `[id]/stream` relays a `live-ask` event to its asker only (`viewerAskEvent`; `tests/unit/live-asks.test.ts`,
+  `tests/unit/live-ask-route.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays
   valid until that shard calls `/begin`, which swaps it for the shard's stream token: read the set with
   `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.

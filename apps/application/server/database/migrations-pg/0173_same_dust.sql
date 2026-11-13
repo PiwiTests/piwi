@@ -1,0 +1,1 @@
+ALTER TABLE "project_integrations" ADD COLUMN "declared_issue_types" jsonb;

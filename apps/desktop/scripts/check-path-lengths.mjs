@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const MAX_PATH = 259;
 const SERVER = ['resources', 'app-server', '.output', ''];
-const PER_USER_OUTPUT = ['C:', 'Users', 'u'.repeat(20), 'AppData', 'Local', 'Piwi Dashboard', ...SERVER].join('\\');
+const PER_USER_OUTPUT = ['C:', 'Users', 'u'.repeat(20), 'AppData', 'Local', 'Piwi Desktop', ...SERVER].join('\\');
 const PACKAGE_OUTPUT = [
   'C:',
   'Program Files',

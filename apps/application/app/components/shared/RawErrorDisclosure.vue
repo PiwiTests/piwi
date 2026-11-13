@@ -11,7 +11,7 @@
  * (the `signature` prop). `reveal()` opens and scrolls to the panel so a clue or
  * diagnosis citation can point at the raw error.
  */
-import { renderAnsi } from '~/utils';
+import { renderAnsi } from '@piwitests/run-ui/ansi';
 import { condenseErrorText } from '#shared/error-fingerprint';
 
 const props = defineProps<{

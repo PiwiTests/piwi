@@ -1,0 +1,32 @@
+{
+  "_spec": "FolderList",
+  "next": null,
+  "startAt": 0,
+  "maxResults": 1000,
+  "total": 2,
+  "isLast": true,
+  "values": [
+    {
+      "id": 40001,
+      "parentId": null,
+      "name": "Nightly",
+      "index": 0,
+      "folderType": "TEST_CYCLE",
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      }
+    },
+    {
+      "id": 40002,
+      "parentId": 40001,
+      "name": "Release 4.2",
+      "index": 0,
+      "folderType": "TEST_CYCLE",
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      }
+    }
+  ]
+}

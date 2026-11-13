@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { formatEditorDiscovery, type EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { formatRecordChannel } from '@piwitests/core/ide-recorder';
-import { runChannelRef, runInteractive, type FollowedEditor } from '../src/internal/config/editors.js';
+import { runChannelRef, runInteractive, type FollowedHub } from '../src/internal/config/hub.js';
 import { detectCi } from '../src/internal/support/ci.js';
 import { getSetupFilePath } from '../src/internal/support/setup-file.js';
 import { wrapConfig } from '../src/public/config-wrapper.js';
@@ -26,20 +26,10 @@ const CHANNEL = formatRecordChannel({
   token: 'interactive-token-0123456789',
 });
 
-/** The editor a terminal's run follows, as `followEditor` finds it. */
-function followed(client: string | null): FollowedEditor {
-  const editor: EditorDiscovery = {
-    pid: 1,
-    host: os.hostname(),
-    version: '0.66.0',
-    client,
-    startedAt: new Date().toISOString(),
-    roots: ['/work'],
-    hub: null,
-    runChannel: null,
-    recorderBundle: null,
-  };
-  return { editor, ref: 'terminal-41-1730000000000' };
+/** The editor a terminal's run follows, as `followHub` finds it. */
+function followed(client: string | null): FollowedHub {
+  const name = client ?? 'the editor';
+  return { kind: 'editor', pid: 1, name, client: client ?? 'editor', ref: 'terminal-41-1730000000000', attended: true };
 }
 
 describe('the hub a run follows', () => {
@@ -68,6 +58,9 @@ describe('the hub a run follows', () => {
       ref: 'terminal-41-1730000000000',
     });
     expect(runInteractive(terminalRun, followed(null))).toEqual({ client: 'editor', ref: 'terminal-41-1730000000000' });
+    // A run the desktop app's linked folder holds is the app's.
+    const desktopHub: FollowedHub = { ...followed(null), kind: 'desktop', name: 'the desktop app', client: 'desktop' };
+    expect(runInteractive(terminalRun, desktopHub)).toEqual({ client: 'desktop', ref: 'terminal-41-1730000000000' });
     expect(runInteractive(terminalRun, null)).toEqual({ client: null, ref: 'terminal-41-1730000000000' });
     expect(runInteractive({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'ed-1' }, null)).toBeNull();
     expect(runInteractive({ PIWI_ORIGIN: 'desktop', PIWI_RUN_REF: 'desktop-7' }, null)).toBeNull();

@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
-import { testCases, testRunsCases } from '../database/schema';
+import { failureClusters, testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { clusterLabel } from '#shared/handlers/failure-cluster-ops';
 
 /**
  * The catch-up a run's stream sends a page that connects: the `run-finished` of
@@ -29,7 +30,10 @@ export function runFinishedEventData(run: {
   };
 }
 
-/** The `test-completed` data of each stored execution of the run, each test's attempts in order (error left out). */
+/**
+ * The `test-completed` data of each stored execution of the run, each test's attempts in order (error left out), with
+ * the failure cluster it joined and that cluster's label as the live event carries them.
+ */
 export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise<Record<string, unknown>[]> {
   const existingCases = await db
     .select({
@@ -52,6 +56,7 @@ export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise
       tags: testRunsCases.tags,
       locks: testRunsCases.locks,
       testMeta: testRunsCases.testMeta,
+      testAnnotations: testRunsCases.testAnnotations,
       retries: testRunsCases.retries,
       attempts: testRunsCases.attempts,
       passedAfterFailure: testRunsCases.passedAfterFailure,
@@ -59,9 +64,13 @@ export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise
       didNotRunReason: testRunsCases.didNotRunReason,
       expectedStatus: testRunsCases.expectedStatus,
       blockedBy: testRunsCases.blockedBy,
+      failureClusterId: failureClusters.id,
+      clusterTitle: failureClusters.title,
+      clusterStatus: failureClusters.status,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .leftJoin(failureClusters, eq(testRunsCases.failureClusterId, failureClusters.id))
     .where(eq(testRunsCases.testRunId, runId))
     // Each test's attempts in order, so its latest one is replayed last.
     .orderBy(asc(testRunsCases.retries), asc(testRunsCases.id));
@@ -83,6 +92,7 @@ export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise
     tags: tc.tags ?? null,
     locks: tc.locks ?? null,
     testMeta: tc.testMeta ?? null,
+    testAnnotations: tc.testAnnotations ?? null,
     retries: tc.retries ?? null,
     attempts: tc.attempts ?? null,
     passedAfterFailure: tc.passedAfterFailure,
@@ -92,5 +102,10 @@ export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise
     blockedBy: tc.blockedBy ?? null,
     executionId: tc.id,
     testCaseId: tc.testCaseId,
+    failureClusterId: tc.failureClusterId ?? null,
+    failureCluster:
+      tc.failureClusterId != null
+        ? clusterLabel({ id: tc.failureClusterId, title: tc.clusterTitle, status: tc.clusterStatus })
+        : null,
   }));
 }

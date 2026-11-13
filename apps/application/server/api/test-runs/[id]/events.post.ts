@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
+import { liveAsks } from '../../../utils/live-asks';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { runningCaseKey } from '../../../utils/inserted-run-cases';
@@ -13,6 +14,7 @@ import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
+import { clusterLabels } from '#shared/handlers/failure-cluster-ops';
 import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -20,7 +22,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
+      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The answer's `ask` (`{ id, by }`, once) is a teammate's ask to watch the run (Ask to watch), the oldest of the run not handed over yet, for the reporter to put to the developer; the body's `askAnswer` (`{ id, answer: 'not-now' }`) is the developer's answer to an ask of this run, and its `takesAsks: true` says the reporter takes asks. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -41,6 +43,10 @@ defineRouteMeta({
               streamToken: { type: 'string' },
               testCases: { type: 'array', items: { type: 'object' } },
               testCase: { type: 'object' },
+              askAnswer: {
+                type: 'object',
+                properties: { id: { type: 'string' }, answer: { type: 'string', enum: ['not-now'] } },
+              },
             },
             required: ['streamToken'],
           },
@@ -76,6 +82,8 @@ export default eventHandler(async (event) => {
   }
 
   const { projectId } = await authorizeStreamToken(db, id, body.streamToken);
+  liveAsks.noteTakesAsks(id, body);
+  liveAsks.answer(id, body.askAnswer);
 
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
@@ -125,6 +133,7 @@ export default eventHandler(async (event) => {
       success: true,
       processed: beginEvents.length + stepRunEvents.length,
       watched: runEventBus.answerWatched(id, body.streamToken),
+      ...liveAsks.handOverAnswer(id),
     };
   }
 
@@ -160,15 +169,21 @@ export default eventHandler(async (event) => {
 
   const updatedRun = updatedRuns[0];
 
-  // Publish test-completed events to SSE subscribers. The persisted execution
-  // id rides along so the live run page can deep-link each row to its real
-  // case page instead of a fabricated id (see persistRunCases' inputIndex).
+  // Publish test-completed events to SSE subscribers. The persisted execution id and the failure cluster the attempt
+  // joined ride along, so the live run page deep-links each row to its real case page instead of a fabricated id (see
+  // persistRunCases' inputIndex) and files a failure under its cluster.
   const persistedByInputIndex = new Map(
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
 
+  const labels = await clusterLabels(
+    db,
+    insertedRunCases.map((r) => r.failureClusterId),
+  );
+
   for (const [index, tc] of (completeEvents as StreamEventPayload[]).entries()) {
-    const persisted = persistedByInputIndex.get(index);
+    const stored = persistedByInputIndex.get(index);
+    const persisted = stored && { ...stored, failureCluster: labels.get(stored.failureClusterId!) ?? null };
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
     if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
@@ -207,5 +222,6 @@ export default eventHandler(async (event) => {
     success: true,
     processed: insertedRunCases.length + beginEvents.length,
     watched: runEventBus.answerWatched(id, body.streamToken),
+    ...liveAsks.handOverAnswer(id),
   };
 });

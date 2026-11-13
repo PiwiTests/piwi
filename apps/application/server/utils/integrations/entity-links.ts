@@ -156,6 +156,7 @@ export async function updateEntityLinkStatus(
     statusText?: string | null;
     statusColor?: string | null;
     key?: string | null;
+    externalId?: string | null;
   },
 ): Promise<void> {
   await db

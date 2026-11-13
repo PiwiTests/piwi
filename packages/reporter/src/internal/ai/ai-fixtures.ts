@@ -199,7 +199,8 @@ function createAiApi(
     if (!serverUrl) {
       throw new Error(`piwi AI: ${config.mode} mode needs PIWI_DASHBOARD_URL (the authoring server) to be set`);
     }
-    return new ServerStepResolver(serverUrl, process.env.PIWI_API_KEY ?? null);
+    const apiKey = process.env.PIWI_API_KEY ?? null;
+    return new ServerStepResolver(serverUrl, apiKey, process.env.PIWI_DESKTOP_KEY === '1' ? apiKey : null);
   };
 
   const readAria = (p: Page): Promise<string | null> => ariaSnapshotBestEffort(p.locator('body'));

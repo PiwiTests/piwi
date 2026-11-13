@@ -21,7 +21,7 @@ import {
   noteDemoComplete,
   noteDemoSteps,
 } from './stuck-tests';
-import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
+import { publishDemoGlobalEvent, publishDemoRunEvent, publishDemoRunProgress } from '../run-events';
 import {
   projects,
   testRuns,
@@ -118,6 +118,7 @@ import {
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
   assignFailureClusters,
+  clusterLabels,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
 import type {
@@ -128,6 +129,7 @@ import type {
 } from '#shared/types';
 import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
+import { linkDemoDeclaredIssues } from './integrations';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
@@ -657,6 +659,7 @@ export async function persistRunCases(
     inputIndex: number;
     passedAfterFailure: boolean;
     attempts: unknown;
+    failureClusterId: number | null;
   }>
 > {
   if (input.length === 0) return [];
@@ -937,6 +940,7 @@ export async function persistRunCases(
     inputIndex: rowInputIndices[r.rowIndex]!,
     passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
     attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
+    failureClusterId: runCasesRows[r.rowIndex]!.failureClusterId ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
@@ -1054,15 +1058,19 @@ export async function apiPostRunEvents(
 
   const updatedRun = updatedRuns[0] ?? testRun;
 
-  // The persisted execution id rides along so the live run page can deep-link
-  // each row to its real case page instead of a fabricated id (mirrors the
-  // server's events handler).
+  // The persisted execution id and the failure cluster the attempt joined ride along, so the live run page deep-links
+  // each row to its real case page and files a failure under its cluster (mirrors the server's events handler).
   const persistedByInputIndex = new Map(
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
+  const labels = await clusterLabels(
+    db,
+    insertedRunCases.map((r) => r.failureClusterId),
+  );
 
   for (const [index, tc] of completeEvents.entries()) {
-    const persisted = persistedByInputIndex.get(index);
+    const stored = persistedByInputIndex.get(index);
+    const persisted = stored && { ...stored, failureCluster: labels.get(stored.failureClusterId!) ?? null };
     publishDemoRunEvent(id, { type: 'test-completed', data: testCompletedData(tc, cases[index]!, persisted) });
   }
 
@@ -1075,6 +1083,16 @@ export async function apiPostRunEvents(
       skippedTests: updatedRun.skippedTests,
       didNotRunTests: updatedRun.didNotRunTests,
     },
+  });
+  // Also to every list showing the run (the server's `publishRunProgress`).
+  publishDemoRunProgress({
+    runId: id,
+    projectId: testRun.projectId,
+    totalTests: updatedRun.totalTests,
+    passedTests: updatedRun.passedTests,
+    failedTests: updatedRun.failedTests,
+    skippedTests: updatedRun.skippedTests,
+    didNotRunTests: updatedRun.didNotRunTests,
   });
 
   return { success: true, processed: insertedRunCases.length + beginEvents.length, watched: DEMO_RUN_WATCHED };
@@ -1128,8 +1146,8 @@ export async function apiLiveResourcesTestRun(
 let recordingFindings: Promise<unknown> = Promise.resolve();
 
 /**
- * What a finished run records beside its own row: its incident flag, its markers, its resource findings and its
- * rollup. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
+ * What a finished run records beside its own row: its incident flag, its markers, its resource findings, its
+ * rollup and the links its failing tests name. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
  * demo has no reports poll to read it again.
  */
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
@@ -1139,6 +1157,7 @@ async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
   await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
+  await linkDemoDeclaredIssues(db, id).catch(() => {});
 }
 
 export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {

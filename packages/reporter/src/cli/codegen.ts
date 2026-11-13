@@ -15,7 +15,7 @@ import { renderSpec, type CodegenOptions, type CodegenResult } from '@piwitests/
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
-import { connectionFolders, resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, connectionFolders, resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -185,7 +185,7 @@ function authHeaders(apiKey: string | null): Record<string, string> {
 }
 
 async function fetchJson(url: string, apiKey: string | null): Promise<unknown> {
-  const res = await fetch(url, { headers: authHeaders(apiKey), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const res = await cliFetch(url, { headers: authHeaders(apiKey), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${new URL(url).pathname} answered ${res.status}`);
   return res.json();
 }

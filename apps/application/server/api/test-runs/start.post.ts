@@ -3,6 +3,7 @@ import { getDatabase } from '../../database';
 import { testRuns, type User } from '../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
+import { runReporterId } from '../../utils/run-viewer';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
@@ -144,6 +145,7 @@ export default eventHandler(async (event) => {
           metadata,
           origin: runOrigin(metadata),
           commit: runCommit(metadata),
+          reporterId: runReporterId(event, signedIn),
           instanceId,
           playwrightVersion: body.playwrightVersion || null,
           reporterVersion: body.reporterVersion || null,
@@ -210,6 +212,7 @@ export default eventHandler(async (event) => {
         origin: runOrigin(metadata),
         commit: runCommit(metadata),
         requesterId: grant?.requester.id ?? null,
+        reporterId: runReporterId(event, signedIn),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,

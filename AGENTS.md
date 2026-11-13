@@ -14,6 +14,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `packages/reporter/`: the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
 | `apps/desktop/`: the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
 | `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md)     |
+| `packages/run-model/`: the run model the Runs window and the desktop tray share | [`packages/run-model/AGENTS.md`](packages/run-model/AGENTS.md) |
 | `apps/runner/`: Piwi Runner, the window and Node host that run a team instance's requests | [`apps/runner/AGENTS.md`](apps/runner/AGENTS.md) |
 | `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
 | `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
@@ -51,6 +52,7 @@ packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, d
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
 packages/editor/      @piwitests/editor: the language server both editor clients bundle (scope `ide`)
 packages/run-ui/      @piwitests/run-ui: the Nuxt layer the dashboard and Piwi Runner share (run request UI, Tauri bridge)
+packages/run-model/   @piwitests/run-model: the run model Piwi Picker's Runs window and the desktop app's tray share
 packages/server/      @piwitests/server: the published npm run option (`npx @piwitests/server`)
 integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
 examples/sample-app/  One web app and its Playwright suite, served by each supported backend
@@ -141,9 +143,6 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
 `--no-verify`.
 
-Release notes: release-please writes one raw entry per commit; the `Tidy release notes` workflow de-duplicates them,
-and the `release-notes` skill writes the polished, human-facing version.
-
 ### Cross-platform shell commands
 
 Any command shown to a **user** (docs, `*.md`, in-app `CodeBlock` snippets) must work on Windows too: prefer one
@@ -217,6 +216,8 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
   range and the area guides, never your reasoning or what you expect them to find, and ask for an adversarial
   reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
   ones, and open the pull request after.
+- **Screenshots go in the pull request**: one that changes what people see embeds in its description the screenshots
+  already captured for it (the docs images it updates, the scenes it ran), not only the chat.
 - **Report what you find**: bugs, inconsistencies and tech debt discovered along the way go in your final report and
   in a GitHub issue on `PiwiTests/piwi`, after searching open and closed issues: comment on a match instead of opening
   a duplicate. A security finding never goes in an issue or a comment: describe it to the user and let them decide.

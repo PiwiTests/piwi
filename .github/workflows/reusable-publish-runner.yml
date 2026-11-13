@@ -1,0 +1,274 @@
+name: Publish Piwi Runner installers
+
+# Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and attaches the installers to the
+# GitHub Release release-please created for the tag, beside the desktop app's (release.yml calls it). Runner is the
+# desktop crate built with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and
+# window. On a tag with the update signing key, the packages carry update signatures and the `manifest` job writes
+# `latest-runner.json` from them, Runner's own update manifest beside the desktop app's `latest.json`. Off a tag it
+# builds the installers and keeps them as the run's artifacts.
+on:
+  workflow_call:
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+# The release's file names: "Piwi-Runner_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…", with no
+# version: the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs),
+# and apps/runner/scripts/release-files.mjs renders it for the files the job uploads.
+env:
+  ASSET_NAME_PATTERN: 'Piwi-Runner_[arch][setup][ext]'
+
+jobs:
+  runner:
+    name: runner (${{ matrix.target }}, ${{ matrix.bundles }})
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    permissions:
+      contents: write # upload installers to the release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One leg for both Windows installers: one manifest names each by its kind (`windows-x86_64-msi`,
+          # `windows-x86_64-nsis`), so a build serves both, as the desktop app's two channels cannot.
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+          # Ad hoc signed by the base config's signingIdentity "-", like the desktop app. `app` alongside the dmg: the
+          # bundler makes the macOS update file (.app.tar.gz) from the app bundle only.
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          # Ubuntu 22.04 (not latest) for the same reason as the desktop app: AppImage bundles the host's glibc, and
+          # 22.04 is the last runner carrying webkit2gtk-4.1.
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The host and the window build in the npm workspace (Nuxt, the editor package, the run-ui layer).
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      # Tauri's Linux prerequisites, the desktop app's list.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            xdg-utils \
+            squashfs-tools
+
+      # The runner feature changes the crate's dependencies, so it keeps a cache of its own apart from the desktop app's.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: runner
+
+      - name: Install desktop tooling
+        working-directory: apps/desktop
+        run: npm install
+
+      # Under Runner's own name (runner.conf.json's externalBin): the .deb and the .rpm install it in /usr/bin, beside
+      # the desktop app's.
+      - name: Fetch Node sidecar
+        working-directory: apps/desktop
+        run: node scripts/fetch-node.mjs --target ${{ matrix.target }} --name piwi-runner-node
+
+      - name: Build the Runner host
+        run: npm run runner:build -w apps/runner
+
+      - name: Build the Runner window
+        run: npm run runner:window -w apps/runner
+
+      - name: Stage the Runner host and window
+        run: npm run runner:stage -w apps/runner
+
+      # Runner's own logo, into the folder runner.conf.json's bundle icons name.
+      - name: Generate app icons
+        working-directory: apps/desktop
+        run: npx tauri icon ../runner/app-icon.svg --output src-tauri/icons-runner
+
+      # tauri-action only builds: with no release id it uploads nothing, and the steps below upload the files. With the
+      # signing key, a tag's build also merges runner.updater.conf.json (its endpoint is latest-runner.json), and the
+      # bundler signs each package.
+      - name: Build Piwi Runner
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          # The desktop app's key: one key signs both apps' updates, and runner.updater.conf.json holds its public half.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          # Linux AppImage bundling runs linuxdeploy, a self-mounting AppImage; GitHub runners have no libfuse2, so it
+          # extracts and runs instead. No-op on Windows/macOS.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        with:
+          projectPath: apps/desktop
+          # Retries the build, whose bundler downloads WiX, NSIS and linuxdeploy.
+          retryAttempts: 3
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/runner.updater.conf.json' || '' }}
+
+      # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
+      # damaged, and the Node sidecar the bundler re-signed must still run the host: start it from the bundle, as the
+      # shell does on launch, and wait for /api/health. The check opens the dmg: the file a user installs from.
+      - name: Check the macOS app bundle
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg
+        run: |
+          dmg=(*.dmg)
+          if [[ ${#dmg[@]} -ne 1 ]]; then
+            echo "::error::Expected one dmg, found ${#dmg[@]}"
+            exit 1
+          fi
+          mount="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmg[0]}" > /dev/null
+          log="$(mktemp)"
+          host=""
+          cleanup() {
+            if [[ -n "$host" ]]; then kill "$host" 2>/dev/null || true; wait "$host" 2>/dev/null || true; fi
+            hdiutil detach "$mount" -quiet || true
+          }
+          trap cleanup EXIT
+          app="$mount/Piwi Runner.app"
+          codesign --verify --strict --verbose=2 "$app"
+          codesign --display --entitlements - "$app/Contents/MacOS/piwi-runner-node"
+          PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" PIWI_RUNNER_PORT=3918 \
+            "$app/Contents/MacOS/piwi-runner-node" "$app/Contents/Resources/resources/runner-host/server.cjs" > "$log" 2>&1 &
+          host=$!
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3918/api/health > /dev/null 2>&1; then
+              echo "The bundled host answered /api/health"
+              exit 0
+            fi
+            kill -0 "$host" 2>/dev/null || break
+            sleep 1
+          done
+          cat "$log"
+          echo "::error::The bundled host did not answer /api/health"
+          exit 1
+
+      # The installers and their signatures under the names the release carries (apps/runner/scripts/release-files.mjs),
+      # on every build, so a pull request's dry run checks them too. A signed build must have every signature.
+      - name: Stage the release files
+        shell: bash
+        env:
+          BUNDLE: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle
+          OUT: ${{ runner.temp }}/release-files
+          SIGNED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--signed' || '' }}
+        run: node apps/runner/scripts/release-files.mjs --bundle "$BUNDLE" --target ${{ matrix.target }} --out "$OUT" $SIGNED
+
+      # gh prints GitHub's answer to each attempt that fails, and --clobber replaces a file an earlier attempt or run
+      # left, so a retry, or a re-run of the job, uploads the whole set again.
+      - name: Upload to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          OUT: ${{ runner.temp }}/release-files
+        run: |
+          if ! gh release view "$TAG" --repo "$REPO" --json tagName > /dev/null; then
+            echo "::error::No GitHub release for $TAG: release-please creates it with the tag"
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$TAG" "$OUT"/* --repo "$REPO" --clobber; then
+              exit 0
+            fi
+            echo "::warning::Upload attempt $attempt of 5 to $TAG failed"
+            if [[ $attempt -lt 5 ]]; then sleep $((attempt * 20)); fi
+          done
+          echo "::error::The Piwi Runner files did not reach the $TAG release: GitHub's answers are above"
+          exit 1
+
+      # Dry-run only: the files the release would carry, as the run's artifact.
+      - name: Upload installers (dry-run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: piwi-runner-${{ matrix.target }}
+          path: ${{ runner.temp }}/release-files
+          if-no-files-found: error
+          retention-days: 7
+
+  # latest-runner.json, from the signed packages the legs uploaded (apps/runner/scripts/update-manifest.mjs): one entry
+  # per kind of install. Written once every leg has ended, and from the legs that passed when one failed: a rerun of
+  # that leg runs this job again. A release built without the signing key has no signature, and gets no manifest.
+  manifest:
+    name: Runner update manifest
+    needs: runner
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: write # upload the manifest to the release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: apps/runner/scripts
+
+      - name: Publish latest-runner.json
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { runnerUpdateManifest } = await import(`${process.env.GITHUB_WORKSPACE}/apps/runner/scripts/update-manifest.mjs`);
+            const { owner, repo } = context.repo;
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = tag.replace(/^v/, '');
+            const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const listed = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: release.data.id, per_page: 100,
+            });
+            const sigs = listed.filter((a) => a.name.startsWith('Piwi-Runner_') && a.name.endsWith('.sig'));
+            if (sigs.length === 0) {
+              core.info('No Piwi Runner update signature on the release (no signing key): no latest-runner.json');
+              return;
+            }
+            const signatures = {};
+            for (const sig of sigs) {
+              const { data } = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: sig.id, headers: { accept: 'application/octet-stream' },
+              });
+              signatures[sig.name.slice(0, -'.sig'.length)] = Buffer.from(data).toString('utf8');
+            }
+            const manifest = runnerUpdateManifest({
+              version,
+              pubDate: new Date().toISOString(),
+              assets: listed.map((a) => ({ name: a.name, url: a.browser_download_url })),
+              signatures,
+            });
+            const name = 'latest-runner.json';
+            const prior = listed.find((a) => a.name === name);
+            if (prior) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: prior.id });
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: release.data.id, name, data: JSON.stringify(manifest, null, 2),
+            });
+            core.info(`Published ${name}: ${Object.keys(manifest.platforms).join(', ')}`);

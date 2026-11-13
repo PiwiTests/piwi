@@ -20,10 +20,12 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
 import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
+import com.intellij.util.concurrency.AppExecutorUtil
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
+import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageServer
 import java.lang.ref.WeakReference
 import java.net.InetSocketAddress
@@ -75,7 +77,9 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         if (!Files.isRegularFile(server)) throw ExecutionException("The Piwi editor service is missing: $server")
         val interpreter = NodeJsInterpreterManager.getInstance(project).interpreter
         val node = (interpreter as? NodeJsLocalInterpreter)?.interpreterSystemDependentPath ?: "node"
-        val problem = Glue.nodeProblem(node, nodeVersion(node))
+        val version = nodeVersion(node)
+        val problem = Glue.nodeProblem(node, version)
+        if (problem == null) project.service<PiwiLog>().write("Starting the editor service with Node.js ${version?.trim()} ($node).")
         project.service<PiwiProjectService>().startFailed(problem)
         if (problem != null) throw ExecutionException(problem)
         val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
@@ -88,13 +92,23 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
 
     /**
      * The service's process, which [PiwiProjectService.watchServer] starts again when it ends while starting, and whose
-     * end ends the sessions of its runs ([PiwiRunSessions.watch]).
+     * end ends the sessions of its runs ([PiwiRunSessions.watch]) and of the CI runs it told ([PiwiCiRuns.watch]).
      */
     override fun startServerProcess(): OSProcessHandler =
-        super.startServerProcess().also {
+        logged { super.startServerProcess() }.also {
+            project.service<PiwiLog>().watch(it)
             project.service<PiwiProjectService>().watchServer(it)
             project.service<PiwiRunSessions>().watch(it)
+            project.service<PiwiCiRuns>().watch(it)
         }
+
+    /** `start`'s result; a start that fails, its command line included (`createCommandLine`), says why in the log first. */
+    private fun <T> logged(start: () -> T): T = try {
+        start()
+    } catch (e: ExecutionException) {
+        project.service<PiwiLog>().write("The editor service did not start: ${e.message}")
+        throw e
+    }
 
     /**
      * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),
@@ -139,17 +153,25 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 
     /**
-     * The connection, that the plugin shows where the runs it started stop, answers those stops and writes the code made
-     * there, and whether the service serves those runs to the agents of this machine, at which port and token.
+     * The connection, that the plugin shows where the runs it started stop, answers those stops, writes the code made
+     * there, stops a run as another tool asks and marks the running line of the slot it watches, whether the service serves those runs to the agents of this
+     * machine, at which port and token, and where a run started in a terminal that follows the IDE posts its picks.
      */
     override fun createInitializationOptions(): Any {
         val service = project.service<PiwiProjectService>()
-        return mapOf(
+        val options = mutableMapOf<String, Any>(
             "credentials" to service.credentials(),
             "runControl" to true,
             "stopCode" to true,
+            "stopsRuns" to true,
+            "startsRuns" to true,
+            "runningLine" to true,
             "agents" to service.agentsOptions(),
         )
+        PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
+        // A service started again shares the project's runs as the person left them: the project has not closed.
+        if (project.getServiceIfCreated(PiwiRunSessions::class.java)?.windowShared == true) options["shareWindow"] = true
+        return options
     }
 
     override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> = PiwiLanguageServer::class.java
@@ -163,8 +185,9 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 }
 
-/** The lsp4j proxy of a running service, with the service's own requests; null until it runs. */
-fun LspServer.piwiServer(): PiwiLanguageServer? = Lsp4jAccess.server(this) as? PiwiLanguageServer
+/** The lsp4j proxy of a running service, with the service's own requests, their failures logged; null until it runs. */
+fun LspServer.piwiServer(): PiwiLanguageServer? =
+    (Lsp4jAccess.server(this) as? PiwiLanguageServer)?.let { PiwiLog.logged(project, it) }
 
 /**
  * The lsp4j proxy of a running service. The platform hands it only to a request's sender, so it
@@ -242,6 +265,22 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRunSessions>().heard(session)
     }
 
+    /** A CI run of the branch moved, read-only: the CI Runs tab and the CI positions. */
+    @JsonNotification("piwi/ciSessionChanged")
+    fun ciSessionChanged(session: CiSession) {
+        project.service<PiwiCiRuns>().heard(session)
+    }
+
+    @JsonNotification("piwi/shareWindowChanged")
+    fun shareWindowChanged(params: ShareWindowParams) {
+        project.service<PiwiRunSessions>().windowSharedChanged(params.on)
+    }
+
+    @JsonNotification("piwi/askToWatch")
+    fun askToWatch(ask: AskToWatchParams) {
+        project.service<PiwiRunSessions>().askedToWatch(ask)
+    }
+
     @JsonNotification("piwi/pageFrame")
     fun pageFrame(frame: PageFrame) {
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.frame(frame)
@@ -252,10 +291,64 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneFrame(frame)
     }
 
+    /** A layer of the slot the Worker tab watches, one it asked for. */
+    @JsonNotification("piwi/laneLayer")
+    fun laneLayer(layer: LaneViewLayer) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneLayer(layer)
+    }
+
+    /** The call the running test of the slot the Worker tab watches is in, or none. */
+    @JsonNotification("piwi/runningLine")
+    fun runningLine(line: RunningLine) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.runningLine(line)
+    }
+
+    /** A CI run's lane the Worker tab watches, read-only: an image, why none shows, or why the watch ended. */
+    @JsonNotification("piwi/ciFrame")
+    fun ciFrame(frame: CiFrame) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciFrame(frame)
+    }
+
+    /** A layer of the CI run's lane the Worker tab watches, one it asked for. */
+    @JsonNotification("piwi/ciLayer")
+    fun ciLayer(layer: CiLayer) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciLayer(layer)
+    }
+
     /** The code made at a stop, from here or Piwi Picker: written above the stopped line. */
     @JsonNotification("piwi/stopCode")
     fun stopCode(code: StopCode) {
         project.service<PiwiRunSessions>().write(code)
+    }
+
+    /**
+     * Run the command the service built for an agent's `run_start` as a person's run starts, on a pooled thread, and
+     * say who started it in a balloon; refused in an untrusted project.
+     */
+    @JsonRequest("piwi/startRun")
+    fun startRun(params: StartRunParams): CompletableFuture<StartRunResult> {
+        val command = params.command
+        if (!project.service<PiwiProjectService>().trusted()) {
+            return CompletableFuture.completedFuture(StartRunResult(false, Glue.UNTRUSTED))
+        }
+        return CompletableFuture.supplyAsync({
+            if (!PiwiCommands.startRun(project, command, emptyList())) {
+                StartRunResult(false, "The IDE has no command to run.")
+            } else {
+                command.label?.let { PiwiCommands.notify(project, "$it: ${command.command.orEmpty()}") }
+                StartRunResult(true, "The IDE runs it.")
+            }
+        }, AppExecutorUtil.getAppExecutorService())
+    }
+
+    /**
+     * Another tool asks through the hub to stop a run this IDE started (Piwi Picker, the desktop app): its process ends,
+     * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
+     */
+    @JsonRequest("piwi/stopRun")
+    fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> {
+        val stopped = project.getServiceIfCreated(PiwiRunSessions::class.java)?.stopRun(params.ref) ?: false
+        return CompletableFuture.completedFuture(Glue.stopRunAnswer(stopped))
     }
 
     /**

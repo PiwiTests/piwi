@@ -46,6 +46,7 @@ import {
   type PausePoint,
   type PauseRecord,
   type PauseState,
+  viewHere,
 } from '../src/internal/capture/pause-at.js';
 import {
   intentAt,
@@ -720,7 +721,8 @@ describe('pauseHere', () => {
 
   it('takes an intent from outside the page as its own button, the window brought to the front, none while it runs', async () => {
     const { page, shown } = fakePausePage([], { holdBar: true });
-    const intents = new BarIntents();
+    const said: unknown[] = [];
+    const intents = new BarIntents((what) => void said.push(what));
     const ended = new AbortController();
     let offeredMeanwhile: boolean | null = null;
     const recorded = vi.fn(async () => {
@@ -733,21 +735,27 @@ describe('pauseHere', () => {
     expect(recorded).toHaveBeenCalledOnce();
     expect(offeredMeanwhile).toBe(false);
     expect(page.bringToFront).toHaveBeenCalledOnce();
+    // A recording records Escape as a step: it is never said to run, so the views keep Escape their own.
+    expect(said).toEqual([]);
     ended.abort();
     expect(await done).toBe('resume');
   });
   it('ends a pick or a recording an intent started with the stop, as the bar’s own, the window’s raise included', async () => {
     const g = globalThis as Record<string, unknown>;
     const picking = fakePausePage([], { holdBar: true, hangPick: true });
-    const pickIntents = new BarIntents();
+    const said: unknown[] = [];
+    const pickIntents = new BarIntents((what) => void said.push(what));
     const ended = new AbortController();
     const picked = pauseHere(picking.page as never, POINT, PROBE, () => {}, undefined, ended.signal, pickIntents);
     await vi.waitFor(() => expect(picking.shown).toHaveLength(1));
     expect(pickIntents.offer('pick')).toBe(true);
     await vi.waitFor(() => expect(picking.page.evaluate.mock.calls.map((c) => c[0])).toContain(installPickerOverlay));
+    // The pick runs in the test's window: said as it starts, and as it ends with the stop.
+    expect(said).toEqual(['pick']);
     ended.abort('ended');
     try {
       expect(await picked).toBe('resume');
+      expect(said).toEqual(['pick', null]);
       expect(g.__piwiPickEnded).toBe(true);
       const evaluated = picking.page.evaluate.mock.calls.map((c) => c[0]);
       expect(evaluated[evaluated.length - 1]).toBe(takePauseState);
@@ -768,6 +776,36 @@ describe('pauseHere', () => {
     stopped.abort('closed');
     expect(await recorded).toBe('resume');
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it('says a pick runs at a stop no pause bar shows, until the view it is driven through ends', async () => {
+    const picking = fakePausePage([], { hangPick: true });
+    const said: unknown[] = [];
+    const intents = new BarIntents((what) => void said.push(what));
+    const ended = new AbortController();
+    const view = new AbortController();
+    const g = globalThis as Record<string, unknown>;
+    const done = viewHere(
+      picking.page as never,
+      PROBE,
+      () => {},
+      undefined,
+      ended.signal,
+      intents,
+      undefined,
+      () => view.signal,
+    );
+    try {
+      expect(intents.offer('pick')).toBe(true);
+      await vi.waitFor(() => expect(said).toEqual(['pick']));
+      view.abort('view ended');
+      await vi.waitFor(() => expect(said).toEqual(['pick', null]));
+      ended.abort('ended');
+      await done;
+      expect(said).toEqual(['pick', null]);
+    } finally {
+      delete g.__piwiPickEnded;
+    }
   });
 });
 

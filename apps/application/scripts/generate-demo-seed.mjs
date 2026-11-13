@@ -52,7 +52,20 @@ import {
   incidentUrl,
   incidentNavigationError,
 } from '../shared/demo/failure-stories.mjs';
-import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import {
+  DEMO_TEST_MANAGEMENT_CASES,
+  DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+} from '../shared/demo/demo-test-management.mjs';
+import {
+  demoTestMeta,
+  demoTags,
+  demoLocks,
+  demoExternalId,
+  buildAiUsage,
+  DEMO_JIRA_ISSUES,
+} from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
@@ -2663,7 +2676,8 @@ for (const story of FAILURE_STORIES) {
 }
 
 // Screenshots on a few PASSING executions, so evidence isn't failure-only and
-// the visual diff has a real baseline execution to point at.
+// the visual diff has a real baseline execution to point at. An entry's `name`
+// is the attachment name the test gave it (Playwright's `screenshot` without).
 const PASSING_SCREENSHOTS = [
   {
     file: 'checkout-order-confirmed.png',
@@ -2679,6 +2693,9 @@ const PASSING_SCREENSHOTS = [
   },
   {
     file: 'cart-summary.png',
+    name:
+      'Step 2: Add one wireless mouse and two USB-C cables, then open the cart page | Expected: The cart lists ' +
+      'both items with their line prices ($24.00 and $18.00) and the total shows $42.00',
     projectId: 1,
     specFile: 'tests/checkout/cart.spec.ts',
     title: 'should display cart total correctly',
@@ -2698,7 +2715,7 @@ for (const shot of PASSING_SCREENSHOTS) {
   if (trc) {
     attach(trc, {
       type: 'attachment',
-      subtype: 'screenshot',
+      subtype: shot.name ?? 'screenshot',
       label: 'image/png',
       relPath: `demo/screenshots/${shot.file}`,
     });
@@ -2790,6 +2807,48 @@ for (const shot of PASSING_SCREENSHOTS) {
       console.warn(`⚠ Could not generate the demo visual diff: ${error}`);
     }
   }
+}
+
+// A test attaches a named screenshot on every run that reaches it, so a named entry also rides
+// the older passing executions of its test, under the same name. They are attached last so the
+// ids of every other attachment don't depend on how many there are.
+for (const shot of PASSING_SCREENSHOTS) {
+  if (!shot.name) continue;
+  const newest = passingShotTrcs.get(shot.file);
+  const caseId = caseIdByKey.get(`${shot.projectId}\x00${shot.specFile}\x00${shot.title}`);
+  const older = TEST_RUNS_CASES.filter((t) => t.test_case_id === caseId && t.status === 'passed' && t !== newest);
+  for (const trc of older.sort((a, b) => b.id - a.id)) {
+    attach(trc, {
+      type: 'attachment',
+      subtype: shot.name,
+      label: 'image/png',
+      relPath: `demo/screenshots/${shot.file}`,
+    });
+  }
+}
+
+// The newest run of the first project keeps its video on the short passing and failing tests, as a suite
+// that records every test does, so the run page's Video tab has reels on several worker lanes. The long
+// failing tests keep none, which shows the tests a reel steps over. Attached last for the same reason.
+{
+  const run = TEST_RUNS.find((r) => r.project_id === 1);
+  const clips = ['checkout-pay-timeout.webm', 'mobile-nav-timeout.webm', 'button-strict-mode.webm'];
+  const MAX_CLIP_TEST_MS = 6000;
+  const recorded = TEST_RUNS_CASES.filter(
+    (t) =>
+      t.test_run_id === run?.id &&
+      (t.status === 'passed' || t.status === 'failed') &&
+      (t.retries ?? 0) === 0 &&
+      t.duration <= MAX_CLIP_TEST_MS,
+  ).sort((a, b) => a.started_at - b.started_at || a.id - b.id);
+  recorded.forEach((trc, i) => {
+    attach(trc, {
+      type: 'attachment',
+      subtype: 'video',
+      label: 'video/webm',
+      relPath: `demo/videos/${clips[i % clips.length]}`,
+    });
+  });
 }
 
 // ── Build failure_clusters rows ────────────────────────────────────────────
@@ -3533,7 +3592,7 @@ const ENTITY_LINKS = [
     url: 'https://demo.atlassian.net/browse/DEMO-42',
     provider: 'jira',
     key: 'DEMO-42',
-    title: 'Login returns 500 when verifyCredentials finds no user',
+    title: '[Piwi] Login returns 500 when verifyCredentials finds no user',
     status_text: 'In Progress',
     status_color: 'warning',
     metadata: { statusCategory: 'indeterminate', assignee: 'David Lee' },
@@ -3546,6 +3605,64 @@ const ENTITY_LINKS = [
     updated_at: ts('2025-04-25T08:00:00') * 1000,
   },
 ];
+
+// The links the link step writes when a run fails into a cluster, for the issues its tests name. The Apple Pay
+// checkout's `piwi:issue` annotation (`demoTestMeta`) names DEMO-57 and DEMO-61, issues of the bound DEMO project the
+// demo's Jira knows (`DEMO_JIRA_ISSUES`), linked read-only with the test as their source into cluster 2; DEMO-64 is not
+// in Jira, so the cluster's links end with *and 1 more named by its tests*. DEMO-61 is Done, so the known issue is
+// DEMO-57, the oldest one still open. The PayPal and credit card checkouts name DEMO-52 and DEMO-53 in tags the
+// project's issue key pattern matches (`demoTags`) into cluster 1: DEMO-52 is a Bug, the binding's issue type, so it
+// is linked with the tag as its source, and DEMO-53 is a Task, so cluster 1 neither links nor counts it, since keys the
+// type filter drops stay out of the count. No connection row backs them, like DEMO-42.
+{
+  const demoIssue = (key) => DEMO_JIRA_ISSUES.find((issue) => issue.key === key);
+  const seedDeclaredLink = ({ clusterId, key, origin, title, source, offset }) => {
+    const issue = demoIssue(key);
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const testCaseId = caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+    // Linked when the test's latest run failed into the cluster finished.
+    const linkedAt =
+      (latestTrc(testCaseId, (t) => t.failure_cluster_id === clusterId)?.started_at ?? cluster.updated_at * 1000) +
+      offset;
+    ENTITY_LINKS.push({
+      id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
+      failure_cluster_id: clusterId,
+      url: `https://demo.atlassian.net/browse/${issue.key}`,
+      provider: 'jira',
+      key: issue.key,
+      title: issue.title,
+      status_text: issue.status,
+      status_color: issue.statusColor,
+      metadata: { statusCategory: issue.statusCategory, source: { testCaseId, ...source } },
+      unfurled_at: linkedAt,
+      connection_id: null,
+      external_id: issue.id,
+      origin,
+      created_by: null,
+      created_at: linkedAt,
+      updated_at: linkedAt,
+    });
+  };
+  ['DEMO-57', 'DEMO-61'].forEach((key, offset) =>
+    seedDeclaredLink({
+      clusterId: 2,
+      key,
+      origin: 'annotation',
+      title: 'should complete checkout with Apple Pay',
+      source: {},
+      offset,
+    }),
+  );
+  FAILURE_CLUSTERS.find((c) => c.id === 2).declared_issues_more = 1;
+  seedDeclaredLink({
+    clusterId: 1,
+    key: 'DEMO-52',
+    origin: 'tag',
+    title: 'should complete checkout with PayPal',
+    source: { tag: '@DEMO-52' },
+    offset: 0,
+  });
+}
 
 // ── Users, groups & role bindings ───────────────────────────────────────────
 // Seed the canonical demo identities and groups so the access model is usable
@@ -4787,9 +4904,51 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     );
   const slowest = steps.reduce((a, b) => (ownMs(b) > ownMs(a) ? b : a));
 
+  // The run before it, from the same editor window, whose runs the developer shares live together: its test stood at
+  // the first breakpoint until they started it again, which cancelled it, so it stored no result. The paused run
+  // continues it (`continued_in_id`), and its page says so.
+  const earlierId = runId++;
   const id = runId++;
   const executionId = trcId++;
   const startTime = Math.floor(T / 1000);
+  const earlierStart = startTime - 4 * 60;
+  TEST_RUNS.push({
+    id: earlierId,
+    project_id: 1,
+    status: 'cancelled',
+    start_time: earlierStart,
+    duration: 9_000,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 0,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: null,
+    p90_test_duration: null,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.59.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    continued_in_id: id,
+    created_at: earlierStart,
+    updated_at: earlierStart + 9,
+  });
   TEST_RUNS.push({
     id,
     project_id: 1,
@@ -4964,6 +5123,154 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       failure: null,
     });
   }
+}
+
+// ── A test ended at a stop (post-processing, rng-free) ──────────────────────
+// A run the editor started on the same branch, one cart test stopped at its
+// breakpoint (`PIWI_PAUSE_AT`) before it removes the item, and ended there with
+// End the test: Playwright skips it with Piwi's reason, so the run passed and
+// the result is marked "Ended at a stop", never a plain pass. Dated before the
+// project's newest runs and on a branch, as the paused run above.
+{
+  const testCase = TEST_CASES.find((c) => c.project_id === 1 && c.title === 'should remove item from cart');
+  const template = TEST_RUNS_CASES.filter((row) => row.test_case_id === testCase.id && row.status === 'passed')
+    .filter((row) => row.started_at !== null)
+    .sort((a, b) => b.started_at - a.started_at)[0];
+  if (!template) throw new Error('No passing remove-from-cart execution to model the ended one on');
+  const caseDef = caseById.get(testCase.id);
+  const commit = SCM_REPOS[1].commits[0];
+  const line = (n) => `${caseDef.file}:${caseDef.declLine + n}`;
+
+  const T = BASE_START_MS - 75 * 60 * 1000;
+  const stop = { at: 1_100, duration: 3_800, title: "Click getByRole('button', { name: 'Remove' })", line: 2 };
+  const afterHooksAt = stop.at + stop.duration + 30;
+  const clockMs = afterHooksAt + 200;
+  // Playwright's duration leaves the stop out.
+  const duration = clockMs - stop.duration;
+  const id = runId++;
+  const startTime = Math.floor(T / 1000);
+  TEST_RUNS.push({
+    id,
+    project_id: 1,
+    status: 'passed',
+    start_time: startTime,
+    duration: clockMs + 1_200,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 1,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: duration,
+    p90_test_duration: duration,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.68.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${caseDef.file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    created_at: startTime,
+    updated_at: startTime + Math.ceil((clockMs + 1_200) / 1000),
+  });
+  TEST_RUNS_CASES.push({
+    ...template,
+    id: trcId++,
+    test_run_id: id,
+    status: 'skipped',
+    duration,
+    error: null,
+    failure_cluster_id: null,
+    retries: 0,
+    repeat_each_index: 0,
+    attempts: JSON.stringify([{ retry: 0, status: 'skipped', duration, startedAt: T }]),
+    is_new_regression: 0,
+    is_new_flaky: 0,
+    line: caseDef.declLine,
+    column: caseDef.declColumn,
+    // `ENDED_AT_STOP_REASON` of `@piwitests/core/run-channel`, as the reporter's skip records it.
+    test_annotations: [{ type: 'skip', description: 'Ended from Piwi' }],
+    steps: [
+      {
+        title: 'Navigate',
+        subtitle: '/cart',
+        category: 'navigation',
+        startTime: T + 400,
+        duration: 600,
+        location: `${line(1)}:16`,
+      },
+    ],
+    locator_pages_payload_id: null,
+    step_events: [
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startedAt: T,
+        duration: 360,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'Fixture "context"', category: 'fixture', duration: 120 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 100 },
+          { title: 'beforeEach hook', category: 'hook', duration: 140 },
+        ],
+      },
+      {
+        title: stop.title,
+        category: 'pause',
+        startedAt: T + stop.at,
+        duration: stop.duration,
+        status: 'breakpoint',
+        location: `${line(stop.line)}:5`,
+      },
+      {
+        title: 'After Hooks',
+        category: 'hook',
+        startedAt: T + afterHooksAt,
+        duration: 200,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'afterEach hook', category: 'hook', duration: 120 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 80 },
+        ],
+      },
+    ],
+    wasted_time_ms: 0,
+    slowest_step: 'Navigate',
+    slowest_step_duration: 600,
+    web_vitals: null,
+    page_state: null,
+    ai_usage: null,
+    console_logs: null,
+    dialogs: null,
+    aria_snapshot: null,
+    aria_snapshot_json: null,
+    aria_snapshot_payload_id: null,
+    evidence_sources: null,
+    code_reach_payload_id: null,
+    coverage_payload_id: null,
+    page_inventory_payload_id: null,
+    resources: null,
+    worker_index: 0,
+    shard_index: null,
+    started_at: T,
+    did_not_run_reason: null,
+    blocked_by: null,
+    created_at: T,
+  });
 }
 
 function collectAnchorSec() {
@@ -5543,6 +5850,7 @@ const REBASE_SQL = [
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE reused_results SET created_at = created_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   // kept_at is nullable; NULL + delta stays NULL.
@@ -5575,7 +5883,16 @@ const REBASE_SQL = [
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
-  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE integration_connections SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE project_test_management SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE test_management_cases SET fetched_at = fetched_at + ${D_MS};`,
+  `UPDATE test_management_catalog_reads SET fetched_at = fetched_at + ${D_MS};`,
+  `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS}, ` +
+    `result = json_set(result, '$.uploadStartedAt', json_extract(result, '$.uploadStartedAt') + ${D_MS}) ` +
+    `WHERE json_extract(result, '$.uploadStartedAt') IS NOT NULL;`,
+  `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS} ` +
+    `WHERE json_extract(result, '$.uploadStartedAt') IS NULL;`,
+  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, unfurled_at = unfurled_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
@@ -5591,6 +5908,8 @@ const REBASE_SQL = [
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS}, snoozed_until = snoozed_until + ${D_MS};`,
   '',
   '-- ISO timestamps embedded in JSON columns',
+  `UPDATE integration_actions SET payload = json_set(payload, '$.startedAt', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(payload, '$.startedAt'), '+' || ${D} || ' seconds'));`,
   `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
     `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
     `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
@@ -6763,6 +7082,265 @@ for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null
   }
 }
 
+// ── Pass reuse (rng-free) ─────────────────────────────────────────────────
+// A web-dashboard run whose pass reuse plan skipped every test: Playwright ran
+// none, and each test stands in through its newest first-attempt pass in an
+// earlier run, so the run page shows its Reused row. It runs on a feature
+// branch an hour before the project's newest run, so the default branch's
+// analyses (the Test Map's drift among them) never read it.
+const REUSED_RESULTS = [];
+{
+  const PLAN_ID = 1;
+  const runs = TEST_RUNS.filter((r) => r.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  const [newest] = runs;
+  if (newest) {
+    const id = Math.max(...TEST_RUNS.map((r) => r.id)) + 1;
+    const startTime = newest.start_time - 3600;
+    const runById = new Map(runs.map((r) => [r.id, r]));
+    for (const testCase of TEST_CASES.filter((c) => c.project_id === 5)) {
+      const [pass] = TEST_RUNS_CASES.filter(
+        (c) =>
+          c.test_case_id === testCase.id &&
+          c.status === 'passed' &&
+          !c.retries &&
+          runById.has(c.test_run_id) &&
+          runById.get(c.test_run_id).start_time < startTime,
+      ).sort((a, b) => runById.get(b.test_run_id).start_time - runById.get(a.test_run_id).start_time);
+      if (!pass) continue;
+      const source = runById.get(pass.test_run_id);
+      REUSED_RESULTS.push({
+        id: REUSED_RESULTS.length + 1,
+        run_id: id,
+        test_case_id: testCase.id,
+        projects: [pass.browser_name ?? 'Chromium'],
+        source_run_id: source.id,
+        source_execution_ids: [pass.id],
+        source_commit: source.commit_sha ?? '0'.repeat(40),
+        plan_id: PLAN_ID,
+        created_at: startTime,
+      });
+    }
+    if (REUSED_RESULTS.length > 0) {
+      TEST_RUNS.push({
+        ...newest,
+        id,
+        start_time: startTime,
+        duration: 9000,
+        status: 'passed',
+        total_tests: 0,
+        passed_tests: 0,
+        failed_tests: 0,
+        skipped_tests: 0,
+        flaky_tests: 0,
+        did_not_run_tests: 0,
+        avg_test_duration: null,
+        p90_test_duration: null,
+        is_full_run: 0,
+        reused_count: REUSED_RESULTS.length,
+        label: 'Plan: full, every test reused',
+        created_at: startTime,
+        updated_at: startTime + 9,
+        branch: 'feature/pass-reuse',
+        metadata: {
+          ...newest.metadata,
+          scm: { ...newest.metadata?.scm, branch: 'feature/pass-reuse' },
+          htmlReport: { ...newest.metadata?.htmlReport, projects: [] },
+          ci: newest.metadata?.ci && {
+            ...newest.metadata.ci,
+            buildNumber: `${newest.metadata.ci.buildNumber}-plan`,
+            buildUrl: undefined,
+          },
+          piwiPlan: { id: PLAN_ID },
+        },
+      });
+    }
+  }
+}
+
+// ── Test management (the checkout project's Zephyr Scale binding and catalog) ─────────────────────
+// The checkout project is bound to the demo's Zephyr Scale connection in dry run, and its catalog is the demo tool's
+// cases (`shared/demo/demo-test-management.mjs`). Both are written in ms and rebased with the rest. Settings mirror
+// `resolveTestManagementBinding({})`: a binding is nothing the demo sends.
+const TEST_MANAGEMENT_BOUND_AT_MS = ts('2025-04-20T09:00:00') * 1000;
+// The row the binding's foreign key needs. The demo lists its connections from memory and never reads this row; a dev
+// database loaded from the seed shows it as a connection nobody has entered a token for.
+const TEST_MANAGEMENT_CONNECTIONS = [
+  {
+    id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    provider: DEMO_TEST_MANAGEMENT_CONNECTION.provider,
+    name: DEMO_TEST_MANAGEMENT_CONNECTION.name,
+    base_url: DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl,
+    config: DEMO_TEST_MANAGEMENT_CONNECTION.config,
+    credentials: null,
+    status: 'unverified',
+    last_checked_at: null,
+    last_error: null,
+    managed_by: 'db',
+    created_at: TEST_MANAGEMENT_BOUND_AT_MS,
+    updated_at: TEST_MANAGEMENT_BOUND_AT_MS,
+  },
+];
+const PROJECT_TEST_MANAGEMENT = [
+  {
+    project_id: 1,
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    enabled: 1,
+    dry_run: 1,
+    provider_project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    key_sources: { tags: true, externalId: false },
+    run_scope: { branches: [], defaultBranch: true, environments: [] },
+    run_policy: { mode: 'per-run', nameTemplate: 'Automation · {branch} · {environment} · Piwi #{runId}' },
+    statuses: { pass: 'Pass', fail: 'Fail', flaky: null, notExecuted: 'Not Executed' },
+    options: { flakyAs: 'pass', skippedAs: null, includeError: false, includeComment: true },
+    created_at: TEST_MANAGEMENT_BOUND_AT_MS,
+    updated_at: TEST_MANAGEMENT_BOUND_AT_MS,
+  },
+];
+const TEST_MANAGEMENT_READ_AT_MS = ANCHOR_SEC * 1000 - 3 * 60 * 60 * 1000; // read by the daily task, three hours before the newest run
+const TEST_MANAGEMENT_CASES = DEMO_TEST_MANAGEMENT_CASES.map((c) => ({
+  connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+  key: c.key,
+  provider_id: c.providerId,
+  name: c.name,
+  status_name: c.status,
+  folder: c.folder,
+  fetched_at: TEST_MANAGEMENT_READ_AT_MS,
+}));
+const TEST_MANAGEMENT_CATALOG_READS = [
+  {
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    fetched_at: TEST_MANAGEMENT_READ_AT_MS,
+  },
+];
+
+// The newest eligible runs of the checkout project carry the results sync the run page shows: the newest was a dry run,
+// the one before it went to the tool and made a test run there, and the third's upload ended without an answer. A run is
+// eligible on the default branch, whole, and ended as passed or failed. Each payload is what `buildSyncPayload` makes of
+// the run's tests: the worst result of each key the catalog holds, the keys it does not hold listed apart.
+const TEST_MANAGEMENT_KNOWN_KEYS = new Set(DEMO_TEST_MANAGEMENT_CASES.map((c) => c.key));
+const TEST_MANAGEMENT_KEY_PATTERN = /^SHOP-T\d+$/;
+function demoSyncPayload(run) {
+  const rows = TEST_RUNS_CASES.filter((r) => r.test_run_id === run.id && r.status !== 'did-not-run');
+  const worst = new Map();
+  const unknown = new Set();
+  let unmapped = 0;
+  for (const row of rows) {
+    const keys = JSON.parse(row.tags ?? '[]').filter((t) => TEST_MANAGEMENT_KEY_PATTERN.test(t));
+    if (keys.length === 0) unmapped++;
+    for (const key of keys) {
+      if (!TEST_MANAGEMENT_KNOWN_KEYS.has(key)) {
+        unknown.add(key);
+        continue;
+      }
+      if (worst.get(key) !== 'failed') worst.set(key, row.status === 'failed' ? 'failed' : 'passed');
+    }
+  }
+  const results = [...worst].map(([key, status]) => ({ key, status: status === 'failed' ? 'Fail' : 'Pass' }));
+  const name = `Automation · ${run.branch} · ${run.environment} · Piwi #${run.id}`;
+  return {
+    runId: run.id,
+    runUrl: null,
+    providerProjectKey: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    startedAt: new Date(run.start_time * 1000).toISOString(),
+    run: { name, description: `Piwi run #${run.id}, ${run.branch}, ${run.environment}` },
+    results,
+    unknownKeys: [...unknown],
+    unknownKeyCount: unknown.size,
+    unmappedCount: unmapped,
+    tagsTruncated: 0,
+    counts: {
+      passed: results.filter((r) => r.status === 'Pass').length,
+      failed: results.filter((r) => r.status === 'Fail').length,
+      flaky: 0,
+      notExecuted: 0,
+    },
+    dryRun: false,
+  };
+}
+const SYNC_RUNS = TEST_RUNS.filter(
+  (r) => r.project_id === 1 && r.branch === 'main' && r.is_full_run === 1 && ['passed', 'failed'].includes(r.status),
+)
+  .sort((a, b) => b.start_time - a.start_time)
+  .slice(0, 3);
+const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
+  const payload = demoSyncPayload(run);
+  const endedMs = run.start_time * 1000 + run.duration + 4000;
+  const base = {
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    project_id: 1,
+    kind: 'sync-results',
+    entity_type: 'test_run',
+    entity_id: run.id,
+    dedupe_key: `sync-results:test_run:${run.id}:conn${DEMO_TEST_MANAGEMENT_CONNECTION_ID}`,
+    attempts: 1,
+    scheduled_for: null,
+    requested_by: null,
+    created_at: endedMs,
+    finished_at: endedMs + 2000,
+  };
+  if (index === 0) {
+    const { run: runFacts, results, unknownKeys, unknownKeyCount, unmappedCount, tagsTruncated, counts } = payload;
+    const sent = { run: runFacts, results, unknownKeys, unknownKeyCount, unmappedCount, tagsTruncated, counts };
+    return {
+      ...base,
+      status: 'done',
+      error: null,
+      payload: { ...payload, dryRun: true },
+      result: { dryRun: true, payload: { ...sent, dryRun: true } },
+    };
+  }
+  if (index === 1) {
+    const runKey = `${DEMO_TEST_MANAGEMENT_PROJECT_KEY}-R${run.id}`;
+    return {
+      ...base,
+      status: 'done',
+      error: null,
+      payload,
+      result: {
+        uploadStartedAt: endedMs + 500,
+        runKey,
+        runUrl: '',
+        sent: payload.results.length,
+      },
+    };
+  }
+  return {
+    ...base,
+    status: 'failed',
+    error: `Outcome unknown: check the test management tool for a test run named "${payload.run.name}", then use Sync again`,
+    payload,
+    result: { uploadStartedAt: endedMs + 500 },
+  };
+});
+{
+  const synced = INTEGRATION_ACTIONS.find((a) => a.status === 'done' && !a.result.dryRun);
+  const payload = synced?.payload;
+  if (synced) {
+    ENTITY_LINKS.push({
+      id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
+      test_run_id: synced.entity_id,
+      test_runs_case_id: null,
+      test_case_id: null,
+      url: synced.result.runUrl,
+      provider: 'zephyr-scale',
+      key: synced.result.runKey,
+      title: payload.run.name,
+      status_text: null,
+      status_color: null,
+      metadata: null,
+      unfurled_at: null,
+      connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      external_id: null,
+      origin: 'created',
+      created_by: null,
+      created_at: synced.finished_at,
+      updated_at: synced.finished_at,
+    });
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -6801,6 +7379,13 @@ const lines = [
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
+  '',
+  "-- Test management: the checkout project's Zephyr Scale binding and the catalog of its project",
+  insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
+  insert('project_test_management', PROJECT_TEST_MANAGEMENT),
+  insert('test_management_cases', TEST_MANAGEMENT_CASES),
+  insert('test_management_catalog_reads', TEST_MANAGEMENT_CATALOG_READS),
+  insert('integration_actions', INTEGRATION_ACTIONS),
   '',
   '-- Project URL patterns (browser extension)',
   insert('project_url_patterns', PROJECT_URL_PATTERNS),
@@ -6871,6 +7456,9 @@ const lines = [
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
+  '',
+  '-- Reused results of a pass reuse plan (reference test_runs and test_cases)',
+  insert('reused_results', REUSED_RESULTS),
   '',
   '-- Files (screenshot/trace/video attachments — reference test_runs_cases, so must come after)',
   insert('files', ATTACHMENTS),

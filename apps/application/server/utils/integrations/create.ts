@@ -16,7 +16,7 @@
  * replayed.
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, testRunsCases } from '../../database/schema';
+import { bugReports, failureClusters, testRuns, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { DEFAULT_ISSUE_OPTS, issueLabels } from '#shared/integrations/build-issue';
 import type { AutomaticFiling } from '#shared/integrations/automation';
@@ -53,11 +53,13 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import type { CommentStatus, IssueFieldProblem } from '#shared/integrations/types';
-import { readProjectIntegration } from './binding';
+import { bindingTitlePrefix, readProjectIntegration } from './binding';
+import { getConnectionRow } from './connections';
 import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { commentOnFiledIssueKey, createIssueKey, createIssueSubmissionKey } from '#shared/integrations/action-keys';
 import { commentNodes, normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
 import { t } from '#shared/integrations/messages';
+import { prefixedTitle } from '#shared/integrations/title-prefix';
 import { resolveClusterOwner } from './owner';
 import type { DraftEntityType } from './draft';
 
@@ -68,6 +70,12 @@ export interface CreateIssueParams {
   projectKey: string;
   issueType: string;
   title?: string;
+  /**
+   * The title was written without the project's prefix in view (an agent's): the
+   * project's prefix goes in front of it unless it already starts with it. A
+   * title from the create dialog is filed as typed.
+   */
+  prefixTitle?: boolean;
   labels?: string[];
   assignee?: string | null;
   locale?: IssueLocale;
@@ -172,6 +180,43 @@ export function filedByName(user: { id: number; username: string; name?: string 
   return user.name?.trim() || user.username;
 }
 
+/** The project a bug report, a run, or an execution of one belongs to, or null when it is gone. */
+async function filedEntityProjectId(db: DbClient, params: CreateIssueParams): Promise<number | null> {
+  const [row] =
+    params.entityType === 'bug_report'
+      ? await db.select({ projectId: bugReports.projectId }).from(bugReports).where(eq(bugReports.id, params.entityId))
+      : params.entityType === 'test_run'
+        ? await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, params.entityId))
+        : await db
+            .select({ projectId: testRuns.projectId })
+            .from(testRunsCases)
+            .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+            .where(eq(testRunsCases.id, params.entityId));
+  return row?.projectId ?? null;
+}
+
+/** The prefix the project's ticket titles carry: its binding's, else its connection's default. */
+async function ticketTitlePrefix(
+  db: DbClient,
+  params: CreateIssueParams,
+  binding: ResolvedProjectIntegration,
+): Promise<string | null> {
+  const connection = await getConnectionRow(db, params.connectionId);
+  return bindingTitlePrefix(binding, connection?.config);
+}
+
+/** The title the ticket is filed under: the one given, with the project's prefix when it asks for it, else the built one. */
+async function filedTitle(
+  db: DbClient,
+  params: CreateIssueParams,
+  binding: ResolvedProjectIntegration,
+  built: string,
+): Promise<string> {
+  const given = params.title?.trim();
+  if (!given) return built;
+  return params.prefixTitle ? prefixedTitle(await ticketTitlePrefix(db, params, binding), given) : given;
+}
+
 /** The person's comment with their name, or null when they wrote nothing. */
 function issueComment(params: CreateIssueParams): IssueComment | null {
   const text = normalizeIssueComment(params.comment);
@@ -188,6 +233,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
 
   const include = { ...DEFAULT_ISSUE_OPTS, ...(params.include ?? {}) };
   const locale = params.locale ?? DEFAULT_LOCALE;
+  const binding = await readProjectIntegration(db, target.projectId);
   // The body carries the share link redacted: the link is created when the issue is sent.
   const opts = {
     ...include,
@@ -196,6 +242,8 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     mintShareToken: redactedShareTokenMinter,
     automatic: params.automatic ?? null,
     comment: issueComment(params),
+    filedBy: params.filedBy ?? null,
+    titlePrefix: await ticketTitlePrefix(db, params, binding),
   };
   const built =
     params.entityType === 'failure_cluster'
@@ -212,7 +260,6 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   // The owner route contributes a Jira component the modal never asks for, plus
   // any labels the route adds; project key and assignee already ride in on the
   // prefilled request, so the route only fills what the request could not carry.
-  const binding = await readProjectIntegration(db, target.projectId);
   const owner = await resolveClusterOwner(db, target.clusterId).catch(() => null);
   const route = pickOwnerRoute(binding.ownerRoutes, owner);
 
@@ -241,13 +288,17 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
  */
 async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
   const locale = params.locale ?? DEFAULT_LOCALE;
+  const projectId = await filedEntityProjectId(db, params);
+  if (projectId == null) return null;
+  const binding = await readProjectIntegration(db, projectId);
   const built = await buildBugReportIssue(db, params.entityId, {
     locale,
     siteUrl: params.siteUrl,
     comment: issueComment(params),
+    filedBy: params.filedBy ?? null,
+    titlePrefix: await ticketTitlePrefix(db, params, binding),
   });
   if (!built) return null;
-  const binding = await readProjectIntegration(db, built.projectId);
   const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
 
   return fileIssue(db, params, binding, {
@@ -269,18 +320,21 @@ async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Pr
  * entity. Each submission of the dialog files once; a new one files again.
  */
 async function createRunIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  const projectId = await filedEntityProjectId(db, params);
+  if (projectId == null) return null;
+  const binding = await readProjectIntegration(db, projectId);
   const opts = {
     locale: params.locale ?? DEFAULT_LOCALE,
     siteUrl: params.siteUrl,
     comment: issueComment(params),
     filedBy: params.filedBy ?? null,
+    titlePrefix: await ticketTitlePrefix(db, params, binding),
   };
   const built: BuiltRunIssue | null =
     params.entityType === 'test_run'
       ? await buildRunIssue(db, params.entityId, opts)
       : await buildStandaloneExecutionIssue(db, params.entityId, opts);
   if (!built) return null;
-  const binding = await readProjectIntegration(db, built.projectId);
   const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
   const linkEntityType = params.entityType === 'test_run' ? 'test_run' : 'test_runs_case';
 
@@ -443,7 +497,7 @@ async function fileIssue(
   const payload: CreateIssueActionPayload = {
     projectKey: params.projectKey,
     issueType: params.issueType,
-    title: params.title?.trim() || issue.title,
+    title: await filedTitle(db, params, binding, issue.title),
     document: issue.document,
     labels: issue.labels,
     assigneeId: params.assignee ?? null,
@@ -456,6 +510,7 @@ async function fileIssue(
     include: issue.include,
     shareUrl: issue.shareUrl,
     comment: issueComment(params),
+    filedBy: params.filedBy ?? null,
     submissionId: params.submissionId || null,
   };
 

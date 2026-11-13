@@ -7,6 +7,7 @@ import type {
   IssueTracker,
   TrackerCredentials,
   TrackerIssue,
+  TrackerIssueBatch,
   TrackerIssueType,
   TrackerProject,
   TrackerSearch,
@@ -14,9 +15,10 @@ import type {
   TrackerUser,
   UpdateIssueInput,
 } from '../types';
-import { statusColorForCategory, toStatusCategory } from '../types';
+import { MAX_BULK_ISSUE_KEYS, statusColorForCategory, toStatusCategory } from '../types';
 import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
+import { cutLine, TICKET_TITLE_MAX_LENGTH } from '#shared/integrations/title-prefix';
 import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
 import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
@@ -26,13 +28,9 @@ import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
 
-/** Jira refuses a summary longer than this, or one with a line break. */
-const SUMMARY_MAX_LENGTH = 255;
-
-/** A title as Jira takes a summary: one line, at most {@link SUMMARY_MAX_LENGTH} characters. */
+/** A title as Jira takes a summary: one line, at most {@link TICKET_TITLE_MAX_LENGTH} characters. */
 export function jiraSummary(title: string): string {
-  const line = title.replace(/\s+/g, ' ').trim();
-  return line.length <= SUMMARY_MAX_LENGTH ? line : `${line.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+  return cutLine(title.replace(/\s+/g, ' ').trim(), TICKET_TITLE_MAX_LENGTH);
 }
 
 /** Create metadata is paged; a screen past this many fields is read no further. */
@@ -111,6 +109,8 @@ interface JiraIssueResponse {
     summary?: string;
     status?: JiraStatus;
     assignee?: JiraUser | null;
+    project?: { key?: string } | null;
+    issuetype?: { id?: string; name?: string } | null;
   };
 }
 
@@ -262,7 +262,9 @@ export class JiraClient implements IssueTracker {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
         ...init?.headers,
       },
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: init?.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(this.timeoutMs)])
+        : AbortSignal.timeout(this.timeoutMs),
     }));
     if (!response.ok) throw await toJiraError(response, 'Jira request failed');
     if (response.status === 204) return undefined as T;
@@ -292,19 +294,41 @@ export class JiraClient implements IssueTracker {
             email: assignee.emailAddress ?? null,
           }
         : null,
+      projectKey: data.fields?.project?.key ?? null,
+      issueType: data.fields?.issuetype?.name ?? null,
+      issueTypeId: data.fields?.issuetype?.id ?? null,
     };
   }
 
   async getIssue(key: string): Promise<TrackerIssue | null> {
     try {
       const data = await this.request<JiraIssueResponse>(
-        `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,status,assignee`,
+        `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,status,assignee,project,issuetype`,
       );
       return this.toIssue(data, key);
     } catch (err) {
       if (err instanceof JiraError && err.status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * Jira Cloud's bulk fetch: a key it does not find comes back among `issueErrors` and the others are still
+   * returned. Each issue keeps the key Jira gives it, so a moved issue comes back under its new key.
+   */
+  async getIssues(keys: string[], options: { signal?: AbortSignal } = {}): Promise<TrackerIssueBatch> {
+    const asked = keys.slice(0, MAX_BULK_ISSUE_KEYS);
+    if (asked.length === 0) return { issues: [] };
+    const data = await this.request<{ issues?: JiraIssueResponse[] }>('/rest/api/3/issue/bulkfetch', {
+      method: 'POST',
+      body: JSON.stringify({
+        issueIdsOrKeys: asked,
+        fields: ['summary', 'status', 'assignee', 'project', 'issuetype'],
+      }),
+      signal: options.signal,
+    });
+    const issues = (data.issues ?? []).filter((issue) => typeof issue.key === 'string' && issue.key);
+    return { issues: issues.map((issue) => this.toIssue(issue, issue.key as string)) };
   }
 
   /** Every project the credential can browse, paged through. */
@@ -371,8 +395,11 @@ export class JiraClient implements IssueTracker {
     return fields;
   }
 
-  async searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]> {
-    const params = new URLSearchParams({ project: projectKey, query, maxResults: '20' });
+  async searchAssignable(projectKey: string, query: string, options?: { accountId?: string }): Promise<TrackerUser[]> {
+    const params = new URLSearchParams({ project: projectKey });
+    if (options?.accountId) params.set('accountId', options.accountId);
+    else params.set('query', query);
+    params.set('maxResults', '20');
     const data = await this.request<JiraUser[]>(`/rest/api/3/user/assignable/search?${params.toString()}`);
     return (data ?? [])
       .filter((u) => u.accountId)

@@ -39,11 +39,11 @@ them.
 
 ## Reuse the shared primitives
 
-**Build from `app/components/shared/` before writing new markup.** `SectionCard` / `CollapsibleSectionCard` (headers
-and folding), `EmptyState` / `LoadingState` / `ErrorState`, `StatTile` + `StatTileGrid` (never hand-rolled tile
-markup), `FiltersBlock` + `FilterBar`, `FilterToolbar`, `TableScroller`, `NavbarActions`, `BreadcrumbNav`,
-`ChartCard`, `DurationValue`, `ErrorText` (never print a raw error string: it carries ANSI codes), `DiffPatch` /
-`DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField`, `OpenInIdeLink`. What each
+**Build from `app/components/shared/` before writing new markup.** `SectionCard` / `CollapsibleSectionCard` (headers and
+folding), `EmptyState` / `LoadingState` / `ErrorState`, `StatTile` + `StatTileGrid` (never hand-rolled tile markup),
+`FiltersBlock` + `FilterBar`, `FilterToolbar`, `TableScroller`, `NavbarActions`, `BreadcrumbNav`, `ChartCard`,
+`DurationValue`, `ErrorText` (the `run-ui` layer's; never print a raw error string: it carries ANSI codes), `DiffPatch`
+/ `DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField`, `OpenInIdeLink`. What each
 one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 - **A detail page's title is its `BreadcrumbNav`**: the navbar never repeats it.
@@ -139,8 +139,8 @@ views are exempt only where a rule says so.
   `variant="ghost"` for a disclosure or a menu trigger; no `warning`, `success` or `soft` buttons for ordinary actions.
   A selection is neutral too: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
   `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
-  of status-colored marks), all in `app/utils/index.ts`. The one exception is a card's header icon (`CARD_ICON_CLASS`,
-  marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
+  of status-colored marks), `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and the
+  layer's `ui-classes.ts` for the last two. The one exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
   affected tests' components (add a new one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered
   pages.
 - **A link inside a sentence keeps the sentence's color**:
@@ -199,16 +199,18 @@ views are exempt only where a rule says so.
 
 ## Test outcome colors
 
-- **Each outcome has one color everywhere**: the `--color-status-*` tokens in `app/assets/css/main.css` (passed,
+- **Each outcome has one color everywhere**: the `--color-status-*` tokens in `@piwitests/run-ui/run-ui.css` (passed,
   failed, flaky, skipped, didn't run, running, interrupted; violet is the accent, never an outcome). Timed-out counts
   as failed, a pass after a failed attempt as flaky, and a `test.fixme()` skip is the second grey `fixme`
   (`isFixmeSkip` / `fixmeSkipPredicate`, `shared/utils/skip-kind.ts`), carved out of skipped as flaky is out of passed.
-  An interrupted test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled
-  "Interrupted" in every legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
+  A test ended at a stop (End the test, `isEndedAtStop`) is a mark, not an outcome: skipped in color and count, its
+  label alone reading "Ended at a stop" (`statusChipLabel`'s `endedAtStop`, `ENDED_AT_STOP_BADGE`). An interrupted
+  test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled "Interrupted" in every
+  legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
 - **Never hardcode a status color** in a bar, chart, legend, dot, history cell, timeline bar or filter chip: use
-  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`app/utils/status-palette.ts`, `flaky` the execution's stored
-  `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML,
-  `var(--color-status-*)` in an SVG `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
+  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`@piwitests/run-ui/status-palette`, `flaky` the execution's
+  stored `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML, `var(--color-status-*)` in an SVG
+  `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
   a registered Nuxt UI color). A view needing another shade adds it to the palette entry, not to the component.
 - **A pass rate takes its band and color from `app/utils/pass-rate.ts`** (`passRateTone`, `passRateTextClass`,
   `PASS_RATE_TONES`, `passRateStep` for heatmap cells), never from a threshold or color written at the call site.
@@ -271,10 +273,14 @@ views are exempt only where a rule says so.
   from `plugins/desktop-run-hub.client.ts`, whatever the layout: a run of the Local runs tray runs, or the hub says it
   has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
   window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
-  **Hold failures** switch is on (off by default, on for a reproduction, `desktopHoldsByDefault`; never for a run
-  nobody attends, `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted
-  (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
+  **Hold failures** switch is on (off by default, on for a reproduction and a run started with it on,
+  `desktopHoldsByDefault`, and **Run again** keeps this window's choice; never for a run nobody attends, `desktopHoldRefusal`),
+  each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
   `tests/unit/desktop-run-hub-plugin.test.ts`).
+- **A reload of the desktop window keeps its Local runs** (`plugins/desktop-local-runs.client.ts`): a field added to
+  `LocalRun` is plain JSON, since the store writes the runs to session storage, and a separate output window is fed by
+  `DesktopRunOutputWindows` in `app.vue`, never by the tray, so it outlives the tray and the reload
+  (`tests/unit/desktop-local-runs-reload.test.ts`, `tests/desktop-run-view.spec.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

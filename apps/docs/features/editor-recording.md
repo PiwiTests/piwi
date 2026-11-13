@@ -20,8 +20,8 @@ works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 
 | Editor | Record at the cursor | Record a new test file |
 |---|---|---|
-| VS Code | **Piwi: Record here**, from the command palette or the editor's context menu | **Piwi: Record a new test file** |
-| JetBrains IDE | **Tools → Piwi → Record Here**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu | **File → New → Record a New Test File…** |
+| VS Code | **Piwi: Record here**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title; any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file** |
+| JetBrains IDE | **Tools → Piwi → Record Here**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **File → New → Record a New Test File…** |
 
 Before the browser opens, the editor asks for:
 

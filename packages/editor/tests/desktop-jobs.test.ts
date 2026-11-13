@@ -8,6 +8,7 @@ import { DesktopJobs, labResults, verdictMessage } from '../src/desktop-jobs';
 import { PiwiClient, type BranchFailure } from '../src/piwi-client';
 import type { DesktopJobUpdate } from '../src/protocol';
 import { hasUntestedSuspect } from '../src/server';
+import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
 import type { FlakeLabJobPlan, FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
 const BAD = 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0';
@@ -26,9 +27,17 @@ interface Received {
 /** A stub server answering from `routes`, recording every request it receives. */
 async function stub(
   routes: (req: Received) => { status?: number; body: unknown } | undefined,
+  provesToken?: string,
 ): Promise<{ url: string; received: Received[]; close: () => Promise<void> }> {
   const received: Received[] = [];
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
+    const challenge = req.headers[DESKTOP_CHALLENGE_HEADER];
+    if (provesToken && req.url === '/api/health' && typeof challenge === 'string') {
+      const proof = await desktopTokenProof(provesToken, (server.address() as AddressInfo).port, challenge);
+      res.setHeader(DESKTOP_PROOF_HEADER, proof);
+      res.end('{}');
+      return;
+    }
     let raw = '';
     req.on('data', (chunk) => (raw += chunk));
     req.on('end', () => {
@@ -168,7 +177,7 @@ beforeAll(async () => {
       return { body: { id: 'f00d', ...jobState } };
     }
     return undefined;
-  });
+  }, TOKEN);
   discovery = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-jobs-')), 'desktop.json');
   fs.writeFileSync(discovery, JSON.stringify({ url: desktop.url, token: TOKEN, projects: [] }));
 });

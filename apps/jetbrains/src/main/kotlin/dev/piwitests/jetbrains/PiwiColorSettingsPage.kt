@@ -11,8 +11,8 @@ import javax.swing.Icon
 /**
  * **Settings → Editor → Color Scheme → Piwi**: the background of a failing test, of the line it failed at, of the
  * lines a recording writes and of the line a run started here is stopped at (the debugger's execution point by
- * default); and the coverage marks, whose error stripe color is the mark in the gutter and the scroll bar, with no
- * background by default.
+ * default); and the coverage marks, whose error stripe color is the mark in the gutter and, but for the lines the tests
+ * ran, the scroll bar, with no background by default.
  */
 class PiwiColorSettingsPage : ColorSettingsPage {
     override fun getDisplayName(): String = "Piwi"

@@ -481,6 +481,7 @@ describe('hand-written reference pages match the code', () => {
     gate: '`gate`',
     'quality-report': '`report`',
     select: '{#select-run}',
+    plan: '`plan`',
     rerun: '`rerun`',
     probe: '`probe`',
     flake: '`flake`',
@@ -489,6 +490,7 @@ describe('hand-written reference pages match the code', () => {
     preflight: '`preflight`',
     coverage: '`coverage`',
     bug: '`bug`',
+    mcp: '`mcp`',
   };
 
   test.each(Object.entries(CLI_COMMANDS))('every flag of %s --help is in the Piwi CLI reference', (source, heading) => {

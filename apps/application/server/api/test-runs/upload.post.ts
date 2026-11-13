@@ -7,6 +7,7 @@ import { join, posix } from 'path';
 import { randomBytes } from 'node:crypto';
 import { decompressDirectory } from '../../utils/compression';
 import { requireAuth } from '../../utils/auth';
+import { runReporterId } from '../../utils/run-viewer';
 import { getStorage } from '../../storage';
 import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
@@ -117,7 +118,7 @@ export default eventHandler(async (event) => {
     maxFiles: MAX_UPLOAD_PARTS,
   });
   try {
-    return await handleUpload(user, multipart);
+    return await handleUpload(user, runReporterId(event, user), multipart);
   } finally {
     await multipart.cleanup();
   }
@@ -133,7 +134,11 @@ interface UploadedFile {
   size: number;
 }
 
-async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multipart: StreamedMultipart) {
+async function handleUpload(
+  user: Awaited<ReturnType<typeof requireAuth>>,
+  reporterId: number | null,
+  multipart: StreamedMultipart,
+) {
   // Parse form fields
   let projectName: string | undefined;
   let existingTestRunId: number | undefined; // Set when attaching uploads to an already-created streaming run
@@ -326,7 +331,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       testRun = { id: existingTestRunId, projectId: project.id };
       await applyReporterKeep(db, existingTestRunId, testRunData.keep);
     } else if (isBatchShard) {
-      const run = await batchShardRun(db, project.id, instanceId!, testRunData);
+      const run = await batchShardRun(db, project.id, instanceId!, testRunData, reporterId);
       testRun = { id: run.id, projectId: run.projectId };
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
       await saveEnvironmentSnapshots(db, run.id, testRunData.environments);
@@ -355,6 +360,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
           metadata,
           origin: runOrigin(metadata),
           commit: runCommit(metadata),
+          reporterId,
           instanceId,
           playwrightVersion: testRunData.playwrightVersion || null,
           reporterVersion: testRunData.reporterVersion || null,

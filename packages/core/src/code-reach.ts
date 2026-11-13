@@ -14,8 +14,8 @@
  * At line granularity, V8's block coverage tells which code ran inside a
  * function: at each offset, the innermost range around it (a function or a
  * block) gives its count. A source line is executable when a source map
- * segment maps to it, and it ran when one of those segments starts at an
- * offset that ran. A script with no map counts the lines holding code inside
+ * segment holding code maps to it, and it ran when one of those segments ran
+ * at its first character of code ({@link scriptLines}). A script with no map counts the lines holding code inside
  * the functions V8 lists, its top level left out, and one of them ran when
  * code on it ran.
  *
@@ -52,14 +52,66 @@ export interface ScriptText {
    * Kept with `code: true`, for a script read without a source map.
    */
   code?: { starts: ArrayLike<number>; ends: ArrayLike<number> };
+  /** The code under each segment of a source map, kept with `map`, for a script read through one. */
+  segments?: SegmentCode;
+}
+
+/**
+ * The code under each segment a source map's `forEachMapping` visits, in its order. A segment holds the generated
+ * text from its column to the next segment's on its line, or to the line's end.
+ */
+export interface SegmentCode {
+  /**
+   * The offset of the segment's first character that is not whitespace; -1 for a segment with no code: whitespace
+   * alone, or nothing, past the end of its line or of the script.
+   */
+  offsets: Int32Array;
+  /** 1 for a segment whose code is closing punctuation alone: `}`, `)`, `]`, `,` and `;`. */
+  closing: Uint8Array;
 }
 
 const isSpace = (ch: number) => ch === 32 || ch === 9 || ch === 13 || ch === 11 || ch === 12 || ch === 0xfeff;
+/** `}`, `)`, `]`, `,` and `;`. */
+const isClosing = (ch: number) => ch === 125 || ch === 41 || ch === 93 || ch === 44 || ch === 59;
 
-/** A script's text as its coverage offsets are read against it; with `code`, the columns of each line's code too. */
-export function scriptText(source: string, options: { code?: boolean } = {}): ScriptText {
+/** The code under each segment of a source map, read in the script it maps. */
+function segmentCode(source: string, starts: ArrayLike<number>, map: SourceMapLookup): SegmentCode {
+  const offsets: number[] = [];
+  const closing: number[] = [];
+  map.forEachMapping((line, column, _source, _originalLine, end) => {
+    if (line >= starts.length) {
+      offsets.push(-1);
+      closing.push(0);
+      return;
+    }
+    const lineEnd = line + 1 < starts.length ? starts[line + 1]! - 1 : source.length;
+    const to = end < 0 ? lineEnd : Math.min(starts[line]! + end, lineEnd);
+    let first = starts[line]! + column;
+    while (first < to && isSpace(source.charCodeAt(first))) first++;
+    if (first >= to) {
+      offsets.push(-1);
+      closing.push(0);
+      return;
+    }
+    let only = 1;
+    for (let i = first; i < to && only; i++) {
+      const ch = source.charCodeAt(i);
+      if (!isSpace(ch) && !isClosing(ch)) only = 0;
+    }
+    offsets.push(first);
+    closing.push(only);
+  });
+  return { offsets: Int32Array.from(offsets), closing: Uint8Array.from(closing) };
+}
+
+/**
+ * A script's text as its coverage offsets are read against it; with `code`, the columns of each line's code too; with
+ * `map`, the code under each of the map's segments.
+ */
+export function scriptText(source: string, options: { code?: boolean; map?: SourceMapLookup | null } = {}): ScriptText {
   const starts = Uint32Array.from(lineStarts(source));
-  if (!options.code) return { length: source.length, starts };
+  const segments = options.map ? { segments: segmentCode(source, starts, options.map) } : {};
+  if (!options.code) return { length: source.length, starts, ...segments };
   const codeStarts = new Int32Array(starts.length).fill(-1);
   const codeEnds = new Int32Array(starts.length).fill(-1);
   for (let line = 0; line < starts.length; line++) {
@@ -73,7 +125,7 @@ export function scriptText(source: string, options: { code?: boolean } = {}): Sc
       codeEnds[line] = to - from;
     }
   }
-  return { length: source.length, starts, code: { starts: codeStarts, ends: codeEnds } };
+  return { length: source.length, starts, code: { starts: codeStarts, ends: codeEnds }, ...segments };
 }
 
 const textOf = (entry: JsCoverageEntry, text: ScriptText | undefined): ScriptText | undefined =>
@@ -283,10 +335,23 @@ function toLineRanges(lines: Iterable<number>): LineRange[] {
 }
 
 /**
+ * What the segments mapped to one original line tell, as bits: whether one holding code ran, whether one holds
+ * closing punctuation alone, and whether the first of those ran.
+ */
+const LINE_CODE_RAN = 1;
+const LINE_CLOSING = 2;
+const LINE_CLOSING_RAN = 4;
+
+/**
  * A script's executable lines and those that ran, per source, from the offsets
  * that ran ({@link executedOffsets}). Through a source map, by the index of the
- * source: the original lines a segment maps to, a line ran when one of its
- * segments starts at an offset that ran. Without one, under index -1: the lines
+ * source: the original lines a segment holding code maps to, a segment over
+ * whitespace alone counting for none. A segment ran when its first character of
+ * code ran; of the segments holding closing punctuation alone (`}`, `)`, `]`,
+ * `,`, `;`), only a line's first one counts. A line ran when one of its
+ * segments that counts ran: `},` ran with the block its `}` closes, `} else {`
+ * with either branch. Without the code under each segment (`text.segments`, or
+ * the source), a segment counts at its column. Without a map, under index -1: the lines
  * of the script's own text with code on them (`text.code`) inside the functions
  * its coverage lists, its top level left out; a line ran when an offset of its
  * code ran. Empty when the text is not known.
@@ -302,21 +367,33 @@ export function scriptLines(
   if (!read) return out;
   const starts = read.starts;
   if (map) {
-    const executable = new Map<number, Set<number>>();
-    const ran = new Map<number, Set<number>>();
-    const add = (into: Map<number, Set<number>>, source: number, line: number) => {
-      let set = into.get(source);
-      if (!set) into.set(source, (set = new Set()));
-      set.add(line);
-    };
+    const segments = read.segments ?? (entry.source !== undefined ? segmentCode(entry.source, starts, map) : undefined);
+    /** Per source, each original line's `LINE_*` bits. */
+    const states = new Map<number, Map<number, number>>();
+    let index = -1;
     map.forEachMapping((line, column, source, originalLine) => {
+      index++;
       if (line >= starts.length || originalLine < 0) return;
-      add(executable, source, originalLine);
-      const offset = starts[line]! + column;
-      if (offset < read.length && ranBetween(executed, offset, offset + 1)) add(ran, source, originalLine);
+      const known = segments && index < segments.offsets.length;
+      const offset = known ? segments.offsets[index]! : starts[line]! + column;
+      if (offset < 0) return;
+      let lines = states.get(source);
+      if (!lines) states.set(source, (lines = new Map()));
+      const state = lines.get(originalLine) ?? 0;
+      const ran = offset < read.length && ranBetween(executed, offset, offset + 1);
+      if (known && segments.closing[index]) {
+        // The line's first closing segment counts; later ones close the code around it.
+        lines.set(originalLine, state & LINE_CLOSING ? state : state | LINE_CLOSING | (ran ? LINE_CLOSING_RAN : 0));
+      } else {
+        lines.set(originalLine, state | (ran ? LINE_CODE_RAN : 0));
+      }
     });
-    for (const [source, lines] of executable) {
-      out.set(source, { executable: toLineRanges(lines), lines: toLineRanges(ran.get(source) ?? []) });
+    for (const [source, lines] of states) {
+      const ran: number[] = [];
+      for (const [line, state] of lines) {
+        if (state & (LINE_CODE_RAN | LINE_CLOSING_RAN)) ran.push(line);
+      }
+      out.set(source, { executable: toLineRanges(lines.keys()), lines: toLineRanges(ran) });
     }
     return out;
   }

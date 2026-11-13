@@ -1,5 +1,6 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
+import { runReporterId } from '../../utils/run-viewer';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { checkSubmitBody } from '../../utils/batch-payload';
@@ -93,7 +94,7 @@ export default eventHandler(async (event) => {
     if (isSharded && instanceId) {
       // A shard of a batch run: its executions join the run its instance's shards
       // share, and the last shard to arrive settles it.
-      const run = await batchShardRun(db, project.id, instanceId, body);
+      const run = await batchShardRun(db, project.id, instanceId, body, runReporterId(event, user));
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
       await saveEnvironmentSnapshots(db, run.id, body.environments);
       await applyReporterKeep(db, run.id, body.keep);
@@ -104,7 +105,7 @@ export default eventHandler(async (event) => {
     }
 
     // A run of its own: not sharded, or sharded with no instance id to join its shards by
-    const testRun = await createBatchRun(db, project.id, body);
+    const testRun = await createBatchRun(db, project.id, body, { reporterId: runReporterId(event, user) });
 
     runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 

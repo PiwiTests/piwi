@@ -1,0 +1,34 @@
+{
+  "name": "@piwitests/run-model",
+  "version": "0.69.0",
+  "description": "The run model Piwi Picker's Runs window and the desktop app's Local runs tray share: what the runs ask of the person, what a worker's stop takes, says and offers, who drives it, and the input played on its live view",
+  "private": true,
+  "license": "FSL-1.1-MIT",
+  "type": "module",
+  "exports": {
+    "./attention": "./src/attention.ts",
+    "./ci": "./src/ci.ts",
+    "./controls": "./src/controls.ts",
+    "./layers": "./src/layers.ts",
+    "./outcome": "./src/outcome.ts",
+    "./presence": "./src/presence.ts",
+    "./status": "./src/status.ts",
+    "./stop": "./src/stop.ts",
+    "./tabs": "./src/tabs.ts",
+    "./view-input": "./src/view-input.ts",
+    "./words": "./src/words.ts"
+  },
+  "scripts": {
+    "run-model:test": "vitest run",
+    "run-model:test:watch": "vitest",
+    "run-model:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "run-model:lint": "oxlint --config oxlint.config.mts .",
+    "run-model:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "run-model:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\"",
+    "run-model:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\"",
+    "test": "npm run run-model:test"
+  },
+  "dependencies": {
+    "@piwitests/core": "*"
+  }
+}

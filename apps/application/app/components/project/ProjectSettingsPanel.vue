@@ -24,6 +24,7 @@ const SECTION_IDS = [
   'targets',
   'issue-tracker',
   'tag-keys',
+  'test-management',
   'browser-extension',
   'local-folder',
 ] as const;
@@ -102,6 +103,13 @@ const sections = computed<Section[]>(() => [
     id: 'tag-keys',
     label: 'Keys in test tags',
     icon: 'i-lucide-tags',
+    group: 'integrations',
+    visible: canManage.value,
+  },
+  {
+    id: 'test-management',
+    label: 'Test management',
+    icon: 'i-lucide-list-checks',
     group: 'integrations',
     visible: canManage.value,
   },
@@ -284,6 +292,12 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         :project="project"
         data-tour="project-settings-tag-keys"
         @saved="emit('saved')"
+      />
+
+      <ProjectTestManagementSettings
+        v-else-if="active === 'test-management'"
+        :project-id="project.id"
+        data-tour="project-settings-test-management"
       />
 
       <ProjectUrlPatternsForm

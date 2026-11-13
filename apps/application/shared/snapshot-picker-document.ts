@@ -21,6 +21,7 @@
  * in `app/utils/snapshot-picker-script.ts`, which re-exports these.
  */
 import { installPickerOverlay, probeElementAttrs, type PickerOverlayArg, type ProbeArg } from '@piwitests/picker-dom';
+import { cssImports, replaceCssUrls } from '#shared/css-urls';
 import {
   installSnapshotPickerExtras,
   readonlySnapshotScript,
@@ -98,8 +99,6 @@ const START_TAG_RE = /<([a-zA-Z][^\s/>]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
 const ATTR_RE = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 // A `<style>` element: its CSS is raw text, rewritten as CSS rather than markup.
 const STYLE_ELEMENT_RE = /(<style(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>)([\s\S]*?)(<\/style\s*>|$)/gi;
-const CSS_IMPORT_RE = /@import\s+(?:url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\)|"[^"]*"|'[^']*')[^;]*;?/gi;
-const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /** A URL the browser resolves without the network: a well-formed `data:` URI or an in-document `#fragment`. */
 function isInlineRef(url: string): boolean {
@@ -109,18 +108,27 @@ function isInlineRef(url: string): boolean {
 
 /** CSS with every `@import` removed and every `url(...)` that would fetch replaced by `none`. */
 function stripCssNetworkRefs(css: string): string {
-  return css
-    .replace(CSS_IMPORT_RE, '')
-    .replace(CSS_URL_RE, (full, _quote, quoted?: string, bare?: string) =>
-      isInlineRef(quoted ?? bare ?? '') ? full : 'none',
-    );
+  let kept = '';
+  let last = 0;
+  for (const rule of cssImports(css)) {
+    kept += css.slice(last, rule.start);
+    last = rule.end;
+  }
+  kept += css.slice(last);
+  return replaceCssUrls(kept, (url) => (isInlineRef(url.target) ? null : 'none'));
 }
 
 function decodeAttr(value: string): string {
   return value
     .replace(/&quot;|&#34;|&#x22;/gi, '"')
     .replace(/&apos;|&#39;|&#x27;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
     .replace(/&amp;/g, '&');
+}
+
+function encodeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -133,7 +141,7 @@ function offlineAttr(tag: string, attr: string, name: string, value: string | un
   if (lower === 'style' && value !== undefined) {
     const css = decodeAttr(value);
     const stripped = stripCssNetworkRefs(css);
-    return stripped === css ? attr : `${name}="${stripped.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`;
+    return stripped === css ? attr : `${name}="${encodeAttr(stripped)}"`;
   }
   // Scripts, nested browsing contexts and plugins would run or load code of their own.
   if (lower === 'srcdoc') return '';
@@ -164,14 +172,25 @@ function stripMarkupNetworkRefs(html: string): string {
 }
 
 /**
+ * Every `http-equiv` left, wherever it is (a tag the patterns above did not read
+ * as one, CSS, text), with its hyphen as a character reference: as an attribute's
+ * name it no longer names one (a `<meta http-equiv="refresh">` would navigate the
+ * frame), and as text or an attribute's value it reads the same.
+ */
+function neutralizeHttpEquiv(html: string): string {
+  return html.replace(/(http)-(equiv)/gi, '$1&#45;$2');
+}
+
+/**
  * The snapshot as a document that loads nothing from the network: it renders
  * only what it carries inline — the stylesheets and images the server embedded
  * from the trace, `data:` URIs and in-document references. Every other
  * subresource would resolve against the dashboard's origin (or reach the live
  * tested app), so it is removed: leftover `<link>` elements, `<base>`,
- * `<meta http-equiv>`, nested frame/object/embed sources, `src`/`srcset`/
- * `poster`/`href` media URLs, and CSS `url(...)`/`@import` in `<style>` and
- * `style=""`. A masked `data:` URI is malformed, so it goes too.
+ * `<meta http-equiv>` (and any `http-equiv` left wherever it is),
+ * nested frame/object/embed sources, `src`/`srcset`/`poster`/`href` media URLs,
+ * and CSS `url(...)`/`@import` in `<style>` and `style=""`. A masked `data:` URI
+ * is malformed, so it goes too.
  */
 export function stripNetworkReferences(html: string): string {
   let out = '';
@@ -180,7 +199,7 @@ export function stripNetworkReferences(html: string): string {
     out += stripMarkupNetworkRefs(html.slice(last, m.index) + m[1]) + stripCssNetworkRefs(m[2]!) + m[3];
     last = m.index + m[0].length;
   }
-  return out + stripMarkupNetworkRefs(html.slice(last));
+  return neutralizeHttpEquiv(out + stripMarkupNetworkRefs(html.slice(last)));
 }
 
 /**
@@ -192,6 +211,13 @@ export function buildPickerDocument(html: string, config: SnapshotPickerConfig, 
   return stripNetworkReferences(html) + snapshotPickerScriptTag(config, nonce);
 }
 
+/** The read-only document's script: the page's recorded state put back, then made inert and measured. */
+export function readonlyScriptTag(nonce?: string): string {
+  const restoreSrc = escScriptClose(String(restoreSnapshotState));
+  const src = escScriptClose(String(readonlySnapshotScript));
+  return `<script${nonceAttr(nonce)}>(${restoreSrc})();(${src})();</script>`;
+}
+
 /**
  * Build the read-only document: the snapshot with its network references
  * stripped, plus the page's recorded state put back (`restoreSnapshotState`)
@@ -201,7 +227,5 @@ export function buildPickerDocument(html: string, config: SnapshotPickerConfig, 
  * as the picker does.
  */
 export function buildReadonlyDocument(html: string, nonce?: string): string {
-  const restoreSrc = escScriptClose(String(restoreSnapshotState));
-  const src = escScriptClose(String(readonlySnapshotScript));
-  return stripNetworkReferences(html) + `<script${nonceAttr(nonce)}>(${restoreSrc})();(${src})();</script>`;
+  return stripNetworkReferences(html) + readonlyScriptTag(nonce);
 }

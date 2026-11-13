@@ -5,7 +5,7 @@
  * file, which opens in the editor.
  */
 import type { LocatorIndexTestStatus } from '#shared/locator-index';
-import { statusPalette } from '~/utils/status-palette';
+import { statusPalette } from '@piwitests/run-ui/status-palette';
 
 const props = defineProps<{
   test: { id: number; title: string; file: string; suite?: string[]; status: LocatorIndexTestStatus | null };

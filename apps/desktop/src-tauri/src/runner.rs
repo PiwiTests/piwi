@@ -11,7 +11,7 @@
 // Links live in the shell's own store (`settings.json`), not the server
 // database — a folder path is a fact about this machine, not about the project.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -101,6 +101,62 @@ pub struct LocalRuns {
     specs: Mutex<HashMap<u32, PathBuf>>,
     /// What each running run is, for the tray's Stop items (`run_label`).
     labels: Mutex<HashMap<u32, String>>,
+    /// The linked folder each plain run is going in (`runs_in`).
+    folders: Mutex<HashMap<u32, PathBuf>>,
+    /// Set once the app quits (`kill_all`): every run that ends from then on
+    /// was stopped.
+    quitting: AtomicBool,
+    /// The latest runs that ended, oldest first, each with its exit code
+    /// (`note_exit`): a window that reloaded reads the end of a run it missed.
+    ended: Mutex<VecDeque<EndedRun>>,
+    /// The events that carry each running run's verdict, as the window was
+    /// sent them (`keep_verdict`): they go with its end into `ended`.
+    verdicts: Mutex<HashMap<u32, Vec<RunEventPayload>>>,
+    /// The origin reference the window gave each plain run it started
+    /// (`note_origin`), until its end leaves `ended`: a window that reloaded
+    /// as a run's next step started finds that step by it.
+    origins: Mutex<HashMap<u32, String>>,
+}
+
+/// How many ended runs [`LocalRuns`] remembers for a window that reloads.
+const ENDED_KEPT: usize = 64;
+
+/// A run that ended, with its exit code and the events that carried its
+/// verdict ([`LocalRuns::note_exit`]).
+#[derive(Clone, serde::Serialize)]
+pub struct EndedRun {
+    pub id: u32,
+    pub code: Option<i32>,
+    /// What a repro spec recorded, a lab's report, a bisect's result: the
+    /// events the window was sent, for one that missed them as it reloaded.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<RunEventPayload>,
+}
+
+/// The origin reference the window gave a plain run it started.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunOrigin {
+    pub id: u32,
+    pub origin_ref: String,
+}
+
+/// The shell's runs as a window that reloaded asks for them ([`desktop_local_runs`]).
+#[derive(serde::Serialize)]
+pub struct LocalRunsState {
+    /// The runs still going, by id.
+    pub running: Vec<u32>,
+    /// The latest runs that ended, with their exit codes and verdicts.
+    pub ended: Vec<EndedRun>,
+    /// The origin reference of each plain run the window started that is
+    /// still going or among `ended`.
+    pub origins: Vec<RunOrigin>,
+}
+
+/// The real path of `path`, as Windows writes it without the `\\?\` verbatim
+/// prefix; `path` itself when it cannot be resolved.
+pub(crate) fn real_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// What a local run is, as the tray names it: `tests in shop`, `the bisect in
@@ -136,9 +192,79 @@ impl LocalRuns {
             .collect()
     }
 
+    /// Remember that run `id` ended with `code`, before it leaves the running
+    /// runs and its `exit` event goes to the window: a window that asks in
+    /// between finds it among the ended ones.
+    pub(crate) fn note_exit(&self, id: u32, code: Option<i32>) {
+        let events = self.verdicts.lock().unwrap().remove(&id).unwrap_or_default();
+        let mut dropped = Vec::new();
+        {
+            let mut ended = self.ended.lock().unwrap();
+            ended.push_back(EndedRun { id, code, events });
+            while ended.len() > ENDED_KEPT {
+                if let Some(old) = ended.pop_front() {
+                    dropped.push(old.id);
+                }
+            }
+        }
+        let mut origins = self.origins.lock().unwrap();
+        for old in dropped {
+            origins.remove(&old);
+        }
+    }
+
+    /// Keep an event that carries run `id`'s verdict, sent to the window as
+    /// the run goes: it goes with the run's end ([`LocalRuns::note_exit`]).
+    pub(crate) fn keep_verdict(&self, id: u32, event: RunEventPayload) {
+        self.verdicts.lock().unwrap().entry(id).or_default().push(event);
+    }
+
+    /// Remember the origin reference the window gave plain run `id`.
+    pub(crate) fn note_origin(&self, id: u32, origin_ref: String) {
+        self.origins.lock().unwrap().insert(id, origin_ref);
+    }
+
+    /// The runs still going, then the latest that ended: read in that order,
+    /// a run that ends meanwhile is in one list or both, never in neither.
+    pub fn state(&self) -> LocalRunsState {
+        let running = self.listed().into_iter().map(|(id, _)| id).collect();
+        let ended = self.ended.lock().unwrap().iter().cloned().collect();
+        let mut origins: Vec<RunOrigin> = self
+            .origins
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, origin_ref)| RunOrigin {
+                id: *id,
+                origin_ref: origin_ref.clone(),
+            })
+            .collect();
+        origins.sort_by_key(|origin| origin.id);
+        LocalRunsState { running, ended, origins }
+    }
+
     /// Name run `id` for the tray (`run_label`).
     pub(crate) fn label(&self, id: u32, label: String) {
         self.labels.lock().unwrap().insert(id, label);
+    }
+
+    /// Record the linked folder plain run `id` is going in.
+    pub(crate) fn track_folder(&self, id: u32, folder: &Path) {
+        self.folders.lock().unwrap().insert(id, folder.to_path_buf());
+    }
+
+    /// The linked folders the plain runs are going in, each once.
+    pub(crate) fn folders(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = self.folders.lock().unwrap().values().cloned().collect();
+        folders.sort();
+        folders.dedup();
+        folders
+    }
+
+    /// Whether a plain run is going in `folder`, compared by real path.
+    pub(crate) fn runs_in(&self, folder: &Path) -> bool {
+        let folder = real_path(folder);
+        self.folders.lock().unwrap().values().any(|other| real_path(other) == folder)
     }
 
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.
@@ -150,6 +276,7 @@ impl LocalRuns {
     pub(crate) fn drop_job(&self, id: u32) {
         self.jobs.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Record (or clear) the child currently running for a job, so a stop or
@@ -182,11 +309,20 @@ impl LocalRuns {
         }
     }
 
+    /// Forget plain run `id` once its process has exited, and answer whether
+    /// it was stopped: asked to stop, or still going when the app quit.
+    fn end_child(&self, id: u32) -> bool {
+        let stopped = self.stopping.lock().unwrap().contains(&id) || self.quitting.load(Ordering::SeqCst);
+        self.drop_child(id);
+        stopped
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Kill a plain run's process tree now, if it is still running.
@@ -194,6 +330,7 @@ impl LocalRuns {
         let child = self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
         if let Some(child) = child {
             crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
@@ -217,6 +354,7 @@ impl LocalRuns {
     /// closes its webServer and browsers itself; whatever still runs
     /// `QUIT_GRACE` later is killed with its process tree.
     pub fn kill_all(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
         let mut interrupted = false;
         for child in self.children.lock().unwrap().values() {
             interrupted |= crate::interrupt::interrupt(child.pid());
@@ -248,6 +386,7 @@ impl LocalRuns {
             crate::repro::remove_spec(&spec);
         }
         self.labels.lock().unwrap().clear();
+        self.folders.lock().unwrap().clear();
     }
 
     /// Whether a plain run, or a job's test or browser install, is still running.
@@ -665,6 +804,78 @@ fn bundled_run_channel(port: u16, token: String) -> Option<(String, Option<Strin
     Some((channel, picks))
 }
 
+/// What the bundled server names for a job in a throwaway checkout of the
+/// linked folder `folder` (`GET /api/desktop/run-channel?folder=…`): its own run
+/// channel, where picks go, and the run channel of the live editor whose
+/// workspace holds the folder (`editor`), which a job nobody attends
+/// (`attended` false) is given only by an editor that knows such runs. Asked
+/// with the desktop token once the server at the port proved it holds it; None
+/// when it does not answer a channel.
+fn bundled_job_channel(
+    port: u16,
+    token: String,
+    folder: &Path,
+    attended: bool,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let server = crate::mcp_clients::ServerInfo { port, token };
+    let path = format!(
+        "/api/desktop/run-channel?folder={}&attended={}",
+        crate::repro::query_escape(&folder.to_string_lossy()),
+        if attended { 1 } else { 0 }
+    );
+    let body = crate::repro::local_get_json(&server, &path).ok()?;
+    let channel = body.get("runChannel")?.as_str()?.to_string();
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+    };
+    let editor = body
+        .get("editor")
+        .and_then(|editor| editor.get("runChannel"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    Some((channel, text("picks"), editor))
+}
+
+/// The environment of job `id`, which the shell runs in a throwaway checkout
+/// of `commit` of the linked folder `folder`: on the run channel of the live
+/// editor whose workspace holds the folder, as the bundled server names it,
+/// else on the bundled server's ([`crate::hub_env::job_hub_env`]).
+pub(crate) async fn job_hub_env(
+    app: &AppHandle,
+    id: u32,
+    attended: bool,
+    folder: &Path,
+    commit: &str,
+) -> Vec<(&'static str, String)> {
+    let (port, token) = {
+        let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
+            return crate::hub_env::hub_env(None, None, id, attended);
+        };
+        (server.port, server.token.clone())
+    };
+    let folder = folder.to_path_buf();
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        bundled_job_channel(port, token, &folder, attended)
+    })
+    .await
+    .ok()
+    .flatten();
+    let (channel, picks, editor) = match found {
+        Some((channel, picks, editor)) => (Some(channel), picks, editor),
+        None => (None, None, None),
+    };
+    crate::hub_env::job_hub_env(
+        channel.as_deref(),
+        picks.as_deref(),
+        editor.as_deref(),
+        id,
+        attended,
+        commit,
+    )
+}
+
 /// The environment naming the bundled server as run `id`'s hub, and as where
 /// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
 /// the run starts; the run's name alone when the server names no hub.
@@ -689,6 +900,25 @@ pub(crate) async fn bundled_hub_env(
     crate::hub_env::hub_env(channel.as_deref(), picks.flatten().as_deref(), id, attended)
 }
 
+/// Tell the bundled server what the run named `run_ref` runs
+/// (`POST /api/desktop/runs/started`, Playwright's arguments after `test`), so
+/// its hub names the run's command to Piwi Picker and to agents. On its own
+/// thread, once the server at the port proved it holds the token; nothing
+/// without a server.
+fn tell_run_started(app: &AppHandle, run_ref: String, args: Vec<String>) {
+    let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
+        return;
+    };
+    let server = crate::mcp_clients::ServerInfo {
+        port: server.port,
+        token: server.token.clone(),
+    };
+    std::thread::spawn(move || {
+        let body = json!({ "ref": run_ref, "args": args });
+        let _ = crate::run_target::local_call(&server, "POST", "/api/desktop/runs/started", Some(&body));
+    });
+}
+
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
 /// bundled Node sidecar and the folder's own Playwright package. Returns a run
 /// id; progress arrives as `piwi:local-run` events carrying that id.
@@ -700,10 +930,8 @@ pub async fn desktop_run_local_tests(
     origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
-    let origin = crate::worktree::origin_env(
-        "desktop",
-        crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
-    );
+    let origin_ref = crate::worktree::origin_reference(None, origin_ref)?;
+    let origin = crate::worktree::origin_env("desktop", origin_ref.as_deref());
 
     let folder = read_links(&app)
         .get(&project_id)
@@ -716,7 +944,20 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
-    spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await
+    let id = spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await?;
+    if let Some(origin_ref) = origin_ref {
+        app.state::<LocalRuns>().note_origin(id, origin_ref);
+    }
+    Ok(id)
+}
+
+/// Emit an event that carries run `id`'s verdict, and keep it with the run's
+/// end, for a window that reloads meanwhile ([`LocalRuns::keep_verdict`]).
+pub(crate) fn emit_verdict(app: &AppHandle, payload: RunEventPayload) {
+    if let Some(runs) = app.try_state::<LocalRuns>() {
+        runs.keep_verdict(payload.id, payload.clone());
+    }
+    let _ = app.emit(RUN_EVENT, &payload);
 }
 
 /// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
@@ -733,6 +974,7 @@ pub(crate) async fn spawn_tests(
     on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
 ) -> Result<u32, String> {
     let attended = crate::hub_env::attended_args(&args);
+    let started_args = args.clone();
     let mut cmd_args: Vec<String> = vec![node_path(cli), "test".into()];
     cmd_args.extend(args);
 
@@ -740,7 +982,7 @@ pub(crate) async fn spawn_tests(
     let hub = bundled_hub_env(app, id, attended).await;
     let command = app
         .shell()
-        .sidecar("node")
+        .sidecar(crate::NODE_SIDECAR)
         .map_err(|e| e.to_string())?
         .args(cmd_args)
         .current_dir(folder)
@@ -752,8 +994,21 @@ pub(crate) async fn spawn_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    state.label(id, run_label("tests", folder));
-    state.children.lock().unwrap().insert(id, child);
+    {
+        // Checked under the lock `kill_all` drains, so a run spawned as the app quits never outlives it.
+        let mut children = state.children.lock().unwrap();
+        if state.quitting.load(Ordering::SeqCst) {
+            drop(children);
+            crate::worktree::kill_child_tree(child.pid());
+            let _ = child.kill();
+            return Err("the app is quitting".into());
+        }
+        state.label(id, run_label("tests", folder));
+        state.track_folder(id, folder);
+        children.insert(id, child);
+    }
+    crate::run_target::hand_local_runs(app);
+    tell_run_started(app, crate::hub_env::run_ref(id, attended), started_args);
 
     let emit_app = app.clone();
     let mut on_exit = Some(on_exit);
@@ -772,11 +1027,11 @@ pub(crate) async fn spawn_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
-                    let mut stopped = false;
-                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        stopped = runs.stopping.lock().unwrap().contains(&id);
-                        runs.drop_child(id);
-                    }
+                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| {
+                        runs.note_exit(id, status.code);
+                        runs.end_child(id)
+                    });
+                    crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
                     }
@@ -789,6 +1044,13 @@ pub(crate) async fn spawn_tests(
     });
 
     Ok(id)
+}
+
+/// The local runs still going and the latest that ended, with their exit
+/// codes: a window that reloaded follows its runs again from them.
+#[tauri::command]
+pub fn desktop_local_runs(app: AppHandle) -> LocalRunsState {
+    app.state::<LocalRuns>().state()
 }
 
 /// Stop a running local process as Ctrl+C would in a terminal (see
@@ -874,12 +1136,94 @@ mod tests {
     }
 
     #[test]
+    fn a_window_that_reloads_finds_each_run_running_or_ended_with_its_code() {
+        let runs = LocalRuns::default();
+        assert_eq!(
+            serde_json::to_value(runs.state()).unwrap(),
+            json!({ "running": [], "ended": [], "origins": [] })
+        );
+        runs.note_exit(3, Some(1));
+        runs.note_exit(4, None);
+        assert_eq!(
+            serde_json::to_value(runs.state().ended).unwrap(),
+            json!([{ "id": 3, "code": 1 }, { "id": 4, "code": null }])
+        );
+        for id in 10..(10 + ENDED_KEPT as u32) {
+            runs.note_exit(id, Some(0));
+        }
+        let ended = runs.state().ended;
+        assert_eq!(ended.len(), ENDED_KEPT);
+        assert_eq!(ended[0].id, 10);
+    }
+
+    #[test]
+    fn a_window_that_reloads_reads_a_run_s_verdict_with_its_end_and_each_step_s_origin() {
+        let runs = LocalRuns::default();
+        runs.note_origin(5, "desktop:abc".into());
+        runs.note_origin(6, "desktop:abc".into());
+        runs.keep_verdict(5, RunEventPayload::repro(5, Some(json!({ "status": "failed" }))));
+        runs.note_exit(5, Some(1));
+        let state = serde_json::to_value(runs.state()).unwrap();
+        assert_eq!(
+            state["ended"],
+            json!([{
+                "id": 5,
+                "code": 1,
+                "events": [{ "id": 5, "kind": "repro", "repro": { "status": "failed" } }]
+            }])
+        );
+        assert_eq!(
+            state["origins"],
+            json!([{ "id": 5, "originRef": "desktop:abc" }, { "id": 6, "originRef": "desktop:abc" }])
+        );
+        // A verdict goes with its own run's end alone, and an origin goes once its end is no longer kept.
+        runs.note_exit(6, Some(0));
+        assert!(runs.state().ended[1].events.is_empty());
+        for id in 100..(100 + ENDED_KEPT as u32) {
+            runs.note_exit(id, Some(0));
+        }
+        assert!(runs.state().origins.is_empty());
+    }
+
+    #[test]
     fn a_project_id_is_digits_only() {
         assert!(valid_project_id("1"));
         assert!(valid_project_id("4021"));
         for bad in ["", "../../etc", "1/2", "1.0", "-1", " 1", "abc", &"9".repeat(21)] {
             assert!(!valid_project_id(bad), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn a_run_is_found_by_its_folder_until_it_is_forgotten() {
+        let folder = std::env::temp_dir().join(format!("piwi-runs-in-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("sub")).unwrap();
+        let runs = LocalRuns::default();
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(4, &folder);
+        assert!(runs.runs_in(&folder));
+        assert!(runs.runs_in(&folder.join("sub").join("..")));
+        assert!(!runs.runs_in(&folder.join("sub")));
+        runs.forget_child(4);
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(5, &folder);
+        runs.track_folder(6, &folder.join("sub"));
+        runs.track_folder(7, &folder);
+        assert_eq!(runs.folders(), vec![folder.clone(), folder.join("sub")]);
+        runs.kill_all();
+        assert!(!runs.runs_in(&folder));
+        assert!(runs.folders().is_empty());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_run_that_ends_once_the_app_quits_ends_stopped() {
+        let runs = LocalRuns::default();
+        runs.track_folder(4, Path::new("/work/shop"));
+        runs.track_folder(5, Path::new("/work/admin"));
+        assert!(!runs.end_child(4), "a run that ends on its own");
+        runs.kill_all();
+        assert!(runs.end_child(5), "killed as the app quits");
     }
 
     #[test]

@@ -126,7 +126,24 @@ describe('the debug run’s pure half', () => {
       title: 'cart › adds a mug',
       project: null,
       execution: 7,
+      ref: null,
     });
+    // The name the dashboard gave the run, which its page follows it by: `ed-` and hexadecimal digits alone.
+    expect(checkedDebugRun({ stop, title: 'a', ref: 'ed-0123456789abcdef' })).toMatchObject({
+      ref: 'ed-0123456789abcdef',
+    });
+    for (const ref of [
+      'ed-123',
+      'ed-01234567',
+      'terminal-1-2',
+      'ed-0123456789ABCDEF',
+      'ed-0123456789abcdef; rm -rf /',
+      42,
+    ]) {
+      expect(checkedDebugRun({ stop, title: 'a', ref })).toBe(
+        'The name the dashboard gave the run is not one Piwi takes.',
+      );
+    }
     expect(checkedDebugRun({ stop: { uri: stop.uri, line: -1 }, title: 'a' })).toBe(
       'The failing line to stop at is missing.',
     );

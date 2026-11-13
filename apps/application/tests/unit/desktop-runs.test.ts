@@ -22,7 +22,7 @@ import {
   type RunToHub,
 } from '@piwitests/core/run-channel';
 import { writeDiscovery } from '@piwitests/editor/discovery';
-import type { ToolResult } from '@piwitests/editor/run-host';
+import { startTraceViewer, type ToolResult, type TraceViewerLauncher } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
   parseLiveAnswer,
@@ -36,6 +36,8 @@ import {
   RUN_CHANNEL_FOLDER_PREFIX,
   clearStaleRunChannels,
   insideFolder,
+  linkHolding,
+  linkedSpelling,
 } from '../../server/utils/desktop-runs';
 import {
   desktopPicksToken,
@@ -44,6 +46,13 @@ import {
   presentsDesktopPicksToken,
 } from '../../server/utils/desktop-access';
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
+import type { DesktopAgentRun } from '#shared/desktop-agent-runs';
+import {
+  answerAgentRun,
+  askWindowToStart,
+  subscribeAgentRuns,
+  waitingAgentRuns,
+} from '../../server/utils/desktop-agent-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 /** How long an agent follows a run after its last call, short for the test that waits it out. */
@@ -54,6 +63,15 @@ const SPEC =
 
 let folder = '';
 let worktree = '';
+/** What the hub asked the trace viewer to open, and where; each viewer stays open until the test closes them. */
+const traceLaunches: Array<Parameters<TraceViewerLauncher>[0]> = [];
+const traceClosers: Array<() => void> = [];
+const traceViewer: TraceViewerLauncher = async (launch) => {
+  traceLaunches.push(launch);
+  return { ok: true, closed: new Promise<void>((resolve) => traceClosers.push(resolve)) };
+};
+/** Whether the machine the hub runs on shows the trace viewer's window, whatever display the test's machine has. */
+const machine = { display: true };
 /** The editors' discovery folder the hub names its peers from. */
 let editors = '';
 let runs: DesktopRuns;
@@ -276,6 +294,8 @@ beforeAll(async () => {
     agentIdleMs: AGENT_IDLE_MS,
     editorsDir: editors,
     peersMs: 50,
+    traceViewer,
+    traceDisplay: () => machine.display,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -297,6 +317,117 @@ describe('the run channel the shell names in a run', () => {
       expect(path.basename(path.dirname(channel.path))).toMatch(new RegExp(`^${RUN_CHANNEL_FOLDER_PREFIX}`));
     }
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'is an editor’s for a job in a throwaway checkout of a folder its workspace holds, named to the shell alone',
+    () => {
+      onTestFinished(() => {
+        for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
+      });
+      expect(runs.editorHubFor(folder, true)).toBeNull();
+      // An editor whose channel is a socket of this user's, in a folder no other user enters: the server's own here.
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: channel,
+        recorderBundle: null,
+        checkout: true,
+      });
+      expect(runs.editorHubFor(folder, true)).toEqual({
+        runChannel: `${channel.path}#${channel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A job nobody attends stays on the app's channel with an editor that does not know such runs.
+      expect(runs.editorHubFor(folder, false)).toBeNull();
+      expect(runs.editorHubFor(worktree, true)).toBeNull();
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'names an editor’s channel to the shell alone: never to a browser’s request, nor in a window’s stream',
+    async () => {
+      // The editor's own run channel, apart from the server's: a socket of this user's in a folder no other user enters.
+      const editorDir = fs.mkdtempSync(path.join(editors, 'channel-'));
+      fs.chmodSync(editorDir, 0o700);
+      const editorChannel = { path: path.join(editorDir, 'channel.sock'), token: 'Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed' };
+      const editorSocket = net.createServer();
+      await new Promise<void>((resolve) => editorSocket.listen(editorChannel.path, resolve));
+      vi.doMock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
+      vi.doMock('../../server/utils/desktop-runs', () => ({ desktopRuns: async () => runs }));
+      vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+      vi.stubGlobal('defineRouteMeta', () => {});
+      vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+      vi.stubGlobal('setResponseHeader', () => {});
+      vi.stubGlobal('getQuery', (e: { path: string }) =>
+        Object.fromEntries(new URL(e.path, 'http://127.0.0.1').searchParams),
+      );
+      const window = await openWindow();
+      onTestFinished(async () => {
+        window.close();
+        vi.doUnmock('../../server/utils/auth');
+        vi.doUnmock('../../server/utils/desktop-runs');
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+        await new Promise<void>((resolve) => editorSocket.close(() => resolve()));
+        fs.rmSync(editors, { recursive: true, force: true });
+        fs.mkdirSync(editors, { mode: 0o700 });
+      });
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: editorChannel,
+        recorderBundle: null,
+        unattended: true,
+        checkout: true,
+      });
+      const route = (await import('../../server/api/desktop/run-channel.get')).default as unknown as (
+        event: unknown,
+      ) => Promise<Record<string, unknown>>;
+      const ask = (headers: Record<string, string>) =>
+        route({
+          path: `/api/desktop/run-channel?folder=${encodeURIComponent(folder)}&attended=1`,
+          node: { req: { headers: { host: '127.0.0.1:3000', ...headers } }, res: {} },
+          context: {},
+        });
+
+      // The shell hears the editor's channel.
+      expect((await ask({ 'x-piwi-token': TOKEN })).editor).toEqual({
+        runChannel: `${editorChannel.path}#${editorChannel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A request a browser sends is refused, the editor's channel named nowhere in the refusal.
+      for (const browser of [{ origin: ORIGIN }, { 'sec-fetch-site': 'same-origin' }]) {
+        const refused = await ask({ 'x-piwi-token': TOKEN, ...browser }).then(
+          () => null,
+          (error: { statusCode?: number }) => error,
+        );
+        expect(refused?.statusCode, JSON.stringify(browser)).toBe(403);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.token);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.path);
+      }
+
+      // A job of the server's channel runs and stops as the window watches: nothing of the editor's channel reaches it.
+      const ref = 'desktop-7-at-abc1234';
+      const worker = new Worker(worktree).attach(ref);
+      worker.begin();
+      worker.stop(1);
+      await waitFor(() => window.session(ref)?.workers[0]?.stop);
+      worker.socket.destroy();
+      const heard = JSON.stringify([window.events, runs.editorRuns(), runs.live()]);
+      expect(heard).not.toContain(editorChannel.token);
+      expect(heard).not.toContain(editorChannel.path);
+    },
+  );
 
   it.skipIf(process.platform === 'win32')(
     'is cleared as the server starts when a server that was killed left it, and kept while one listens',
@@ -352,8 +483,9 @@ describe('the run channel the shell names in a run', () => {
     expect(window.session('desktop-90')).toBeUndefined();
 
     const worker = new Worker(folder).attach('desktop-1');
-    // The hub shows a failure, so it says so to a worker that holds one only for a hub that does, naming itself.
-    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    // The hub names itself to a worker that holds a failure only for a hub that shows it: none while its Hold failures
+    // is off.
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: [], host: 'the desktop app' });
     worker.begin();
     const session = await waitFor(() => window.session('desktop-1')?.workers[0]?.test ?? undefined);
     expect(session.title).toEqual(['checkout', 'pays']);
@@ -383,9 +515,59 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes'],
+        features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
       },
     ]);
+  });
+
+  it('has a window stop a run as Piwi Picker asks, and says no window can while none is open', async () => {
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    const worker = new Worker(folder).attach('desktop-6');
+    worker.begin();
+    await waitFor(() => picker.session('desktop-6'));
+    picker.send({ type: 'stop', id: 2, ref: 'desktop-6' });
+    expect(await picker.answer(2)).toMatchObject({
+      ok: false,
+      message: "No window of the desktop app is open: open the app's window to stop the run.",
+    });
+    const window = await openWindow();
+    const other = await openWindow();
+    picker.send({ type: 'stop', id: 3, ref: 'desktop-6' });
+    expect(await picker.answer(3)).toMatchObject({ ok: true, message: 'The desktop app stops the run.' });
+    // Every window hears it; the one whose tray holds the run stops it.
+    for (const each of [window, other]) expect(each.events).toContainEqual({ type: 'stop-run', ref: 'desktop-6' });
+    picker.send({ type: 'stop', id: 4, ref: 'desktop-99' });
+    expect(await picker.answer(4)).toMatchObject({ ok: false, message: 'The run has ended.' });
+    worker.socket.destroy();
+    window.close();
+    other.close();
+    picker.socket.close();
+  });
+
+  it('names the command the shell started a run with to Piwi Picker and to an agent, as an editor names its own', async () => {
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    expect(runs.started('desktop-41', ['tests/checkout.spec.ts:3', '--headed'])).toBeNull();
+    const worker = new Worker(folder).attach('desktop-41');
+    const command = 'npx playwright test tests/checkout.spec.ts:3 --headed';
+    expect((await waitFor(() => picker.session('desktop-41')?.command)) ?? null).toBe(command);
+    const listed = await runs.agent.call('run_list', {});
+    const text = listed.content[0]!.type === 'text' ? listed.content[0]!.text : '{}';
+    const run = (JSON.parse(text) as { runs: Array<{ run: string; command: string | null }> }).runs.find(
+      (r) => r.run === 'desktop-41',
+    );
+    expect(run?.command).toBe(command);
+    // A run the shell said nothing of names no command.
+    const other = new Worker(folder).attach('desktop-42');
+    await waitFor(() => picker.session('desktop-42'));
+    expect(picker.session('desktop-42')?.command).toBeNull();
+    expect(runs.started('terminal-3', [])).toMatch(/no run the shell starts/);
+    worker.socket.destroy();
+    other.socket.destroy();
+    picker.socket.close();
   });
 
   it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
@@ -425,10 +607,14 @@ describe('the hub Piwi Picker reaches', () => {
     picker.socket.close();
   });
 
-  it('opens only for an extension that names it as this machine, and after hello with the desktop token', async () => {
+  it('opens only for an extension or a process that names it as this machine, after hello with the desktop token', async () => {
     const port = new URL(hubUrl()).port;
     expect(await connect({ origin: 'http://127.0.0.1:3000' })).toBe(403);
-    expect(await connect({ origin: null })).toBe(403);
+    // A browser always sends an Origin: none is a process of this machine, which needs the token as an extension does.
+    const local = (await connect({ origin: null })) as Picker;
+    expect(local).not.toBeTypeOf('number');
+    local.send({ type: 'hello', token: `pd_${'cd'.repeat(32)}` });
+    expect((await local.closed).code).toBe(4001);
     expect(await connect({ host: `evil.example:${port}` })).toBe(403);
     expect(await connect({ host: `localhost:${port}` })).not.toBeTypeOf('number');
 
@@ -450,7 +636,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -578,8 +764,9 @@ describe('a failure no pause bar shows', () => {
     expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
     // A plain run the window shows, at the same time, holds its failure.
     const plain = new Worker(folder).attach('desktop-9');
-    expect(await plain.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    expect(await plain.next('attached')).toEqual({ type: 'attached', holds: [], host: 'the desktop app' });
     expect(await window.command({ type: 'show', id: 2, ref: 'desktop-9', on: true })).toMatchObject({ ok: true });
+    expect(await plain.next('attached', 1)).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
     plain.begin();
     plain.stop(1, 'failure');
     await waitFor(() => window.session('desktop-9')?.workers[0]?.stop?.reason === 'failure');
@@ -592,17 +779,51 @@ describe('a failure no pause bar shows', () => {
     window.close();
   });
 
-  it('waits while a Runs window of Piwi Picker follows the runs', async () => {
+  it('stays held as an agent or Piwi Picker set it after the window, which then closes, and while another window shows it', async () => {
+    const first = await openWindow();
+    const second = await openWindow();
+    const worker = new Worker(folder).attach('desktop-34');
+    worker.begin();
+    expect(await first.command({ type: 'show', id: 1, ref: 'desktop-34', on: true })).toMatchObject({ ok: true });
+    expect(await second.command({ type: 'show', id: 1, ref: 'desktop-34', on: true })).toMatchObject({ ok: true });
+    // One of two windows showing it stops: the run's Hold failures stays on.
+    await first.command({ type: 'show', id: 2, ref: 'desktop-34', on: false });
+    await waitFor(() => second.session('desktop-34')?.hold ?? undefined);
+    await sleep(50);
+    expect(second.session('desktop-34')?.hold).toEqual({ on: true, by: 'person' });
+    // An agent sets it after the window did: the last window closing leaves it as the agent set it.
+    expect((await runs.agent.call('run_follow', { run: 'desktop-34', wait: 0, hold: true })).isError).toBeFalsy();
+    await waitFor(() => second.session('desktop-34')?.hold?.by === 'agent');
+    first.close();
+    second.close();
+    const watcher = await openWindow();
+    await waitFor(() => watcher.session('desktop-34')?.hold ?? undefined);
+    expect(watcher.session('desktop-34')?.hold).toEqual({ on: true, by: 'agent' });
+    worker.socket.destroy();
+    watcher.close();
+  });
+
+  it('waits in a run whose Hold failures Piwi Picker turned on, not because a Runs window follows the runs', async () => {
     const picker = await paired();
     picker.send({ type: 'subscribe', id: 1 });
     picker.send({ type: 'follow', id: 2, on: true });
     await picker.answer(2);
+    // Followed, the run's Hold failures still off: its failure goes on at once.
     const worker = new Worker(folder).attach('desktop-6');
     worker.begin();
+    await waitFor(() => picker.session('desktop-6')?.hold?.on === false);
     worker.stop(1, 'failure');
-    await waitFor(() => picker.session('desktop-6')?.workers[0]?.stop?.reason === 'failure');
-    picker.socket.close();
     expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+    picker.send({ type: 'hold', id: 3, ref: 'desktop-6', on: true });
+    expect(await picker.answer(3)).toMatchObject({ ok: true });
+    await waitFor(() => picker.session('desktop-6')?.hold?.on === true);
+    expect(picker.session('desktop-6')?.hold).toEqual({ on: true, by: 'person' });
+    worker.send({ type: 'running', stop: 1 });
+    worker.stop(2, 'failure');
+    await waitFor(() => picker.session('desktop-6')?.workers[0]?.stop?.reason === 'failure');
+    // Its last surface gone, nobody can answer it: it goes on.
+    picker.socket.close();
+    expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
     worker.socket.destroy();
   });
 });
@@ -657,6 +878,52 @@ describe('the window', () => {
     });
     window.close();
     expect(await window.command({ type: 'subscribe', id: 5 })).toBeNull();
+  });
+
+  it('asks the person as a teammate asks to watch a run, and sends Not now back through the run', async () => {
+    const window = await openWindow();
+    const main = net.connect(channel.path);
+    main.setEncoding('utf8');
+    const heard: string[] = [];
+    main.on(
+      'data',
+      lineReader(
+        (line) => heard.push(line),
+        () => main.destroy(),
+      ),
+    );
+    const say = (message: Record<string, unknown>) => main.write(`${JSON.stringify(message)}\n`);
+    say({
+      type: 'run-begin',
+      token: channel.token,
+      ref: 'desktop-31',
+      cwd: folder,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 1,
+      workers: 1,
+      shard: null,
+    });
+    say({ type: 'run-ask', id: 'a1', by: 'Dana' });
+    expect(await waitFor(() => window.events.find((e) => e.type === 'ask-to-watch'))).toEqual({
+      type: 'ask-to-watch',
+      ref: 'desktop-31',
+      id: 'a1',
+      by: 'Dana',
+      run: null,
+    });
+    expect(await window.command({ type: 'answer-ask', id: 6, ref: 'desktop-31', ask: 'a1' })).toMatchObject({
+      ok: true,
+    });
+    expect(await waitFor(() => heard.map((line) => JSON.parse(line)).find((m) => m.type === 'ask-answer'))).toEqual({
+      type: 'ask-answer',
+      id: 'a1',
+      answer: 'not-now',
+    });
+    expect(await window.command({ type: 'answer-ask', id: 7, ref: 'a b', ask: 'a1' })).toMatchObject({ ok: false });
+    main.destroy();
+    window.close();
   });
 
   it('watches a stop’s live view and plays its input there alone, picking on its image', async () => {
@@ -815,6 +1082,230 @@ describe('the window', () => {
     expect(worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane')).toBe(false);
     window.close();
     worker.socket.destroy();
+  });
+});
+
+describe('the trace so far of a desktop run', () => {
+  it('opens from the linked folder’s Playwright as the window or Piwi Picker asks, its path in no message', async () => {
+    const ref = 'desktop-trace-1';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).toMatchObject({ traces: true });
+    const traces = path.join(folder, 'test-results', '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 'id-pays.trace');
+    fs.writeFileSync(file, '{"type":"context-options"}\n');
+    const there = { ok: true, message: "The attempt's trace grows there.", file };
+    // The tray's Open the trace so far: the window's command reaches the viewer, run from the linked folder.
+    const asked = window.command({ type: 'openTrace', id: 7, ref, lane: 0 });
+    await worker.answer('trace', there);
+    expect(await asked).toEqual({
+      type: 'answer',
+      id: 7,
+      ok: true,
+      message: "Playwright's trace viewer opened on the trace so far.",
+    });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(traces, 'id-pays.json') }]);
+    // Piwi Picker's, while that viewer is open: one viewer for the attempt.
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.arrayContaining(['trace']),
+    });
+    picker.send({ type: 'openTrace', id: 8, ref, lane: 0 });
+    await worker.answer('trace', there, 1);
+    expect(await picker.answer(8)).toEqual({
+      type: 'answer',
+      id: 8,
+      ok: false,
+      message:
+        "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+    });
+    expect(traceLaunches).toHaveLength(1);
+    for (const said of [...window.events, ...picker.messages].map((m) => JSON.stringify(m))) {
+      expect(said).not.toContain(traces);
+      expect(said).not.toContain('.playwright-artifacts');
+    }
+    traceClosers.splice(0).forEach((close) => close());
+    picker.socket.close();
+    window.close();
+    worker.socket.destroy();
+  });
+
+  it('opens a trace only from the linked folder, whatever folder a worker names, and none of a run outside it', async () => {
+    const ref = 'desktop-trace-2';
+    traceLaunches.splice(0);
+    const first = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    first.begin();
+    // A second worker of the run names the worktree as the folder it runs in.
+    const second = new Worker(worktree).attach(ref, channel.token, 1, [], ['view-lane', 'trace']);
+    second.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers.find((w) => w.parallelIndex === 1)?.test);
+    const theirs = path.join(worktree, 'test-results', '.playwright-artifacts-1', 'traces');
+    const ours = path.join(folder, 'test-results', '.playwright-artifacts-1', 'traces');
+    for (const traces of [theirs, ours]) {
+      fs.mkdirSync(traces, { recursive: true });
+      fs.writeFileSync(path.join(traces, 'id-pays.trace'), '{"type":"context-options"}\n');
+    }
+    const answer = (traces: string) => ({
+      ok: true,
+      message: "The attempt's trace grows there.",
+      file: path.join(traces, 'id-pays.trace'),
+    });
+    const outside = window.command({ type: 'openTrace', id: 9, ref, lane: 1 });
+    await second.answer('trace', answer(theirs));
+    expect(await outside).toEqual({
+      type: 'answer',
+      id: 9,
+      ok: false,
+      message: 'The worker named a trace outside the folder the run runs in.',
+    });
+    const inside = window.command({ type: 'openTrace', id: 10, ref, lane: 1 });
+    await second.answer('trace', answer(ours), 1);
+    expect(await inside).toMatchObject({ id: 10, ok: true });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(ours, 'id-pays.json') }]);
+    traceClosers.splice(0).forEach((close) => close());
+    // A run in the worktree, which no project links: no trace is offered, nor opened, nor its worker asked.
+    const repro = new Worker(worktree).attach('desktop-trace-3', channel.token, 0, [], ['view-lane', 'trace']);
+    repro.begin();
+    await waitFor(() => window.session('desktop-trace-3')?.workers[0]?.test);
+    expect(window.session('desktop-trace-3')!.workers[0]).not.toHaveProperty('traces');
+    expect(await window.command({ type: 'openTrace', id: 11, ref: 'desktop-trace-3', lane: 0 })).toEqual({
+      type: 'answer',
+      id: 11,
+      ok: false,
+      message: "This run's folder is not known here: open its trace from the editor or the app that started it.",
+    });
+    expect(repro.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    window.close();
+    for (const worker of [first, second, repro]) worker.socket.destroy();
+  });
+
+  it('offers and opens no trace on a machine without a display, nor asks the worker', async () => {
+    machine.display = false;
+    onTestFinished(() => {
+      machine.display = true;
+    });
+    const ref = 'desktop-trace-4';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).not.toHaveProperty('traces');
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.not.arrayContaining(['trace']),
+    });
+    const noDisplay = "This machine has no display for Playwright's trace viewer.";
+    expect(await window.command({ type: 'openTrace', id: 12, ref, lane: 0 })).toEqual({
+      type: 'answer',
+      id: 12,
+      ok: false,
+      message: noDisplay,
+    });
+    picker.send({ type: 'openTrace', id: 13, ref, lane: 0 });
+    expect(await picker.answer(13)).toMatchObject({ ok: false, message: noDisplay });
+    expect(worker.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    picker.socket.close();
+    window.close();
+    worker.socket.destroy();
+  });
+
+  it('is read for the window’s Inspect from the lane’s checked trace, its path in no message, until the window closes', async () => {
+    const ref = 'desktop-trace-5';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    const traces = path.join(folder, 'test-results', '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 'id-pays.trace');
+    const page = ['HTML', {}, ['BODY', {}, 'Cart']];
+    fs.writeFileSync(
+      file,
+      `${JSON.stringify({ type: 'before', callId: 'c@1', method: 'goto', params: {} })}\n${JSON.stringify({
+        type: 'frame-snapshot',
+        snapshot: {
+          callId: 'c@1',
+          phase: 'after',
+          pageId: 'page@1',
+          frameId: 'frame@1',
+          html: page,
+          isMainFrame: true,
+        },
+      })}\n`,
+    );
+    // A command that does not name a lane, or names no run, is refused.
+    expect(await window.command({ type: 'inspect', id: 20, ref, on: true })).toMatchObject({ ok: false });
+    expect(await window.command({ type: 'inspect', id: 21, ref: 'a b', lane: 0, on: true })).toMatchObject({
+      ok: false,
+    });
+    expect(await window.command({ type: 'inspect', id: 22, ref, lane: 0, on: true })).toMatchObject({ ok: true });
+    await worker.answer('trace', { ok: true, message: "The attempt's trace grows there.", file });
+    const kept = await waitFor(() =>
+      window.events.find(
+        (e): e is Extract<DesktopRunEvent, { type: 'inspect' }> =>
+          e.type === 'inspect' && 'snapshot' in e && !!e.snapshot,
+      ),
+    );
+    expect(kept).toMatchObject({
+      ref,
+      lane: 0,
+      attempt: 'id-pays#0',
+      snapshot: { call: 'c@1', phase: 'after', title: 'goto' },
+    });
+    const rendered = await runs.inspects.page(window.viewer, ref, 0, 'c@1', 'after');
+    expect('html' in rendered && rendered.html).toContain('Cart');
+    for (const said of window.events.map((m) => JSON.stringify(m))) {
+      expect(said).not.toContain(traces);
+      expect(said).not.toContain('.playwright-artifacts');
+    }
+    // The window closes: its Inspect goes with it.
+    window.close();
+    expect(runs.inspects.calls(window.viewer, ref, 0)).toBeNull();
+    worker.socket.destroy();
+  });
+
+  it('starts the viewer with none of the server’s own settings and secrets', async () => {
+    // The launcher the server wires, on a linked folder whose stand-in Playwright writes the environment it got.
+    const linked = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-viewer-')));
+    onTestFinished(() => fs.rmSync(linked, { recursive: true, force: true }));
+    const pkg = path.join(linked, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1' }));
+    fs.writeFileSync(
+      path.join(pkg, 'cli.js'),
+      "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'env.json'), JSON.stringify(process.env));\n" +
+        'setTimeout(() => {}, 600);\n',
+    );
+    const server: Record<string, string> = {
+      PIWI_SECRET_KEY: 'secret-key',
+      PIWI_DESKTOP_TOKEN: TOKEN,
+      PIWI_DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      PIWI_STORAGE_S3_SECRET_ACCESS_KEY: 'storage-secret',
+      DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      NODE_OPTIONS: '--no-warnings',
+      NODE_COMPILE_CACHE: path.join(linked, 'cache'),
+      NODE_ENV: 'production',
+    };
+    const before = { ...process.env };
+    Object.assign(process.env, server);
+    try {
+      const started = await startTraceViewer({ folder: linked, trace: path.join(linked, 'x.json') }, 300);
+      expect(started.ok).toBe(true);
+      if (started.ok) await started.closed;
+    } finally {
+      for (const name of Object.keys(server)) {
+        if (before[name] === undefined) delete process.env[name];
+        else process.env[name] = before[name];
+      }
+    }
+    const env = JSON.parse(fs.readFileSync(path.join(pkg, 'env.json'), 'utf8')) as Record<string, string>;
+    for (const name of Object.keys(server)) expect(env, name).not.toHaveProperty(name);
+    expect(Object.keys(env).filter((name) => /^(PIWI_|NODE_)/i.test(name))).toEqual([]);
+    expect(env).toMatchObject({ PATH: process.env.PATH, FORCE_COLOR: '0' });
   });
 });
 
@@ -1004,6 +1495,28 @@ describe('the code from a stop of a desktop run', () => {
       fs.rmSync(link);
     }
   });
+
+  it('names a run by its own folder as the linked folder holding it spells it', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-linked-'));
+    onTestFinished(() => fs.rmSync(base, { recursive: true, force: true }));
+    const shop = path.join(base, 'shop');
+    const e2e = path.join(shop, 'e2e');
+    fs.mkdirSync(e2e, { recursive: true });
+    const links = [
+      { id: 1, path: shop },
+      { id: 2, path: path.join(base, 'other') },
+    ];
+    expect(linkHolding(links, e2e)).toBe(shop);
+    expect(linkedSpelling(links, e2e)).toBe(e2e);
+    expect(linkedSpelling(links, shop)).toBe(shop);
+    expect(linkedSpelling(links, base)).toBeNull();
+    // A folder linked through a link of its own: the run's folder in the link's spelling.
+    if (process.platform !== 'win32') {
+      const spelled = path.join(base, 'shop-link');
+      fs.symlinkSync(shop, spelled);
+      expect(linkedSpelling([{ id: 3, path: spelled }], e2e)).toBe(path.join(spelled, 'e2e'));
+    }
+  });
 });
 
 describe("the agents' tools for the desktop app's runs", () => {
@@ -1157,6 +1670,74 @@ describe("the agents' tools for the desktop app's runs", () => {
     window.close();
   });
 
+  it('start a spec of a linked folder in the window as a person’s run, labeled with the agent, and none without a window', async () => {
+    expect((await call('run_start', { file: 'tests/checkout.spec.ts', agent: 'Claude Code' })).piwi).toEqual({
+      ok: false,
+      message: "No window of the desktop app is open: open the app's window, then start the run again.",
+    });
+    const heard: DesktopAgentRun[] = [];
+    const stop = subscribeAgentRuns((run) => {
+      heard.push(run);
+      expect(answerAgentRun({ id: run.id, ref: 'desktop-61' })).toBe(true);
+    });
+    try {
+      const started = await call('run_start', { file: 'tests/checkout.spec.ts', line: 4, agent: 'Claude Code' });
+      expect(started.piwi).toEqual({
+        ok: true,
+        message:
+          'tests/checkout.spec.ts:3 started in the desktop app\'s window, as "Started by Claude Code". Follow it with run_follow.',
+        run: 'desktop-61',
+      });
+      expect(heard).toEqual([
+        {
+          id: expect.stringMatching(/^[0-9a-f]{32}$/),
+          projectId: 3,
+          file: 'tests/checkout.spec.ts',
+          line: 3,
+          headed: false,
+          hold: true,
+          title: 'Started by Claude Code',
+        },
+      ]);
+      // An answer comes once: a second, or one for a run never asked, is not taken.
+      expect(answerAgentRun({ id: heard[0]!.id, ref: 'desktop-62' })).toBe(false);
+      // Listed from its start, before its workers connect.
+      const listed = await call('run_list');
+      expect(listed.piwi.runs).toContainEqual(expect.objectContaining({ run: 'desktop-61', starting: true }));
+      // A spec outside the linked folders is refused before the window hears of it.
+      const outside = await call('run_start', { file: path.join(worktree, 'tests', 'checkout.spec.ts') });
+      expect(outside.piwi.message).toBe(
+        `${path.join(worktree, 'tests', 'checkout.spec.ts')} is in no folder linked to a project: the desktop app runs the specs of its linked folders alone.`,
+      );
+      expect(heard).toHaveLength(1);
+    } finally {
+      stop();
+    }
+    // The window that does not answer, and one that refuses, are said.
+    const quiet = subscribeAgentRuns(() => {});
+    const start = { projectId: 3, file: 'tests/checkout.spec.ts', line: null, headed: false, hold: true, title: 'x' };
+    expect(await askWindowToStart(start, 20)).toEqual({
+      refused: "The desktop app's window did not start the run: open its main window, then start the run again.",
+    });
+    quiet();
+    const refusing = subscribeAgentRuns((run) => answerAgentRun({ id: run.id, error: 'The project has no folder.' }));
+    expect(await askWindowToStart(start, 1000)).toEqual({ refused: 'The project has no folder.' });
+    refusing();
+    // A run still waiting is sent again to a window that connects; once answered, or past the wait, it is not, and a
+    // late answer is not taken.
+    const sent: DesktopAgentRun[] = [];
+    const late = subscribeAgentRuns((run) => sent.push(run));
+    const waited = askWindowToStart(start, 1000);
+    expect(waitingAgentRuns()).toEqual(sent);
+    expect(answerAgentRun({ id: sent[0]!.id, ref: 'desktop-63' })).toBe(true);
+    expect(await waited).toEqual({ ref: 'desktop-63' });
+    expect(waitingAgentRuns()).toEqual([]);
+    await askWindowToStart(start, 20);
+    expect(waitingAgentRuns()).toEqual([]);
+    expect(answerAgentRun({ id: sent[1]!.id, ref: 'desktop-64' })).toBe(false);
+    late();
+  });
+
   it('pause a run only while a window can show its stop, which goes on once the agent calls no more', async () => {
     const ref = 'desktop-33';
     const worker = new Worker(folder).attach(ref, channel.token, 0, ['agent', 'events', 'end']);
@@ -1169,6 +1750,10 @@ describe("the agents' tools for the desktop app's runs", () => {
     expect(refused.isError).toBe(true);
     expect(refused.piwi.message).toMatch(/^No window of the desktop app is open/);
     expect(worker.heard.some((m) => m.type === 'control')).toBe(false);
+    // Its failures held, the agent hears that one goes on all the same while no window can show it.
+    const held = await call('run_follow', { run: ref, wait: 0, hold: true });
+    expect(held.piwi.hold).toMatch(/until someone answers it\. No window of the desktop app is open/);
+    await call('run_follow', { run: ref, wait: 0, hold: false });
 
     // With the window open (hidden in the tray, say), the agent's stop holds, then goes on once it calls no more.
     const shown = await openWindow();
@@ -1206,6 +1791,8 @@ describe('the routes', () => {
       ['GET', '/api/desktop/runs/events'],
       ['POST', '/api/desktop/runs/commands'],
       ['POST', '/api/desktop/runs/picks'],
+      ['GET', '/api/desktop/runs/inspect/calls'],
+      ['GET', '/api/desktop/runs/inspect/page'],
     ] as const) {
       expect(isOpenDesktopRoute(route[0], route[1])).toBe(false);
     }

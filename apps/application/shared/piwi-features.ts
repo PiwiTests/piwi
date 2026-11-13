@@ -150,12 +150,52 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Run video',
+        summary:
+          'Play the videos of a finished run one test after another, grouped by worker or file, with a checklist.',
+        needs: [],
+        where: 'Test run → Video',
+        doc: 'features/run-video',
+      },
+      {
+        title: 'Watch a run',
+        summary:
+          'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
+        needs: [],
+        where: 'Test run page, editor status bars, Runs window, desktop app, terminal',
+        doc: 'features/watch-a-run',
+      },
+      {
         title: 'Live view of a run',
         summary:
           'Watch the page each worker of a running CI run, or of a run a developer shares (Share live), is on, beside its step: a few images a second, only while someone watches, to who may open the run, never stored.',
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch; Project → Settings → Live view',
         doc: 'features/live-view',
+      },
+      {
+        title: 'Watch all workers',
+        summary:
+          'Every worker of a running CI or shared run as a tile on its run page, an image a second each; a click shows one in full, and Follow what needs attention moves to the worker whose test failed, got stuck or stopped, saying why.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch all',
+        doc: 'features/watch-all',
+      },
+      {
+        title: 'Page events, text and filmstrip',
+        summary:
+          'Under a worker’s live view: its page’s console errors, failed and slow requests with what the backend logged of them, its text as roles and names to search, and a filmstrip of its calls, masked in the worker and never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch → Page events, Page text',
+        doc: 'features/live-view-layers',
+      },
+      {
+        title: "Inspect a running test's page",
+        summary:
+          'In a worker’s live view, the page at each call of its running test as a document, before it, at its action and after it, rendered without its scripts, with the locator picker on it: sent only while open, its secret fields removed in the worker, never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch → Inspect',
+        doc: 'features/live-inspect',
       },
       {
         title: 'Share a run live',
@@ -332,6 +372,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-issues',
       },
       {
+        title: 'Results in Zephyr Scale',
+        summary:
+          'A finished CI run of the whole suite written to Zephyr Scale Cloud as one test run, one result per test case key, with a dry run first and a link back to the run.',
+        needs: ['admin'],
+        where: 'Project → Settings → Test management; run page',
+        doc: 'features/test-management',
+      },
+      {
         title: 'Issue automation',
         summary:
           'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',
@@ -378,6 +426,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'CLI (`piwi run impact`); MCP get_impacted_tests',
         doc: 'features/change-impact',
+      },
+      {
+        title: 'Reuse forecast',
+        summary:
+          'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',
+        needs: ['fixtures'],
+        where: 'Project → Selections; MCP get_reuse_forecast',
+        doc: 'features/reuse-forecast',
       },
       {
         title: 'AI steps',
@@ -664,12 +720,28 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop-runs',
       },
       {
+        title: 'Local runs tray',
+        summary:
+          "Every run the desktop app starts, counted as its own process counts its tests, a failed run's end leading to its first failure, one line a run in the compact list, and all of it kept through a reload.",
+        needs: ['desktop'],
+        where: 'Desktop app → Local runs',
+        doc: 'features/local-runs-tray',
+      },
+      {
         title: 'Run on my machine',
         summary:
-          'Ask the desktop app on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
-        needs: ['desktop', 'admin'],
+          'Ask the desktop app or Piwi Runner on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
+        needs: ['admin'],
         where: 'Settings → Capabilities; Settings → Account → Connected apps',
         doc: 'features/run-on-my-machine',
+      },
+      {
+        title: 'Piwi Runner',
+        summary:
+          'A small app that takes Run on my machine requests without the dashboard: it asks before every run, runs it in your folder and stays in the tray.',
+        needs: ['admin'],
+        where: 'Piwi Runner',
+        doc: 'features/piwi-runner',
       },
       {
         title: 'Browser extension',
@@ -765,7 +837,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/test-functions',
       },
       {
-        title: 'Open in IDE',
+        title: 'Open in editor',
         summary: 'Every source path in the dashboard jumps to that file and line in VS Code or JetBrains.',
         needs: [],
         where: 'any source path',

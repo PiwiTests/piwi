@@ -22,6 +22,9 @@ import {
 import { planRequestedRun, type RequestPlan } from './request-run';
 import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from './run-target-view';
 
+/** How long `useKeptKey` waits for the ends the shell hands it to be reported. */
+const ENDED_REPORT_WITHIN_MS = 10_000;
+
 /** How long a claimed request waits for the person's answer, as the instance counts it. */
 const ANSWER_WITHIN_MS = 10 * 60 * 1000;
 
@@ -43,11 +46,17 @@ interface HeldRequest {
   expiry: ReturnType<typeof setTimeout> | null;
 }
 
-/** What the shell hears on its notification stream: stop the run a request started. */
-export interface ShellRunTargetCommand {
-  type: 'requested-run-stop';
-  requestId: string;
+/** How a requested run the shell holds ended, before this server took it. */
+export interface EndedRun {
+  id: string;
+  code: number | null;
+  stopped: boolean;
 }
+
+/** What the shell hears on its notification stream: stop the run a request started, or forget a revoked key. */
+export type ShellRunTargetCommand =
+  | { type: 'requested-run-stop'; requestId: string }
+  | { type: 'key-revoked'; instance: string };
 
 interface DeviceFlow {
   deviceCode: string;
@@ -71,6 +80,12 @@ const state: {
   /** The requests being claimed and checked, and the stops heard for them meanwhile. */
   claiming: Set<string>;
   stoppedWhileClaiming: Set<string>;
+  /** The requests whose run the shell started for a server before this one, and still holds. */
+  adopted: Set<string>;
+  /** The folders the shell's local runs are going in, requested runs among them. */
+  localRuns: string[];
+  /** The names the instance gave for its projects, by id. */
+  projectNames: Map<number, string>;
 } = {
   instance: null,
   key: null,
@@ -84,6 +99,9 @@ const state: {
   held: new Map(),
   claiming: new Set(),
   stoppedWhileClaiming: new Set(),
+  adopted: new Set(),
+  localRuns: [],
+  projectNames: new Map(),
 };
 
 const windowListeners = new Set<(message: RunTargetMessage) => void>();
@@ -119,6 +137,7 @@ export function runTargetConnection(): RunTargetConnectionView {
     error: state.error,
     keyToKeep: state.keyToKeep,
     linkedProjectIds: [...state.links.keys()].sort((a, b) => a - b),
+    projectNames: Object.fromEntries(state.projectNames),
   };
 }
 
@@ -137,6 +156,7 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
     id: request.id,
     instance: state.instance ?? '',
     projectId: request.projectId,
+    projectName: state.projectNames.get(request.projectId) ?? null,
     tests: request.tests,
     options: request.options,
     source: request.source,
@@ -172,6 +192,14 @@ export function linksOf(value: unknown): Map<number, string> | null {
     links.set(projectId, folder);
   }
   return links.size <= 200 ? links : null;
+}
+
+/** The folders the shell's local runs are going in: at most 200 paths. */
+export function localRunsOf(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 200) return null;
+  return value.every((folder) => typeof folder === 'string' && folder && folder.length <= 4096)
+    ? (value as string[])
+    : null;
 }
 
 let appVersion = '0.0.0';
@@ -212,6 +240,7 @@ function drop(id: string, reason: 'answered' | 'expired' | 'stopped'): void {
   if (held.expiry) clearTimeout(held.expiry);
   state.held.delete(id);
   tellWindow({ type: 'run-request-gone', id, reason });
+  if (held.approved) void planWaiting();
 }
 
 /** Drop a held request `afterMs` from now unless its run started by then. */
@@ -225,6 +254,7 @@ function expireLater(id: string, held: HeldRequest, afterMs: number): void {
 
 function startHost(instance: string, key: string): void {
   stopHost();
+  if (state.instance !== instance) state.projectNames.clear();
   state.instance = instance;
   state.key = key;
   state.error = null;
@@ -236,6 +266,14 @@ function startHost(instance: string, key: string): void {
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
+    holds: (id) => state.held.has(id) || state.claiming.has(id) || state.adopted.has(id),
+    onProjectNames: (projects) => {
+      if (state.host !== host) return;
+      const changed = projects.some(({ id, name }) => state.projectNames.get(id) !== name);
+      for (const { id, name } of projects) state.projectNames.set(id, name);
+      if (changed) tellConnection();
+    },
+    onKeyRevoked: () => tellShell({ type: 'key-revoked', instance }),
     onStatus: (status, detail) => {
       state.status = status;
       if (status === 'revoked') {
@@ -265,7 +303,7 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
     if (state.host !== host) return;
     let plan: RequestPlan;
     try {
-      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null);
+      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null, foldersRunning());
     } catch (error) {
       await host
         .answer(request.id, {
@@ -308,7 +346,12 @@ async function takeStop(host: RequestHost, id: string): Promise<void> {
     return;
   }
   const held = state.held.get(id);
-  if (!held) return;
+  if (!held) {
+    if (!state.adopted.has(id)) return;
+    tellShell({ type: 'requested-run-stop', requestId: id });
+    await host.report(id, { state: 'stopping', detail: 'Stopped from the dashboard' }).catch(() => {});
+    return;
+  }
   held.stopRequested = true;
   if (held.launched) {
     tellShell({ type: 'requested-run-stop', requestId: id });
@@ -323,16 +366,52 @@ async function takeStop(host: RequestHost, id: string): Promise<void> {
   drop(id, 'stopped');
 }
 
-/** Use the key the shell kept, with the folders it links: after each start, and when they change. */
-export function useKeptKey(instance: string, key: string, links: Map<number, string>): void {
+/**
+ * Use the key the shell kept, with the folders it links, the requests whose run it still holds (`running`), the runs
+ * that ended before a server took their end (`ended`) and the folders its local runs are going in (`localRuns`):
+ * after each start, and when they change. Answers the ids of `ended` reported with their outcome within
+ * `ENDED_REPORT_WITHIN_MS`, which the shell forgets; it hands the others again.
+ */
+export async function useKeptKey(
+  instance: string,
+  key: string,
+  links: Map<number, string>,
+  running: readonly string[] = [],
+  shell: { localRuns?: readonly string[]; ended?: readonly EndedRun[] } = {},
+): Promise<string[]> {
+  const ended = shell.ended ?? [];
   state.links = links;
   state.keyToKeep = false;
+  state.adopted = new Set([...running, ...ended.map((run) => run.id)].filter((id) => !state.held.has(id)));
+  if (shell.localRuns) useLocalRuns(shell.localRuns);
   if (state.instance === instance && state.key === key && state.host) {
     void state.host.describe().catch(() => {});
     tellConnection();
-    return;
-  }
-  startHost(instance, key);
+  } else startHost(instance, key);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), ENDED_REPORT_WITHIN_MS)));
+  const told = await Promise.all(
+    ended.map((run) => Promise.race([requestedRunEnded(run.id, run.code, run.stopped), late])),
+  );
+  clearTimeout(timer);
+  return ended.filter((_, i) => told[i]).map((run) => run.id);
+}
+
+/** The folders the shell's local runs are going in changed: a request waiting for one of them is checked again. */
+export function useLocalRuns(folders: readonly string[]): void {
+  const changed = folders.length !== state.localRuns.length || folders.some((f, i) => f !== state.localRuns[i]);
+  state.localRuns = [...folders];
+  if (changed) void planWaiting();
+}
+
+/** The folders the shell links now, each with the id of the instance's project it is linked to. */
+export function linkedFolders(): { id: number; path: string }[] {
+  return [...state.links].map(([id, folder]) => ({ id, path: folder }));
+}
+
+/** The name the instance gave its project `id`; null while it gave none. */
+export function projectNameOf(id: number): string | null {
+  return state.projectNames.get(id) ?? null;
 }
 
 /** The folders the shell links changed. */
@@ -353,6 +432,9 @@ export function disconnectRunTarget(): void {
   state.flowTimer = null;
   state.flow = null;
   stopHost();
+  state.adopted.clear();
+  state.localRuns = [];
+  state.projectNames.clear();
   state.instance = null;
   state.key = null;
   state.keyToKeep = false;
@@ -440,16 +522,65 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
   state.flowTimer.unref?.();
 }
 
+/**
+ * The folders a run is going in: those the requests held, other than `except`, run in once **Run** approved them,
+ * and those of the shell's local runs.
+ */
+function foldersRunning(except?: HeldRequest): string[] {
+  return [
+    ...[...state.held.values()].filter((held) => held !== except && held.approved).map((held) => held.approved!.folder),
+    ...state.localRuns,
+  ];
+}
+
+/** Whether `held` is still held as `id` and waits for the person's answer: not being answered, nor run. */
+function unanswered(id: string, held: HeldRequest | undefined): held is HeldRequest {
+  return !!held && state.held.get(id) === held && !held.answering && !held.token && !held.launched;
+}
+
 /** Check a held request again, after the person linked its folder. */
 export async function planAgain(id: string): Promise<RunRequestPromptView | null> {
   const held = state.held.get(id);
-  const unanswered = () => !!held && state.held.get(id) === held && !held.answering && !held.token && !held.launched;
-  if (!held || !unanswered()) return null;
-  const plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
+  if (!unanswered(id, held)) return null;
+  const plan = await planRequestedRun(
+    held.request,
+    state.links.get(held.request.projectId) ?? null,
+    foldersRunning(held),
+  );
   // Answered or gone while it was planned: the window shows it no more.
-  if (!unanswered()) return null;
+  if (!unanswered(id, held)) return null;
   held.plan = plan;
   return promptOf(held);
+}
+
+/** Which call of `planWaiting` is the latest: an earlier one that ends after it changes nothing. */
+let planning = 0;
+
+/**
+ * Check every request still asked about again, once a folder took a run or freed up, and show the window each one
+ * whose checks or command changed.
+ */
+async function planWaiting(): Promise<void> {
+  const turn = ++planning;
+  const waiting = [...state.held].filter(([id, held]) => unanswered(id, held));
+  const plans = await Promise.all(
+    waiting.map(([, held]) =>
+      planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null, foldersRunning(held)).catch(
+        () => null,
+      ),
+    ),
+  );
+  if (turn !== planning) return;
+  waiting.forEach(([id, held], i) => {
+    const plan = plans[i];
+    if (!plan || !unanswered(id, held) || samePlan(held.plan, plan)) return;
+    held.plan = plan;
+    tellWindow({ type: 'run-request', request: promptOf(held) });
+  });
+}
+
+function samePlan(a: RequestPlan, b: RequestPlan): boolean {
+  return a.runnable === b.runnable && a.display === b.display && JSON.stringify(a.checks) === JSON.stringify(b.checks);
 }
 
 /** Whether a value is a request id, as the routes take it. */
@@ -475,7 +606,7 @@ export async function answerRunRequest(
   try {
     if (decision === 'run') {
       const folder = state.links.get(held.request.projectId) ?? null;
-      held.plan = await planRequestedRun(held.request, folder);
+      held.plan = await planRequestedRun(held.request, folder, foldersRunning(held));
       // The folder changed since the window showed it: it shows the checks and the command again.
       if (!folder || !held.plan.runnable || held.plan.args.length === 0 || held.plan.display !== shownCommand) {
         tellWindow({ type: 'run-request', request: promptOf(held) });
@@ -500,6 +631,7 @@ export async function answerRunRequest(
       // A token the window never hands the shell (the window closed) is dropped once it can start nothing.
       expireLater(id, held, REQUEST_TOKEN_LIFETIME_MS);
       tellWindow({ type: 'run-request-gone', id, reason: 'answered' });
+      void planWaiting();
       return { ok: true, launch: true };
     }
     const failed = held.plan.checks.filter((c) => c.level === 'fail').map((c) => c.message);
@@ -540,7 +672,7 @@ export function launchOf(
 /** The shell started the run of a request. */
 export async function requestedRunStarted(id: string): Promise<void> {
   const held = state.held.get(id);
-  if (!held?.launched || !state.host) return;
+  if (!(held?.launched || state.adopted.has(id)) || !state.host) return;
   await state.host.report(id, { state: 'running' }).catch(() => {});
 }
 
@@ -555,25 +687,40 @@ export function outcomeOf(code: number | null, stopRequested: boolean): RunReque
   return 'error';
 }
 
+/** The adopted requests whose end is being reported now, still held until it is. */
+const reportingEnd = new Set<string>();
+
 /**
  * The shell's run of a request ended with `code` (null when it was killed); `stopped` when a stop was asked for it,
- * from the dashboard or the window.
+ * from the dashboard or the window. Answers whether this server knew the request: false for one it never ran nor
+ * adopted, whose end the shell keeps for the next start (`useKeptKey`'s `ended`).
  */
-export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<void> {
+export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<boolean> {
   const held = state.held.get(id);
-  if (!held?.launched) return;
-  state.held.delete(id);
-  const outcome = outcomeOf(code, held.stopRequested || stopped);
+  if (reportingEnd.has(id)) return true;
+  if (!held?.launched && !state.adopted.has(id)) return false;
+  if (held?.launched) {
+    state.held.delete(id);
+    void planWaiting();
+  } else reportingEnd.add(id);
+  const outcome = outcomeOf(code, !!held?.stopRequested || stopped);
   const detail = outcome === 'error' ? `Playwright exited with ${code ?? 'no code'}` : undefined;
-  await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
+  try {
+    await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
+  } finally {
+    // Held until reported, so a server that started again does not end it as lost meanwhile.
+    if (reportingEnd.delete(id)) state.adopted.delete(id);
+  }
+  return true;
 }
 
 /** The run of a request the shell could not start. */
 export async function requestedRunFailed(id: string, detail: string): Promise<void> {
   const held = state.held.get(id);
-  if (!held) return;
-  if (held.expiry) clearTimeout(held.expiry);
+  if (!held && !state.adopted.delete(id)) return;
+  if (held?.expiry) clearTimeout(held.expiry);
   state.held.delete(id);
+  if (held?.approved) void planWaiting();
   await state.host?.report(id, { state: 'ended', outcome: 'error', detail: detail.slice(0, 500) }).catch(() => {});
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/editor",
-  "version": "0.67.0",
+  "version": "0.69.0",
   "description": "The Piwi editor service: a language server that shows a suite's history and the locators a change breaks in VS Code and the JetBrains IDEs",
   "private": true,
   "license": "FSL-1.1-MIT",
@@ -20,6 +20,10 @@
     "./run-target-stream": "./src/run-target-stream.ts",
     "./desktop-page": "./src/desktop-page.ts",
     "./run-target-view": "./src/run-target-view.ts",
+    "./shell-runs": "./src/shell-runs.ts",
+    "./shell-runs-routes": "./src/shell-runs-routes.ts",
+    "./shell-run-events": "./src/shell-run-events.ts",
+    "./shell-runs-http": "./src/shell-runs-http.ts",
     "./mcp-protocol": "./src/mcp-protocol.ts",
     "./server": "./dist/piwi-language-server.cjs"
   },

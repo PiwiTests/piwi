@@ -1,7 +1,7 @@
 [package]
 name = "piwi-desktop"
-version = "0.67.0" # x-release-please-version
-description = "Piwi Dashboard desktop app"
+version = "0.69.0" # x-release-please-version
+description = "Piwi Desktop app"
 authors = ["piwitests"]
 license = "FSL-1.1-MIT"
 repository = "https://github.com/PiwiTests/piwi"
@@ -25,6 +25,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
+# The start-on-login entry of the product's former name (`src/login_item.rs`); the plugin's own version.
+auto-launch = "0.6"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
@@ -33,7 +35,7 @@ tauri-plugin-window-state = "2"
 tauri-plugin-deep-link = "2"
 keepawake = "0.6"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 rand = "0.9"
 hmac = "0.12"
 sha2 = "0.10"
@@ -43,6 +45,8 @@ sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 semver = "1"
+# A folder's real path without Windows' `\\?\` verbatim prefix (`runner::real_path`). Already built for Tauri.
+dunce = "1"
 # Only compiled into e2e test builds (see the `e2e-testing` feature). Lets a
 # Playwright runner drive the real webview to smoke-test the shell integration.
 tauri-plugin-playwright = { version = "0.4", optional = true }

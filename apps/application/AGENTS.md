@@ -46,10 +46,18 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
 - **Code both this app and Piwi Runner's window use lives in the `@piwitests/run-ui` layer** (`packages/run-ui/`,
   extended in `nuxt.config.ts`): the team run request confirmation and connection (`DesktopTeamRunRequestModal`,
   `DesktopTeamInstance`, `useDesktopTeamRequests`, the `desktop-team-requests.client.ts` plugin), the host's event
-  stream (`subscribeDesktopEvents`), `CodeBlock`, `useCopy`, the Tauri bridge (`useTauri.ts`), `errorMessage`,
-  `copyPreview` and the syntax highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules
-  that a vitest file loads without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`,
-  `@piwitests/run-ui/text`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
+  stream (`subscribeDesktopEvents`), the live view of the runs the shell starts (`useDesktopRunHub`, the
+  `DesktopRun*` components, `@piwitests/run-ui/run-view`), `ErrorText`, `LocatorCode`, `CodeBlock`, `useCopy`, the
+  Tauri bridge (`useTauri.ts`), `errorMessage`, `copyPreview`, the status palette, the search fold and the syntax
+  highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules that a vitest file loads
+  without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`, `@piwitests/run-ui/text`,
+  `@piwitests/run-ui/status-palette`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
+- **What the Local runs tray shares with Piwi Picker's Runs window lives in `@piwitests/run-model`**
+  (`packages/run-model/`): what a stop takes, its place and error, a test's name, a worker's status and tab, its
+  controls, who is present, the tab shown, the live view's input, and their English words (`RUN_WORDS_EN`, which the
+  tray says through `desktopSay`). Import it by name (`@piwitests/run-model/stop`), never from `apps/extension`, and
+  never keep a copy in `app/`.
+  ([`packages/run-model/AGENTS.md`](../../packages/run-model/AGENTS.md))
 - **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
   or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
   there: `packages/core/tests/boundary.test.ts` fails on a dependency or on an import that is not relative (`node:`, a

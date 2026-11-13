@@ -65,6 +65,7 @@ defineExpose({ revealRawError });
               entity-type="failure_cluster"
               :entity-id="cluster.id"
               :links="cluster.links"
+              :declared-more="cluster.declaredIssuesMore"
               :readonly="!canEditLinks"
               @updated="emit('refresh')"
             />

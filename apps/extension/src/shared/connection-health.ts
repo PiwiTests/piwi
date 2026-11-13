@@ -117,7 +117,8 @@ export async function recordConnectionHealth(
 
 /**
  * Runs `request` to the instance at `instanceUrl` and records its outcome:
- * `ok` when it resolves, the outcome its error stands for when it throws. The
+ * `ok` when it resolves, the outcome its error stands for when it throws, and
+ * nothing for a request the extension aborted itself (`AbortError`). The
  * answer or the error is passed on unchanged.
  */
 export async function withConnectionHealth<T>(instanceUrl: string, request: () => Promise<T>): Promise<T> {
@@ -125,7 +126,9 @@ export async function withConnectionHealth<T>(instanceUrl: string, request: () =
   try {
     result = await request();
   } catch (error) {
-    await recordConnectionHealth(instanceUrl, healthOutcome(error));
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      await recordConnectionHealth(instanceUrl, healthOutcome(error));
+    }
     throw error;
   }
   await recordConnectionHealth(instanceUrl, 'ok');

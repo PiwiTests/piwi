@@ -15,7 +15,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Check a connection before saving it',
     description:
-      "Runs the provider's own check, with each step carrying a plain-language `hint` when it fails. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. For Jira: reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees.",
+      "Runs the provider's own check, with each step carrying a plain-language `hint` when it fails. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. For Zephyr Scale: signs in on the chosen region's host, never a typed one, and counts the projects the token sees. For Jira: reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees.",
     'x-required-permission': 'connections:manage',
   },
 });

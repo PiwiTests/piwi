@@ -13,6 +13,7 @@ export interface DemoExampleExpect {
   diagnosis?: 'with-patch' | 'none';
   fixLanded?: true;
   issue?: { key: string; status: string };
+  declaredMore?: number;
   lab?:
     | 'untested'
     | 'not-reproduced'

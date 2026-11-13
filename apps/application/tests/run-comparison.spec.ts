@@ -273,7 +273,10 @@ test.describe.serial('Changes tab without a passing run', () => {
     await page.goto(`/test-runs/${latest}?tab=changes`);
     await waitForHydration(page);
 
-    await expect(page.getByRole('link', { name: `Run #${firstFailed}` })).toBeVisible({ timeout: 15000 });
+    const baseline = page.locator('[data-shot="run-changes-baseline"]');
+    await expect(baseline.getByRole('link', { name: new RegExp(`Run #${firstFailed}\\b`) })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByText('No earlier full run passed; the last failed run on')).toBeVisible();
     await expect(page.getByText('Passed in the baseline, failing here')).toBeVisible();
     await expect(page.getByText('cart total')).toBeVisible();

@@ -47,6 +47,17 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-test-management-sync',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'How the run’s results went to the test management tool: the test run made there, what was sent, the keys left out, and Sync again.',
+    shownWhen: 'When the project is bound to a test management tool and the run ended and was eligible to send.',
+    help: 'run.testManagementSync',
+    doc: 'features/test-management',
+    sample: { route: '/test-runs/2', expect: { run: { id: 2, project: 'e2e-checkout' } } },
+  },
+  {
     id: 'run-retry-command',
     kind: 'action',
     pages: ['/test-runs/[id]'],
@@ -304,6 +315,17 @@ export const RUNS_ANCHORS = [
     help: 'run.timeline',
     doc: 'features/cpu-memory-disk',
     sample: { route: '/test-runs/63?tab=workers', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'run-video',
+    kind: 'tab',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ query: { tab: 'video' } }],
+    describes:
+      'The Video tab: the run’s recorded videos played one test after another, with a checklist of the tests that ticks as each ends.',
+    shownWhen: 'When the run has finished.',
+    doc: 'features/run-video',
+    sample: { route: '/test-runs/1?tab=video', expect: { run: { id: 1, project: 'e2e-checkout' } } },
   },
   {
     id: 'run-resources',

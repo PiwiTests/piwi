@@ -231,6 +231,15 @@
   "badge_replay": {
     "message": "REPR"
   },
+  "badge_runsPaused": {
+    "message": "II"
+  },
+  "badge_runsResumed": {
+    "message": "▶"
+  },
+  "badge_runsNone": {
+    "message": "–"
+  },
   "popup_settings": {
     "message": "Configuración"
   },
@@ -779,13 +788,13 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
+    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece en la página Configuración de la aplicación, en Conectar Piwi Picker. Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
+    "message": "Aparece en la página Configuración de la aplicación, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Vincular"
@@ -797,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "El token está en la página Configuración de la aplicación, en Conectar Piwi Picker, junto a su dirección."
+    "message": "El token está en la página Configuración de la aplicación, en «Pair with Piwi Picker», junto a su dirección."
   },
   "options_desktopSave": {
     "message": "Guardar y probar"
@@ -6252,8 +6261,96 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ prueba te espera",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ pruebas te esperan",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ prueba falló",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ pruebas fallaron",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Ejecuciones · Piwi Picker"
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ en espera · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ en espera · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ fallida · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ fallidas · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Las ejecuciones de tu editor"
@@ -6280,10 +6377,20 @@
     "message": "Cambiar el atajo"
   },
   "runs_failOffline": {
-    "message": "El servicio del editor no está conectado: Piwi Picker vuelve a conectarse."
+    "message": "Sin conexión con $tool$: Piwi Picker vuelve a conectarse.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "El editor no respondió a tiempo."
+    "message": "Sin respuesta a tiempo de $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: la ejecución terminó.",
@@ -6360,6 +6467,9 @@
   },
   "runs_openSettings": {
     "message": "Abrir la configuración"
+  },
+  "runs_looking": {
+    "message": "Buscando…"
   },
   "runs_findAgain": {
     "message": "Buscar de nuevo"
@@ -6495,6 +6605,268 @@
       }
     }
   },
+  "runs_layerCalls": {
+    "message": "Por qué espera"
+  },
+  "runs_callNone": {
+    "message": "Aún no hay ninguna llamada: la llamada que ejecuta el test aparece aquí, con lo que Playwright espera."
+  },
+  "runs_callRunning": {
+    "message": "En curso desde hace $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callPassed": {
+    "message": "Terminada en $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callFailed": {
+    "message": "Falló tras $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_targetNone": {
+    "message": "Aún ningún elemento coincide con su locator"
+  },
+  "runs_targetMatches_one": {
+    "message": "$count$ elemento coincide con su locator",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetMatches_other": {
+    "message": "$count$ elementos coinciden con su locator",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetDisabled": {
+    "message": "Su elemento no está habilitado"
+  },
+  "runs_layerEvents": {
+    "message": "Eventos"
+  },
+  "runs_eventsNone": {
+    "message": "Nada por ahora: los errores de la consola, las peticiones fallidas o lentas y los errores del backend aparecen aquí."
+  },
+  "runs_eventConsole": {
+    "message": "Error de la consola"
+  },
+  "runs_eventPageError": {
+    "message": "Error no capturado"
+  },
+  "runs_eventFailed": {
+    "message": "Petición fallida"
+  },
+  "runs_eventPending": {
+    "message": "Petición pendiente"
+  },
+  "runs_eventSlow": {
+    "message": "Petición lenta"
+  },
+  "runs_eventBackendError": {
+    "message": "Error del backend"
+  },
+  "runs_eventBackendWarning": {
+    "message": "Aviso del backend"
+  },
+  "runs_eventApi": {
+    "message": "Llamada a la API"
+  },
+  "runs_eventDropped_one": {
+    "message": "$count$ evento más omitido",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_eventDropped_other": {
+    "message": "$count$ eventos más omitidos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_requestAnswered": {
+    "message": "$request$ respondió $status$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      }
+    }
+  },
+  "runs_requestAnsweredIn": {
+    "message": "$request$ respondió $status$ en $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "time": {
+        "content": "$3",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestAnsweredAfter": {
+    "message": "$request$ respondió tras $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestPending": {
+    "message": "$request$ pendiente desde hace $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestFailed": {
+    "message": "$request$ falló: $failure$",
+    "placeholders": {
+      "failure": {
+        "content": "$1",
+        "example": "net::ERR_CONNECTION_REFUSED"
+      },
+      "request": {
+        "content": "$2",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestUnanswered": {
+    "message": "$request$ no recibió respuesta",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestLogged": {
+    "message": "$request$: $text$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "text": {
+        "content": "$2",
+        "example": "NullReferenceException in CartService"
+      }
+    }
+  },
+  "runs_layerText": {
+    "message": "Texto"
+  },
+  "runs_textShow": {
+    "message": "Mostrar el texto de la página"
+  },
+  "runs_textShowTitle": {
+    "message": "Mostrar la página como roles y nombres, con sus campos secretos ocultos: tomada ahora y seguida a medida que la traza del test la escribe"
+  },
+  "runs_textAgain": {
+    "message": "Tomarlo de nuevo"
+  },
+  "runs_textHide": {
+    "message": "Ocultar el texto"
+  },
+  "runs_textWaiting": {
+    "message": "Leyendo la página…"
+  },
+  "runs_textTrace": {
+    "message": "De la traza del test"
+  },
+  "runs_textSnapshot": {
+    "message": "Tomado a petición tuya"
+  },
+  "runs_textCut": {
+    "message": "Recortado: el texto de la página es más largo"
+  },
+  "runs_textLabel": {
+    "message": "El texto de la página, con sus campos secretos ocultos"
+  },
+  "runs_layerFilmstrip": {
+    "message": "Tira de imágenes"
+  },
+  "runs_filmstripNone": {
+    "message": "La página de cada llamada aparece aquí cuando la llamada termina."
+  },
+  "runs_filmstripAlt": {
+    "message": "La página tras $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_filmstripClose": {
+    "message": "Cerrar"
+  },
+  "runs_progressEndedAtStop_one": {
+    "message": "$count$ terminada en una parada",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressEndedAtStop_other": {
+    "message": "$count$ terminadas en una parada",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_endedPassed": {
     "message": "La ejecución se superó."
   },
@@ -6558,11 +6930,17 @@
   "runs_giveUpTitle": {
     "message": "Terminar la prueba ahora: la llamada en la que espera se abandona si se puede y se omite el resto de la prueba"
   },
+  "runs_stateFailed": {
+    "message": "Falló, retenido en su línea"
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },
   "runs_stateBetween": {
     "message": "Entre dos tests"
+  },
+  "runs_workerTabs": {
+    "message": "Workers"
   },
   "runs_worker": {
     "message": "worker $number$",
@@ -6627,6 +7005,58 @@
   "runs_pickTitle": {
     "message": "Elegir un locator en la ventana del test: reemplaza el de esta línea"
   },
+  "runs_front": {
+    "message": "Mostrar el navegador"
+  },
+  "runs_frontTitle": {
+    "message": "Traer al frente la ventana del navegador del test"
+  },
+  "runs_openTrace": {
+    "message": "Abrir la traza hasta ahora"
+  },
+  "runs_openTraceTitle": {
+    "message": "Abrir la traza de este test hasta ahora en el visor de trazas de Playwright, en la máquina donde se realiza la ejecución"
+  },
+  "runs_runControls": {
+    "message": "Controles de la ejecución"
+  },
+  "runs_pauseAll": {
+    "message": "Pausar todo"
+  },
+  "runs_pauseAllTitle": {
+    "message": "Pausar cada worker de esta ejecución antes de su siguiente llamada"
+  },
+  "runs_stopRun": {
+    "message": "Detener la ejecución"
+  },
+  "runs_stopRunTitle": {
+    "message": "Terminar ahora toda la ejecución, como su propio Detener donde se inició"
+  },
+  "runs_resumeAll": {
+    "message": "Reanudar todo"
+  },
+  "runs_resumeAllTitle": {
+    "message": "Dejar que cada test detenido de esta ejecución continúe"
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Hay varios tests detenidos: mueva el foco al que quiere dirigir con una tecla."
+  },
+  "runs_keyOtherTab": {
+    "message": "El test detenido está en la pestaña de otro worker: abra esa pestaña para dirigirlo con una tecla."
+  },
   "runs_record": {
     "message": "Grabar"
   },
@@ -6654,6 +7084,9 @@
   "runs_imageLoading": {
     "message": "Tomando una imagen de la página…"
   },
+  "runs_pageCaption": {
+    "message": "Página del test"
+  },
   "runs_assert": {
     "message": "Comprobar"
   },
@@ -6672,6 +7105,105 @@
   "runs_mockTitle": {
     "message": "Elegir una petición de la página: un page.route() que la responde como el servidor va al editor, que lo escribe encima de esta línea"
   },
+  "runs_codeLabel": {
+    "message": "Código"
+  },
+  "runs_more": {
+    "message": "Más"
+  },
+  "runs_holdFailures": {
+    "message": "Retener fallos"
+  },
+  "runs_holdFailuresOn": {
+    "message": "Una prueba fallida espera en su línea una respuesta. Haz clic para que los fallos sigan al instante."
+  },
+  "runs_holdFailuresOff": {
+    "message": "Una prueba fallida sigue al instante. Haz clic para que espere en su línea una respuesta."
+  },
+  "runs_holdByAgent": {
+    "message": "Fijado por un agente"
+  },
+  "runs_presenceOpen": {
+    "message": "También abierta en $tools$",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "Un agente sigue esta ejecución"
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker"
+  },
+  "runs_presenceDesktop": {
+    "message": "la aplicación de escritorio"
+  },
+  "runs_presenceAgent": {
+    "message": "un agente"
+  },
+  "runs_watchedBy": {
+    "message": "Observada por $who$",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "ti"
+  },
+  "runs_driverYou": {
+    "message": "Tú controlas esta parada"
+  },
+  "runs_driverAgent": {
+    "message": "Un agente controla esta parada"
+  },
+  "runs_driverDesktop": {
+    "message": "La aplicación de escritorio controla esta parada"
+  },
+  "runs_driverTool": {
+    "message": "$tool$ controla esta parada",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Tomar el control"
+  },
+  "runs_takeControlTitle": {
+    "message": "Controla tú esta parada: las acciones de un agente aquí esperan hasta que la devuelvas"
+  },
+  "runs_giveBack": {
+    "message": "Devolver"
+  },
+  "runs_giveBackTitle": {
+    "message": "Devolver esta parada: un agente puede volver a actuar en ella"
+  },
+  "runs_stoppedByAgent": {
+    "message": "Pausado por el agente"
+  },
+  "runs_stoppedByAgentStep": {
+    "message": "Detenido tras el paso del agente"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Detenido en la línea pedida por el agente"
+  },
+  "runs_announceDriveTaken": {
+    "message": "Ahora controlas la parada de $test$: el agente espera hasta que la devuelvas.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Código desde esta parada"
   },
@@ -6689,9 +7221,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Error"
   },
   "runs_announceFailed": {
     "message": "$test$ falló en $place$.",
@@ -6760,11 +7289,11 @@
   "runs_requestNoSize": {
     "message": "tamaño desconocido"
   },
-  "runs_live": {
-    "message": "Ver en directo"
+  "runs_interact": {
+    "message": "Interactuar"
   },
-  "runs_liveTitle": {
-    "message": "Mostrar la página del test tal como se dibuja, en lugar de su imagen: tus clics y teclas sobre ella van a la página"
+  "runs_interactTitle": {
+    "message": "Enviar tus clics, el desplazamiento y tus teclas a la página del test, controlando esta parada: Esc la devuelve"
   },
   "runs_liveBadge": {
     "message": "En directo"
@@ -6779,16 +7308,21 @@
     "message": "Iniciando la vista en directo…"
   },
   "runs_liveLost": {
-    "message": "Se perdió la conexión con el editor: la vista en directo vuelve a empezar cuando regrese."
+    "message": "Se perdió la conexión con $tool$: la vista en directo vuelve a empezar cuando regrese.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
-    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc desactiva Interactuar y devuelve la parada, pero va a la página mientras en ella se elige un elemento o se comprueba; Mayús+clic elige un locator."
   },
   "runs_watch": {
     "message": "Ver"
   },
   "runs_watchTitle": {
-    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, tus clics y teclas sobre ella van a la página"
+    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, Interactuar envía tus clics y teclas a ella"
   },
   "runs_pauseWatch": {
     "message": "Pausar y ver"
@@ -6874,14 +7408,232 @@
   "runs_stopSharingTitle": {
     "message": "Terminar las vistas de esta ejecución en la instancia: no se envía nada más"
   },
+  "runs_shareWindow": {
+    "message": "Compartir las ejecuciones de esta ventana del editor"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Compartir en directo en la instancia de Piwi de tu equipo esta ejecución y cada ejecución que esta ventana del editor inicie a partir de ahora, hasta que lo detengas o cierres esa ventana"
+  },
+  "runs_sharedByWindow": {
+    "message": "Compartida como una de las ejecuciones de esta ventana del editor, hasta que lo detengas."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Dejar de compartir las ejecuciones de esta ventana"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Terminar las vistas de las ejecuciones de esta ventana del editor en la instancia: las siguientes se quedan en esta máquina"
+  },
+  "runs_stopSharingAsk": {
+    "message": "¿Dejar de compartir esta ejecución en directo? Sus vistas en la instancia del equipo se cierran."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "¿Dejar de compartir en directo las ejecuciones de esta ventana del editor? Sus vistas en la instancia del equipo se cierran, y las siguientes se quedan en esta máquina."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: las ejecuciones de esta ventana se comparten en directo, cada una que inicie, hasta que lo detengas.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: compartida en directo, como una de las ejecuciones de su ventana del editor.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: las ejecuciones de esta ventana se comparten en directo hasta que lo detengas.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: las ejecuciones de esta ventana ya no se comparten en directo.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copiar el enlace de la página de la ejecución"
   },
+  "runs_runNumber": {
+    "message": "Ejecución #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "77"
+      }
+    }
+  },
+  "runs_openRunPage": {
+    "message": "Abrir"
+  },
+  "runs_copyRunPageShort": {
+    "message": "Copiar enlace"
+  },
+  "runs_ciHeading": {
+    "message": "Ejecuciones de CI en curso"
+  },
+  "runs_ciRun": {
+    "message": "Ejecución de CI #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "en $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, en $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Ver muestra aquí la página de una prueba en curso."
+  },
+  "runs_ciTests": {
+    "message": "Pruebas en curso"
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, worker $worker$",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Mostrar la página de esta prueba mientras se ejecuta en la CI, también en las siguientes pruebas de su worker: solo lectura, nada de aquí la alcanza"
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Ver en el panel de control"
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Abrir la vista de este worker en la página de la ejecución"
+  },
+  "runs_ciWatching": {
+    "message": "Viendo la ejecución de CI #$id$: $worker$.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Vista en directo de la página de la prueba de CI, solo lectura"
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "Esta ejecución de CI ya no está en curso."
+  },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker sigue tres ejecuciones de CI a la vez, las más recientes: las pruebas de esta vuelven a aparecer cuando termine una más reciente."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "Las pruebas de esta ejecución no se pueden ver: la vista en directo de su proyecto está desactivada, o la ejecución no tiene clave."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "Todavía no se ejecutó ninguna prueba en el carril de este worker."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "La instancia no respondió."
+  },
+  "runs_ciRefusedLate": {
+    "message": "La instancia no abrió la vista a tiempo: vuelve a intentarlo en un momento."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "Piwi Picker no lee la vista en directo de esta instancia: mira la prueba en el panel de control."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "La instancia respondió $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "La ejecución de CI terminó."
+  },
+  "runs_ciEndOff": {
+    "message": "Se desactivó la vista en directo del proyecto."
+  },
+  "runs_ciEndReplaced": {
+    "message": "La instancia cerró esta vista: abriste en otros sitios más vistas de esta ejecución de las que guarda para una persona."
+  },
+  "runs_ciEndTest": {
+    "message": "La prueba terminó."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "Ya no se ejecuta ningún worker en este carril."
+  },
+  "runs_ciEndUnshared": {
+    "message": "La ejecución ya no se comparte."
+  },
+  "runs_ciEndSilent": {
+    "message": "La instancia dejó de responder."
+  },
+  "runs_ciEndClosed": {
+    "message": "La instancia cerró la vista."
+  },
+  "runs_ciEndBroken": {
+    "message": "Se cortó la conexión con la instancia."
+  },
+  "runs_ciEndMoved": {
+    "message": "Otra ventana Ejecuciones ve ahora otro worker: Piwi Picker muestra un worker de CI a la vez."
+  },
   "runs_pageAtStop": {
-    "message": "La página de un test aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando lo pausas. Ver en directo la muestra entonces tal como se dibuja."
+    "message": "La página de un test aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando lo pausas. Ver la muestra entonces tal como se dibuja."
   },
   "runs_pageAtStopDesktop": {
-    "message": "La página de un test aparece aquí cuando se detiene: en page.pause() o cuando lo pausas. Ver en directo la muestra entonces tal como se dibuja."
+    "message": "La página de un test aparece aquí cuando se detiene: en page.pause() o cuando lo pausas. Ver la muestra entonces tal como se dibuja."
   },
   "runs_shareRefusedLocal": {
     "message": "Esta ejecución no puede compartirse en directo: informa a la aplicación de escritorio de Piwi de esta máquina, a la que ningún compañero llega. Indica la instancia de tu equipo en PIWI_DASHBOARD_URL para compartir allí una ejecución."

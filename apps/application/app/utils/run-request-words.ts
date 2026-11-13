@@ -1,6 +1,6 @@
 import { FINAL_RUN_REQUEST_STATES, type RunRequestState } from '@piwitests/core/run-request';
 import type { RunRequestView } from '#shared/handlers/run-requests';
-import type { StatusPaletteKey } from '~/utils/status-palette';
+import type { StatusPaletteKey } from '@piwitests/run-ui/status-palette';
 
 /** Whether a request moves no more: the page stops reading it. */
 export function runRequestIsFinal(request: Pick<RunRequestView, 'state'>): boolean {

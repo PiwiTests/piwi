@@ -17,33 +17,30 @@ its own.
 
 ## Connect your agent
 
-The server listens on `127.0.0.1` once the editor extension starts, at a port and behind a token the extension keeps
-for this workspace (in a JetBrains IDE, this project): a configuration you copy once keeps working after a restart. If
-another program holds that port, the server moves, with a new token, and says so.
+**One entry for every repository.** `npx @piwitests/reporter mcp` serves the runs of every editor with Piwi and of
+the desktop app as one MCP server, over stdio: add it once, at user scope, for any agent that starts a command.
 
-| Agent                                                                          | What it takes                                                                           |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| VS Code's own agent (1.101 and later)                                          | Nothing to set: the extension lists the server as **Piwi runs**, beside **Piwi**        |
-| Claude Code, Cursor and other agents that connect over HTTP                    | The `mcpServers` entry of type `http` below, with the token as a bearer header          |
-| The JetBrains AI Assistant, Claude Desktop and agents that only start commands | An `mcpServers` entry that runs `mcp-remote`, a small Node bridge, at one exact release |
+::: code-group
 
-- **From VS Code**: **Piwi: Copy the runs' MCP server configuration for agents** asks which, then copies the entry:
+```bash [Linux / macOS]
+claude mcp add --scope user piwi-runs -- npx -y @piwitests/reporter@latest mcp
+```
 
-  ```json
-  {
-    "mcpServers": {
-      "piwi-runs": { "type": "http", "url": "http://127.0.0.1:41234/mcp", "headers": { "Authorization": "Bearer …" } }
-    }
-  }
-  ```
+```powershell [Windows (PowerShell)]
+claude mcp add --scope user piwi-runs -- cmd /c npx -y @piwitests/reporter@latest mcp
+```
 
-  Claude Code reads it in your user settings (`claude mcp add-json` with `--scope user`), Cursor in
-  `~/.cursor/mcp.json`; the other choice is VS Code's own `mcp.json`.
+:::
 
-- **From a JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code or Cursor**
-  copies the same entry; **…for Agents** copies one that runs `npx -y mcp-remote@0.14.3 <url> --transport http-only`,
-  the token in `env`, for the AI Assistant (**Settings → Tools → AI Assistant → Model Context Protocol**), which has no
-  public way for a plugin to add a server.
+How it routes each call: [`mcp`](/reference/cli#mcp). VS Code's own agent (1.101 and later) needs nothing: the extension lists its window's server as **Piwi runs**,
+beside **Piwi**, which then leaves the desktop app's run tools of the same names out.
+
+Each editor's server listens on `127.0.0.1` once the extension starts, at a port and behind a token the extension
+keeps for this workspace (in a JetBrains IDE, this project). If another program holds that port, the server moves,
+with a new token, and says so. To give an agent one window's runs alone, copy its entry: **Piwi: Copy the runs' MCP
+server configuration for agents** in VS Code, **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code
+or Cursor** (an `http` entry, the token as a bearer header) or **…for Agents** (one that runs
+`npx -y mcp-remote@0.14.3 <url> --transport http-only`, for the JetBrains AI Assistant) in a JetBrains IDE.
 
 **The configuration holds the token.** Keep it in your user settings, never in a file of the repository such as a
 project's `.mcp.json`: whoever reads it can drive your runs while the editor is open. **Reset the token** (**Piwi:
@@ -55,7 +52,8 @@ an agent with the old one is refused until you copy the configuration again. `pi
 
 | Tool            | What it does                                                                                                                                                                                                                                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run_list`      | The runs of the window, their workers, the test each one runs and where it stands stopped                                                                                                                                                                                                                                     |
+| `run_start`     | Start a run of a spec, or of the test holding a line, built and checked as yours are and run where you see it, labeled with the agent's name, three at once at most; a failed test waits at its line by default while the agent follows the run                                                                          |
+| `run_list`      | The runs of the window, what started each (the editor, a terminal or a test runner), their page, progress, Hold failures and who has them open, their workers, the test each one runs and where it stands stopped                                                                                                           |
 | `run_follow`    | The run's events since a cursor: each test's start and end, each call with its place in your code and its result, the stops, and the page's navigations, console errors, uncaught errors and failed requests. It waits up to 25 seconds, and answers at once while the run is stopped or ended                                |
 | `run_control`   | Pause, Step, Run to a line, Resume, Finish or [End the test](./end-the-test), answered when the run stops again, with the page's snapshot, when the test it ended ends, or when the run ends                                                                                                                                  |
 | `page_snapshot` | The stopped page's ARIA snapshot in AI mode, a ref per element (`[ref=e5]`), to a depth you choose, with an image of the page when asked                                                                                                                                                                                      |
@@ -71,8 +69,8 @@ project's test id attribute first and the suite's own locators preferred. `code_
 generator, as [Code from a pause](./editor-stop-code) does, and the editor writes them above the stopped line as one
 edit: one undo removes it. The test goes on with the code it started with: the new lines run next time.
 
-A run's calls and page events are told until two minutes after the agent's last call on it; an action the page
-answers late may still take effect, kept as a step, and `run_follow` says so.
+An agent follows a run until two minutes after its last call on it: the run's calls and page events are told until
+then; an action the page answers late may still take effect, kept as a step, and `run_follow` says so.
 
 **An assertion on an element's text** checks the whole text, as the page shows it now (`toHaveText`); for a text
 longer than 1,000 characters, it checks that the element contains its first words (`toContainText`, up to 200
@@ -85,8 +83,9 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   the runs this window started, and those [started outside Piwi](./terminal-runs) that follow it, and nothing of an
   instance.
 - **Only a stopped page, only the actions named.** An action needs the stop it answers, and goes nowhere once the test
-  went on. The tools take a closed set of arguments; none evaluates code, reads a file or runs a command. Code reaches
-  your files only through the editor, as an edit you see.
+  went on. The tools take a closed set of arguments. `run_start` runs a spec of your workspace as you would, with the
+  command Piwi builds; no other tool evaluates code, reads a file or runs a command. Code reaches your files only
+  through the editor, as an edit you see.
 - **The page is untrusted.** A page can hold text written to steer a model. Everything that comes from it (its
   snapshot, its address and title, an element's name, text and value, the locators built from them, its console, its
   errors, its requests, and what the test says when a read of it fails) comes back apart from Piwi's own answer,
@@ -98,21 +97,17 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   hidden, as on Piwi's other surfaces.
 - **You watch it happen.** The agent's stops show in the editor and the Runs window as yours do, the editor's as
   `Paused by the agent · …`; its first action at a stop says so in a notification; the code it has written names it
-  (`Piwi wrote the steps the agent took above checkout.spec.ts:30.`). You can take over at any stop.
+  (`Piwi wrote the steps the agent took above checkout.spec.ts:30.`). You can take over at any stop
+  ([driving a stop](/guide/concepts#presence-driving-a-stop)): the agent is refused there and told so.
 
 ## In the desktop app
 
-The [desktop app](./desktop-runs#for-agents) serves the same tools for the runs it starts, from its own MCP server.
-There, `code_write` writes no file: the code waits in the **Local runs** tray to copy, and comes back to the agent. A
-run nobody attends, such as a Flake Lab run or a bisect, is not served.
-
-## Share with Playwright tools
-
-At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
-Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
-Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
-It is off until you ask, every time, and asks first: a shared browser is open to any process of yours, which can read
-its pages and run code in them. It is shared until the test ends, and no agent can share it.
+The [desktop app](./desktop-runs#for-agents)'s MCP server serves the same tools for the runs it starts; there,
+`code_write` writes no file and a run nobody attends is not served. `run_start` takes a spec of a linked folder,
+which the app's window starts as you would from its Local runs tray, titled `Started by <agent>`, while a window is
+open. It runs each test once, outside UI mode, and counts among the three runs agents start at once until its process
+ends; a line in no test, or a spec whose name starts with `-`, is refused. `npx @piwitests/reporter mcp` sends the
+app a spec no editor's workspace holds.
 
 ## Limits
 
@@ -126,3 +121,4 @@ its pages and run code in them. It is shared until the test ends, and no agent c
 - [Code from a pause](./editor-stop-code)
 - [MCP server](./mcp)
 - [Runs window](./runs-window)
+- [Share a stop with Playwright tools](./watch-a-run#share-with-playwright-tools)

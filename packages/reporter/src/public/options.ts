@@ -35,7 +35,9 @@ export interface PiwiDashboardOptions {
    * `'prefer'` uses it whenever it is running and the run is not on CI, even
    * with `serverUrl` set, so local runs land in the app while CI runs, and
    * local runs with the app closed, go to `serverUrl` with its credentials.
-   * `'off'` never uses it. Defaults to `'fallback'`. `PIWI_DESKTOP_APP`
+   * `'off'` never sends it results; a run started in a terminal in a folder it
+   * links still follows its window, unless `PIWI_EDITOR=off`. Defaults to
+   * `'fallback'`. `PIWI_DESKTOP_APP`
    * overrides this option, so setting it to `off` for one run sends that
    * local run to `serverUrl`.
    */
@@ -388,7 +390,7 @@ export interface PiwiDashboardOptions {
   failOnFlakyTests?: boolean;
 
   // ── Authentication ─────────────────────────────────────────────────────────
-  /** Username for dashboard login (use `apiKey` instead when possible) */
+  /** Username or email address for dashboard login (use `apiKey` instead when possible) */
   username?: string | null;
   /** Password for dashboard login (used with `username`) */
   password?: string | null;

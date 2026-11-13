@@ -9,22 +9,33 @@
  * as it changes (`HubSessionMessage`), what each action that writes code at a stop came to, whichever surface
  * started it (`HubCodeMessage`: its sentence, never the code), and the other live hubs of the machine as they come and
  * go (`HubPeersMessage`: their addresses, never their tokens); `welcome` and the desktop app's live answer list what
- * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there
- * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
+ * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there (a Runs window
+ * is open), which holds nothing; `hold` turns a run's **Hold failures** on or off, whichever surface asks; `view` has
+ * it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
- * asks. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
- * connection. Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates
- * code, reads a file or reaches an instance.
+ * asks, or, at a hub whose features list `share-window`, each run of the editor window from then on until the person
+ * stops (`scope: 'window'`, said to every subscribed connection in `share-window`); `openTrace` opens a lane's running test's trace so far in Playwright's trace viewer, on the hub's machine,
+ * from the file the lane's worker names to the hub alone. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a
+ * frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on
+ * both sides. Nothing a command asks evaluates code or reaches an instance, and no command names a file: for
+ * `openTrace` the hub checks the file the lane's worker named and the folder it is in, then starts the project's own
+ * Playwright's trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the
+ * subfolders its files share.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import {
   MAX_RUN_FAILURE_TEXT,
   MAX_STOP_ERROR,
+  endedAtStopWithin,
+  readRunPage,
   type KeptRequest,
   type RunCounts,
   type RunEndStatus,
+  type RunPage,
 } from './run-channel';
+import { readLaneLayers, type LaneLayer } from './live-layers';
+import { checkoutCommitOf, readLaneLayerData, type LaneLayerData } from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
@@ -51,17 +62,74 @@ export const MAX_HUB_MESSAGE = 1000;
 export const MAX_HUB_WARNINGS = 16;
 /** The most hubs a `peers` names: the hub names the first ones. */
 export const MAX_HUB_PEERS = 64;
+/** The most tools a run's or a worker's presence names: the hub names the first ones. */
+export const MAX_HUB_PRESENCE = 16;
 
 /**
  * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
- * other live hubs of the machine as they come and go (`peers`), and shows a lane of a run while it runs (`lanes`: the
- * command `watch`, its frames `lane-frame`). A reader keeps those it knows; a hub that predates the list does none of
- * them.
+ * other live hubs of the machine as they come and go (`peers`), shows a lane of a run while it runs (`lanes`: the
+ * command `watch`, its frames `lane-frame`), keeps **Hold failures** for each run (`hold`: the command `hold`, the
+ * session's `hold`), says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
+ * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`), stops a whole run the way the
+ * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names), sends a watched lane's
+ * layers beside its frames (`layers`: `watch`'s `layers`, its messages `lane-layer`), and opens a lane's running test's
+ * trace so far in Playwright's trace viewer on its machine (`trace`: the command `openTrace`, for a worker whose
+ * `traces` says its reporter answers where the trace grows), and shares each run of its editor window live until the
+ * person stops (`share-window`: `share` with `scope: 'window'`, its state the message `share-window`). A reader keeps
+ * those it knows; a hub that predates the list does none of them, a hub whose host cannot stop its runs leaves `stop`
+ * out, one whose host cannot start the trace viewer leaves `trace` out, and one whose host is no editor window leaves
+ * `share-window` out.
  */
-export type HubFeature = 'peers' | 'lanes';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers' | 'trace' | 'share-window';
 
-/** The features of a hub of this version. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes'];
+/** The features of a hub of this version whose host can stop its runs and start the trace viewer. */
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'];
+
+/** The features a reader of this version knows: `HUB_FEATURES`, and `share-window`, an editor window's alone. */
+const KNOWN_FEATURES: readonly HubFeature[] = [...HUB_FEATURES, 'share-window'];
+
+/**
+ * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
+ * process said it ended (`progress.status`), nor one started in a terminal (`terminal`, an editor's test runner's run
+ * included), nor a job the desktop app runs in a throwaway checkout (`checkoutCommitOf` its ref), whose Stop stays where
+ * it was started.
+ */
+export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal' | 'progress'> & { ref?: string }): boolean {
+  if (session.ref !== undefined && checkoutCommitOf(session.ref) !== null) return false;
+  return !session.ended && !session.terminal && (session.progress?.status ?? 'running') === 'running';
+}
+
+/**
+ * What a tool present on a run is: a Runs window of Piwi Picker (`picker`), an editor (`editor`), the desktop app's
+ * window (`desktop`), or an agent through a hub's MCP tools (`agent`); `other` for a kind of a newer hub.
+ */
+export type HubPresenceKind = 'picker' | 'editor' | 'desktop' | 'agent' | 'other';
+
+const PRESENCE_KINDS: readonly HubPresenceKind[] = ['picker', 'editor', 'desktop', 'agent'];
+
+/**
+ * A tool present on a run, a lane or a stop: its kind, its name as the hub knows it (`Visual Studio Code`, at most
+ * `MAX_HUB_CLIENT` characters), and `self` when it is the connection that hears it.
+ */
+export interface HubPresence {
+  kind: HubPresenceKind;
+  name: string;
+  self?: true;
+}
+
+/**
+ * Who set a run's **Hold failures** last: the run's own start (`start`: a run built to be watched, a debug run, a
+ * reproduction), a person on a surface (`person`), or an agent (`agent`).
+ */
+export type HubHoldBy = 'start' | 'person' | 'agent';
+
+/** Whether a failure no pause bar shows waits at its line in a run (`on`), and who said so last (`by`). */
+export interface HubHold {
+  on: boolean;
+  by: HubHoldBy;
+}
+
+const HOLD_BY: readonly HubHoldBy[] = ['start', 'person', 'agent'];
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -115,6 +183,19 @@ export interface HubStop {
   error?: string;
   /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
   by?: 'agent';
+  /**
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the tool whose person
+   * took it (a click, a key or text on its view, a pick, an intent, or `drive`), which takes it from the agent. An
+   * agent's actions there are refused while a person drives. Absent while nobody drives, and from a hub without
+   * `presence`.
+   */
+  driver?: HubPresence;
+  /**
+   * An action that takes Escape as its own runs in the test's window at this stop: a pick, a check or a region's pick,
+   * started from the pause bar or as an intent. A view sends Escape there while one runs. Absent while none runs, and
+   * from a hub or a reporter that predates it.
+   */
+  acting?: 'pick' | HubCodeIntent;
 }
 
 /** A test a worker runs. */
@@ -151,14 +232,25 @@ export type HubCodeIntent = 'assert' | 'assert-region';
  */
 export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
+/** What a stop its pause bar shows can do for a viewer elsewhere: bring the test's window to the front (`front`). */
+export type HubWindowAction = 'front';
+
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
- * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
+ * live view's actions, Show the browser (`front`) at a stop its pause bar shows, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
  * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
  * while it runs (`watch`, at a hub whose features list `lanes`); `give-up` too, while a Pause waits for the call its
  * test runs: End the test there (`runControl` `give-up`).
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch' | 'give-up';
+export type HubAction =
+  | HubIntent
+  | HubCodeIntent
+  | 'mock'
+  | HubViewAction
+  | HubWindowAction
+  | 'end'
+  | 'watch'
+  | 'give-up';
 
 /**
  * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
@@ -181,6 +273,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'input',
   'input-clicks',
   'pick-at',
+  'front',
   'end',
   'watch',
   'give-up',
@@ -213,6 +306,16 @@ export interface HubWorker {
    * from a stop: none for a reporter that predates them, whose stops every action is refused at.
    */
   intents: HubAction[];
+  /**
+   * The tools that watch its page now, its lane's view or its stop's, each connection once: absent while none does,
+   * and from a hub without `presence`.
+   */
+  watchers?: HubPresence[];
+  /**
+   * Its reporter says where its running test's trace grows: `openTrace` opens it, at a hub whose features list
+   * `trace`. Absent for a reporter that does not, and from a hub that predates it.
+   */
+  traces?: true;
 }
 
 /**
@@ -281,12 +384,29 @@ export interface HubSession {
    * `@piwitests/core/run-channel`): absent from a service or a reporter that predates it.
    */
   progress?: HubProgress;
+  /**
+   * The run's page on the instance it reports to, its number and address, once its own process knows it (`run-page`):
+   * absent before, for a run that reports to none, and from a service or a reporter that predates it.
+   */
+  page?: RunPage;
+  /**
+   * Whether a failure no pause bar shows waits at its line in this run (**Hold failures**), and who said so: absent
+   * for a run nobody attends, whose failures always go on at once, and from a hub without the `hold` feature, whose
+   * failures wait while a Runs window follows the runs.
+   */
+  hold?: HubHold;
+  /**
+   * The tools that have the run open, beyond the hub's own editor: each Runs window that follows the runs, the desktop
+   * app's window, and an agent that follows this run. Absent while none does, and from a hub without `presence`.
+   */
+  presence?: HubPresence[];
 }
 
 /**
- * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`), whether it
- * still runs or how it ended (`status`), and its first failure, once it ended (the test's title and its error's first
- * line, null for none).
+ * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`, with how
+ * many of the skipped were ended at a stop from a service and a reporter that count them), whether it still runs or
+ * how it ended (`status`), and its first failure, once it ended (the test's title and its error's first line, null for
+ * none).
  */
 export interface HubProgress extends RunCounts {
   total: number;
@@ -320,13 +440,35 @@ export interface HubHello {
 
 /** A command, after `hello`: `id` (1 to 2147483647) names its answer. */
 export type HubCommand =
-  /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
-  | { type: 'subscribe'; id: number }
   /**
-   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. While one connection
-   * follows them, a failure no pause bar shows is held for it; a connection that never says so, or closes, does not.
+   * Hear every run of the editor: one `session` for each live now, after the answer, then each change. With `observe`,
+   * as the desktop app's server reads an editor's runs for its own surfaces, it answers no stop: a stop no pause bar
+   * shows does not wait for it.
+   */
+  | { type: 'subscribe'; id: number; observe?: true }
+  /**
+   * Whether a person watches the runs through this connection now (`on`): a Runs window is open, which each run names
+   * in its `presence` (a hub with the `presence` feature). It holds no failure: a hub with the `hold` feature holds
+   * them by each run's **Hold failures** (`hold`), whoever watches.
    */
   | { type: 'follow'; id: number; on: boolean }
+  /**
+   * Turn the run's **Hold failures** on (`on`: a failure no pause bar shows waits at its line for an answer) or off
+   * (it goes on at once, one held now included), as a person asks on a surface. Refused for a run nobody attends.
+   */
+  | { type: 'hold'; id: number; ref: string; on: boolean }
+  /**
+   * Stop the whole run, as the tool that started it stops it (an editor's task or process, the desktop app's run): its
+   * tests end now, and its last message follows. A hub with the `stop` feature; refused for a run `canStopRun` leaves
+   * out.
+   */
+  | { type: 'stop'; id: number; ref: string }
+  /**
+   * At the stop `since` names (of the one stopped worker, or `worker`), drive it (`on`: an agent's actions there are
+   * refused until this connection gives it back), or give it back (an agent may act again). Driving takes it from an
+   * agent, which hears so; the input, a pick and an intent this connection sends there drive it too.
+   */
+  | { type: 'drive'; id: number; ref: string; worker: number | null; since: string; on: boolean }
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`, `end`. `since` names the stop the
@@ -352,6 +494,11 @@ export type HubCommand =
    * cannot write code from a stop.
    */
   | { type: HubIntent | HubCodeIntent; id: number; ref: string; worker: number | null; since: string }
+  /**
+   * At the stop `since` names, bring the test's window to the front (**Show the browser**). Refused at a stop no pause
+   * bar shows (a headless run), at a stop the test went on from, and for a reporter that does not take it.
+   */
+  | { type: HubWindowAction; id: number; ref: string; worker: number | null; since: string }
   /** The responses the test kept as it stood at the stop `since` names: the answer's `requests`. */
   | { type: 'requests'; id: number; ref: string; worker: number | null; since: string }
   /**
@@ -379,17 +526,32 @@ export type HubCommand =
   /**
    * Share the run live on the team instance its reporter reports to (`on`), for whoever may open it there, or stop
    * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
-   * shared.
+   * shared. With `scope: 'window'`, at a hub whose features list `share-window`: share each run of the editor window
+   * from now on, the run of `ref` too when one is named, until the person stops or the window closes, or stop sharing
+   * every run of the window (`on: false`).
    */
-  | { type: 'share'; id: number; ref: string; on: boolean }
+  | { type: 'share'; id: number; ref: string; on: boolean; scope?: undefined }
+  | { type: 'share'; id: number; ref: string | null; on: boolean; scope: 'window' }
   /**
    * Start (`on`) or stop watching the lane `lane` (Playwright's `parallelIndex`) of the run: the page of its running
    * test, of its stop while it stands at one, through its tests, its stops and a worker Playwright starts in its place,
    * its frames coming to this connection alone (`HubLaneFrameMessage`) until it stops watching, the run ends or the
    * connection closes. Refused for a lane whose worker's `intents` lack `watch`, saying why. At a stop the frames
-   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`.
+   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`. `layers`, at a hub
+   * whose features list `layers`, are the lane's layers this connection takes beside its frames from now on
+   * (`HubLaneLayerMessage`, `@piwitests/core/live-layers`), none without it; a later `watch` on changes them, and one
+   * that lists `text` asks for the page's text now.
    */
-  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean };
+  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean; layers?: LaneLayer[] }
+  /**
+   * Open the running test's trace so far of the lane `lane` (Playwright's `parallelIndex`) of the run in Playwright's
+   * trace viewer, on the hub's machine (**Open the trace so far**), at a hub whose features list `trace`: the hub asks
+   * the lane's worker where the trace grows, checks that file and its folder, and starts the project's own Playwright's
+   * trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its
+   * files share. The answer says what came of it in a sentence, never a file. Refused for a worker whose `traces` is
+   * absent, with no test running, or for an attempt the runner does not trace or that wrote no trace yet.
+   */
+  | { type: 'openTrace'; id: number; ref: string; lane: number };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -411,6 +573,8 @@ export interface HubAnswer {
   requests?: HubKeptRequest[];
   /** For `pick-at`: the locator sent to the editor, null when none was found. */
   locator?: string | null;
+  /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
 }
 
 /** Sent once `hello` was accepted: the service the connection reached. */
@@ -512,6 +676,20 @@ export interface HubLaneFrameRefusal {
   refused: string;
 }
 
+/**
+ * A layer of the lane `lane` of the run (`LaneLayerData`), while this connection watches it and asked for that layer
+ * (`watch`'s `layers`), of the worker `worker` and the test `test` (Playwright's id; null for the text of a page no test
+ * shows): the call its test is in, something its page or its requests said, the page's text, an image of its
+ * filmstrip. Sent as the worker sends it, bounded as `@piwitests/core/live-layers` says; the hub keeps none.
+ */
+export type HubLaneLayerMessage = {
+  type: 'lane-layer';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string | null;
+} & LaneLayerData;
+
 /** A live hub as another one names it (`peers`): where it listens and whose it is, never its token. */
 export type PeerHub = Omit<LiveHub, 'token' | 'features'>;
 
@@ -525,6 +703,16 @@ export interface HubPeersMessage {
   hubs: PeerHub[];
 }
 
+/**
+ * Whether the editor window shares each of its runs live until the person stops (`share` with `scope: 'window'`):
+ * sent by a hub whose features list `share-window` to a subscribed connection after the runs `subscribe` answers
+ * with, then each time it changes, whichever surface changed it.
+ */
+export interface HubShareWindowMessage {
+  type: 'share-window';
+  on: boolean;
+}
+
 /** What the hub sends. */
 export type HubMessage =
   | HubWelcome
@@ -535,7 +723,9 @@ export type HubMessage =
   | HubFrameRefusal
   | HubLaneFrameMessage
   | HubLaneFrameRefusal
+  | HubLaneLayerMessage
   | HubPeersMessage
+  | HubShareWindowMessage
   | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
@@ -675,25 +865,64 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   const { id } = value;
   const invalid = (message: string): ParsedHubCommand => ({ type: 'invalid', id, message });
   if (typeof value.type !== 'string' || !value.type) return invalid('A command needs a type.');
-  if (value.type === 'subscribe') return { type: 'subscribe', id };
+  if (value.type === 'subscribe')
+    return value.observe === true ? { type: 'subscribe', id, observe: true } : { type: 'subscribe', id };
   if (value.type === 'follow') {
     return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
   }
-  if (value.type === 'share') {
+  if (value.type === 'hold') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
     return typeof value.on === 'boolean'
-      ? { type: 'share', id, ref: value.ref, on: value.on }
-      : invalid('share needs on: true to share the run live, false to stop.');
+      ? { type: 'hold', id, ref: value.ref, on: value.on }
+      : invalid('hold needs on: true to hold the failures, false to let them go on.');
+  }
+  if (value.type === 'stop') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return { type: 'stop', id, ref: value.ref };
+  }
+  if (value.type === 'share') {
+    const byWindow = value.scope === 'window';
+    if (value.scope !== undefined && !byWindow) return invalid('share’s scope is window, or none for the run alone.');
+    const named = byWindow && (value.ref === undefined || value.ref === null) ? null : value.ref;
+    if (named !== null && (typeof named !== 'string' || !REF.test(named))) {
+      return invalid('The command needs the ref of a run.');
+    }
+    if (typeof value.on !== 'boolean') return invalid('share needs on: true to share the run live, false to stop.');
+    return byWindow
+      ? { type: 'share', id, ref: named, on: value.on, scope: 'window' }
+      : { type: 'share', id, ref: named as string, on: value.on };
   }
   if (value.type === 'watch') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
     if (!isInt(value.lane, 0)) return invalid('watch needs the lane: a parallelIndex, from 0.');
-    return typeof value.on === 'boolean'
-      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on }
-      : invalid('watch needs on: true to watch the lane, false to stop watching it.');
+    if (typeof value.on !== 'boolean') {
+      return invalid('watch needs on: true to watch the lane, false to stop watching it.');
+    }
+    if (value.layers === undefined) return { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on };
+    const layers = readLaneLayers(value.layers);
+    return layers
+      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on, layers }
+      : invalid('watch names its layers in a list: calls, events, text, filmstrip.');
+  }
+  if (value.type === 'openTrace') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return isInt(value.lane, 0)
+      ? { type: 'openTrace', id, ref: value.ref, lane: value.lane }
+      : invalid('openTrace needs the lane: a parallelIndex, from 0.');
   }
   if (
-    !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
+    ![
+      'runControl',
+      'pausedPage',
+      'requests',
+      'mock',
+      'view',
+      'input',
+      'pick-at',
+      'drive',
+      'front',
+      ...HUB_INTENTS,
+    ].includes(value.type)
   ) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
@@ -726,6 +955,11 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     }
     case 'requests':
       return since === null ? invalid(NEEDS_STOP) : { type: 'requests', id, ref, worker, since };
+    case 'drive':
+      if (since === null) return invalid(NEEDS_STOP);
+      return typeof value.on === 'boolean'
+        ? { type: 'drive', id, ref, worker, since, on: value.on }
+        : invalid('drive needs on: true to drive the stop, false to give it back.');
     case 'view':
       if (since === null) return invalid(NEEDS_STOP);
       return typeof value.on === 'boolean'
@@ -746,7 +980,7 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     default:
       return since === null
         ? invalid(NEEDS_STOP)
-        : { type: value.type as HubIntent | HubCodeIntent, id, ref, worker, since };
+        : { type: value.type as HubIntent | HubCodeIntent | HubWindowAction, id, ref, worker, since };
   }
 }
 
@@ -826,6 +1060,15 @@ function readLaneFrame(value: Record<string, unknown>): HubLaneFrameMessage | Hu
   };
 }
 
+/** A layer of a lane, field by field; null when it is not one. */
+function readLaneLayer(value: Record<string, unknown>): HubLaneLayerMessage | null {
+  const { ref, lane, worker, test } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(lane, 0) || !isInt(worker, 0)) return null;
+  if (test !== null && (str(test, 256) === null || !test)) return null;
+  const data = readLaneLayerData(value);
+  return data ? { type: 'lane-layer', ref, lane, worker, test: test as string | null, ...data } : null;
+}
+
 /** The actions of a list, those this version knows, in their order; none for anything but a list. */
 function readActions(value: unknown): HubAction[] {
   return Array.isArray(value) ? HUB_ACTIONS.filter((action) => value.includes(action)) : [];
@@ -852,7 +1095,26 @@ function readStop(value: unknown): HubStop | null | undefined {
     ...(error === undefined ? {} : { error: error as string }),
     ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
     ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
+    ...(value.driver === undefined || !readPresence(value.driver) ? {} : { driver: readPresence(value.driver)! }),
+    ...(ACTING.includes(value.acting as string) ? { acting: value.acting as 'pick' | HubCodeIntent } : {}),
   };
+}
+
+/** The actions a stop says run in the test's window, each taking Escape as its own. */
+const ACTING: readonly string[] = ['pick', 'assert', 'assert-region'];
+
+/** A tool present on a run, field by field: a kind of a newer hub reads as `other`; null when it is not one. */
+function readPresence(value: unknown): HubPresence | null {
+  if (!isObject(value) || typeof value.kind !== 'string' || value.kind.length > 64) return null;
+  if (str(value.name, MAX_HUB_CLIENT) === null || !value.name) return null;
+  const kind = PRESENCE_KINDS.find((known) => known === value.kind) ?? 'other';
+  return { kind, name: value.name as string, ...(value.self === true ? { self: true as const } : {}) };
+}
+
+/** The tools of a presence list this version reads, at most `MAX_HUB_PRESENCE`; null when it is no list. */
+function readPresenceList(value: unknown): HubPresence[] | null {
+  if (!Array.isArray(value) || value.length > MAX_HUB_PRESENCE) return null;
+  return value.map(readPresence).filter((p): p is HubPresence => p !== null);
 }
 
 /** What an action that writes code came to, field by field; null when it is not one. */
@@ -914,6 +1176,10 @@ function readWorker(value: unknown): HubWorker | null {
     pausing,
     intents: readActions(value.intents),
     ...(waiting ? { waiting } : {}),
+    ...(value.watchers === undefined || !readPresenceList(value.watchers)?.length
+      ? {}
+      : { watchers: readPresenceList(value.watchers)! }),
+    ...(value.traces === true ? { traces: true as const } : {}),
   };
 }
 
@@ -954,12 +1220,21 @@ function readSession(value: unknown): HubSession | null {
   if (live) session.live = live;
   const progress = value.progress === undefined ? null : readProgress(value.progress);
   if (progress) session.progress = progress;
+  const page = value.page === undefined ? null : readRunPage(value.page);
+  if (page) session.page = page;
+  const hold = value.hold === undefined ? null : readHold(value.hold);
+  if (hold) session.hold = hold;
+  const presence = value.presence === undefined ? null : readPresenceList(value.presence);
+  if (presence?.length) session.presence = presence;
   return session;
 }
 
 const PROGRESS_STATUSES: readonly string[] = ['running', 'passed', 'failed', 'timedout', 'interrupted', 'other'];
 
-/** How far a run is, field by field: a status of a newer service reads as `other`; null when it is not one. */
+/**
+ * How far a run is, field by field: a status of a newer service reads as `other`, an `endedAtStop` it cannot read is
+ * left out; null when it is not one.
+ */
 function readProgress(value: unknown): HubProgress | null {
   if (!isObject(value)) return null;
   const { total, done, failed, flaky, skipped, status, failure } = value;
@@ -984,9 +1259,17 @@ function readProgress(value: unknown): HubProgress | null {
     failed: failed as number,
     flaky: flaky as number,
     skipped: skipped as number,
+    ...endedAtStopWithin(value.endedAtStop, skipped as number),
     status: (PROGRESS_STATUSES.includes(status) ? status : 'other') as HubProgress['status'],
     failure: first,
   };
+}
+
+/** A run's **Hold failures**, field by field; null when it is not one. */
+function readHold(value: unknown): HubHold | null {
+  if (!isObject(value) || typeof value.on !== 'boolean') return null;
+  const by = HOLD_BY.find((known) => known === value.by);
+  return by ? { on: value.on, by } : null;
 }
 
 /** A run's live view on the team instance, field by field; null when it is not one. */
@@ -1042,6 +1325,7 @@ export function parseHubMessage(text: string): HubMessage | null {
         if (value.locator !== null && str(value.locator, 1000) === null) return null;
         answer.locator = value.locator as string | null;
       }
+      if (typeof value.taken === 'boolean') answer.taken = value.taken;
       if (value.image === undefined) return answer;
       const image = readImage(value.image);
       return image === undefined ? null : { ...answer, image };
@@ -1050,6 +1334,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       return readFrame(value);
     case 'lane-frame':
       return readLaneFrame(value);
+    case 'lane-layer':
+      return readLaneLayer(value);
     case 'session': {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;
@@ -1060,6 +1346,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       return Array.isArray(value.hubs) && value.hubs.length <= MAX_HUB_PEERS
         ? { type: 'peers', hubs: value.hubs.flatMap((hub) => readPeer(hub) ?? []) }
         : null;
+    case 'share-window':
+      return typeof value.on === 'boolean' ? { type: 'share-window', on: value.on } : null;
     case 'keepalive':
       return { type: 'keepalive' };
     default:
@@ -1104,5 +1392,5 @@ function readPeer(hub: unknown): PeerHub | null {
 
 /** The features of a list, those this version knows, in its order; none for anything but a list. */
 function readFeatures(value: unknown): HubFeature[] {
-  return Array.isArray(value) ? HUB_FEATURES.filter((feature) => value.includes(feature)) : [];
+  return Array.isArray(value) ? KNOWN_FEATURES.filter((feature) => value.includes(feature)) : [];
 }

@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: "Every keyboard shortcut the dashboard registers: the command palette, the assistant, the go-to chords, failure inbox triage, the test lists' search, and the keys of the image and element viewers."
+description: "Every keyboard shortcut the dashboard registers: the command palette, the assistant, the go-to chords, failure inbox triage, the test lists' search, the keys of the image and element viewers, and Piwi Picker's Runs window."
 lang: en-US
 ---
 
@@ -21,8 +21,8 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 
 ## Desktop app
 
-In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, and
-zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
+In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, beside the
+docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
 
 | Keys | Action |
 |---|---|
@@ -31,6 +31,36 @@ zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
 | `Ctrl` + `[` | Go back |
 | `Ctrl` + `]` | Go forward |
 | `Ctrl` + `+` / `-` / `0` | Zoom in, out, back to 100% |
+
+## Piwi Picker's Runs window
+
+In [Piwi Picker's Runs window](/features/runs-window), for the stopped test whose row holds the focus, else the only
+stopped test shown: a run's worker tabs show one worker at a time. Step and Finish wait for a stop that is no failure.
+
+| Keys | Action |
+|---|---|
+| `F8` or `F5` | Resume |
+| `F10` | Step |
+| `Shift` + `F11` | Finish |
+
+While **Interact** is on at a [watched stop](/features/runs-window#click-and-type-on-the-view), the view takes your
+pointer: moves, left and right clicks, double and triple clicks as your system counts them, drags, and the wheel once
+the view has the focus, with `Ctrl`, `Alt` and `⌘` held with a click held in the page too. It takes your keys while it
+has the focus (a focus ring around it), and a paste, which types the clipboard's text: characters are typed, named keys (Enter, the arrows, Backspace, Delete, Home, End) pressed, with Shift, and
+`Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the editing keys. The browser's other shortcuts, the function keys and
+`Esc` stay the window's: `Esc` turns **Interact** off, gives
+the stop back and moves the focus to **Interact**. While a pick or a check runs on the page, `Esc` goes to the page
+instead, as its own key. `Tab` moves the focus on past the view, unless you clicked into
+it: then `Tab` and `Shift+Tab` go to the page too, until `Esc` turns **Interact** off. Characters an input method composes (Chinese,
+Japanese, Korean) do not reach the page; paste them instead. The desktop app's Local runs tray takes the same keys.
+On a run's worker tabs, the arrow keys, `Home` and `End` move between the workers.
+
+## The run shortcut
+
+Piwi Picker's run shortcut works from any window. It resumes the stopped tests, else pauses every run, but a run
+[nobody attends](/guide/concepts#hold-failures); Piwi Picker's toolbar icon shows what it did for a moment. It has no
+key until you set one: **Set a shortcut**, in the Runs window, opens the browser's shortcuts page, where you give it a
+key and, in Chrome and Edge, the **Global** scope. In Firefox, it works while Firefox has the focus.
 
 ## Assistant panel
 

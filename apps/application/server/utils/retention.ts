@@ -23,16 +23,20 @@ import {
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
+  projectTestManagement,
   reportSnapshots,
   runCoverage,
   runLocatorBreaks,
   shareLinks,
   subscriptions,
+  testManagementCases,
+  testManagementCatalogReads,
   testRuns,
   testRunsCases,
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
+import { runEventBus } from './run-events';
 import { unreferencedFileVersions, unreferencedFragments } from './coverage';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
@@ -119,6 +123,8 @@ export async function deleteRunsByIds(
     await recomputeClusterOccurrences(db, clusterId);
   }
   for (const projectId of new Set(runs.map((run) => run.projectId))) dropProjectTestFilters(projectId);
+  // A run deleted while it runs leaves nothing in the event bus: its lanes, its running cases, its steps.
+  for (const run of runs) runEventBus.cleanup(run.id);
 
   return { deletedRuns: runs.length, deletedCases };
 }
@@ -572,6 +578,25 @@ export async function pruneIntegrationActions(db: DbClient, olderThanDays: numbe
   )!;
   const pruned = await countWhere(db, integrationActions, settled);
   if (pruned > 0) await db.delete(integrationActions).where(settled);
+  return pruned;
+}
+
+/**
+ * Delete the stored test cases, and the record of when they were read, of a test management project no project's
+ * binding names any more. A disabled binding still names its project, so its catalog stays for when it is switched
+ * on again. Returns the rows removed from both tables.
+ */
+export async function pruneTestManagementCatalogs(db: DbClient): Promise<number> {
+  const unbound = (connectionId: SQL, projectKey: SQL) =>
+    sql`NOT EXISTS (SELECT 1 FROM ${projectTestManagement} WHERE ${projectTestManagement.connectionId} = ${connectionId} AND ${projectTestManagement.providerProjectKey} = ${projectKey})`;
+  const cases = unbound(sql`${testManagementCases.connectionId}`, sql`${testManagementCases.projectKey}`);
+  const reads = unbound(sql`${testManagementCatalogReads.connectionId}`, sql`${testManagementCatalogReads.projectKey}`);
+  const pruned =
+    (await countWhere(db, testManagementCases, cases)) + (await countWhere(db, testManagementCatalogReads, reads));
+  if (pruned > 0) {
+    await db.delete(testManagementCases).where(cases);
+    await db.delete(testManagementCatalogReads).where(reads);
+  }
   return pruned;
 }
 

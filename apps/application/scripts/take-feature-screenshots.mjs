@@ -575,6 +575,50 @@ button { margin-top: 24px; width: 100%; padding: 12px; border: 0; border-radius:
   </section>
 </main>`;
 
+/** The other pages the workers of `run-watch-all` are on: a search, a cart and a sign-in. */
+const WATCH_ALL_PAGES = {
+  search: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600 }
+main { padding: 32px } input { width: 420px; padding: 10px; border: 1px solid #cbd2d9; border-radius: 6px; font: inherit }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 24px }
+.card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%) }
+.img { height: 120px; border-radius: 6px; background: linear-gradient(135deg, #c3dafe, #e9d8fd) }
+</style>
+<header>Shop</header>
+<main>
+  <input placeholder="Search" value="Nordwind">
+  <div class="grid">
+    <div class="card"><div class="img"></div><p>Nordwind trail runner</p><b>€89.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind rain jacket</p><b>€129.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind day pack</p><b>€59.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind cap</p><b>€19.00</b></div>
+  </div>
+</main>`,
+  cart: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600; display: flex; justify-content: space-between }
+main { padding: 32px; max-width: 720px } section { background: #fff; border-radius: 8px; padding: 8px 24px 24px }
+.row { display: flex; justify-content: space-between; margin: 12px 0 }
+</style>
+<header><span>Shop</span><span>Signed in as jo@example.test · Cart (2)</span></header>
+<main><section>
+  <h2>Your cart</h2>
+  <div class="row"><span>Running shoes</span><span>€79.90</span></div>
+  <div class="row"><span>Socks, 3 pairs</span><span>€12.00</span></div>
+  <hr><div class="row"><b>Total</b><b>€91.90</b></div>
+</section></main>`,
+  signIn: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933; display: grid; place-items: center; height: 100vh }
+section { background: #fff; border-radius: 8px; padding: 32px; width: 380px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%); text-align: center }
+</style>
+<section>
+  <h2>Check your inbox</h2>
+  <p>We sent a sign-in link to jo@example.test.</p>
+  <p style="color: #52606d; font-size: 14px">It expires in 15 minutes.</p>
+</section>`,
+};
+
 /**
  * The call log of the click `run-live-view` shows, as its worker posts it 6.4 s into the wait: Playwright 1.64's log
  * of a click on a disabled button, folded as the worker folds it.
@@ -599,17 +643,94 @@ const LIVE_VIEW_CALL_LINES = [
 
 /**
  * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
- * on the test the worker runs.
+ * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another.
  */
-function holdLiveWorkerStream(base, runId, key) {
+function holdLiveWorkerStream(base, runId, key, after = null) {
   const client = base.startsWith('https:') ? https : http;
-  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
+  const continues = after === null ? '' : `&after=${after}`;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
   request.on('error', () => {});
   request.end();
   return () => request.destroy();
+}
+
+/**
+ * The page events the worker of `run-live-view-layers` posts, oldest first: the API call that seeded its cart, a
+ * console error, a save that waits, then fails with the exception the backend logged for it.
+ */
+const LIVE_LAYERS_EVENTS = [
+  {
+    kind: 'api',
+    method: 'POST',
+    url: 'https://shop.example.test/api/test/carts',
+    status: 201,
+    ms: 84,
+    failure: null,
+  },
+  {
+    kind: 'console',
+    text: "TypeError: Cannot read properties of undefined (reading 'brand')\n    at cardBrand (checkout.js:41:18)",
+  },
+  {
+    kind: 'request-pending',
+    id: 12,
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    ms: 5_000,
+    done: false,
+  },
+  {
+    kind: 'request-pending',
+    id: 12,
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    ms: 15_000,
+    done: false,
+  },
+  {
+    kind: 'request-failed',
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    status: 502,
+    failure: null,
+  },
+  {
+    kind: 'backend',
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    status: 502,
+    level: 'error',
+    text: 'PaymentGatewayTimeoutException: the card issuer did not answer within 15 s',
+  },
+];
+
+/** The calls of `run-live-view-layers`' test that ended, each with the page as its filmstrip shows it after the call. */
+const LIVE_LAYERS_CALLS = [
+  { call: 'call@41', title: 'Navigate to "/checkout"', fill: {} },
+  { call: 'call@47', title: 'Fill "jo@example.test" getByLabel(\'Email\')', fill: { email: 'jo@example.test' } },
+  {
+    call: 'call@52',
+    title: "Fill getByLabel('Card number')",
+    fill: { email: 'jo@example.test', card: '4242 4242 4242 4242' },
+  },
+  {
+    call: 'call@55',
+    title: "Fill getByLabel('Password')",
+    fill: { email: 'jo@example.test', card: '4242 4242 4242 4242', password: 'correct horse' },
+  },
+];
+
+/** One live message, as a worker posts an image of its filmstrip: the header's length, the header, the data's, the data. */
+function liveMessage(header, data) {
+  const json = Buffer.from(JSON.stringify(header));
+  const head = Buffer.alloc(4);
+  head.writeUInt32BE(json.length);
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(data.length);
+  return Buffer.concat([head, json, size, data]);
 }
 
 /**
@@ -688,6 +809,204 @@ async function reportLiveRunWithResources(request, base) {
     },
   });
   return runId;
+}
+
+/** The project of `live-run-lists`: two finished runs, then one still going. */
+const LIVE_LISTS_PROJECT = 'storefront-live';
+/** The tests the running run of `live-run-lists` plans. */
+const LIVE_LISTS_TOTAL = 40;
+
+/**
+ * `count` results of the running run of `live-run-lists`, from its `from`-th test on: every fourth one fails.
+ */
+function liveListsResults(from, count) {
+  return Array.from({ length: count }, (_, i) => {
+    const n = from + i;
+    const failed = n % 4 === 3;
+    return {
+      type: 'complete',
+      title: `storefront step ${n + 1}`,
+      location: `tests/storefront.spec.ts:${n * 8 + 3}:5`,
+      status: failed ? 'failed' : 'passed',
+      duration: 1200 + (n % 5) * 300,
+      error: failed ? "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('alert')" : null,
+      retries: 0,
+      workerIndex: n % 3,
+      browser: { projectName: 'chromium', browserName: 'chromium' },
+    };
+  });
+}
+
+/** The running run of `live-run-lists`, reported once per session: its id and stream token. */
+let liveListsRun;
+
+/**
+ * Two finished runs of `storefront-live`, then a third still going with 40 tests planned and its first 8 results in,
+ * 2 of them failed. Nothing finishes it, so Home and the project's runs list show it running. The project an earlier
+ * session reported is deleted first, so the list holds these three runs alone.
+ */
+function reportLiveListsRun(request, base) {
+  liveListsRun ??= (async () => {
+    const post = (path, options) => postRetrying(request, base, path, options);
+    const { items } = await (await request.get(`${base}/api/projects`)).json();
+    const earlier = items.find((project) => project.name === LIVE_LISTS_PROJECT);
+    if (earlier) await request.delete(`${base}/api/projects/${earlier.id}`);
+    for (const [hoursAgo, failed] of [
+      [26, 0],
+      [3, 2],
+    ]) {
+      const startTime = new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+      const results = liveListsResults(0, LIVE_LISTS_TOTAL).map(({ type: _type, ...result }, i) => ({
+        ...result,
+        status: i < failed ? 'failed' : 'passed',
+        error: i < failed ? "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('alert')" : null,
+      }));
+      await post('/api/test-runs/submit', {
+        data: {
+          projectName: LIVE_LISTS_PROJECT,
+          status: failed ? 'failed' : 'passed',
+          startTime,
+          duration: 94_000,
+          totalTests: LIVE_LISTS_TOTAL,
+          passedTests: LIVE_LISTS_TOTAL - failed,
+          failedTests: failed,
+          skippedTests: 0,
+          testCases: results,
+        },
+      });
+    }
+    const { runId, streamToken } = await (
+      await post('/api/test-runs/start', {
+        data: {
+          projectName: LIVE_LISTS_PROJECT,
+          startTime: new Date(Date.now() - 40_000).toISOString(),
+          totalTests: LIVE_LISTS_TOTAL,
+        },
+      })
+    ).json();
+    await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases: liveListsResults(0, 8) } });
+    return { runId, streamToken, reported: 8 };
+  })();
+  return liveListsRun;
+}
+
+/** Report the next `count` results of the running run of `live-run-lists`, as its reporter streams them. */
+async function streamLiveListsResults(request, base, count) {
+  const run = await liveListsRun;
+  const testCases = liveListsResults(run.reported, count);
+  run.reported += count;
+  await postRetrying(request, base, `/api/test-runs/${run.runId}/events`, {
+    data: { streamToken: run.streamToken, testCases },
+  });
+}
+
+/**
+ * A sharded run still going, 3 min 20 s in, with two of its three shards started: shard 1 on three workers, shard 2
+ * on two. Each worker finished a few tests and runs one more, whose test passed in two earlier runs, so the Timeline
+ * draws its usual time behind it. The one on shard 1's worker 2 has run over 3 minutes, far past its passes (the
+ * server's stuck check marks it within 15 s), and on shard 1's worker 3 a test that failed runs its second attempt,
+ * past its usual time but not stuck. Nothing finishes it, so the run page draws it live, while the caller keeps it
+ * from going quiet with each shard's stream token (`tokens`): two minutes without a word interrupt it.
+ */
+async function reportLiveShardedRun(request, base) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const projectName = 'checkout-lanes';
+  const browser = { projectName: 'chromium', browserName: 'chromium' };
+  const now = Date.now();
+  // Each test: its shard and lane, its title and line, how long it usually passes in, and this run's attempts as
+  // [start, duration] from the run's start (a null duration still runs), the earlier ones failed.
+  const TESTS = [
+    { shard: 1, lane: 0, title: 'adds an item to the cart', line: 8, usual: 14_000, attempts: [[2_000, 13_500]] },
+    { shard: 1, lane: 0, title: 'applies a discount code', line: 22, usual: 18_000, attempts: [[16_000, 17_000]] },
+    { shard: 1, lane: 0, title: 'checks out as a guest', line: 36, usual: 130_000, attempts: [[34_000, 126_000]] },
+    { shard: 1, lane: 0, title: 'shows the order summary', line: 50, usual: 60_000, attempts: [[163_000, null]] },
+    { shard: 1, lane: 1, title: 'saves the shipping address', line: 64, usual: 9_000, attempts: [[2_400, 8_200]] },
+    { shard: 1, lane: 1, title: 'pays with PayPal', line: 78, usual: 8_000, attempts: [[12_000, null]] },
+    { shard: 1, lane: 2, title: 'removes an item', line: 92, usual: 25_000, attempts: [[2_800, 24_000]] },
+    { shard: 1, lane: 2, title: 'updates the quantities', line: 106, usual: 120_000, attempts: [[28_000, 118_000]] },
+    {
+      shard: 1,
+      lane: 2,
+      title: 'pays by card',
+      line: 120,
+      usual: 16_000,
+      attempts: [
+        [148_000, 15_000],
+        [165_000, null],
+      ],
+    },
+    { shard: 2, lane: 0, title: 'lists past orders', line: 134, usual: 45_000, attempts: [[9_000, 41_000]] },
+    { shard: 2, lane: 0, title: 'filters orders by date', line: 148, usual: 100_000, attempts: [[51_000, 95_000]] },
+    { shard: 2, lane: 0, title: 'cancels an order', line: 162, usual: 70_000, attempts: [[148_000, null]] },
+    { shard: 2, lane: 1, title: 'downloads an invoice', line: 176, usual: 40_000, attempts: [[9_500, 37_000]] },
+    { shard: 2, lane: 1, title: 'emails the receipt', line: 190, usual: 66_000, attempts: [[48_000, 64_000]] },
+    { shard: 2, lane: 1, title: 'reorders a past order', line: 204, usual: 90_000, attempts: [[114_000, null]] },
+  ];
+  const location = (t) => `tests/checkout.spec.ts:${t.line}:3`;
+  // Two earlier runs where every test passed: its usual time, and a little less.
+  for (const [i, factor] of [0.92, 1].entries()) {
+    await post('/api/test-runs/submit', {
+      data: {
+        projectName,
+        status: 'passed',
+        startTime: new Date(now - (i + 1) * 86_400_000).toISOString(),
+        duration: 240_000,
+        totalTests: TESTS.length,
+        passedTests: TESTS.length,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: TESTS.map((t) => ({
+          title: t.title,
+          status: 'passed',
+          duration: Math.round(t.usual * factor),
+          location: location(t),
+          browser,
+        })),
+      },
+    });
+  }
+
+  const startTime = now - 200_000;
+  const instanceId = `lanes-scene-${now}`;
+  let runId = null;
+  const tokens = [];
+  for (const shard of [1, 2]) {
+    const ofShard = TESTS.filter((t) => t.shard === shard);
+    const started = await (
+      await post('/api/test-runs/start', {
+        data: {
+          projectName,
+          startTime: new Date(startTime).toISOString(),
+          totalTests: ofShard.length + 2,
+          instanceId,
+          shardIndex: shard,
+          shardTotal: 3,
+        },
+      })
+    ).json();
+    runId = started.runId;
+    tokens.push(started.streamToken);
+    const testCases = ofShard.flatMap((t) =>
+      t.attempts.map(([at, duration], retries) => ({
+        type: duration === null ? 'begin' : 'complete',
+        title: t.title,
+        location: location(t),
+        retries,
+        ...(duration === null
+          ? {}
+          : retries < t.attempts.length - 1
+            ? { status: 'failed', duration, error: 'Error: expect(locator).toBeVisible() failed' }
+            : { status: 'passed', duration }),
+        workerIndex: t.lane + (retries > 0 ? 3 : 0),
+        parallelIndex: t.lane,
+        shardIndex: shard,
+        startedAt: startTime + at,
+        browser,
+      })),
+    );
+    await post(`/api/test-runs/${runId}/events`, { data: { streamToken: started.streamToken, testCases } });
+  }
+  return { runId, tokens };
 }
 
 /**
@@ -974,7 +1293,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
- *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
+ *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
+ *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
  *   update      — desktop mode: `{ check, releaseNotes }`, an update on offer and its release notes (default none)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
@@ -1039,7 +1359,7 @@ async function shopPageJpeg(context) {
 /**
  * A desktop scene's local run, live on the run page: the run page's Re-run starts it, the played hub names its one
  * worker running `intents` (`playDesktopRunHub` first), the run reports to the app with the reference the app gave it,
- * its test begun on that worker, and **Live in Piwi** opens its page. Answers the tray, the spec's URI, the running
+ * its test begun on that worker, and **Open run #N** opens its page. Answers the tray, the spec's URI, the running
  * worker, a session message of a worker, and `finish`, which ends the live run.
  */
 async function openDesktopLiveRun({ page, base, goto, intents }) {
@@ -1112,7 +1432,7 @@ async function openDesktopLiveRun({ page, base, goto, intents }) {
       browser: { projectName: 'chromium' },
     };
     await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
-    await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
+    await tray.getByRole('link', { name: `Open run #${started.runId}` }).click({ timeout: 60_000 });
   } catch (error) {
     await finish();
     throw error;
@@ -1614,6 +1934,12 @@ const JIRA_SCENE_ICONS = {
     '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
 };
 const jiraSceneIcon = (name) => `/rest/api/3/universal_avatar/view/type/scene/avatar/${name}`;
+/** The sample people the scenes' fake site lets the connection assign. */
+const JIRA_SCENE_PEOPLE = [
+  { id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') },
+  { id: 'acct-2', displayName: 'Sam Ortiz', icon: jiraSceneIcon('person') },
+  { id: 'acct-3', displayName: 'Lee Park', icon: jiraSceneIcon('person') },
+];
 
 async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/icon*', (route) => {
@@ -1641,9 +1967,15 @@ async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
-  await page.route('**/api/integrations/connections/*/assignable*', (route) =>
-    route.fulfill({ json: { users: [{ id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') }] } }),
-  );
+  await page.route('**/api/integrations/connections/*/assignable*', (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const accountId = params.get('accountId');
+    const words = (params.get('q') ?? '').trim().toLowerCase();
+    const users = JIRA_SCENE_PEOPLE.filter((u) =>
+      accountId ? u.id === accountId : !words || u.displayName.toLowerCase().includes(words),
+    );
+    return route.fulfill({ json: { users } });
+  });
   await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
     route.fulfill({
       json: {
@@ -1791,6 +2123,30 @@ function screenshotLightboxScene(width, suffix) {
       await settle();
       await enlarge.click();
       await page.getByRole('complementary', { name: 'Screenshot details' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  };
+}
+
+/**
+ * A screenshot the test attached under a long step name, enlarged from the Screen
+ * tab of the passing cart total execution: the details give the name in full,
+ * with its expected result on a line of its own.
+ */
+function namedScreenshotScene(width, suffix) {
+  return {
+    name: `screenshot-lightbox-named${suffix}`,
+    description: `An enlarged attached screenshot whose details give its full step name and expected result, at ${width} px`,
+    tags: ['desktop'],
+    route: '/test-run-cases/238?evidence=screen',
+    viewport: { width, height: width < 640 ? 844 : 900 },
+    async run({ page, settle, shoot }) {
+      const enlarge = page.getByRole('button', { name: /^Enlarge Step 2: Add one wireless mouse/ }).first();
+      await enlarge.waitFor({ timeout: 60_000 });
+      await settle();
+      await enlarge.click();
+      await page.getByRole('dialog').waitFor();
       await settle();
       await shoot();
     },
@@ -2290,6 +2646,121 @@ const DESKTOP_UPDATE_RELEASE_NOTES = {
   ],
 };
 
+/** A finished run of the checkout project whose tests all have a video; the demo seed's run #1. */
+const VIDEO_MARKS_RUN = 1;
+/** One of its videoed tests: it checks a box and hovers the button a few ms apart, which merge into one mark, then clicks it. */
+const VIDEO_MARKS_EXECUTION = 6;
+
+/**
+ * The marks under the video review: the lane of a test's actions on the run's Video tab, a click, a fill and the
+ * merged mark each hovered, one action shown as failed and the lane of a test with no recorded actions (answered
+ * here, since every videoed test of the seed has some), then the same lane in the Evidence window. The narrow and
+ * dark ones keep the lane and the merged mark.
+ */
+function videoMarksScene(width, colorScheme, suffix) {
+  const name = `run-video-marks${suffix}`;
+  const full = suffix === '';
+  const lane = '[data-testid="video-action-marks"]';
+  const byLabel = (page, pattern) => page.getByRole('button', { name: pattern }).locator('visible=true').first();
+  const marksOf = (page) => page.locator(`${lane} [data-testid="video-action-mark"]`);
+  const outputs = [`${name}-lane.png`, `${name}-merged.png`];
+  if (full) {
+    outputs.push(
+      `${name}-click.png`,
+      `${name}-fill.png`,
+      `${name}-failed.png`,
+      `${name}-evidence.png`,
+      `${name}-empty.png`,
+    );
+  }
+  return {
+    name,
+    description: `The marks under the video review on the run's Video tab (${width} px, ${colorScheme}): the lane and the merged mark${full ? ', a click, a fill and a failed action hovered, the Evidence window and a test with no recorded actions' : ''}`,
+    route: `/test-runs/${VIDEO_MARKS_RUN}?tab=video`,
+    viewport: { width, height: width < 640 ? 1500 : 1000 },
+    colorScheme,
+    outputs,
+    async run({ page, goto, settle, shoot }) {
+      const tab = '[data-shot="run-video-tab"]';
+      const ready = async () => {
+        await page.locator(`${tab} ${lane} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      const hover = async (locator, label) => {
+        await locator.hover();
+        await page.getByRole('tooltip').first().waitFor({ timeout: 10_000 });
+        await shoot(label, { of: tab, pad: 12 });
+      };
+      await ready();
+      await shoot('lane', { of: tab, pad: 12 });
+      await hover(byLabel(page, /^2 actions/), 'merged');
+      if (!full) return;
+
+      await page.mouse.move(0, 0);
+      await hover(byLabel(page, /^Click getByRole\('button', \{ name: 'Place order' \}\)/), 'click');
+      await page.mouse.move(0, 0);
+      await hover(byLabel(page, /^Fill getByLabel\('Email'\)/), 'fill');
+
+      // The seed has no failed action, so the last one is answered as failed.
+      await page.route('**/api/test-run-cases/*/video-actions', async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        const last = body.actions[body.actions.length - 1];
+        if (last) last.failed = true;
+        await route.fulfill({ response, json: body });
+      });
+      await goto(`/test-runs/${VIDEO_MARKS_RUN}?tab=video`);
+      await ready();
+      await page.mouse.move(0, 0);
+      await hover(marksOf(page).last(), 'failed');
+      await page.unroute('**/api/test-run-cases/*/video-actions');
+
+      await page.route('**/api/test-run-cases/*/video-actions', (route) =>
+        route.fulfill({ json: { source: 'none', timing: null, actions: [], total: 0, capped: false } }),
+      );
+      await goto(`/test-runs/${VIDEO_MARKS_RUN}?tab=video`);
+      await page.getByText('No recorded actions for this test').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('empty', { of: tab, pad: 12 });
+      await page.unroute('**/api/test-run-cases/*/video-actions');
+
+      await goto(`/test-run-cases/${VIDEO_MARKS_EXECUTION}`);
+      await page.getByRole('button', { name: 'Open video review' }).click();
+      await page.locator(`[role="dialog"] ${lane} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('evidence');
+    },
+  };
+}
+
+/** The run's Video tab and the Evidence's video review at a viewport: the whole reel in view, and the bar's ring. */
+function videoFitScene(width, height, suffix) {
+  const name = `video-review-fit${suffix}`;
+  const bar = '[aria-label="Tests in this reel"]';
+  return {
+    name,
+    description: `The video review fitted to a ${width}x${height} screen: video, Play row, bar and marks in view without scrolling the page, the current block's ring on the bar, and the Evidence window the same`,
+    route: `/test-runs/${VIDEO_MARKS_RUN}?tab=video`,
+    viewport: { width, height },
+    outputs: [`${name}-tab.png`, `${name}-bar.png`, `${name}-evidence.png`],
+    async run({ page, goto, settle, shoot }) {
+      const ready = async (scope) => {
+        await page.locator(`${scope} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      await ready('[data-shot="run-video-tab"]');
+      await shoot('tab');
+      await page.locator(`${bar} button`).first().focus();
+      await shoot('bar', { of: bar, pad: 16 });
+
+      await goto(`/test-run-cases/${VIDEO_MARKS_EXECUTION}`);
+      await page.getByRole('button', { name: 'Open video review' }).click();
+      await ready('[role="dialog"]');
+      await shoot('evidence');
+    },
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -2684,11 +3155,11 @@ const SCENES = [
   {
     name: 'open-in-ide-settings',
     description:
-      'The Open in IDE dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
+      'The Open in editor dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
     route: '/',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
-      const item = page.getByRole('menuitem', { name: 'Open in IDE…' });
+      const item = page.getByRole('menuitem', { name: 'Open in editor…' });
       await settle();
       for (let attempt = 0; attempt < 20 && !(await item.isVisible()); attempt++) {
         await page.locator('[data-shot="user-menu"]').click();
@@ -3967,6 +4438,162 @@ const SCENES = [
     },
   },
   {
+    name: 'zephyr-integrations-card',
+    description:
+      'Settings → Integrations: the Zephyr Scale Cloud card with a verified connection on the Europe region, beside the Jira card',
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1100 },
+    colorScheme: 'light',
+    async run({ page, goto, shoot, settle }) {
+      // The scene answers the connection list with a canned Zephyr connection; no Zephyr host is contacted.
+      await page.route('**/api/integrations/connections', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const list = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...list,
+            connections: [
+              ...list.connections,
+              {
+                id: 9001,
+                provider: 'zephyr-scale',
+                name: 'Zephyr Scale Cloud (Europe)',
+                baseUrl: 'https://eu.api.zephyrscale.smartbear.com/v2',
+                config: { region: 'eu' },
+                status: 'ok',
+                lastCheckedAt: new Date().toISOString(),
+                lastError: null,
+                managedBy: 'db',
+                hasCredentials: true,
+                credentialValues: {},
+                hasWebhookToken: false,
+                createdAt: null,
+                updatedAt: null,
+              },
+            ],
+          },
+        });
+      });
+      await page.route('**/api/integrations/connections/9001/**', (route) => route.fulfill({ json: { events: [] } }));
+      // A client-side navigation, so the route above answers the page's fetch, not the server render.
+      await goto('/settings');
+      await page.locator('a[href="/settings/integrations"]').first().click();
+      const card = page.locator('[data-shot="integration-zephyr-scale"]');
+      await card.getByText('Zephyr Scale Cloud (Europe)').waitFor({ timeout: 20000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="integration-zephyr-scale"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-connect-form',
+    description:
+      'Settings → Integrations: the Zephyr Scale Cloud connect form with a region chosen, a token pasted and a passed check',
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1100 },
+    colorScheme: 'light',
+    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/integrations/connections/check', async (route) => {
+        const body = route.request().postDataJSON();
+        await route.fulfill({
+          json: {
+            baseUrl: 'https://eu.api.zephyrscale.smartbear.com/v2',
+            site: {
+              ok: true,
+              reachable: true,
+              deploymentType: null,
+              title: 'Europe',
+              reportedUrl: null,
+              cloudId: null,
+            },
+            auth: {
+              ok: true,
+              account: { id: `zephyr-scale:${body.region}`, displayName: 'Zephyr Scale Cloud (Europe)' },
+            },
+            projects: { ok: true, count: 3, keys: ['CHK', 'PAY', 'WEB'], hint: null },
+          },
+        });
+      });
+      await page.getByRole('button', { name: 'Connect Zephyr Scale Cloud' }).click();
+      const form = page.locator('[data-shot="zephyr-scale-connection-form"]');
+      await form.waitFor();
+      await form.getByTestId('region').click();
+      await page.getByRole('option', { name: 'Europe' }).click();
+      await form.getByTestId('credential-apiToken').fill('screenshot-token');
+      await form.getByRole('button', { name: 'Check', exact: true }).click();
+      await page.getByTestId('region-check').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="zephyr-scale-connection-form"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-binding-form',
+    mode: 'demo',
+    description:
+      'Project settings → Test management: the checkout project bound to a Zephyr Scale project with dry run on and the case key read from tags',
+    route: '/projects/1?tab=settings&section=test-management',
+    viewport: { width: 1280, height: 1400 },
+    colorScheme: 'light',
+    async run({ page, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const form = page.locator('[data-shot="project-test-management-binding"]');
+      await form.getByTestId('test-management-dry-run').waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="project-test-management-binding"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-mapping-summary',
+    mode: 'demo',
+    description:
+      'Project settings → Test management: how the last run’s tests map onto the case catalog (tests with a key, tests with none, a key the catalog does not hold) and the catalog with its Refresh button',
+    route: '/projects/1?tab=settings&section=test-management',
+    viewport: { width: 1280, height: 1400 },
+    colorScheme: 'light',
+    async run({ page, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const summary = page.locator('[data-shot="test-management-summary"]');
+      await summary.getByTestId('test-management-mapped').waitFor({ timeout: 90_000 });
+      await summary.getByTestId('test-management-unknown').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-management-summary"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-case-hover-card',
+    mode: 'demo',
+    description:
+      'A test case page: hovering a case key tag opens a card with the name and status of the Zephyr Scale case behind it',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'light',
+    async run({ page, goto, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      const caseId = await page.evaluate(async () => {
+        const res = await fetch('/demo/api/projects/1/test-cases?tags=SHOP-T123&maxAgeDays=0');
+        const body = await res.json();
+        return body.items?.[0]?.id ?? null;
+      });
+      if (caseId === null) throw new Error('No demo test carries the tag SHOP-T123');
+      await goto(`/test-cases/${caseId}`);
+      const tag = page.getByText('@SHOP-T123', { exact: true }).first();
+      await tag.waitFor({ timeout: 90_000 });
+      await tag.hover();
+      const card = page.getByTestId('test-case-key-card');
+      await card.getByTestId('test-case-key-name').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-testid="test-case-key-card"]', pad: 24 });
+    },
+  },
+  {
     name: 'create-issue-modal',
     description: 'Create issue modal on a cluster: title, fields, include toggles and the fix-plan preview',
     tags: ['docs'],
@@ -4082,7 +4709,7 @@ const SCENES = [
     out: 'docs',
     // A db-managed Jira connection makes the binding form appear; its base URL
     // points at a dead local port so no real Jira is contacted. The binding is
-    // answered as bound to CHK / Bug, with its sync policies and an owner route.
+    // answered as bound to CHK / Bug, with its sync policies, a default assignee and an owner route.
     prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
     viewport: { width: 1280, height: 2300 },
@@ -4100,6 +4727,7 @@ const SCENES = [
             projectKey: 'CHK',
             issueType: '10004',
             labels: ['piwi', 'e2e'],
+            defaultAssignee: 'acct-2',
             fieldDefaults: JIRA_FIELD_DEFAULTS,
             policies: {
               ...binding.policies,
@@ -4117,6 +4745,122 @@ const SCENES = [
       });
       await goto('/projects/2?tab=settings&section=issue-tracker');
       await page.locator('[data-shot="project-integration-binding"]').waitFor({ timeout: 20000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'settings-title-prefix',
+    description: 'Project → Settings → Issue tracker: the Title prefix field, set to [Piwi] on the binding',
+    // The binding is answered as bound to CHK / Bug with the prefix the issues are filed under.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings&section=issue-tracker',
+    viewport: { width: 1280, height: 2400 },
+    of: '[data-shot="issue-tracker-destination"]',
+    pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            labels: ['piwi'],
+            fieldDefaults: JIRA_FIELD_DEFAULTS,
+            titlePrefix: '[Piwi]',
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      await page.locator('[data-shot="project-integration-binding"]').waitFor({ timeout: 20000 });
+      await page.getByLabel('Title prefix').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    {
+      name: 'create-dialog-prefixed',
+      of: '[role="dialog"]',
+      description: 'Create issue modal: the title carries the prefix',
+    },
+    {
+      name: 'ticket-preview-filed-by',
+      of: '[data-shot="issue-preview"]',
+      description: 'Create issue modal: the preview ends with the line naming who files the issue',
+    },
+  ].map(({ name, of, description }) => ({
+    name,
+    description,
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/4',
+    viewport: { width: 1280, height: 1300 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+        route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+      );
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        const markdown = String(draft.markdown ?? '').replace('Filed from Piwi.', 'Filed by Priya Shah from Piwi.');
+        await route.fulfill({
+          json: {
+            ...draft,
+            title: draft.title.startsWith('[Piwi] ') ? draft.title : `[Piwi] ${draft.title}`,
+            markdown,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            projectBound: true,
+            fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+          },
+        });
+      });
+      await page.locator('[data-shot="issue-line-create"]').first().click();
+      await page.getByRole('dialog').waitFor();
+      await page
+        .getByText('What happened')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await page.locator('[data-shot="issue-preview"] *').evaluateAll((nodes) => {
+        for (const node of nodes) node.scrollTop = node.scrollHeight;
+      });
+      await settle();
+      await shoot(undefined, { of, pad: 0 });
+    },
+  })),
+  {
+    name: 'issue-line-filed-by',
+    description: 'Cluster situation block: the Issue line names the issue and says who filed it and when',
+    prepare: async ({ base, request }) => {
+      await pinSceneIssue({ base, request }, { clusterId: 10, key: 'PROJ-128', title: 'Checkout button is disabled' });
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await page.route('**/api/failure-clusters/10', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const cluster = await (await route.fetch()).json();
+        if (cluster.knownIssue) {
+          cluster.knownIssue.filedBy = 'Priya Shah';
+          cluster.knownIssue.automatic = false;
+          cluster.knownIssue.linkedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+        }
+        await route.fulfill({ json: cluster });
+      });
+      // The cluster page is server-rendered on a direct load, which the page cannot answer for:
+      // opening it from the app fetches it in the browser.
+      await goto('/');
+      await page.evaluate(() => window.useNuxtApp().$router.push('/failure-clusters/10'));
+      await page.locator('[data-testid="issue-line-filed-by"]').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
@@ -4402,6 +5146,13 @@ const SCENES = [
   },
   runTimelineLeaksScene('light', ''),
   runTimelineLeaksScene('dark', '-dark'),
+  videoMarksScene(1280, 'light', ''),
+  videoMarksScene(375, 'light', '-phone'),
+  videoMarksScene(1280, 'dark', '-dark'),
+  videoFitScene(1440, 900, ''),
+  videoFitScene(375, 812, '-phone'),
+  videoFitScene(1280, 720, '-laptop'),
+  videoFitScene(375, 667, '-phone-short'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
@@ -4511,6 +5262,51 @@ const SCENES = [
     outputs: ['run-timeline-resources-hover.png'],
   },
   {
+    name: 'live-run-lists',
+    description:
+      "A run still going, as Home's Recent activity and the project's runs list show it: the count bar and '16 of 40 · 4 failed', the row moving on in place as results come in, at 1280 px and at phone width",
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    pad: 8,
+    outputs: [
+      'live-run-lists-home.png',
+      'live-run-lists-home-narrow.png',
+      'live-run-lists-project.png',
+      'live-run-lists-project-narrow.png',
+    ],
+    async prepare({ request, base }) {
+      await reportLiveListsRun(request, base);
+    },
+    async run({ page, base, goto, shoot, settle }) {
+      /** Wait until the page's running row says `text`, with no reload: the tally came over the stream. */
+      const says = (of, text) =>
+        page.locator(`${of} [data-live-progress]`).filter({ hasText: text }).first().waitFor({ timeout: 30_000 });
+      for (const [route, of, label] of [
+        ['/', '[data-shot="recent-activity"]', 'home'],
+        [null, '[data-shot="runs-table"]', 'project'],
+      ]) {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        if (route) await goto(route);
+        else {
+          const projects = await (await page.request.get(`${base}/api/projects`)).json();
+          const project = projects.items.find((p) => p.name === LIVE_LISTS_PROJECT);
+          await goto(`/projects/${project.id}`);
+        }
+        const run = await liveListsRun;
+        await says(of, `${run.reported} of ${LIVE_LISTS_TOTAL}`);
+        // Four more results come in while the page is open: the row moves on by itself.
+        await streamLiveListsResults(page.request, base, 4);
+        await says(of, `${run.reported} of ${LIVE_LISTS_TOTAL}`);
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot(label, { of });
+        await page.setViewportSize({ width: 390, height: 900 });
+        await settle();
+        await shoot(`${label}-narrow`, { of });
+      }
+    },
+  },
+  {
     name: 'run-timeline-resources-live',
     description:
       "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, then each running test's worker values on the Tests tab, at 1280 px and at phone width",
@@ -4559,6 +5355,60 @@ const SCENES = [
       'run-timeline-resources-live-narrow.png',
       'run-timeline-resources-live-tests.png',
       'run-timeline-resources-live-tests-narrow.png',
+    ],
+  },
+  {
+    name: 'run-timeline-lanes',
+    description:
+      'A sharded run still going, two of its three shards started: its Timeline as lanes by shard, each running test a bar to now over the pale bar of its usual time, the stuck one amber, then its Tests tab searched for is:stuck, at 1280 px and at phone width',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.live = await reportLiveShardedRun(request, base);
+    },
+    async run({ page, base, goto, shoot, settle }) {
+      const { runId, tokens } = this.live;
+      // Each shard's heartbeat, so the run stays live through the captures.
+      const beat = () =>
+        Promise.all(
+          tokens.map((streamToken) =>
+            page.request.post(`${base}/api/test-runs/${runId}/heartbeat`, { data: { streamToken } }).catch(() => {}),
+          ),
+        );
+      await beat();
+      const heartbeat = setInterval(beat, 20_000);
+      try {
+        await goto(`/test-runs/${runId}?tab=workers`);
+        // The server checks its live runs for stuck tests every 15 seconds.
+        await page.locator('[data-timeline-running][data-stuck]').first().waitFor({ timeout: 60_000 });
+        await page.locator('[data-timeline-ghost]').first().waitFor({ timeout: 30_000 });
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 900 });
+        await settle();
+        await shoot('narrow');
+        for (const [width, label] of [
+          [1280, 'tests'],
+          [390, 'tests-narrow'],
+        ]) {
+          await page.setViewportSize({ width, height: 900 });
+          await goto(`/test-runs/${runId}?tab=test-cases&search=is%3Astuck`);
+          await page.locator('[data-testid="stuck-time"]:visible').first().waitFor({ timeout: 60_000 });
+          await settle();
+          await shoot(label, { of: '[data-shot="failure-clusters"]' });
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+    },
+    outputs: [
+      'run-timeline-lanes.png',
+      'run-timeline-lanes-narrow.png',
+      'run-timeline-lanes-tests.png',
+      'run-timeline-lanes-tests-narrow.png',
     ],
   },
   {
@@ -4773,6 +5623,30 @@ const SCENES = [
     out: 'docs',
     route: '/projects/1/selections',
     viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'run-reused-tests',
+    description: 'Run page: the Reused row of a run whose pass reuse plan skipped every test, and the list it opens',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-runs/75',
+    viewport: { width: 1280, height: 900 },
+    run: async ({ page, shoot, settle }) => {
+      await page.locator('[data-reused-open]').click();
+      await page.locator('[data-shot="run-reused-tests"] li').first().waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'reuse-forecast',
+    description:
+      'Selections tab: the pass reuse forecast, the test time that ran code identical to an earlier pass and the tests that failed anyway',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5/selections',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="reuse-forecast"]',
   },
   {
     name: 'test-functions',
@@ -5098,6 +5972,30 @@ const SCENES = [
       await page.locator('[data-shot="kept-runs-toggle"]').click();
       await settle();
       await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 4 });
+    },
+  },
+  {
+    name: 'own-runs-list',
+    description:
+      'Project runs table with "Include partial runs" off: your own partial run from an editor listed, marked why',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot }) {
+      await page.locator('[data-shot="runs-table"] [data-testid="own-run-mark"]:visible').first().waitFor();
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'own-runs-list-mobile',
+    description: 'Project runs cards at phone width: your own partial run listed with its mark',
+    route: '/projects/1',
+    viewport: { width: 390, height: 844 },
+    async run({ page, shoot, settle }) {
+      const mark = page.locator('[data-shot="runs-table"] [data-testid="own-run-mark"]:visible').first();
+      await mark.waitFor();
+      await mark.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      await settle();
+      await shoot();
     },
   },
   {
@@ -5538,6 +6436,146 @@ const SCENES = [
     },
   },
   {
+    name: 'run-ask-to-watch',
+    description:
+      'Ask to watch beside Not shared live, on a running run from a developer’s machine, then the ask waiting and the developer’s Not now, at 1280 and 390 px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator',
+    prepare: signInForScene,
+    route: '/projects',
+    viewport: { width: 1280, height: 480 },
+    outputs: [
+      'run-ask-to-watch.png',
+      'run-ask-to-watch-asked.png',
+      'run-ask-to-watch-not-now.png',
+      'run-ask-to-watch-narrow.png',
+    ],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-ask-to-watch needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await request.get(`${base}/api/projects/${projectId}`)).json();
+      let run = null;
+      const capture = async (selector, name = '') => {
+        await page.locator(selector).waitFor({ timeout: 20_000 });
+        await settle();
+        await shoot(name);
+      };
+      try {
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true, askToWatch: true } });
+        // A run on a developer's machine that holds a live view key, which nobody shares.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 1 },
+          })
+        ).json();
+        run = { runId: setup.runId, streamToken: begun.streamToken };
+        await request.post(`${base}/api/test-runs/${run.runId}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [{ type: 'begin', title: 'checkout', location: 'tests/checkout.spec.ts:3:1', workerIndex: 0 }],
+          },
+        });
+        await goto(`/test-runs/${run.runId}`);
+        await capture('[data-testid="ask-to-watch"]');
+        await page.getByTestId('ask-to-watch').click();
+        await capture('[data-testid="ask-to-watch-state"][data-state="asked"]', 'asked');
+        // The run's reporter takes the ask in the answer of its heartbeat, and sends the developer's Not now back.
+        const beat = async (body = {}) =>
+          (
+            await request.post(`${base}/api/test-runs/${run.runId}/heartbeat`, {
+              data: { streamToken: run.streamToken, ...body },
+            })
+          ).json();
+        const { ask } = await beat();
+        if (!ask) throw new Error('the heartbeat handed no ask over');
+        await beat({ askAnswer: { id: ask.id, answer: 'not-now' } });
+        await capture('[data-testid="ask-to-watch-state"][data-state="not-now"]', 'not-now');
+        await page.setViewportSize({ width: 390, height: 760 });
+        await capture('[data-testid="ask-to-watch-state"][data-state="not-now"]', 'narrow');
+      } finally {
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+          });
+        }
+        await request.patch(`${base}/api/projects/${projectId}`, {
+          data: { liveView: project.liveView === true, askToWatch: project.askToWatch !== false },
+        });
+      }
+    },
+  },
+  {
+    name: 'run-continued',
+    description:
+      'A run from a developer’s machine that the next run of its editor window continues: its page says Continued in run #N, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 640 },
+    outputs: ['run-continued.png', 'run-continued-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-continued needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await request.get(`${base}/api/projects/${projectId}`)).json();
+      const runs = [];
+      let closeStream = () => {};
+      /** A run outside CI that holds a live view key, as the reporter's global setup and begin start it. */
+      const start = async () => {
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 1 },
+          })
+        ).json();
+        const run = { runId: setup.runId, key: setup.liveView?.key, streamToken: begun.streamToken };
+        runs.push(run);
+        return run;
+      };
+      try {
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } });
+        const earlier = await start();
+        // Its developer runs the test again from the same window, which stops it.
+        await request.post(`${base}/api/test-runs/${earlier.runId}/finish`, {
+          data: { streamToken: earlier.streamToken, status: 'interrupted', totalTests: 0 },
+        });
+        // The window's next run, whose worker names the run it continues as it shares.
+        const next = await start();
+        if (!next.key) throw new Error('run-continued needs a live view key: is the project’s live view on?');
+        closeStream = holdLiveWorkerStream(base, next.runId, next.key, earlier.runId);
+        const linked = async () =>
+          (await (await request.get(`${base}/api/test-runs/${earlier.runId}`)).json()).continuedInId === next.runId;
+        for (let tries = 0; !(await linked()); tries++) {
+          if (tries > 50) throw new Error('the next run did not continue the earlier one');
+          await page.waitForTimeout(100);
+        }
+        await goto(`/test-runs/${earlier.runId}`);
+        await page.locator('[data-shot="run-continued"]').waitFor();
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 760 });
+        await settle();
+        await shoot('narrow');
+      } finally {
+        closeStream();
+        for (const run of runs) {
+          await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+          });
+        }
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+      }
+    },
+  },
+  {
     name: 'run-live-view',
     description:
       'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',
@@ -5679,6 +6717,604 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-view-layers',
+    description:
+      'The lane panel of a CI run’s worker with its layers: the filmstrip of the test’s calls, the page’s events (an API call, a console error, a request pending, then failing with the backend’s exception under it) and its text, masked, with the element the call waits on marked, at 1280 px; at 390 px the sheet’s filmstrip with one image larger, then its events and its text searched',
+    route: '/projects',
+    viewport: { width: 1280, height: 1500 },
+    outputs: ['run-live-view-layers.png', 'run-live-view-layers-narrow.png', 'run-live-view-layers-narrow-text.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) {
+        throw new Error('run-live-view-layers needs the seeded web-dashboard project (npm run app:seed:dev)');
+      }
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and its worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: now - 21_000,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: test,
+                workerIndex: 0,
+                startedAt: now - 6_400,
+              },
+            ],
+          },
+        });
+        const client = base.startsWith('https:') ? https : http;
+        const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=0&slot=0`, {
+          headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+        });
+        stream.on('response', (response) => response.resume());
+        stream.on('error', () => {});
+        stream.end();
+        closeStream = () => stream.destroy();
+
+        // The page the worker is on, its card and password fields painted over as the worker masks them, and the
+        // image of each call of its filmstrip.
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        const paint = async (fill) => {
+          await testPage.setContent(LIVE_VIEW_CHECKOUT);
+          await testPage.evaluate((values) => {
+            const [email, card, password] = document.querySelectorAll('input');
+            email.value = values.email ?? '';
+            card.value = values.card ?? '';
+            password.value = values.password ?? '';
+          }, fill);
+        };
+        const masked = async () => {
+          const style = await testPage.addStyleTag({
+            content: 'label:nth-of-type(n+2) input { background: #9aa5b1 !important; color: transparent !important }',
+          });
+          const image = await testPage.screenshot({ type: 'jpeg', quality: 50 });
+          await style.evaluate((node) => node.remove());
+          return image;
+        };
+        const thumbs = [];
+        for (const [i, shot] of LIVE_LAYERS_CALLS.entries()) {
+          await paint(shot.fill);
+          const image = await sharp(await masked())
+            .resize({ width: 320 })
+            .jpeg({ quality: 60 })
+            .toBuffer();
+          thumbs.push({ ...shot, index: i + 1, image });
+        }
+        await paint(LIVE_LAYERS_CALLS.at(-1).fill);
+        const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
+        const frame = (await masked()).toString('base64');
+        const text = await testPage.ariaSnapshot({ mode: 'ai' });
+        await testPage.close();
+
+        const id = { shard: null, worker: 0, slot: 0 };
+        const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
+        const post = (message) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}` },
+              data: { ...id, test, ...message },
+            })
+            .catch(() => undefined);
+        const send = () =>
+          Promise.all([
+            post({ type: 'frame', data: frame, call }),
+            post({
+              type: 'call-log',
+              log: {
+                id: 'call@58',
+                call,
+                status: 'running',
+                lines: LIVE_VIEW_CALL_LINES,
+                point: null,
+                target: { count: 1, box, enabled: false },
+                viewport,
+                ms: 6_400,
+                error: null,
+              },
+            }),
+          ]);
+        sending = setInterval(send, 400);
+        await goto(`/test-runs/${run.id}`);
+        await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '40'));
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        const panel = page.getByTestId('lane-panel');
+        await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await panel.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+
+        // The layers, as the worker posts them while the panel shows them.
+        const at = Date.now() - 4_000;
+        for (const [i, event] of LIVE_LAYERS_EVENTS.entries()) {
+          await post({ type: 'page-event', event, at: at + i * 500 });
+        }
+        for (const thumb of thumbs) {
+          const header = {
+            type: 'thumb',
+            ...id,
+            test,
+            thumb: { call: thumb.call, title: thumb.title, index: thumb.index, width: 320, height: 200, at: at },
+          };
+          await request.post(`${base}/api/test-runs/${run.id}/live-view`, {
+            headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': 'application/vnd.piwi.live-frame' },
+            data: liveMessage(header, thumb.image),
+          });
+        }
+        await panel
+          .getByTestId('live-filmstrip-shot')
+          .nth(thumbs.length - 1)
+          .waitFor({ timeout: 30_000 });
+        if ((await panel.getByTestId('live-text-section').getAttribute('data-state')) !== 'open') {
+          await panel.getByRole('button', { name: 'Page text' }).click();
+        }
+        await post({ type: 'text', text: { call: null, source: 'snapshot', text, cut: false, at: Date.now() } });
+        await panel.getByTestId('live-text').waitFor({ timeout: 30_000 });
+        // The worker's sends stop, so every image is of the same call log.
+        clearInterval(sending);
+        await send();
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+
+        // At 390 px, in the sheet: the filmstrip with one of its images larger, then the events and the text searched.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        const sheet = page.getByRole('dialog');
+        await sheet.getByTestId('live-filmstrip-shot').nth(2).click();
+        await sheet.getByTestId('live-filmstrip').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+        await sheet.getByTestId('live-filmstrip-shot').nth(2).click();
+        await sheet.getByTestId('live-text-search').fill('card');
+        await sheet.getByTestId('live-text-search').scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('narrow-text', { of: '[role="dialog"]', pad: 0 });
+        await sheet.getByTestId('live-text-search').fill('');
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-live-inspect',
+    description:
+      'The lane panel of a CI run’s worker with Inspect open: the page at the test’s latest call as a document, its stylesheet inlined, the Pay button outlined at the click’s action, Before / Action / After and the calls whose page came, at 1280 px; the same in the sheet at 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1400 },
+    outputs: ['run-live-inspect.png', 'run-live-inspect-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-inspect needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: Date.now() - 21_000,
+                browser: { projectName: 'chromium', browserName: 'chromium' },
+              },
+            ],
+          },
+        });
+        const client = base.startsWith('https:') ? https : http;
+        const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=0&slot=0`, {
+          headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+        });
+        stream.on('response', (response) => response.resume());
+        stream.on('error', () => {});
+        stream.end();
+        closeStream = () => stream.destroy();
+
+        // The page the worker is on, as its image shows it, its card and password fields painted over.
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize({ width: 1280, height: 800 });
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const style = await testPage.addStyleTag({
+          content: 'label:nth-of-type(n+2) input { background: #9aa5b1 !important; color: transparent !important }',
+        });
+        const frame = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await style.evaluate((node) => node.remove());
+        await testPage.close();
+
+        const id = { shard: null, worker: 0, slot: 0 };
+        const call = {
+          title: "Click getByRole('button', { name: 'Pay €84.90' })",
+          file: 'tests/checkout.spec.ts',
+          line: 31,
+        };
+        const post = (data, headers = {}) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}`, ...headers },
+              data,
+            })
+            .catch(() => undefined);
+        const send = () => post({ ...id, test, type: 'frame', data: frame, call });
+        sending = setInterval(send, 500);
+        await goto(`/test-runs/${run.id}`);
+        await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '44'));
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        const panel = page.getByTestId('lane-panel');
+        await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+
+        // The page's stylesheet, then its snapshot at each call, as the worker posts them while Inspect is open.
+        const css = LIVE_VIEW_CHECKOUT.slice(
+          LIVE_VIEW_CHECKOUT.indexOf('<style>') + 7,
+          LIVE_VIEW_CHECKOUT.indexOf('</style>'),
+        );
+        const sha1 = `${createHash('sha1').update(css).digest('hex')}.css`;
+        const binary = { 'Content-Type': 'application/vnd.piwi.live-frame' };
+        await post(liveMessage({ type: 'resource', ...id, sha1, contentType: 'text/css' }, Buffer.from(css)), binary);
+        const field = (label, attrs) => ['LABEL', {}, `${label} `, ['INPUT', attrs]];
+        const checkout = (values, button) => [
+          'HTML',
+          {},
+          ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/assets/checkout.css' }]],
+          [
+            'BODY',
+            {},
+            ['HEADER', {}, 'Checkout'],
+            [
+              'MAIN',
+              {},
+              [
+                'SECTION',
+                {},
+                ['H2', {}, 'Payment'],
+                field('Email', { __playwright_value_: values.email ?? '' }),
+                field('Card number', { __playwright_value_: values.card ?? '' }),
+                field('Password', { type: 'password', __playwright_value_: values.password ?? '' }),
+                ['P', { class: 'note' }, values.note ?? ''],
+                ['BUTTON', button, 'Pay €84.90'],
+              ],
+              [
+                'SECTION',
+                {},
+                ['H2', {}, 'Order'],
+                ['DIV', { class: 'row' }, ['SPAN', {}, 'Running shoes'], ['SPAN', {}, '€79.90']],
+                ['DIV', { class: 'row' }, ['SPAN', {}, 'Delivery'], ['SPAN', {}, '€5.00']],
+                ['HR', {}],
+                ['DIV', { class: 'row' }, ['B', {}, 'Total'], ['B', {}, '€84.90']],
+              ],
+            ],
+          ],
+        ];
+        const filled = { email: 'jo@example.test', card: '<hidden>', password: '<hidden>' };
+        const moments = [
+          ['call@41', 'Navigate to "/checkout"', 'after', {}, { disabled: '' }],
+          [
+            'call@47',
+            'Fill "jo@example.test" getByLabel(\'Email\')',
+            'after',
+            { email: filled.email },
+            { disabled: '' },
+          ],
+          ['call@52', "Fill getByLabel('Card number')", 'after', { ...filled, password: '' }, { disabled: '' }],
+          ['call@55', "Fill getByLabel('Password')", 'after', filled, {}],
+          ['call@58', call.title, 'before', { ...filled, note: 'Checking your card…' }, {}],
+          ['call@58', call.title, 'action', { ...filled, note: 'Checking your card…' }, { __playwright_target__: '' }],
+        ];
+        for (const [index, [callId, title, phase, values, button]] of moments.entries()) {
+          const json = {
+            html: checkout(values, button),
+            frameUrl: 'https://shop.example.test/checkout',
+            viewport: { width: 1280, height: 800 },
+          };
+          const header = {
+            type: 'snapshot',
+            ...id,
+            call: callId,
+            title,
+            phase,
+            page: 'page@3',
+            frame: 'frame@4',
+            main: true,
+            full: true,
+            index,
+            at: Date.now(),
+            resources: [{ url: 'https://shop.example.test/assets/checkout.css', sha1 }],
+            test,
+          };
+          await post(liveMessage(header, Buffer.from(JSON.stringify(json))), binary);
+        }
+        if ((await panel.getByTestId('live-inspect-section').getAttribute('data-state')) !== 'open') {
+          await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+        }
+        const inspect = panel.getByTestId('live-inspect');
+        const shown = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+        await shown.getByRole('button', { name: 'Pay €84.90' }).waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await send();
+        await inspect.scrollIntoViewIfNeeded();
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+
+        // At 390 px, in the sheet.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        const sheet = page.getByRole('dialog');
+        await sheet
+          .getByTestId('live-inspect-frame')
+          .locator('iframe')
+          .contentFrame()
+          .getByRole('button', { name: 'Pay €84.90' })
+          .waitFor({ timeout: 30_000 });
+        await sheet.getByTestId('live-inspect').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-watch-all',
+    description:
+      'Watch all on a running CI run of four workers: a tile of each worker’s page with its test and step, and a click showing one in full in the lane panel, at 1280 px; the tiles alone at 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['run-watch-all.png', 'run-watch-all-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-watch-all needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      const closers = [];
+      let sending = null;
+      // Each worker's test: its title, its step and the page it is on.
+      const lanes = [
+        {
+          test: 'pays with a saved card',
+          step: ['Click', "getByRole('button', { name: 'Pay' })"],
+          html: LIVE_VIEW_CHECKOUT,
+        },
+        {
+          test: 'searches the catalog by brand',
+          step: ['Fill', "getByPlaceholder('Search')"],
+          html: WATCH_ALL_PAGES.search,
+        },
+        {
+          test: 'keeps the cart after sign-in',
+          step: ['Click', "getByRole('link', { name: 'Cart' })"],
+          html: WATCH_ALL_PAGES.cart,
+        },
+        {
+          test: 'signs in with a magic link',
+          step: ['Expect toBeVisible', "getByText('Check your inbox')"],
+          html: WATCH_ALL_PAGES.signIn,
+        },
+      ];
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and each worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 24 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: lanes.flatMap((lane, worker) => [
+              {
+                type: 'begin',
+                title: lane.test,
+                location: `tests/shop.spec.ts:${worker * 20 + 4}:3`,
+                workerIndex: worker,
+                parallelIndex: worker,
+                startedAt: now - 4_000 - worker * 1_500,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: lane.step[0],
+                subtitle: lane.step[1],
+                location: `tests/shop.spec.ts:${worker * 20 + 9}:5`,
+                stepCategory: 'pw:api',
+                parentTitle: lane.test,
+                workerIndex: worker,
+                startedAt: now - 2_000,
+              },
+            ]),
+          },
+        });
+        for (const worker of lanes.keys()) {
+          const client = base.startsWith('https:') ? https : http;
+          const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=${worker}&slot=${worker}`, {
+            headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+          });
+          stream.on('response', (response) => response.resume());
+          stream.on('error', () => {});
+          stream.end();
+          closers.push(() => stream.destroy());
+        }
+
+        // The image each worker sends: its page as the test's browser shows it.
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize({ width: 1280, height: 800 });
+        const images = [];
+        for (const lane of lanes) {
+          await testPage.setContent(lane.html);
+          images.push((await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64'));
+        }
+        await testPage.close();
+        const send = () =>
+          Promise.all(
+            lanes.map((lane, worker) =>
+              request
+                .post(`${base}/api/test-runs/${run.id}/live-view`, {
+                  headers: { Authorization: `Bearer ${run.key}` },
+                  data: {
+                    type: 'frame',
+                    shard: null,
+                    worker,
+                    slot: worker,
+                    data: images[worker],
+                    call: {
+                      title: `${lane.step[0]} ${lane.step[1]}`,
+                      file: 'tests/shop.spec.ts',
+                      line: worker * 20 + 9,
+                    },
+                    test: lane.test,
+                  },
+                })
+                .catch(() => undefined),
+            ),
+          );
+        sending = setInterval(send, 1000);
+        await goto(`/test-runs/${run.id}`);
+        // The step each worker is on: live steps reach the pages open as they stream.
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: lanes.map((lane, worker) => ({
+              type: 'step-begin',
+              title: lane.step[0],
+              subtitle: lane.step[1],
+              location: `tests/shop.spec.ts:${worker * 20 + 9}:5`,
+              stepCategory: 'pw:api',
+              parentTitle: lane.test,
+              workerIndex: worker,
+              startedAt: Date.now() - 1_000,
+            })),
+          },
+        });
+        await page.getByTestId('watch-all-toggle').click({ timeout: 60_000 });
+        await page
+          .getByTestId('watch-all-image')
+          .nth(lanes.length - 1)
+          .waitFor({ timeout: 30_000 });
+        await page.getByRole('button', { name: /^Show worker 1 in full/ }).click();
+        await page.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await send();
+        await settle();
+        await shoot();
+        await page.getByRole('button', { name: 'Close the live view' }).click();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        await shoot('narrow', { of: '[data-shot="watch-all"]', pad: 8 });
+      } finally {
+        clearInterval(sending);
+        for (const close of closers) close();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 4 },
+          });
+        }
+      }
+    },
+  },
+  {
     name: 'run-stuck-test',
     description:
       'Run page while live: a test running five minutes where its passing runs took seconds is marked Stuck?, with how long it has run against its usual time, at 1280 and 390 px',
@@ -5779,6 +7415,197 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-home',
+    description:
+      'Run page in the desktop app while a run it started goes on: On your machine, the run’s Stop, Hold failures, its worker with its controls and the output, as the Local runs tray shows them, scrolling inside the card so the tabs keep their room at 1280×800, and at 390 px',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['desktop-run-home.png', 'desktop-run-home-narrow.png'],
+    async run({ page, base, goto, settle, shoot }) {
+      await playDesktopRunHub(page, () => ({}));
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const { finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      try {
+        const home = page.locator('[data-shot="desktop-run-home"]');
+        await home.waitFor({ timeout: 60_000 });
+        await home.locator('[data-shot="desktop-run-worker"]').waitFor();
+        await page
+          .getByRole('button', { name: 'Close local runs' })
+          .click({ timeout: 1000 })
+          .catch(() => {});
+        await settle();
+        await shoot('');
+        await page.setViewportSize({ width: 390, height: 1100 });
+        await settle();
+        await shoot('narrow', { of: '[data-shot="desktop-run-home"]', pad: 0 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
+    name: 'desktop-worker-window',
+    description:
+      'A worker of a run the desktop app started, in a window of its own kept above the others (Open in a window): its test, where it stands, its controls and its page',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/desktop/run-worker?ref=desktop-41&lane=0',
+    viewport: { width: 520, height: 680 },
+    async run({ page, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/desktop/run-worker?ref=desktop-41&lane=0');
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const worker = {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        pausing: false,
+        intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        test: {
+          id: 't1',
+          title: ['checkout', 'pays with a saved card'],
+          uri,
+          line: 11,
+          project: 'chromium',
+          retry: 0,
+          cannotPause: null,
+        },
+        stop: {
+          reason: 'page-pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        },
+      };
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        workers: [worker],
+        ended: false,
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      await page
+        .locator('[data-shot="desktop-run-worker"]')
+        .getByRole('img', { name: /stopped before/ })
+        .waitFor();
+      await settle();
+      await shoot('');
+    },
+  },
+  {
+    name: 'desktop-editor-run-note',
+    description:
+      'Run page in the desktop app while a run that follows an editor and reports to the app waits at a stop: In Visual Studio Code, the worker, its test and its place, which opens in the IDE (desktop shell)',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, base, goto, settle, shoot }) {
+      const post = async (path, data) => {
+        const res = await page.request.post(`${base}${path}`, { data });
+        if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
+        return res.json();
+      };
+      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+      const started = await post('/api/test-runs/start', {
+        projectName: source.project.name,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'terminal', ref: 'terminal-4242-1700000000000' } },
+      });
+      const finish = () =>
+        page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
+          data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+        });
+      try {
+        await post(`/api/test-runs/${started.runId}/events`, {
+          streamToken: started.streamToken,
+          testCases: [
+            {
+              type: 'begin',
+              title: 'pays with a saved card',
+              location: 'tests/checkout.spec.ts:11:3',
+              workerIndex: 0,
+              startedAt: Date.now(),
+              browser: { projectName: 'chromium' },
+            },
+          ],
+        });
+        // The server observes the editor's run: its stream says where its test waits.
+        const root = '/home/dev/code/acme-checkout';
+        const uri = `file://${root}/tests/checkout.spec.ts`;
+        const run = {
+          client: 'Visual Studio Code',
+          session: {
+            ref: 'terminal-4242-1700000000000',
+            root,
+            label: 'acme-checkout',
+            command: null,
+            project: 'checkout-web',
+            terminal: true,
+            ended: false,
+            page: { id: started.runId, url: `${base}/test-runs/${started.runId}` },
+            workers: [
+              {
+                worker: 0,
+                parallelIndex: 0,
+                state: 'stopped',
+                pausing: false,
+                intents: [],
+                test: {
+                  id: 't1',
+                  title: ['checkout', 'pays with a saved card'],
+                  uri,
+                  line: 10,
+                  project: 'chromium',
+                  retry: 0,
+                },
+                stop: {
+                  reason: 'breakpoint',
+                  title: "Click getByRole('button', { name: 'Pay now' })",
+                  uri,
+                  line: 17,
+                  character: 4,
+                  locator: "getByRole('button', { name: 'Pay now' })",
+                  bar: false,
+                  since: '1',
+                },
+              },
+            ],
+          },
+        };
+        await page.route('**/api/desktop/events', (route) =>
+          route.fulfill({
+            contentType: 'text/event-stream',
+            body: `data: ${JSON.stringify({ type: 'snapshot', runs: [] })}\n\ndata: ${JSON.stringify({ type: 'editor-runs', runs: [run] })}\n\n`,
+          }),
+        );
+        await goto(`/test-runs/${started.runId}`);
+        await page.locator('[data-shot="desktop-editor-run-note"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot('', { of: '[data-shot="desktop-editor-run-note"]', pad: 8 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
     name: 'run-live-desktop-pause',
     description:
       'Run page in the desktop app while a run it started goes on: a running test’s Pause and watch, also at 390 px, then the test paused before its next call, its page live in the Local runs tray, and its row once the tray is closed',
@@ -5844,7 +7671,7 @@ const SCENES = [
         };
         await page.evaluate((event) => window.__hub.send(event), session({ ...running, state: 'stopped', stop }));
         const worker = tray.locator('[data-shot="desktop-run-worker"]');
-        await worker.locator('button[aria-pressed="true"]', { hasText: 'Watch live' }).waitFor();
+        await worker.locator('button[aria-pressed="true"]', { hasText: /^\s*Watch\s*$/ }).waitFor();
         await page.evaluate(
           (data) =>
             window.__hub.send({
@@ -5858,7 +7685,7 @@ const SCENES = [
             }),
           image,
         );
-        await worker.getByRole('img', { name: /The page, live/ }).waitFor();
+        await worker.getByRole('img', { name: /^Live view/ }).waitFor();
         await settle();
         await shoot('paused');
 
@@ -5875,7 +7702,7 @@ const SCENES = [
   {
     name: 'run-live-desktop-watch',
     description:
-      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
+      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), with Open the trace so far in its head for a reporter that says where the trace grows, at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: 41,
@@ -5886,6 +7713,7 @@ const SCENES = [
       'run-live-desktop-watch-narrow.png',
       'run-live-desktop-watch-tray.png',
       'run-live-desktop-watch-tray-narrow.png',
+      'run-live-desktop-watch-trace.png',
       'run-live-desktop-watch-stop.png',
       'run-live-desktop-watch-running.png',
       'run-live-desktop-watch-waiting.png',
@@ -5927,13 +7755,19 @@ const SCENES = [
         const worker = tray.locator('[data-shot="desktop-run-worker"]');
         await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
         await laneFrame(null);
-        await worker.getByRole('img', { name: 'The page, live', exact: true }).waitFor();
+        await worker.getByRole('img', { name: 'Live view of the test’s page', exact: true }).waitFor();
         await settle();
         await shoot('tray', { of: '[aria-label="Local runs"]', pad: 0 });
         await page.setViewportSize({ width: 390, height: 844 });
         await settle();
         await shoot('tray-narrow');
         await page.setViewportSize({ width: 1280, height: 900 });
+
+        // A reporter that says where the running test's trace grows: Open the trace so far in the page's head.
+        await send(session({ ...running, traces: true }));
+        await worker.getByRole('button', { name: 'Open the trace so far' }).waitFor();
+        await settle();
+        await shoot('trace', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
 
         // At a stop, the lane shows the stopped page, which takes the clicks and keys on it.
         const stop = {
@@ -5949,7 +7783,10 @@ const SCENES = [
         };
         await send(session({ ...running, state: 'stopped', stop }));
         await laneFrame('s1');
-        await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
+        await worker.getByRole('button', { name: 'Interact' }).click();
+        await worker
+          .getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' })
+          .waitFor();
         await settle();
         await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
 
@@ -5977,6 +7814,108 @@ const SCENES = [
         await worker.getByTestId('desktop-watch-needs-update').waitFor();
         await settle();
         await shoot('outdated', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
+    name: 'run-live-desktop-inspect',
+    description:
+      'Local runs tray in the desktop app: a watched lane’s card with Inspect open beside Open the trace so far, the page of the running test at its latest call as its own trace on this machine took it, Before, Action and After, the calls read, and Pick a locator, also at 390 px',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1800 },
+    outputs: ['run-live-desktop-inspect.png', 'run-live-desktop-inspect-narrow.png'],
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, () => ({}));
+      // The server's routes of Inspect: the calls it read of the test's trace, and each page rendered.
+      const notice = (call, phase, title, at) => ({
+        type: 'snapshot',
+        shard: null,
+        worker: 0,
+        call,
+        title,
+        phase,
+        page: 'page@1',
+        frame: 'frame@1',
+        main: true,
+        full: true,
+        index: 0,
+        at,
+        test: 'checkout › pays with a saved card',
+      });
+      const now = Date.now();
+      const heard = [
+        notice('call@1', 'after', 'Navigate to "/cart"', now - 4000),
+        notice('call@2', 'before', "Click getByRole('link', { name: 'Checkout' })", now - 3000),
+        notice('call@2', 'after', "Click getByRole('link', { name: 'Checkout' })", now - 2900),
+        notice('call@3', 'before', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 2000),
+        notice('call@3', 'action', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 1990),
+        notice('call@3', 'after', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 1980),
+        notice('call@4', 'before', "Click getByRole('button', { name: 'Pay now' })", now - 1000),
+      ];
+      await page.route('**/api/desktop/runs/inspect/calls?**', (route) =>
+        route.fulfill({ json: { attempt: 't1#0', heard, refused: null } }),
+      );
+      await page.route('**/api/desktop/runs/inspect/page?**', (route) => {
+        if (new URL(route.request().url()).searchParams.get('format') === 'json') {
+          return route.fulfill({ json: { viewport: { width: 1280, height: 800 } } });
+        }
+        return route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          headers: {
+            'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'",
+          },
+          body: `<!doctype html><html><head><meta charset="utf-8"><style>
+    body { margin: 0; font: 22px system-ui, sans-serif; color: #1f2937; background: #f9fafb }
+    header { background: #4c1d95; color: #fff; padding: 22px 40px; font-weight: 700; font-size: 28px; text-align: center }
+    main { padding: 40px; display: grid; grid-template-columns: 1fr 380px; gap: 40px }
+    label { display: block; margin-top: 18px } input { display: block; width: 100%; margin-top: 8px; padding: 14px; font: inherit; border: 1px solid #d1d5db; border-radius: 10px; background: #fff }
+    aside { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 28px }
+    button { margin-top: 24px; width: 100%; padding: 18px; font: inherit; font-weight: 600; color: #fff; background: #6d28d9; border: 0; border-radius: 10px }
+  </style></head><body><header>Acme shop</header><main><section><h1>Payment</h1>
+    <label>Name on card<input value="Ada Lovelace"></label>
+    <label>Card number<input value="&lt;hidden&gt;"></label></section>
+    <aside><h2>Total</h2><p>€36.00</p><button>Pay now</button></aside></main></body></html>`,
+        });
+      });
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at', 'watch'];
+      const { tray, running, session, finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      const send = (event) => page.evaluate((e) => window.__hub.send(e), event);
+      try {
+        const watch = page.getByRole('button', { name: 'Watch: checkout › pays with a saved card', exact: true });
+        await watch.waitFor({ timeout: 60_000 });
+        await watch.click();
+        const worker = tray.locator('[data-shot="desktop-run-worker"]');
+        await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
+        await send(session({ ...running, traces: true }));
+        await send({
+          type: 'lane-frame',
+          ref: 'desktop-41',
+          lane: 0,
+          worker: 0,
+          test: 't1',
+          since: null,
+          width: 1280,
+          height: 800,
+          data: image,
+        });
+        await worker.getByRole('img', { name: 'Live view of the test’s page', exact: true }).waitFor();
+        // Inspect opened: the page at the latest call, as the test's own trace took it.
+        await worker.getByRole('button', { name: 'Inspect', exact: true }).click();
+        const inspect = worker.locator('[data-shot="desktop-run-inspect"]');
+        await inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame().getByText('Payment').waitFor();
+        await settle();
+        await shoot(undefined, { of: '[data-shot="desktop-run-lane"]', pad: 8 });
+        // At 390 px, Inspect alone under the page, scrolled into the tray's view.
+        await page.setViewportSize({ width: 390, height: 1400 });
+        await inspect.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('narrow', { of: '[data-shot="desktop-run-inspect"]', pad: 0 });
       } finally {
         await finish();
       }
@@ -7059,9 +8998,125 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-options',
+    description:
+      "Run options (desktop app): the run button's menu with Hold failures and, for a repeat, Stop at the first failing repetition, the button naming both, and the Run with options dialog at 1280 and 390 px",
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    outputs: [
+      'desktop-run-options.png',
+      'desktop-run-options-button.png',
+      'desktop-run-options-dialog.png',
+      'desktop-run-options-dialog-narrow.png',
+    ],
+    async run({ page, settle, shoot }) {
+      const runButton = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ }).first();
+      await runButton.waitFor({ timeout: 60_000 });
+      const menu = async () => {
+        await page.getByRole('button', { name: 'Run options' }).first().click();
+        await page.getByText('Options of this button', { exact: true }).waitFor();
+      };
+      await menu();
+      await page.getByRole('menuitem', { name: /^Repeat each/ }).hover();
+      await page.getByRole('menuitemcheckbox', { name: '× 20' }).click();
+      await page.getByRole('menuitemcheckbox', { name: 'Stop at the first failing repetition' }).click();
+      await page.getByRole('menuitemcheckbox', { name: 'Hold failures' }).click();
+      await settle();
+      await shoot('', { of: '[role="menu"]', pad: 12 });
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await settle();
+      const box = await runButton.locator('xpath=..').boundingBox();
+      await shoot('button', {
+        of: false,
+        clip: { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 },
+      });
+      await menu();
+      await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor();
+      await settle();
+      await shoot('dialog', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1100 });
+      await settle();
+      await shoot('dialog-narrow', { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-run-front',
+    description:
+      'Local runs tray (desktop app): a worker stopped at a breakpoint of a headed run, with Show the browser beside Resume, Step, Finish and End the test',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, goto, settle, shoot }) {
+      await playDesktopRunHub(page, () => ({}));
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const intents = ['assert-region', 'mock', 'view', 'pick-at', 'front', 'end'];
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        ended: false,
+        workers: [
+          {
+            worker: 0,
+            parallelIndex: 0,
+            state: 'stopped',
+            pausing: false,
+            intents,
+            test: {
+              id: 't1',
+              title: ['checkout', 'pays with a saved card'],
+              uri,
+              line: 11,
+              project: 'chromium',
+              retry: 0,
+              cannotPause: null,
+            },
+            stop: {
+              reason: 'breakpoint',
+              title: "Click getByRole('button', { name: 'Pay now' })",
+              uri,
+              line: 17,
+              character: 4,
+              locator: "getByRole('button', { name: 'Pay now' })",
+              bar: true,
+              since: 's1',
+              intents,
+            },
+          },
+        ],
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      const shown = tray.locator('[data-shot="desktop-run-worker"]');
+      await shown.getByRole('button', { name: 'Show the browser' }).waitFor();
+      await settle();
+      await shoot('', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+    },
+  },
+  {
     name: 'desktop-run-live',
     description:
-      'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+      'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live with Interact on, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
     tags: ['docs', 'desktop'],
     out: 'docs',
     outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
@@ -7122,12 +9177,14 @@ const SCENES = [
         project: 'checkout-web',
         workers: [worker],
         ended: false,
+        // Its number and page on this app's server, as the run's own process names them.
+        page: { id: 41, url: `${new URL(page.url()).origin}/test-runs/41` },
       };
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
       const shown = tray.locator('[data-shot="desktop-run-worker"]');
       await shown.getByRole('img', { name: /stopped before/ }).waitFor();
-      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
       await page.evaluate(
         (data) =>
           window.__hub.send({
@@ -7141,7 +9198,9 @@ const SCENES = [
           }),
         image,
       );
-      await shown.getByRole('img', { name: /The page, live/ }).waitFor();
+      await shown.getByRole('img', { name: /^Live view/ }).waitFor();
+      await shown.getByRole('button', { name: 'Interact' }).click();
+      await shown.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' }).waitFor();
       await settle();
       await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
 
@@ -7178,6 +9237,275 @@ const SCENES = [
       await tray.locator('[data-shot="desktop-run-copy"]').waitFor();
       await settle();
       await shoot('code', { of: '[data-shot="desktop-run-copy"]', pad: 8 });
+    },
+  },
+  {
+    name: 'desktop-run-workers',
+    description:
+      'Local runs tray (desktop app): a run of two workers, one stopped at its page.pause() with its page watched live, the other running, at the tray’s width, at 390 px and in dark mode',
+    tags: ['desktop'],
+    outputs: ['desktop-run-workers.png', 'desktop-run-workers-narrow.png', 'desktop-run-workers-dark.png'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const test = (id, title, line) => ({ id, title, uri, line, project: 'chromium', retry: 0, cannotPause: null });
+      const stopped = {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        pausing: false,
+        intents,
+        test: test('t1', ['checkout', 'pays with a saved card'], 11),
+        stop: {
+          reason: 'page-pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents,
+        },
+      };
+      const running = {
+        worker: 1,
+        parallelIndex: 1,
+        state: 'running',
+        pausing: false,
+        intents,
+        test: test('t2', ['checkout', 'refunds a returned mug'], 31),
+        stop: null,
+      };
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        workers: [stopped, running],
+        ended: false,
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      const shown = tray.locator('[data-worker="desktop-41|0"]');
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
+      await page.evaluate(
+        (data) =>
+          window.__hub.send({
+            type: 'frame',
+            ref: 'desktop-41',
+            worker: 0,
+            since: 's1',
+            width: 1280,
+            height: 800,
+            data,
+          }),
+        image,
+      );
+      await shown.getByRole('img', { name: /live/i }).waitFor();
+      await settle();
+      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await settle();
+      await shoot('dark', { of: '[aria-label="Local runs"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-runs-tray',
+    description:
+      'Local runs tray (desktop app): three runs, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, with Open the failure; whole and as the compact list, at the tray’s width and at 390 px',
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    // The docs show the tray at its width; its 390 px shots go to .screens/.
+    outputs: ['desktop-runs-tray.png', 'desktop-runs-tray-compact.png'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: [51, 52, 53],
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const progress = (counts) => ({ flaky: 0, skipped: 0, failure: null, ...counts });
+      const send = (session) =>
+        page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), {
+          root,
+          label: 'acme-checkout',
+          command: null,
+          project: 'checkout-web',
+          workers: [],
+          ...session,
+        });
+      const exit = (id, code) =>
+        page.evaluate(({ id, code }) => window.__emitTauri('piwi:local-run', { id, kind: 'exit', line: null, code }), {
+          id,
+          code,
+        });
+
+      // The first run reports to the app and fails: its process names its first failure as it ends.
+      await page.waitForFunction(() => window.__runArgs?.originRef);
+      const originRef = await page.evaluate(() => window.__runArgs.originRef);
+      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+      const failed = (title) => ({
+        title,
+        status: 'failed',
+        duration: 4100,
+        location: 'tests/checkout.spec.ts:11:3',
+        browser: { name: 'chromium', projectName: 'chromium' },
+        error: 'expect(locator).toBeVisible() failed',
+        retries: 0,
+        workerIndex: 0,
+        startedAt: Date.now(),
+      });
+      const reported = await page.request.post(`${base}/api/test-runs/submit`, {
+        data: {
+          projectName: source.project.name,
+          metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+          status: 'failed',
+          startTime: new Date().toISOString(),
+          duration: 9000,
+          totalTests: 2,
+          passedTests: 0,
+          failedTests: 2,
+          skippedTests: 0,
+          testCases: [failed('pays with a saved card'), failed('applies a coupon')],
+        },
+      });
+      if (!reported.ok()) throw new Error(`the run did not report: ${reported.status()}`);
+      await tray.getByRole('link', { name: /^Open run #\d+$/ }).waitFor({ timeout: 60_000 });
+      await send({
+        ref: 'desktop-51',
+        ended: true,
+        progress: progress({
+          total: 12,
+          done: 12,
+          failed: 2,
+          status: 'failed',
+          failure: { title: 'checkout › pays with a saved card', error: 'expect(locator).toBeVisible() failed' },
+        }),
+      });
+      await exit(51, 1);
+      await tray.getByRole('button', { name: 'Open the failure' }).waitFor();
+
+      // Run again: it passes, once the shell started it.
+      const runAgain = async () => {
+        await page.evaluate(() => (window.__runArgs = null));
+        await tray.getByRole('button', { name: 'Run again' }).first().click();
+        await page.waitForFunction(() => window.__runArgs);
+      };
+      await runAgain();
+      await send({
+        ref: 'desktop-52',
+        ended: true,
+        progress: progress({ total: 12, done: 12, failed: 0, status: 'passed' }),
+      });
+      await exit(52, 0);
+      await tray.getByText('Passed', { exact: true }).waitFor();
+
+      // Run again: it goes on, a worker stopped at its page.pause(), another running.
+      await runAgain();
+      // The window holds the hub's stream again while the run goes on.
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const test = (id, title, line) => ({ id, title, uri, line, project: 'chromium', retry: 0, cannotPause: null });
+      await send({
+        ref: 'desktop-53',
+        ended: false,
+        progress: progress({ total: 12, done: 5, failed: 1, status: 'running' }),
+        workers: [
+          {
+            worker: 0,
+            parallelIndex: 0,
+            state: 'stopped',
+            pausing: false,
+            intents,
+            test: test('t1', ['checkout', 'pays with a saved card'], 11),
+            stop: {
+              reason: 'page-pause',
+              title: "Click getByRole('button', { name: 'Pay now' })",
+              uri,
+              line: 17,
+              character: 4,
+              locator: "getByRole('button', { name: 'Pay now' })",
+              bar: false,
+              since: 's1',
+              intents,
+            },
+          },
+          {
+            worker: 1,
+            parallelIndex: 1,
+            state: 'running',
+            pausing: false,
+            intents,
+            test: test('t2', ['checkout', 'refunds a returned mug'], 31),
+            stop: null,
+          },
+        ],
+      });
+      await tray.getByText('5 of 12 tests · 1 failed', { exact: true }).waitFor();
+      await tray.getByRole('img', { name: /stopped before/ }).waitFor();
+      // The end toasts of the first two runs go, so the tray shows whole.
+      await page.mouse.move(0, 0);
+      await page.waitForFunction(
+        () =>
+          ![...document.querySelectorAll('li')].some((li) => /Local run (passed|failed)/.test(li.textContent ?? '')),
+        null,
+        { timeout: 30_000 },
+      );
+      await settle();
+      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+
+      // The compact list: one line a run, with the one action it needs now.
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await tray.getByRole('button', { name: 'Compact list' }).click();
+      await tray.getByRole('button', { name: 'Show as one line' }).click();
+      await tray.locator('[data-shot="desktop-run-line"]').nth(2).waitFor();
+      await settle();
+      await shoot('compact', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
     },
   },
   {
@@ -7300,6 +9628,8 @@ const SCENES = [
   quarantineDismissScene(390, '-mobile'),
   screenshotLightboxScene(1280, ''),
   screenshotLightboxScene(390, '-mobile'),
+  namedScreenshotScene(1280, ''),
+  namedScreenshotScene(390, '-mobile'),
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',
@@ -7745,6 +10075,7 @@ const SCENES = [
         id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
         instance: 'https://piwi.example.com',
         projectId: 1,
+        projectName: 'Acme Checkout',
         tests: [
           { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
           {
@@ -7806,6 +10137,7 @@ const SCENES = [
         error: null,
         keyToKeep: false,
         linkedProjectIds: [1],
+        projectNames: { 1: 'Acme Checkout' },
       };
       await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
       await page.route('**/api/desktop/events', (route) =>
@@ -7983,11 +10315,11 @@ const SCENES = [
   })),
   {
     name: 'ai-claude-cli',
-    description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
+    description: 'Settings → AI: use the local Claude Code CLI as the provider, on its own sign-in (desktop shell)',
     tags: ['desktop'],
     mode: 'desktop',
     route: '/settings/ai',
-    viewport: { width: 1000, height: 1100 },
+    viewport: { width: 1000, height: 1400 },
     of: '[data-shot="ai-model-providers"]',
     pad: 12,
     outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
@@ -8000,7 +10332,7 @@ const SCENES = [
       await settle();
       await shoot();
 
-      // Pick the CLI as the provider to reveal its status, sign-in and usage.
+      // Pick the CLI as the provider to reveal its status, how it is signed in and its usage.
       await tile.click();
       await page.getByText('with its own tools turned off').first().waitFor();
       await settle();

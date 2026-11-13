@@ -15,7 +15,7 @@ import { gateEvaluations, projects } from '../database/schema';
 import { recordOutcome } from './outcomes';
 import { createScmProvider } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
-import { getPrFeedbackSettings } from './scm/pr-feedback';
+import { getPrFeedbackSettings } from './scm/pr-feedback-settings';
 import { readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './scm/pr-feedback-posts';
 import { buildGateStatus } from '#shared/pr-feedback';
 import type { GateOutcomeDetails } from '#shared/handback-outcomes';

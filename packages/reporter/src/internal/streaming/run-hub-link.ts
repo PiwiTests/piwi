@@ -7,25 +7,48 @@ import {
   MAX_RUN_FAILURE_TEXT,
   RUN_CHANNEL_ENV,
   TERMINAL_REF_PREFIX,
+  endedAtStopIn,
+  parseHubToMain,
+  readRunPage,
   type RunCounts,
   type RunMainToHub,
 } from '@piwitests/core/run-channel';
-import { runChannelRef, startedByTestRunner } from '../config/editors.js';
+import type { LiveAsk, LiveAskAnswer } from '@piwitests/core/live-view';
+import { runChannelRef, startedByTestRunner } from '../config/hub.js';
 
 /**
  * The run's own connection to the hub its workers reach (`PIWI_RUN_CHANNEL`, the editor's or the desktop app's;
  * `RunMainToHub` of `@piwitests/core/run-channel`), from `onBegin` to `onEnd`, so the hub knows how far the run is
  * before and between its workers: how many tests the run holds (`run-begin`), how many ended for good and how
- * (`run-progress`, four times a second at most, the latest counts alone), and how the run ended, with its first
- * failure's title and error line through `hideSecretsInText` (`run-end`). Each test counts once, by the outcome of its
- * latest attempt: a serial group's retry counts its tests again in place of their earlier outcome. It reads nothing
- * the hub says and never waits on it but `CLOSE_MS` at the end, the connection held open meanwhile so the run's process
- * does not exit inside `onEnd`: a connection that does not open, or closes (a hub that predates it closes it at its
- * first line), leaves the run as without it.
+ * (`run-progress`, four times a second at most, the latest counts alone), its page on the instance once it is known
+ * (`run-page`, again when the stream opens another run than the global setup's), and how the run ended, with its first
+ * failure's title and error line through `hideSecretsInText` (`run-end`), and a teammate's ask to watch the run
+ * (`run-ask`). Each test counts once, by the outcome of its latest attempt: a serial group's retry counts its tests
+ * again in place of their earlier outcome. A skipped test whose latest attempt was ended at a stop (End the test,
+ * `ENDED_AT_STOP_REASON`) counts in `endedAtStop` too. Of what the hub says it reads the developer's answer to an ask
+ * (`ask-answer`, `onAskAnswer`) alone, and it never waits on the hub but `CLOSE_MS` at the end, the connection held open
+ * meanwhile so the run's process does not exit inside `onEnd`: a connection that does not open, or closes (a hub that
+ * predates it closes it at its first line), leaves the run as without it.
  */
 
 /** A test's outcome as counted: one of the counts, or `passed` for one that counts as done alone. */
-type Counted = 'failed' | 'flaky' | 'skipped' | 'passed';
+export type Counted = 'failed' | 'flaky' | 'skipped' | 'passed';
+
+/**
+ * How an attempt's test counts once it ended for good, by the outcome of its latest attempt; null while a failed
+ * attempt has a retry to come.
+ */
+export function countedOutcome(test: TestCase, result: TestResult): Counted | null {
+  const outcome = test.outcome();
+  if (outcome === 'unexpected' && result.retry < test.retries && result.status !== 'interrupted') return null;
+  return outcome === 'unexpected'
+    ? 'failed'
+    : outcome === 'flaky'
+      ? 'flaky'
+      : outcome === 'skipped'
+        ? 'skipped'
+        : 'passed';
+}
 
 /** The least time between two `run-progress` lines. */
 const PROGRESS_MS = 250;
@@ -33,14 +56,22 @@ const PROGRESS_MS = 250;
 const CLOSE_MS = 500;
 
 export class RunHubLink {
-  private readonly counts: RunCounts = { done: 0, failed: 0, flaky: 0, skipped: 0 };
-  /** Each test counted, by Playwright's id, in the order first counted: its outcome, and its failure while it failed. */
+  private readonly counts: Required<RunCounts> = { done: 0, failed: 0, flaky: 0, skipped: 0, endedAtStop: 0 };
+  /**
+   * Each test counted, by Playwright's id, in the order first counted: its outcome, whether it was ended at a stop, and
+   * its failure while it failed.
+   */
   private readonly counted = new Map<
     string,
-    { as: Counted; failure: { title: string; error: string | null } | null }
+    { as: Counted; ended: boolean; failure: { title: string; error: string | null } | null }
   >();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sentAt = -Infinity;
+  /** Called with the developer's answer to an ask to watch, as the hub says it. */
+  onAskAnswer: ((answer: LiveAskAnswer) => void) | null = null;
+  /** The page the hub last heard, and whether it heard how the run ended: nothing is sent after `run-end`. */
+  private pageSent: string | null = null;
+  private ended = false;
 
   private constructor(private socket: net.Socket | null) {}
 
@@ -57,11 +88,14 @@ export class RunHubLink {
     socket.on('close', () => {
       if (link.socket === socket) link.socket = null;
     });
-    // Nothing the hub says is read: its lines are let go.
+    // Of what the hub says, the answer to an ask is read; the other lines are let go.
     socket.on(
       'data',
       lineReader(
-        () => {},
+        (line) => {
+          const message = parseHubToMain(line);
+          if (message) link.onAskAnswer?.({ id: message.id, answer: message.answer });
+        },
         () => socket.destroy(),
       ),
     );
@@ -88,23 +122,19 @@ export class RunHubLink {
    * outcome it was counted with before (a serial group that runs again).
    */
   testEnded(test: TestCase, result: TestResult): void {
-    const outcome = test.outcome();
-    if (outcome === 'unexpected' && result.retry < test.retries && result.status !== 'interrupted') return;
-    const as: Counted =
-      outcome === 'unexpected'
-        ? 'failed'
-        : outcome === 'flaky'
-          ? 'flaky'
-          : outcome === 'skipped'
-            ? 'skipped'
-            : 'passed';
+    const as = countedOutcome(test, result);
+    if (!as) return;
+    const ended = as === 'skipped' && endedAtStopIn(result.annotations);
     const before = this.counted.get(test.id);
     if (before) {
       if (before.as !== 'passed') this.counts[before.as]--;
+      if (before.ended) this.counts.endedAtStop--;
     } else this.counts.done++;
     if (as !== 'passed') this.counts[as]++;
+    if (ended) this.counts.endedAtStop++;
     this.counted.set(test.id, {
       as,
+      ended,
       // Its title as the workers name it: its describe blocks' titles, then its own.
       failure:
         as === 'failed'
@@ -117,10 +147,31 @@ export class RunHubLink {
     this.progress();
   }
 
+  /**
+   * The run's page on the instance (`id`, `url`): the hub hears each page that reads and differs from the last it
+   * heard, until the run ended.
+   */
+  page(id: number | null | undefined, url: string | null | undefined): void {
+    const page = readRunPage({ id, url });
+    if (!page || this.ended) return;
+    const key = `${page.id} ${page.url}`;
+    if (this.pageSent === key) return;
+    this.pageSent = key;
+    this.send({ type: 'run-page', ...page });
+  }
+
+  /** A teammate asks to watch the run: the hub's tool asks the developer. False when no hub hears it. */
+  ask(ask: LiveAsk): boolean {
+    if (this.ended || !this.socket || this.socket.destroyed) return false;
+    this.send({ type: 'run-ask', ...ask });
+    return true;
+  }
+
   /** The run ended (`status`, Playwright's): the hub hears how, and the connection closes, `CLOSE_MS` at most. */
   async end(status: string): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.ended = true;
     const socket = this.socket;
     if (!socket) return;
     const known = ['passed', 'failed', 'timedout', 'interrupted'].includes(status);

@@ -19,7 +19,7 @@ teammate's paused test, without waiting for the trace. Nothing you do in the vie
 |---|---|
 | A CI run, or a run shared from a developer's machine | Its page on the team instance: **Watch** |
 | A run you start from VS Code, a JetBrains IDE or a terminal | Its browser when headed; Piwi Picker's [Runs window](./runs-window#watch-live) and the editor's [worker view](./watch-running-test), running or stopped |
-| A run the desktop app starts | Its [Local runs](./desktop-runs#watch-live) tray and the Runs window, running or stopped |
+| A run the desktop app starts | Its [Local runs](./desktop-runs#watch) tray and the Runs window, running or stopped |
 
 A stop is a breakpoint, a `page.pause()` or **Pause**. A run that reports to the desktop app gets no live view key, so
 no team **Watch**.
@@ -34,17 +34,15 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 <<< @/snippets/live-view-on.txt
 
 A spec file that imports `test` from `@playwright/test` instead of your [capture fixtures](/guide/capture-fixtures)
-has no view: the log names the first one. A CI run without a view logs why instead: the setting is off, the run does
-not stream (`streaming: false`), `wrapConfig`'s global setup did not register it, or the instance did not register the run as
-it started, with the error it answered.
+has no view: the log names the first one. A CI run without a view logs why instead, for a reason
+[Check availability](#check-availability) lists, with the error the instance answered.
 
-Turning it off ends every view at once; a run that started while it was off stays without one. Turned on again, a
-run that had a view and still runs gets it back within a minute.
+Turning it off ends every view at once. Turned on again, a run that had a view and still runs gets it back within a
+minute.
 
-A CI run's workers keep their view through an outage of the dashboard or its restart: each tries again after 1, 2, 4,
-8 and 16 seconds, then every 30 to 60 seconds while the run lasts; one the instance refuses waits that long at once. A
-worker whose view stays out says so once in the run's log, with the cause, and once more as it is back, outside any
-test's output.
+A CI run's workers keep their view through an outage or a restart of the dashboard: each tries again after 1, 2, 4,
+8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out says so once in the
+run's log, with the cause, and once more as it is back.
 
 ## Check availability
 
@@ -61,15 +59,17 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 ## Watch a worker
 
 On the run page's **Tests** tab, **Watch** at the end of a running test's row opens its worker's view, docked beside
-the page (a sheet on a smaller screen): the test's page as the browser paints it, headless or not, under it the call
-the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new
-image, so the caption names the step the test began since. Widen the panel by its edge or open it full screen; a click
-on the image zooms.
+the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
+taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
+caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
+Under it, the page's [events, text and filmstrip](./live-view-layers) and [Inspect](./live-inspect); [Watch all](./watch-all)
+shows every worker at once.
 
-In a CI run, the view follows that call: how long it has run, Playwright's log of it as a failed call's error
-prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
-image, with the point a click acts on; **Zoom to the element** crops the image around it. A shared run shows the call
-alone. Following the call needs Playwright 1.64: 1.63 shows its log without the matches, an older one the call alone.
+The view follows that call: how long it has run, Playwright's log of it as a failed call's error prints it, and while
+it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point
+a click acts on; **Zoom to the element** crops the image around it. In a CI run this needs Playwright 1.64 (1.63
+shows the log without the matches, an older one the call alone); a shared run reads it inside the worker, pausing
+nothing.
 
 A view follows its worker's lane: it says how each test ended, lists the lane's earlier tests and goes on, across
 worker restarts; untick **Follow the worker's next test** to end it with its test. The page's address names the lane
@@ -85,12 +85,13 @@ shared or not ([its stops](./share-live#stops-shared-or-not)).
   [stops](./share-live#stops-shared-or-not) show as text.
 - **Nothing while nobody watches.** Each worker of a CI or shared run keeps one connection to the dashboard and says
   only when its test stops and goes on. No image is taken.
-- **While someone watches a worker**, that worker sends JPEG images of its test's page, at most 640 by 400 pixels at
-  quality 50, four a second at most and about 256 KB a second: a heavier image holds the next one back longer. A test
-  whose trace or video already films the page shares that recording's images, 800 pixels wide at quality 90, and so
-  sends fewer of them. The recording stays whole. A test that starts its own `page.screencast` gets it, and the view
-  goes on with an image a second. A CI run's worker also sends the call's log. Nothing of the view is a step of the
-  test or an action of its trace.
+- **While someone watches a worker**, that worker sends JPEG images of its test's page at quality 50, at the size the
+  view shows them in device pixels, 1280 by 800 at most: four a second to a view,
+  one to a [Watch all](./watch-all) tile, and about 256 KB a second, a heavier image holding the next one back longer.
+  A test whose trace or video already films the page shares that recording's images, 800 pixels wide at quality 90.
+  The recording stays whole. A test that starts its own `page.screencast` gets it, and the view
+  goes on with an image a second. A view also gets the call's log. Nothing of the view is a step of the test or an
+  action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
   [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: never written
@@ -100,25 +101,27 @@ shared or not ([its stops](./share-live#stops-shared-or-not)).
 **Masked in the worker**, with `@piwitests/reporter` 0.64.0 or later (an older one masks nothing): before an image
 leaves it, the worker paints over password fields, fields whose `autocomplete` asks for a one-time code or a card's
 number or code, and the project's **Masked elements** (Playwright locators). While one shows, two images a second go at
-most. A zoomed-in page sends no image. A secret in the page's own text still shows; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
+most. A zoomed-in page sends no image. A secret in the page's own text still shows; the caption and the log hide
+credentials and typed text. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
-environment of the tests, their hooks or their fixtures, so a process they start does not get it. The dashboard keeps
-the key's SHA-256 digest with the run, never the key, so a dashboard that restarts takes the key back from the
-workers that present it while the run lasts.
+environment of the tests, their hooks or their fixtures. The dashboard keeps the key's SHA-256 digest with the run,
+never the key, so a dashboard that restarts takes it back from the workers while the run lasts.
 
 ## Limits
 
 - **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
-- **Sixteen views of a run at a time**, four of them one person's with authentication on: a fifth closes that
-  person's oldest.
-- **One dashboard server.** The view is relayed in the memory of one server, as the run's live events are, so it needs
-  a deployment of one server ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do
-  not make up for it: the run's setup, its CI workers and the people watching are separate clients.
+- **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
+  that person's oldest. Its workers send 4 MB of images and pages a second at most together.
+- **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
+  ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
+  run's setup, its CI workers and the people watching are separate clients.
 
 ## Related
 
+- [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
+- [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a run live](./share-live): let a teammate watch a run on your machine
 - [Runs window](./runs-window): the live view of a test your editor runs, with its controls

@@ -2,6 +2,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
 import FormData from 'form-data';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
 import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
@@ -21,6 +22,25 @@ export class HttpError extends Error {
   ) {
     super(message);
     this.name = 'HttpError';
+  }
+}
+
+/**
+ * The request carried the desktop app's token to a server that did not prove it holds that token, so nothing was sent.
+ * The message is the line to show.
+ */
+export class DesktopNotProvenError extends Error {
+  /** The code of a connection that never opened for a server that did not answer, so a request that waits retries. */
+  readonly code?: string;
+
+  constructor(serverUrl: string, proof: DesktopProof) {
+    super(
+      proof === 'unreachable'
+        ? `The desktop app at ${serverUrl} did not answer, so its token is not sent and nothing is uploaded.`
+        : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token, so nothing is uploaded. Restart or update the desktop app, or name another instance with a server URL and an API key.`,
+    );
+    this.name = 'DesktopNotProvenError';
+    if (proof === 'unreachable') this.code = 'ECONNREFUSED';
   }
 }
 
@@ -152,12 +172,15 @@ export class HttpClient {
    * @param uploadTimeout Socket inactivity timeout of a multipart upload, or of
    *                  a run's results sent as JSON, in ms (default 10 min): the
    *                  dashboard answers one only once it has stored all of it.
+   * @param desktopToken The desktop app's token when `serverUrl` is the app's: a request that carries it waits for
+   *                  the server to prove it holds it, and without the proof nothing is sent.
    */
   constructor(
     private readonly serverUrl: string,
     private readonly logger: Logger = new Logger(),
     private readonly timeout = 30000,
     private readonly uploadTimeout = 10 * 60 * 1000,
+    private readonly desktopToken: string | null = null,
   ) {
     this.warnIfInsecureTransport();
   }
@@ -343,7 +366,25 @@ export class HttpClient {
    * Unified request core: transport, headers, auth, response accumulation, timeout. Nothing is sent to a `serverUrl`
    * that is not an `http://` or `https://` URL.
    */
-  private request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
+  private async request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
+    if (!this.desktopToken || opts.auth !== this.desktopToken) return this.send(method, pathname, opts);
+    await this.requireDesktopProof();
+    return this.send(method, pathname, opts);
+  }
+
+  private readonly proofsInFlight = shareInFlight<DesktopProof>();
+
+  /**
+   * Resolves once the server proved it holds the desktop token. Each request that carries the token asks for its own
+   * proof; requests that arrive while a proof is being asked share it, and a proof that has arrived is never used for
+   * a later request.
+   */
+  private async requireDesktopProof(): Promise<void> {
+    const proof = await this.proofsInFlight('proof', () => proveDesktopServer(this.serverUrl, this.desktopToken!));
+    if (proof !== 'proven') throw new DesktopNotProvenError(this.serverUrl, proof);
+  }
+
+  private send(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
       if (this.closedReason !== null) {
         reject(new Error(this.closedReason));

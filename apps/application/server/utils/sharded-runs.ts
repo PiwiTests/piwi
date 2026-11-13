@@ -126,9 +126,15 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
 /**
  * The run a shard of a batch submission joins: the instance's active sharded
  * run, or a new one, running with no shard counted yet, for the first shard to
- * arrive. A new run cancels the instance's earlier non-sharded runs.
+ * arrive, reported by `reporterId` (`runReporterId`). A new run cancels the instance's earlier non-sharded runs.
  */
-export function batchShardRun(db: DbClient, projectId: number, instanceId: string, body: BatchRunBody) {
+export function batchShardRun(
+  db: DbClient,
+  projectId: number,
+  instanceId: string,
+  body: BatchRunBody,
+  reporterId: number | null = null,
+) {
   return withInstanceRunLock(projectId, instanceId, async () => {
     const active = await findActiveShardedRun(db, projectId, instanceId, body.shardTotal!);
     if (active) return active;
@@ -154,6 +160,7 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
         metadata,
         origin: runOrigin(metadata),
         commit: runCommit(metadata),
+        reporterId,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,

@@ -215,7 +215,7 @@ describe('find_tools', () => {
 const HANGING_CLI = `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args.includes('--version')) { process.stdout.write('9.9.9 (stub)\\n'); process.exit(0); }
-if (args[0] === 'auth') { process.stdout.write(JSON.stringify({ loggedIn: true })); process.exit(0); }
+if (args[0] === 'auth') { process.stdout.write(JSON.stringify({ loggedIn: true, authMethod: 'api_key', apiProvider: 'firstParty' })); process.exit(0); }
 if (args.includes('--help')) {
   process.stdout.write('Options:\\n  --print\\n  --output-format\\n  --system-prompt\\n  --tools\\n  --strict-mcp-config\\n  --mcp-config\\n  --allowedTools\\n');
   process.exit(0);

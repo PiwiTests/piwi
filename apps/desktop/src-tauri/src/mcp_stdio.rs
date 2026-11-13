@@ -152,7 +152,7 @@ fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, St
         let attempt = match read_endpoint(discovery) {
             Some(endpoint) => post(&endpoint, message),
             None => Err(PostError {
-                message: "Piwi Dashboard is not running — start the app, then reconnect this server"
+                message: "Piwi Desktop is not running — start it from the Start menu, the Dock or the app list, then reconnect this server"
                     .into(),
                 retryable: true,
                 sent: false,
@@ -213,7 +213,7 @@ const LOOPBACK_HOST: &str = "127.0.0.1";
 fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
     PostError {
         message: format!(
-            "cannot reach Piwi Dashboard at http://{}:{} ({detail})",
+            "cannot reach Piwi Desktop at http://{}:{} ({detail})",
             endpoint.host, endpoint.port
         ),
         retryable: true,
@@ -225,9 +225,9 @@ fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
 /// server end the body by closing the socket, so reading to EOF is the whole
 /// response — no keep-alive or chunked framing to decode by hand.
 ///
-/// The connection comes from [`crate::connect_proving_token`]: the token goes out only
-/// once the server on the port has proved it holds it. A failed proof is retryable and
-/// nothing was sent.
+/// The request goes on the connection [`crate::connect_proving_token`] proved: the token
+/// goes out only on the stream whose server proved it holds it. A failed proof is
+/// retryable and nothing was sent.
 fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
     if endpoint.host != LOOPBACK_HOST {
         return Err(PostError {
@@ -276,7 +276,7 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
     let text = String::from_utf8_lossy(raw);
     let Some((head, body)) = text.split_once("\r\n\r\n") else {
         return Err(PostError {
-            message: "Piwi Dashboard sent a malformed HTTP response".into(),
+            message: "Piwi Desktop sent a malformed HTTP response".into(),
             // An empty or truncated response means the connection died mid-flight.
             retryable: true,
             sent: true,
@@ -289,17 +289,17 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
     match status {
         Some(code) if (200..300).contains(&code) => Ok(body.to_string()),
         Some(401) | Some(403) => Err(PostError {
-            message: "Piwi Dashboard rejected the bridge's access token — reconnect Claude Desktop from the app's MCP page".into(),
+            message: "Piwi Desktop rejected the bridge's access token — reconnect Claude Desktop from the app's MCP page".into(),
             retryable: false,
             sent: true,
         }),
         Some(code) => Err(PostError {
-            message: format!("Piwi Dashboard replied {code}"),
+            message: format!("Piwi Desktop replied {code}"),
             retryable: false,
             sent: true,
         }),
         None => Err(PostError {
-            message: "Piwi Dashboard sent a malformed HTTP response".into(),
+            message: "Piwi Desktop sent a malformed HTTP response".into(),
             retryable: true,
             sent: true,
         }),
@@ -410,21 +410,19 @@ mod tests {
                 )
             })
             .unwrap_or_default();
-        let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\n{proof}\r\n{{}}").as_bytes());
+        let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\n{proof}\r\n{{}}").as_bytes());
         probe
     }
 
     /// A one-shot HTTP server that holds `TOKEN`: it proves it on the readiness probe, then hands
-    /// back `response` and reports the raw request it received after that. Enough to drive the
+    /// back `response` on the same connection and reports the raw request it received after that. Enough to drive the
     /// bridge over a real socket.
     fn stub_server(response: &'static str) -> (u16, std::thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
         let port = listener.local_addr().expect("stub addr").port();
         let handle = std::thread::spawn(move || {
-            let (mut probe, _) = listener.accept().expect("accept the probe");
-            answer_probe(&mut probe, port, true);
-            drop(probe);
             let (mut stream, _) = listener.accept().expect("accept");
+            answer_probe(&mut stream, port, true);
             let request = read_request(&mut stream);
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
@@ -446,10 +444,8 @@ mod tests {
             let (mut first, _) = listener.accept().expect("accept the first probe");
             let squatted = answer_probe(&mut first, port, false);
             drop(first);
-            let (mut probe, _) = listener.accept().expect("accept the second probe");
-            answer_probe(&mut probe, port, true);
-            drop(probe);
-            let (mut stream, _) = listener.accept().expect("accept");
+            let (mut stream, _) = listener.accept().expect("accept the second probe");
+            answer_probe(&mut stream, port, true);
             let request = read_request(&mut stream);
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();

@@ -11,6 +11,9 @@
  * subscribing components can share their handling code between modes.
  */
 import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
+import type { RunProgressBroadcast } from '~~/server/utils/run-events';
+import { runProgressThrottle } from '~~/server/utils/run-progress-throttle';
+import { RunLanes, type Lane } from '#shared/live-lanes';
 
 const CHANNEL_NAME = 'piwi-demo-run-events';
 
@@ -27,7 +30,8 @@ export interface DemoRunEvent {
     | 'run-progress'
     | 'run-finalizing'
     | 'run-finished'
-    | 'resources';
+    | 'resources'
+    | 'lane';
   data: Record<string, unknown>;
 }
 
@@ -49,6 +53,8 @@ export interface DemoGlobalEvent {
 export type DemoEventMessage =
   | { scope: 'run'; runId: number; event: DemoRunEvent }
   | { scope: 'global'; event: DemoGlobalEvent }
+  /** A running run's tally, as the server's `/api/stream` sends its `run-progress`. */
+  | { scope: 'progress'; event: RunProgressBroadcast }
   | { scope: 'notification'; event: Record<string, unknown> };
 
 // ── Publishing (service worker side) ───────────────────────────────────────
@@ -62,16 +68,43 @@ function getPublishChannel(): BroadcastChannel {
   return publishChannel;
 }
 
+/** Each live run's lanes, reduced from the events published for it, as the server's bus keeps them. */
+const demoLanes = new RunLanes();
+
+/** Publish a run event, then a `lane` event for each lane it changed, as the server's bus does. */
 export function publishDemoRunEvent(runId: number, event: DemoRunEvent): void {
   getPublishChannel().postMessage({ scope: 'run', runId, event } satisfies DemoEventMessage);
+  for (const lane of demoLanes.hear(runId, event)) publishDemoRunEvent(runId, { type: 'lane', data: { ...lane } });
+}
+
+/** The lanes of a live run as they stand, for the stream's catch-up. */
+export function demoLanesOf(runId: number): Lane[] {
+  return demoLanes.lanesOf(runId);
 }
 
 /** The global events after which the analytics test filters memoized over the run's project are stale. */
 const STALE_TEST_FILTER_EVENTS = new Set<DemoGlobalEvent['type']>(['run-finished', 'run-submitted', 'rollup-updated']);
 
+/** The runs' tallies, throttled per run as the server's `/api/stream` throttles them. */
+let progressThrottle: ReturnType<typeof runProgressThrottle> | null = null;
+
+function getProgressThrottle() {
+  progressThrottle ??= runProgressThrottle((event) =>
+    getPublishChannel().postMessage({ scope: 'progress', event } satisfies DemoEventMessage),
+  );
+  return progressThrottle;
+}
+
 export function publishDemoGlobalEvent(event: DemoGlobalEvent): void {
   if (STALE_TEST_FILTER_EVENTS.has(event.type)) dropProjectTestFilters(event.projectId);
+  // The run's tally held back goes first, as on the server's stream.
+  progressThrottle?.flush(event.runId);
   getPublishChannel().postMessage({ scope: 'global', event } satisfies DemoEventMessage);
+}
+
+/** Publish a running run's tally, at most once every 2 s per run, its latest winning. */
+export function publishDemoRunProgress(progress: RunProgressBroadcast): void {
+  getProgressThrottle().push(progress.runId, progress);
 }
 
 export function publishDemoNotificationEvent(event: Record<string, unknown>): void {

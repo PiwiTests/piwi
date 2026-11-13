@@ -6,16 +6,62 @@
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
- * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches, it posts too
- * the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
+ * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches it in full, it
+ * posts too the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
  * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
  * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
  * `readWorkerToInstance`).
+ *
+ * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
+ * in device pixels, the pace, and whether one of them shows the worker in full) takes each frame as its JPEG's bytes
+ * behind a short JSON header, one live message (`LIVE_FRAME_TYPE`); an older instance takes the frame in base64 inside
+ * JSON. The call log and the test's end go only to a full view: a worker that only tiles show posts neither, and
+ * follows no call log. A viewer reads one stream of live
+ * messages (`LIVE_STREAM_TYPE`): the frames of the workers it watches, their images as bytes, and the JSON messages
+ * of the view (`LiveViewerMessage`). A live message is a length-prefixed JSON header, then length-prefixed bytes
+ * (`encodeLiveMessage`, `createLiveMessageReader`): the dashboard and any other viewer read it with this one reader.
+ *
+ * Beside the images, a viewer of the worker in full may ask for the layers of `@piwitests/core/live-layers`
+ * (`LiveWatchAsk`'s `layers` on the instance): the instance says which on the worker's stream (`view`'s `layers`, the
+ * union of what its full views ask), and the worker posts them while asked alone, each naming its test: what the page
+ * and the test's requests said (`page-event`), the page's text (`text`, as the instance asks for it, `text` on the
+ * stream), and the images of its test's filmstrip (`thumb`, a live message whose data is the JPEG: the view's own masked
+ * images, kept in the worker's memory for a viewer who comes later, sent again on `resend`). The instance relays each to
+ * the watches that asked for that layer, and keeps none.
+ *
+ * A full view may also ask for **Inspect** (`view`'s `inspect`): the worker then posts the DOM snapshots its page's
+ * trace takes at each call (`snapshot`) and the resources they name (`resource`), as `@piwitests/core/live-inspect`
+ * says, and the instance tells each watch with Inspect open of each snapshot (`snapshot`, its data left out), which it
+ * serves rendered on its own.
  *
  * A CI run's workers open their streams at once. A run outside CI holds its key too, and its workers open no stream
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
+import {
+  LANE_THUMBS_PER_SECOND,
+  MAX_LANE_THUMB,
+  isLaneThumbBytes,
+  isLayerTime,
+  readLaneLayers,
+  readLaneText,
+  readLaneThumb,
+  readPageEvent,
+  type LaneLayer,
+  type LaneText,
+  type LaneThumb,
+  type PageEvent,
+} from './live-layers';
+import {
+  LIVE_INSPECT_DATA_LIMITS,
+  MAX_SNAPSHOT_BYTES,
+  liveSnapshotFields,
+  readLiveResource,
+  readLiveSnapshot,
+  readLiveSnapshotFields,
+  type LiveResource,
+  type LiveSnapshot,
+} from './live-inspect';
 import { tryParseLocatorChain } from './locator-chain';
 import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
@@ -37,6 +83,13 @@ export const LIVE_FRAME_FPS = 4;
 export const LIVE_FRAME_BYTE_RATE = 256 * 1024;
 /** The longest frame, in bytes of JPEG: a longer one is dropped, and a lighter image of the page goes in its place. */
 export const MAX_LIVE_FRAME = 192 * 1024;
+/** The largest image a viewer asks for, in device pixels: a larger view shows it scaled up. */
+export const MAX_LIVE_VIEW_WIDTH = 1280;
+export const MAX_LIVE_VIEW_HEIGHT = 800;
+/** A tile of **Watch all**: the size of each worker's image, in device pixels, and how many a second. */
+export const LIVE_TILE_WIDTH = 320;
+export const LIVE_TILE_HEIGHT = 200;
+export const LIVE_TILE_FPS = 1;
 /** The longest frame's data, in characters of base64. */
 export const MAX_LIVE_FRAME_BASE64 = 4 * Math.ceil(MAX_LIVE_FRAME / 3);
 /** The longest message a worker posts, in bytes of JSON. */
@@ -295,11 +348,49 @@ export function parseLiveMasks(value: unknown): string[] | null {
 }
 
 /**
- * What the instance says on a worker's stream: how many people watch the worker now, and the elements its project
- * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them. A list
- * this reader cannot read (`locators: null`, from an instance newer than it) masks nothing it could trust.
+ * What the instance says on a worker's stream: how many people watch the worker now, the elements its project
+ * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them, and
+ * what its viewers ask of the images (`view`): the largest size one of them shows the image at, in device pixels,
+ * within `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`, the most images a second one of them takes
+ * (`LIVE_FRAME_FPS` for the full view of the worker, `LIVE_TILE_FPS` for tiles alone), and whether one of them shows
+ * it in full (`full`): only then does the worker follow and post its test's call log and post the test's end, and an
+ * instance that does not say it is read as one that does. An instance that says `view` takes frames as live messages
+ * (`LIVE_FRAME_TYPE`). `resend` asks the worker for its latest image and call log again: a watch that showed it as a
+ * tile shows it in full now, which changes neither the count nor what they ask. A list this reader cannot read
+ * (`locators: null`, from an instance newer than it) masks nothing it could trust. `view`'s `layers` are the layers its
+ * full views ask beside the images (`@piwitests/core/live-layers`: `events`, `text` and `filmstrip`; the call log goes
+ * with `full`), none from an instance that does not say them; `text` asks for the page's text now (a viewer asked).
+ * `view`'s `inspect` says a full view has Inspect open (`@piwitests/core/live-inspect`), false from an instance that
+ * does not say it.
  */
-export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'masks'; locators: string[] | null };
+export type InstanceToWorker =
+  | { type: 'viewers'; count: number }
+  | { type: 'masks'; locators: string[] | null }
+  | {
+      type: 'view';
+      width: number;
+      height: number;
+      fps: number;
+      full: boolean;
+      layers: LaneLayer[];
+      inspect: boolean;
+    }
+  | { type: 'resend' }
+  | { type: 'text' };
+
+/**
+ * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
+ * `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`; null when either is not a whole number from 1.
+ */
+export function readLiveViewSize(width: unknown, height: unknown): { width: number; height: number } | null {
+  const w = wholeNumber(width);
+  const h = wholeNumber(height);
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1) return null;
+  return {
+    width: Math.min(MAX_LIVE_VIEW_WIDTH, Math.max(LIVE_TILE_WIDTH, w)),
+    height: Math.min(MAX_LIVE_VIEW_HEIGHT, Math.max(LIVE_TILE_HEIGHT, h)),
+  };
+}
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
@@ -317,7 +408,12 @@ export type WorkerToInstance =
   /** The test the viewers watched ended, how when the worker knows (`outcome`), or none runs. */
   | (LiveWorkerId & { type: 'ended'; outcome?: LiveTestOutcome | null })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
-  | (LiveWorkerId & { type: 'unshared' });
+  | (LiveWorkerId & { type: 'unshared' })
+  /** Something the page or the test's requests said, when (`at`, epoch ms), while a viewer asked for `events`. */
+  | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
+  /** The page's text, while a viewer asked for `text`, or why none goes. */
+  | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null });
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -475,6 +571,8 @@ export function readLiveCallLog(value: unknown): LiveCallLog | null {
 
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** How a JPEG's first three bytes (`FF D8 FF`) are written in base64. */
+const JPEG_BASE64 = '/9j/';
 
 /** Whether `value` is a time in epoch milliseconds: a finite number after 2001. */
 export function isEpochMs(value: unknown): value is number {
@@ -496,7 +594,9 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       if (typeof value.refused === 'string' && value.refused.trim()) {
         return { type: 'frame', ...id, refused: value.refused.slice(0, MAX_REFUSAL) };
       }
-      if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
+      if (!isLiveFrameData(value.data) || !value.data.startsWith(JPEG_BASE64)) {
+        return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
+      }
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
       const frame = { type: 'frame' as const, ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
       return isEpochMs(value.at) ? { ...frame, at: Math.round(value.at) } : frame;
@@ -523,8 +623,22 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
     }
     case 'unshared':
       return { type: 'unshared', ...id };
+    case 'page-event': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at)
+        ? { type: 'page-event', ...id, event, at: value.at, test: readLiveTestTitle(value.test) }
+        : 'A page event names its kind, its fields and when it happened.';
+    }
+    case 'text': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      const text = readLaneText(value.text);
+      return text ? { type: 'text', ...id, text, test } : 'A text names its source, its text and when it was taken.';
+    }
     default:
-      return 'The message is of a type other than frame, stop, call-log, ended or unshared.';
+      return 'The message is of a type other than frame, stop, call-log, ended, unshared, page-event or text.';
   }
 }
 
@@ -538,6 +652,569 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   }
   if (!isObject(value)) return null;
   if (value.type === 'masks') return { type: 'masks', locators: parseLiveMasks(value.locators) };
+  if (value.type === 'view') {
+    const size = typeof value.width === 'number' ? readLiveViewSize(value.width, value.height) : null;
+    if (!size || !isInt(value.fps, 1, 60)) return null;
+    const full = typeof value.full === 'boolean' ? value.full : true;
+    const layers = (readLaneLayers(value.layers) ?? []).filter((layer) => layer !== 'calls');
+    const inspect = value.inspect === true;
+    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
+  }
+  if (value.type === 'resend') return { type: 'resend' };
+  if (value.type === 'text') return { type: 'text' };
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
+}
+
+/** The media type of a frame a worker posts to an instance that says `view`: one live message, the JPEG its data. */
+export const LIVE_FRAME_TYPE = 'application/vnd.piwi.live-frame';
+/** The media type of a viewer's watch: live messages one after another, a heartbeat among them every 15 seconds. */
+export const LIVE_STREAM_TYPE = 'application/vnd.piwi.live-stream';
+/** The longest header of a live message, in bytes of JSON. */
+export const MAX_LIVE_HEADER = 64 * 1024;
+/** The longest live message a worker posts as `LIVE_FRAME_TYPE`, in bytes: a frame's, or an image of a filmstrip's. */
+export const MAX_LIVE_FRAME_MESSAGE = 8 + MAX_LIVE_HEADER + MAX_LIVE_FRAME;
+/** The longest live message a worker posts as `LIVE_FRAME_TYPE` while Inspect is open: a snapshot's, in bytes. */
+export const MAX_LIVE_INSPECT_MESSAGE = 8 + MAX_LIVE_HEADER + MAX_SNAPSHOT_BYTES;
+/**
+ * The bounds a reader of what a worker posts holds each live message to: a frame's data, and the larger data of the
+ * Inspect types (`snapshot`, `resource`) for those types alone.
+ */
+export const LIVE_WORKER_POST_LIMITS: LiveMessageLimits = { maxData: MAX_LIVE_FRAME, byType: LIVE_INSPECT_DATA_LIMITS };
+
+/**
+ * A live message: a JSON object (`header`), and bytes (`data`, an image), null when it carries none. On the wire, the
+ * header's length in bytes as a 32-bit unsigned big-endian number, the header as UTF-8 JSON, the data's length the
+ * same way, then the data. A message whose two lengths are 0 is a heartbeat, which a reader passes over.
+ */
+export interface LiveMessage {
+  header: Record<string, unknown>;
+  data: Uint8Array | null;
+}
+
+/**
+ * The bounds a reader holds each live message to, in bytes: its header (`MAX_LIVE_HEADER` unless said) and its data,
+ * `maxData` unless its header's `type` is one of `byType`'s, which says the bound of that type's data.
+ */
+export interface LiveMessageLimits {
+  maxHeader?: number;
+  maxData: number;
+  byType?: Readonly<Record<string, number>>;
+}
+
+/** The most data a message of the header `header` carries under `limits`. */
+function maxDataOf(limits: LiveMessageLimits, header: Record<string, unknown>): number {
+  const type = header.type;
+  return typeof type === 'string' && limits.byType && Object.prototype.hasOwnProperty.call(limits.byType, type)
+    ? limits.byType[type]!
+    : limits.maxData;
+}
+
+/** A heartbeat: a live message with no header and no data, which a reader passes over. */
+export const LIVE_HEARTBEAT = new Uint8Array(8);
+
+/** The live message of `header` and `data`, as bytes. */
+export function encodeLiveMessage(header: Record<string, unknown>, data: Uint8Array | null = null): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const length = data?.length ?? 0;
+  const bytes = new Uint8Array(8 + json.length + length);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, json.length);
+  bytes.set(json, 4);
+  view.setUint32(4 + json.length, length);
+  if (data) bytes.set(data, 8 + json.length);
+  return bytes;
+}
+
+/** A header's JSON, read as an object; why not, as a sentence. */
+function readHeader(bytes: Uint8Array): Record<string, unknown> | string {
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    return 'A live message’s header is not JSON.';
+  }
+  return isObject(value) ? value : 'A live message’s header is not a JSON object.';
+}
+
+/**
+ * A reader of live messages as they arrive, in chunks of any size: each call takes the next chunk and returns the
+ * messages it completed, in order, heartbeats left out. A header longer than `limits.maxHeader`, data longer than its
+ * type's bound (`limits.maxData`, or `limits.byType`'s), data without a header, or a header that is not a JSON object
+ * throws, as soon as its length or its text is read, with a sentence that says why; the reader then throws on every call, the stream being broken. A
+ * message's data is a copy of its own, which the caller keeps as long as it pleases. The bytes not read yet wait in
+ * one buffer, as long as the message they begin needs once its lengths are read, whatever the chunks' sizes.
+ */
+export function createLiveMessageReader(limits: LiveMessageLimits): (chunk: Uint8Array) => LiveMessage[] {
+  const maxHeader = limits.maxHeader ?? MAX_LIVE_HEADER;
+  // The bytes not read yet, the first `size` of `buffer`, and how many must have come before reading on is worth it.
+  let buffer = new Uint8Array(0);
+  let size = 0;
+  let need = 4;
+  let broken: string | null = null;
+  // The header of the message being read, once its text came whole: its data waits behind it.
+  let header: Record<string, unknown> | null = null;
+  const fail = (why: string): never => {
+    broken = why;
+    buffer = new Uint8Array(0);
+    size = 0;
+    throw new Error(why);
+  };
+  return (chunk) => {
+    if (broken) throw new Error(broken);
+    if (size + chunk.length > buffer.length) {
+      const grown = new Uint8Array(Math.max(need, size + chunk.length));
+      grown.set(buffer.subarray(0, size));
+      buffer = grown;
+    }
+    buffer.set(chunk, size);
+    size += chunk.length;
+    if (size < need) return [];
+    const view = new DataView(buffer.buffer, buffer.byteOffset, size);
+    const messages: LiveMessage[] = [];
+    let at = 0;
+    need = 4;
+    while (size - at >= 4) {
+      const headerLength = view.getUint32(at);
+      if (headerLength > maxHeader) fail(`A live message’s header is ${maxHeader} bytes at most.`);
+      need = 8 + headerLength;
+      if (size - at < need) break;
+      const dataLength = view.getUint32(at + 4 + headerLength);
+      if (headerLength === 0 && dataLength > 0) fail('A live message with data has a header.');
+      if (headerLength > 0 && !header) {
+        const read = readHeader(buffer.subarray(at + 4, at + 4 + headerLength));
+        if (typeof read === 'string') fail(read);
+        header = read as Record<string, unknown>;
+      }
+      const maxData = header ? maxDataOf(limits, header) : limits.maxData;
+      if (dataLength > maxData) fail(`A live message’s data is ${maxData} bytes at most.`);
+      need = 8 + headerLength + dataLength;
+      const end = at + need;
+      if (size < end) break;
+      if (header) messages.push({ header, data: dataLength > 0 ? buffer.slice(end - dataLength, end) : null });
+      header = null;
+      at = end;
+      need = 4;
+    }
+    // What is left begins the next message: it waits at the start of a buffer as long as that message needs.
+    const left = size - at;
+    const room = Math.max(need, left);
+    if (buffer.length > room) {
+      const kept = new Uint8Array(room);
+      kept.set(buffer.subarray(at, size));
+      buffer = kept;
+    } else if (at > 0) {
+      buffer.copyWithin(0, at, size);
+    }
+    size = left;
+    return messages;
+  };
+}
+
+/**
+ * The one live message `bytes` holds, as a worker posts it: none before it nor after it; why not, as a sentence, when
+ * it holds none, more than one, or one past `limits`.
+ */
+export function decodeLiveMessage(bytes: Uint8Array, limits: LiveMessageLimits): LiveMessage | string {
+  const maxHeader = limits.maxHeader ?? MAX_LIVE_HEADER;
+  const whole = 'The body holds one live message, whole.';
+  if (bytes.length < 8) return whole;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const headerLength = view.getUint32(0);
+  if (headerLength > maxHeader) return `A live message’s header is ${maxHeader} bytes at most.`;
+  if (headerLength === 0 || bytes.length < 8 + headerLength) return whole;
+  const dataLength = view.getUint32(4 + headerLength);
+  const header = readHeader(bytes.subarray(4, 4 + headerLength));
+  if (typeof header === 'string') return header;
+  const maxData = maxDataOf(limits, header);
+  if (dataLength > maxData) return `A live message’s data is ${maxData} bytes at most.`;
+  if (bytes.length !== 8 + headerLength + dataLength) return whole;
+  return { header, data: dataLength > 0 ? bytes.slice(8 + headerLength) : null };
+}
+
+/** Whether `bytes` starts as a JPEG does. */
+function isJpeg(bytes: Uint8Array): boolean {
+  return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
+/** A frame of a worker's test page as the instance reads it, from either form a worker posts: its JPEG's bytes. */
+export type LiveWorkerFrame = LiveWorkerId & {
+  type: 'frame';
+  image: Uint8Array;
+  call: LiveCall | null;
+  test: string | null;
+  at?: number;
+};
+
+/** The header of a frame a worker posts as a live message (`LIVE_FRAME_TYPE`); its JPEG is the message's data. */
+export function liveFrameHeader(
+  id: LiveWorkerId,
+  frame: { call: LiveCall | null; test: string | null; at?: number },
+): Record<string, unknown> {
+  return {
+    type: 'frame',
+    ...id,
+    call: frame.call,
+    test: frame.test,
+    ...(frame.at !== undefined && Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {}),
+  };
+}
+
+/**
+ * A frame a worker posted as a live message, checked field by field: its header a frame's, as `readWorkerToInstance`
+ * reads one, and its data a JPEG of `MAX_LIVE_FRAME` bytes at most; why not, as a sentence, when it is not one.
+ */
+export function readLiveWorkerFrame(message: LiveMessage): LiveWorkerFrame | string {
+  const { header, data } = message;
+  if (header.type !== 'frame') return 'A live message a worker posts is a frame.';
+  const id = readLiveWorkerId(header.shard, header.worker, header.slot);
+  if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
+  if (!data || !isJpeg(data) || data.length > MAX_LIVE_FRAME) {
+    return `A frame is a JPEG of ${MAX_LIVE_FRAME / 1024} KB at most.`;
+  }
+  const call = header.call === null || header.call === undefined ? null : readLiveCall(header.call);
+  const frame: LiveWorkerFrame = { type: 'frame', ...id, image: data, call, test: readLiveTestTitle(header.test) };
+  return isEpochMs(header.at) ? { ...frame, at: Math.round(header.at) } : frame;
+}
+
+/** An image of a worker's test filmstrip as the instance reads it: its fields, and its JPEG's bytes. */
+export type LiveWorkerThumb = LiveWorkerId & {
+  type: 'thumb';
+  thumb: LaneThumb;
+  image: Uint8Array;
+  test: string | null;
+};
+
+/** The header of an image of a filmstrip a worker posts as a live message (`LIVE_FRAME_TYPE`); its JPEG is the data. */
+export function liveThumbHeader(id: LiveWorkerId, thumb: LaneThumb, test: string | null): Record<string, unknown> {
+  return { type: 'thumb', ...id, thumb, test };
+}
+
+/** The most images of a filmstrip a worker posts a second. */
+export const LIVE_THUMBS_PER_SECOND = LANE_THUMBS_PER_SECOND;
+
+/**
+ * A DOM snapshot of a worker's test page, as the instance reads it while Inspect is open (`@piwitests/core/live-inspect`):
+ * its header's fields (`snapshot`), its JSON's bytes (`data`) and the test's title.
+ */
+export type LiveWorkerSnapshot = LiveWorkerId & {
+  type: 'snapshot';
+  snapshot: LiveSnapshot;
+  data: Uint8Array;
+  test: string | null;
+};
+
+/** Why a worker sends no snapshot of its page while Inspect is open: the sentence the viewers see in its place. */
+export type LiveWorkerSnapshotRefusal = LiveWorkerId & { type: 'snapshot'; refused: string; test: string | null };
+
+/** A resource the snapshots of a worker's test page name, as the instance reads it: its header's fields, and its bytes. */
+export type LiveWorkerResource = LiveWorkerId & { type: 'resource'; resource: LiveResource; data: Uint8Array };
+
+/** The header of a snapshot a worker posts as a live message (`LIVE_FRAME_TYPE`); its JSON is the message's data. */
+export function liveSnapshotHeader(
+  id: LiveWorkerId,
+  snapshot: LiveSnapshot,
+  test: string | null,
+): Record<string, unknown> {
+  return { type: 'snapshot', ...id, ...liveSnapshotFields(snapshot), test };
+}
+
+/** The header of why a worker sends no snapshot, a live message without data (`LIVE_FRAME_TYPE`). */
+export function liveSnapshotRefusalHeader(
+  id: LiveWorkerId,
+  refused: string,
+  test: string | null,
+): Record<string, unknown> {
+  return { type: 'snapshot', ...id, refused, test };
+}
+
+/** The header of a resource a worker posts as a live message (`LIVE_FRAME_TYPE`); its bytes are the message's data. */
+export function liveResourceHeader(id: LiveWorkerId, resource: LiveResource): Record<string, unknown> {
+  return { type: 'resource', ...id, sha1: resource.sha1, contentType: resource.contentType };
+}
+
+/** Everything a worker posts as a live message (`LIVE_FRAME_TYPE`), as `readLiveWorkerPost` reads it. */
+export type LiveWorkerPost =
+  | LiveWorkerFrame
+  | LiveWorkerThumb
+  | LiveWorkerSnapshot
+  | LiveWorkerSnapshotRefusal
+  | LiveWorkerResource;
+
+/**
+ * What a worker posted as a live message, checked field by field: a frame (`readLiveWorkerFrame`), an image of its
+ * test's filmstrip (`thumb`: its fields as `@piwitests/core/live-layers` reads them, its data a JPEG of
+ * `MAX_LANE_THUMB` bytes at most), a DOM snapshot of its page or why none goes (`snapshot`), or a resource a snapshot
+ * names (`resource`), both as `@piwitests/core/live-inspect` reads them; why not, as a sentence, when it is none of
+ * them. A reader of the message itself takes the Inspect types' larger data (`LIVE_WORKER_POST_LIMITS`).
+ */
+export function readLiveWorkerPost(message: LiveMessage): LiveWorkerPost | string {
+  const { header, data } = message;
+  if (header.type !== 'thumb' && header.type !== 'snapshot' && header.type !== 'resource') {
+    return readLiveWorkerFrame(message);
+  }
+  const id = readLiveWorkerId(header.shard, header.worker, header.slot);
+  if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
+  if (header.type === 'snapshot') {
+    const test = readLiveTestTitle(header.test);
+    if (typeof header.refused === 'string' && header.refused.trim()) {
+      return { type: 'snapshot', ...id, refused: header.refused.slice(0, MAX_REFUSAL), test };
+    }
+    const read = readLiveSnapshot(header, data);
+    if (typeof read === 'string') return read;
+    const { data: json, ...snapshot } = read;
+    return { type: 'snapshot', ...id, snapshot, data: json, test };
+  }
+  if (header.type === 'resource') {
+    const read = readLiveResource(header, data);
+    if (typeof read === 'string') return read;
+    const { data: bytes, ...resource } = read;
+    return { type: 'resource', ...id, resource, data: bytes };
+  }
+  const thumb = readLaneThumb(header.thumb);
+  if (!thumb) return 'An image of a filmstrip names its call, its title, its place, its size and when it was taken.';
+  if (!data || !isLaneThumbBytes(data))
+    return `An image of a filmstrip is a JPEG of ${MAX_LANE_THUMB / 1024} KB at most.`;
+  return { type: 'thumb', ...id, thumb, image: data, test: readLiveTestTitle(header.test) };
+}
+
+/**
+ * Why a viewer's view of a worker ended: its test ended, its worker left, the run ended, the project's live view was
+ * turned off, the person who watched opened a further watch of the run, past their share, in its place (`replaced`),
+ * or the developer who shared the run from their machine stopped sharing it (`unshared`).
+ */
+export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | 'replaced' | 'unshared';
+
+const VIEW_ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced', 'unshared'];
+
+/** The ends of a viewer's whole watch, after which its stream closes: every other end is its focused view's alone. */
+export const LIVE_WATCH_ENDS: readonly LiveViewEnd[] = ['run-ended', 'off', 'replaced'];
+
+/**
+ * A message of a viewer's watch (`LIVE_STREAM_TYPE`). A watch shows one worker in full (its focus, a worker or the
+ * worker of a lane, which it follows through the lane's next tests), each other worker's image as a tile while it
+ * shows tiles (**Watch all**), or both; every message of a worker names it (`LiveWorkerId`), so the viewer files it. A
+ * reader takes a message's data, an image's JPEG or a page's text, of `MAX_LIVE_FRAME` bytes at most, and its header
+ * of `MAX_LIVE_HEADER`, which no message's other fields reach.
+ */
+export type LiveViewerMessage =
+  /** The watch opened: the id its viewer names it by to change what it shows. */
+  | { type: 'hello'; watch: string }
+  /**
+   * A frame of a worker's test page, its JPEG's bytes, the call it was taken at, the title of its test and, from a
+   * reporter that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most
+   * the worker's clock. A tile's frames come `LIVE_TILE_FPS` a second at most.
+   */
+  | (LiveWorkerId & { type: 'frame'; image: Uint8Array; call: LiveCall | null; test: string | null; at?: number })
+  /** The call the focused worker's test is in, as Playwright logs it, in a CI run, and the title of its test. */
+  | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
+  /** Why no frame of the worker shows now. */
+  | (LiveWorkerId & { type: 'refused'; message: string })
+  /** Something the focused worker's page or its test's requests said, as the watch asked for `events`. */
+  | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
+  /**
+   * The focused worker's page as text, as the watch asked for `text`, or why none goes: on the wire, the text's fields
+   * in the header and its text the data (`encodeLiveViewerMessage`).
+   */
+  | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
+  /** An image of the focused worker's test filmstrip, as the watch asked for `filmstrip`: its JPEG's bytes as the data. */
+  | (LiveWorkerId & { type: 'thumb'; thumb: LaneThumb; image: Uint8Array; test: string | null })
+  /**
+   * A DOM snapshot of the focused worker's page came, as the watch has Inspect open: its call, title, moment, page,
+   * frame, whether it is of the main frame and full, its place among its frame's, and when it was taken, its JSON left
+   * with the instance, which serves it rendered; or why none comes (`refused`).
+   */
+  | (LiveWorkerId & LiveSnapshotNotice & { type: 'snapshot'; test: string | null })
+  | (LiveWorkerId & { type: 'snapshot'; refused: string; test: string | null })
+  /** The focused worker's test ended, how when it says (`outcome`): a view of its lane stays for the next. */
+  | (LiveWorkerId & { type: 'test-ended'; outcome: LiveTestOutcome | null })
+  /**
+   * The focused view ended (it names its worker), with how its test ended when that is why, or the whole watch ended
+   * (`LIVE_WATCH_ENDS`, no worker named): its stream closes after it.
+   */
+  | (Partial<LiveWorkerId> & { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null });
+
+/**
+ * The most bytes of a page's text a watch's message carries, in UTF-8: a frame's, which every reader of a watch takes
+ * as its data. A longer text is cut where a character ends, and says so (`cut`).
+ */
+const MAX_LIVE_TEXT_DATA = MAX_LIVE_FRAME;
+
+/**
+ * The live message of a watch's message: its image, or its page's text in UTF-8 (`MAX_LIVE_TEXT_DATA` bytes at most),
+ * as the data, every other field in the header.
+ */
+export function encodeLiveViewerMessage(message: LiveViewerMessage): Uint8Array {
+  if (message.type === 'frame' || message.type === 'thumb') {
+    const { image, ...header } = message;
+    return encodeLiveMessage(header as unknown as Record<string, unknown>, image);
+  }
+  if (message.type === 'text' && 'text' in message) {
+    const {
+      text: { text, ...fields },
+      ...header
+    } = message;
+    let data = new TextEncoder().encode(text);
+    const cut = data.length > MAX_LIVE_TEXT_DATA;
+    if (cut) {
+      data = new Uint8Array(MAX_LIVE_TEXT_DATA);
+      data = data.subarray(0, new TextEncoder().encodeInto(text, data).written);
+    }
+    return encodeLiveMessage({ ...header, text: { ...fields, cut: fields.cut || cut } }, data);
+  }
+  return encodeLiveMessage(message as unknown as Record<string, unknown>);
+}
+
+/** What a watch hears of a snapshot: its header's fields but the resources it names. */
+export type LiveSnapshotNotice = Omit<LiveSnapshot, 'resources'>;
+
+const WATCH_ID = /^[A-Za-z0-9_-]{16,64}$/;
+
+/** A snapshot's notice to a watch, checked field by field as a snapshot's header is; null when it is not one. */
+function readSnapshotNotice(value: Record<string, unknown>): LiveSnapshotNotice | null {
+  const read = readLiveSnapshotFields({ ...value, resources: [] });
+  if (typeof read === 'string') return null;
+  const { call, title, phase, page, frame, main, full, index, at } = read;
+  return { call, title, phase, page, frame, main, full, index, at };
+}
+
+/** A live message of a viewer's watch, checked field by field; null when it is not one this version reads. */
+export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage | null {
+  const value = message.header;
+  if (value.type === 'hello') {
+    return typeof value.watch === 'string' && WATCH_ID.test(value.watch) ? { type: 'hello', watch: value.watch } : null;
+  }
+  if (value.type === 'end') {
+    if (!VIEW_ENDS.includes(value.reason as string)) return null;
+    const id = readLiveWorkerId(value.shard, value.worker, value.slot);
+    const outcome = readLiveTestOutcome(value.outcome);
+    return {
+      type: 'end',
+      ...id,
+      reason: value.reason as LiveViewEnd,
+      ...(outcome ? { outcome } : {}),
+    };
+  }
+  const id = readLiveWorkerId(value.shard, value.worker, value.slot);
+  if (!id) return null;
+  switch (value.type) {
+    case 'frame': {
+      if (!message.data || !isJpeg(message.data)) return null;
+      const frame = {
+        type: 'frame' as const,
+        ...id,
+        image: message.data,
+        call: value.call ? readLiveCall(value.call) : null,
+        test: readLiveTestTitle(value.test),
+      };
+      return isEpochMs(value.at) ? { ...frame, at: value.at } : frame;
+    }
+    case 'call-log': {
+      const log = readLiveCallLog(value.log);
+      return log ? { type: 'call-log', ...id, log, test: readLiveTestTitle(value.test) } : null;
+    }
+    case 'refused':
+      return typeof value.message === 'string'
+        ? { type: 'refused', ...id, message: value.message.slice(0, MAX_REFUSAL) }
+        : null;
+    case 'test-ended':
+      return { type: 'test-ended', ...id, outcome: readLiveTestOutcome(value.outcome) };
+    case 'page-event': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at)
+        ? { type: 'page-event', ...id, event, at: value.at, test: readLiveTestTitle(value.test) }
+        : null;
+    }
+    case 'text': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      if (!isObject(value.text) || !message.data) return null;
+      const text = readLaneText({ ...value.text, text: new TextDecoder().decode(message.data) });
+      return text ? { type: 'text', ...id, text, test } : null;
+    }
+    case 'thumb': {
+      const thumb = readLaneThumb(value.thumb);
+      if (!thumb || !message.data || !isLaneThumbBytes(message.data)) return null;
+      return { type: 'thumb', ...id, thumb, image: message.data, test: readLiveTestTitle(value.test) };
+    }
+    case 'snapshot': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'snapshot', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      const notice = readSnapshotNotice(value);
+      return notice ? { type: 'snapshot', ...id, ...notice, test } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * **Ask to watch**: a signed-in teammate reading a run that is not shared live asks its developer to share it, once per
+ * `ASK_TO_WATCH_MS` at most. The instance hands the ask to the run's reporter in an answer of the run's stream (`ask` of
+ * the events, heartbeat and live resources answers), once; the reporter hands it to the hub its run reports to
+ * (`run-ask`), whose tool asks the developer where the run was launched, or prints it in its terminal. The developer
+ * shares the run, which the instance sees as its workers stream, or answers `not-now` (`LiveAskAnswer`), which goes back
+ * the same way (`ask-answer`, then `askAnswer` of the next heartbeat).
+ */
+export interface LiveAsk {
+  /** The ask on the instance: 1 to 64 characters of letters, digits, `_` and `-`. */
+  id: string;
+  /** Who asks, as the instance names its user: 1 to 100 characters. */
+  by: string;
+}
+
+/** The developer's answer to an ask that is not to share the run: `not-now`. */
+export interface LiveAskAnswer {
+  id: string;
+  answer: 'not-now';
+}
+
+/**
+ * The field of the bodies of a run's stream requests (events, heartbeat) by which its reporter says it takes asks
+ * (`true`): the instance takes an ask to watch a run only once its reporter said so, since an older one would never
+ * put it to the developer.
+ */
+export const TAKES_ASKS_FIELD = 'takesAsks';
+
+/** The least time between two asks of one person on one run, in milliseconds. */
+export const ASK_TO_WATCH_MS = 5 * 60_000;
+
+/** The longest name an ask carries. */
+export const MAX_ASK_BY = 100;
+
+/**
+ * The query parameter of a worker's stream that names the run it continues on the instance: the run of the same editor
+ * window shared before it, while the window's runs are shared (`after`). The instance links the earlier run to this one.
+ */
+export const LIVE_VIEW_AFTER_PARAM = 'after';
+
+const ASK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * An ask as the instance sent it; null when it is not one. Its name is plain text on one line: control and direction
+ * characters go, and so do the characters a notification would read as a link or as markup (`[]()<>` and backticks),
+ * cut to `MAX_ASK_BY` characters, never inside one.
+ */
+export function parseLiveAsk(value: unknown): LiveAsk | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id) || typeof value.by !== 'string') {
+    return null;
+  }
+  const plain = value.by
+    .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
+    .replace(/[[\]()<>`]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const by = Array.from(plain).slice(0, MAX_ASK_BY).join('').trim();
+  return by ? { id: value.id, by } : null;
+}
+
+/** An answer to an ask; null when it is not one. */
+export function parseLiveAskAnswer(value: unknown): LiveAskAnswer | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id)) return null;
+  return value.answer === 'not-now' ? { id: value.id, answer: 'not-now' } : null;
 }

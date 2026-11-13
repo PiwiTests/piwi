@@ -1,15 +1,15 @@
 ---
-title: Open in IDE
+title: Open in editor
 description: "Open any source path shown in the dashboard at its file and line in VS Code or JetBrains, and how to set up each method."
 lang: en-US
 ---
 
-# Open in IDE
+# Open in editor
 
 <Needs reporter />
 
 Every source path the dashboard shows is clickable: the failing call stack ("Failed here"), a run's test-case list, a
-test case's file, flaky lists, cluster evidence, the AI suggested fix. Hover a path and a small **open in IDE** control
+test case's file, flaky lists, cluster evidence, the AI suggested fix. Hover a path and a small **open in editor** control
 appears: click it to open that file, at its line, in your local editor, or open the chooser to pick a method.
 
 The dashboard runs in your browser while the source lives on your machine, so the mapping from a repo-relative path
@@ -56,7 +56,7 @@ workspace folders. It opens the file at its line and column, and never a file ou
 ## Set it up
 
 1. Hover any source path and click the **⌄** caret, then **Configure…**, or open it from the user menu (bottom-left)
-   → **Open in IDE…**.
+   → **Open in editor…**.
 2. For VS Code without the Piwi extension, or a JetBrains IDE without the Piwi plugin, set your **workspace root**: the
    absolute path of the folder the tests run from, such as `/home/me/my-repo` (or `C:\Users\me\my-repo` on Windows).
    Repo-relative paths are joined onto it. With the Piwi extension, leave it empty and tick **The Piwi extension is
@@ -69,24 +69,23 @@ workspace folders. It opens the file at its line and column, and never a file ou
 | Method | How it opens | Needs |
 |--------|--------------|-------|
 | **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme with a workspace root; without one, the Piwi extension's `vscode://piwitests.piwi/open` link | A workspace root (for the absolute path), or the [Piwi extension](./editors#install-and-connect) in the editor. Flavors: VS Code, Insiders, VSCodium, Cursor. |
-| **JetBrains (URL)** | The Piwi plugin, then `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
-| **JetBrains (local server)** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. |
+| **JetBrains: Piwi plugin, else URL** | `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
+| **JetBrains: Piwi plugin, else local server** | `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. |
 | **Auto** | The Piwi plugin, then the other methods in turn (see below) | Whatever the method that answers needs. |
 
 ### Desktop app: direct launch
 
-In the [desktop app](./desktop.md), whatever method you pick, clicking a path first runs your IDE's **command-line
-launcher**:
+In the [desktop app](./desktop.md), whatever method you pick, clicking a path runs your IDE's **command-line
+launcher** before any URL (a JetBrains method or Auto asks the Piwi plugin first):
 
 - VS Code family: `code --goto <file>:<line>:<column>` (or `cursor`, `codium`, `code-insiders`, matching the flavor
   you chose);
 - JetBrains: `<product> --line <line> --column <column> <file>`, where `<product>` is the product tag you set
   (`rider`, `idea`, `webstorm`, …).
 
-Unlike a URL scheme, it reports whether the launcher started, and flags a missing file. It needs a workspace root, or
-the project's [linked folder](./desktop.md), which stands in for it. The app finds the launcher on your
-`PATH`, then where the IDEs install it, since an app started from the Dock or the Start menu does not see the `PATH`
-your shell sets:
+Unlike a URL scheme, it reports whether the launcher started, and flags a missing file. It needs a workspace root or
+the project's [linked folder](./desktop.md). The app finds the launcher on your
+`PATH`, then where the IDEs install it (an app started from the Dock or the Start menu misses your shell's `PATH`):
 
 - **Windows:** the Toolbox scripts folder, then the IDE's `bin` folder under `%LOCALAPPDATA%\Programs` or
   `C:\Program Files\JetBrains`, newest version first; VS Code's `bin` folder.

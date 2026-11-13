@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '../../app/utils/status-palette';
-import { formatExecutionStatus, statusChipLabel } from '../../app/utils/index';
+import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '@piwitests/run-ui/status-palette';
+import { endedAtStopMark, formatExecutionStatus, statusChipLabel } from '../../app/utils/index';
 
 describe('statusPaletteKey', () => {
   test('maps each outcome to its own palette entry', () => {
@@ -66,8 +66,8 @@ describe('STATUS_PALETTE', () => {
     }
   });
 
-  test('every entry has its token defined in main.css', () => {
-    const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
+  test('every entry has its token defined in run-ui.css', () => {
+    const css = readFileSync(new URL('../../../../packages/run-ui/app/assets/css/run-ui.css', import.meta.url), 'utf8');
     for (const key of Object.keys(STATUS_PALETTE)) expect(css).toContain(`--color-status-${key}:`);
   });
 
@@ -83,6 +83,12 @@ describe('formatExecutionStatus', () => {
     expect(formatExecutionStatus('passed', false)).toBe('passed');
     expect(formatExecutionStatus('timedout')).toBe('timed out');
   });
+
+  test('marks a skip of a test ended at a stop, and nothing else', () => {
+    expect(formatExecutionStatus('skipped', false, true)).toBe('ended at a stop');
+    expect(formatExecutionStatus('skipped', false, false)).toBe('skipped');
+    expect(formatExecutionStatus('failed', false, true)).toBe('failed');
+  });
 });
 
 describe('statusChipLabel', () => {
@@ -92,5 +98,13 @@ describe('statusChipLabel', () => {
     expect(statusChipLabel('didnotrun')).toBe("Didn't run");
     expect(statusChipLabel('timedOut')).toBe('Timed out');
     expect(statusChipLabel('failed', true)).toBe('Failed');
+    expect(statusChipLabel('skipped', false, true)).toBe('Ended at a stop');
+  });
+});
+
+describe('endedAtStopMark', () => {
+  test('names a run’s tests ended at a stop, with the count above one', () => {
+    expect(endedAtStopMark(1)).toBe('Ended at a stop');
+    expect(endedAtStopMark(3)).toBe('3 ended at a stop');
   });
 });

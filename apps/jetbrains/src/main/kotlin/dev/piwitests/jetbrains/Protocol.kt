@@ -31,7 +31,8 @@ data class SummaryLine(
 
 /**
  * The line of the test a failure went through (0-based), followed through the edits since the run, and why it failed.
- * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; may be null.
+ * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; may be null. `diagnosed` when
+ * the failure's diagnostic is on that line, which then says why it failed.
  */
 data class TestFailure(
     val line: Int = 0,
@@ -40,6 +41,7 @@ data class TestFailure(
     val executionId: Int = 0,
     val url: String? = null,
     val state: String? = null,
+    val diagnosed: Boolean = false,
 )
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)
@@ -57,12 +59,15 @@ data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? 
 /** `piwi/testAt`: a 0-based position of a spec. */
 data class TestAtParams(val uri: String, val line: Int, val character: Int)
 
-/** The tests of a spec, by id, which `piwi/runArgs` runs. */
-data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
+/**
+ * The tests of a spec: those Piwi knows, by id, and the spec as a location without a line (`location`), which runs every
+ * test of the file as saved: Run This Spec runs it.
+ */
+data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, val location: String? = null)
 
 /**
  * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
- * null for a file that is not a spec or holds none of them; and where that `test(…)` call starts, as Playwright's
+ * null for a file that is not a spec under a Playwright config's folder; and where that `test(…)` call starts, as Playwright's
  * location filter takes it (`tests/checkout.spec.ts:42`, relative to the Playwright config's folder), whether Piwi
  * knows the test or not, null outside every `test(…)` call.
  */
@@ -128,15 +133,20 @@ data class EditorBreakpoint(val uri: String, val line: Int)
 
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
- * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion), headed, with Piwi's
- * pause bar, when their file is under the Playwright config's folder. `root` names the Playwright config's folder to
- * run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
+ * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion) when their file is
+ * under the Playwright config's folder; they run it headed only when the project's reporter stops at none headless
+ * (older than 0.62.0, or of a version unknown) or the run has no run channel. `root` names the Playwright config's
+ * folder to run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
- * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed. `debug`
- * debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title names, headed, with
- * one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds no such test.
+ * retries (`--repeat-each=3 --retries=0`), headless unless `headed`, and the run's end says how many of those runs
+ * passed. `debug` debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title
+ * names, headed, with one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds
+ * no such test. `headed` and `holdFailures` start the run as the person chose for every run of the project
+ * (`RunStartOptions`): headed (`--headed`), and with **Hold failures** on or off from its start, over what its
+ * breakpoints decided; left out, the service decides: headless but for a `page.pause()` and the breakpoints above,
+ * and Hold failures on with a breakpoint or a `page.pause()`. A repeated run takes `headed` alone.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -147,6 +157,8 @@ data class RunTestsArgs(
     val locations: List<String>? = null,
     val repeat: Int? = null,
     val debug: DebugRun? = null,
+    val headed: Boolean? = null,
+    val holdFailures: Boolean? = null,
 )
 
 /**
@@ -160,16 +172,30 @@ data class DebugRun(
     val title: String,
     val project: String? = null,
     val execution: Int? = null,
+    /** The name the dashboard gave the run, which its page follows the run by. */
+    val ref: String? = null,
 )
 
-data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
+/**
+ * `piwi.runCommand`'s argument: a command line to run in a terminal. `follow` says it runs Playwright for nobody
+ * watching (a fix plan's verification, a Flake Lab command): the plugin asks `piwi/followCommand` for it and runs the
+ * command it answers as a test run, so its runs are listed, paused and stopped as the IDE's; as a plain command when the
+ * answer is null.
+ */
+data class RunCommandArgs(
+    val cwd: String,
+    val command: String,
+    val env: Map<String, String>? = null,
+    val follow: Boolean? = null,
+)
 
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
  * `piwi/commandEnded` names once the command ends; may be null. `notice` is a sentence to show once
  * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
- * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`).
+ * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`). `label` says who
+ * started it when a person did not (`Started by Claude Code`, an agent's `run_start`).
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -179,7 +205,13 @@ data class RunCommand(
     val ref: String? = null,
     val notice: String? = null,
     val pauses: Boolean? = null,
+    val label: String? = null,
 )
+
+/** `piwi/startRun`: run the command the service built for an agent's `run_start`, as a person's run starts. */
+data class StartRunParams(val command: RunCommand)
+
+data class StartRunResult(val ok: Boolean, val message: String)
 
 /**
  * `piwi/commandStarted`: the command of a `RunCommand` built with `ref` was sent to a terminal; `terminalRef` is the ref
@@ -211,7 +243,10 @@ data class ContextStatus(
     val locators: Int = 0,
     val reachedFiles: Int = 0,
     val problem: String? = null,
-    /** What `problem` is about: `not-configured`, `no-project`, `refused` or `unreachable`; null with no problem. */
+    /**
+     * What `problem` is about: `not-configured`, `no-project`, `refused`, `desktop-unproven` or `unreachable`; null with
+     * no problem.
+     */
     val problemKind: String? = null,
     /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
     val instance: NamedInstance? = null,
@@ -252,6 +287,12 @@ data class LiveRun(
     val startedAt: String? = null,
     val own: Boolean = false,
     val ref: String? = null,
+    /** Its page on the instance, which the status bar opens while it runs. */
+    val url: String? = null,
+    /** A CI run's: the status bar says so, never as the person's own tests running. */
+    val ci: Boolean = false,
+    /** The branch it runs on, as it reported it; null for a run that names none. */
+    val branch: String? = null,
 )
 
 /** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
@@ -301,11 +342,126 @@ data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
 /**
+ * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
+ * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
+ * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
+ * ended; `watchable` says a running test's lane can be watched in the IDE (`piwi/ciWatch`) or on the dashboard, from
+ * its `watch` address. The last of a run says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
+ */
+data class CiSession(
+    val runId: Int = 0,
+    val root: String? = null,
+    val url: String = "",
+    val name: String = "",
+    val branch: String? = null,
+    val startedAt: String? = null,
+    val progress: CiProgress? = null,
+    val summary: String = "",
+    val tests: List<CiTest>? = null,
+    val watchable: Boolean = false,
+    val ended: Boolean = false,
+)
+
+/** How far a CI run is: its tests (`total`), those that ended (`done`) and of them `failed`, `flaky` and `skipped`. */
+data class CiProgress(
+    val total: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val status: String = "running",
+)
+
+/**
+ * A test of a CI run: its describe blocks' titles then its own, its spec in the project and the 0-based line of its
+ * `test(…)` call (null when the project holds no such spec), its Playwright project, `running` or its result, its
+ * attempt, its worker's lane from 1 and its shard (null when the run names none); while it runs, the call it is at (`at`,
+ * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched).
+ */
+data class CiTest(
+    val title: List<String>? = null,
+    val uri: String? = null,
+    val line: Int? = null,
+    val project: String = "",
+    val status: String = "running",
+    val retry: Int = 0,
+    val lane: Int? = null,
+    val shard: Int? = null,
+    val at: CiPosition? = null,
+    val watch: String? = null,
+)
+
+/** Where a running test of a CI run is: the call it runs (`title`), its file and 0-based line, and the words to show there. */
+data class CiPosition(
+    val title: String = "",
+    val uri: String = "",
+    val line: Int = 0,
+    val character: Int? = null,
+    val text: String = "",
+)
+
+/**
+ * `piwi/ciWatch`: the IDE watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest` names
+ * them), read-only, through the team instance's watch of the run with the editor's key, until `on` is false, its
+ * session ends or the instance ends the watch; one at a time, another replacing it. Nothing it sends reaches the run.
+ */
+data class CiWatchParams(
+    val root: String?,
+    val runId: Int,
+    val shard: Int?,
+    val lane: Int,
+    val on: Boolean,
+    /** The layers the Worker tab shows beside the images (`calls`, `events`, `text`, `filmstrip`): `piwi/ciLayer`. */
+    val layers: List<String>? = null,
+    /** True asks the lane's worker for its page's text now, for a watch that takes `text`. */
+    val text: Boolean? = null,
+)
+
+/**
+ * `piwi/ciLayer`: a layer of the CI lane the IDE watches, one it asked for (`CiWatchParams.layers`), of the worker
+ * `worker` (its index, as the instance names it) and the test `test` (its title): `layer` names which, and its fields
+ * as `LaneLayerFields` says.
+ */
+data class CiLayer(
+    val root: String = "",
+    val runId: Int = 0,
+    val shard: Int? = null,
+    val lane: Int = 0,
+    override val worker: Int = 0,
+    override val test: String? = null,
+    override val layer: String = "",
+    override val log: LiveCallLog? = null,
+    override val event: PageEvent? = null,
+    override val at: Long? = null,
+    override val text: LaneText? = null,
+    override val refused: String? = null,
+    override val thumb: LaneThumb? = null,
+    override val data: String? = null,
+) : LaneLayerFields
+
+/**
+ * `piwi/ciFrame`: a JPEG of the CI lane the IDE watches (`data`, base64), as its worker masked it, with its test's title
+ * and the call it was taken at; or why no image shows now (`refused`); or why the watch ended (`ended`), its last word.
+ */
+data class CiFrame(
+    val root: String = "",
+    val runId: Int = 0,
+    val shard: Int? = null,
+    val lane: Int = 0,
+    val data: String? = null,
+    val test: String? = null,
+    val call: String? = null,
+    val refused: String? = null,
+    val ended: String? = null,
+)
+
+/**
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
- * command that started it (`RunCommand.ref`), when the service still keeps it.
+ * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
+ * were ended at a stop (End the Test), null for none.
  */
 data class RunEnded(
     val root: String? = null,
@@ -316,6 +472,7 @@ data class RunEnded(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val fixed: Int = 0,
     val stillFailing: List<String>? = null,
     val newFailures: List<String>? = null,
@@ -426,6 +583,12 @@ data class FailureTreeNode(
 data class FailuresParams(val grouping: String? = null)
 
 /**
+ * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
+ * and the sentence it shows for it; null beside failures.
+ */
+data class FailuresView(val state: String = "failures", val message: String? = null)
+
+/**
  * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
  * (`run`, null when a developer's own runs are read alone), the runs laid over it, newest first, when they were read
  * (ISO 8601) and the baseline chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or
@@ -444,6 +607,7 @@ data class FailuresResult(
     val runLabel: String? = null,
     val failing: Int = 0,
     val rerun: List<RunTestsArgs>? = null,
+    val view: FailuresView? = null,
 )
 
 /** `piwi/runId`: the run id typed for A run by id… (`118`, `#118`); null in the answer when the text is not one. */
@@ -603,8 +767,17 @@ data class SelectionItem(val key: String = "", val name: String? = null, val cou
 
 data class SelectionsResult(val items: List<SelectionItem>? = null)
 
-/** `piwi/runSelection`: a saved selection to run, with the IDE's breakpoints as in `RunTestsArgs`. */
-data class RunSelectionParams(val uri: String, val key: String, val breakpoints: List<EditorBreakpoint>? = null)
+/**
+ * `piwi/runSelection`: a saved selection to run, with the IDE's breakpoints, and started as the person chose (`headed`,
+ * `holdFailures`), as in `RunTestsArgs`.
+ */
+data class RunSelectionParams(
+    val uri: String,
+    val key: String,
+    val breakpoints: List<EditorBreakpoint>? = null,
+    val headed: Boolean? = null,
+    val holdFailures: Boolean? = null,
+)
 
 /**
  * `piwi/applyPick`: the edit that puts a locator picked while a run was paused at a breakpoint in place of the locator
@@ -698,6 +871,28 @@ data class RunStop(
     val bar: Boolean = false,
     val since: String? = null,
     val by: String? = null,
+    /**
+     * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
+     * person last acted on it. A person's action takes it from the agent. Null while nobody drives.
+     */
+    val driver: RunPresence? = null,
+    /**
+     * An action that runs in the test's window at this stop (`pick`, `record`, `assert`, `assert-region`), started from
+     * the pause bar or as an intent: Escape on the view goes to the page, whose Escape it is. Null while none runs.
+     */
+    val acting: String? = null,
+)
+
+/**
+ * A tool present on a run, a worker's page or a stop: a Runs window of Piwi Picker (`picker`), an editor (`editor`,
+ * this IDE among them, `self`), the desktop app's window (`desktop`) or an agent through the service's MCP server
+ * (`agent`), and its name as the service knows it (`Piwi Picker`, `an agent`).
+ */
+data class RunPresence(
+    val kind: String? = null,
+    val name: String = "",
+    /** It is this IDE. */
+    val self: Boolean = false,
 )
 
 /**
@@ -731,8 +926,16 @@ data class RunWorker(
     val takes: List<String>? = null,
     /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
     val watchable: Boolean = false,
+    /** Its reporter sends the layers of its slot's view: the call log, the page's events, its text, the filmstrip. */
+    val layers: Boolean = false,
+    /** Its reporter brings the test's window to the front at a stop its pause bar shows (`front`, Show the Browser). */
+    val showsWindow: Boolean = false,
     /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
     val waiting: RunWaiting? = null,
+    /** The tools that watch its page now, its slot's view or its stop's, each once; null while none does. */
+    val watchers: List<RunPresence>? = null,
+    /** Its reporter answers a trace ask: `piwi/openTrace` opens its running test's trace so far; null otherwise. */
+    val traces: Boolean? = null,
 )
 
 /**
@@ -752,7 +955,8 @@ data class RunWaiting(
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
  * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
  * the run stands on the team instance's live view (Share live), for a run whose reporter shares it, and `progress`
- * how far it is, as its own process says.
+ * how far it is, as its own process says. `checkout` marks a job the desktop app runs in a throwaway checkout of a
+ * commit, outside the workspace: its code is offered to copy (`StopCode.copy`), and the app stops it.
  */
 data class RunSession(
     val ref: String? = null,
@@ -761,15 +965,38 @@ data class RunSession(
     val ended: Boolean = false,
     val terminal: Boolean = false,
     val runner: Boolean = false,
+    val checkout: RunCheckout? = null,
     val live: RunLive? = null,
     val progress: RunProgress? = null,
+    /** The run's page on the instance once its own process names it: its number there and its address. */
+    val page: RunPage? = null,
+    /** Hold failures: whether a failure no pause bar shows waits at its line; null for a run nobody attends. */
+    val hold: RunHoldFailures? = null,
+    /**
+     * The tools that have the run open beyond this IDE: each Runs window that follows the runs, the desktop app's
+     * window, and an agent that follows this run. Null while none does.
+     */
+    val presence: List<RunPresence>? = null,
 )
 
 /**
+ * A run's Hold failures: whether a failure no pause bar shows waits at its line for an answer (`on`), and who said so
+ * last (`by`: `start`, `person` or `agent`).
+ */
+data class RunHoldFailures(val on: Boolean = false, val by: String? = null)
+
+/** The throwaway checkout a desktop app's job runs in: its commit's first 7 to 12 hex digits. */
+data class RunCheckout(val commit: String = "")
+
+/** A run's page on an instance: its number there (`#78`) and its address. */
+data class RunPage(val id: Int = 0, val url: String = "")
+
+/**
  * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
- * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`), whether it still runs or how it
- * ended (`status`: `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it
- * ended (null for none). Null for a run whose reporter predates it.
+ * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`, and of the skipped those ended at a
+ * stop, `endedAtStop`, null from a reporter that predates the count), whether it still runs or how it ended (`status`:
+ * `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it ended (null for
+ * none). Null for a run whose reporter predates it.
  */
 data class RunProgress(
     val total: Int = 0,
@@ -777,6 +1004,7 @@ data class RunProgress(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val status: String = "running",
     val failure: RunFailure? = null,
 )
@@ -803,9 +1031,32 @@ data class RunLive(
 
 /**
  * `piwi/shareRun`: Share live, the person's own choice after the plugin's warning: share the run of `ref` on the team
- * instance (`on`), or stop sharing it. Answered with what was done or why not.
+ * instance (`on`), or stop sharing it. Answered with what was done or why not. `scope` `window` shares this project's
+ * runs until the person stops or the project closes, the run of `ref` too when one is named; off, it stops them all.
  */
-data class ShareRunParams(val ref: String, val on: Boolean)
+data class ShareRunParams(val ref: String?, val on: Boolean, val scope: String? = null)
+
+/** `piwi/shareWindowChanged`: whether this project's runs are shared live. */
+data class ShareWindowParams(val on: Boolean = false)
+
+/** `piwi/askToWatch`: a signed-in teammate asks to watch the run of `ref`, which is not shared live. */
+data class AskToWatchParams(val ref: String? = null, val id: String? = null, val by: String? = null, val run: Int? = null)
+
+/** `piwi/answerAsk`: the developer's Not now to an ask, which the teammate's page shows. */
+data class AnswerAskParams(val ref: String, val id: String, val answer: String = "not-now")
+
+/**
+ * `piwi/holdRun`: Hold failures for the run of `ref`, as the person asks: on, a failure no pause bar shows waits at its
+ * line; off, it goes on at once, one held now included. Answered with what was done or why not.
+ */
+data class HoldRunParams(val ref: String, val on: Boolean)
+
+/**
+ * `piwi/stopRun` (request, server to client): stop the run of `ref` this IDE started, as Stop the Run does, as another
+ * tool asks through the hub. Sent only to a client that said `stopsRuns`, never for a run started in a terminal.
+ * Answered with `RunControlResult`: refused for a run this IDE did not start, saying where to stop it.
+ */
+data class StopRunParams(val ref: String = "")
 
 /**
  * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
@@ -834,6 +1085,13 @@ data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreak
  * change: a run started in a terminal starts with them.
  */
 data class SetBreakpointsParams(val places: List<EditorBreakpoint>)
+
+/**
+ * `piwi/setRunPairing`: where a run's picks go (`PIWI_EDITOR_SEND`, `<url>#<token>`), which the service names in its
+ * discovery file for a run started in a terminal; null for none. The plugin gives it in the initialization options
+ * (`runPairing`) as the service starts while a token is kept, and with this once it mints one.
+ */
+data class SetRunPairingParams(val address: String?)
 
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
 data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
@@ -864,13 +1122,133 @@ data class PageInput(
 
 data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
 
+/**
+ * `piwi/driveStop`: the IDE's person takes the stop `since` names (`on`: an agent's actions there are refused until it
+ * is given back), refused unless one of the IDE's views watches it, or gives it back (`on: false`, as **Interact**
+ * goes off), whichever of the IDE's views drove it. The plugin sends only `on: false`: the person's first click, key,
+ * wheel or pick on a view drives the stop. Answered with `RunControlResult`; giving back a stop the IDE did not drive
+ * changes nothing.
+ */
+data class DriveStopParams(val ref: String, val worker: Int, val since: String, val on: Boolean)
+
 data class PageFrame(val ref: String, val worker: Int, val since: String, val data: String? = null, val width: Int? = null, val height: Int? = null, val refused: String? = null)
 
 /**
  * `piwi/laneView`: the IDE watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or stopped,
  * through its tests and the worker Playwright starts in its place, until `on` is false or the run ends; one at a time.
  */
-data class LaneViewParams(val ref: String, val lane: Int, val on: Boolean)
+data class LaneViewParams(
+    val ref: String,
+    val lane: Int,
+    val on: Boolean,
+    /** The layers the Worker tab shows beside the frames (`calls`, `events`, `text`, `filmstrip`): `piwi/laneLayer`. */
+    val layers: List<String>? = null,
+    /** True asks the lane's worker for its page's text now, for a watch that takes `text`. */
+    val text: Boolean? = null,
+)
+
+/**
+ * `piwi/openTrace`: **Open the Trace So Far** for the slot `lane` of the run `ref` (its `RunWorker.parallelIndex`): the
+ * service starts Playwright's trace viewer, on the machine the run runs on, on the running test's trace up to now.
+ * Answered with `RunControlResult`, its message said to the person; the trace's path never reaches the IDE.
+ */
+data class OpenTraceParams(val ref: String, val lane: Int)
+
+/**
+ * A layer of a watched lane (`@piwitests/core/live-layers`), of the worker `worker` (a retry runs in another), by
+ * `layer`: the call its test is in (`calls`: `log`), something its page or its requests said (`events`: `event`, when,
+ * `at`), the page's text or why none goes (`text`: `text` or `refused`), an image of the test's filmstrip, its JPEG in
+ * base64 (`filmstrip`: `thumb`, `data`). Every text in it comes from the run: shown as plain text alone.
+ */
+interface LaneLayerFields {
+    val worker: Int?
+    val test: String?
+    val layer: String
+    val log: LiveCallLog?
+    val event: PageEvent?
+    val at: Long?
+    val text: LaneText?
+    val refused: String?
+    val thumb: LaneThumb?
+    val data: String?
+}
+
+/**
+ * `piwi/laneLayer`: a layer of the slot the IDE watches, one it asked for (`LaneViewParams.layers`), of the worker
+ * `worker` and its test `test` (Playwright's id; null for the text of a page no test shows).
+ */
+data class LaneViewLayer(
+    val ref: String = "",
+    val lane: Int = 0,
+    override val worker: Int = 0,
+    override val test: String? = null,
+    override val layer: String = "",
+    override val log: LiveCallLog? = null,
+    override val event: PageEvent? = null,
+    override val at: Long? = null,
+    override val text: LaneText? = null,
+    override val refused: String? = null,
+    override val thumb: LaneThumb? = null,
+    override val data: String? = null,
+) : LaneLayerFields
+
+/** The call a lane's test is in, as Playwright logs it: its title and place, how it stands, its log's last lines. */
+data class LiveCallLog(
+    val id: String = "",
+    val call: LiveCall? = null,
+    /** `running`, `passed` or `failed`. */
+    val status: String = "",
+    val lines: List<String>? = null,
+    /** While it waits on a locator: how many elements match, and whether the first is enabled. */
+    val target: LiveCallTarget? = null,
+    /** How long it had run, in milliseconds. */
+    val ms: Long = 0,
+    /** The first line of the error it ended with. */
+    val error: String? = null,
+)
+
+data class LiveCall(val title: String = "", val file: String? = null, val line: Int? = null)
+
+data class LiveCallTarget(val count: Int = 0, val enabled: Boolean? = null)
+
+/**
+ * Something a lane's page or its test's requests said, by `kind`: `console`, `page-error` (`text`), `request-failed`
+ * (`method`, `url`, `status`, `failure`), `request-pending` (`id`, `method`, `url`, `ms`, `done`), `backend` (`method`,
+ * `url`, `status`, `level`, `text`), `api` (`method`, `url`, `status`, `ms`, `failure`), `dropped` (`count`).
+ */
+data class PageEvent(
+    val kind: String = "",
+    val text: String? = null,
+    val method: String? = null,
+    val url: String? = null,
+    val status: Int? = null,
+    val failure: String? = null,
+    val id: Long? = null,
+    val ms: Long? = null,
+    val done: Boolean? = null,
+    val level: String? = null,
+    val count: Long? = null,
+)
+
+/** A lane's page as roles and names, masked: from the trace (`source: trace`) or read as asked; `cut` at its bound. */
+data class LaneText(val call: String? = null, val source: String = "", val text: String = "", val cut: Boolean = false, val at: Long = 0)
+
+/** An image of a lane's filmstrip: the call it ended (`call`), its title and its place in the strip (`index`, from 1). */
+data class LaneThumb(val call: String = "", val title: String = "", val index: Int = 0, val width: Int = 0, val height: Int = 0, val at: Long = 0)
+
+/**
+ * `piwi/runningLine`, to a client that takes it (`runningLine` in its initialization options): the call the running
+ * test of the slot the IDE watches (`piwi/laneView`) is in, of the worker `worker`; or none (`call` null) once the line
+ * goes: the test ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run
+ * did. Sent only when it differs from the last one sent for the slot.
+ */
+data class RunningLine(val ref: String = "", val lane: Int = 0, val worker: Int = 0, val call: RunningCall? = null)
+
+/**
+ * The call a slot's running test (`test`, Playwright's id) is in: its title, and its place in the run's code (`uri` and
+ * the 0-based `line`, as a stop's: mapped through the edits since the run started).
+ */
+data class RunningCall(val test: String = "", val title: String = "", val uri: String = "", val line: Int = 0)
 
 /**
  * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the
@@ -895,8 +1273,16 @@ data class LaneFrame(
  */
 data class PickAtParams(val ref: String, val worker: Int? = null, val since: String, val x: Int, val y: Int)
 
-/** The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from). */
-data class PickAtResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null)
+/**
+ * The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from).
+ * `taken`: whether an editor took the locator; null when the run's reporter does not say.
+ */
+data class PickAtResult(
+    val ok: Boolean = false,
+    val message: String? = null,
+    val locator: String? = null,
+    val taken: Boolean? = null,
+)
 
 /**
  * `piwi/hub`: the address of the service's hub, and, with `forwarded`, the loopback ports of the browser's machine a
@@ -910,8 +1296,9 @@ data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
 /**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
  * `worker`: `pick`, `record`, `assert` and `assert-region` in the test's window (where the pause bar shows), `mock`
- * with `request`, a response `piwi/stopRequests` lists. Answered with whether it started, or why not; the code of
- * `assert`, `assert-region` and `mock` comes in `piwi/stopCode`.
+ * with `request`, a response `piwi/stopRequests` lists, and `front` (Show the Browser), which brings the test's window
+ * to the front where the pause bar shows. Answered with whether it started, or why not; the code of `assert`,
+ * `assert-region` and `mock` comes in `piwi/stopCode`.
  */
 data class StopActionParams(val ref: String, val worker: Int? = null, val since: String, val action: String, val request: Int? = null)
 
@@ -954,7 +1341,8 @@ data class LocatorAtCaretResult(val ok: Boolean = false, val message: String? = 
  * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`, and an agent's `steps` and `locator`, whose
  * edit replaces the stopped line's locator), from the IDE, Piwi Picker or an agent, for the IDE to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
  * file's text at `version` (null for the file as saved), made together as one edit; the block as written (`code`),
- * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`).
+ * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`). With `copy`, the
+ * code is offered to copy, never written: the stop is in a desktop app's throwaway checkout, and `message` says so.
  */
 data class StopCode(
     val ref: String? = null,
@@ -968,6 +1356,7 @@ data class StopCode(
     val edits: List<FileEdit>? = null,
     val message: String? = null,
     val warnings: List<String>? = null,
+    val copy: Boolean = false,
 )
 
 /**
@@ -1014,6 +1403,14 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/runArgs")
     fun runArgs(params: RunTestsArgs): CompletableFuture<RunCommand?>
+
+    /**
+     * `piwi/followCommand`: a command given with `RunCommandArgs.follow`, answered with a ref of the service's own and
+     * the run channel in its environment, its runs held to no failure since nobody attends them; null when the service
+     * cannot follow it.
+     */
+    @JsonRequest("piwi/followCommand")
+    fun followCommand(params: RunCommandArgs): CompletableFuture<RunCommand?>
 
     @JsonRequest("piwi/status")
     fun status(): CompletableFuture<StatusResult?>
@@ -1087,6 +1484,12 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/shareRun")
     fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
 
+    @JsonRequest("piwi/answerAsk")
+    fun answerAsk(params: AnswerAskParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/holdRun")
+    fun holdRun(params: HoldRunParams): CompletableFuture<RunControlResult?>
+
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
 
@@ -1096,8 +1499,17 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/pageInput")
     fun pageInput(params: PageInputParams): CompletableFuture<RunControlResult?>
 
+    @JsonRequest("piwi/driveStop")
+    fun driveStop(params: DriveStopParams): CompletableFuture<RunControlResult?>
+
     @JsonRequest("piwi/laneView")
     fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciWatch")
+    fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/openTrace")
+    fun openTrace(params: OpenTraceParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
@@ -1140,4 +1552,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setBreakpoints")
     fun setBreakpoints(params: SetBreakpointsParams)
+
+    @JsonNotification("piwi/setRunPairing")
+    fun setRunPairing(params: SetRunPairingParams)
 }

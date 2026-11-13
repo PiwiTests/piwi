@@ -753,6 +753,153 @@ describe('code from a stop, with a client that writes it', () => {
   });
 });
 
+describe('code from a stop of a job the desktop app runs in a throwaway checkout', () => {
+  let svc: Service;
+  let checkout = '';
+  beforeAll(async () => {
+    svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    checkout = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-checkout-')));
+    fs.mkdirSync(path.join(checkout, 'tests'));
+    fs.writeFileSync(path.join(checkout, 'tests/checkout.spec.ts'), SPEC);
+  });
+  afterAll(() => {
+    svc.stop();
+    fs.rmSync(checkout, { recursive: true, force: true });
+  });
+
+  /** A worker of the desktop app's job `ref`, its run in the checkout, stopped at the spec's Pay line. */
+  async function stoppedInCheckout(ref: string, reason: 'breakpoint' | 'failure' = 'breakpoint') {
+    const { channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, checkout).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    worker.begin('pays');
+    worker.send({
+      type: 'stopped',
+      stop: 1,
+      reason,
+      title: reason === 'failure' ? 'Failed: Timed out' : "Click getByRole('button', { name: 'Pay' })",
+      place: { file: 'tests/checkout.spec.ts', line: 5, column: 5 },
+      locator: "getByRole('button', { name: 'Pay' })",
+      bar: false,
+    });
+    const stop = await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+    return { worker, stop };
+  }
+
+  test('shows its stop at the checkout’s file, as the reproduction’s at its commit, its failures held from the start', async () => {
+    const ref = 'desktop-7-at-abc1234def01';
+    const { worker, stop } = await stoppedInCheckout(ref, 'failure');
+    try {
+      const session = svc.latest(ref)!;
+      expect(session).toMatchObject({ root: null, checkout: { commit: 'abc1234def01' } });
+      expect(session.terminal).toBeUndefined();
+      expect(session.hold).toEqual({ on: true, by: 'start' });
+      expect(stop.uri).toBe(pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('offers the code made at its stop to copy, never to write, saying why', async () => {
+    const ref = 'desktop-8-at-abc1234';
+    const { worker, stop } = await stoppedInCheckout(ref);
+    const before = svc.codes.length;
+    try {
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- heading "Summary"' });
+      const code = await waitFor(() => svc.codes[before]);
+      const why = 'This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file.';
+      expect(code).toMatchObject({
+        ref,
+        since: stop.since,
+        action: 'assert-region',
+        uri: pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href,
+        line: 4,
+        copy: true,
+        message: why,
+      });
+      expect(code.code).toContain("await expect(page.getByTestId('summary')).toMatchAriaSnapshot(`");
+      // The checkout's file is as it was: nothing is written there.
+      expect(fs.readFileSync(path.join(checkout, 'tests/checkout.spec.ts'), 'utf8')).toBe(SPEC);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('offers the code to copy once the editor opened the checkout’s file, at the line as it stands there', async () => {
+    const ref = 'desktop-11-at-abc1234';
+    const { worker } = await stoppedInCheckout(ref);
+    const file = pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href;
+    const before = svc.codes.length;
+    const notices = svc.notices.length;
+    try {
+      // The editor reveals the stop: it opens the checkout's file, and a line is added above the stopped call there.
+      await svc.client.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: file, languageId: 'typescript', version: 1, text: SPEC },
+      });
+      await svc.client.sendNotification('textDocument/didChange', {
+        textDocument: { uri: file, version: 2 },
+        contentChanges: [{ range: { start: { line: 4, character: 0 }, end: { line: 4, character: 0 } }, text: '\n' }],
+      });
+      // The service has read both before the worker's answer comes.
+      await svc.client.sendRequest('piwi/status');
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- heading "Summary"' });
+      const code = await waitFor(() => svc.codes[before] ?? svc.notices[notices]);
+      expect(code).toMatchObject({ ref, action: 'assert-region', uri: file, line: 5, copy: true });
+      expect(fs.readFileSync(path.join(checkout, 'tests/checkout.spec.ts'), 'utf8')).toBe(SPEC);
+    } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: file } });
+      worker.socket.destroy();
+    }
+  });
+
+  test('records nothing into the checkout’s file, saying why', async () => {
+    const ref = 'desktop-10-at-abc1234';
+    const { channel } = await svc.command();
+    const { worker } = await stoppedInCheckout(ref);
+    const handoff = net.connect(channel.path);
+    handoff.setEncoding('utf8');
+    let heard = '';
+    handoff.on('data', (data) => (heard += data));
+    try {
+      handoff.write(
+        `${JSON.stringify({
+          type: 'attach',
+          token: channel.token,
+          file: path.join(checkout, 'tests/checkout.spec.ts'),
+          line: 5,
+          reason: 'breakpoint',
+          testIdAttribute: null,
+          baseURL: null,
+        })}\n`,
+      );
+      const refused = await waitFor(() => heard.split('\n').find((line) => line.includes('"refused"')));
+      expect(JSON.parse(refused)).toEqual({
+        type: 'refused',
+        message: 'this reproduction runs at commit abc1234 in a throwaway checkout: record in your own file.',
+      });
+    } finally {
+      handoff.destroy();
+      worker.socket.destroy();
+    }
+  });
+
+  test('refuses the code of a stop outside the workspace in a run that is no such job', async () => {
+    const ref = 'desktop-9';
+    const { worker } = await stoppedInCheckout(ref);
+    const notices = svc.notices.length;
+    try {
+      expect(svc.latest(ref)!.checkout).toBeUndefined();
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- text: x' });
+      const notice = await waitFor(() => svc.notices[notices]);
+      expect(notice.message).toBe(
+        `No Playwright config of this workspace holds ${pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href}.`,
+      );
+      expect(svc.codes.filter((c) => c.ref === ref)).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+});
+
 describe('code from a stop, with a client that writes none', () => {
   test('refuses the actions that write code, and lets Pick and Record through', async () => {
     const svc = await service(dir, true, { distDir: dist });
@@ -1050,10 +1197,10 @@ describe('code from a stop, started from Piwi Picker', () => {
     }
   });
 
-  test('holds a failure no pause bar shows only while a connection follows the runs, a Runs window open', async () => {
+  test('holds a failure no pause bar shows while its run’s Hold failures is on, not because a Runs window is open', async () => {
     const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
     const published = await waitFor(() => svc.published[0] ?? undefined);
-    // Piwi Picker's background worker, paired, with no Runs window open: subscribed, not following.
+    // Piwi Picker's background worker, paired: subscribed, then following as a Runs window opens.
     const picker = await hubClient(published.hub!, true);
     const { ref, channel } = await svc.command();
     const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
@@ -1070,28 +1217,37 @@ describe('code from a stop, started from Piwi Picker', () => {
     const controls = () => worker.heard.filter((m) => m.type === 'control');
     try {
       worker.begin('pays');
+      // A Runs window open holds nothing: the failure goes on at once, unseen.
+      picker.send({ type: 'follow', id: 2, on: true });
+      expect(await picker.reply(2)).toMatchObject({ ok: true });
       fail(1);
       expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
       await new Promise((r) => setTimeout(r, 100));
       expect(svc.sessions.some((s) => s.workers.some((w) => w.stop))).toBe(false);
-      // A Runs window opens: the next failure waits for an answer.
-      picker.send({ type: 'follow', id: 2, on: true });
-      expect(await picker.reply(2)).toMatchObject({ ok: true });
+      // A person turns the run's Hold failures on: the next failure waits for an answer.
+      picker.send({ type: 'hold', id: 3, ref, on: true });
+      expect(await picker.reply(3)).toMatchObject({
+        ok: true,
+        message: 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+      });
       fail(2);
       await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      expect(svc.latest(ref)?.hold).toEqual({ on: true, by: 'person' });
       await new Promise((r) => setTimeout(r, 100));
       expect(controls()).toHaveLength(1);
-      // The last Runs window closes: the failure goes on.
-      picker.send({ type: 'follow', id: 3, on: false });
+      // Turned off from the editor: the failure held goes on.
+      expect(await svc.client.sendRequest('piwi/holdRun', { ref, on: false })).toMatchObject({ ok: true });
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
       worker.send({ type: 'running', stop: 2 });
-      // Following again, then the connection closes: the failure it held goes on as well.
-      picker.send({ type: 'follow', id: 4, on: true });
+      // On again, then Piwi Picker leaves: the editor answers stops too, so the failure keeps waiting there, until the
+      // hold goes off.
+      picker.send({ type: 'hold', id: 4, ref, on: true });
       await picker.reply(4);
       fail(3);
+      picker.socket.close();
       await new Promise((r) => setTimeout(r, 100));
       expect(controls()).toHaveLength(2);
-      picker.socket.close();
+      await svc.client.sendRequest('piwi/holdRun', { ref, on: false });
       expect(await worker.next('control', 2)).toEqual({ type: 'control', action: 'resume', stop: 3 });
       expect(svc.notices).toEqual([]);
     } finally {

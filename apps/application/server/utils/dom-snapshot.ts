@@ -56,10 +56,15 @@ const EXT_MIME: Record<string, string> = {
   bmp: 'image/bmp',
 };
 
-/** Resolve a `<link href>` / CSS `url(...)` (possibly relative) against a base URL. */
+/**
+ * Resolve a `<link href>` / CSS `url(...)` (possibly relative) against a base URL, as the browser requests it: its
+ * fragment left out, as a trace's resources and a live worker's name them.
+ */
 function resolveResourceUrl(href: string, base: string | undefined): string | null {
   try {
-    return new URL(href, base).href;
+    const url = new URL(href, base);
+    url.hash = '';
+    return url.href;
   } catch {
     return null;
   }
@@ -80,10 +85,20 @@ function assetMimeType(res: TraceResource, ref: string): string | null {
   return (ext && EXT_MIME[ext]) || null;
 }
 
-/** Where the snapshot's captured resources live, and the binary budget they share. */
+/**
+ * Where a snapshot's captured resources come from: the resource each URL names, and its bytes, decoded (null when it
+ * is gone or unreadable). A stored trace reads them from the project's resource pool, a live snapshot from the run's
+ * resources the live view holds in memory.
+ */
+export interface SnapshotAssets {
+  byUrl: Map<string, TraceResource>;
+  read(resource: TraceResource): Promise<Buffer | null>;
+}
+
+/** A snapshot's captured resources, and the binary budget they share. */
 interface AssetSource {
   urlToRes: Map<string, TraceResource>;
-  resourcesDir: string;
+  read: SnapshotAssets['read'];
   budget: { value: number };
 }
 
@@ -104,16 +119,13 @@ async function assetDataUri(
   const res = (abs ? assets.urlToRes.get(abs) : undefined) ?? assets.urlToRes.get(ref);
   if (!res) return null;
   const mime = assetMimeType(res, ref);
-  if (!mime) return null;
-  try {
-    const bytes = decodeResource(await getStorage().readFile(`${assets.resourcesDir}/${res.sha1}`));
-    const cost = bytes.length * uses;
-    if (bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || cost > assets.budget.value) return null;
-    assets.budget.value -= cost;
-    return `data:${mime};base64,${bytes.toString('base64')}`;
-  } catch {
-    return null;
-  }
+  // A `data:` URI can't carry the fragment that names an element of an SVG (`sprite.svg#icon`).
+  if (!mime || (ref.includes('#') && /svg/i.test(mime))) return null;
+  const bytes = await assets.read(res);
+  const cost = (bytes?.length ?? 0) * uses;
+  if (!bytes || bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || cost > assets.budget.value) return null;
+  assets.budget.value -= cost;
+  return `data:${mime};base64,${bytes.toString('base64')}`;
 }
 
 /**
@@ -149,30 +161,21 @@ async function inlineImages(html: string, frameUrl: string | undefined, assets: 
 }
 
 /**
- * Inline the snapshot's external stylesheets, then its images, from the trace's
- * stored resources. Each reference maps → absolute URL (via the frame's base) →
- * content hash (from the `.network` stream) → the body stored under the
- * project's `trace-resources` pool. Stylesheets go first, so their fonts and
- * backgrounds take the shared budget before images do. Purely additive: any
- * missing piece leaves that `<link>` or `<img>` untouched.
+ * Inline the snapshot's external stylesheets, then its images, from its captured
+ * resources. Each reference maps → absolute URL (via the frame's base) → the
+ * resource it names (`assets.byUrl`) → its bytes (`assets.read`). Stylesheets go
+ * first, so their fonts and backgrounds take the shared budget before images
+ * do. Purely additive: any missing piece leaves that `<link>` or `<img>`
+ * untouched.
  */
-async function inlineTraceAssets(
-  blobPath: string,
-  urlToRes: Map<string, TraceResource>,
+export async function inlineSnapshotAssets(
   result: DomSnapshotResult,
+  snapshotAssets: SnapshotAssets,
 ): Promise<DomSnapshotResult> {
   if (result.status !== 'ok' || !result.html) return result;
+  const urlToRes = snapshotAssets.byUrl;
   if (urlToRes.size === 0) return result;
-
-  // Resources live in a project-scoped shared pool; the id is in the blob path
-  // (`project-<id>/blobs/<hash>.zip`).
-  const projectId = /^project-(\d+)\//.exec(blobPath)?.[1];
-  if (!projectId) return result;
-  const assets: AssetSource = {
-    urlToRes,
-    resourcesDir: `project-${projectId}/trace-resources`,
-    budget: { value: INLINE_ASSET_BUDGET },
-  };
+  const assets: AssetSource = { urlToRes, read: snapshotAssets.read, budget: { value: INLINE_ASSET_BUDGET } };
 
   const cssByHref: Record<string, string> = {};
   for (const { href, media } of collectStylesheetLinks(result.html)) {
@@ -182,21 +185,37 @@ async function inlineTraceAssets(
     const abs = resolveResourceUrl(href, result.frameUrl);
     const res = (abs ? urlToRes.get(abs) : undefined) ?? urlToRes.get(href);
     if (!res) continue;
-    try {
-      const bytes = decodeResource(await getStorage().readFile(`${assets.resourcesDir}/${res.sha1}`));
-      if (bytes.length === 0 || bytes.length > MAX_STYLESHEET_BYTES) continue;
-      // Embed the sheet's own url() assets first, THEN mask token-shaped secrets
-      // — masking last leaves the fresh base64 data URIs (and this sheet's
-      // content-hashed filenames) intact.
-      const css = await inlineCssAssets(bytes.toString('utf8'), abs ?? href, assets);
-      cssByHref[href] = maskCssText(css);
-    } catch {
-      // Resource missing/unreadable — leave the <link> as-is.
-    }
+    const bytes = await assets.read(res);
+    if (!bytes || bytes.length === 0 || bytes.length > MAX_STYLESHEET_BYTES) continue;
+    // Embed the sheet's own url() assets first, THEN mask token-shaped secrets
+    // — masking last leaves the fresh base64 data URIs (and this sheet's
+    // content-hashed filenames) intact.
+    const css = await inlineCssAssets(bytes.toString('utf8'), abs ?? href, assets);
+    cssByHref[href] = maskCssText(css);
   }
   const styled = inlineStylesheets(result.html, cssByHref, INLINE_STYLES_MAX_CHARS);
   const html = await inlineImages(styled, result.frameUrl, assets);
   return html === result.html ? result : { ...result, html };
+}
+
+/**
+ * A stored trace's captured resources: the bodies under the project's
+ * `trace-resources` pool, whose id is in the blob path
+ * (`project-<id>/blobs/<hash>.zip`); null for a path that names no project.
+ */
+function storedTraceAssets(blobPath: string, byUrl: Map<string, TraceResource>): SnapshotAssets | null {
+  const projectId = /^project-(\d+)\//.exec(blobPath)?.[1];
+  if (!projectId) return null;
+  return {
+    byUrl,
+    read: async (res) => {
+      try {
+        return decodeResource(await getStorage().readFile(`project-${projectId}/trace-resources/${res.sha1}`));
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 /** Options for {@link getTraceDomSnapshot}. */
@@ -219,8 +238,10 @@ export async function getTraceDomSnapshot(
   // The rendered page views keep the page's inline images; text consumers get them masked.
   const result = extractDomSnapshot(events.parsed, capChars, { keepInlineImages: options.inlineStyles }, options.at);
   if (!options.inlineStyles) return result;
+  const assets = storedTraceAssets(blobPath, events.resourcesByUrl);
+  if (!assets) return result;
   try {
-    return await inlineTraceAssets(blobPath, events.resourcesByUrl, result);
+    return await inlineSnapshotAssets(result, assets);
   } catch {
     // Inlining is best-effort decoration — never fail the snapshot over it.
     return result;

@@ -3,13 +3,17 @@
  * on Windows; `PIWI_EDITORS_DIR` names another folder) once it listens, readable by its user only, and removes it as
  * it stops. A file names the service's process and machine, its version and its client, the workspace's folders, the
  * hub's WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
- * (`@piwitests/core/run-channel`) and the recorder's bundle. A reader lists the folder (`readLiveEditors`): it takes
- * only a file this user owns that reads as a service's file of this machine naming the process its name names, and
+ * (`@piwitests/core/run-channel`), the recorder's bundle, where a run's picks go (`@piwitests/core/editor-send`) and
+ * the agents' MCP server.
+ * A reader lists the folder (`readLiveEditors`): it takes only a file this user owns that reads as a service's file of
+ * this machine naming the process its name names, and
  * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
  * user's file, and skips, never deleting, any other file and another machine's (a home folder several machines share).
  * A test run started in a terminal attaches to the service whose workspace holds it (`editorForRun`). Readers ignore
  * fields they do not know. Pure: the reader takes the folder's operations from its caller.
  */
+
+import { formatPairing, parsePairing, type EditorPairing } from './editor-send';
 
 /** The environment variable naming another folder than `~/.piwi/editors`. */
 export const EDITORS_DIR_ENV = 'PIWI_EDITORS_DIR';
@@ -20,6 +24,12 @@ export const EDITORS_DIR_PARTS: readonly string[] = ['.piwi', 'editors'];
 /** A WebSocket address on this machine and the token its first message carries. */
 export interface HubAddress {
   /** `ws://127.0.0.1:<port>/piwi/hub`. */
+  url: string;
+  token: string;
+}
+
+/** The agents' MCP server of a service: `http://127.0.0.1:<port>/mcp`, and the bearer token it takes. */
+export interface AgentAddress {
   url: string;
   token: string;
 }
@@ -50,6 +60,27 @@ export interface EditorDiscovery {
   runChannel: ChannelAddress | null;
   /** The recorder's bundle a test loads to record into the editor, absolute; null when the service ships none. */
   recorderBundle: string | null;
+  /**
+   * The service knows a run nobody attends (a ref ending in `UNATTENDED_REF_SUFFIX`): it gives it no breakpoint and
+   * holds none of its failures. Absent from a service that does not, which a run nobody attends never follows.
+   */
+  unattended?: boolean;
+  /**
+   * The service knows a job the desktop app runs in a throwaway checkout (a ref naming its commit, `checkoutCommitOf`
+   * of `@piwitests/core/run-channel`): it shows its stops as that commit's and offers their code to copy. Absent from a
+   * service that does not, which the desktop app runs no such job on.
+   */
+  checkout?: boolean;
+  /**
+   * Where a run's picks go (**Pick a locator**, as `PIWI_EDITOR_SEND` names it): the client's Send to editor endpoint,
+   * on this machine's loopback interface. Absent while the client named none.
+   */
+  send?: EditorPairing;
+  /**
+   * The service's MCP server for agents, while it serves the runs to them (the client's `agents.enabled`): an agent's
+   * router (`piwi mcp`) forwards a tool call there. Absent while it serves none.
+   */
+  agents?: AgentAddress;
 }
 
 /** The operations `readLiveEditors` takes from its caller. */
@@ -111,6 +142,21 @@ function readChannel(value: unknown): ChannelAddress | null {
   return path && typeof value.token === 'string' && TOKEN.test(value.token) ? { path, token: value.token } : null;
 }
 
+/** The agents' MCP server a file names, on `127.0.0.1` with a token of 32 to 256 base64url characters; else none. */
+function readAgents(value: unknown): { agents?: AgentAddress } {
+  if (!isObject(value) || typeof value.url !== 'string' || typeof value.token !== 'string') return {};
+  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/mcp$/.test(value.url) || !/^[A-Za-z0-9_-]{32,256}$/.test(value.token))
+    return {};
+  return { agents: { url: value.url, token: value.token } };
+}
+
+/** The pairing a file names, as `PIWI_EDITOR_SEND` takes it (a loopback address): none for anything else. */
+function readSend(value: unknown): { send?: EditorPairing } {
+  if (!isObject(value) || typeof value.url !== 'string' || typeof value.token !== 'string') return {};
+  const send = parsePairing(formatPairing({ url: value.url, token: value.token }));
+  return send ? { send } : {};
+}
+
 /** A file's content, checked field by field; null when it is not one. A field it cannot read is null or empty. */
 export function parseEditorDiscovery(content: string): EditorDiscovery | null {
   let value: unknown;
@@ -138,6 +184,10 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     hub: readHub(value.hub),
     runChannel: readChannel(value.runChannel),
     recorderBundle: text(value.recorderBundle, 4096),
+    ...(value.unattended === true ? { unattended: true } : {}),
+    ...(value.checkout === true ? { checkout: true } : {}),
+    ...readSend(value.send),
+    ...readAgents(value.agents),
   };
 }
 
@@ -158,6 +208,24 @@ export function readLiveEditors(folder: DiscoveryFolder): EditorDiscovery[] {
     else folder.remove(name);
   }
   return found.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.pid - b.pid);
+}
+
+/** The longest a clock may have moved between a process writing its file and a reader reading it. */
+const CLOCK_SLACK_MS = 60_000;
+
+/**
+ * Whether a time a file names, in milliseconds since the epoch, is since this machine started, `uptimeMs` before `now`
+ * (a minute of clock slack allowed): a file of before names a process its restart ended, whose id another may have
+ * taken since.
+ */
+export function sinceBoot(time: number, now: number, uptimeMs: number): boolean {
+  return time >= now - uptimeMs - CLOCK_SLACK_MS;
+}
+
+/** Whether a service's file was written since this machine started (`sinceBoot`); one with no time it reads passes. */
+export function writtenSinceBoot(editor: Pick<EditorDiscovery, 'startedAt'>, now: number, uptimeMs: number): boolean {
+  const written = Date.parse(editor.startedAt);
+  return !Number.isFinite(written) || sinceBoot(written, now, uptimeMs);
 }
 
 /** A folder as `editorForRun` compares them: forward slashes and lower case on Windows, no trailing slash. */

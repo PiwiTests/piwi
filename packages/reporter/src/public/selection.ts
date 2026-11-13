@@ -11,6 +11,7 @@
  * failure falls back to the full suite rather than breaking the run.
  */
 import { PIWI_ENV_KEYS, PIWI_SELECTION_ENV } from '../internal/config/env.js';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import { fetchResolution, resolveProjectId } from '../internal/support/selection-client.js';
 
 export interface ResolveSelectionResult {
@@ -58,6 +59,19 @@ export async function resolveSelection(
     if (options.strict) throw new Error('resolveSelection: no dashboard URL (set PIWI_DASHBOARD_URL)');
     return undefined;
   }
+
+  // The desktop app's key, from its discovery file or the run it started, goes only to a server that proves it.
+  const keyIsFromEnv = apiKey === env[PIWI_ENV_KEYS.apiKey];
+  resolveCliConnection(
+    { serverUrl },
+    {
+      ...env,
+      [PIWI_ENV_KEYS.apiKey]: apiKey ?? undefined,
+      [PIWI_ENV_KEYS.desktopKey]: keyIsFromEnv ? env[PIWI_ENV_KEYS.desktopKey] : undefined,
+    },
+    [],
+    'resolveSelection',
+  );
 
   const clientOptions = { serverUrl, apiKey, project, key, format: 'grep', budgetMs: options.budgetMs ?? null };
 

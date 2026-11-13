@@ -155,7 +155,7 @@ describe('renderDesktopHandoffPage', () => {
   it('tells the user the page is in the app', () => {
     const html = renderDesktopHandoffPage(true);
     expect(html).toContain('data-desktop-handoff="shown"');
-    expect(html).toContain('Opened in Piwi Dashboard');
+    expect(html).toContain('Opened in Piwi Desktop');
   });
 
   it('closes the tab with the one script its policy allows', () => {

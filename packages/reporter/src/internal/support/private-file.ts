@@ -39,6 +39,49 @@ export function legacyPrivateTempDir(): string | null {
   return process.platform === 'win32' ? os.tmpdir() : null;
 }
 
+/** How long a private file named for one run may go unchanged before a later run removes it as left behind. */
+export const STALE_PRIVATE_FILE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Remove the files of `dir` (the private temp folder by default) whose name starts with `prefix`, that are regular
+ * files this user owns, and that have not changed for `STALE_PRIVATE_FILE_MS`: the ones a run killed before its end
+ * left. A link is never followed nor removed, and a file that cannot be read or removed is left as it is.
+ */
+export function sweepStalePrivateFiles(prefix: string, { dir = privateTempDir(), now = Date.now() } = {}): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const file = path.join(dir, name);
+    try {
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile()) continue;
+      if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) continue;
+      if (now - stat.mtimeMs < STALE_PRIVATE_FILE_MS) continue;
+      fs.rmSync(file, { force: true });
+    } catch {
+      // Another run removed it, or it is not this user's to remove.
+    }
+  }
+}
+
+/**
+ * Mark a private file a run still reads as in use, its times set to now, never through a link, so a later run's
+ * `sweepStalePrivateFiles` leaves it whatever time passes without a write. A file that is gone is left gone.
+ */
+export function keepPrivateFileLive(file: string): void {
+  try {
+    const now = new Date();
+    fs.lutimesSync(file, now, now);
+  } catch {
+    // Removed meanwhile: the run's own end removes it too.
+  }
+}
+
 const NO_FOLLOW = fs.constants.O_NOFOLLOW ?? 0;
 const NO_WAIT = fs.constants.O_NONBLOCK ?? 0;
 

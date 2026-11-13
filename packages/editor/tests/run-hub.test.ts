@@ -23,7 +23,7 @@ import {
   type LiveHub,
 } from '@piwitests/core/run-hub';
 import { RUN_TAKES } from '@piwitests/core/run-channel';
-import type { RunSession } from '../src/protocol';
+import type { AgentsResult, RunSession, StartRunParams } from '../src/protocol';
 import { writeDiscovery } from '../src/discovery';
 import { RunHub, type RunHubOptions } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
@@ -114,10 +114,198 @@ describe('the hub’s address', () => {
         runChannel: { path: expect.any(String), token: expect.any(String) },
         // Unbundled, the service has no recorder bundle beside it.
         recorderBundle: null,
+        unattended: true,
+        checkout: true,
       },
     ]);
     expect(hub.token).toMatch(/^[\w-]{32}$/);
     expect(svc.published[0]!.runChannel!.token).not.toBe(hub.token);
+  });
+
+  test('names where a run’s picks go, as the client names it as it starts and later', async () => {
+    const pairing = (port: number) => ({
+      url: `http://127.0.0.1:${port}/piwi/send`,
+      token: 'pairing-token-0123456789',
+    });
+    const other = await service(
+      dir,
+      false,
+      {},
+      { runPairing: `http://127.0.0.1:41001/piwi/send#${pairing(41001).token}` },
+    );
+    try {
+      expect(await waitFor(() => other.published[0] ?? undefined)).toMatchObject({ send: pairing(41001) });
+      await other.client.sendNotification('piwi/setRunPairing', {
+        address: `http://127.0.0.1:41002/piwi/send#${pairing(41002).token}`,
+      });
+      expect(await waitFor(() => other.published[1] ?? undefined)).toMatchObject({ send: pairing(41002) });
+      // An address off this machine's loopback interface is none.
+      await other.client.sendNotification('piwi/setRunPairing', { address: 'http://evil.test:80/piwi/send#x' });
+      const last = await waitFor(() => other.published[2] ?? undefined);
+      expect(last).not.toHaveProperty('send');
+      expect(last.runChannel).toEqual(other.published[0]!.runChannel);
+      // Once the service stopped, a pairing it hears writes no file again.
+      await other.client.sendRequest('shutdown');
+      const stopped = other.published.length;
+      expect(other.published[stopped - 1]).toBeNull();
+      await other.client.sendNotification('piwi/setRunPairing', {
+        address: `http://127.0.0.1:41004/piwi/send#${pairing(41004).token}`,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(other.published).toHaveLength(stopped);
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('names the agents’ MCP server while it serves the runs to them, and no more once it stops', async () => {
+    const other = await service(dir, false, {}, { agents: { enabled: true } });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      expect(named.agents).toEqual({
+        url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+        token: expect.stringMatching(/^[\w-]{32,256}$/),
+      });
+      // A client that runs no command for an agent is offered no run_start.
+      const listed = await fetch(named.agents!.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result.tools;
+      expect(tools.map((tool) => tool.name)).not.toContain('run_start');
+      // The file names a token of this process alone: the one the client keeps works too, and a new one ends both.
+      const kept = (await other.client.sendRequest('piwi/agents', { enabled: true })) as AgentsResult;
+      expect(kept.token).not.toBe(named.agents!.token);
+      const status = async (token: string) =>
+        (
+          await fetch(named.agents!.url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }),
+          })
+        ).status;
+      expect(await status(kept.token!)).toBe(200);
+      const renewed = (await other.client.sendRequest('piwi/agents', {
+        enabled: true,
+        newToken: true,
+      })) as AgentsResult;
+      expect(await status(kept.token!)).toBe(401);
+      expect(await status(named.agents!.token)).toBe(401);
+      expect(await status(renewed.token!)).toBe(200);
+      const republished = await waitFor(() => {
+        const file = other.published[other.published.length - 1];
+        return file?.agents && file.agents.token !== named.agents!.token ? file : undefined;
+      });
+      expect(republished.agents!.token).not.toBe(renewed.token);
+      expect(await status(republished.agents!.token)).toBe(200);
+      await other.client.sendRequest('piwi/agents', { enabled: false });
+      const last = await waitFor(() => {
+        const file = other.published[other.published.length - 1];
+        return file && !file.agents ? file : undefined;
+      });
+      expect(last.runChannel).toEqual(named.runChannel);
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('starts an agent’s run as a person’s is built, labeled with its name, once the client runs it', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'tests', 'checkout.spec.ts'),
+      "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {\n  await page.goto('/');\n});\n",
+    );
+    const other = await service(dir, false, {}, { agents: { enabled: true }, startsRuns: true });
+    const started: StartRunParams[] = [];
+    let refuses = false;
+    other.client.onRequest('piwi/startRun', (params: StartRunParams) => {
+      if (refuses) return { ok: false, message: 'Test Editor could not start the task that runs it.' };
+      started.push(params);
+      return { ok: true, message: 'Test Editor runs it.' };
+    });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      const call = async (method: string, params: Record<string, unknown>) => {
+        const res = await fetch(named.agents!.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        });
+        return (await res.json()) as { result: { tools?: Array<{ name: string }>; content?: Array<{ text: string }> } };
+      };
+      expect((await call('tools/list', {})).result.tools![0]!.name).toBe('run_start');
+      const tool = async (name: string, args: Record<string, unknown>) => {
+        const answer = await call('tools/call', { name, arguments: args });
+        return JSON.parse(answer.result.content![0]!.text) as Record<string, unknown>;
+      };
+      const body = await tool('run_start', { file: 'tests/cart.spec.ts', line: 3, agent: 'Claude Code' });
+      expect(body).toMatchObject({ ok: true, run: expect.stringMatching(/^[\w-]+$/) });
+      expect(started).toHaveLength(1);
+      expect(started[0]!.command).toMatchObject({ ref: body.run, label: 'Started by Claude Code' });
+      expect(started[0]!.command.args.join(' ')).toContain('tests/cart.spec.ts:3');
+      // The run is followed from its start, before its workers connect, and ends with its command when none does.
+      expect(await tool('run_follow', { run: body.run, wait: 0 })).toMatchObject({ ok: true, state: 'starting' });
+      expect(((await tool('run_list', {})).runs as unknown[]).length).toBe(1);
+      expect(await tool('run_list', {})).toMatchObject({ runs: [{ run: body.run, starting: true }] });
+      await other.client.sendNotification('piwi/commandEnded', { ref: body.run, exitCode: 1 });
+      const until = async <T>(read: () => Promise<T | undefined>): Promise<T> => {
+        for (let tries = 0; tries < 250; tries++) {
+          const value = await read();
+          if (value !== undefined) return value;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error('timed out');
+      };
+      const ended = await until(async () => {
+        const followed = await tool('run_follow', { run: body.run, wait: 0 });
+        return followed.state === 'ended' ? followed : undefined;
+      });
+      expect(ended.events).toEqual([expect.objectContaining({ kind: 'run-ended', exitCode: 1 })]);
+      // A line inside a test runs that test, headed when asked; the agent's name shows without its control characters.
+      const inside = await tool('run_start', {
+        file: path.join(dir, 'tests', 'checkout.spec.ts'),
+        line: 4,
+        headed: true,
+        agent: 'Bot\n\u202Eevil',
+      });
+      expect(inside).toMatchObject({ ok: true });
+      expect(started[1]!.command.args.join(' ')).toContain('tests/checkout.spec.ts:3');
+      expect(started[1]!.command.args).toContain('--headed');
+      expect(started[1]!.command.label).toBe('Started by Bot evil');
+      // Agents' runs that have not ended are three at most.
+      await tool('run_start', { file: 'tests/cart.spec.ts' });
+      await tool('run_start', { file: 'tests/cart.spec.ts' });
+      const fourth = await tool('run_start', { file: 'tests/cart.spec.ts' });
+      expect(fourth).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('3 runs agents started have not ended'),
+      });
+      expect(started).toHaveLength(4);
+      for (const run of started.slice(1)) {
+        await other.client.sendNotification('piwi/commandEnded', { ref: run.command.ref, exitCode: 0 });
+      }
+      await until(async () => ((await tool('run_list', {})).runs as unknown[]).length === 0 || undefined);
+      // A client that could not run it says so, and no run is followed.
+      refuses = true;
+      expect(await tool('run_start', { file: 'tests/cart.spec.ts' })).toMatchObject({
+        ok: false,
+        message: 'Test Editor could not start the task that runs it.',
+      });
+      refuses = false;
+      // A file that is no spec of the workspace runs nothing, as one outside it does.
+      expect(await tool('run_start', { file: '../elsewhere.spec.ts' })).toMatchObject({ ok: false });
+      const outside = path.join(os.tmpdir(), 'piwi-outside.spec.ts');
+      fs.writeFileSync(outside, '');
+      try {
+        expect(await tool('run_start', { file: outside })).toMatchObject({ ok: false });
+      } finally {
+        fs.rmSync(outside, { force: true });
+      }
+      expect(started).toHaveLength(4);
+    } finally {
+      other.stop();
+      fs.rmSync(path.join(dir, 'tests', 'checkout.spec.ts'), { force: true });
+    }
   });
 
   test('goes as the service stops', async () => {
@@ -139,22 +327,34 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace', 'share-window'],
     });
     client.socket.close();
   });
 
-  test('refuses another Host, a page’s origin, a null origin, none, and another path, before any WebSocket opens', async () => {
+  test('refuses another Host, a page’s origin, a null origin and another path, before any WebSocket opens', async () => {
     expect(await open({ host: `evil.test:${hub.port}` })).toBe(403);
     expect(await open({ host: `127.0.0.1:${hub.port + 1}` })).toBe(403);
     expect(await open({ origin: `http://127.0.0.1:${hub.port}` })).toBe(403);
     expect(await open({ origin: 'https://piwitests.dev' })).toBe(403);
     expect(await open({ origin: 'null' })).toBe(403);
     expect(await open({ origin: 'file://' })).toBe(403);
-    expect(await open({ origin: '' })).toBe(403);
     expect(await open({ url: hub.url.replace('/piwi/hub', '/other') })).toBe(404);
     const plain = await fetch(`http://127.0.0.1:${hub.port}/piwi/hub`);
     expect(plain.status).toBe(426);
+  });
+
+  test('takes a process of this machine that sends no Origin, after its token', async () => {
+    // A browser always sends one: no Origin is a process of this machine, as the desktop app's server.
+    const local = (await open({ origin: '' })) as Client;
+    expect(typeof local).toBe('object');
+    local.send({ type: 'hello', token: hub.token });
+    expect(await waitFor(() => local.messages[0])).toMatchObject({ type: 'welcome', client: 'Test Editor' });
+    local.socket.close();
+    // Without the token, nothing: its first message closes it.
+    const stranger = (await open({ origin: '' })) as Client;
+    stranger.send({ type: 'hello', token: 'not-the-token-0123456789' });
+    expect((await stranger.closed).code).not.toBe(1000);
   });
 
   test('takes a loopback Host at a port the client forwards to it only once named, the origin and token still needed', async () => {
@@ -297,6 +497,7 @@ describe('the commands', () => {
           },
         ],
         ended: false,
+        hold: { on: false, by: 'start' },
       });
       worker.begin();
       await waitFor(() => (client.session(ref)?.workers[0]?.state === 'running' ? true : undefined));
@@ -312,6 +513,12 @@ describe('the commands', () => {
         line: 29,
         bar: true,
       });
+
+      // A pick that runs in the test's window there: the connection hears it on the stop, and its end.
+      worker.send({ type: 'acting', stop: 1, what: 'pick' });
+      expect(await waitFor(() => client.session(ref)?.workers[0]?.stop?.acting)).toBe('pick');
+      worker.send({ type: 'acting', stop: 1, what: null });
+      await waitFor(() => (client.session(ref)?.workers[0]?.stop?.acting === undefined ? true : undefined));
 
       // The image of the stopped page.
       client.send({ type: 'pausedPage', id: 3, ref, worker: 0 });
@@ -440,6 +647,41 @@ describe('the commands', () => {
     }
   });
 
+  test('stop a run the editor started through its client, and refuse one started in a terminal', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const terminalRef = 'terminal-4244-1730000000003';
+    const terminal = new FakeWorker(channel.path, dir).attach(channel.token, terminalRef, 0, [...RUN_TAKES]);
+    try {
+      await waitFor(() => client.session(ref));
+      await waitFor(() => client.session(terminalRef));
+      client.send({ type: 'stop', id: 2, ref });
+      expect(await client.answer(2)).toMatchObject({ ok: true, message: 'Test Editor stops the run.' });
+      expect(svc.stops).toEqual([ref]);
+      // The client's own refusal, and a run it did not start, which it is never asked to stop.
+      svc.stopAnswer = { ok: false, message: 'The run was not started in this window: stop it in its terminal.' };
+      client.send({ type: 'stop', id: 3, ref });
+      expect(await client.answer(3)).toMatchObject({
+        ok: false,
+        message: 'The run was not started in this window: stop it in its terminal.',
+      });
+      client.send({ type: 'stop', id: 4, ref: terminalRef });
+      expect(await client.answer(4)).toMatchObject({
+        ok: false,
+        message: 'The run was started in a terminal: stop it there.',
+      });
+      expect(svc.stops).toEqual([ref, ref]);
+    } finally {
+      svc.stopAnswer = { ok: true, message: 'Test Editor stops the run.' };
+      worker.socket.destroy();
+      terminal.socket.destroy();
+      client.socket.close();
+    }
+  });
+
   test('name a run the editor’s own test runner started, as its workers say', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });
@@ -490,6 +732,50 @@ describe('the commands', () => {
       expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 1 });
       client.send({ type: 'share', id: 3, ref });
       expect(await client.answer(3)).toMatchObject({ ok: false, message: expect.stringMatching(/^share needs on/) });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+      other.socket.close();
+    }
+  });
+
+  test('share the window’s runs as a connection asks, every connection hearing the window’s state', async () => {
+    const client = await paired();
+    const other = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    other.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    await other.answer(1);
+    // After the runs, the window's state.
+    expect(await waitFor(() => other.messages.find((m) => m.type === 'share-window'))).toEqual({
+      type: 'share-window',
+      on: false,
+    });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const page = 'https://piwi.example.com/test-runs/43';
+    const windowStates = () => other.messages.filter((m) => m.type === 'share-window');
+    try {
+      worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await waitFor(() => other.session(ref)?.live);
+      client.send({ type: 'share', id: 2, ref, on: true, scope: 'window' });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/^Sharing this window's runs live until you stop/),
+      });
+      expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+      expect(await waitFor(() => (windowStates().length === 2 ? windowStates()[1] : undefined))).toEqual({
+        type: 'share-window',
+        on: true,
+      });
+      // Stopping names no run: every run of the window stops sharing.
+      client.send({ type: 'share', id: 3, on: false, scope: 'window' });
+      expect(await client.answer(3)).toMatchObject({ ok: true, message: "Stopped sharing this window's runs live." });
+      expect(await worker.next('share', 1)).toEqual({ type: 'share', on: false });
+      expect(await waitFor(() => (windowStates().length === 3 ? windowStates()[2] : undefined))).toEqual({
+        type: 'share-window',
+        on: false,
+      });
     } finally {
       worker.socket.destroy();
       client.socket.close();
@@ -587,6 +873,25 @@ describe('a stop nobody else can answer, with the editor’s client unable to', 
       worker.socket.destroy();
     }
   });
+
+  test('goes on while only a process that observes the runs follows them, which hears the stop', async () => {
+    const observer = (await open({ origin: '' })) as Client;
+    observer.send({ type: 'hello', token: hub.token });
+    await waitFor(() => observer.messages[0]);
+    observer.send({ type: 'subscribe', id: 1, observe: true });
+    expect(await observer.answer(1)).toMatchObject({ ok: true });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      worker.stopAt(1, 30);
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(observer.messages.some((m) => m.type === 'session' && m.session.ref === ref)).toBe(true);
+    } finally {
+      worker.socket.destroy();
+      observer.socket.close();
+    }
+  });
 });
 
 /** A hub of its own, its sessions faked, with the keepalive and hello limits it ships with. */
@@ -604,6 +909,8 @@ function ownHub(
     current: () => [session],
     intentsOf: () => [],
     stopIntentsOf: () => [],
+    presenceFor: () => null,
+    presentOn: () => undefined,
     unwatchAll: () => {},
   } as unknown as RunSessions;
   return RunHub.open({
@@ -623,6 +930,82 @@ function ownHub(
     ...extra,
   });
 }
+
+describe('stopping a whole run', () => {
+  /** A connection to `own` that said hello: its welcome, and the answer to a stop of `ref` sent as command `id`. */
+  async function stopOn(own: RunHub, ref: string): Promise<{ welcome: HubMessage; answer: HubMessage }> {
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      const welcome = await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      socket.send(JSON.stringify({ type: 'stop', id: 4, ref }));
+      const answer = await waitFor(() => heard.find((m) => m.type === 'answer'));
+      return { welcome, answer };
+    } finally {
+      socket.close();
+    }
+  }
+
+  test('is offered by a hub whose host stops runs, which stops the run the command names and says so', async () => {
+    const stopped: string[] = [];
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      stopRun: async (ref) => {
+        stopped.push(ref);
+        return { ok: true, message: 'Test Editor stops the run.' };
+      },
+    }))!;
+    try {
+      const { welcome, answer } = await stopOn(own, 'ed-1');
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'] });
+      expect(answer).toEqual({ type: 'answer', id: 4, ok: true, message: 'Test Editor stops the run.' });
+      expect(stopped).toEqual(['ed-1']);
+    } finally {
+      own.close();
+    }
+  });
+
+  test('leaves the window’s share out where the host is no editor window, refusing it with a sentence', async () => {
+    const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      const welcome = await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'layers'] });
+      socket.send(JSON.stringify({ type: 'share', id: 5, on: true, scope: 'window' }));
+      expect(await waitFor(() => heard.find((m) => m.type === 'answer'))).toEqual({
+        type: 'answer',
+        id: 5,
+        ok: false,
+        message: 'This hub shares one run at a time: share each run from its card.',
+      });
+    } finally {
+      socket.close();
+      own.close();
+    }
+  });
+
+  test('is neither offered nor done by a hub whose host cannot stop a run', async () => {
+    const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
+    try {
+      const { welcome, answer } = await stopOn(own, 'ed-1');
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'layers'] });
+      expect(answer).toEqual({
+        type: 'answer',
+        id: 4,
+        ok: false,
+        message: 'This hub cannot stop a run: stop it where it was started.',
+      });
+    } finally {
+      own.close();
+    }
+  });
+});
 
 describe('a connection the hub lets go', () => {
   test('is cut when the library closed it, a frame too long, and the other side does not answer the close', async () => {
@@ -753,6 +1136,8 @@ describe('what the hub sends', () => {
       current: () => [session],
       intentsOf: () => [],
       stopIntentsOf: () => [],
+      presenceFor: () => null,
+      presentOn: () => undefined,
       unwatchAll: () => {},
     } as unknown as RunSessions;
     const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
@@ -768,6 +1153,62 @@ describe('what the hub sends', () => {
       socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
       const sent = await waitFor(() => heard.find((m) => m.type === 'session' || m.type === ('unreadable' as never)));
       expect(sent).toMatchObject({ type: 'session', session: { ref: 'ed-1', progress } });
+    } finally {
+      socket.close();
+      own.close();
+    }
+  });
+
+  test('names a stop’s line where it stands now, as the editor does, and the run’s page', async () => {
+    const stop = {
+      reason: 'breakpoint' as const,
+      title: 'Click',
+      uri: 'file:///work/shop/tests/cart.spec.ts',
+      line: 4,
+      character: 2,
+      locator: null,
+      bar: true,
+      since: '2026-11-10T10:00:00.000Z',
+    };
+    const page = { id: 78, url: 'https://piwi.example.com/test-runs/78' };
+    const session = {
+      ref: 'ed-1',
+      root: '/work/shop',
+      workers: [
+        { worker: 0, parallelIndex: 0, state: 'stopped', test: null, stop, pausing: false, waiting: null, takes: [] },
+      ],
+      ended: false,
+      page,
+    } as unknown as RunSession;
+    const sessions = {
+      current: () => [session],
+      intentsOf: () => [],
+      stopIntentsOf: () => [],
+      presenceFor: () => null,
+      presentOn: () => undefined,
+      unwatchAll: () => {},
+    } as unknown as RunSessions;
+    const asked: Array<[string, string, number]> = [];
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      sessions,
+      // Two lines were added above the stop since the run started.
+      lineNow: (ref, uri, line) => (asked.push([ref, uri, line]), line + 2),
+    }))!;
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const sent = (await waitFor(() => heard.find((m) => m.type === 'session'))) as Extract<
+        HubMessage,
+        { type: 'session' }
+      >;
+      expect(sent.session.workers[0]?.stop).toMatchObject({ line: 6, uri: stop.uri });
+      expect(sent.session.page).toEqual(page);
+      expect(asked).toEqual([['ed-1', stop.uri, 4]]);
     } finally {
       socket.close();
       own.close();

@@ -344,14 +344,14 @@ test.describe('the Runs window in another language', () => {
       heading: 'Les exécutions de votre éditeur',
       mock: 'Simuler une requête',
       failed: 'En échec à',
-      live: 'Voir en direct',
+      live: 'Regarder',
     },
     {
       language: 'de',
       heading: 'Die Läufe Ihres Editors',
       mock: 'Anfrage nachbilden',
       failed: 'Fehlgeschlagen bei',
-      live: 'Live ansehen',
+      live: 'Ansehen',
     },
   ];
 
@@ -372,6 +372,7 @@ test.describe('the Runs window in another language', () => {
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
         stopAtCheckout(run.worker, 1);
+        await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
         await runs.getByRole('button', { name: mock }).click();
         await answerNext(run.worker, 'requests', { ok: true, message: '', requests: KEPT });
         await expect(runs.locator('.request')).toHaveCount(KEPT.length);
@@ -381,17 +382,20 @@ test.describe('the Runs window in another language', () => {
         stopAtCheckout(run.worker, 2, { reason: 'failure' });
         await expect(runs.locator('.state')).toHaveText(`${failed} tests/checkout.spec.ts:5`);
         expect(await clipped(runs)).toEqual([]);
-        // A headless stop watched live: its tools, its badge, the hint on its input and the actions it takes then.
+        // A headless stop watched live, with Interact: its tools, its badge, the hint on its input and the actions it
+        // takes then.
         run.worker.send({ type: 'running', stop: 2 });
         stopAtCheckout(run.worker, 3, { bar: false });
         const frame = await jpegOf(runs);
         await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: frame, ...VIEWPORT });
-        await runs.getByRole('button', { name: live }).click();
+        await runs.getByRole('button', { name: live, exact: true }).click();
         await answerView(run.worker);
         sendFrame(run.worker, 3, frame);
         await expect(runs.locator('img.live')).toBeVisible();
+        await runs.getByRole('button', { name: readCatalog(language).runs_interact!.message }).click();
         await expect(runs.locator('.hint')).toBeVisible();
-        await expect(runs.locator('.controls button')).toHaveCount(9);
+        await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
+        await expect(runs.locator('.controls button')).toHaveCount(10);
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
         expect(await runs.locator('img.live').getAttribute('alt')).toBe(

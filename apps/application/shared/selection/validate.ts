@@ -10,6 +10,20 @@ import type { SelectionDefinition, SelectionPredicateGroup, SelectionRankBy } fr
 /** Slug rule for a selection key — lowercase, digits and hyphens, 1–64 chars. */
 export const SELECTION_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/**
+ * Names no selection key may take: the literal routes beside
+ * `/api/projects/:id/selections/:key`, which the server and the demo dispatch to
+ * before `:key`, so a selection named so could not be read by its key.
+ */
+export const RESERVED_SELECTION_KEYS: ReadonlySet<string> = new Set([
+  'analytics',
+  'impact',
+  'overview',
+  'preview',
+  'reuse-forecast',
+  'suggestions',
+]);
+
 /** The largest window `failedInLastRuns` may look back over. */
 export const MAX_FAILED_IN_LAST_RUNS = 25;
 
@@ -217,6 +231,9 @@ export function validateSelectionKey(key: unknown): { valid: boolean; error?: st
       valid: false,
       error: 'key must be 1–64 characters of lowercase letters, digits and hyphens, starting with a letter or digit',
     };
+  }
+  if (RESERVED_SELECTION_KEYS.has(key)) {
+    return { valid: false, error: `"${key}" names a selections route, so it cannot be a selection's key` };
   }
   return { valid: true };
 }

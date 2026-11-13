@@ -46,9 +46,16 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
-import { forwardedPorts } from '@piwitests/core/run-hub';
+import {
+  RUN_CHANNEL_ENV,
+  RUN_REF_ENV,
+  TERMINAL_REF_PREFIX,
+  checkoutCommitOf,
+  isUnattendedRef,
+} from '@piwitests/core/run-channel';
+import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
+import { parsePairing, type EditorPairing } from '@piwitests/core/editor-send';
 import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
@@ -60,6 +67,7 @@ import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
   applyPatchFile,
   breakMessage,
+  breakpointRunHeaded,
   breakpointsNotice,
   breaksByAnchor,
   breaksOfChange,
@@ -121,7 +129,13 @@ import {
   runIdOf,
   withServerUrl,
 } from './context.js';
-import { failuresAnswer, parseFailuresGrouping, type ContextFailures } from './failure-tree.js';
+import {
+  failuresAnswer,
+  failuresView,
+  parseFailuresGrouping,
+  type ContextFailures,
+  type ContextViewState,
+} from './failure-tree.js';
 import {
   PiwiClient,
   forgetShared,
@@ -134,16 +148,23 @@ import {
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
+import { requireDesktopProof } from './http.js';
 import {
   isTestLocation,
+  locationSpec,
   playwrightArgsOf,
+  followableCommand,
   playwrightTestCommand,
   repeatArgs,
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { statusWords } from './status-words.js';
 import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
+import { RunStreams } from './run-stream.js';
+import { CiSessions } from './ci-sessions.js';
+import { CiWatch } from './ci-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
 import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
@@ -163,11 +184,12 @@ import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
+import { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
-import { StopActions } from './stop-actions.js';
+import { StopActions, checkoutCopyWhy, checkoutRecordWhy } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
-import { RunAgent } from './run-agent.js';
+import { RunAgent, type AgentRunStart } from './run-agent.js';
 import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
@@ -204,6 +226,11 @@ import {
   STOP_RECORDING_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_STATUS_NOTIFICATION,
+  CI_SESSION_NOTIFICATION,
+  CI_WATCH_REQUEST,
+  CI_FRAME_NOTIFICATION,
+  CI_LAYER_NOTIFICATION,
+  type CiWatchParams,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
   RUN_ID_REQUEST,
@@ -211,7 +238,10 @@ import {
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
+  FOLLOW_COMMAND_REQUEST,
   SET_BASELINE_NOTIFICATION,
+  SET_RUN_PAIRING_NOTIFICATION,
+  START_RUN_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
   STATUS_NOTIFICATION,
@@ -222,6 +252,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
+  DRIVE_STOP_REQUEST,
   PAGE_FRAME_NOTIFICATION,
   PICK_AT_REQUEST,
   HUB_REQUEST,
@@ -230,6 +261,11 @@ import {
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   SHARE_RUN_REQUEST,
+  SHARE_WINDOW_NOTIFICATION,
+  ASK_TO_WATCH_NOTIFICATION,
+  ANSWER_ASK_REQUEST,
+  HOLD_RUN_REQUEST,
+  STOP_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -269,7 +305,11 @@ import {
   type PageViewParams,
   type LaneViewParams,
   LANE_VIEW_REQUEST,
+  type OpenTraceParams,
+  OPEN_TRACE_REQUEST,
   LANE_FRAME_NOTIFICATION,
+  LANE_LAYER_NOTIFICATION,
+  RUNNING_LINE_NOTIFICATION,
   type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
@@ -282,7 +322,13 @@ import {
   type StopBindResult,
   type RunControlParams,
   type ShareRunParams,
+  type ShareWindowParams,
+  type AskToWatchParams,
+  type AnswerAskParams,
+  type HoldRunParams,
+  type DriveStopParams,
   type RunControlResult,
+  type StopRunParams,
   type SetBreakpointsParams,
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
@@ -302,7 +348,11 @@ import {
   type RunStatus,
   type RunStatusResult,
   type SetBaselineParams,
+  type SetRunPairingParams,
+  type StartRunParams,
+  type StartRunResult,
   type RunSelectionParams,
+  type RunStartOptions,
   type ScreenshotParams,
   type ScreenshotResult,
   type SelectionsParams,
@@ -352,6 +402,8 @@ const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
+/** The largest file of a desktop app's throwaway checkout read to make the code of a stop in it, in bytes. */
+const MAX_CHECKOUT_FILE = 2 * 1024 * 1024;
 /**
  * How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths, and
  * `piwi/newTestFile` before reading the test folders from the config's text.
@@ -404,6 +456,10 @@ export interface ServerOptions {
   distDir?: string;
   /** Starts a recording's launcher; the bundled one by default. */
   launchRecorder?: LauncherFactory;
+  /** Starts Playwright's trace viewer on a running test's trace (`piwi/openTrace`); the project's own by default. */
+  traceViewer?: TraceViewerLauncher;
+  /** Whether this machine shows the trace viewer's window; `hasDisplay` of `trace-viewer.ts` by default. */
+  traceDisplay?: () => boolean;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
   /**
@@ -411,6 +467,11 @@ export interface ServerOptions {
    * listen, and with null as the service stops. The process's entry writes and removes the file (`main.ts`).
    */
   publish?: (discovery: EditorDiscovery | null) => void;
+  /**
+   * Writes an error to the editor's log: the process's entry writes it to stderr (`main.ts`), which both clients show in
+   * their log; `window/logMessage` by default.
+   */
+  logError?: (text: string) => void;
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
@@ -549,6 +610,15 @@ function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
 }
 
 /** Whether a failure is listed from a run that did not run in CI: a run laid over the baseline, or the baseline itself. */
+/**
+ * What a failure diagnostic's message starts with: `Local failure: ` for a developer's own run's, `Edited since run
+ * #120: ` for one whose line changed since `editedSince`, both as `Local failure, edited since your run #42: `.
+ */
+function failureLead(local: boolean, editedSince: string | null): string {
+  if (local) return editedSince ? `Local failure, edited since ${editedSince}: ` : 'Local failure: ';
+  return editedSince ? `Edited since ${editedSince}: ` : '';
+}
+
 function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
   return !isCiRun(context, f.runId ?? context.failures?.run?.id);
 }
@@ -587,6 +657,39 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
   const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
   const run = `${isOwnRun(context, r.runId) ? 'your ' : ''}run #${r.runId}`;
   return `${where} in ${run} (failing in run #${context.failures?.run?.id ?? ''})`;
+}
+
+/**
+ * A test's latest result, as its line's summary leads with it, in the dashboard's words: in the run in progress while
+ * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
+ * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
+ * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
+ * runs`, `never run`, `no recent result`).
+ */
+function testVerdict(
+  context: PiwiContext,
+  found: CatalogCase,
+  failed: BranchFailure | undefined,
+  fixed: BranchResolved | undefined,
+  failure: TestFailure | undefined,
+): string {
+  const live = context.liveTests.get(found.id);
+  if (live && context.live) {
+    const run = `${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
+    return `${live === 'failed' ? 'failing' : statusWords(live)} in ${run}`;
+  }
+  if (failed) {
+    const otherBranch =
+      context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : '';
+    const edited = failure?.state === 'edited' ? ', its line edited since' : '';
+    return `failing in ${runLabel(context, failed)}${otherBranch}${edited}`;
+  }
+  if (fixed) return fixedLabel(context, fixed);
+  if (!found.status) return 'no recent result';
+  // The catalog calls a test flaky when one of its recent runs was.
+  if (found.status === 'flaky') return 'flaky in recent runs';
+  if (found.status === 'never-run') return statusWords(found.status);
+  return `${statusWords(found.status)} in its latest run`;
 }
 
 /** What a `piwi/failures` item says launched its run. */
@@ -709,6 +812,7 @@ export function flakeLabLines(
               cwd: commandFolder(context),
               command: withServerUrl(a.command, serverUrl, context.root, env),
               env: editorRunEnv(),
+              follow: true,
             } satisfies RunCommandArgs,
           ],
         },
@@ -737,9 +841,17 @@ export function hasUntestedSuspect(entry: FlakeLabEntry | undefined): boolean {
   return !!entry && ((entry.untestedSuspects ?? 0) > 0 || entry.suspect?.standing === 'untested');
 }
 
+/** Whether a client's answer reads as a `RunControlResult`. */
+function isRunControlResult(value: unknown): value is RunControlResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ok, message } = value as Record<string, unknown>;
+  return typeof ok === 'boolean' && typeof message === 'string' && message.length > 0;
+}
+
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
+  const logError = options.logError ?? ((text: string) => connection.console.error(text));
   /** What `asked` settles with, or `fallback` once a quick fix or a hover has waited long enough. */
   const within = <T>(asked: Promise<T>, fallback: T): Promise<T> =>
     Promise.race([
@@ -774,6 +886,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let lastRunStatus = '';
   /** Whether the client previews an edit whose change annotation asks for confirmation. */
   let previewsEdits = false;
+  /** The runs' streams: the contexts' runs in progress and the CI sessions read one connection per run. */
+  const runStreams = new RunStreams();
+  /** The client's one watch of a CI run's lane on the instance, read-only. */
+  const ciWatch = new CiWatch({
+    target: (root, runId, shard, lane) => ciSessions.watchTarget(root, runId, shard, lane),
+    send: (frame) => connection.sendNotification(CI_FRAME_NOTIFICATION, frame),
+    sendLayer: (layer) => connection.sendNotification(CI_LAYER_NOTIFICATION, layer),
+  });
+  /** The CI runs of the contexts' branches while they run, read-only. */
+  const ciSessions = new CiSessions({
+    contexts: () => contexts,
+    streams: runStreams,
+    changed: (session) => {
+      ciWatch.sessionChanged(session);
+      void connection.sendNotification(CI_SESSION_NOTIFICATION, session);
+    },
+  });
 
   const publish = (uri: string) =>
     connection.sendDiagnostics({
@@ -1184,7 +1313,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
-    return failuresAnswer(views, failuresGrouping);
+    const answer = failuresAnswer(views, failuresGrouping);
+    const states = contexts.map((c): ContextViewState => ({
+      connected: !!c.index && !c.problem,
+      loading: !!c.client && !c.index && !c.problem,
+      hasRun: !!c.failures?.run || !!c.failures?.overlays?.length,
+      problemKind: c.problemKind,
+      problem: c.problem,
+      branch: c.failures?.run?.branch ?? c.runBranch,
+      projectName: c.project?.name ?? null,
+      baseline: c.baseline.kind === 'ladder' ? null : c.baselineLabel || null,
+    }));
+    return { ...answer, view: failuresView(states, answer.items.length > 0) };
   };
   /** The failures last sent in `piwi/failuresChanged`. */
   let failuresSent = JSON.stringify(failuresAnswer([], 'file'));
@@ -1223,7 +1363,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: edited ? `Edited since ${run}: ${headline} (${where})` : `${headline} (${where})`,
+          // The code stays `ci-failure` for every failure (D25 freezes it); the message names a developer's own run's.
+          message: `${failureLead(isLocalFailure(context, f), edited ? run : null)}${headline} (${where})`,
           data: {
             root: context.root,
             executionId: f.executionId,
@@ -1489,7 +1630,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           failingTests: failing.size,
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
-          live: c.live ? { ...c.live } : null,
+          live: c.live ? { ...c.live, url: c.client!.runUrl(c.live.runId) } : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
           ...(c.liveTests.size
@@ -1502,8 +1643,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }),
   });
 
-  /** Tell the client when the run status changed. */
+  /** Tell the client when the run status changed; a CI run a context reads in progress is followed. */
   const sendRunStatus = () => {
+    ciSessions.sync();
     const status = runStatus();
     const serialized = JSON.stringify(status);
     if (serialized !== lastRunStatus) {
@@ -1581,6 +1723,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     },
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
+    // Created below, before any command can end.
+    reporterHeard: (ref) => runSessions.heardFrom(ref),
+    endedAtStop: (ref) => runSessions.endedAtStopOf(ref),
     runEnded: (ended) => {
       void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended);
       // The run may have recorded coverage: the files the client holds show it.
@@ -1589,6 +1734,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
     ownRunPollMs: options.ownRunPollMs,
     commandEndWaitMs: options.commandEndWaitMs,
+    runStreams,
+    runStarted: (context, run) => ciSessions.offer(context, run),
+    instanceEvent: (context, event) => ciSessions.instanceEvent(context, event),
   });
 
   /**
@@ -1704,10 +1852,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let answersStops = false;
   /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
   let writesCode = false;
+  /** Whether the client stops a run it started as another tool asks (`InitializationOptions.stopsRuns`). */
+  let stopsRuns = false;
+  /** Whether the client runs a command the service built for an agent (`InitializationOptions.startsRuns`). */
+  let startsRuns = false;
+  /** Whether the client marks the running call's line of the lane it watches (`InitializationOptions.runningLine`). */
+  let marksRunningLine = false;
   /** The editor's display language, as `initialize` names it. */
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
   let clientName: string | null = null;
+  /** Where a run's picks go, as the client names it (`InitializationOptions.runPairing`, `piwi/setRunPairing`). */
+  let runPairing: EditorPairing | null = null;
+  /** The discovery file as the service last wrote it, without `send` and `agents`: null until it listens. */
+  let discovered: EditorDiscovery | null = null;
+  /** Write the discovery file again, naming where a run's picks go as the client last said. */
+  const publishDiscovery = () => {
+    if (!discovered) return;
+    options.publish?.({
+      ...discovered,
+      ...(runPairing ? { send: runPairing } : {}),
+      // The token of this process alone: the one the client keeps outlives it, and stays off the disk.
+      ...(agentServer ? { agents: { url: agentServer.url, token: agentServer.localToken } } : {}),
+    });
+  };
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
   let runHub: RunHub | null = null;
   /** The loopback ports the client forwards to the hub from the browser's machine (`piwi/hub`). */
@@ -1720,8 +1888,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let agentPrefs: InitializationOptions['agents'] = undefined;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
-  /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
+  /**
+   * The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`) or whose start options
+   * hold their failures, by ref.
+   */
   const watchedRuns = new Set<string>();
+  /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
+  const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
   const runLines = new RunLines();
   /** A file as `RunLines` names it: its absolute path, in lower case on Windows, as `samePath` compares them. */
@@ -1738,6 +1911,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return null;
     }
   };
+  /** Whether a checkout's file is one to read for a stop's code: a regular file, at most `MAX_CHECKOUT_FILE` bytes. */
+  const isCheckoutFile = (file: string): boolean => {
+    try {
+      const stat = fs.statSync(file);
+      return stat.isFile() && stat.size <= MAX_CHECKOUT_FILE;
+    } catch {
+      return false;
+    }
+  };
+  /** Whether a worker of a job the desktop app runs in a throwaway checkout stands stopped in `file`. */
+  const inCheckoutStop = (file: string): boolean =>
+    runSessions.current().some(
+      (session) =>
+        !!session.checkout &&
+        session.workers.some((worker) => {
+          const stopped = worker.stop ? uriToPath(worker.stop.uri) : null;
+          return stopped !== null && lineKey(stopped) === lineKey(file);
+        }),
+    );
   /** The files the editor holds with changes it has not saved, which a run starting now does not have. */
   const unsavedFiles = (): string[] =>
     documents.all().flatMap((document) => {
@@ -1750,21 +1942,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
   const runSessions = new RunSessions({
+    // A run's page is linked under the instances the configs connect to, the desktop app's included.
+    instances: () => contexts.map((c) => c.client?.connection.serverUrl),
+    // The workers' lines name the editor (`Visual Studio Code`), as it named itself at `initialize`.
+    workerHost: () => clientName,
     notify: (session) => {
       clientPageView?.changed();
       clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
+    presenceChanged: (session) => runHub?.push(session),
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
-    watched: (ref) => watchedRuns.has(ref),
+    // A reproduction the desktop app runs in a throwaway checkout holds its failures from its start, as the app's own.
+    watched: (ref) => watchedRuns.has(ref) || (checkoutCommitOf(ref) !== null && !isUnattendedRef(ref)),
+    // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
+    holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
-    // A Runs window open in Piwi Picker: its connection says it follows the runs.
-    followed: () => !!runHub?.follows(),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
     sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
+    askedToWatch: (ask) => void connection.sendNotification(ASK_TO_WATCH_NOTIFICATION, ask satisfies AskToWatchParams),
+    shareWindowChanged: (on) => {
+      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
+      runHub?.shareWindowChanged(on);
+    },
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -1785,12 +1988,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const started = runLines.startedAt(ref);
       return disk && (started === null || disk.mtime <= started) ? disk.text : null;
     },
+    traceViewer: options.traceViewer ?? startTraceViewer,
+    ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
   });
-  clientPageView = new ClientPageView(runSessions, (frame) =>
-    connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  clientPageView = new ClientPageView(
+    runSessions,
+    (frame) => connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+    () => clientName,
   );
-  clientLaneView = new ClientLaneView(runSessions, (frame) =>
-    connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+  clientLaneView = new ClientLaneView(
+    runSessions,
+    (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+    () => clientName,
+    (layer) => connection.sendNotification(LANE_LAYER_NOTIFICATION, layer),
+    (line) => connection.sendNotification(RUNNING_LINE_NOTIFICATION, line),
+    () => marksRunningLine,
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
@@ -1810,7 +2022,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       contexts.map(spelled).find((f): f is string => f !== null && !!contextFor(f)) ??
       (contextFor(handoff.file) ? handoff.file : null);
     if (!file) {
-      recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
+      // A test stopped in a desktop app's throwaway checkout records nothing into the checkout's file.
+      const stopped = pathToFileURL(handoff.file).href;
+      const checkout = runSessions
+        .current()
+        .find((s) => s.checkout && s.workers.some((w) => w.stop?.uri === stopped))?.checkout;
+      recordChannel?.refuse(
+        handoff.id,
+        checkout
+          ? checkoutRecordWhy(checkout.commit)
+          : `no Playwright config of this editor's workspace holds ${handoff.file}.`,
+      );
       return;
     }
     // The steps go above the paused call where it stands now, which an earlier recording at this stop moved down.
@@ -1871,6 +2093,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
       };
     },
+    // A stop of a job the desktop app runs in a throwaway checkout: its code is made from the checkout's file as the
+    // editor holds it, else as it is on disk, to copy.
+    copy: (stop, file) => {
+      const commit = checkoutCommitOf(stop.ref);
+      const open = commit && isCheckoutFile(file) ? openDocument(file) : undefined;
+      const text = commit && isCheckoutFile(file) ? (open?.getText() ?? diskFile(file)?.text ?? null) : null;
+      if (!commit || text === null) return null;
+      return {
+        why: checkoutCopyWhy(commit),
+        target: {
+          uri: open?.uri ?? pathToFileURL(file).href,
+          text,
+          version: null,
+          preferLocators: new Set<string>(),
+          expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
+        },
+      };
+    },
     language: () => clientLocale,
     editor: () => clientName,
   });
@@ -1890,6 +2130,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         message,
       } satisfies Notice),
     command: (ref) => runCommands.get(ref) ?? null,
+    startRun: (start) => startAgentRun(start),
+    startsRuns: () => startsRuns,
     preferLocators: (root) => suiteLocators(root ? contextOfRoot(root) : null),
     ...(options.agentFollowIdleMs === undefined ? {} : { followIdleMs: options.agentFollowIdleMs }),
   });
@@ -2046,7 +2288,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         // The failures and the coverage marks follow the edit: placed again on the edited buffer.
         placeAgainSoon(document);
         coverageAgain(urisOf(document.uri));
-        void validate(document).catch((e) => connection.console.error(`Piwi: ${(e as Error).message}`));
+        void validate(document).catch((e) => logError(`Piwi: ${(e as Error).message}`));
       }, delay),
     );
   };
@@ -2229,7 +2471,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
     writesCode = init?.stopCode === true;
+    stopsRuns = init?.stopsRuns === true;
+    startsRuns = init?.startsRuns === true;
+    marksRunningLine = init?.runningLine === true;
+    if (init?.shareWindow === true) runSessions.share({ on: true, scope: 'window' });
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
+    runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
@@ -2243,6 +2490,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       serverInfo: { name: 'Piwi' },
     };
   });
+
+  /**
+   * Another tool asks through the hub to stop the run of `ref` (`stop`): the client stops it as its own Stop does
+   * (`piwi/stopRun`), a run that ended or one started in a terminal refused here, an answer the client did not give
+   * read as a refusal.
+   */
+  const stopRunAsked = async (ref: string): Promise<RunControlResult> => {
+    const session = runSessions.current().find((s) => s.ref === ref);
+    if (session?.terminal) return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    if (session?.checkout) return { ok: false, message: 'The desktop app runs this reproduction: stop it there.' };
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
+    try {
+      const answer: unknown = await connection.sendRequest(STOP_RUN_REQUEST, { ref } satisfies StopRunParams);
+      if (isRunControlResult(answer)) return { ok: answer.ok, message: answer.message.slice(0, 500) };
+    } catch {
+      // The client did not answer: said below.
+    }
+    return { ok: false, message: 'The editor did not stop the run: stop it there.' };
+  };
 
   connection.onInitialized(() => {
     for (const folder of folders) {
@@ -2277,6 +2543,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       RunHub.open({
         sessions: runSessions,
         actions: stopActions,
+        // An editor window shares its runs until the person stops: Piwi Picker offers it too.
+        sharesWindow: true,
+        lineNow: (ref, uri, line) => {
+          const file = uriToPath(uri);
+          if (!file) return null;
+          const open = !!openDocument(file);
+          const now = runLines.lineNow(ref, lineKey(file), line, open, open ? null : diskFile(file));
+          return 'line' in now ? now.line : null;
+        },
         runInfo: (ref, root) => {
           const context = root ? contextOfRoot(root) : null;
           return {
@@ -2287,6 +2562,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
+        ...(stopsRuns ? { stopRun: stopRunAsked } : {}),
         forwarded: () => hubForwarded,
         peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
         peersMs: options.hubPeersMs,
@@ -2303,7 +2579,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runHub = hub;
       if (!channel && !hub) return;
       const bundle = path.join(distDir, 'record-ide.js');
-      options.publish?.({
+      discovered = {
         pid: process.pid,
         host: os.hostname(),
         version: SERVICE_VERSION,
@@ -2313,13 +2589,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         hub: hub && { url: hub.url, token: hub.token },
         runChannel: channel && { path: channel.path, token: channel.token },
         recorderBundle: fs.existsSync(bundle) ? bundle : null,
-      });
+        unattended: true,
+        checkout: true,
+      };
+      publishDiscovery();
     });
   });
 
   documents.onDidOpen((e) => {
     const file = uriToPath(e.document.uri);
-    if (file && contextFor(file)) runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    if (file && (contextFor(file) || inCheckoutStop(file))) {
+      runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    }
     schedule(e.document, 0);
   });
   documents.onDidChangeContent((e) => schedule(e.document));
@@ -2516,7 +2797,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               title: 'Run the verification',
               command: 'piwi.runCommand',
               arguments: [
-                { cwd: commandFolder(owner), command: verification, env: editorRunEnv() } satisfies RunCommandArgs,
+                {
+                  cwd: commandFolder(owner),
+                  command: verification,
+                  env: editorRunEnv(),
+                  follow: true,
+                } satisfies RunCommandArgs,
               ],
             },
           });
@@ -2669,6 +2955,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const hit = failureOf(d.data as FailureData);
       if (hit) found.set(hit.failure.executionId, hit);
     }
+    // These failures' diagnostics, on this line, say their headline beside the hover.
+    const diagnosedHere = new Set(found.keys());
     // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
     const context = file ? contextFor(file) : null;
     const pass = placer();
@@ -2707,9 +2995,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       parts.push(
         [
           `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
-          message && message !== failure.headline
-            ? `${failure.headline ?? ''}\n\n${fenced(message)}`
-            : (failure.headline ?? ''),
+          diagnosedHere.has(failure.executionId) ? '' : (failure.headline ?? ''),
+          message && message !== failure.headline ? fenced(message) : '',
           chain.length > 1 ? `Called from ${chain.join(' ← ')}` : '',
           ...issues.map(
             (l) =>
@@ -2824,13 +3111,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const failed = failingNow.get(found.id);
       const fixed = failed ? undefined : fixedNow.get(found.id);
       const at = failed ? pass.place(context, failed) : null;
+      const line = failureLine(at?.frames ?? [], file, call.line, call.endLine);
       const failure: TestFailure | undefined = failed && {
-        line: failureLine(at?.frames ?? [], file, call.line, call.endLine),
+        line,
         headline: failed.headline,
         message: failed.message ?? null,
         executionId: failed.executionId,
         url: context.client!.executionUrl(failed.executionId),
         state: at?.state === 'edited' ? 'edited' : 'failing',
+        // On any project the test failed on: each failure has a diagnostic of its own.
+        diagnosed:
+          credentials.failureSeverity !== 'off' &&
+          (context.failures?.failures ?? []).some((f) => {
+            if (f.testCaseId !== found.id) return false;
+            const site = f === failed ? at : pass.place(context, f);
+            return !!site && site.state !== 'gone' && samePath(site.file, file) && site.line - 1 === line;
+          }),
       };
       const status =
         context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
@@ -2848,8 +3144,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const lines = text.split(/\r?\n/);
     const pass = placer({ file, text });
-    const run = (testIds: number[], coverage?: RunTestsArgs['coverage']) => ({
-      title: 'Run them',
+    /** A click that runs `testIds`, its title saying which: `Run the 7 tests of this spec with Piwi`. */
+    const run = (testIds: number[], which: string, coverage?: RunTestsArgs['coverage']) => ({
+      title: `Run ${testIds.length === 1 ? 'the test' : `the ${testIds.length} tests`} ${which} with Piwi${coverage ? ', recording its coverage' : ''}`,
       command: 'piwi.runTests' as const,
       arguments: [{ uri: params.uri, testIds, ...(coverage ? { coverage } : {}) } satisfies RunTestsArgs],
     });
@@ -2861,7 +3158,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push({
           line: l.line - 1,
           title: [plural(l.tests.length, 'test'), l.actions.slice(0, 2).join(', '), counts].filter(Boolean).join(' · '),
-          command: run(l.tests.map((t) => t.id)),
+          command: run(
+            l.tests.map((t) => t.id),
+            l.tests.length === 1 ? 'that uses this locator' : 'that use this locator',
+          ),
         });
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
@@ -2879,12 +3179,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
-        const status = fixed
-          ? ` · ${fixedLabel(context, fixed)}`
-          : found.status && found.status !== 'passed'
-            ? ` · ${found.status}`
-            : '';
+        const verdict = testVerdict(context, found, failed, fixed, failure);
+        // A test the catalog has no run of has no pass rate to give.
+        const passRate =
+          runs > 0
+            ? ` · passed ${passed} of ${plural(runs, 'run')}`
+            : !found.status || found.status === 'never-run'
+              ? ''
+              : ' · no pass rate (no passed or failed run)';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
@@ -2908,7 +3210,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${verdict}${passRate}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',
@@ -2922,10 +3224,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
-        const why = clip(failed.headline ?? 'Failed', 120);
+        // The failure's diagnostic says why it failed: the line above says so only where no diagnostic does.
+        const why = failure.diagnosed || !failed.headline ? null : clip(failed.headline, 120);
+        const mark = failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)}` : '✗ Failed here';
         reasons.push({
           line: failure.line,
-          title: failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)} · ${why}` : `✗ ${why}`,
+          title: why ? `${mark} · ${why}` : mark,
           command: {
             title: 'Open the failure in the dashboard',
             command: 'piwi.openInDashboard',
@@ -2965,7 +3269,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            command: run(cases.map((c) => c.id)),
+            // Every test of the spec as saved, by its path, as Run This Spec runs it.
+            command: {
+              title: 'Run every test of this spec with Piwi',
+              command: 'piwi.runTests',
+              arguments: [{ uri: params.uri, testIds: [], locations: [relative!] } satisfies RunTestsArgs],
+            },
           }
         : null;
       return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
@@ -3001,6 +3310,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             .join(' · '),
           command: run(
             tests.map((t) => t.id),
+            tests.length === 1 ? 'that reaches this file' : 'that reach this file',
             recordCoverage,
           ),
         }
@@ -3015,6 +3325,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           title: [`Reached by ${plural(ran.length, 'test')}`, testCounts(ran)].filter(Boolean).join(' · '),
           command: run(
             ran.map((t) => t.id),
+            ran.length === 1 ? 'that reaches this function' : 'that reach this function',
             recordCoverage,
           ),
         },
@@ -3052,7 +3363,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ]
         .filter(Boolean)
         .join(' · '),
-      command: run(page.tests.map((t) => t.id)),
+      command: run(
+        page.tests.map((t) => t.id),
+        page.tests.length === 1 ? 'that acts on this page' : 'that act on this page',
+      ),
     };
     return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
   });
@@ -3090,12 +3404,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
-    const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
+    const lines = (readText(file) ?? '').split(/\r?\n/);
+    const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
     return {
       test: found ? caseToEditorTest(context, found) : null,
-      spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
+      spec: { uri: params.uri, testIds: cases.map((c) => c.id), location: relative },
       location: call ? `${relative}:${call.line + 1}` : null,
     };
   });
@@ -3184,8 +3499,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
-   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`), and a
+   * notice when the project's reporter does not pause at them. Headless, its stop watched in the worker view, unless
+   * the project's reporter stops at none headless or the run has no run channel (`breakpointRunHeaded`): `--headed`
+   * then. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
@@ -3204,9 +3521,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!pauseAt) return command;
     if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
+    const headed = breakpointRunHeaded(context.reporterVersion, !!recordChannel);
     return {
       ...command,
-      ...headedCommand(command.command, command.args),
+      ...(headed ? headedCommand(command.command, command.args) : {}),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };
@@ -3225,7 +3543,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = file ? relativeTo(context.root, file) : null;
     if (file && relative && SPEC_FILE.test(relative)) specs.add(file);
     for (const location of params?.locations ?? []) {
-      if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
+      if (isTestLocation(location)) specs.add(path.join(context.root, locationSpec(location)));
     }
     const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
     const run: RunCommand = {
@@ -3233,16 +3551,54 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
       env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
-    if (run.ref) {
-      runCommands.delete(run.ref);
-      runCommands.set(run.ref, run.command);
-      for (const oldest of runCommands.keys()) {
-        if (runCommands.size <= MAX_RUN_COMMANDS) break;
-        runCommands.delete(oldest);
-      }
-      if (pauses) watchedRuns.add(run.ref);
-      for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
-      runLines.started(run.ref, unsavedFiles);
+    if (run.ref && pauses) watchedRuns.add(run.ref);
+    return registered(run);
+  };
+
+  /**
+   * A run the service built on the run channel, kept by its ref: its command line, which the hub names to Piwi Picker,
+   * and its code as it starts. The oldest are forgotten past `MAX_RUN_COMMANDS`, with what was kept of them.
+   */
+  const registered = (run: RunCommand): RunCommand => {
+    if (!run.ref) return run;
+    runCommands.delete(run.ref);
+    runCommands.set(run.ref, run.command);
+    for (const oldest of runCommands.keys()) {
+      if (runCommands.size <= MAX_RUN_COMMANDS) break;
+      runCommands.delete(oldest);
+    }
+    for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+    runLines.started(run.ref, unsavedFiles);
+    return run;
+  };
+
+  /**
+   * A run nobody attends (Verify ×3, a fix plan's verification, a Flake Lab command): its workers keep their run
+   * connection, so it is listed, paused and stopped as any run of the editor, but it holds no failure (`holdsFailures`)
+   * and turns headed for no `page.pause()`. Unchanged while the run channel does not listen.
+   */
+  const unattended = (command: RunCommand): RunCommand => {
+    if (!recordChannel || !command.ref) return command;
+    // Kept apart from the command lines, which a long run may outlive: it stays one nobody attends.
+    unattendedRuns.delete(command.ref);
+    unattendedRuns.add(command.ref);
+    for (const oldest of unattendedRuns) {
+      if (unattendedRuns.size <= MAX_RUN_COMMANDS) break;
+      unattendedRuns.delete(oldest);
+    }
+    return registered({ ...command, env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value } });
+  };
+
+  /**
+   * A test run's command as the person chose to start it (`RunStartOptions`): headed when asked, and with Hold failures
+   * on or off from its start when asked, over what its breakpoints and `page.pause()` decided.
+   */
+  const withStartOptions = (command: RunCommand, options: RunStartOptions | undefined): RunCommand => {
+    const run = options?.headed === true ? { ...command, ...headedCommand(command.command, command.args) } : command;
+    // Only a run with a run channel holds a failure.
+    if (run.ref && run.env?.[RUN_CHANNEL_ENV] && typeof options?.holdFailures === 'boolean') {
+      if (options.holdFailures) watchedRuns.add(run.ref);
+      else watchedRuns.delete(run.ref);
     }
     return run;
   };
@@ -3250,7 +3606,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
     if (!isTestLocation(location)) return false;
-    const spec = location.slice(0, location.lastIndexOf(':'));
+    const spec = locationSpec(location);
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
@@ -3261,10 +3617,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) => {
-        const colon = l.lastIndexOf(':');
-        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
-      });
+      return params.locations.map((l) => `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`);
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -3311,9 +3664,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           : `${relative} cannot be passed on a command line, so Piwi runs nothing.`,
       );
     }
-    const ref = newRunRef();
-    runWatch.watch(context, ref);
-    const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
+    // The dashboard follows the run by the name it gave it, unless a run of this window holds that name.
+    const borrowed = !!debug.ref && !runCommands.has(debug.ref);
+    const ref = borrowed ? debug.ref! : newRunRef();
+    runWatch.watch(context, ref, null, borrowed);
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      ...headedCommand(command, args),
+      env: editorRunEnv(ref),
+      ref,
+    };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
     const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
     const execution = debug.execution;
@@ -3324,7 +3684,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return built;
   };
 
-  connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
+  connection.onRequest(RUN_ARGS_REQUEST, (params: RunTestsArgs) => runCommandFor(params));
+
+  /** The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. */
+  const runCommandFor = async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
     if (params.debug) return debugRunArgs(context, params);
@@ -3343,14 +3706,118 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
+    if (repeat === null) {
+      return withStartOptions(
+        withRecording(context, withBreakpoints(context, run, params.breakpoints), params),
+        params,
+      );
+    }
     const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
     repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
     }
-    return run;
+    // A repeated run runs headless unless asked, and nobody attends it: it holds no failure.
+    return withStartOptions(unattended(run), { headed: params.headed });
+  };
+
+  /**
+   * The file an agent names, as the workspace holds it: an absolute path, or one relative to a folder of the workspace;
+   * a path through a link to a workspace folder is named under that folder. Null when no folder holds it.
+   */
+  const workspaceFile = (named: string): string | null => {
+    const candidates = path.isAbsolute(named)
+      ? [path.resolve(named)]
+      : folders.map((folder) => path.resolve(folder, named)).filter((candidate) => fs.existsSync(candidate));
+    for (const candidate of candidates) {
+      if (folders.some((folder) => relativeTo(folder, candidate) !== null)) return candidate;
+      const real = realPath(candidate);
+      for (const folder of folders) {
+        const realFolder = realPath(folder);
+        const inside = real && realFolder ? relativeTo(realFolder, real) : null;
+        if (inside !== null) return path.join(folder, inside);
+      }
+    }
+    return null;
+  };
+  const realPath = (file: string): string | null => {
+    try {
+      return fs.realpathSync(file);
+    } catch {
+      return null;
+    }
+  };
+  /**
+   * The line, from 1, of the test of `file` whose lines hold `line`; `line` itself when no test the spec's text shows
+   * holds it, for Playwright to read.
+   */
+  const testLineAt = (file: string, line: number): number => {
+    const text = readText(file);
+    const call = text === null ? null : testCallAt(text.split(/\r?\n/), line - 1);
+    return call ? call.line + 1 : line;
+  };
+  /**
+   * An agent's run (`run_start`): the spec it names, or the test at a line of it, built as a person's run of it is and
+   * run by the client where the developer sees it, labeled with the agent's name. A line inside a test runs that test.
+   * Refused for a file no Playwright config of the workspace holds as a spec, and by a client that runs none for an
+   * agent.
+   */
+  const startAgentRun = async (
+    start: AgentRunStart,
+  ): Promise<{ ok: boolean; message: string; run?: string; root?: string | null }> => {
+    if (!startsRuns)
+      return { ok: false, message: 'This editor starts no run for an agent: update its Piwi extension.' };
+    const file = workspaceFile(start.file);
+    const context = file ? contextFor(file) : null;
+    const relative = file && context ? relativeTo(context.root, file) : null;
+    if (!file || !context || !relative || !SPEC_FILE.test(relative)) {
+      return { ok: false, message: `${start.file} is no spec of a Playwright config of this workspace.` };
+    }
+    const line = start.line === null ? null : testLineAt(file, start.line);
+    const command = await runCommandFor({
+      uri: pathToFileURL(file).href,
+      root: context.root,
+      testIds: [],
+      locations: [line === null ? relative : `${relative}:${line}`],
+      headed: start.headed,
+      holdFailures: start.hold,
+    });
+    if (!command?.ref) return { ok: false, message: `Piwi could not build a command that runs ${relative}.` };
+    const label = `Started by ${start.agent}`;
+    try {
+      const answer = (await connection.sendRequest(START_RUN_REQUEST, {
+        command: { ...command, ref: command.ref, label },
+      } satisfies StartRunParams)) as StartRunResult | null;
+      if (!answer?.ok) return { ok: false, message: answer?.message || 'The editor did not start the run.' };
+      return {
+        ok: true,
+        message: `${answer.message} Follow it with run_follow.`,
+        run: command.ref,
+        root: context.root,
+      };
+    } catch {
+      return { ok: false, message: 'The editor did not start the run.' };
+    }
+  };
+
+  connection.onRequest(FOLLOW_COMMAND_REQUEST, (params: RunCommandArgs): RunCommand | null => {
+    const context = contexts.find((c) => commandFolder(c) === params?.cwd);
+    if (!context || !followableCommand(params?.command) || !recordChannel) return null;
+    const env = Object.fromEntries(
+      Object.entries(params.env ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    // Named on the run channel alone: a command of several runs (a Flake Lab line's batches) is not the editor's own
+    // run on the instance, as it was not before it was followed.
+    const ref = newRunRef();
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      command: params.command,
+      args: playwrightArgsOf(params.command) ?? [],
+      env: { ...env, [RUN_REF_ENV]: ref },
+      ref,
+    };
+    return unattended(run);
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
@@ -3411,7 +3878,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: editorRunEnv(ref),
       ref,
     };
-    return withRecording(context, withBreakpoints(context, run, params.breakpoints));
+    return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);
   });
 
   connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {
@@ -3501,7 +3968,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return null;
   });
 
-  connection.onRequest(MCP_REQUEST, (): McpServersResult => {
+  connection.onRequest(MCP_REQUEST, async (): Promise<McpServersResult> => {
     const signIn = credentials.mcpAuthorization === 'sign-in';
     const seen = new Set<string>();
     const servers: McpServersResult['servers'] = [];
@@ -3509,6 +3976,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const conn = c.client?.connection;
       if (!conn || seen.has(conn.serverUrl)) continue;
       seen.add(conn.serverUrl);
+      if (
+        conn.apiKey &&
+        (await requireDesktopProof(conn.serverUrl, conn.apiKey).then(
+          () => false,
+          () => true,
+        ))
+      )
+        continue;
       let host = conn.serverUrl;
       try {
         host = new URL(conn.serverUrl).host;
@@ -3522,6 +3997,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         url: `${conn.serverUrl}/mcp`,
         headers: authorization === 'key' ? { Authorization: `Bearer ${conn.apiKey}` } : {},
         authorization,
+        ...(c.source === 'desktop' ? { desktop: true as const } : {}),
       });
     }
     return { servers };
@@ -3692,6 +4168,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const { ref } = params;
     runSessions.commandEnded(ref);
     const exitCode = typeof params.exitCode === 'number' ? params.exitCode : null;
+    runAgent.commandEnded(ref, exitCode);
     void runWatch.commandEnded(ref, exitCode).then((reached) => {
       const repeated = repeatedCommands.get(ref);
       if (!repeated || reached) return;
@@ -3705,6 +4182,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(SHARE_RUN_REQUEST, (params: ShareRunParams): RunControlResult => runSessions.share(params));
+  connection.onRequest(ANSWER_ASK_REQUEST, (params: AnswerAskParams): RunControlResult =>
+    runSessions.answerAsk(params),
+  );
+  connection.onRequest(HOLD_RUN_REQUEST, (params: HoldRunParams): RunControlResult =>
+    runSessions.hold(params, 'person'),
+  );
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
     runSessions.setBreakpoints(debugRuns.breakpoints(params)),
@@ -3718,7 +4201,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runSessions.pausedPage(params),
   );
 
-  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
+  // A pick on the image is the editor's person driving the stop.
+  // A pick drives the stop as the view that watches it, its lane's panel included, which gives it back as it goes.
+  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => {
+    const at = { ref: params?.ref, worker: params?.worker ?? -1, since: params?.since, events: [] };
+    const view = [clientPageView, clientLaneView].find((v) => v?.takes(at)) ?? clientPageView;
+    return runSessions.pickAt(params, view?.viewer);
+  });
 
   connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
     answersStops
@@ -3730,20 +4219,49 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ? clientLaneView!.input(params)
       : clientPageView!.input(params),
   );
+  // The person takes a stop one of this client's views watches, as that view; turning Interact off, or Esc, gives back
+  // what either view drove there.
+  connection.onRequest(DRIVE_STOP_REQUEST, (params: DriveStopParams): RunControlResult => {
+    if (!answersStops) return { ok: false, message: 'This client does not show stopped pages.' };
+    const at = { ref: params?.ref, worker: params?.worker, since: params?.since, events: [] };
+    const watching = [clientPageView!, clientLaneView!].find((view) => view.takes(at));
+    if (params?.on === true) {
+      if (!watching) return { ok: false, message: 'Watch the stopped page first: you drive the stop you watch.' };
+      return runSessions.driveStop(at, watching.viewer, true);
+    }
+    return runSessions.driveStop(at, clientPageView!.viewer, false, [clientLaneView!.viewer]);
+  });
+  // The answer is a sentence: the trace's path stays in the service.
+  connection.onRequest(OPEN_TRACE_REQUEST, (params: OpenTraceParams): Promise<RunControlResult> =>
+    runSessions.openTrace(params),
+  );
+
   connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
     answersStops
       ? clientLaneView!.watch(params)
       : Promise.resolve({ ok: false, message: 'This client does not show running tests.' }),
   );
+  // A CI run's lane, read-only: nothing it sends reaches the run.
+  connection.onRequest(CI_WATCH_REQUEST, (params: CiWatchParams): Promise<RunControlResult> => ciWatch.watch(params));
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
     if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);
     return { url: runHub?.url ?? null, forwarded: hubForwarded };
   });
 
-  connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
-    stopActions.action(params),
-  );
+  connection.onRequest(STOP_ACTION_REQUEST, async (params: StopActionParams): Promise<StopActionResult> => {
+    const answer = await stopActions.action(params);
+    // An intent started from the editor is its person driving the stop, while the worker still stands at it.
+    const intent = params?.action === 'pick' || params?.action === 'record' || params?.action === 'assert';
+    if (answer.ok && (intent || params?.action === 'assert-region') && clientPageView && params.since) {
+      runSessions.driveStop(
+        { ref: params.ref, worker: params.worker, since: params.since },
+        clientPageView.viewer,
+        true,
+      );
+    }
+    return answer;
+  });
 
   /**
    * The MCP server for agents listens only once the client turns it on, and closes as it turns it off; `newToken`
@@ -3807,6 +4325,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const toldAgents = (answer: AgentsResult, asked: boolean): AgentsResult => {
     const held = JSON.stringify([answer.url, answer.token]);
     if (held !== agentsHeld && !asked) void connection.sendNotification(AGENTS_CHANGED_NOTIFICATION, answer);
+    // An agent's router reads where the runs are served from the discovery file.
+    if (held !== agentsHeld) publishDiscovery();
     agentsHeld = held;
     return answer;
   };
@@ -3862,6 +4382,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     desktopJobs.share(params.jobId),
   );
 
+  connection.onNotification(SET_RUN_PAIRING_NOTIFICATION, (params: SetRunPairingParams) => {
+    const next = typeof params?.address === 'string' ? parsePairing(params.address) : null;
+    if (next?.url === runPairing?.url && next?.token === runPairing?.token) return;
+    runPairing = next;
+    publishDiscovery();
+  });
+
   connection.onNotification(SET_BASELINE_NOTIFICATION, async (params: SetBaselineParams) => {
     const context = typeof params?.root === 'string' ? contextOfRoot(params.root) : null;
     const choice = parseBaselineChoice(params?.choice);
@@ -3897,6 +4424,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     agentServer = null;
     runAgent.dispose();
     runSessions.dispose();
+    // Gone with the service: a pairing named after this writes no file again.
+    discovered = null;
     if (open) options.publish?.(null);
   };
   connection.onShutdown(() => {
@@ -3916,6 +4445,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             const file = uriToPath(params.textDocument.uri);
             const before = documents.get(params.textDocument.uri)?.getText() ?? null;
             if (file) runLines.changed(lineKey(file), before, params.contentChanges);
+            // A run stopped in this file is told again with the stop's line where it stands now.
+            const key = file ? lineKey(file) : null;
+            const stoppedHere = (uri: string | undefined) => {
+              const stopped = uri ? uriToPath(uri) : null;
+              return key !== null && stopped !== null && lineKey(stopped) === key;
+            };
+            for (const session of runSessions.current()) {
+              if (session.workers.some((w) => stoppedHere(w.stop?.uri))) runHub?.push(session);
+            }
             return handler(params);
           });
       },
@@ -3925,6 +4463,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   return () => {
     stopped = true;
     runWatch.dispose();
+    ciWatch.dispose();
+    ciSessions.dispose();
+    runStreams.dispose();
     recordings.dispose();
     closeRecordChannel();
     desktopJobs.dispose();

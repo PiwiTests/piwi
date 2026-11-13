@@ -14,7 +14,7 @@ or a codespace. What the editor shows from the service works there as it does on
 runs in the browser on your computer and reaches the editor through a pairing address on the loopback interface,
 which in remote development is the local end of a forwarded port.
 
-The editor's **Watch live** and **Interact** controls use its existing connection. They need no Picker pairing or
+The editor's **Watch** and **Interact** controls use its existing connection. They need no Picker pairing or
 extra port forwarding. The steps below are for using Picker's separate Runs window and Send to editor.
 
 ## VS Code

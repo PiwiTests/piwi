@@ -29,7 +29,7 @@ beforeAll(async () => {
     await db.insert(schema.testRuns).values({ projectId: 1, status: 'passed', startTime: new Date(NOW - i * HOUR) });
   }
   await db.insert(schema.testRuns).values([
-    { id: 100, projectId: QUIET, status: 'running', startTime: new Date(NOW - 10 * 60 * 1000) },
+    { id: 100, projectId: QUIET, status: 'running', origin: 'ci', startTime: new Date(NOW - 10 * 60 * 1000) },
     { id: 101, projectId: QUIET, status: 'passed', startTime: new Date(NOW - 7 * 24 * HOUR) },
     { id: 102, projectId: QUIET, status: 'failed', startTime: new Date(NOW - 8 * 24 * HOUR) },
   ]);
@@ -46,6 +46,11 @@ describe('getRecentTestRuns', () => {
     expect(runs).toHaveLength(31);
     expect(runs[0]!.id).toBe(100);
     expect(runs.every((r) => r.id === 100 || r.projectId === 1)).toBe(true);
+  });
+
+  test('names what launched each run', async () => {
+    const runs = await getRecentTestRuns(db as never, new Set([QUIET]));
+    expect(runs.map((r) => r.origin)).toEqual(['ci', 'local', 'local']);
   });
 
   test('a user with no project sees none', async () => {

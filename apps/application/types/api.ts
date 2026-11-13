@@ -321,6 +321,8 @@ export interface ProjectUnscopedRun {
   environment: string | null;
   branch: string | null;
   isFullRun: boolean;
+  /** The viewer's own run, which the filters never hide. */
+  mine?: true;
 }
 
 /**
@@ -372,7 +374,8 @@ export interface OpenFailureCluster {
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Who the cluster is assigned to (name or email); overrides the derived owner. */
   assignee: string | null;
-  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** The cluster's known issue, else its newest link the tests did not declare, shown as a chip. */
+  issueLink: { url: string; provider: string; key: string | null; status?: string | null } | null;
   /** A one-line cause hint for the row — muted secondary text. */
   topClue: { text: string; strength: 'strong' | 'medium' | 'weak' } | null;
   /** Fix-verification state; `'regressed'` drives the "fix didn't hold" queue and badge. */
@@ -381,7 +384,7 @@ export interface OpenFailureCluster {
   regressionOnDefault: boolean;
   /** The last-seen run was on the project's default branch — a needs-ticket candidate must be. */
   onDefaultBranch: boolean;
-  /** The cluster already carries a tracker issue — excluded from needs-ticket. */
+  /** The cluster's known issue still tracks it (not Done, or being reopened) — excluded from needs-ticket. */
   hasKnownIssue: boolean;
   /** Days a cluster may sit untracked on the default branch before needs-ticket lists it. */
   needsTicketAfterDays: number;
@@ -429,6 +432,8 @@ export interface ProjectWithTestRuns {
   testRuns: TestRunSummary[];
   /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
   unscopedRuns?: ProjectUnscopedRun[];
+  /** With a run scope: the viewer's own most recent runs, in its environments, that `testRuns` does not hold. */
+  ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
@@ -455,6 +460,8 @@ export interface ProjectWithTestRuns {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+  askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
@@ -499,6 +506,8 @@ export interface ProjectDetails {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+  askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
@@ -557,6 +566,8 @@ export interface TestRunSummary {
   keepSource?: KeepSource | null;
   keepReason?: string | null;
   createdAt: Date;
+  /** The viewer's own run (`#shared/own-runs`), which the runs lists show whatever the filters say. */
+  mine?: true;
 }
 
 /**
@@ -581,8 +592,14 @@ export interface TestRunDetails {
   shardTotal?: number | null;
   shardsFinished?: number;
   isFullRun?: boolean;
+  /** Tests a pass reuse plan skipped, recorded as reused results; -1 when the run claimed a plan whose reuse could not be recorded. */
+  reusedCount?: number;
+  /** The pass reuse plan the run executed, from its metadata. */
+  planId?: number | null;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** How many of the run's final attempts have a video (the Video tab's count; 0 disables the tab). */
+  videoCount?: number;
   /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
   machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
@@ -610,6 +627,8 @@ export interface TestRunDetails {
   origin?: string;
   /** The person who asked for a requested run; null for every other run. */
   requesterId?: number | null;
+  /** The run that continued this one, shared after it from the same editor window; null for none. */
+  continuedInId?: number | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -663,6 +682,8 @@ export interface TestRunForChart {
   isFullRun?: boolean;
   environment?: string | null;
   branch?: string | null;
+  /** The viewer's own run (`#shared/own-runs`), which the recent activity shows whatever the filters say. */
+  mine?: true;
 }
 
 // ============================================================================
@@ -1235,7 +1256,9 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
   links: EntityLinkInfo[];
-  /** The cluster's known issue: its newest tracker link. Every surface names this one. */
+  /** How many more issue keys its tests named in their last failing run than were linked. */
+  declaredIssuesMore?: number | null;
+  /** The cluster's known issue: its tracker link, else a link its tests name. Every surface names this one. */
   knownIssue: KnownIssueRef | null;
   /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
   issueFilingQueued: boolean;
@@ -1280,8 +1303,8 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   diagnosis: DiagnosisCompact | null;
-  /** The pinned known-issue link (newest), shown as a chip. */
-  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** The cluster's known issue, else its newest link the tests did not declare, shown as a chip. */
+  issueLink: { url: string; provider: string; key: string | null; status?: string | null } | null;
   /** Inbox triage — assignee and snooze state. A snoozed open cluster is not failing now. */
   assignee: string | null;
   snoozedUntil: string | Date | null;
@@ -1796,9 +1819,10 @@ export interface ScmChanges {
  * Supported AI provider identifiers.
  * - `anthropic` — the Anthropic API (needs an API key).
  * - `openai` — any OpenAI-compatible HTTP endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, …).
- * - `claude-cli` — the locally-installed `claude` CLI (Claude Code). Desktop app only: the
- *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
- *   own subscription/OAuth login and no API key is stored.
+ * - `claude-cli` — the locally-installed `claude` CLI (Claude Code), in the desktop app or on a
+ *   server with `PIWI_CLAUDE_CLI_PATH` set. The server shells out to `claude -p`, so authentication
+ *   is the CLI's own: a Claude subscription in the desktop app only, an API key or a cloud provider
+ *   anywhere.
  */
 export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli' | 'deepseek-cli';
 
@@ -1821,10 +1845,10 @@ export interface CodexCliStatus {
 
 /**
  * Health + authentication state of the local `claude` CLI, returned by
- * GET /api/ai/claude-cli/status. Only meaningful inside the desktop app.
+ * GET /api/ai/claude-cli/status.
  */
 export interface ClaudeCliStatus {
-  /** True when the desktop app is running and may shell out to the CLI at all. */
+  /** True inside the desktop app, the only place a Claude subscription sign-in may run. */
   desktop: boolean;
   /** True when the `claude` binary was found and is runnable. */
   available: boolean;
@@ -1834,11 +1858,13 @@ export interface ClaudeCliStatus {
   version: string | null;
   /** True when `claude auth status` reports a signed-in account. */
   loggedIn: boolean;
-  /** How the CLI is authenticated: "oauth_token", "api_key", … */
+  /** How the CLI is authenticated: "claude.ai" (a Claude subscription), "oauth_token" (a token), "api_key", "api_key_helper", "third_party" (a cloud provider). */
   authMethod: string | null;
-  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex". */
+  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex", "foundry". */
   apiProvider: string | null;
-  /** A human-readable problem when the CLI is missing or misconfigured. */
+  /** Signed in with an API key, a gateway token or a cloud provider, never a Claude subscription: what a server needs. */
+  apiCredentials: boolean;
+  /** A human-readable problem when the CLI is missing, not signed in, or signed in a way this server may not use. */
   error: string | null;
   /** Running usage totals since the server started (live, not persisted). */
   usage: ClaudeCliUsageTotals;
@@ -2056,8 +2082,10 @@ export interface EntityLinkInfo {
   /** The connection that can read/write this record, when Piwi owns it. */
   connectionId?: number | null;
   externalId?: string | null;
-  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  /** Who put the link there: `pinned` by a person, `created` by Piwi, `annotation` from the test's `piwi:issue`, `tag` from a test's tag, etc. */
   origin?: string | null;
+  /** What the link was read with; a link from the tests names the test and, for a tag, the tag (with its `@`). */
+  metadata?: { source?: { testCaseId?: number | null; tag?: string | null } | null } | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;

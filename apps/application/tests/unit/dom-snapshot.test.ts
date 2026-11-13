@@ -16,6 +16,7 @@ import {
   pointerAt,
   withPageInteraction,
 } from '~~/server/utils/dom-snapshot-render';
+import { stripNetworkReferences } from '#shared/snapshot-picker-document';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
 import {
@@ -86,6 +87,77 @@ describe('renderSnapshotHtml', () => {
       's1',
     );
     expect(html).toBe('<html><body><div id="box"></div></body></html>');
+  });
+
+  test('drops an attribute whose URL runs code, however the browser would read it', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            [
+              'BODY',
+              {},
+              ['A', { href: 'javascript:alert(1)', id: 'a' }, 'Pay'],
+              ['A', { href: ' JaVa\tScRiPt:alert(1)', id: 'b' }, 'Pay'],
+              ['FORM', { action: 'vbscript:msgbox(1)', id: 'c' }],
+              ['A', { href: '/cart?javascript:x', id: 'd' }, 'Cart'],
+            ],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<html><body><a id="a">Pay</a><a id="b">Pay</a><form id="c"></form><a href="/cart?javascript:x" id="d">Cart</a></body></html>',
+    );
+  });
+
+  test('reads a script URL only in an attribute that holds a URL: text that reads like one stays', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'BODY',
+            {},
+            ['IMG', { alt: 'JavaScript: The Good Parts', src: 'b.png', title: 'VBScript: legacy' }],
+            ['BUTTON', { 'aria-label': 'Javascript: run', formaction: 'javascript:x()' }, 'Run'],
+            ['IMG', { srcset: 'a.png 1x, javascript:x() 2x' }],
+            ['OBJECT', { data: 'javascript:x()' }],
+            ['VIDEO', { poster: ' javascript:x()' }],
+            ['TD', { background: 'javascript:x()' }],
+            ['Q', { cite: 'vbscript:x' }],
+            [
+              'svg',
+              {},
+              ['a', { 'xlink:href': 'javascript:x()' }],
+              ['set', { attributeName: 'href', to: 'javascript:x()' }],
+            ],
+            ['svg', {}, ['animate', { attributeName: 'href', values: '#a;javascript:x()', from: 'javascript:x()' }]],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<body><img alt="JavaScript: The Good Parts" src="b.png" title="VBScript: legacy">' +
+        '<button aria-label="Javascript: run">Run</button><img><object></object><video></video><td></td><q></q>' +
+        '<svg><a></a><set attributeName="href"></set></svg><svg><animate attributeName="href"></animate></svg></body>',
+    );
+  });
+
+  test('says each back-reference it cannot resolve', () => {
+    let unresolved = 0;
+    const html = renderSnapshotHtml(
+      [snap({ snapshotName: 's2', html: ['HTML', {}, [[1, 0]], ['BODY', {}, [[2, 3]]]] })],
+      's2',
+      { onUnresolved: () => unresolved++ },
+    );
+    expect(unresolved).toBe(2);
+    expect(html).toContain('[unresolved snapshot reference]');
   });
 
   test('drops tag and attribute names that would spill into the markup', () => {
@@ -204,6 +276,32 @@ describe('renderSnapshotHtml', () => {
     expect(html).toBe('<html><main><div>root text</div></main></html>');
   });
 
+  test('gives up on a chain whose references double at each snapshot, in a bounded time', () => {
+    const snapshots = [snap({ snapshotName: 's0', html: ['HTML', {}, 'x'] })];
+    // Each snapshot's two children are the whole of the snapshot before it: 2^40 nodes to write.
+    for (let k = 1; k <= 40; k++) {
+      snapshots.push(snap({ snapshotName: `s${k}`, html: ['B', {}, [[1, k === 1 ? 1 : 0]], [[1, k === 1 ? 1 : 0]]] }));
+    }
+    let tooLarge = 0;
+    const started = performance.now();
+    expect(renderSnapshotHtml(snapshots, 's40', { onTooLarge: () => tooLarge++ })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(tooLarge).toBe(1);
+    expect(extractDomSnapshot(traceData(snapshots), 1_500_000)).toEqual({ status: 'no-snapshot' });
+    expect(performance.now() - started).toBeLessThan(4000);
+  });
+
+  test('gives up on a page that writes more than it may, a long text named again and again', () => {
+    const text = 'x'.repeat(1_000_000);
+    const refs = Array.from({ length: 100 }, () => [[1, 0]]);
+    const first = snap({ snapshotName: 's0', html: ['P', {}, text] });
+    expect(renderSnapshotHtml([first, snap({ snapshotName: 's1', html: ['DIV', {}, ...refs] })], 's1')).toBeNull();
+    expect(renderSnapshotHtml([first, snap({ snapshotName: 's1', html: ['STYLE', {}, ...refs] })], 's1')).toBeNull();
+    // Named a few times, it renders.
+    const few = snap({ snapshotName: 's1', html: ['DIV', {}, [[1, 0]], [[1, 0]]] });
+    expect(renderSnapshotHtml([first, few], 's1')).toHaveLength(2_000_000 + '<div></div>'.length);
+  });
+
   test('emits a placeholder for unresolvable references instead of failing', () => {
     const html = renderSnapshotHtml([snap({ snapshotName: 's1', html: ['HTML', {}, ['BODY', {}, [[5, 99]]]] })], 's1');
     expect(html).toBe('<html><body><!-- [unresolved snapshot reference] --></body></html>');
@@ -236,7 +334,7 @@ describe('renderSnapshotHtml — live state', () => {
       '<input id="name" value="Ada Lovelace">',
     );
     expect(render(body(['INPUT', { __playwright_value_: 'a "quoted" <b>', id: 'q' }]))).toContain(
-      '<input id="q" value="a &quot;quoted&quot; <b>">',
+      '<input id="q" value="a &quot;quoted&quot; &lt;b&gt;">',
     );
   });
 
@@ -388,6 +486,67 @@ describe('renderSnapshotHtml — live state', () => {
     expect(html).toContain('<style>.card { & > .inner { content: "<"; } }</style>');
     expect(html).toContain('<style>a::after { content: "<\\/style><script>x()</script>"; }</style>');
     expect(html).toContain('<svg><style>a > b &amp; c</style></svg>');
+  });
+
+  const REFRESH = '<meta http-equiv="refresh" content="0;url=https://evil.test/">';
+
+  test('escapes a style’s text inside SVG or MathML, whatever case it was recorded in, an adopted one too', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['svg', {}, ['STYLE', {}, REFRESH]],
+        ['MATH', {}, ['mi', {}, ['STYLE', {}, REFRESH]]],
+        ['SVG', {}, ['TEMPLATE', { __playwright_style_sheet_: REFRESH }]],
+        ['svg', {}, ['foreignObject', {}, ['DIV', {}, ['STYLE', {}, REFRESH]]]],
+      ],
+    ]);
+    expect(html).not.toContain('<meta');
+    expect(html).toContain(
+      '<svg><style>&lt;meta http-equiv="refresh" content="0;url=https://evil.test/"></style></svg>',
+    );
+    // Out of SVG again, a style's text is raw.
+    expect(render(['HTML', {}, ['svg', {}], ['STYLE', {}, 'a > b']])).toBe(
+      '<html><svg></svg><style>a > b</style></html>',
+    );
+  });
+
+  test('writes only the escaped text of an element whose content the browser reads as text', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['NOSCRIPT', {}, ['STYLE', {}, `</noscript>${REFRESH}`], `</noscript>${REFRESH}`],
+        ['TEXTAREA', {}, ['STYLE', {}, `</textarea>${REFRESH}`], 'Note'],
+        ['XMP', {}, ['B', { title: `</xmp>${REFRESH}` }], ['TEMPLATE', { __playwright_style_sheet_: REFRESH }]],
+        ['PLAINTEXT', {}, 'the rest'],
+      ],
+    ]);
+    expect(html).not.toContain('<meta');
+    expect(html).toBe(
+      '<html><body>' +
+        '<noscript>&lt;/noscript>&lt;meta http-equiv="refresh" content="0;url=https://evil.test/"></noscript>' +
+        '<textarea>Note</textarea><xmp></xmp><pre>the rest</pre></body></html>',
+    );
+  });
+
+  test('escapes the angle brackets of an attribute’s value', () => {
+    expect(render(['P', { title: `</noscript>${REFRESH}` }])).toBe(
+      '<p title="&lt;/noscript&gt;&lt;meta http-equiv=&quot;refresh&quot; content=&quot;0;url=https://evil.test/&quot;&gt;"></p>',
+    );
+  });
+
+  test('writes a doctype that names a plain type alone', () => {
+    const page = (doctype: string) =>
+      renderSnapshotHtml([snap({ snapshotName: 's1', doctype, html: ['HTML', {}] })], 's1');
+    expect(page('html')).toBe('<!DOCTYPE html>\n<html></html>');
+    expect(page('HTML')).toBe('<!DOCTYPE HTML>\n<html></html>');
+    expect(page(`html>${REFRESH}<svg`)).toBe('<html></html>');
+    expect(page('html PUBLIC "-//W3C//DTD HTML 4.01//EN"')).toBe('<html></html>');
   });
 });
 
@@ -543,18 +702,78 @@ describe('parseResourceSnapshots', () => {
   });
 });
 
+describe('reading CSS and markup in linear time', () => {
+  /** How long `read` takes, in milliseconds. */
+  const took = (read: () => unknown) => {
+    const started = performance.now();
+    read();
+    return performance.now() - started;
+  };
+  const page = (css: string) =>
+    renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: ['HTML', {}, ['HEAD', {}, ['STYLE', {}, css]], ['BODY', {}, ['IMG', { src: '/a.png' }]]],
+        }),
+      ],
+      's1',
+    )!;
+
+  test('reads 200,000 characters of url() and @import that never close well under a second', () => {
+    for (const css of [
+      'url("'.repeat(40_000),
+      "url('".repeat(40_000),
+      'url('.repeat(50_000),
+      '@import url('.repeat(17_000),
+      '@import "'.repeat(22_000),
+    ]) {
+      expect(took(() => collectCssUrls(css))).toBeLessThan(500);
+      expect(took(() => inlineCssUrls(css, { x: 'y' }))).toBeLessThan(500);
+      expect(took(() => stripNetworkReferences(`<style>${css}</style>`))).toBeLessThan(500);
+    }
+  });
+
+  test('reads a page whose style holds 200,000 characters of tags that never close well under a second', () => {
+    for (const css of ['<img "'.repeat(33_000), `<link ${'rel=x '.repeat(33_000)}`, '<link'.repeat(40_000)]) {
+      const html = page(css);
+      expect(took(() => collectImageSources(html))).toBeLessThan(500);
+      expect(took(() => inlineImageSources(html, { '/a.png': 'data:image/png;base64,AA==' }))).toBeLessThan(500);
+      expect(took(() => collectStylesheetLinks(html))).toBeLessThan(500);
+      expect(took(() => inlineStylesheets(html, { x: 'y' }))).toBeLessThan(500);
+    }
+    // A tag in a style's text is CSS, never markup.
+    const html = page('<img src="/b.png"><link rel="stylesheet" href="/x.css">');
+    expect([...collectImageSources(html).keys()]).toEqual(['/a.png']);
+    expect(collectStylesheetLinks(html)).toEqual([]);
+  });
+
+  test('reads url() as before: quoted with the quote inside, bare, spaced, in any case', () => {
+    const css =
+      'a{background:url("a"b")} b{src:URL( \'c.woff\' )} c{x:url( d.png )} d{x:url("e\nf")} e{x:url()} f{x:url(g h)}';
+    expect([...collectCssUrls(css).keys()]).toEqual(['a"b', 'c.woff', 'd.png']);
+    expect(inlineCssUrls(css, { 'c.woff': 'data:font/woff;base64,AA==', 'd.png': 'data:image/png;base64,AA==' })).toBe(
+      'a{background:url("a"b")} b{src:url("data:font/woff;base64,AA==")} c{x:url("data:image/png;base64,AA==")}' +
+        ' d{x:url("e\nf")} e{x:url()} f{x:url(g h)}',
+    );
+  });
+});
+
 describe('collectCssUrls / inlineCssUrls', () => {
-  test('counts each url() target, skipping data:, #fragment and fragment-addressed refs', () => {
+  test('counts each url() target, skipping data: and in-document refs', () => {
     const css =
       '@font-face{src:url("/f/inter.woff2") format("woff2")}' +
       '.a{background:url(/img/bg.png)}' +
       ".b{background:url('/img/bg.png')}" + // dupe of the same target
       '.c{background:url(data:image/gif;base64,AAAA)}' + // already inline
       '.d{filter:url(#blur)}' + // in-document ref
-      '.e{background:url(/img/sprite.svg#star)}'; // fragment-addressed — can't inline faithfully
+      '.e{background:url(/img/sprite.svg#star)}' + // fragment-addressed: an SVG one is not inlined
+      '@font-face{src:url(/f/old.eot?#iefix)}';
     expect([...collectCssUrls(css)]).toEqual([
       ['/f/inter.woff2', 1],
       ['/img/bg.png', 2],
+      ['/img/sprite.svg#star', 1],
+      ['/f/old.eot?#iefix', 1],
     ]);
   });
 

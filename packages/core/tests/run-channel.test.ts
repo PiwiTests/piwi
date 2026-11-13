@@ -13,12 +13,17 @@ import {
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
   MAX_WAITING_TITLE,
+  ENDED_AT_STOP_REASON,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
   RUN_FEATURES,
   RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
+  parseHubToMain,
+  checkoutCommitOf,
+  endedAtStopIn,
+  withoutCheckout,
   isSnapshotRef,
   parseRunMainToHub,
   parseRunToHub,
@@ -788,6 +793,33 @@ describe('the run channel', () => {
       expect(parseRunMainToHub(line({ ...progress, done: 1.5 }))).toBeNull();
     });
 
+    test('reads how many of the skipped were ended at a stop, and leaves out a count it cannot read', () => {
+      const progress = { type: 'run-progress', done: 4, failed: 0, flaky: 0, skipped: 2 };
+      expect(parseRunMainToHub(line({ ...progress, endedAtStop: 1 }))).toEqual({ ...progress, endedAtStop: 1 });
+      expect(parseRunMainToHub(line({ ...progress, endedAtStop: 0 }))).toEqual({ ...progress, endedAtStop: 0 });
+      // More than the skipped, or no count: the counts stand without it.
+      for (const wrong of [3, -1, 1.5, '1', null]) {
+        expect(parseRunMainToHub(line({ ...progress, endedAtStop: wrong })), String(wrong)).toEqual(progress);
+      }
+      const end = { ...progress, type: 'run-end', status: 'passed', failure: null, endedAtStop: 2 };
+      expect(parseRunMainToHub(line(end))).toEqual(end);
+    });
+
+    test('names the skip of a test ended at a stop as results already stored read it', () => {
+      expect(ENDED_AT_STOP_REASON).toBe('Ended from Piwi');
+      expect(endedAtStopIn([{ type: 'skip', description: 'Ended from Piwi' }])).toBe(true);
+      expect(
+        endedAtStopIn([
+          { type: 'tag', description: '@cart' },
+          { type: 'skip', description: 'Ended from Piwi' },
+        ]),
+      ).toBe(true);
+      expect(endedAtStopIn([{ type: 'skip', description: 'not ready' }])).toBe(false);
+      expect(endedAtStopIn([{ type: 'fixme', description: 'Ended from Piwi' }])).toBe(false);
+      expect(endedAtStopIn([{ type: 'skip' }])).toBe(false);
+      expect(endedAtStopIn(null)).toBe(false);
+    });
+
     test('reads how the run ended, a status of a newer Playwright as other, its failure cut short', () => {
       const end = {
         type: 'run-end',
@@ -810,6 +842,21 @@ describe('the run channel', () => {
   });
 
   describe('the lane view', () => {
+    test('reads the action that runs in the test’s window at a stop, and its end', () => {
+      for (const what of ['pick', 'assert', 'assert-region'] as const) {
+        expect(parseRunToHub(line({ type: 'acting', stop: 3, what }))).toEqual({ type: 'acting', stop: 3, what });
+      }
+      expect(parseRunToHub(line({ type: 'acting', stop: 3, what: null }))).toEqual({
+        type: 'acting',
+        stop: 3,
+        what: null,
+      });
+      // A recording takes no Escape of its own: it records it.
+      for (const wrong of [{ what: 'record' }, { what: 'dance' }, { what: undefined }, { stop: 0 }, { stop: '3' }]) {
+        expect(parseRunToHub(line({ type: 'acting', stop: 3, what: 'pick', ...wrong }))).toBeNull();
+      }
+    });
+
     test('reads the call a pausing worker waits in, and End the test there', () => {
       const waiting = {
         type: 'waiting',
@@ -845,6 +892,20 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
     });
 
+    test('reads Show the browser at a stop, and its answer', () => {
+      const asked = { type: 'request', request: 7, what: 'front', stop: 2 } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, stop: 0 }))).toBeNull();
+      const answered = {
+        type: 'answer',
+        request: 7,
+        what: 'front',
+        value: { ok: true, message: "The test's window is in front." },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answered))).toEqual(answered);
+      expect(parseRunToHub(line({ ...answered, value: { ok: 'yes' } }))).toBeNull();
+    });
+
     test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {
       const attach = {
         type: 'run-attach',
@@ -860,7 +921,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers', 'trace']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });
@@ -868,6 +929,46 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, features: Array(65).fill('view-lane') }))).toMatchObject({
         features: [],
       });
+    });
+
+    test('reads a request for the running attempt’s trace, which names no stop, and its answer', () => {
+      const asked = { type: 'request', request: 9, what: 'trace' } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, stop: 3 }))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, request: 0 }))).toBeNull();
+      const file = '/work/shop/test-results/.playwright-artifacts-1/traces/a1b2-c3.trace';
+      const answered = {
+        type: 'answer',
+        request: 9,
+        what: 'trace',
+        value: { ok: true, message: 'The trace grows there.', file },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answered))).toEqual(answered);
+      const refused = {
+        type: 'answer',
+        request: 9,
+        what: 'trace',
+        value: { ok: false, message: 'No test runs on this worker now.' },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      // A refusal carries no file, whatever the line says.
+      expect(parseRunToHub(line({ ...refused, value: { ...refused.value, file } }))).toEqual(refused);
+      expect(parseRunToHub(line({ ...answered, value: { ...answered.value, message: 'x'.repeat(600) } }))).toEqual({
+        ...answered,
+        value: { ...answered.value, message: 'x'.repeat(500) },
+      });
+      for (const wrong of [
+        { ok: true, message: 'Here.' },
+        { ok: true, message: 'Here.', file: '' },
+        { ok: true, message: 'Here.', file: 4 },
+        { ok: true, message: 'Here.', file: '/a\0b.trace' },
+        { ok: true, message: 'Here.', file: `/${'x'.repeat(4096)}.trace` },
+        { ok: 'yes', message: 'Here.', file },
+        { ok: true, file },
+        null,
+      ]) {
+        expect(parseRunToHub(line({ ...answered, value: wrong })), JSON.stringify(wrong)?.slice(0, 80)).toBeNull();
+      }
     });
 
     test('reads a request to turn the lane view on or off, which names no stop', () => {
@@ -1101,5 +1202,59 @@ describe('the run channel', () => {
         }
       }
     });
+  });
+});
+
+describe('a teammate’s ask to watch, between the run’s own process and its hub', () => {
+  test('reads the ask the run passes on, and the answer the hub gives back', () => {
+    expect(parseRunMainToHub(JSON.stringify({ type: 'run-ask', id: 'a1', by: 'Dana' }))).toEqual({
+      type: 'run-ask',
+      id: 'a1',
+      by: 'Dana',
+    });
+    expect(parseRunMainToHub(JSON.stringify({ type: 'run-ask', id: 'a 1', by: 'Dana' }))).toBeNull();
+    expect(parseHubToMain(JSON.stringify({ type: 'ask-answer', id: 'a1', answer: 'not-now' }))).toEqual({
+      type: 'ask-answer',
+      id: 'a1',
+      answer: 'not-now',
+    });
+    expect(parseHubToMain(JSON.stringify({ type: 'ask-answer', id: 'a1', answer: 'share' }))).toBeNull();
+    expect(parseHubToMain(JSON.stringify({ type: 'share', on: true }))).toBeNull();
+  });
+
+  test('reads the run a shared run continues, and none that is not a run', () => {
+    expect(parseHubToRun(JSON.stringify({ type: 'share', on: true, after: 77 }))).toEqual({
+      type: 'share',
+      on: true,
+      after: 77,
+    });
+    expect(parseHubToRun(JSON.stringify({ type: 'share', on: true, after: 'x' }))).toEqual({ type: 'share', on: true });
+  });
+});
+
+describe('a job the desktop app runs in a throwaway checkout', () => {
+  test('names its commit in its ref, before the mark of a job nobody attends', () => {
+    expect(checkoutCommitOf('desktop-12-at-abc1234')).toBe('abc1234');
+    expect(checkoutCommitOf('desktop-3-at-0123456789ab-unattended')).toBe('0123456789ab');
+    for (const ref of [
+      'desktop-12',
+      'desktop-12-unattended',
+      'terminal-1-2',
+      'terminal-1-at-abc1234',
+      'desktop-12-at-abc12',
+      'desktop-12-at-ABC1234',
+      'desktop-12-at-0123456789abc',
+      'desktop-x-at-abc1234',
+      'desktop-12-at-abc1234-more',
+    ]) {
+      expect(checkoutCommitOf(ref), ref).toBeNull();
+    }
+  });
+
+  test('is known by the desktop app under the name of its run alone', () => {
+    expect(withoutCheckout('desktop-12-at-abc1234')).toBe('desktop-12');
+    expect(withoutCheckout('desktop-3-at-0123456789ab-unattended')).toBe('desktop-3-unattended');
+    expect(withoutCheckout('desktop-12-unattended')).toBe('desktop-12-unattended');
+    expect(withoutCheckout('terminal-1-at-abc1234')).toBe('terminal-1-at-abc1234');
   });
 });

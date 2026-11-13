@@ -15,7 +15,8 @@
  * person reopened or that regressed under a closed ticket is not pulled back on
  * every sweep; a regressed cluster is never closed by its ticket. Each move is
  * one conditional write, so a person's triage made while the tracker answered
- * is never overwritten.
+ * is never overwritten. A link the tests declared is refreshed but never moves
+ * its cluster.
  * Work is bounded per sweep and a connection's failure is recorded on its
  * `last_error` rather than failing the whole sweep.
  */
@@ -30,6 +31,7 @@ import { readProjectIntegration } from './binding';
 import { linksOnBoundConnection } from './bound-connection';
 import { updateEntityLinkStatus, mergeEntityLinkMetadata } from './entity-links';
 import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
+import { isDeclaredLink } from '#shared/handlers/known-issues';
 import { SYNC_BATCH_LIMIT, isLinkRefreshDue } from '#shared/integrations/sync-config';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 
@@ -71,7 +73,10 @@ async function recordConnectionError(db: DbClient, connectionId: number, message
     .where(eq(integrationConnections.id, connectionId));
 }
 
-/** Refresh one link's cached status and drive the resolve/reopen policies. */
+/**
+ * Refresh one link's cached status and drive the resolve/reopen policies. A link the tests declared is refreshed only,
+ * and deleted once its issue moved out of the bound Jira project.
+ */
 async function syncOneLink(
   db: DbClient,
   tracker: IssueTracker,
@@ -84,11 +89,23 @@ async function syncOneLink(
   const issue = await tracker.getIssue(idOrKey);
   if (!issue) return;
 
+  // A link the tests declared stands only for an issue of the bound project: one moved out of it is dropped.
+  const declared = isDeclaredLink(link);
+  if (declared && cluster && issue.projectKey) {
+    const { projectKey } = await bindingFor(cluster.projectId);
+    if (projectKey && issue.projectKey !== projectKey) {
+      await db.delete(entityLinks).where(eq(entityLinks.id, link.id));
+      return;
+    }
+  }
+
   await updateEntityLinkStatus(db, link.id, {
     title: issue.title,
     statusText: issue.status,
     statusColor: issue.statusColor ?? statusColorForCategory(issue.statusCategory),
     key: issue.key,
+    // The tracker's stable id, once it reports one: a link pinned by its key gains it here.
+    ...(issue.id ? { externalId: issue.id } : {}),
   });
   const previousCategory = (link.metadata as { statusCategory?: string | null } | null)?.statusCategory ?? null;
   // The last category the tracker reported: a sync that reports none keeps it.
@@ -101,7 +118,8 @@ async function syncOneLink(
     await syncBugReport(db, link.bugReportId, previousCategory, issue.statusCategory, bindingFor);
     return;
   }
-  if (!cluster) return;
+  // Its status never moves the cluster.
+  if (!cluster || declared) return;
   const move = ticketMove(previousCategory, issue.statusCategory);
   if (!move) return;
   const binding = await bindingFor(cluster.projectId);
@@ -256,21 +274,30 @@ export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?:
   return { refreshed, failed, skipped };
 }
 
+/** One tracker issue as a webhook names it: its stable id, its key, or both. */
+export interface IssueRef {
+  id?: string | null;
+  key?: string | null;
+}
+
 /**
  * Sync a single connection's links to one issue immediately, those of the
- * projects bound to that connection (the webhook and the tests use this).
+ * projects bound to that connection (the webhook and the tests use this). A
+ * link matches on the issue's stable id (`external_id`) or on its key, so a
+ * link pinned by its key before the tracker reported the id is found too.
  */
-export async function refreshLinkByExternalId(
-  db: DbClient,
-  connectionId: number,
-  externalId: string,
-): Promise<boolean> {
+export async function refreshLinksForIssue(db: DbClient, connectionId: number, issue: IssueRef): Promise<boolean> {
+  const matches = [
+    issue.id ? eq(entityLinks.externalId, issue.id) : undefined,
+    issue.key ? eq(entityLinks.key, issue.key) : undefined,
+  ].filter((m) => m !== undefined);
+  if (matches.length === 0) return false;
   const links = await linksOnBoundConnection(
     db,
     await db
       .select()
       .from(entityLinks)
-      .where(and(eq(entityLinks.connectionId, connectionId), eq(entityLinks.externalId, externalId))),
+      .where(and(eq(entityLinks.connectionId, connectionId), or(...matches))),
   );
   if (links.length === 0) return false;
   const tracker = await createTracker(db, connectionId).catch(() => null);

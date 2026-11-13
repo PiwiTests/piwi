@@ -70,15 +70,15 @@ export async function startInstance(dir, { logFile }) {
 }
 
 /**
- * A "CI" run: `origin` cloned into `dir` at `commit` on `main`, the whole suite run headless and reported to the
- * instance. Resolves with the run's exit code once Playwright ends; its output goes to `log`, and its JSON report
- * (`ci-report.json` of the checkout) beside it, as `<log>.json`.
+ * A "CI" run: `origin` cloned into `dir` at `commit` on `main`, the whole suite run headless, with `args` to Playwright,
+ * and reported to the instance. Resolves with the run's exit code once Playwright ends; its output goes to `log`, and
+ * its JSON report (`ci-report.json` of the checkout) beside it, as `<log>.json`.
  */
-export function startCiRun({ origin, dir, commit, instance, log, extraEnv = {} }) {
+export function startCiRun({ origin, dir, commit, instance, log, extraEnv = {}, args = [] }) {
   fs.rmSync(dir, { recursive: true, force: true });
   checkout(origin, dir);
   at(dir, commit);
-  const child = spawn('npx', ['playwright', 'test'], {
+  const child = spawn('npx', ['playwright', 'test', ...args], {
     cwd: dir,
     env: {
       ...process.env,

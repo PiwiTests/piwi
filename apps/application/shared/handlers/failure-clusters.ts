@@ -18,7 +18,7 @@ import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { ClusterLatestHeadline, OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { appendedTriageNote, splitFailureCluster } from './failure-cluster-ops';
-import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
+import { clusterIssueChips, clusterIssueFilings, clusterKnownIssues } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
@@ -1044,7 +1044,7 @@ export async function getOpenFailureClusters(
     ...new Set(clusters.flatMap((c) => [c.lastSeenRunId, c.firstSeenRunId]).filter((id) => id != null)),
   ];
 
-  const [projectRows, counts, seenRuns, ownerRows, linkRows, regressionRows, mergeRows, localOnlyRows] =
+  const [projectRows, counts, seenRuns, ownerRows, issueChips, regressionRows, mergeRows, localOnlyRows] =
     await Promise.all([
       db
         .select({ id: projects.id, name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
@@ -1087,17 +1087,7 @@ export async function getOpenFailureClusters(
         .where(inArray(testRunsCases.failureClusterId, clusterIds))
         .groupBy(testRunsCases.failureClusterId, testCases.id, testCases.filePath, testCases.owner),
 
-      db
-        .select({
-          clusterId: entityLinks.failureClusterId,
-          url: entityLinks.url,
-          provider: entityLinks.provider,
-          key: entityLinks.key,
-          connectionId: entityLinks.connectionId,
-        })
-        .from(entityLinks)
-        .where(inArray(entityLinks.failureClusterId, clusterIds))
-        .orderBy(desc(entityLinks.id)),
+      clusterIssueChips(db, clusterIds),
 
       // Clusters that ever regressed (passed in baseline, then failed) and on which
       // branch — paired below with the cluster's last-seen branch to decide whether
@@ -1181,20 +1171,6 @@ export async function getOpenFailureClusters(
     const list = caseIdsByCluster.get(row.clusterId) ?? [];
     list.push(row.testCaseId);
     caseIdsByCluster.set(row.clusterId, list);
-  }
-
-  // Newest known-issue link wins (rows come back id-descending).
-  const issueByCluster = new Map<number, { url: string; provider: string; key: string | null }>();
-  // A cluster "has a ticket" when a tracker link (Jira, or any link that carries
-  // a connection) has a key — that is what excludes it from the needs-ticket queue.
-  const hasKnownIssueByCluster = new Set<number>();
-  for (const row of linkRows as any[]) {
-    if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
-      issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
-    }
-    if (row.clusterId != null && isTrackerLink(row)) {
-      hasKnownIssueByCluster.add(row.clusterId);
-    }
   }
 
   // The needs-ticket age threshold per project, from each binding (default 2 days).
@@ -1288,12 +1264,12 @@ export async function getOpenFailureClusters(
       lastSeenRunStatus: run?.status ?? null,
       owner: rep?.owner ? { name: rep.owner, source: 'annotation' } : null,
       assignee: c.assignee ?? null,
-      issueLink: issueByCluster.get(c.id) ?? null,
+      issueLink: issueChips.get(c.id)?.issueLink ?? null,
       topClue: clusterClue(c),
       fixVerification: c.fixVerification ?? null,
       regressionOnDefault,
       onDefaultBranch: effectiveDefault != null && run?.branch === effectiveDefault,
-      hasKnownIssue: hasKnownIssueByCluster.has(c.id),
+      hasKnownIssue: issueChips.get(c.id)?.tracked ?? false,
       needsTicketAfterDays: needsTicketDaysByProject.get(c.projectId) ?? DEFAULT_NEEDS_TICKET_AFTER_DAYS,
       quarantinedCount,
       quarantineReadyCount,

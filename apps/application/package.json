@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/dashboard",
-  "version": "0.67.0",
+  "version": "0.69.0",
   "private": true,
   "type": "module",
   "imports": {
@@ -66,6 +66,7 @@
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@piwitests/picker-dom": "*",
+    "@piwitests/run-model": "*",
     "@piwitests/run-ui": "*",
     "@tanstack/vue-table": "^8.21.3",
     "@vite-pwa/nuxt": "^1.1.1",

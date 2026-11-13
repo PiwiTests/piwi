@@ -40,6 +40,8 @@ vi.stubGlobal('apiError', apiError);
 
 /** Every request sent out, to a Jira site or an avatar host, as `host/path`. */
 const sent: string[] = [];
+/** The query of every search for assignable people sent out. */
+const assignableSearches: URLSearchParams[] = [];
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 vi.stubGlobal(
@@ -60,6 +62,19 @@ vi.stubGlobal(
           fields: [{ fieldId: 'summary', name: 'Summary', required: true, schema: { type: 'string' } }],
         });
       case '/rest/api/3/user/assignable/search':
+        assignableSearches.push(url.searchParams);
+        // The LOCKED project stands for an account that may not browse users; SLOW for a Jira that never answers in
+        // time, OFFLINE for one this server cannot reach, BROKEN for a fault that is not about Jira at all.
+        switch (url.searchParams.get('project')) {
+          case 'LOCKED':
+            return json({ errorMessages: ['You do not have permission to browse users'] }, 403);
+          case 'SLOW':
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+          case 'OFFLINE':
+            throw new TypeError('fetch failed');
+          case 'BROKEN':
+            throw new RangeError('not about Jira');
+        }
         return json([{ accountId: `${site}-1`, displayName: `${site} person` }]);
       case '/rest/api/3/issue/picker':
         return json({ sections: [{ id: 'cs', issues: [{ key: 'PAY-1', summaryText: `${site} card declined` }] }] });
@@ -162,6 +177,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   sent.length = 0;
+  assignableSearches.length = 0;
   for (const cache of Object.values(pickerCaches)) cache.deleteWhere(() => true);
 });
 
@@ -254,5 +270,104 @@ describe('the routes that read a tracker through a connection', () => {
       }
     }
     expect(sent).toContain('spare.atlassian.net/rest/api/3/project/search');
+  });
+});
+
+describe('the search for assignable people', () => {
+  const search = (query: Record<string, string>) => ROUTES.assignable.call(request({}, query)(billingJira));
+
+  const failure = async (query: Record<string, string>) =>
+    (await search(query).then(
+      () => null,
+      (e: unknown) => e,
+    )) as { statusCode: number; message: string; data: Record<string, unknown> } | null;
+
+  test("answers a tracker's refusal with a 502 that carries the tracker's status, and repeats it for 30 seconds", async () => {
+    state.caller = sam;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const error = await failure({ project: 'LOCKED', q: '' });
+        expect(error?.statusCode).toBe(502);
+        expect(error?.message).toContain('403');
+        expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+      }
+      expect(assignableSearches).toHaveLength(1);
+      vi.advanceTimersByTime(31 * 1000);
+      expect((await failure({ project: 'LOCKED', q: '' }))?.statusCode).toBe(502);
+      expect(assignableSearches).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('answers every search of a refused project from the one refusal, and a lookup apart from it', async () => {
+    state.caller = sam;
+    const first = await failure({ project: 'LOCKED', q: 'al' });
+    expect(first?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+    for (const q of ['ali', '']) {
+      const error = await failure({ project: 'LOCKED', q });
+      expect(error?.statusCode).toBe(502);
+      expect(error?.message).toBe(first?.message);
+      expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+    }
+    expect(assignableSearches).toHaveLength(1);
+    expect((await failure({ project: 'LOCKED', accountId: 'billing-1' }))?.statusCode).toBe(502);
+    expect(assignableSearches).toHaveLength(2);
+    expect(assignableSearches[1]!.get('accountId')).toBe('billing-1');
+  });
+
+  test.each([
+    ['times out', 'SLOW'],
+    ['cannot reach Jira', 'OFFLINE'],
+  ])('answers a search that %s with a 502 without a tracker status', async (_, project) => {
+    state.caller = sam;
+    const error = await failure({ project, q: '' });
+    expect(error?.statusCode).toBe(502);
+    expect(error?.message).toBe('Jira did not answer the search for assignable people.');
+    expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: null });
+  });
+
+  test('lets any other fault through as it is', async () => {
+    state.caller = sam;
+    const error = await failure({ project: 'BROKEN', q: '' });
+    expect(error).toBeInstanceOf(RangeError);
+  });
+
+  test('trims the words and cuts them at 200 characters', async () => {
+    state.caller = sam;
+    await search({ project: 'PAY', q: `  ${'a'.repeat(250)}  ` });
+    await search({ project: 'PAY', q: 'a'.repeat(200) });
+    expect(assignableSearches.map((params) => params.get('query'))).toEqual(['a'.repeat(200)]);
+  });
+
+  test('caches an answer for the same words', async () => {
+    state.caller = sam;
+    await search({ project: 'PAY', q: 'bil' });
+    await search({ project: 'PAY', q: 'bil' });
+    await search({ project: 'PAY', q: 'bill' });
+    expect(assignableSearches.map((params) => params.get('query'))).toEqual(['bil', 'bill']);
+  });
+
+  test('looks up the one account an id names, apart from any search', async () => {
+    state.caller = sam;
+    await search({ project: 'PAY', q: '' });
+    expect(await search({ project: 'PAY', q: 'ignored', accountId: ' billing-1 ' })).toMatchObject({
+      users: [{ id: 'billing-1', displayName: 'billing person' }],
+    });
+    await search({ project: 'PAY', q: 'other', accountId: 'billing-1' });
+    expect(assignableSearches).toHaveLength(2);
+    const lookup = assignableSearches[1]!;
+    expect(lookup.get('accountId')).toBe('billing-1');
+    expect(lookup.has('query')).toBe(false);
+  });
+
+  test('refuses an account id longer than any Jira account id, before any call', async () => {
+    state.caller = sam;
+    expect(await refusal(search({ project: 'PAY', accountId: 'x'.repeat(129) }))).toEqual({
+      statusCode: 400,
+      message: 'accountId is too long',
+    });
+    expect(sent).toEqual([]);
   });
 });

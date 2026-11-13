@@ -42,6 +42,11 @@ why the snippet creates `.data` with the right owner; see
 [Permission issues with volumes](/operate/deployment#permission-issues-with-volumes) if the container cannot write to
 it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
+The desktop app installs from the latest release. [Piwi Runner](/features/piwi-runner), below it, is not a dashboard:
+it runs the tests a team instance asks for, on a machine without the desktop app, which takes the same requests.
+
+<DownloadApps />
+
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
 token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 
@@ -125,7 +130,10 @@ reaches it, not `localhost`.
 
 The home page and a project's page leave out partial runs (a run of a few files) until you change their **Filters**,
 and a project's page leaves out branches other than the default one too. The **Filters** block counts the runs it
-hides, with **Include partial runs** and **Show all branches** to bring them back.
+hides, with **Include partial runs** and **Show all branches** to bring them back. Your own runs from outside CI (with
+sign-in off, every run that did not come from CI) stay listed whatever these two filters say, marked with what they
+would have hidden ("Yours · partial run", "Yours · feature/x"), and not counted among the hidden runs; the charts and
+pass rates still follow the filters.
 
 In CI nothing Piwi-specific is needed: the same reporter runs inside `npx playwright test`, pointed at your instance
 with `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`. [CI & sharding](./ci) has the pipeline examples.

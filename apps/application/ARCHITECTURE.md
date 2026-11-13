@@ -56,7 +56,10 @@ types/        Front-end API response types (`api.ts`)
   (environments, branches, the branch policy, full runs only), the scope's query keys (the analytics ones, so an
   analytics drill-down address is a scope too) and the in-browser matcher (`runInProjectScope`).
   `shared/handlers/project-run-scope.ts` turns a scope into the SQL conditions (`projectRunScopeConditions`) that every
-  project tab's handler adds.
+  project tab's handler adds. A runs list (the project page's, Home's recent activity) also shows the viewer's own runs
+  the partial-run and branch filters leave out: `shared/own-runs.ts` decides which runs are a person's (from
+  `test_runs.reporter_id` and `requester_id`), the list answers `mine`, and `app/utils/own-run-mark.ts` lists and
+  marks them ("Yours · partial run").
 - **`@piwitests/core`** (`packages/core/`) is a private package with **zero dependencies**, safe to run in the browser,
   a service worker or the server. It holds the pure logic the app shares with the reporter, Piwi Picker (the browser
   extension) and the editor service: locators (generation and scoring, ARIA role resolution, element-fingerprint
@@ -95,7 +98,7 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 | Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
 | Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
 | Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
-| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                                     |
+| Integrations         | `integration_connections`, `project_integrations`, `project_test_management`, `test_management_cases`, `test_management_catalog_reads`, `integration_actions`                                                |
 | Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                                          |
 | Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                                   |
 | Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                                           |
@@ -183,16 +186,34 @@ Each entry names folders under `server/api/`.
     or trace).
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
-    `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
+    `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`. The same bus keeps
+    each lane of a live run (`shared/live-lanes.ts`, through `@piwitests/core/live-lane`'s reducer) from the events
+    published for it and publishes it as a `lane` event as it changes, which `[id]/stream` replays in its catch-up and
+    the demo's bus mirrors: the run page reads its lanes' states, tests and stops from them, never working them out.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
-    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
-    worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
-    may open the run) and `[id]/live-view/workers` (its workers and how many views are open, which `LanePanel` reads to
-    say why a view did not open). All of it is relayed in memory by
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`, a frame as a live message or, from an
+    older reporter, as JSON), `[id]/live-view/watch` (a page's one watch of the run, `GET`, to a person who may open
+    it: a stream of live messages carrying one worker's full view, of its test or of its lane, which follows the
+    lane's tests and the worker started in it again, and every worker's tile for **Watch all**; `POST` changes what it
+    shows by the id it opened with), `[id]/live-view/watch/[watch]/snapshot` (**Inspect**: the page of a worker at
+    one of its calls, rendered from the DOM snapshot the worker sent while a watch had Inspect open, by
+    `dom-snapshot-render.ts` and the asset inlining of `dom-snapshot.ts`, kept in memory by
+    `server/utils/live-inspect.ts`, and served as the stored trace's snapshot frame is, by `dom-snapshot-frame.ts`;
+    `LaneInspect` shows it in the lane panel, from the source `teamInspectSource` names) and `[id]/live-view/workers` (its workers and how many watches are open,
+    which `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
+    (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
+    attention** moves the lane panel by `app/utils/live-attention.ts`, from the rows and the `lane` events. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key and stores its digest with the run
     (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
+    `[id]/live-view/ask` is **Ask to watch**: a signed-in reader asks the developer of a run nobody shares to share
+    it. The asks wait in memory (`server/utils/live-asks.ts`) until the answer of the run's next `events`,
+    `heartbeat` or `live-resources` request hands one over (`ask`); the reporter sends the developer's Not now back
+    (`askAnswer`), a worker that streams answers them as shared, and the person who asked hears each change on the
+    run's `[id]/stream` (`live-ask`), which also tells each viewer whether they may ask (`live-view`). A worker's
+    stream that names the run it continues (`after`) links that run to it (`test_runs.continued_in_id`,
+    `server/utils/run-continuation.ts`), whose page follows (`continued`, and `run-continued` on `/api/stream`).
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
@@ -266,12 +287,37 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands and each worker's Watch live,
-  `DesktopRunSession`, `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live
-  view (with the Runs window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live,
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
+  lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
+  given back by `DesktopRunWorker`), and
+  a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
+  does, else through the shell (`desktop-run-hub.client.ts`, `desktopShellIdOf`);
+  `DesktopRunSession`, `DesktopRunWorker`, `DesktopRunStopPage` and `DesktopRunLaneView` show each worker as Piwi
+  Picker's Runs window does, from the run model they share (`@piwitests/run-model`: a worker's status and tab, its
+  controls, who is present and drives a stop, which frame is the page now, the live view's input, Pause all and
+  Resume all, and their English words, `desktopSay`, with the model's icons mapped once in `DESKTOP_RUN_ICONS`): its
+  test, a status card in its tone, its controls, and its page in a card (`DesktopRunPageCard`, who drives the stop at
+  its foot, `DesktopRunDriver`). A run of several workers shows one at a time behind its worker tabs, which
+  `useDesktopRunHub` follows by run as it hears it (`desktopTabsAfter`, `shownLaneOf`; `chooseTab`, `advanceTab`), the
+  workers not shown kept drawn and hidden. A watched lane's **Inspect** (`DesktopRunLaneInspect`, the run page's
+  `LaneInspect` from the source `desktopInspectSource` names) is read by the server from the test's own trace, whose
+  checked file the lane's worker names to it alone (`RunSessions.laneTrace`), into the run page's store and renderer
+  (`server/utils/desktop-inspect.ts`, `RunInspect` in the app's words) while a view of it shows and the window is not
+  hidden: the window hears each page's call on its stream (`inspect`), lists them each time it opens it
+  (`runs/inspect/calls`), keeps them in the order the pages were taken on the attempt the stream follows
+  (`useDesktopLaneInspects`: `hearDesktopInspect`, `hearDesktopCalls`), and reads each page rendered
+  (`runs/inspect/page`). The layer's lane view opens and closes it, and shows the view the app gives it
+  (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
+  `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
-  tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
-  `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run
+  tray or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). A run's state and count
+  come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
+  (`plugins/desktop-local-runs.client.ts`: `keepForReload`, `takeBackAfterReload` and the shell's
+  `desktop_local_runs`). The live view (`useDesktopRunHub`, the `DesktopRun*`
+  components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
+  window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
+  layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run
   page, a running row of a run the shell started offers Pause and watch (`TestRowDesktopWorker`), its worker found
   among the live runs that report the run (`useDesktopRunSessions`, `desktopSessionsOfRun`, `desktopRowWorker`).
   Agents reach the same runs through `/mcp` (the run tools, below).
@@ -416,6 +462,7 @@ Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTask
 | Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
 | Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
 | Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
 | Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
 
 ### Code the server and the demo share
@@ -598,8 +645,8 @@ rule):
   - `CoverageSourceView`: a source file with the lines a coverage ran and the executable lines it did not, the
     functions that ran linked above it, and an optional per-line annotation column; without the source, the line
     numbers alone.
-  - `LocatorCode`: a locator expression, syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`.
-  - `ErrorText`: error text with its ANSI colors rendered, as a one-line `line` preview for lists and cells, or the
+  - `LocatorCode` (from the layer): a locator expression, syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`.
+  - `ErrorText` (from the layer): error text with its ANSI colors rendered, as a one-line `line` preview for lists and cells, or the
     full `block`.
   - `DeferredTooltip`: a `UTooltip` built when the pointer first enters, for a tooltip repeated on every row of a
     list.
@@ -620,7 +667,8 @@ rule):
   `EnvManagedAlert`.
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
-    `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+    `RunLiveProgress` (a running run's row in a runs list: its count bar and "120 of 400 · 2 failed"), `TagBadge` /
+    `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
   - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
     picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
@@ -645,8 +693,9 @@ rule):
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
   `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
-- **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
-  the browser tab's favicon and title).
+- **Run streaming**: `useRunStream`, `useNotificationStream`, `useLiveRunProgress` (a runs list's running rows moved
+  on by the `run-progress` tallies of `/api/stream`, throttled per run on the server, with no read of the list), and
+  `useTabRunIndicator` (a watched run's progress on the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
 - **Timeline**: `useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline` (an execution's failure timeline
   under one key, for its Timeline and Network tabs).
@@ -694,8 +743,9 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
   dashboard layout, and answers with the API's 404 or 403.
 - `route-query.ts`: `replaceQuery`. Query changes made in the same tick (a tab switch and the list the tab mounts) add
   up, instead of the last one dropping the others.
-- `status-palette.ts`: `STATUS_PALETTE` / `statusPalette`, the test outcome colors every bar, chart, history cell,
-  timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`.
+- `STATUS_PALETTE` / `statusPalette` (`@piwitests/run-ui/status-palette`, the layer's): the test outcome colors every
+  bar, chart, history cell, timeline bar and filter chip uses, backed by the `--color-status-*` tokens of the layer's
+  `run-ui.css`, which `assets/css/main.css` imports.
 - `pass-rate.ts`: the one set of thresholds and the one color scale for every colored pass rate, heatmap cells
   included.
 - `duration-tone.ts`: the one tone for a timeline duration that stands out in its test. The rule is in

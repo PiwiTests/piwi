@@ -4,21 +4,31 @@
  * `fixme`) is what tells them apart. A `fixme` skip is counted as a subset of
  * skipped, the way a pass on retry (flaky) is a subset of passed, so the
  * skipped counters stay as they are and `fixme` is carved out for display.
+ *
+ * A test ended at a stop (End the test) is skipped too, its `skip` annotation
+ * reading `ENDED_AT_STOP_REASON`: a mark on the result, never a status of its
+ * own, so it counts as skipped everywhere and only reads "Ended at a stop".
  */
 import { sql, type SQL } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
+import { endedAtStopIn } from '@piwitests/core/run-channel';
 
 /** The annotation type `test.fixme()` adds to a test. */
 export const FIXME_ANNOTATION = 'fixme';
 
 interface AnnotatedCase {
   status: string;
-  testAnnotations?: ReadonlyArray<{ type: string }> | null;
+  testAnnotations?: ReadonlyArray<{ type: string; description?: string | null }> | null;
 }
 
 /** Whether a case was skipped by `test.fixme()` rather than `test.skip()`. */
 export function isFixmeSkip(tc: AnnotatedCase): boolean {
   return tc.status === 'skipped' && (tc.testAnnotations ?? []).some((a) => a.type === FIXME_ANNOTATION);
+}
+
+/** Whether a case was ended at a stop (End the test): skipped, its `skip` annotation giving Piwi's reason. */
+export function isEndedAtStop(tc: AnnotatedCase): boolean {
+  return tc.status === 'skipped' && endedAtStopIn(tc.testAnnotations);
 }
 
 /**

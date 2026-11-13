@@ -25,6 +25,25 @@ function vlq(n: number): string {
   return out;
 }
 
+/** A map into one source from each generated line's segments, as `[column, original line]` pairs. */
+function mapOf(lines: Array<Array<[number, number]>>) {
+  let previousLine = 0;
+  const mappings = lines
+    .map((segments) => {
+      let previousColumn = 0;
+      return segments
+        .map(([column, line]) => {
+          const segment = `${vlq(column - previousColumn)}A${vlq(line - previousLine)}A`;
+          previousColumn = column;
+          previousLine = line;
+          return segment;
+        })
+        .join(',');
+    })
+    .join(';');
+  return decodeSourceMap({ version: 3, sources: ['/src/components/Pay.vue'], mappings })!;
+}
+
 describe('reachedFunctionLines', () => {
   const source = 'function pay() {\n  done();\n}\nfunction idle() {}\npay();\n';
   const entry: JsCoverageEntry = {
@@ -304,6 +323,159 @@ describe('block coverage at line granularity', () => {
           ],
         },
       ],
+    ]);
+  });
+
+  test('through a map, a segment over a line’s indentation counts for no line', () => {
+    // Each line maps to itself at its code, and, as Rollup and esbuild map them, an indented line's column 0 maps to
+    // the line before it: the `return` line's indentation, which ran, to the `}` closing the block that did not.
+    const indent = (line: string) => line.length - line.trimStart().length;
+    const lines = source.split('\n').slice(0, 8);
+    const map = mapOf(
+      lines.map((text, i): Array<[number, number]> =>
+        indent(text) > 0
+          ? [
+              [0, i - 1],
+              [indent(text), i],
+            ]
+          : [[0, i]],
+      ),
+    );
+    const expected = [
+      [
+        0,
+        {
+          executable: [[1, 8]],
+          lines: [
+            [1, 2],
+            [5, 6],
+            [8, 8],
+          ],
+        },
+      ],
+    ];
+    expect([...scriptLines(entry, executedOffsets(entry.functions), map)]).toEqual(expected);
+    // A text read with the map stands for the source.
+    expect([
+      ...scriptLines(
+        { ...entry, source: undefined },
+        executedOffsets(entry.functions),
+        map,
+        scriptText(source, { map }),
+      ),
+    ]).toEqual(expected);
+  });
+
+  test('through a map, a line of closing punctuation ran when its first segment did', () => {
+    // `},` ends `idle`, which did not run, and the `,` after it belongs to the object around it, which did.
+    const object = 'const api = {\n  run() {\n    return 1;\n  },\n  idle() {\n    return 2;\n  },\n};\napi.run();\n';
+    const find = (text: string, from = 0) => object.indexOf(text, from);
+    const methods: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/api.js',
+      source: object,
+      functions: [
+        { functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: object.length, count: 1 }] },
+        {
+          functionName: 'run',
+          isBlockCoverage: true,
+          ranges: [{ startOffset: find('run()'), endOffset: find('},', find('run()')) + 1, count: 1 }],
+        },
+        {
+          functionName: 'idle',
+          isBlockCoverage: true,
+          ranges: [{ startOffset: find('idle()'), endOffset: find('},', find('idle()')) + 1, count: 0 }],
+        },
+      ],
+    };
+    const segments: Array<Array<[number, number]>> = object
+      .split('\n')
+      .slice(0, 9)
+      .map((text, i) => {
+        const at = text.length - text.trimStart().length;
+        return text.trim() === '},'
+          ? [
+              [at, i],
+              [at + 1, i],
+            ]
+          : [[at, i]];
+      });
+    expect([...scriptLines(methods, executedOffsets(methods.functions), mapOf(segments))]).toEqual([
+      [
+        0,
+        {
+          executable: [[1, 9]],
+          lines: [
+            [1, 4],
+            [8, 9],
+          ],
+        },
+      ],
+    ]);
+  });
+
+  test('through a map, `} else {` ran with the branch its `}` closes', () => {
+    // One segment per token, as magic-string and Rollup map them: the `}` ends the branch that ran, `else` and `{`
+    // start the one that did not.
+    const branches = 'function pick(ok) {\n  if (ok) {\n    a();\n  } else {\n    b();\n  }\n}\npick(true);\n';
+    const find = (text: string, from = 0) => branches.indexOf(text, from);
+    const picked: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/pick.js',
+      source: branches,
+      functions: [
+        { functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: branches.length, count: 1 }] },
+        {
+          functionName: 'pick',
+          isBlockCoverage: true,
+          ranges: [
+            { startOffset: 0, endOffset: find('}\npick') + 1, count: 1 },
+            { startOffset: find(' else'), endOffset: find('}', find('b()')) + 1, count: 0 },
+          ],
+        },
+      ],
+    };
+    const segments: Array<Array<[number, number]>> = branches
+      .split('\n')
+      .slice(0, 8)
+      .map((text, i) => {
+        const at = text.length - text.trimStart().length;
+        return text.trim() === '} else {'
+          ? [
+              [at, i],
+              [at + 1, i],
+              [at + 7, i],
+            ]
+          : [[at, i]];
+      });
+    expect([...scriptLines(picked, executedOffsets(picked.functions), mapOf(segments))]).toEqual([
+      [
+        0,
+        {
+          executable: [[1, 8]],
+          lines: [
+            [1, 4],
+            [7, 8],
+          ],
+        },
+      ],
+    ]);
+  });
+
+  test('through a map, segments at one column read the same code', () => {
+    // Two original lines map to the start of the same generated line.
+    const call = 'foo();\n';
+    const once: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/once.js',
+      source: call,
+      functions: [{ functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: 6, count: 1 }] }],
+    };
+    const map = mapOf([
+      [
+        [0, 0],
+        [0, 1],
+      ],
+    ]);
+    expect([...scriptLines(once, executedOffsets(once.functions), map)]).toEqual([
+      [0, { executable: [[1, 2]], lines: [[1, 2]] }],
     ]);
   });
 

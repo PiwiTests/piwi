@@ -10,6 +10,7 @@ import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { showPauseBar } from '@piwitests/picker-dom';
 import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from './coverage-fixtures.js';
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
+import { CI_TESTS, connectTo, startCiInstance } from './ci-instance.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
 import { openShadowRoots } from './shadow.js';
@@ -19,6 +20,7 @@ import type { PiwiSteps } from '@piwitests/core/steps';
 import {
   answerNext,
   pairedExtension,
+  runMain,
   startEditor,
   startRun,
   RUN_TAKES,
@@ -37,7 +39,9 @@ import {
  * are the docs' alone, at their own sizes. `picker-pause` is the docs' too:
  * the reporter's pause bar, at the stores' size, and so is `picker-runs`, the Runs window beside a test stopped there,
  * against the real editor service's hub. `picker-runs-live` is the Runs window alone, at 2×, watching a headless stop
- * live. The harness in
+ * live; `picker-runs-ci` watching a CI run's test from a stand-in instance (`ci-instance.ts`), and
+ * `picker-runs-share-window` while an editor window shares its runs, each also captured 880 pixels wide beside the
+ * test's results. The harness in
  * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
  *
@@ -130,7 +134,12 @@ async function framedOver(
  * Writes `name`: `panel`, a page rendered at 2× whose CSS size is `box`, framed with its shadow on a plain backdrop
  * just larger than it, at 2×: a window of its own with nothing beside it.
  */
-async function framedAlone(panel: Buffer, box: { width: number; height: number }, name: string): Promise<void> {
+async function framedAlone(
+  panel: Buffer,
+  box: { width: number; height: number },
+  name: string,
+  dir = SCREENSHOTS,
+): Promise<void> {
   const margin = 48;
   const { width, height } = { width: Math.round(box.width * 2), height: Math.round(box.height * 2) };
   const canvas = { width: width + margin * 2, height: height + margin * 2 };
@@ -159,7 +168,7 @@ async function framedAlone(panel: Buffer, box: { width: number; height: number }
       { input: framed, left: margin - 2, top: margin - 2 },
     ])
     .png()
-    .toFile(path.join(SCREENSHOTS, `${name}.png`));
+    .toFile(path.join(dir, `${name}.png`));
 }
 
 async function shopPage(context: BrowserContext, query = '?nodialog'): Promise<Page> {
@@ -259,8 +268,13 @@ test('picker-runs', async () => {
     await runs.setViewportSize({ width: 440, height: 700 });
     await runs.goto(`chrome-extension://${extensionId}/runs.html`);
     const run = await startRun(editor, 'pays with a coupon', [...RUN_TAKES]);
+    // The run's own process: its number and page on the instance, and how far it is.
+    const main = runMain(editor, run.channel, run.ref, 9);
     try {
       await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
+      main.send({ type: 'run-page', id: 78, url: 'http://127.0.0.1:7494/test-runs/78' });
+      main.send({ type: 'run-progress', done: 3, failed: 0, flaky: 0, skipped: 0 });
+      await expect(runs.locator('.run-progress')).toHaveText('3 of 9 tests');
       run.worker.send({
         type: 'stopped',
         stop: 1,
@@ -282,10 +296,10 @@ test('picker-runs', async () => {
       await runs.locator('.client').evaluate((client) => (client.textContent = 'Visual Studio Code'));
       await runs.getByRole('button', { name: 'Resume' }).hover();
       await runs.waitForTimeout(300);
-      const body = runs.locator('body');
-      // Below the pause bar, whose buttons answer the same stop.
-      await framedOver(backdrop, await body.screenshot(), (await body.boundingBox())!, 'picker-runs', 64);
+      // The window as it opens, its top: below the pause bar, whose buttons answer the same stop.
+      await framedOver(backdrop, await runs.screenshot(), runs.viewportSize()!, 'picker-runs', 64);
     } finally {
+      main.socket.destroy();
       run.worker.socket.destroy();
     }
   } finally {
@@ -327,10 +341,11 @@ test('picker-runs-live', async ({ context }) => {
         bar: false,
       });
       await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: image, ...STOP_VIEWPORT });
-      await runs.getByRole('button', { name: 'Watch live' }).click();
+      await runs.locator('button[data-focus$="|live"]').click();
       await answerNext(run.worker, 'view', { ok: true, message: 'The live view is on.' });
       run.worker.send({ type: 'frame', stop: 1, ...STOP_VIEWPORT, data: frame });
       await expect(runs.locator('img.live')).toBeVisible();
+      await runs.getByRole('button', { name: 'Interact' }).click();
       await runs.getByRole('button', { name: 'Pick', exact: true }).click();
       await answerNext(run.worker, 'pick', {
         ok: true,
@@ -344,6 +359,117 @@ test('picker-runs-live', async ({ context }) => {
       const body = runs.locator('body');
       await framedAlone(await body.screenshot(), (await body.boundingBox())!, 'picker-runs-live');
     } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await picker.close();
+    await editor.close();
+  }
+});
+
+/**
+ * The Runs window's two widths: the small window it opens in, which the docs show, and a wide one, written beside the
+ * test's results to check the layout.
+ */
+const RUNS_WIDTHS = [
+  { suffix: '', width: 440, docs: true },
+  { suffix: '-wide', width: 880, docs: false },
+] as const;
+
+/** Captures the Runs window's page, framed, at each of its widths, `prepare` run again after each resize. */
+async function runsAtWidths(runs: Page, name: string, height: number, prepare: () => Promise<void>): Promise<void> {
+  for (const { suffix, width, docs } of RUNS_WIDTHS) {
+    await runs.setViewportSize({ width, height });
+    await prepare();
+    await runs.mouse.move(0, 0);
+    await runs.waitForTimeout(300);
+    const body = runs.locator('body');
+    const dir = docs ? SCREENSHOTS : test.info().outputPath();
+    await framedAlone(await body.screenshot(), (await body.boundingBox())!, `${name}${suffix}`, dir);
+  }
+}
+
+// The Runs window watching a CI run's running test, read-only, from a stand-in instance whose watch sends the shop page
+// as a CI worker's live view would.
+test('picker-runs-ci', async ({ context, extensionId }) => {
+  const shop = await shopPage(context);
+  const frame = await shop.screenshot({ type: 'jpeg', quality: 60, scale: 'css' });
+  const instance = await startCiInstance();
+  try {
+    const runs = await context.newPage();
+    await connectTo(runs, extensionId, instance);
+    await runs.setViewportSize({ width: 440, height: 900 });
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    const run = runs.getByRole('region', { name: 'CI run #78' });
+    const second = run.getByRole('listitem').filter({ hasText: CI_TESTS[1]! });
+    await second.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect.poll(() => instance.watches.length).toBe(1);
+    instance.live({
+      type: 'frame',
+      shard: null,
+      worker: 5,
+      slot: 1,
+      image: new Uint8Array(frame),
+      call: { title: "Click getByRole('button', { name: 'Checkout' })" } as never,
+      test: CI_TESTS[1]!,
+    });
+    await expect(run.locator('.ci-view img')).toBeVisible();
+    await runsAtWidths(runs, 'picker-runs-ci', 900, async () => {
+      await expect(run.locator('.ci-view img')).toBeVisible();
+    });
+  } finally {
+    await instance.close();
+  }
+});
+
+// The Runs window while an editor window shares its runs until stopped: the line under the heading, and a run shared
+// as one of them, against the real editor service's hub.
+test('picker-runs-share-window', async () => {
+  const editor = await startEditor();
+  const { context: picker, extensionId } = await pairedExtension(editor, { deviceScaleFactor: 2 });
+  const page = 'https://piwi.example.com/test-runs/78';
+  try {
+    const runs = await picker.newPage();
+    await runs.setViewportSize({ width: 440, height: 640 });
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    const run = await startRun(editor, 'pays with a coupon', [...RUN_TAKES]);
+    const main = runMain(editor, run.channel, run.ref, 9);
+    try {
+      await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
+      main.send({ type: 'run-page', id: 78, url: page });
+      main.send({ type: 'run-progress', done: 3, failed: 0, flaky: 0, skipped: 0 });
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await runs.getByRole('button', { name: 'Share this editor window’s runs' }).click();
+      await runs
+        .getByRole('group', { name: 'Share live' })
+        .getByRole('button', { name: 'Share this editor window’s runs' })
+        .click();
+      await run.worker.next('share');
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+      await expect(runs.getByText('Shared as one of this editor window’s runs, until you stop.')).toBeVisible();
+      // The service under test names itself after its test client: the window shows the editor's name.
+      const named = async () => {
+        await runs.locator('.client').evaluate((client) => (client.textContent = 'Visual Studio Code'));
+        await runs
+          .locator('#hubs p')
+          .evaluateAll((lines) =>
+            lines.forEach(
+              (line) =>
+                line.lastChild &&
+                (line.lastChild.textContent = line.lastChild.textContent!.replace(/^[^:]+:/, 'Visual Studio Code:')),
+            ),
+          );
+      };
+      await runsAtWidths(runs, 'picker-runs-share-window', 640, named);
+      const hubs = runs.locator('#hubs');
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      await hubs
+        .getByRole('group', { name: 'Stop sharing this window’s runs' })
+        .getByRole('button', { name: 'Stop sharing' })
+        .click();
+      await run.worker.next('share', 1);
+    } finally {
+      main.socket.destroy();
       run.worker.socket.destroy();
     }
   } finally {

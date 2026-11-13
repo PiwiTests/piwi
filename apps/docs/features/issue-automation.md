@@ -100,6 +100,13 @@ Each of these is a switch in **Keep the ticket honest**, off by default, and a d
   activity list says so. A rewrite that would change nothing is not sent. Piwi keeps no copy of a share link's token:
   it takes the link from the issue's description, and skips a rewrite that cannot find it there.
 
+## Required fields of a transition
+
+For *transition on fix* and the reopen transition, the binding suggests the transitions an issue offers and asks for
+their required fields, such as a *Resolution*; a move that would leave one empty fails at once, naming it. A requirement
+no screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, which the modal then
+asks for.
+
 ## What an automatic issue says
 
 It opens with why it was filed: *Filed automatically by Piwi after 4 occurrences in 2 runs since Oct 6, 2026. Counted

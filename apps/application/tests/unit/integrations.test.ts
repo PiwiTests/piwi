@@ -79,6 +79,9 @@ describe('JiraClient', () => {
       statusCategory: 'indeterminate',
       statusColor: 'warning',
       assignee: { id: 'u2', displayName: 'Bob', email: 'bob@acme.io' },
+      projectKey: null,
+      issueType: null,
+      issueTypeId: null,
     });
   });
 

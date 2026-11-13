@@ -61,8 +61,8 @@ async function installFakeBridge(page: Page) {
         id: 'gemini-cli',
         label: 'Gemini CLI',
         config_path: '/home/dev/.gemini/settings.json',
-        status: 'not_connected',
-        detail: null,
+        status: 'manual',
+        detail: 'Move Piwi to Applications so assistants can find it',
       },
     ];
     const invocations: { cmd: string; args: Record<string, unknown> | undefined }[] = [];
@@ -117,6 +117,12 @@ test.describe('Desktop MCP client configuration', () => {
     await expect(page.getByTestId('mcp-client-claude-desktop').getByText('Needs update')).toBeVisible();
     await expect(page.getByTestId('mcp-client-vscode').getByText('Manual setup')).toBeVisible();
     await expect(page.getByTestId('mcp-client-windsurf').getByText('Not detected')).toBeVisible();
+
+    // A client the app may not write to says why, and offers no Connect.
+    const gemini = page.getByTestId('mcp-client-gemini-cli');
+    await expect(gemini.getByText('Manual setup')).toBeVisible();
+    await expect(gemini.getByText('Move Piwi to Applications so assistants can find it')).toBeVisible();
+    await expect(gemini.getByRole('button', { name: 'Connect' })).toHaveCount(0);
 
     const claudeCode = page.getByTestId('mcp-client-claude-code');
     await claudeCode.getByRole('button', { name: 'Connect' }).click();

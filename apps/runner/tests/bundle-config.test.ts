@@ -33,10 +33,28 @@ describe("Piwi Runner's merged bundle config", () => {
     expect(desktop.mainBinaryName).toBeUndefined();
   });
 
-  test("drops the desktop app's installer hooks, which read the desktop app's settings", () => {
-    expect(desktop.bundle.windows.nsis.installerHooks).toBeTruthy();
-    expect(runner.bundle.windows.nsis).not.toHaveProperty('installerHooks');
+  test("takes installer hooks of its own, never the desktop app's, which read the desktop app's settings", () => {
+    expect(desktop.bundle.windows.nsis.installerHooks).toBe('windows/installer-hooks.nsh');
+    expect(runner.bundle.windows.nsis.installerHooks).toBe('windows/runner-installer-hooks.nsh');
     expect(runner.bundle.windows.nsis.installMode).toBe('currentUser');
+    const hooks = fs.readFileSync(path.join(shell, runner.bundle.windows.nsis.installerHooks), 'utf8');
+    // It stops the sidecar the config bundles, before the installer and the uninstaller touch a file.
+    const sidecar = path.posix.basename(runner.bundle.externalBin[0]);
+    expect(hooks.split(`PIWI_STOP_SIDECAR "$INSTDIR" "${sidecar}"\n`)).toHaveLength(3);
+    expect(hooks).not.toMatch(/MUI_|PIWI_SAVE_PORT/);
+  });
+
+  test("keeps none of the desktop app's upgrade ties: its MSI upgrade code and the packages it replaces", () => {
+    expect(desktop.bundle.windows.wix.upgradeCode).toBeTruthy();
+    expect(runner.bundle.windows.wix).not.toHaveProperty('upgradeCode');
+    expect(desktop.bundle.linux.deb.replaces).toEqual(['piwi-dashboard']);
+    for (const [format, keys] of [
+      ['deb', ['conflicts', 'replaces']],
+      ['rpm', ['conflicts', 'obsoletes']],
+    ] as const) {
+      expect(desktop.bundle.linux[format]).toMatchObject(Object.fromEntries(keys.map((k) => [k, ['piwi-dashboard']])));
+      for (const key of keys) expect(runner.bundle.linux?.[format] ?? {}).not.toHaveProperty(key);
+    }
   });
 
   test('answers piwi-runner links alone, and the desktop app keeps piwi', () => {
@@ -47,5 +65,53 @@ describe("Piwi Runner's merged bundle config", () => {
   test('bundles the host and no file associations', () => {
     expect(runner.bundle.resources).toEqual(['resources/runner-host']);
     expect(runner.bundle).not.toHaveProperty('fileAssociations');
+  });
+});
+
+describe("Piwi Runner's own files", () => {
+  const libRs = fs.readFileSync(path.join(shell, 'src', 'lib.rs'), 'utf8');
+  const sidecar = /const NODE_SIDECAR: &str = if cfg!\(feature = "runner"\) \{ "([^"]+)" \} else \{ "([^"]+)" \};/.exec(
+    libRs,
+  );
+  const name = (bin: string) => path.posix.basename(bin);
+
+  test('bundles Node under a name of its own, the one the shell spawns', () => {
+    expect(sidecar).not.toBeNull();
+    const [, runnerName, desktopName] = sidecar!;
+    expect(runner.bundle.externalBin.map(name)).toEqual([runnerName]);
+    expect(desktop.bundle.externalBin.map(name)).toEqual([desktopName]);
+    // The Linux packages install each sidecar in /usr/bin, so the two apps' must differ.
+    expect(runnerName).not.toBe(desktopName);
+  });
+
+  test('takes its own icons, in the app and on the installers', () => {
+    const own = (file: string) => file.startsWith('icons-runner/');
+    expect(runner.bundle.icon.length).toBeGreaterThan(0);
+    expect(runner.bundle.icon.every(own)).toBe(true);
+    expect(desktop.bundle.icon.some(own)).toBe(false);
+    expect(own(runner.bundle.windows.nsis.installerIcon)).toBe(true);
+    expect(own(runner.bundle.windows.nsis.uninstallerIcon)).toBe(true);
+  });
+});
+
+describe("Piwi Runner's update channel", () => {
+  const overlay = read('runner.updater.conf.json') as Record<string, any>;
+  const desktopOverlay = read('tauri.updater.conf.json') as Record<string, any>;
+  const updating = merge(runner, overlay) as Record<string, any>;
+
+  test('reads its own manifest, never the desktop app’s', () => {
+    expect(updating.plugins.updater.endpoints).toEqual([
+      'https://github.com/PiwiTests/piwi/releases/latest/download/latest-runner.json',
+    ]);
+  });
+
+  test("checks the signature with the desktop app's public key, which signs both apps' packages", () => {
+    expect(updating.plugins.updater.pubkey).toBe(desktopOverlay.plugins.updater.pubkey);
+    expect(updating.bundle.createUpdaterArtifacts).toBe(true);
+  });
+
+  test('keeps the merged product Runner’s', () => {
+    expect(updating.identifier).toBe('io.piwitests.runner');
+    expect(updating.plugins['deep-link'].desktop.schemes).toEqual(['piwi-runner']);
   });
 });

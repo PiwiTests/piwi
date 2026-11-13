@@ -11,12 +11,14 @@
  */
 import { runAi } from './ai.js';
 import { runBug } from './bug.js';
+import { runMcp } from './mcp.js';
 import { runCodegen } from './codegen.js';
 import { runCoverage } from './coverage.js';
 import { runFlake } from './flake.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
 import { runSelect, runRun } from './select.js';
+import { isPlannedRun, runPlanCommand, runPlannedRun } from './plan.js';
 import { runPreflight } from './preflight.js';
 import { runProbe } from './probe.js';
 import { runQualityReport } from './quality-report.js';
@@ -37,6 +39,7 @@ Commands:
   coverage  Upload a unit-test (or other) coverage report of a commit (coverage upload)
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
+  plan      Plan a run that reuses the passes whose code has not changed (experimental)
   rerun     Run the tests a CI re-run from the dashboard asked for (PIWI_RERUN_ARGS)
   probe     Run the dashboard's probe plan and record what the suite noticed
   flake     Make a flaky test fail on demand under its suspects' conditions, then verify the fix
@@ -44,6 +47,7 @@ Commands:
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
   preflight List the test locators your uncommitted change breaks, and fix them
   bug       Write a bug report's failing test into the project and run it once
+  mcp       Serve the run tools of this machine's editors and desktop app to an agent, over stdio
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
 (The published package is @piwitests/reporter; its command is piwi. Invoke it
@@ -67,7 +71,9 @@ async function main(): Promise<number> {
     case 'select':
       return runSelect(rest);
     case 'run':
-      return runRun(rest);
+      return isPlannedRun(rest) ? runPlannedRun(rest) : runRun(rest);
+    case 'plan':
+      return runPlanCommand(rest);
     case 'rerun':
       return runRerun(rest);
     case 'probe':
@@ -82,6 +88,8 @@ async function main(): Promise<number> {
       return runPreflight(rest);
     case 'bug':
       return runBug(rest);
+    case 'mcp':
+      return runMcp(rest);
     case undefined:
     case '-h':
     case '--help':

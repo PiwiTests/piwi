@@ -1,12 +1,8 @@
-import {
-  DESKTOP_CHALLENGE_HEADER,
-  DESKTOP_PROOF_HEADER,
-  desktopTokenProof,
-  newDesktopChallenge,
-} from '@piwitests/core/desktop-proof';
+import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
 import { liveUrlOf, parseLiveAnswer, type LiveHub } from '@piwitests/core/run-hub';
 import {
   getInstanceApiKey,
@@ -33,7 +29,9 @@ import { t } from './i18n.js';
  * `piwi-get-bug-report`, `piwi-replay-step-view` and `piwi-share-reproduction`,
  * and the desktop app's: `piwi-desktop-repro` once the developer confirmed its
  * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
- * window, `fetchDesktopHubs`) only,
+ * window, `fetchDesktopHubs`; and the CI runs in progress the Runs window lists
+ * while it is open, `fetchActiveRuns`, `fetchRunMetadata` and `openRunStream`, and
+ * the CI lane it watches, `openLiveWatch` and `changeLiveWatch`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -159,6 +157,121 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
   });
   if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
   return listItems<ProjectOption>(await instanceJson(res));
+}
+
+/**
+ * A run in progress as the instance lists it (`GET /api/test-runs/recent`): its project, its branch, what launched it
+ * (`origin`, absent from an older instance) and its counts.
+ */
+export interface ActiveRun {
+  id: number;
+  projectId: number;
+  projectName: string;
+  branch: string | null;
+  status: string;
+  startTime: string;
+  origin?: unknown;
+  totalTests?: unknown;
+  passedTests?: unknown;
+  failedTests?: unknown;
+  skippedTests?: unknown;
+  didNotRunTests?: unknown;
+  flakyTests?: unknown;
+}
+
+const ACTIVE_STATUSES = new Set(['running', 'initializing', 'finalizing']);
+
+/**
+ * The runs in progress of the projects the key may read, as the dashboard's home lists them
+ * (`GET /api/test-runs/recent`, the latest runs that ended left out), for the Runs window's CI runs.
+ */
+export async function fetchActiveRuns(settings: ConnectionSettings): Promise<ActiveRun[]> {
+  if (!settings.instanceUrl.trim()) return [];
+  const headers = await authHeaders(settings);
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/recent`, {
+      headers,
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  return listItems<ActiveRun>(await instanceJson(res)).filter(
+    (run) =>
+      typeof run?.id === 'number' &&
+      typeof run.projectId === 'number' &&
+      typeof run.status === 'string' &&
+      ACTIVE_STATUSES.has(run.status),
+  );
+}
+
+/**
+ * What launched a run, as its details keep it (`GET /api/test-runs/:id`'s `metadata`), for an instance whose list names
+ * no `origin`; null when it names nothing.
+ */
+export async function fetchRunMetadata(settings: ConnectionSettings, runId: number): Promise<unknown> {
+  const headers = await authHeaders(settings);
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}`, {
+      headers,
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  return ((await instanceJson(res)) as { metadata?: unknown } | null)?.metadata ?? null;
+}
+
+/**
+ * One run's event stream (`GET /api/test-runs/:id/stream`), open until `signal` aborts: the Runs window's CI runs read
+ * whether their lanes can be watched and each lane as it stands.
+ */
+export async function openRunStream(
+  settings: ConnectionSettings,
+  runId: number,
+  signal: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/stream`, {
+    headers: { ...headers, Accept: 'text/event-stream' },
+    signal,
+  });
+}
+
+/**
+ * A watch of a live run (`GET /api/test-runs/:id/live-view/watch`), open until `signal` aborts: a CI lane the Runs
+ * window watches, read-only, its live messages read with `@piwitests/core/live-view`'s reader.
+ */
+export async function openLiveWatch(
+  settings: ConnectionSettings,
+  runId: number,
+  query: URLSearchParams,
+  signal: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch?${query}`, {
+    headers: { ...headers, Accept: LIVE_STREAM_TYPE },
+    signal,
+  });
+}
+
+/** Change what a watch of a live run shows (`POST /api/test-runs/:id/live-view/watch`): another lane of the run. */
+export async function changeLiveWatch(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
 }
 
 /**
@@ -696,20 +809,8 @@ async function proveDesktop(desktop: DesktopSettings): Promise<void> {
 }
 
 /** Whether the program at the paired address proved it holds the paired token, did not, or did not answer. */
-async function desktopProof(desktop: DesktopSettings): Promise<'proven' | 'unproven' | 'unreachable'> {
-  const challenge = newDesktopChallenge();
-  let res: Response;
-  try {
-    res = await request(`${desktop.url}/api/health`, {
-      headers: { [DESKTOP_CHALLENGE_HEADER]: challenge },
-      signal: timeout(),
-    });
-  } catch {
-    return 'unreachable';
-  }
-  const proof = res.headers.get(DESKTOP_PROOF_HEADER);
-  const port = Number(new URL(desktop.url).port || 80);
-  return proof && proof === (await desktopTokenProof(desktop.token, port, challenge)) ? 'proven' : 'unproven';
+function desktopProof(desktop: DesktopSettings): Promise<DesktopProof> {
+  return proveDesktopServer(desktop.url, desktop.token, { request, timeoutMs: REQUEST_TIMEOUT_MS });
 }
 
 /** What the paired desktop app answered for the hub of the runs its shell starts, or why it gave none. */

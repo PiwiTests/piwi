@@ -17,12 +17,19 @@ onMounted(() => {
 const active = computed(() => store.runs.value.filter((r) => r.status === 'running'));
 const label = computed(() => `${active.value.length} local run${active.value.length === 1 ? '' : 's'}`);
 
-/** "7/12" across every active run, when Playwright announced totals. */
+const { count } = useDesktopRunBadge();
+
+/**
+ * "7/12" across every active run that knows its tests: as its own process counts them, else as Playwright's output
+ * announced them.
+ */
 const progress = computed(() => {
-  const withTotals = active.value.filter((r) => r.progressTotal);
-  if (withTotals.length === 0) return '';
-  const done = withTotals.reduce((sum, r) => sum + r.progressDone, 0);
-  const total = withTotals.reduce((sum, r) => sum + (r.progressTotal ?? 0), 0);
+  const known = active.value
+    .map((run) => count(run) ?? (run.progressTotal ? { done: run.progressDone, total: run.progressTotal } : null))
+    .filter((known) => known !== null);
+  if (known.length === 0) return '';
+  const done = known.reduce((sum, r) => sum + r.done, 0);
+  const total = known.reduce((sum, r) => sum + r.total, 0);
   return `${done}/${total}`;
 });
 </script>

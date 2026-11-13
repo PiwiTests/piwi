@@ -49,5 +49,6 @@ if (!config.public.demoMode) {
     </NuxtLayout>
 
     <LazyDemoTour v-if="config.public.demoTour" />
+    <ClientOnly><DesktopRunOutputWindows /></ClientOnly>
   </UApp>
 </template>

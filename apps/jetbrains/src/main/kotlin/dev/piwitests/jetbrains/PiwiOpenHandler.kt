@@ -196,11 +196,7 @@ class PiwiOpenHandler : RestService() {
     private fun debugRefusal(project: Project, file: VirtualFile, named: String, spec: Boolean): String? {
         fun canonical(path: String) = runCatching { File(path).canonicalPath }.getOrNull()
         val (roots, configs) = ApplicationManager.getApplication().runReadAction(Computable {
-            val roots = buildList {
-                project.basePath?.let { add(it) }
-                ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
-            }
-            roots to project.service<PiwiProjectService>().playwrightConfigDirs().map { it.toString() }
+            openRoots(project) to project.service<PiwiProjectService>().playwrightConfigDirs().map { it.toString() }
         })
         val real = canonical(file.path) ?: return "$named cannot be read"
         return Glue.debugFileRefusal(named, real, roots.mapNotNull(::canonical), configs.mapNotNull(::canonical), spec)
@@ -233,16 +229,7 @@ class PiwiOpenHandler : RestService() {
      * absolute path. Wherever it was found, it must be inside the project.
      */
     private fun locate(project: Project, path: String, root: String?): VirtualFile? {
-        val service = project.service<PiwiProjectService>()
-        val roots = ApplicationManager.getApplication().runReadAction(Computable {
-            buildList {
-                service.status?.contexts.orEmpty().mapNotNullTo(this) { it.root }
-                service.playwrightConfigDirs().mapTo(this) { it.toString() }
-                service.searchRoots().mapTo(this) { it.toString() }
-                project.basePath?.let { add(it) }
-                ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
-            }
-        })
+        val roots = ApplicationManager.getApplication().runReadAction(Computable { openRoots(project) })
         for (candidate in Glue.candidatePaths(path, listOfNotNull(root) + roots)) {
             val io = File(candidate)
             if (!io.isFile) continue
@@ -254,6 +241,18 @@ class PiwiOpenHandler : RestService() {
             if (inProject) return file
         }
         return null
+    }
+
+    /** The project's folders a file is found in, for opening and for a debug request alike ([Glue.openRoots]); in a read action. */
+    private fun openRoots(project: Project): List<String> {
+        val service = project.service<PiwiProjectService>()
+        return Glue.openRoots(
+            contextRoots = service.status?.contexts.orEmpty().mapNotNull { it.root },
+            configDirs = service.playwrightConfigDirs().map { it.toString() },
+            searchRoots = service.searchRoots().map { it.toString() },
+            basePath = project.basePath,
+            contentRoots = ProjectRootManager.getInstance(project).contentRoots.map { it.path },
+        )
     }
 
     private fun open(project: Project, file: VirtualFile, line: Int?, column: Int?) {

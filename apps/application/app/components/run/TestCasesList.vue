@@ -10,7 +10,7 @@ import type { LiveRowNote } from '~/utils/live-row-note';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
-import { compareWorkers } from '#shared/worker-lane';
+import { compareWorkers, workerNumber } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
@@ -21,8 +21,10 @@ import {
   compileTestSearch,
   parseTestSearch,
   testSearchHighlights,
+  type TestSearchState,
   type TestSearchSubject,
 } from '#shared/test-search';
+import { isStuckAttempt } from '~/utils/test-attempts';
 import {
   compareFileOrder,
   compareRunOrder,
@@ -155,6 +157,7 @@ const searchHighlights = computed(() =>
 // What search, sort and grouping read from an execution, built once per row
 // object (a live row is replaced by a new object when it changes).
 const subjectCache = new WeakMap<TestCaseResult, TestSearchSubject>();
+const STUCK_STATES: readonly TestSearchState[] = ['stuck'];
 function searchSubject(tc: TestCaseResult): TestSearchSubject {
   let subject = subjectCache.get(tc);
   if (!subject) {
@@ -170,6 +173,9 @@ function searchSubject(tc: TestCaseResult): TestSearchSubject {
       priority: tc.testMeta?.priority ?? null,
       feature: tc.testMeta?.feature ?? null,
       externalId: tc.externalId ?? null,
+      states: isStuckAttempt(tc) ? STUCK_STATES : null,
+      worker: workerNumber(tc.parallelIndex),
+      shard: tc.shardIndex ?? null,
     };
     subjectCache.set(tc, subject);
   }

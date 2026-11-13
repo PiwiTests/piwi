@@ -3,7 +3,7 @@
  * drawn outside the Vue app: quality reports, offline exports, emails, PDFs.
  *
  * The dashboard paints through the `--color-status-*` tokens of
- * `app/assets/css/main.css`; `app/utils/status-palette.ts` and
+ * `packages/run-ui/app/assets/css/run-ui.css`; `@piwitests/run-ui/status-palette` and
  * `app/utils/pass-rate.ts` add the Tailwind utilities on top and read the
  * thresholds and steps from here. `tests/unit/status-colors.test.ts` pins the
  * tokens to the `token` names below, so a document, an email and the page

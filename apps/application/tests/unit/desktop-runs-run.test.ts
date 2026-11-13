@@ -6,10 +6,14 @@
  * a failure is held at its line while the window shows the run. Then the window alone steers a run: it pauses it,
  * watches its live view, picks on its image, the locator coming to it to copy, mocks a request the page made, the code
  * coming to it to copy, and clicks the page through the view. Then the window watches a worker's lane as its test
- * runs, pauses it and clicks the page through the lane at the stop. Then an agent steers a run through the run tools
- * `/mcp` serves: it pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into
- * code, which comes to the window to copy and back to the agent. Headless, as the shell runs a reproduction. Skipped
- * when the reporter is not built (`npm run reporter:build`) or Chromium is not installed.
+ * runs, pauses it and clicks the page through the lane at the stop. Then the window inspects a traced test's lane as it
+ * runs: its pages come from the test's own trace, read by the server, the window hearing their calls and reading them
+ * rendered, and none of it is kept past the test. Then an agent steers a run through the run tools `/mcp` serves: it
+ * pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into code, which comes to
+ * the window to copy and back to the agent. Then a run started in a terminal in the linked folder, which the app's
+ * discovery file names the server's run channel to, follows the app: listed as a terminal's run, with no Stop, it is
+ * paused and clicked through its view. Headless, as the shell runs a reproduction. Skipped when the reporter is not
+ * built (`npm run reporter:build`) or Chromium is not installed.
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -93,6 +97,22 @@ test('fails at its line', async ({ page }) => {
 });
 `;
 
+/** A test the window inspects as it runs: it clicks Go, then waits until the window read its pages. */
+const INSPECT_SPEC = (base: string) => `const fs = require('node:fs');
+const path = require('node:path');
+const { test, expect } = require('../fixture.cjs');
+test('inspected as it runs', async ({ page }) => {
+  await page.goto('${base}');
+  await page.getByRole('button', { name: 'Go' }).click();
+  await expect(page.locator('h1')).toHaveText('Clicked');
+  for (let i = 0; i < 800; i++) {
+    if (fs.existsSync(path.join(__dirname, '..', 'inspected'))) return;
+    await page.waitForTimeout(25);
+  }
+  throw new Error('never inspected');
+});
+`;
+
 const RESULTS_REPORTER = `const fs = require('node:fs');
 module.exports = class {
   constructor(options) { this.file = options.outputFile; this.tests = []; }
@@ -154,6 +174,7 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(project, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(project, 'tests', 'shop.spec.cjs'), SPEC(base));
   fs.writeFileSync(path.join(project, 'tests', 'window.spec.cjs'), WINDOW_SPEC(base));
+  fs.writeFileSync(path.join(project, 'tests', 'inspect.spec.cjs'), INSPECT_SPEC(base));
   fs.writeFileSync(
     path.join(project, 'tests', 'agent.spec.cjs'),
     WINDOW_SPEC(base).replace('steered from the window', 'steered by an agent'),
@@ -161,6 +182,16 @@ beforeAll(async () => {
   fs.writeFileSync(
     path.join(project, 'tests', 'lane.spec.cjs'),
     WINDOW_SPEC(base).replace('steered from the window', 'watched as it runs'),
+  );
+  fs.writeFileSync(
+    path.join(project, 'tests', 'terminal.spec.cjs'),
+    WINDOW_SPEC(base).replace('steered from the window', 'started in a terminal'),
+  );
+  // A run started in a terminal finds its hub from Piwi's reporter, which a config wrapped by `wrapConfig` has.
+  fs.writeFileSync(
+    path.join(project, 'playwright.terminal.config.cjs'),
+    `module.exports = { ...require('./playwright.config.cjs'), reporter: [[${JSON.stringify(reporter)}, {}]] };
+`,
   );
   fs.writeFileSync(
     path.join(project, 'fixture.cjs'),
@@ -171,6 +202,13 @@ exports.expect = expect;
 `,
   );
   fs.writeFileSync(path.join(project, 'results-reporter.cjs'), RESULTS_REPORTER);
+  // The runner traces each test: Inspect reads its trace as it grows.
+  fs.writeFileSync(
+    path.join(project, 'playwright.traced.config.cjs'),
+    `const base = require('./playwright.config.cjs');
+module.exports = { ...base, use: { ...base.use, trace: 'on' } };
+`,
+  );
   fs.writeFileSync(
     path.join(project, 'playwright.config.cjs'),
     `module.exports = { testDir: './tests', outputDir: './test-results', timeout: 10000, workers: 1,
@@ -226,8 +264,15 @@ async function picksRoute(): Promise<string> {
   return address;
 }
 
-/** Runs Playwright on one spec of the project, in the environment the desktop shell gives a run. */
-function runPlaywright(spec: string, extra: NodeJS.ProcessEnv): { exited: Promise<number | null>; output(): string } {
+/**
+ * Runs Playwright on one spec of the project, in the environment the desktop shell gives a run, but the variables
+ * `extra` sets to undefined. `stop` ends a run still going, its workers included, so a test that failed leaves no run
+ * under `REF` for the next one to read.
+ */
+function runPlaywright(
+  spec: string | string[],
+  extra: NodeJS.ProcessEnv,
+): { exited: Promise<number | null>; output(): string; stop(): Promise<void> } {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PIWI_RUN_CHANNEL: runs.runChannel!,
@@ -237,23 +282,41 @@ function runPlaywright(spec: string, extra: NodeJS.ProcessEnv): { exited: Promis
     PIWI_DESKTOP_CONFIG: path.join(project, 'no-desktop.json'),
     ...extra,
   };
+  for (const [name, value] of Object.entries(extra)) if (value === undefined) delete env[name];
   for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT']) delete env[name];
   // A run the desktop shell starts is local: no variable a CI provider sets is left.
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
   if (!extra.PIWI_EDITOR_SEND) delete env.PIWI_EDITOR_SEND;
   let output = '';
-  const exited = new Promise<number | null>((resolve) => {
-    const child = execFile(
-      process.execPath,
-      [requireHere.resolve('@playwright/test/cli'), 'test', spec],
-      { cwd: project, env, timeout: 90_000 },
-      () => {},
-    );
-    child.stdout?.on('data', (chunk) => (output += chunk));
-    child.stderr?.on('data', (chunk) => (output += chunk));
-    child.on('exit', (code) => resolve(code));
-  });
-  return { exited, output: () => output };
+  let ended = false;
+  const child = execFile(
+    process.execPath,
+    [requireHere.resolve('@playwright/test/cli'), 'test', ...[spec].flat()],
+    // Its own process group, so `stop` ends its workers and browsers with it.
+    { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' },
+    () => {},
+  );
+  child.stdout?.on('data', (chunk) => (output += chunk));
+  child.stderr?.on('data', (chunk) => (output += chunk));
+  const exited = new Promise<number | null>((resolve) =>
+    child.on('exit', (code) => {
+      ended = true;
+      resolve(code);
+    }),
+  );
+  const stop = async () => {
+    if (ended) return;
+    if (process.platform === 'win32' || !child.pid) child.kill('SIGKILL');
+    else process.kill(-child.pid, 'SIGKILL');
+    await exited;
+  };
+  return { exited, output: () => output, stop };
+}
+
+/** The error a step of a run threw, its run's output added, keeping its diff and its expected and actual values. */
+function withOutput(error: unknown, output: string): unknown {
+  if (error instanceof Error) error.message = `${error.message}\n--- the run's output ---\n${output}`;
+  return error;
 }
 
 describe.skipIf(!runnable)('a run the desktop shell starts', () => {
@@ -266,7 +329,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       ok: true,
     });
 
-    const { exited, output } = runPlaywright('tests/shop.spec.cjs', {});
+    const { exited, output, stop } = runPlaywright('tests/shop.spec.cjs', {});
 
     try {
       // page.pause() in a headless run: the image of the stop, its live view and a pick on the image.
@@ -275,7 +338,12 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       expect(paused.uri).toBe(pathToFileURL(path.join(fs.realpathSync(project), 'tests', 'shop.spec.cjs')).href);
       expect(paused.line).toBe(3);
       const image = await command({ type: 'pausedPage', ref: REF, worker: worker()!.worker });
-      expect(image).toMatchObject({ ok: true, image: { mime: 'image/jpeg', width: 800, height: 600 } });
+      // The answer without the image's data, so a refusal shows the hub's sentence.
+      const { data: _data, ...shown } = image.image ?? { data: '' };
+      expect({ ok: image.ok, message: image.message, image: image.image ? shown : null }).toMatchObject({
+        ok: true,
+        image: { mime: 'image/jpeg', width: 800, height: 600 },
+      });
       expect(Buffer.from(image.image!.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
       expect(await command({ type: 'view', ...at(paused), on: true })).toMatchObject({ ok: true });
       const frame = await waitFor(() => messages.find((m) => m.type === 'frame'));
@@ -316,9 +384,10 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
 
       expect(await exited).toBe(1);
     } catch (error) {
-      throw new Error(`${(error as Error).message}\n${output()}`);
+      throw withOutput(error, output());
     } finally {
       opened?.close();
+      await stop();
     }
     const results = JSON.parse(fs.readFileSync(path.join(project, 'results.json'), 'utf8')) as Array<{
       title: string;
@@ -347,7 +416,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         .pop()?.session.workers[0];
     expect(await send({ type: 'show', ref: REF, on: true })).toMatchObject({ ok: true });
 
-    const { exited, output } = runPlaywright('tests/window.spec.cjs', { PIWI_EDITOR_SEND: await picksRoute() });
+    const { exited, output, stop } = runPlaywright('tests/window.spec.cjs', { PIWI_EDITOR_SEND: await picksRoute() });
     try {
       // Paused from the window while the test waits for its click.
       await waitFor(
@@ -412,9 +481,10 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       expect(await send({ type: 'runControl', ...at, action: 'resume' })).toMatchObject({ ok: true });
       expect(await exited).toBe(0);
     } catch (error) {
-      throw new Error(`${(error as Error).message}\n${output()}`);
+      throw withOutput(error, output());
     } finally {
       opened.close();
+      await stop();
     }
   }, 120_000);
   it('is watched from the window as its test runs, then paused and clicked through its lane', async () => {
@@ -433,17 +503,18 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         return e.type === 'lane-frame' && 'data' in e;
       });
 
-    const { exited, output } = runPlaywright('tests/lane.spec.cjs', {});
+    const { exited, output, stop } = runPlaywright('tests/lane.spec.cjs', {});
     try {
       const running = await waitFor(() => {
         const worker = lastWorker();
         return worker?.test?.title.at(-1) === 'watched as it runs' && worker.state === 'running' ? worker : undefined;
       });
-      // The reporter shows its lane while the test runs: the window watches it, frames of the running test coming.
+      // The reporter shows its lane while the test runs: the window watches it, frames of the running test coming, and
+      // the layers it asks beside them.
       expect(running.intents).toContain('watch');
-      expect(await send({ type: 'watch', ref: REF, lane: running.parallelIndex, on: true })).toMatchObject({
-        ok: true,
-      });
+      expect(
+        await send({ type: 'watch', ref: REF, lane: running.parallelIndex, on: true, layers: ['calls', 'filmstrip'] }),
+      ).toMatchObject({ ok: true });
       const frame = await waitFor(() => laneFrames()[0]);
       expect(frame).toMatchObject({
         ref: REF,
@@ -455,6 +526,15 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         height: 600,
       });
       expect(Buffer.from(frame.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      // The call its test is in, and an image of its filmstrip for each call that ended, come to the window's stream;
+      // the page's text, which it did not ask, does not.
+      const layers = () => events.filter((e) => e.type === 'lane-layer');
+      const of = { ref: REF, lane: running.parallelIndex, worker: running.worker, test: running.test!.id };
+      expect(await waitFor(() => layers().find((e) => e.layer === 'calls'))).toMatchObject({ ...of, layer: 'calls' });
+      const thumb = await waitFor(() => layers().find((e) => e.layer === 'filmstrip'));
+      expect(thumb).toMatchObject({ ...of, layer: 'filmstrip' });
+      expect(Buffer.from((thumb as { data: string }).data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect(layers().filter((e) => e.layer === 'text' || e.layer === 'events')).toEqual([]);
 
       // Paused: the window watches the stop through its lane, so the stop takes its input with no view of its own.
       expect(await send({ type: 'runControl', ref: REF, worker: null, action: 'pause', since: null })).toMatchObject({
@@ -483,9 +563,81 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       ).toMatchObject({ ok: true });
       expect(await exited).toBe(0);
     } catch (error) {
-      throw new Error(`${(error as Error).message}\n${output()}`);
+      throw withOutput(error, output());
     } finally {
       opened.close();
+      await stop();
+    }
+  }, 120_000);
+
+  it('is inspected from the window as its test runs, its pages read from its own trace on this machine', async () => {
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    let id = 0;
+    const send = (body: Record<string, unknown>) => runs.command({ viewer: opened.viewer, id: ++id, ...body });
+    const lastWorker = () =>
+      events
+        .filter(
+          (e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session' && e.session.ref === REF,
+        )
+        .pop()?.session.workers[0];
+    const inspected = () =>
+      events.filter((e): e is Extract<DesktopRunEvent, { type: 'inspect' }> => e.type === 'inspect');
+    fs.rmSync(path.join(project, 'inspected'), { force: true });
+
+    const { exited, output, stop } = runPlaywright(
+      ['--config', 'playwright.traced.config.cjs', 'tests/inspect.spec.cjs'],
+      {},
+    );
+    try {
+      const running = await waitFor(() => {
+        const worker = lastWorker();
+        return worker?.test?.title.at(-1) === 'inspected as it runs' && worker.state === 'running' ? worker : undefined;
+      });
+      const lane = running.parallelIndex;
+      expect(await send({ type: 'watch', ref: REF, lane, on: true, layers: ['calls', 'filmstrip'] })).toMatchObject({
+        ok: true,
+      });
+      expect(await send({ type: 'inspect', ref: REF, lane, on: true })).toMatchObject({ ok: true });
+      const attempt = `${running.test!.id}#${running.test!.retry}`;
+      expect(inspected()[0]).toEqual({ type: 'inspect', ref: REF, lane, attempt });
+      // The page after the click, as the runner's own trace took it, comes to the window by its call and moment.
+      const clicked = await waitFor(() => {
+        for (const event of inspected()) {
+          const snapshot = 'snapshot' in event ? event.snapshot : undefined;
+          if (snapshot?.phase === 'after' && /click/i.test(snapshot.title)) return snapshot;
+        }
+        return undefined;
+      }, 30_000);
+      expect(clicked).toMatchObject({
+        type: 'snapshot',
+        worker: running.worker,
+        main: true,
+        test: 'inspected as it runs',
+      });
+      expect(runs.inspects.calls(opened.viewer, REF, lane)).toMatchObject({
+        attempt,
+        heard: expect.arrayContaining([expect.objectContaining({ call: clicked.call, phase: 'after' })]),
+      });
+      const page = await runs.inspects.page(opened.viewer, REF, lane, clicked.call, 'after');
+      if ('status' in page) throw new Error(page.message);
+      expect(page.html).toContain('Clicked');
+      expect(page.html).not.toMatch(/<script/i);
+      expect(page.viewport).toEqual({ width: 800, height: 600 });
+      // No path of the trace reaches the window.
+      expect(JSON.stringify(events)).not.toContain('.playwright-artifacts');
+
+      // The test ends: what was kept of it goes, and the window hears the lane runs none.
+      fs.writeFileSync(path.join(project, 'inspected'), '');
+      expect(await exited).toBe(0);
+      await waitFor(() => inspected().some((e) => e.attempt === null && !('snapshot' in e && e.snapshot)));
+      expect(await runs.inspects.page(opened.viewer, REF, lane, clicked.call, 'after')).toMatchObject({ status: 404 });
+      expect(await send({ type: 'inspect', ref: REF, lane, on: false })).toMatchObject({ ok: true });
+    } catch (error) {
+      throw withOutput(error, output());
+    } finally {
+      opened.close();
+      await stop();
     }
   }, 120_000);
 
@@ -507,7 +659,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         )
         .pop()?.session.workers[0];
 
-    const { exited, output } = runPlaywright('tests/agent.spec.cjs', {});
+    const { exited, output, stop } = runPlaywright('tests/agent.spec.cjs', {});
     try {
       await waitFor(
         () => lastWorker()?.test?.title.at(-1) === 'steered by an agent' && lastWorker()?.state === 'running',
@@ -540,9 +692,111 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       expect((await tool('run_control', { run: REF, action: 'resume', stop: since, wait: 0 })).piwi.ok).toBe(true);
       expect(await exited).toBe(0);
     } catch (error) {
-      throw new Error(`${(error as Error).message}\n${output()}`);
+      throw withOutput(error, output());
     } finally {
       opened.close();
+      await stop();
+    }
+  }, 120_000);
+});
+
+describe.skipIf(!runnable)('a run started in a terminal in a linked folder', () => {
+  it('follows the app, which lists it as a terminal’s run with no Stop, pauses it and clicks through its view', async () => {
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    let id = 0;
+    const send = (body: Record<string, unknown>) => runs.command({ viewer: opened.viewer, id: ++id, ...body });
+    // The app's discovery file, as the shell writes it once the server proved its token.
+    const [hub] = runs.live();
+    const channel = runs.runChannel!;
+    const hash = channel.lastIndexOf('#');
+    const desktopFile = path.join(project, 'desktop.json');
+    fs.writeFileSync(
+      desktopFile,
+      JSON.stringify({
+        url: 'http://127.0.0.1:9',
+        token: TOKEN,
+        pid: process.pid,
+        projects: [{ id: 1, path: fs.realpathSync(project) }],
+        runChannel: { path: channel.slice(0, hash), token: channel.slice(hash + 1) },
+        hub: { url: hub!.url, token: hub!.token },
+        hubSince: Date.now(),
+      }),
+      { mode: 0o600 },
+    );
+    const editors = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-no-editors-'));
+    const { exited, output, stop } = runPlaywright(
+      ['--config', 'playwright.terminal.config.cjs', 'tests/terminal.spec.cjs'],
+      {
+        PIWI_RUN_CHANNEL: undefined,
+        PIWI_RUN_REF: undefined,
+        PIWI_ORIGIN: undefined,
+        PIWI_ORIGIN_REF: undefined,
+        PIWI_DESKTOP_CONFIG: desktopFile,
+        PIWI_DESKTOP_APP: 'off',
+        PIWI_EDITORS_DIR: editors,
+        // Its output goes to this test, not a terminal: attended as asked.
+        PIWI_EDITOR: 'on',
+      },
+    );
+    const session = () =>
+      events
+        .filter((e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session')
+        .map((e) => e.session)
+        .filter((s) => s.ref.startsWith('terminal-'))
+        .pop();
+    try {
+      const begun = await waitFor(() => {
+        const now = session();
+        return now?.workers[0]?.state === 'running' && now.workers[0].test ? now : undefined;
+      });
+      expect(begun).toMatchObject({ ref: expect.stringMatching(/^terminal-\d+-\d+$/), terminal: true });
+      expect(output()).toContain('Following this run in the desktop app');
+      // Its process is the terminal's: no Stop.
+      expect(await send({ type: 'stop', ref: begun.ref })).toMatchObject({
+        ok: false,
+        message: 'The run was started in a terminal: stop it there.',
+      });
+      expect(
+        await send({ type: 'runControl', ref: begun.ref, worker: null, action: 'pause', since: null }),
+      ).toMatchObject({ ok: true });
+      let paused = await waitFor(() =>
+        session()?.workers[0]?.state === 'stopped' ? session()?.workers[0]?.stop : undefined,
+      );
+      expect(paused.reason).toBe('pause');
+      // A pause heard before the test's page loaded steps on, to a call made once the page is there.
+      while (paused.title.startsWith('Navigate')) {
+        const before = paused.since;
+        const worker = session()!.workers[0]!.worker;
+        expect(await send({ type: 'runControl', ref: begun.ref, worker, action: 'step', since: before })).toMatchObject(
+          { ok: true },
+        );
+        paused = await waitFor(() => {
+          const now = session()?.workers[0];
+          return now?.state === 'stopped' && now.stop && now.stop.since !== before ? now.stop : undefined;
+        });
+      }
+      const at = { ref: begun.ref, worker: session()!.workers[0]!.worker, since: paused.since };
+      expect(await send({ type: 'view', ...at, on: true })).toMatchObject({ ok: true });
+      await waitFor(() => session()?.workers[0]?.stop?.intents?.includes('input'));
+      const clicked = await send({
+        type: 'input',
+        ...at,
+        events: [
+          { type: 'mouse', action: 'move', x: 160, y: 120 },
+          { type: 'mouse', action: 'click', x: 160, y: 120, button: 'left', clickCount: 1 },
+        ],
+      });
+      expect(clicked).toMatchObject({ ok: true });
+      expect(await send({ type: 'runControl', ...at, action: 'resume' })).toMatchObject({ ok: true });
+      expect(await exited).toBe(0);
+    } catch (error) {
+      throw withOutput(error, output());
+    } finally {
+      opened.close();
+      await stop();
+      fs.rmSync(editors, { recursive: true, force: true });
+      fs.rmSync(desktopFile, { force: true });
     }
   }, 120_000);
 });

@@ -20,7 +20,7 @@
  */
 import * as fs from 'node:fs';
 import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/core/gate';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 
 const EXIT_OK = 0;
 const EXIT_VIOLATED = 1;
@@ -65,6 +65,8 @@ Policy (at least one rule or warn-only flag is required):
   --require-selection <key>  Fail when a test the named selection matches did not run or failed
   --max-leaks <n>          Fail when the run left more than n browsers, contexts or pages open (per opening line)
   --max-new-leaks <n>      Fail when more than n of those were never seen on the base branch
+  --max-reused <n|p%>      Fail when the run reused more than n tests (or p% of its tests) from earlier passes
+  --require-executed <tags>  Comma-separated; fail when a test carrying the tag was reused instead of executed
 
 Warn-only (reported, never fails the build):
   --max-uncovered-changes <n>  Warn when more than n changed files are uncovered changes: no test reached them
@@ -102,6 +104,19 @@ function readCount(argv: string[], name: string): number | undefined {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) throw new Error(`${name} expects a non-negative number, got "${raw}"`);
   return Math.floor(n);
+}
+
+/** `--max-reused`: a count (`300`) or a share of the run's tests (`25%`). */
+function readReused(argv: string[]): { maxReused?: number; maxReusedPercent?: number } {
+  const raw = readOption(argv, '--max-reused');
+  if (raw === undefined) return {};
+  const percent = /^(\d+(?:\.\d+)?)%$/.exec(raw.trim());
+  if (percent) {
+    const n = Number(percent[1]);
+    if (n > 100) throw new Error(`--max-reused expects a percentage from 0 to 100, got "${raw}"`);
+    return { maxReusedPercent: n };
+  }
+  return { maxReused: readCount(argv, '--max-reused') };
 }
 
 /** The run id the reporter wrote for this pipeline, if it left a file behind. */
@@ -153,6 +168,11 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: stri
     requireSelection: readOption(argv, '--require-selection'),
     maxLeaks: readCount(argv, '--max-leaks'),
     maxNewLeaks: readCount(argv, '--max-new-leaks'),
+    ...readReused(argv),
+    requireExecuted: (readOption(argv, '--require-executed') ?? '')
+      .split(',')
+      .map((tag) => tag.trim().replace(/^@+/, ''))
+      .filter(Boolean),
   };
 
   return {
@@ -172,7 +192,7 @@ async function requestGate(args: GateArgs): Promise<GateResult> {
 
   // `maxUncoveredChanges` and `minPatchCoverage` are warn-only body fields the
   // server reads outside the policy; JSON.stringify drops them when undefined.
-  const res = await fetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
+  const res = await cliFetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
     method: 'POST',
     headers,
     body: JSON.stringify({

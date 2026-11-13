@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
+import { RunLanes, type Lane } from '#shared/live-lanes';
 import type { WireLiveResources } from '#shared/types';
 import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from './map-step-events';
 import type { StreamEventPayload } from '#shared/types';
@@ -37,7 +38,16 @@ export interface RunEvent {
     /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
     | 'live-worker'
     /** Whether the project's live view is on, and the run holds a key (`LiveViewRunState`, `#shared/live-view`). */
-    | 'live-view';
+    | 'live-view'
+    /** A person's ask to watch the run changed (`LiveAskEvent`, `server/utils/live-asks.ts`): only they hear it. */
+    | 'live-ask'
+    /** A run shared after this one from the same editor window continues it: `{ runId }`, the run that does. */
+    | 'continued'
+    /**
+     * A lane of the run as it stands (`Lane` of `@piwitests/core/live-lane`), after an event of the run changed it
+     * (`#shared/live-lanes`): its state, its worker, its test and attempt, its stop, and its counts.
+     */
+    | 'lane';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;
@@ -48,6 +58,8 @@ export interface GlobalRunEvent {
   /**
    * `rollup-updated` follows `run-finished` and `run-submitted` once the run's daily rollup is
    * written: analytics read the rollups, so they refresh on it, never on the run events before it.
+   * `run-continued` says a run shared after this one from the same editor window continues it (`continuedInId`), for
+   * a page of the run that ended to follow.
    */
   type:
     | 'run-started'
@@ -56,17 +68,21 @@ export interface GlobalRunEvent {
     | 'run-finished'
     | 'run-submitted'
     | 'run-cancelled'
-    | 'rollup-updated';
+    | 'rollup-updated'
+    | 'run-continued';
   runId: number;
   projectId: number;
   status?: string;
+  /** The run that continues `runId`, on `run-continued`. */
+  continuedInId?: number;
 }
 
 /**
  * A live progress tally for one run, broadcast globally so an app-wide consumer
- * (the desktop shell's OS progress) can track every in-flight run's counts
- * without opening a per-run stream. Kept on its own channel so the existing
- * global lifecycle stream (`/api/stream`) is unaffected.
+ * (the desktop shell's OS progress, the lists `/api/stream` feeds) can track
+ * every in-flight run's counts without opening a per-run stream. On its own
+ * channel: `subscribeGlobal`'s listeners never hear it, and it is no lifecycle
+ * event to `lastGlobalEvent`.
  */
 export interface RunProgressBroadcast {
   runId: number;
@@ -120,6 +136,8 @@ class RunEventBus {
   private liveSteps = new Map<number, Map<string, KeptLiveStep>>();
   /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
   private lastGlobalEventAt = new Map<number, number>();
+  /** Each live run's lanes, reduced from the events published for it, which publish a `lane` event as they change. */
+  private lanes = new RunLanes();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -141,7 +159,13 @@ class RunEventBus {
     };
 
     this.emitter.emit(`run:${runId}`, fullEvent);
+    for (const lane of this.lanes.hear(runId, event)) this.publish(runId, { type: 'lane', data: { ...lane } });
     return fullEvent;
+  }
+
+  /** The lanes of a live run as they stand, for the stream's catch-up. */
+  getLanes(runId: number): Lane[] {
+    return this.lanes.lanesOf(runId);
   }
 
   /**
@@ -305,6 +329,7 @@ class RunEventBus {
     this.liveSteps.delete(runId);
     this.liveResources.delete(runId);
     this.liveResourcesDeclined.delete(runId);
+    this.lanes.forget(runId);
   }
 
   /**
@@ -340,7 +365,7 @@ class RunEventBus {
 
   /**
    * Broadcast a run's live progress tally to app-wide subscribers. On its own
-   * channel so it never reaches the lifecycle stream's subscribers.
+   * channel, so it never reaches `subscribeGlobal`'s listeners.
    */
   publishRunProgress(progress: RunProgressBroadcast): void {
     this.globalEmitter.emit('run-progress', progress);

@@ -29,9 +29,14 @@ import type { RefetchResult } from '~/utils/refetch-keeping';
  *   wait that doubles each time (2 s to 30 s), and refreshes all subscribers
  *   once it is open.
  *
+ * Tallies:
+ *   A running run's `run-progress` goes to the `useRunProgress` listeners
+ *   alone: it never refreshes a subscriber, nor reaches a `useRunEvents`
+ *   listener.
+ *
  * In demo mode the API handlers run in the service worker, so the SSE
  * connection is replaced with a BroadcastChannel subscription carrying the
- * same global lifecycle events (see app/demo/run-events.ts).
+ * same global lifecycle events and tallies (see app/demo/run-events.ts).
  *
  * Must be called inside a component's `setup` (or `<script setup>`) context
  * so that `onUnmounted` can deregister the callback.
@@ -48,6 +53,8 @@ export interface RunLifecycleEvent {
   runId?: number;
   projectId?: number;
   status?: string;
+  /** The run that continues `runId`, on `run-continued`. */
+  continuedInId?: number;
 }
 
 /** Listeners that need the event itself (which project), called at once, not debounced. */
@@ -55,6 +62,33 @@ const eventListeners = new Set<(event: RunLifecycleEvent) => void>();
 
 function notifyEventListeners(event: RunLifecycleEvent) {
   for (const fn of eventListeners) fn(event);
+}
+
+/**
+ * A running run's tally, as `/api/stream` sends it, at most once every 2 s per run: each result counted as it is
+ * reported, a retry again.
+ */
+export interface RunProgressEvent {
+  type: 'run-progress';
+  runId: number;
+  projectId: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests: number;
+}
+
+/** Listeners of the running runs' tallies, called at once. */
+const progressListeners = new Set<(event: RunProgressEvent) => void>();
+
+function notifyProgressListeners(event: RunProgressEvent) {
+  for (const fn of progressListeners) fn(event);
+}
+
+/** Whether anything on the page still listens to the shared connection. */
+function hasListeners(): boolean {
+  return subscribers.size > 0 || eventListeners.size > 0 || progressListeners.size > 0;
 }
 
 /** Called each time the shared connection opens: from then on it hears every event. */
@@ -160,6 +194,10 @@ function openEventSource() {
         firstOpen = false;
         return;
       }
+      if (data?.type === 'run-progress') {
+        notifyProgressListeners(data);
+        return;
+      }
       notifySubscribers(data.type);
       if (data && typeof data.type === 'string') notifyEventListeners(data);
     } catch {
@@ -180,7 +218,7 @@ function reopenEventSource() {
   if (reopenTimer) return;
   reopenTimer = setTimeout(() => {
     reopenTimer = null;
-    if (document.visibilityState === 'hidden' || (subscribers.size === 0 && eventListeners.size === 0)) return;
+    if (document.visibilityState === 'hidden' || !hasListeners()) return;
     refreshOnOpen = true;
     openEventSource();
   }, reopenDelay);
@@ -206,7 +244,7 @@ function handleVisibilityChange() {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-  } else if (subscribers.size > 0 || eventListeners.size > 0) {
+  } else if (hasListeners()) {
     // Tab is visible again — reconnect and immediately refresh to catch up on missed events
     firstOpen = false;
     openEventSource();
@@ -235,6 +273,8 @@ function ensureConnection() {
       if (message.scope === 'global') {
         notifySubscribers(message.event.type);
         notifyEventListeners(message.event);
+      } else if (message.scope === 'progress') {
+        notifyProgressListeners({ type: 'run-progress', ...message.event });
       }
     });
     return;
@@ -247,7 +287,7 @@ function ensureConnection() {
 }
 
 function closeConnection() {
-  if (subscribers.size > 0 || eventListeners.size > 0) return;
+  if (hasListeners()) return;
 
   cancelReopen();
   if (sharedEventSource) {
@@ -301,6 +341,25 @@ export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpe
   onUnmounted(() => {
     eventListeners.delete(listener);
     if (onOpen) openListeners.delete(onOpen);
+    closeConnection();
+  });
+}
+
+/**
+ * Listen to the running runs' tallies (`run-progress`), on the same shared
+ * connection as `useRunStream`, for a list to show a running run's progress
+ * without reading it again. A tally sent while the connection was closed never
+ * arrives: the next one, or the list's own refresh, catches up.
+ */
+export function useRunProgress(listener: (event: RunProgressEvent) => void) {
+  if (!import.meta.client) return;
+
+  ensureConnection();
+
+  progressListeners.add(listener);
+
+  onUnmounted(() => {
+    progressListeners.delete(listener);
     closeConnection();
   });
 }

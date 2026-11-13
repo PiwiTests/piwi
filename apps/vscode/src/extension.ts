@@ -17,11 +17,13 @@ import {
   type LanguageClientOptions,
   type NodeModule,
   type ServerOptions,
+  RevealOutputChannelOn,
 } from 'vscode-languageclient/node';
 import {
   AGENT_CONTEXT_REQUEST,
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
+  FOLLOW_COMMAND_REQUEST,
   COMMAND_STARTED_NOTIFICATION,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
@@ -33,12 +35,14 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  CI_SESSION_NOTIFICATION,
   STOP_CODE_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
   type ApplyPickResult,
+  type CiSession,
   type CommandEndedParams,
   type CommandStartedParams,
   type CoverageParams,
@@ -77,6 +81,8 @@ import {
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
+  SET_RUN_PAIRING_NOTIFICATION,
+  START_RUN_REQUEST,
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
@@ -91,6 +97,9 @@ import {
   type FailureSeverity,
   type McpAuthorization,
   type SetBaselineParams,
+  type SetRunPairingParams,
+  type StartRunParams,
+  type StartRunResult,
   type FileSummary,
   type McpServersResult,
   type AgentsParams,
@@ -109,6 +118,8 @@ import {
   type ScreenshotResult,
   type TraceParams,
   type TraceResult,
+  STOP_RUN_REQUEST,
+  type StopRunParams,
 } from '@piwitests/editor/protocol';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
@@ -142,6 +153,7 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  agentMcpUrl,
   MCP_FORMATS,
   RUNS_MCP_FORMATS,
   RUNS_MCP_LABEL,
@@ -151,6 +163,10 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  OwnRunCounts,
+  serviceDownView,
+  heldStops,
+  heldText,
   failingRuns,
   failureRunArgs,
   runVerdict,
@@ -161,6 +177,13 @@ import {
   type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
+  HOLD_FAILURES_CHOICES,
+  type RunStartChoices,
+  runOptionPicks,
+  runOptionTarget,
+  runStartChoices,
+  runStartLine,
+  withRunStart,
   pickNotice,
   statusBarView,
   baselinePicks,
@@ -173,6 +196,9 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
+  notConnectedNotice,
+  RESTART_SERVICE,
+  SERVICE_NOT_ANSWERING,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -180,7 +206,9 @@ import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
+import { stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
+import { registerCiRuns } from './ci-view';
 import {
   liveHubsHere,
   loopbackPort,
@@ -203,6 +231,9 @@ const LIVE_TESTS_DRAW_MS = 1_000;
 const GUTTER_EDIT_MS = 300;
 /** Pause after a change of the connection's settings or key before it is handed to the service. */
 const CREDENTIALS_WAIT_MS = 250;
+
+/** How long the client stays stopped before the status item says the editor service is not running. */
+const SERVICE_DOWN_MS = 3_000;
 /** Pause after a change of the editor's proxy settings before the service is started again with them. */
 const PROXY_WAIT_MS = 250;
 /** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
@@ -272,12 +303,16 @@ export interface PiwiApi {
   runSessions(): RunSession[];
   /** The lines of a file drawn as where a run is stopped, by its URI. */
   executionPoints(uri: string): number[];
+  /** The lines of a file marked as a watched lane's running call. */
+  runningLines(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
   /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
   workerView(): PausedPageView | null;
   /** A message of the worker panel's script, as it posts it. */
   workerMessage(message: unknown): Promise<void>;
+  /** A message of the paused page's script, as it posts it. */
+  pageMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
@@ -322,12 +357,13 @@ async function handCredentials(context: vscode.ExtensionContext, lc: LanguageCli
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, handed);
 }
 
-/** Hand the saved connection to the service when it differs from the one last handed. */
-async function handChangedCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+/** Hand the saved connection to the service when it differs from the one last handed: whether it did. */
+async function handChangedCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const next = await credentials(context);
-  if (JSON.stringify(next) === JSON.stringify(handed)) return;
+  if (JSON.stringify(next) === JSON.stringify(handed)) return false;
   handed = next;
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, next);
+  return true;
 }
 
 /** Hand the saved connection to the service and have it read everything again. */
@@ -392,7 +428,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (credentialsTimer) clearTimeout(credentialsTimer);
     credentialsTimer = setTimeout(() => {
       credentialsTimer = null;
-      void handChangedCredentials(context, lc).then(() => mcpServersChanged());
+      void handChangedCredentials(context, lc).then((handedNow) => {
+        mcpServersChanged();
+        // The lenses say a failure's reason where no diagnostic does, which `failureSeverity` decides.
+        if (handedNow) filesChanged();
+      });
     }, CREDENTIALS_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => credentialsTimer && clearTimeout(credentialsTimer) });
@@ -415,7 +455,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }, PROXY_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => proxyTimer && clearTimeout(proxyTimer) });
+  // The extension's own log, kept when the client stops for a restart.
+  const outputChannel = vscode.window.createOutputChannel('Piwi', { log: true });
+  context.subscriptions.push(outputChannel);
+  /** Where a run's picks go, once this window listens: the service names it again as it starts again. */
+  let runPairingAddress: string | null = null;
   const clientOptions: LanguageClientOptions = {
+    outputChannel,
+    // A failed request is logged, never a toast: the Failures view says when the service is down.
+    revealOutputChannelOn: RevealOutputChannelOn.Never,
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included. The extension
     // shows where the runs it started stop, answers those stops, and writes the code made there.
@@ -423,21 +471,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       credentials: handed ?? undefined,
       runControl: true,
       stopCode: true,
+      stopsRuns: true,
+      // The run control marks the line of the call the watched lane's test is in (`piwi/runningLine`).
+      runningLine: true,
+      // The service builds an agent's run_start, and the extension runs it as a person's (`piwi/startRun`).
+      startsRuns: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
       agents: {
         enabled: vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true,
         port: context.workspaceState.get<number>(AGENTS_PORT) ?? null,
         token: agentsToken,
       },
+      // A run started in a terminal that follows this window posts its picks here: the service's discovery file says so.
+      ...(runPairingAddress ? { runPairing: runPairingAddress } : {}),
     }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
 
-  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails, stronger on
-  // the line it failed at (the service's hover there says why).
+  // Each test's latest result on the test: a gutter icon with a hover (a dashed ring for a test with no recent result),
+  // and a background while it fails, stronger on the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
-    (['failed', 'flaky', 'passed', 'skipped', 'running'] as const).map((status) => [
+    (['failed', 'flaky', 'passed', 'skipped', 'running', 'unknown'] as const).map((status) => [
       status,
       vscode.window.createTextEditorDecorationType({
         gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
@@ -451,15 +506,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone.
+  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone,
+  // and a flaky test, which the view shows as passed, says so after its line.
   const testHover = vscode.window.createTextEditorDecorationType({});
+  const flakyMark = vscode.window.createTextEditorDecorationType({
+    after: {
+      contentText: '  flaky',
+      color: new vscode.ThemeColor('editorWarning.foreground'),
+      fontStyle: 'italic',
+    },
+  });
   const failingLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, failingLine, testHover, ...gutterIcons.values());
+  context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
   let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
@@ -478,6 +541,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         editor.setDecorations(type, explorer ? [] : hovered(tests.filter((t) => t.status === status)));
       }
       editor.setDecorations(testHover, explorer ? hovered(tests) : []);
+      editor.setDecorations(
+        flakyMark,
+        explorer
+          ? tests
+              .filter((t) => t.status === 'flaky' && t.line < document.lineCount)
+              .map((t) => document.lineAt(t.line).range)
+          : [],
+      );
       editor.setDecorations(
         failingBackground,
         tests
@@ -619,15 +690,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.workspace.onDidCloseTextDocument((d) => coverage.delete(d.uri.toString())),
   );
 
+  /** How every run of the window starts: `piwi.runHeaded` and `piwi.runHoldFailures`, read at each run. */
+  const runChoices = (): RunStartChoices => {
+    const settings = vscode.workspace.getConfiguration('piwi');
+    return runStartChoices(settings.get('runHeaded'), settings.get('runHoldFailures'));
+  };
+
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
   let statusUrl: string | null = null;
+  /** The page of the run in progress the status bar item counts, which `piwi.openLiveRun` opens. */
+  let liveUrl: string | null = null;
   let lastServers = '';
   context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
 
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
+  /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
+  const connectedOrSay = (): boolean => {
+    const notice = notConnectedNotice(status);
+    if (!notice) return true;
+    const button = notice.action === 'retry' ? 'Retry' : notice.action === 'connect' ? 'Connect' : null;
+    void (
+      button
+        ? vscode.window.showInformationMessage(notice.message, button)
+        : vscode.window.showInformationMessage(notice.message)
+    ).then(
+      (answer) => answer && vscode.commands.executeCommand(notice.action === 'retry' ? 'piwi.refresh' : 'piwi.connect'),
+    );
+    return false;
+  };
   let runs: RunStatusResult | null = null;
   /** The runs the CodeLens and the gutter were last drawn with, and when the run in progress's tests were. */
   let runsShown: RunStatusResult | null = null;
@@ -662,18 +755,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /**
+   * The editor service is down: its start failed, or it stayed stopped `SERVICE_DOWN_MS` (the client gave up starting
+   * it again). The status item says so.
+   */
+  let serviceDown = false;
+  let downTimer: ReturnType<typeof setTimeout> | null = null;
+  context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
+  /** The run sessions the run control keeps, once it exists. */
+  let runSessions: () => RunSession[] = () => [];
+  const ownRunCounts = new OwnRunCounts();
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
-    statusItem.text = refreshing ? refreshingText(view.text) : view.text;
-    const tooltip = new vscode.MarkdownString(view.tooltip);
+    const view = serviceDown
+      ? serviceDownView()
+      : statusBarView(status, runs, desktopChosen, Date.now(), activeFile(), (ref, instance) =>
+          ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
+        );
+    statusItem.text = refreshing
+      ? refreshingText(view.text)
+      : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
+    // How every run of the window starts, with the link that changes it, wherever a config is found.
+    const tooltip = new vscode.MarkdownString(
+      view.action === 'none' ? view.tooltip : `${view.tooltip}\n\n${runStartLine(runChoices())}`,
+    );
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
+    liveUrl = view.liveUrl;
+    void vscode.commands.executeCommand('setContext', 'piwi.liveRun', !!liveUrl);
     statusItem.command = {
       refresh: 'piwi.refreshRun',
       retry: 'piwi.refresh',
       connect: 'piwi.connect',
+      restart: 'piwi.restartService',
       none: undefined,
     }[view.action];
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
@@ -753,12 +868,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // command with the same ref, which the service follows as a rerun of a run it knows.
   /** The refs of the tasks started from Piwi whose process has not started yet: their start was already sent. */
   const pendingStarts = new Set<string>();
-  const runAsTask = async (command: RunCommand & { ref: string }, env: Record<string, string> | undefined) => {
+  /** Run a test command as a task: whether VS Code started it. */
+  const runAsTask = async (
+    command: RunCommand & { ref: string },
+    env: Record<string, string> | undefined,
+  ): Promise<boolean> => {
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(command.cwd));
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
-      runTaskName(command.args),
+      command.label
+        ? `${runTaskName(command.args, command.command)} · ${command.label}`
+        : runTaskName(command.args, command.command),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -771,11 +892,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref: command.ref } satisfies CommandStartedParams);
     try {
       await vscode.tasks.executeTask(task);
+      return true;
     } catch (err) {
       pendingStarts.delete(command.ref);
       void vscode.window.showErrorMessage(`Piwi: could not run the tests: ${(err as Error).message}`);
-      // No task ran, so none will end: the Testing view's run hears it now.
+      // No task ran, so none will end: the Testing view's run hears it now, and the service as its command's end.
       explorer?.taskEnded(command.ref, null);
+      void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
+        ref: command.ref,
+        exitCode: null,
+      } satisfies CommandEndedParams);
+      return false;
     }
   };
   /** The ref of a test run's task; null for another task. */
@@ -863,8 +990,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
+  /**
+   * Tell the service where a run's picks go once this window listens (the saved port, Piwi Picker's pairing, or a run's
+   * own), and again as the listener or the token changes. It never starts a listener itself: one started for this alone
+   * would keep the window off the saved port another window lets go.
+   */
+  const announceRunPairing = () => {
+    const listener = sendListener;
+    const address = listener && sendStore.token ? formatPairing({ url: listener.url, token: sendStore.token }) : null;
+    if (address === runPairingAddress) return;
+    runPairingAddress = address;
+    if (lc.isRunning()) {
+      void lc
+        .sendNotification(SET_RUN_PAIRING_NOTIFICATION, { address } satisfies SetRunPairingParams)
+        .catch(() => undefined);
+    }
+  };
   const startListener = async (port: number) => {
-    sendListener = await startSendListener({
+    const started = await startSendListener({
       port,
       token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
@@ -877,7 +1020,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         }),
       forwarded: () => pairingForwarded,
     });
-    return sendListener;
+    sendListener = started;
+    announceRunPairing();
+    return started;
   };
   // A pairing asked while another start is on its way waits for that one.
   const listen = oneStartAtATime(startListener);
@@ -903,6 +1048,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (change.key !== SEND_TOKEN) return;
       void context.secrets.get(SEND_TOKEN).then((token) => {
         sendStore.token = token ?? '';
+        announceRunPairing();
       });
     }),
   );
@@ -934,16 +1080,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
       : [];
 
+  /** Ends the task of the run `ref` started in this window: whether there was one. */
+  const terminateRun = (ref: string): boolean => {
+    const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
+    execution?.terminate();
+    return !!execution;
+  };
+
+  /** The CI runs of the branch while they run, read-only. */
+  const ciRuns = registerCiRuns();
+  context.subscriptions.push(ciRuns);
+
   /** Where the runs started here stop, and their controls. */
   const runControl = registerRunControl(context, lc, {
     breakpoints: breakpointsForRun,
-    terminate: (ref) => {
-      const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
-      execution?.terminate();
-      return !!execution;
+    terminate: terminateRun,
+    // Once the status is read: before, the item shows the service starting.
+    changed: () => {
+      if (status || runs) render();
     },
   });
   context.subscriptions.push(runControl);
+  runSessions = () => runControl.sessions();
 
   /** The notices of `RunCommand.notice` already shown: each is shown once. */
   const noticesShown = new Set<string>();
@@ -952,9 +1110,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /**
    * Run a test command started with `breakpoints`: its notice shown once, and, when it can pause in the browser
    * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
-   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
+   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`). Whether it started.
    */
-  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]) => {
+  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]): Promise<boolean> => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
@@ -967,21 +1125,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lastRun = { ...command, env };
     if (command.ref) {
       runControl.started(command.ref, breakpoints);
-      await runAsTask({ ...command, ref: command.ref }, env);
-    } else {
-      runInTerminal(command.cwd, command.command, env);
+      return runAsTask({ ...command, ref: command.ref }, env);
     }
+    runInTerminal(command.cwd, command.command, env);
+    return true;
   };
 
+  // An agent's run_start: the command the service built runs as a person's does, its task named after the agent.
+  context.subscriptions.push(
+    lc.onRequest(START_RUN_REQUEST, async (params: StartRunParams): Promise<StartRunResult> => {
+      if (!(await startRun(params.command, []))) {
+        return { ok: false, message: `${vscode.env.appName} could not start the task that runs it.` };
+      }
+      void vscode.window.showInformationMessage(`Piwi: ${params.command.label}: ${params.command.command}`);
+      return { ok: true, message: `${vscode.env.appName} runs it.` };
+    }),
+  );
+
   /**
-   * Run tests as the service's command for them says; the command started, or null when there is none, said unless
-   * `quiet`.
+   * Run tests as the service's command for them says, started as the person chose for every run of the window
+   * (`withRunStart`); the command started, or null when there is none, said unless `quiet`.
    */
   const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
+    const started = withRunStart(args, runChoices());
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
-      breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
+      breakpoints.length ? { ...started, breakpoints: placesOf(breakpoints) } : started,
     );
     if (!command) {
       if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
@@ -1010,17 +1180,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return !document?.isDirty || document.save();
   };
 
-  /** Run the tests Piwi knows of the spec (`target`, else the active one) as every test run does, saved first. */
+  /** Run every test of the spec (`target`, else the active one) by its path, as every test run does, saved first. */
   const runSpec = async (target?: vscode.Uri) => {
     const uri = target?.toString() ?? activeUri();
     if (!uri) return;
     const found = await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: 0, character: 0 }).catch(() => null);
-    const testIds = found?.spec?.testIds ?? [];
-    if (!testIds.length) {
-      void vscode.window.showInformationMessage('Piwi: no test of this spec is known yet.');
+    // Every test of the spec as saved, by its path, known to the instance or not.
+    const spec = found?.spec?.location;
+    if (!spec) {
+      void vscode.window.showInformationMessage('Piwi: no Playwright config holds this file.');
       return;
     }
-    if (await saveSpec(uri)) await runTests({ uri, testIds });
+    if (await saveSpec(uri)) await runTests({ uri, testIds: [], locations: [spec] });
   };
 
   /**
@@ -1081,12 +1252,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
     ),
     vscode.commands.registerCommand('piwi.refresh', async () => {
-      await lc.sendRequest(REFRESH_REQUEST);
+      try {
+        await lc.sendRequest(REFRESH_REQUEST);
+      } catch {
+        const answer = await vscode.window.showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE);
+        if (answer) await vscode.commands.executeCommand('piwi.restartService');
+        return;
+      }
       await updateStatus();
+    }),
+    // A service the client gave up restarting, or one that does not answer, is stopped and started again.
+    vscode.commands.registerCommand('piwi.restartService', async () => {
+      restarting = restarting
+        .then(async () => {
+          lc.outputChannel.info('Starting the editor service again.');
+          await lc.stop().catch(() => undefined);
+          await lc.start();
+          await updateStatus();
+        })
+        .catch((e: unknown) => {
+          lc.outputChannel.error(`The editor service did not start again: ${(e as Error).message}`);
+          void vscode.window
+            .showErrorMessage(
+              'Piwi: the editor service did not start again. The log says why; reloading the window starts it anew.',
+              'Open the log',
+            )
+            .then((a) => a && lc.outputChannel.show());
+        });
+      await restarting;
     }),
     // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
-      if (refreshing) return;
+      if (refreshing || !connectedOrSay()) return;
       refreshing = true;
       render();
       const answer = await lc.sendRequest<RunStatusResult>(REFRESH_RUN_REQUEST).catch(() => null);
@@ -1115,6 +1312,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
     // From a Playwright config's node or a run's node of the failures view, that config's baseline.
     vscode.commands.registerCommand('piwi.compareWith', async (node?: FailureNode) => {
+      if (!connectedOrSay()) return;
       const contexts = runs?.contexts ?? [];
       const file = vscode.window.activeTextEditor?.document.uri.fsPath;
       // The context of the active file: the deepest config folder holding it.
@@ -1193,7 +1391,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
     vscode.commands.registerCommand('piwi.runTestsForFile', async (target?: vscode.Uri) => {
       const uri = target?.toString() ?? activeUri();
-      if (!uri) return;
+      if (!uri || !connectedOrSay()) return;
       const found = await lc.sendRequest<TestsForFile>(TESTS_FOR_FILE_REQUEST, { uri });
       if (!found.tests.length) {
         void vscode.window.showInformationMessage('Piwi: no test reaches this file yet.');
@@ -1210,6 +1408,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         await vscode.env.openExternal(vscode.Uri.parse(url));
         return;
       }
+      if (!connectedOrSay()) return;
       const uri = activeUri();
       const found = uri ? await lc.sendRequest<TestsForFile>(TESTS_FOR_FILE_REQUEST, { uri }) : null;
       if (!found?.tests.length) {
@@ -1227,14 +1426,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
     }),
-    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) =>
-      runInTerminal(args.cwd, args.command, args.env),
-    ),
+    vscode.commands.registerCommand('piwi.runCommand', async (args: RunCommandArgs) => {
+      // A command the service follows runs as a test run of its own, listed, paused and stopped as the others.
+      const followed = args.follow
+        ? await lc.sendRequest<RunCommand | null>(FOLLOW_COMMAND_REQUEST, args).catch(() => null)
+        : null;
+      if (followed) await startRun(followed, []);
+      else runInTerminal(args.cwd, args.command, args.env);
+    }),
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
     }),
     vscode.commands.registerCommand('piwi.runSelection', async () => {
+      if (!connectedOrSay()) return;
       const uri = activeUri() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? '';
       const { items } = await lc.sendRequest<SelectionsResult>(SELECTIONS_REQUEST, { uri });
       if (!items.length) {
@@ -1252,14 +1457,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       );
       if (!picked) return;
       const breakpoints = breakpointsForRun();
-      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
-        uri,
-        key: picked.key,
-        ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
-      });
+      const command = await lc.sendRequest<RunCommand | null>(
+        RUN_SELECTION_REQUEST,
+        withRunStart(
+          { uri, key: picked.key, ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}) },
+          runChoices(),
+        ),
+      );
       if (command) await startRun(command, breakpoints);
     }),
+    // Run headed, and Hold failures from each run's start, for every run of the window: written where the setting's
+    // value comes from, the workspace's settings when they hold one, else the user's.
+    vscode.commands.registerCommand('piwi.runOptions', async () => {
+      const settings = vscode.workspace.getConfiguration('piwi');
+      const choices = runChoices();
+      const picked = await vscode.window.showQuickPick(runOptionPicks(choices), {
+        placeHolder: 'How every test run of this window starts',
+      });
+      if (!picked) return;
+      const save = (key: string, value: unknown) =>
+        settings.update(
+          key,
+          value,
+          runOptionTarget(settings.inspect(key)) === 'workspace'
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global,
+        );
+      if (picked.option === 'headed') {
+        await save('runHeaded', !choices.headed);
+        return;
+      }
+      const hold = await vscode.window.showQuickPick(
+        HOLD_FAILURES_CHOICES.map((c) => ({
+          label: c.label,
+          description: c.choice === choices.holdFailures ? 'current' : undefined,
+          detail: c.detail,
+          choice: c.choice,
+        })),
+        { placeHolder: "Hold failures from each run's start" },
+      );
+      if (hold) await save('runHoldFailures', hold.choice);
+    }),
+    vscode.commands.registerCommand('piwi.openLiveRun', async () => {
+      if (liveUrl) await vscode.env.openExternal(vscode.Uri.parse(liveUrl));
+    }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
+      if (!connectedOrSay()) return;
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
     }),
     vscode.commands.registerCommand('piwi.openTrace', async (target: TraceParams | FailureNode) => {
@@ -1320,10 +1563,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           // A test's line is drawn in the gutter and its hover, not as a lens above it.
           return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
+            // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
               title: line.title,
               command: line.command?.command ?? '',
               arguments: line.command?.arguments ?? [],
+              ...(line.command?.title ? { tooltip: line.command.title } : {}),
             });
           });
         },
@@ -1341,6 +1586,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
+      if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
@@ -1371,6 +1617,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await context.secrets.store(agentsKey, agents.token);
     }
     if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
+    // The desktop app's server is listed without its run tools while this window lists its own runs' server.
+    if (!!agents?.url !== (before !== 'null')) mcpChanged.fire();
   };
   const agentsChanged = async (newToken = false) => {
     const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
@@ -1383,6 +1631,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
       if (e.newState === State.Running) void agentsChanged();
+      // A start that failed is down at once; a stop, once the client is still stopped: a restart, or the client's own
+      // after a crash, starts it again within that time.
+      if (downTimer) clearTimeout(downTimer);
+      downTimer = null;
+      const down = () => {
+        serviceDown = true;
+        render();
+        void failuresView.read();
+      };
+      if (e.newState === State.StartFailed) down();
+      else if (e.newState === State.Stopped) {
+        downTimer = setTimeout(() => {
+          downTimer = null;
+          if (lc.state === State.Stopped) down();
+        }, SERVICE_DOWN_MS);
+      } else if (serviceDown) {
+        serviceDown = false;
+        render();
+      }
       if (e.newState === State.Stopped && agents) {
         agents = null;
         runsMcpChanged.fire();
@@ -1457,8 +1724,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         onDidChangeMcpServerDefinitions: mcpChanged.event,
         async provideMcpServerDefinitions() {
           const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
+          const ownRunsListed = !!(agents?.url && agents.token);
           return (servers?.servers ?? []).map(
-            (s) => new McpHttpServerDefinition(s.label, vscode.Uri.parse(s.url), s.headers),
+            (s) => new McpHttpServerDefinition(s.label, vscode.Uri.parse(agentMcpUrl(s, ownRunsListed)), s.headers),
           );
         },
       }),
@@ -1476,6 +1744,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
 
   context.subscriptions.push(
+    // Another tool asks through the hub to stop a run started here: its task ends, as with Piwi: Stop.
+    lc.onRequest(STOP_RUN_REQUEST, (params: StopRunParams) =>
+      stopRunAnswer(typeof params?.ref === 'string' && terminateRun(params.ref)),
+    ),
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     // The Playwright configs the breakpoints are read under may change with the status.
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus().then(() => runControl.breakpointsChanged())),
@@ -1501,14 +1773,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (picked === VERDICT_ACTIONS.failures) await vscode.commands.executeCommand('piwi.failures.focus');
       else if (picked === VERDICT_ACTIONS.dashboard) await vscode.env.openExternal(vscode.Uri.parse(ended.url));
       else if (picked === VERDICT_ACTIONS.rerun) await vscode.commands.executeCommand('piwi.rerunFailing');
+      else if (picked === VERDICT_ACTIONS.onlyOnFailure) {
+        // Where the setting is set: the workspace's value when it has one, else the user's.
+        const config = vscode.workspace.getConfiguration('piwi');
+        const target =
+          config.inspect('runNotifications')?.workspaceValue === undefined
+            ? vscode.ConfigurationTarget.Global
+            : vscode.ConfigurationTarget.Workspace;
+        await config.update('runNotifications', 'failures' satisfies RunNotifications, target);
+        vscode.window.setStatusBarMessage(
+          "Piwi: a run's notice now comes only when a test fails; a verification still says how it went",
+          5000,
+        );
+      }
     }),
     // A run started here: a worker started or ended a test, stopped or went on.
-    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),
+    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => {
+      runControl.heard(session);
+      explorer?.sessionChanged(session);
+    }),
+    // A CI run of the branch moved: the CI Runs view and the CI positions.
+    lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => {
+      ciRuns.heard(session);
+      runControl.ciChanged(ciRuns.sessions());
+    }),
     // The code made at a stop, from here or Piwi Picker: written above the stopped line.
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
-      if (e.newState === State.Stopped) runControl.clear();
+      if (e.newState === State.Stopped) {
+        runControl.clear();
+        ciRuns.clear();
+        runControl.ciChanged(ciRuns.sessions());
+        explorer?.sessionsCleared();
+      }
       // A service started again hears the editor's breakpoints, for a run a terminal starts.
       else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),
@@ -1524,6 +1822,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   recording = registerRecording(context, lc);
   context.subscriptions.push(recording);
   await lc.start();
+  announceRunPairing();
   showTestExplorer();
   await updateStatus();
   runControl.breakpointsChanged();
@@ -1544,9 +1843,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     testExplorer: () => explorer?.shown() ?? null,
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
+    runningLines: (uri) => runControl.runningLines(uri),
     pausedPage: () => runControl.pausedPage(),
     workerView: () => runControl.workerView(),
     workerMessage: (message) => runControl.workerMessage(message),
+    pageMessage: (message) => runControl.pageMessage(message),
     pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
     agents: () => agents,

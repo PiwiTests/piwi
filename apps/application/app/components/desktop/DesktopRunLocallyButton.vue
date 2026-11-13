@@ -15,7 +15,13 @@
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan, localRunCopyOptions, type LocalRunOptions } from '~/utils/local-run-args';
+import {
+  buildLocalRunPlan,
+  localRunCopyOptions,
+  localRunHoldRefusal,
+  localRunHoldsFailures,
+  type LocalRunOptions,
+} from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
@@ -91,6 +97,7 @@ const running = computed(() => contextRun.value?.status === 'running');
 
 /** Keep the result on the button for a moment after the run ends. */
 const FLASH_MS = 8000;
+const { count: runCount } = useDesktopRunBadge();
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 const flashRun = computed(() => {
   const run = contextRun.value;
@@ -110,7 +117,7 @@ const face = computed(() => {
   const run = contextRun.value;
   if (run && running.value) {
     return {
-      label: localRunProgressLabel(run),
+      label: localRunProgressLabel(run, runCount(run)),
       color: 'info' as const,
       variant: 'subtle' as const,
       icon: undefined,
@@ -262,6 +269,18 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         },
       },
       {
+        label: 'Hold failures',
+        icon: 'i-lucide-hand',
+        type: 'checkbox',
+        checked: localRunHoldsFailures(options.value),
+        disabled: !!localRunHoldRefusal(options.value),
+        description: localRunHoldRefusal(options.value) ?? undefined,
+        onSelect: (e: Event) => {
+          e.preventDefault();
+          setOption({ holdFailures: !options.value.holdFailures });
+        },
+      },
+      {
         label: `Repeat each (× ${options.value.repeatEach})`,
         icon: 'i-lucide-repeat',
         children: REPEAT_CHOICES.map((n) => ({
@@ -274,6 +293,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           },
         })),
       },
+      ...(options.value.repeatEach > 1
+        ? [
+            {
+              label: 'Stop at the first failing repetition',
+              icon: 'i-lucide-octagon-x',
+              type: 'checkbox' as const,
+              checked: options.value.stopAtFirstFailure,
+              onSelect: (e: Event) => {
+                e.preventDefault();
+                setOption({ stopAtFirstFailure: !options.value.stopAtFirstFailure });
+              },
+            },
+          ]
+        : []),
       {
         label: 'Select tests by',
         icon: 'i-lucide-list-filter',

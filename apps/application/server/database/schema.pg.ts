@@ -73,6 +73,7 @@ export const projects = pgTable(
     gateStatus: boolean('gate_status').notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     liveView: boolean('live_view').notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
     liveViewMasks: jsonb('live_view_masks'), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
+    askToWatch: boolean('ask_to_watch').notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -110,6 +111,7 @@ export const testRuns = pgTable(
     shardIndex: integer('shard_index'), // Reporting shard index (1-based) of the shard that created this run; null = not sharded
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
     isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
+    reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`; -1 when the run claimed a plan whose reuse could not be recorded
     filterDetails: jsonb('filter_details'), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
@@ -122,6 +124,7 @@ export const testRuns = pgTable(
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     liveViewKeyDigests: jsonb('live_view_key_digests').$type<string[]>(), // SHA-256 digests of the run's live view keys, one per shard that set it up, never a key: an instance started again takes a running worker's key back by them
+    continuedInId: integer('continued_in_id'), // The run that continued this one, shared after it from the same editor window (its worker's `after`); null for none
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
@@ -129,6 +132,7 @@ export const testRuns = pgTable(
     keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
     requesterId: integer('requester_id').references(() => users.id, { onDelete: 'set null' }), // The person who asked for a requested run (origin `request`), from its request token, never from the reporter; such a run is seen by them alone, and by nobody once null
+    reporterId: integer('reporter_id').references(() => users.id, { onDelete: 'set null' }), // The person whose credentials (an API key or a session) reported the run, which their runs lists show whatever the filters; null with authentication off and for a run started by a request token. Never returned by an API
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     serverCoverageGaps: jsonb('server_coverage_gaps'), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
@@ -150,6 +154,7 @@ export const testRuns = pgTable(
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
     requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
+    reporterIdx: index('idx_test_runs_reporter').on(table.reporterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
@@ -312,6 +317,9 @@ export const failureClusters = pgTable(
     // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
     // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
     announcedAt: timestamp('announced_at', { mode: 'date' }),
+    // How many other keys of the bound Jira project the cluster's failing executions named in the last run that
+    // linked the issues its tests name, past the 10 links from the tests a cluster keeps. Null until then.
+    declaredIssuesMore: integer('declared_issues_more'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -579,7 +587,7 @@ export const testRunsCases = pgTable(
     coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
     stdoutPayloadId: integer('stdout_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stdout, bounded and with its secrets hidden
     stderrPayloadId: integer('stderr_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stderr, bounded and with its secrets hidden
-    browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
+    browser: jsonb('browser'), // The project's resolved browser options: `BrowserConfig` of `@piwitests/core/wire`
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     tags: jsonb('tags'), // string[] — tags this execution declared ('@' stripped)
@@ -1216,7 +1224,7 @@ export const entityLinks = pgTable(
     // The connection that can read/write this record, and the tracker's stable id.
     connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
     externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
-    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'tag' | 'reporter'
 
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1230,6 +1238,31 @@ export const entityLinks = pgTable(
     clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
     connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
+    // One link from the tests per cluster and key, so two runs finishing at once cannot both insert it.
+    declaredKeyIdx: uniqueIndex('idx_entity_links_cluster_declared_key')
+      .on(t.failureClusterId, t.key)
+      .where(sql`origin IN ('annotation', 'tag')`),
+  }),
+);
+
+// An issue a person unlinked from a failure cluster, so the link step does not add it back from the issues its
+// tests name. `external_id` keeps the tracker's issue id of a link from the tests or a created one (null for a
+// pinned one), so the dismissal holds after the issue moves to another key.
+export const entityLinkDismissals = pgTable(
+  'entity_link_dismissals',
+  {
+    id: serial('id').primaryKey(),
+    failureClusterId: integer('failure_cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    externalId: text('external_id'),
+    removedBy: integer('removed_by').references(() => users.id, { onDelete: 'set null' }),
+    removedAt: timestamp('removed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    clusterKeyIdx: uniqueIndex('idx_entity_link_dismissals_cluster_key').on(t.failureClusterId, t.key),
+    removedByIdx: index('idx_entity_link_dismissals_removed_by').on(t.removedBy),
   }),
 );
 
@@ -1485,9 +1518,11 @@ export const projectIntegrations = pgTable(
       .references(() => integrationConnections.id, { onDelete: 'cascade' }),
     projectKey: text('project_key'), // Jira project key (tracker binding)
     issueType: text('issue_type'),
+    declaredIssueTypes: jsonb('declared_issue_types'), // string[] | null — the issue types the tag source links; the binding's issue type when null
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    titlePrefix: text('title_prefix'), // put before every ticket title Piwi files for this project; null inherits the connection's
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
@@ -1504,6 +1539,81 @@ export const projectIntegrations = pgTable(
     projectIdx: index('idx_project_integrations_project').on(t.projectId),
     connectionIdx: index('idx_project_integrations_connection').on(t.connectionId),
     projectConnectionIdx: uniqueIndex('idx_project_integrations_project_connection').on(t.projectId, t.connectionId),
+  }),
+);
+
+// Project test management table — the per-project binding of a test management connection (Zephyr Scale first): the
+// provider project, where a test's case keys come from, which runs are in scope, how a run is named and which status
+// names its results carry. One row per project, kept apart from the tracker binding (`project_integrations`) so
+// saving one never touches the other. Dry run is on for a new binding.
+export const projectTestManagement = pgTable(
+  'project_test_management',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(true),
+    dryRun: boolean('dry_run').notNull().default(true), // true = nothing is sent to the tool
+    providerProjectKey: text('provider_project_key').notNull(), // the tool's project key (`SHOP`)
+    keySources: jsonb('key_sources'), // { tags: true, externalId: false }
+    runScope: jsonb('run_scope'), // TrackerRunScope: branches, environments
+    runPolicy: jsonb('run_policy'), // { mode: 'per-run' | 'reuse', nameTemplate, runKey?, folderId?, version? }
+    statuses: jsonb('statuses'), // { pass, fail, flaky, notExecuted }: the tool's status names
+    options: jsonb('options'), // { flakyAs, skippedAs, includeError, includeComment }
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('idx_project_test_management_project').on(t.projectId),
+    connectionIdx: index('idx_project_test_management_connection').on(t.connectionId),
+  }),
+);
+
+// Test management case catalog — a cached copy of the test case keys of a provider project, read through `listCases`
+// by the catalog task and the Refresh button. It holds what the screens show (key, the tool's ID, name, status name and
+// folder ID).
+export const testManagementCases = pgTable(
+  'test_management_cases',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key').notNull(),
+    key: text('key').notNull(),
+    providerId: text('provider_id').notNull(),
+    name: text('name').notNull(),
+    statusName: text('status_name'),
+    folder: text('folder'), // the folder's ID in the tool, null at the project's root
+    fetchedAt: timestamp('fetched_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    keyIdx: uniqueIndex('idx_test_management_cases_key').on(t.connectionId, t.projectKey, t.key),
+  }),
+);
+
+// When a project's catalog was last read from the tool, kept apart from the case rows because a read that found no
+// cases leaves none to carry the time.
+export const testManagementCatalogReads = pgTable(
+  'test_management_catalog_reads',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key').notNull(),
+    fetchedAt: timestamp('fetched_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('idx_test_management_catalog_reads_project').on(t.connectionId, t.projectKey),
   }),
 );
 
@@ -1692,6 +1802,62 @@ export const testSelections = pgTable(
     projectIdIdx: index('idx_test_selections_project_id').on(table.projectId),
     createdByIdx: index('idx_test_selections_created_by').on(table.createdBy),
     keyUnique: uniqueIndex('idx_test_selections_project_key').on(table.projectId, table.key),
+  }),
+);
+
+// Reused results: the tests a run skipped under its pass reuse plan, each with the
+// earlier pass that stood in for it. Not executions: they count toward the run's
+// verdict and the CI gate only. Written once, when the run is finalized, for the
+// tests the run did not execute in any of the projects the plan skipped them in.
+export const reusedResults = pgTable(
+  'reused_results',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    projects: jsonb('projects').notNull(), // string[] — the Playwright projects it was skipped in
+    sourceRunId: integer('source_run_id'), // the run of the pass it reuses; not a foreign key, runs are pruned apart
+    sourceExecutionIds: jsonb('source_execution_ids').notNull(), // number[] — that pass's final attempts
+    sourceCommit: text('source_commit').notNull(),
+    planId: integer('plan_id').notNull(), // the plan, kept after the plan row expires
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runCaseUnique: uniqueIndex('idx_reused_results_run_case').on(table.runId, table.testCaseId),
+    testCaseIdx: index('idx_reused_results_test_case').on(table.testCaseId),
+  }),
+);
+
+// Run plans: which tests of a selection a run executes and which it reuses from
+// an earlier pass whose code has not changed (pass reuse). Created once by
+// `piwi plan`; every shard of a CI matrix reads the same stored plan. A plan
+// expires after a day; creating a plan deletes the project's expired ones.
+export const runPlans = pgTable(
+  'run_plans',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    selectionKey: text('selection_key').notNull(), // the selection planned: a saved key, a built-in, or 'full'
+    commit: text('commit'), // the commit the plan was made at; null outside a git checkout
+    branch: text('branch'),
+    plan: jsonb('plan').notNull(), // StoredRunPlan: the tests to run, the reused tests and the reasons
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    projectExpiresIdx: index('idx_run_plans_project_expires').on(table.projectId, table.expiresAt),
+    createdByIdx: index('idx_run_plans_created_by').on(table.createdBy),
   }),
 );
 
@@ -2488,6 +2654,11 @@ export type IntegrationConnection = typeof integrationConnections.$inferSelect;
 export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
 export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
 export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type ProjectTestManagement = typeof projectTestManagement.$inferSelect;
+export type NewProjectTestManagement = typeof projectTestManagement.$inferInsert;
+export type TestManagementCase = typeof testManagementCases.$inferSelect;
+export type NewTestManagementCase = typeof testManagementCases.$inferInsert;
+export type TestManagementCatalogRead = typeof testManagementCatalogReads.$inferSelect;
 export type IntegrationAction = typeof integrationActions.$inferSelect;
 export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;

@@ -8,11 +8,12 @@
  * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
  * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
- * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
+ * set, checked field by field and answered once; nothing it asks evaluates code or reaches an instance, and none names
+ * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
- * is, a stop no pause bar shows waits for it. One that says a person follows the runs there (`follow`, a Runs window
- * open) holds a failure no pause bar shows too, until it says otherwise or closes: a connection that never says so,
- * such as Piwi Picker's with no Runs window, does not. The code actions it starts at a stop (Assert, Assert a region,
+ * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
+ * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
+ * on, which any connection turns over (`hold`); `follow`, a Runs window open, holds nothing. The code actions it starts at a stop (Assert, Assert a region,
  * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
  * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
  * (`code`: that the code was sent to the client to write, with its warnings, or why it was refused once it started).
@@ -22,9 +23,13 @@
  * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
  * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
- * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
- * hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
+ * window's warning), or each run of the editor window until they stop (`share` with `scope: 'window'`, where the
+ * host shares its window's runs, `sharesWindow`), and every subscribed connection hears how the run stands there
+ * (`session.live`) and whether the window shares its runs (`share-window`). A connection
+ * opens a lane's running test's trace so far in Playwright's trace viewer on this machine (`openTrace`), its answer a
+ * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection; one that came
+ * through a port the client forwards is on another machine, and opens none. A connection the hub closes is cut a
+ * second later when the other side does not answer the close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
  * live hubs of the machine (`peers`, from the host's `peers`: their addresses, never their tokens) after the runs, and
  * again each time the list changes, read every `PEERS_MS` while one is subscribed. A host may join a peer of its own transport (`join`:
  * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
@@ -38,6 +43,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   HUB_CLOSE,
   HUB_FEATURES,
+  type HubFeature,
   HUB_HELLO_MS,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -50,12 +56,13 @@ import {
   MAX_HUB_ROOTS,
   MAX_HUB_WARNINGS,
   hubPeersOf,
+  hubHostPort,
   isExtensionOrigin,
-  isHubHost,
   parseHubCommand,
   parseHubHello,
   type HubAnswer,
   type HubCodeIntent,
+  type HubWindowAction,
   type HubIntent,
   type HubMessage,
   type HubSession,
@@ -65,7 +72,7 @@ import {
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { LaneViewFrame, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import type { LaneViewFrame, LaneViewLayer, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -89,17 +96,42 @@ export interface HubRunInfo {
   project: string | null;
 }
 
+/**
+ * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
+ * run sessions start Playwright's trace viewer (`opensTraces`) and the connection is on this machine, not `forwarded`,
+ * and `share-window` only where its host is an editor window that shares its runs until the person stops
+ * (`sharesWindow`).
+ */
+export function hubFeatures(
+  options: Pick<RunHubOptions, 'stopRun' | 'sessions' | 'sharesWindow'>,
+  forwarded = false,
+): HubFeature[] {
+  const features = HUB_FEATURES.filter(
+    (feature) =>
+      (feature !== 'stop' || !!options.stopRun) &&
+      (feature !== 'trace' || (options.sessions.opensTraces && !forwarded)),
+  );
+  return options.sharesWindow ? [...features, 'share-window'] : features;
+}
+
+/** Why `openTrace` is refused to a connection that came through a port the client forwards. */
+const TRACE_ELSEWHERE = "Playwright's trace viewer would open on the machine the run runs on, not this one.";
+
 export interface RunHubOptions {
   sessions: RunSessions;
   /** The actions a stop takes: the intents, the responses the test kept and the one to mock. */
   actions: Pick<StopActions, 'action' | 'requests'>;
   /** What the Runs page shows of a run beside its workers. */
   runInfo(ref: string, root: string | null): HubRunInfo;
+  /**
+   * Where a stop's 0-based `line` of the file `uri` stands now, after the edits made since the run `ref` started, as
+   * the editor shows it (`RunLines`); null keeps the run's line. Absent, every stop keeps the run's.
+   */
+  lineNow?(ref: string, uri: string, line: number): number | null;
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
   /**
-   * A subscribed connection came or went, or one began or stopped following the runs: whether a stop no pause bar
-   * shows can be answered, or a failure is held, changed.
+   * A subscribed connection came or went: whether a stop no pause bar shows can be answered changed.
    */
   surfacesChanged(): void;
   /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
@@ -109,6 +141,16 @@ export interface RunHubOptions {
    * `peers` names, without their tokens. None when absent.
    */
   peers?(): readonly LiveHub[];
+  /**
+   * Stops the whole run `ref` as the tool that started it does (the `stop` command): the editor's client ends its task
+   * or process, the desktop app's window its run. Absent, the hub leaves the `stop` feature out and refuses the command.
+   */
+  stopRun?(ref: string): Promise<RunControlResult>;
+  /**
+   * The host is an editor window whose runs a person may share until they stop (`share` with `scope: 'window'`): the
+   * hub lists `share-window`, and tells each subscribed connection the window's state (`share-window`).
+   */
+  sharesWindow?: boolean;
   /** The token `hello` must carry: a new random one by default, the desktop app's own token in its server. */
   token?: string;
   /** Why the connections close as the hub does. */
@@ -155,9 +197,14 @@ interface Connection {
   transport: HubTransport;
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
+  /**
+   * Its handshake named a port the client forwards to the hub (`forwarded`): it comes from another machine, the
+   * browser's, where no trace viewer of this one shows.
+   */
+  forwarded: boolean;
   subscribed: boolean;
-  /** A person follows the runs through it (`follow`): a Runs window is open. */
-  following: boolean;
+  /** It subscribed only to observe (`observe`): it answers no stop. */
+  observes: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
   viewer: Viewer;
@@ -170,6 +217,9 @@ interface Connection {
   /** The `peers` message it heard last, as JSON; null before any. */
   peersHeard: string | null;
 }
+
+/** A WebSocket connection's tool, as presence names it: only a browser extension opens one. */
+const PICKER: Viewer['who'] = { kind: 'picker', name: 'Piwi Picker' };
 
 /** Cut a connection being closed once `CLOSE_GRACE_MS` passed, unless the other side closed it by then. */
 function cutSoon(ws: Socket): void {
@@ -275,16 +325,18 @@ export class RunHub {
     return hub;
   }
 
-  /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
+  /** Whether a connection hears the runs (`subscribe`), not only to observe them, and so can answer a stop. */
   answersStops(): boolean {
-    for (const connection of this.connections) if (connection.subscribed) return true;
+    for (const connection of this.connections) if (connection.subscribed && !connection.observes) return true;
     return false;
   }
 
-  /** Whether a person follows the runs through a subscribed connection (`follow`): a failure no bar shows waits then. */
-  follows(): boolean {
-    for (const connection of this.connections) if (connection.subscribed && connection.following) return true;
-    return false;
+  /** Whether the editor window shares its runs changed: every subscribed connection hears it (`share-window`). */
+  shareWindowChanged(on: boolean): void {
+    if (!this.options.sharesWindow) return;
+    for (const connection of this.connections) {
+      if (connection.subscribed) this.send(connection, { type: 'share-window', on });
+    }
   }
 
   /** A run changed: every subscribed connection hears it, with what each stop takes from it. */
@@ -297,19 +349,32 @@ export class RunHub {
     }
   }
 
-  /** A session as one connection hears it: each stop with what it takes from that connection now. */
+  /**
+   * A session as one connection hears it: each stop with what it takes from that connection now, and who is present,
+   * watches and drives, the connection itself marked `self`.
+   */
   private forViewer(session: HubSession, connection: Connection): HubSession {
     const { sessions } = this.options;
+    const present = sessions.presenceFor(session.ref, connection.viewer);
+    const { presence: _presence, ...rest } = session;
     return {
-      ...session,
-      workers: session.workers.map((worker) =>
-        worker.stop
-          ? {
-              ...worker,
-              stop: { ...worker.stop, intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer) },
-            }
-          : worker,
-      ),
+      ...rest,
+      ...(present?.presence.length ? { presence: present.presence } : {}),
+      workers: session.workers.map(({ watchers: _watchers, ...worker }) => {
+        const own = present?.workers.get(worker.worker);
+        const seen = own?.watchers.length ? { watchers: own.watchers } : {};
+        if (!worker.stop) return { ...worker, ...seen };
+        const { driver: _driver, ...stop } = worker.stop;
+        return {
+          ...worker,
+          ...seen,
+          stop: {
+            ...stop,
+            intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer),
+            ...(own?.driver ? { driver: own.driver } : {}),
+          },
+        };
+      }),
     };
   }
 
@@ -345,6 +410,15 @@ export class RunHub {
         this.send(connection, { type: 'lane-frame', ...latest });
       }
     });
+  }
+
+  /**
+   * A layer of a lane a connection watches and asked for, as its worker sent it, bounded as each layer is: dropped
+   * while the connection's socket left more than `MAX_VIEW_BUFFERED` unread. The hub keeps none.
+   */
+  private laneLayer(connection: Connection, layer: LaneViewLayer): void {
+    if (connection.transport.buffered() > MAX_VIEW_BUFFERED) return;
+    this.send(connection, { type: 'lane-layer', ...layer });
   }
 
   /**
@@ -407,8 +481,8 @@ export class RunHub {
    * nothing until it subscribes, commands the hub as a WebSocket connection does, and counts toward none of the
    * WebSocket's limits.
    */
-  join(transport: HubTransport): HubPeer {
-    const connection = this.connection(transport, null);
+  join(transport: HubTransport, who?: Viewer['who']): HubPeer {
+    const connection = this.connection(transport, null, who);
     this.connections.add(connection);
     return {
       viewer: connection.viewer,
@@ -425,16 +499,19 @@ export class RunHub {
     };
   }
 
-  private connection(transport: HubTransport, ws: Socket | null): Connection {
+  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who'], forwarded = false): Connection {
     const connection: Connection = {
       transport,
       ws,
+      forwarded,
       subscribed: false,
-      following: false,
+      observes: false,
       pending: 0,
       viewer: {
         frame: (frame) => this.frame(connection, frame),
         laneFrame: (frame) => this.laneFrame(connection, frame),
+        laneLayer: (layer) => this.laneLayer(connection, layer),
+        ...(who ? { who } : {}),
       },
       frames: new Map(),
       input: new RateWindow(MAX_VIEW_EVENT_RATE),
@@ -453,15 +530,18 @@ export class RunHub {
     this.options.sessions.unwatchAll(connection.viewer);
     for (const pacer of connection.frames.values()) pacer.close();
     connection.frames.clear();
-    if (connection.subscribed) this.options.surfacesChanged();
+    if (connection.subscribed && !connection.observes) this.options.surfacesChanged();
   }
 
   private upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on('error', () => socket.destroy());
     if (req.url !== HUB_PATH) return refuse(socket, 404, 'Not Found');
-    // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket.
+    // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket. A process of
+    // this machine sends none (the desktop app's server): its `hello` holds the token as an extension's does.
     const forwarded = this.options.forwarded?.() ?? [];
-    if (!isHubHost(req.headers.host, this.port, forwarded) || !isExtensionOrigin(req.headers.origin)) {
+    const origin = req.headers.origin;
+    const port = hubHostPort(req.headers.host, this.port, forwarded);
+    if (port === null || (origin !== undefined && !isExtensionOrigin(origin))) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no
@@ -476,12 +556,13 @@ export class RunHub {
     if (open.length >= MAX_CONNECTIONS || unauthenticated >= MAX_UNAUTHENTICATED) {
       return refuse(socket, 503, 'Service Unavailable');
     }
-    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws));
+    // A port the client forwards is the browser's machine's, even one of the same number as the hub's own.
+    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws, forwarded.includes(port)));
   }
 
-  private accept(socket: WebSocket): void {
+  private accept(socket: WebSocket, forwarded: boolean): void {
     const ws: Socket = { socket, authenticated: false, alive: true, cutting: false };
-    const connection = this.connection(socketTransport(socket), ws);
+    const connection = this.connection(socketTransport(socket), ws, PICKER, forwarded);
     this.connections.add(connection);
     const hello = setTimeout(
       () => closeWith(ws, HUB_CLOSE.helloTimeout, 'No hello in time.'),
@@ -507,7 +588,7 @@ export class RunHub {
           client: cut(client, MAX_HUB_CLIENT),
           roots: roots.slice(0, MAX_HUB_ROOTS),
           keepaliveMs: this.options.keepaliveMs ?? HUB_KEEPALIVE_MS,
-          features: [...HUB_FEATURES],
+          features: hubFeatures(this.options, connection.forwarded),
         });
         return;
       }
@@ -555,26 +636,25 @@ export class RunHub {
           const live = sessions.current();
           const first = !connection.subscribed;
           connection.subscribed = true;
+          if (first) connection.observes = command.observe === true;
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
           for (const session of live) {
             this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
           }
           if (connection.ws) this.tellPeers([connection]);
-          if (first) this.options.surfacesChanged();
+          if (this.options.sharesWindow) {
+            this.send(connection, { type: 'share-window', on: sessions.sharingWindow });
+          }
+          if (first && !connection.observes) this.options.surfacesChanged();
           return;
         }
-        case 'follow': {
-          const changed = connection.following !== command.on;
-          connection.following = command.on;
-          reply({
+        case 'follow':
+          // A Runs window open: each run names it among those present.
+          sessions.presentOn(connection.viewer, command.on);
+          return reply({
             ok: true,
-            message: command.on
-              ? 'A failure no pause bar shows waits for an answer while this connection follows the runs.'
-              : 'A failure no pause bar shows goes on unless another surface follows the runs.',
+            message: 'Each run’s Hold failures says whether a failure no pause bar shows waits at its line.',
           });
-          if (changed && connection.subscribed) this.options.surfacesChanged();
-          return;
-        }
         case 'runControl':
           if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
@@ -633,14 +713,42 @@ export class RunHub {
         }
         case 'pick-at': {
           const { ref, worker, since, x, y } = command;
-          const picked = await sessions.pickAt({ ref, worker, since, x, y });
-          return reply(picked, { locator: picked.locator });
+          const picked = await sessions.pickAt({ ref, worker, since, x, y }, connection.viewer);
+          return reply(picked, {
+            locator: picked.locator,
+            ...(picked.taken !== undefined ? { taken: picked.taken } : {}),
+          });
         }
         case 'share':
-          return reply(sessions.share({ ref: command.ref, on: command.on }));
+          if (command.scope !== 'window') return reply(sessions.share({ ref: command.ref, on: command.on }));
+          if (!this.options.sharesWindow) {
+            return reply({ ok: false, message: 'This hub shares one run at a time: share each run from its card.' });
+          }
+          return reply(
+            sessions.share({ on: command.on, scope: 'window', ...(command.ref !== null ? { ref: command.ref } : {}) }),
+          );
+        case 'hold':
+          return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
+        case 'stop':
+          return reply(
+            this.options.stopRun
+              ? await this.options.stopRun(command.ref)
+              : { ok: false, message: 'This hub cannot stop a run: stop it where it was started.' },
+          );
+        case 'drive': {
+          const { ref, worker, since, on } = command;
+          return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
+        }
+        case 'openTrace':
+          if (connection.forwarded) return reply({ ok: false, message: TRACE_ELSEWHERE });
+          // The answer is a sentence: the trace's path stays with the hub.
+          return reply(await sessions.openTrace({ ref: command.ref, lane: command.lane }));
         case 'watch': {
-          const { ref, lane, on } = command;
-          reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
+          const { ref, lane, on, layers } = command;
+          const answer = await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer);
+          reply(answer);
+          // A watch that lists the page's text asks for it now, merged with an ask the run sessions just made.
+          if (answer.ok && on && layers?.includes('text')) void sessions.laneText({ ref, lane }, connection.viewer);
           return this.resend(connection, ref);
         }
         default:
@@ -650,7 +758,7 @@ export class RunHub {
                 ref: command.ref,
                 worker: command.worker,
                 since: command.since,
-                action: command.type as HubIntent | HubCodeIntent,
+                action: command.type as HubIntent | HubCodeIntent | HubWindowAction,
               },
               connection.viewer,
             ),
@@ -670,8 +778,18 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, traces, ...worker }) => ({
         ...worker,
+        ...(traces ? { traces: true as const } : {}),
+        // Each surface names the stop's line where it stands now, as the editor does.
+        ...(worker.stop
+          ? {
+              stop: {
+                ...worker.stop,
+                line: this.options.lineNow?.(session.ref, worker.stop.uri, worker.stop.line) ?? worker.stop.line,
+              },
+            }
+          : {}),
         ...(waiting ? { waiting: { ...waiting, title: cut(waiting.title, MAX_HUB_MESSAGE) ?? '' } } : {}),
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
@@ -688,6 +806,8 @@ export class RunHub {
           }
         : {}),
       ...(session.progress ? { progress: session.progress } : {}),
+      ...(session.page ? { page: session.page } : {}),
+      ...(session.hold ? { hold: { ...session.hold } } : {}),
     };
   }
 

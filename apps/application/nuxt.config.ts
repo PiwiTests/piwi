@@ -120,14 +120,21 @@ export default defineNuxtConfig({
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
   // with the reporter), and so do @piwitests/editor, whose run control the
-  // desktop build's server hosts (server/utils/desktop-runs.ts), and
-  // @piwitests/run-ui, whose highlighter the server renders exports with; Vite must
-  // transpile them since node_modules is not transpiled by default. Nuxt also
-  // passes this list to Nitro's externals.inline, so they are bundled into the
-  // server build instead of being copied as TypeScript into
-  // .output/server/node_modules.
+  // desktop build's server hosts (server/utils/desktop-runs.ts),
+  // @piwitests/run-ui, whose highlighter the server renders exports with, and
+  // @piwitests/run-model, the run model the Local runs tray shares with Piwi
+  // Picker's Runs window; Vite must transpile them since node_modules is not
+  // transpiled by default. Nuxt also passes this list to Nitro's
+  // externals.inline, so they are bundled into the server build instead of
+  // being copied as TypeScript into .output/server/node_modules.
   build: {
-    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor', '@piwitests/run-ui'],
+    transpile: [
+      '@piwitests/core',
+      '@piwitests/picker-dom',
+      '@piwitests/editor',
+      '@piwitests/run-ui',
+      '@piwitests/run-model',
+    ],
   },
 
   devtools: {
@@ -450,6 +457,9 @@ export default defineNuxtConfig({
       '*/10 * * * *': ['gate:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
+      // Read the test case catalog of each bound test management project that was not read in the last day
+      // (the task skips the ones that are fresh, so the hourly tick costs nothing most of the time)
+      '37 * * * *': ['integrations:test-management-catalog'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
       // rows and canonical nodes unseen for thirty runs (independent of retention).
       '23 3 * * *': ['graph:sweep'],

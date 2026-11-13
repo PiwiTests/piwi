@@ -26,6 +26,8 @@ const props = defineProps<{
   hookGeometry: (item: TimelineItem) => { x: number; width: number };
   /** Every attempt of a test that ran more than once, first attempt first; empty otherwise. */
   attempts: (item: TimelineItem) => TimelineItem[];
+  /** The width of a running attempt's usual duration, lifted with it. */
+  ghostWidth: (item: TimelineItem) => number | undefined;
 }>();
 
 const { labelWidth, axisHeight, barHeight } = TIMELINE_LAYOUT;
@@ -97,6 +99,7 @@ const arrows = computed(() => {
       :expandable="expandable(bar)"
       :hooks="hooks(bar)"
       :hook-geometry="hookGeometry"
+      :ghost-width="ghostWidth(bar)"
     />
     <path
       v-for="(d, i) in arrows"

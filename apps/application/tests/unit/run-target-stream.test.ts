@@ -270,6 +270,17 @@ describe('a connected app’s stream', () => {
     expect(runTargetStreamCount(targetId)).toBe(0);
   });
 
+  test('closes without saying the key is gone when the check at a minute is refused with a 403', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const { key, targetId } = await target();
+    const s = await open(key);
+    await db.update(schema.runTargets).set({ userId: otherUserId }).where(eq(schema.runTargets.id, targetId));
+    await vi.advanceTimersByTimeAsync(RUN_TARGET_RECHECK_MS);
+    await s.pump;
+    expect(s.isDone()).toBe(true);
+    expect(s.events.map((e) => e.type)).not.toContain('revoked');
+  });
+
   test('reads as online only while the app has called the instance within two minutes', async () => {
     const { key, targetId } = await target();
     const s = await open(key);

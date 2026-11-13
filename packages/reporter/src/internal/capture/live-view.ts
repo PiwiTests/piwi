@@ -7,11 +7,15 @@ import {
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
   LIVE_FRAME_QUALITY,
+  LIVE_FRAME_TYPE,
   LIVE_FRAME_WIDTH,
   LIVE_SHARE_MISSING,
   LIVE_SHARE_UNKNOWN,
+  LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_ENV,
   MAX_LIVE_FRAME,
+  encodeLiveMessage,
+  liveFrameHeader,
   liveRunPage,
   liveShareRefusal,
   parseInstanceToWorker,
@@ -24,15 +28,30 @@ import {
   type LiveWorkerId,
   type WorkerToInstance,
   type LiveTestOutcome,
+  type InstanceToWorker,
+  liveThumbHeader,
 } from '@piwitests/core/live-view';
+import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
-import { PIWI_RUN_LOG_ENV } from '../config/env.js';
+import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
+import { LiveByteBudget, LiveInspect } from './live-inspect.js';
 import { subscribeLane, type LaneSubscription } from './lane-feed.js';
+import {
+  LaneFilmstrip,
+  LaneTexts,
+  followTraceText,
+  knownSecrets,
+  layersTitleOf,
+  subscribePageEvents,
+  takeLaneText,
+  type KeptThumb,
+  type WatchedLane,
+} from './lane-layers.js';
 import type { PageFrame } from './page-view.js';
 
 /**
@@ -44,18 +63,23 @@ import type { PageFrame } from './page-view.js';
  * closes the stream as they stop sharing it, the viewers hearing why (`unshared`); `liveViewState` says how it stands,
  * and why a run without a key cannot be shared (`none:<why>` in place of the address), for the run channel to tell.
  * Nothing goes to the instance while the run is not shared. While someone watches, the running test's page goes out as
- * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at most
- * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
- * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
- * alone waiting. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
+ * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at the size and pace
+ * the instance says its viewers ask (`view`: the largest image one of them shows, within 1280 by 800 device pixels,
+ * and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles alone), else at most `LIVE_FRAME_WIDTH` by
+ * `LIVE_FRAME_HEIGHT` and `LIVE_FRAME_FPS` frames a second, at `LIVE_FRAME_QUALITY` and `LIVE_FRAME_BYTE_RATE` bytes a
+ * second at most; a page whose video records keeps the video's size, its screencast's first client. Each frame is
+ * posted with the call it was taken at, one post in flight, the latest frame alone waiting: as its JPEG's bytes behind
+ * a JSON header (`LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside JSON to an older one. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
  * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and a headed stop's pause
  * bar in the same pass (`page-view.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
- * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches, it also posts
- * the call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest
- * again for a viewer that comes later. Every call named goes through
+ * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches it in full
+ * (`view`'s `full`; an instance that does not say it counts as one whose viewers do), it also follows and posts the
+ * call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest again
+ * for a viewer that comes later or that the instance asks for (`resend`), and only then posts the test's end
+ * (`ended`): a worker only tiles show turns no call stream on. Every call named goes through
  * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then, in a
  * CI run, every 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost and once that
  * it is back (`printRunLine`); outside CI, it is given up until a person shares the run again. A key the instance does
@@ -63,6 +87,20 @@ import type { PageFrame } from './page-view.js';
  * or the setting turned on again, takes the key back. A key refused (403), or a run no longer live (410), gives it up
  * at once, for the worker's life. The key is out of the worker's environment from the connection's opening to its
  * close (`hideKey`).
+ *
+ * In a run something may pause (`mayPause`), or outside CI, the call log comes from Playwright's in-process
+ * instrumentation (`live-call-log.ts`'s `listener`), which moves no stop, in place of the call stream. Beside the
+ * images, a full view may ask for layers (`view`'s `layers`, `lane-layers.ts`), each posted while asked alone: the page's
+ * events (`page-event`, `MAX_PAGE_EVENTS_PER_SECOND` at most), its text (`text`: as the trace writes it, and taken as the
+ * instance asks, `text` on the stream, one take at a time, `LANE_TEXTS_PER_SECOND` at most, `LaneTexts`, masked with
+ * the project's masks too), and the test's filmstrip (`thumb`, a live message whose data is the JPEG): while anyone
+ * watches, the view's own masked image shortly after each call of the test ended, scaled down, kept in memory for the
+ * test alone (`LaneFilmstrip`) until the project's masks change, all of them posted again to a viewer that asks later
+ * (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most, `MAX_FILMSTRIP` waiting at most. None is
+ * stored. While a full view has Inspect open (`view`'s `inspect`), the page's DOM snapshots and the resources they name
+ * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`: each of its posts waits once, a
+ * second at most, and the frames after it are spaced by its bytes, a second at most), and Inspect opens again as the
+ * project's masks change.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -87,6 +125,8 @@ const SHOT_MS = 1000;
 const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
+/** The most page events posted at once. */
+const MAX_EVENT_POSTS = 8;
 /** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
 const GIVE_UP = new Set([403, 410]);
 /**
@@ -116,6 +156,8 @@ interface Link {
   refused: string | null;
   /** Whether the stream is wanted: from the start in a CI run, while a person shares the run outside one. */
   sharing: boolean;
+  /** The run on the instance this one continues (`LIVE_VIEW_AFTER_PARAM`), named on each stream it opens. */
+  after: number | null;
   /** Why the sharing stopped though nobody asked: the instance did not answer after the retries, or took no key. */
   lost: string | null;
   /** A CI run's: the file the global setup reads the worker's lines from for the run's log (`PIWI_RUN_LOG`). */
@@ -150,6 +192,52 @@ interface Link {
    * named some this reporter cannot read, and no image goes.
    */
   masks: string[] | null;
+  /**
+   * What the viewers ask of the images, as the stream open now last said (`view`): null from an instance that never
+   * says it, which takes frames in base64 inside JSON alone, and shows the worker in full alone.
+   */
+  asked: Extract<InstanceToWorker, { type: 'view' }> | null;
+}
+
+/**
+ * What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts, and Inspect
+ * of the view's page.
+ */
+const layerRuns: {
+  events: (() => void) | null;
+  text: (() => void) | null;
+  texts: LaneTexts | null;
+  thumbs: ReturnType<typeof setInterval> | null;
+  inspect: LiveInspect | null;
+} = { events: null, text: null, texts: null, thumbs: null, inspect: null };
+/** The bytes a second the view's frames and Inspect share. */
+const budget = new LiveByteBudget();
+/** The resources Inspect posted to the run on the stream open now, by name: each goes once. */
+const inspectSent = new Set<string>();
+/** The view and its test now, counted: a text taken for another one goes nowhere. */
+let textGeneration = 0;
+/** The test's filmstrip, taken from the view's own masked images while someone watches. */
+let filmstrip: LaneFilmstrip | null = null;
+/** The filmstrip's images waiting to be posted, in order, each with its test, and whether one is in flight. */
+const thumbPosts: { queue: Array<KeptThumb & { test: string }>; posting: boolean } = { queue: [], posting: false };
+/** The page events posted now. */
+let eventPosts = 0;
+
+/** Whether the full views ask for `layer` now, while the view runs. */
+function layerAsked(own: Link, layer: LaneLayer): boolean {
+  return (
+    !!view && own === link && active(own) && own.viewers > 0 && shownInFull(own) && !!own.asked?.layers.includes(layer)
+  );
+}
+
+/** Whether a full view has Inspect open now, while the view runs. */
+function inspectAsked(own: Link): boolean {
+  return !!view && own === link && active(own) && own.viewers > 0 && shownInFull(own) && !!own.asked?.inspect;
+}
+
+/** Whether a viewer shows the worker in full: only then do its call log and its test's end go. */
+function shownInFull(own: Link): boolean {
+  return own.asked?.full ?? true;
 }
 
 let link: Link | null = null;
@@ -215,6 +303,11 @@ function showKey(): void {
 /** Whether the worker holds the run's live view key, shared or not. */
 export function liveViewOpen(): boolean {
   return link !== null;
+}
+
+/** Whether the worker holds a key of a run outside CI: one a person may pause, whose call log the listener follows. */
+export function liveViewMayPause(): boolean {
+  return link !== null && !link.ci;
 }
 
 /** Whether the worker's stream is wanted now and may open: it holds a key the instance takes, and the run is shared. */
@@ -285,7 +378,9 @@ export function openLiveView(
     retries: 0,
     ended: false,
     refused: null,
-    sharing: ci,
+    // A run outside CI shares from its start when it was asked to (`PIWI_SHARE_LIVE`), as a CI run does.
+    sharing: ci || env[PIWI_SHARE_LIVE_ENV] === 'true',
+    after: null,
     ci,
     lost: null,
     runLog: ci ? env[PIWI_RUN_LOG_ENV] || null : null,
@@ -304,8 +399,16 @@ export function openLiveView(
     logTimer: null,
     logRefused: false,
     masks: [],
+    asked: null,
   };
-  if (ci) connect(link);
+  if (link.sharing) connect(link);
+  inspectSent.clear();
+  filmstrip?.close();
+  filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
+    if (!link || !layerAsked(link, 'filmstrip')) return;
+    thumbPosts.queue.push({ ...kept, test });
+    thumbPosts.queue.splice(0, Math.max(0, thumbPosts.queue.length - MAX_FILMSTRIP));
+  });
   changed();
   return true;
 }
@@ -316,6 +419,9 @@ export function closeLiveView(): void {
   link = null;
   running = null;
   missing = null;
+  filmstrip?.close();
+  filmstrip = null;
+  thumbPosts.queue = [];
   showKey();
   void stopView();
   if (!own) return;
@@ -332,16 +438,17 @@ export function closeLiveView(): void {
  * the stream closes, so nothing more goes to the instance. Each one waits for the one before. Nothing happens for a
  * worker without a key, or whose key the instance refused for good.
  */
-export function shareLiveView(on: boolean): Promise<void> {
-  const turn = shareTurn.then(() => (on ? startSharing() : stopSharing()));
+export function shareLiveView(on: boolean, after: number | null = null): Promise<void> {
+  const turn = shareTurn.then(() => (on ? startSharing(after) : stopSharing()));
   shareTurn = turn.catch(() => undefined);
   return turn;
 }
 
-function startSharing(): void {
+function startSharing(after: number | null): void {
   const own = link;
   if (!own || own.ended || own.refused || own.sharing) return;
   own.sharing = true;
+  own.after = after;
   own.lost = null;
   own.answered = null;
   own.retries = 0;
@@ -370,6 +477,9 @@ async function stopSharing(): Promise<void> {
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
   running = { title, page: null, call, mayPause, began: Date.now() };
+  textGeneration++;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -389,7 +499,7 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
   const own = link;
   if (!own) return;
   await own.framePost;
-  if (own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
+  if (own.viewers > 0 && active(own) && shownInFull(own)) void post(own, { type: 'ended', ...own.id, outcome });
 }
 
 /**
@@ -434,6 +544,7 @@ function connect(own: Link): void {
   url.searchParams.set('worker', String(own.id.worker));
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
   if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
+  if (own.after !== null) url.searchParams.set(LIVE_VIEW_AFTER_PARAM, String(own.after));
   let openedAt: number | null = null;
   let dropped = false;
   /**
@@ -475,6 +586,10 @@ function connect(own: Link): void {
     }
     openedAt = Date.now();
     own.answered = null;
+    // The form this stream's instance takes frames in, and what its viewers ask, it says on this stream.
+    own.asked = null;
+    // An instance started again holds none of the resources Inspect posted before.
+    inspectSent.clear();
     if (own.dark) {
       own.backTimer = setTimeout(() => {
         own.backTimer = null;
@@ -502,6 +617,9 @@ function connect(own: Link): void {
           .join('\n');
         const message = data ? parseInstanceToWorker(data) : null;
         if (message?.type === 'masks') setMasks(own, message.locators);
+        else if (message?.type === 'view') setAsked(own, message);
+        else if (message?.type === 'resend') resendView(own);
+        else if (message?.type === 'text') sendText(own);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -610,30 +728,188 @@ function setViewers(own: Link, count: number): void {
   if (own !== link) return;
   if (count !== before) changed();
   if (count === 0) return void stopView();
-  if (!active(own)) return;
-  if (!running) {
-    // Between two tests, or in a hook outside them: the one who came hears why no image shows.
-    if (count > before) void post(own, { type: 'frame', ...own.id, refused: NO_TEST });
-    return;
-  }
-  if (view) {
-    if (count > before) {
-      view.frames.resend();
-      if (own.log) postLog(own, own.log);
-    }
-    return;
-  }
-  startView();
+  if (count > before) resendView(own);
+  else if (active(own) && running && !view) startView();
 }
 
 /**
- * The project masks `locators` from now on: the image kept for a later viewer was masked without them, so the view
- * takes one again.
+ * A viewer came, or the instance asks again: the view starts, or sends its latest frame again and, to a full view, its
+ * call log; between two tests, or in a hook outside them, the viewers hear why no image shows.
+ */
+function resendView(own: Link): void {
+  if (own !== link || !active(own) || own.viewers === 0) return;
+  if (!running) return void post(own, { type: 'frame', ...own.id, refused: NO_TEST });
+  if (!view) return startView();
+  view.frames.resend();
+  if (own.log && shownInFull(own)) postLog(own, own.log);
+  if (layerAsked(own, 'filmstrip')) queueStrip(own);
+}
+
+/**
+ * The project masks `locators` from now on: the images kept for a later viewer, the filmstrip's included, and a text
+ * being taken were masked without them, so they go, and the view takes one again.
  */
 function setMasks(own: Link, locators: string[] | null): void {
   if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
   own.masks = locators;
-  if (own === link) view?.frames.refresh();
+  if (own !== link) return;
+  textGeneration++;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
+  view?.frames.refresh();
+  // Inspect opens again, as the masks say.
+  void stopInspect();
+  applyLayers(own, new Set(own.asked?.layers ?? []));
+}
+
+/**
+ * The viewers ask `asked` of the images from now on (null: what an older instance takes): the view takes them at
+ * that size and pace.
+ */
+function setAsked(own: Link, asked: Link['asked']): void {
+  if (JSON.stringify(asked) === JSON.stringify(own.asked)) return;
+  const before = new Set(own.asked?.layers ?? []);
+  own.asked = asked;
+  if (own !== link) return;
+  view?.frames.asked();
+  followCalls(own);
+  applyLayers(own, before);
+}
+
+/**
+ * Run the layers the full views ask while the view runs, and stop the others; a layer asked anew (not in `before`)
+ * posts the page's text at once, or the test's filmstrip so far.
+ */
+function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
+  if (layerAsked(own, 'events') && !layerRuns.events) {
+    layerRuns.events = subscribePageEvents((event, at) => {
+      // An instance that answers slowly is not sent more than a few at once: the others go nowhere.
+      if (!layerAsked(own, 'events') || eventPosts >= MAX_EVENT_POSTS) return;
+      eventPosts++;
+      void post(own, { type: 'page-event', ...own.id, event, at, test: running?.title ?? null }).finally(() => {
+        eventPosts--;
+      });
+    });
+  } else if (!layerAsked(own, 'events') && layerRuns.events) {
+    layerRuns.events();
+    layerRuns.events = null;
+  }
+  if (layerAsked(own, 'text')) {
+    if (!layerRuns.texts) {
+      const texts: LaneTexts = new LaneTexts((snapshot) => postText(own, texts, snapshot));
+      layerRuns.texts = texts;
+    }
+    const texts = layerRuns.texts;
+    layerRuns.text ??= followTraceText(
+      () => view?.page ?? null,
+      () => texts.ask(false),
+    );
+    if (!before.has('text')) texts.ask(true);
+  } else if (layerRuns.text || layerRuns.texts) {
+    layerRuns.text?.();
+    layerRuns.texts?.close();
+    layerRuns.text = null;
+    layerRuns.texts = null;
+  }
+  if (layerAsked(own, 'filmstrip')) {
+    layerRuns.thumbs ??= startThumbPosts(own);
+    if (!before.has('filmstrip')) queueStrip(own);
+  } else if (layerRuns.thumbs) {
+    clearInterval(layerRuns.thumbs);
+    layerRuns.thumbs = null;
+    thumbPosts.queue = [];
+  }
+  if (inspectAsked(own) && !layerRuns.inspect && view) {
+    const inspect = new LiveInspect(view.page, {
+      id: own.id,
+      test: () => running?.title ?? null,
+      masks: () => own.masks,
+      post: (body) => postBody(own, body, LIVE_FRAME_TYPE),
+      budget,
+      sent: inspectSent,
+    });
+    layerRuns.inspect = inspect;
+    void inspect.open();
+  } else if (!inspectAsked(own)) {
+    void stopInspect();
+  }
+}
+
+/** Inspect closes: its reads stop, and Piwi's own trace, if it ran one, stops unsaved. */
+function stopInspect(): Promise<void> {
+  const closing = layerRuns.inspect?.close() ?? Promise.resolve();
+  layerRuns.inspect = null;
+  return closing.catch(() => undefined);
+}
+
+/** Stop every layer: the view stopped; resolves once Inspect closed. */
+function stopLayers(): Promise<void> {
+  textGeneration++;
+  const inspecting = stopInspect();
+  layerRuns.events?.();
+  layerRuns.text?.();
+  layerRuns.texts?.close();
+  if (layerRuns.thumbs) clearInterval(layerRuns.thumbs);
+  layerRuns.events = null;
+  layerRuns.text = null;
+  layerRuns.texts = null;
+  layerRuns.thumbs = null;
+  thumbPosts.queue = [];
+  return inspecting;
+}
+
+/** The instance asks for the page's text now, while a full view asks for it: an ARIA snapshot where the trace has none. */
+function sendText(own: Link): void {
+  if (layerAsked(own, 'text')) layerRuns.texts?.ask(true);
+}
+
+/**
+ * Take the page's text and post it: the trace's latest, else, with `snapshot` (the instance asked, or the layer was
+ * asked anew), an ARIA snapshot of the page now; nothing once the view, its test or its takes (`texts`) changed.
+ */
+async function postText(own: Link, texts: LaneTexts, snapshot: boolean): Promise<void> {
+  const generation = textGeneration;
+  const test = running?.title ?? null;
+  const text = await takeLaneText(view?.page ?? null, own.masks, snapshot);
+  if (!text || generation !== textGeneration || layerRuns.texts !== texts) return;
+  if (link !== own || !view || !active(own) || !layerAsked(own, 'text')) return;
+  await post(
+    own,
+    'refused' in text
+      ? { type: 'text', ...own.id, refused: text.refused, test }
+      : { type: 'text', ...own.id, text, test },
+  );
+}
+
+/** The running test's view while someone watches it, for its filmstrip: its title, and the view's latest frame. */
+function watchedLane(): WatchedLane | null {
+  const own = link;
+  const shown = view;
+  if (!own || !shown || !running || !active(own) || own.viewers === 0) return null;
+  return { test: running.title, latest: () => shown.frames.latest() };
+}
+
+/** Post the test's whole filmstrip so far, to a viewer that asked it later. */
+function queueStrip(own: Link): void {
+  if (!filmstrip || !running || !layerAsked(own, 'filmstrip')) return;
+  const test = running.title;
+  thumbPosts.queue = filmstrip.of(test).map((kept) => ({ ...kept, test }));
+}
+
+/** Post the filmstrip's waiting images, `LANE_THUMBS_PER_SECOND` at most, one in flight. */
+function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
+  const timer = setInterval(() => {
+    if (thumbPosts.posting || !thumbPosts.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
+    const next = thumbPosts.queue.shift()!;
+    thumbPosts.posting = true;
+    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, next.test), next.data), LIVE_FRAME_TYPE)
+      .catch(() => undefined)
+      .finally(() => {
+        thumbPosts.posting = false;
+      });
+  }, 1000 / LANE_THUMBS_PER_SECOND);
+  timer.unref?.();
+  return timer;
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */
@@ -648,11 +924,18 @@ function startView(): void {
   const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
   // The lane's frames, masked with the project's masks and the page's secret fields.
   const frames = subscribeLane({
-    maxWidth: LIVE_FRAME_WIDTH,
-    maxHeight: LIVE_FRAME_HEIGHT,
+    get maxWidth() {
+      return own.asked?.width ?? LIVE_FRAME_WIDTH;
+    },
+    get maxHeight() {
+      return own.asked?.height ?? LIVE_FRAME_HEIGHT;
+    },
     quality: LIVE_FRAME_QUALITY,
-    fps: LIVE_FRAME_FPS,
-    spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
+    get fps() {
+      return own.asked?.fps ?? LIVE_FRAME_FPS;
+    },
+    // A frame is spaced by its own bytes, and by those Inspect posted before it, a second at most.
+    spacing: (frame) => Math.max((frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE, budget.wait()),
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
@@ -669,33 +952,58 @@ function startView(): void {
     if (view?.page === page) void stopView();
   };
   page.once('close', onClose);
-  // The call log Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
-  const following =
-    own.ci && running && !running.mayPause && !own.logRefused
-      ? followCallLog(page, running.began, (log) => {
-          if (live()) postLog(own, log);
-        }).catch(() => null)
-      : null;
-  view = { page, frames, onClose, following };
+  view = { page, frames, onClose, following: null };
+  followCalls(own);
+  applyLayers(own, new Set());
+}
+
+/**
+ * Follow the call log of the view's page while a viewer shows the worker in full, and stop as none does. The call
+ * stream Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses, and any other
+ * run is followed through Playwright's in-process instrumentation, which moves nothing.
+ */
+function followCalls(own: Link): void {
+  const shown = view;
+  if (!shown || own !== link) return;
+  const wanted = !!running && !own.logRefused && shownInFull(own);
+  if (wanted && !shown.following) {
+    const { page } = shown;
+    const source = own.ci && !running!.mayPause ? 'stream' : 'listener';
+    shown.following = followCallLog(
+      page,
+      running!.began,
+      (log) => {
+        if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
+      },
+      { source, titleOf: layersTitleOf, secrets: knownSecrets },
+    ).catch(() => null);
+  } else if (!wanted && shown.following) {
+    void shown.following.then((stop) => stop?.());
+    shown.following = null;
+    forgetLog(own);
+  }
+}
+
+/** The call log shown goes, and the one waiting to go. */
+function forgetLog(own: Link): void {
+  own.log = null;
+  if (own.logTimer) clearTimeout(own.logTimer);
+  own.logTimer = null;
 }
 
 /** Stop the view, `VIEW_END_MS` at most; one still opening is closed once it opened. */
 async function stopView(): Promise<void> {
   const shown = view;
   view = null;
+  const inspecting = stopLayers();
   if (!shown) return;
   shown.page.off('close', shown.onClose);
   void shown.following?.then((stop) => stop?.());
-  const own = link;
-  if (own) {
-    own.log = null;
-    if (own.logTimer) clearTimeout(own.logTimer);
-    own.logTimer = null;
-  }
+  if (link) forgetLog(link);
   const closed = shown.frames.close();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
-    closed.catch(() => undefined),
+    Promise.all([closed.catch(() => undefined), inspecting]),
     new Promise<void>((resolve) => {
       timer = setTimeout(resolve, VIEW_END_MS);
       timer.unref?.();
@@ -709,15 +1017,13 @@ function postFrame(own: Link, frame: PageFrame): void {
   if (!active(own)) return;
   own.posting = true;
   const call = running?.call() ?? null;
-  const data = frame.data.toString('base64');
-  own.framePost = post(own, {
-    type: 'frame',
-    ...own.id,
-    data,
-    call: call && hideCallSecrets(call),
-    test: running?.title ?? null,
-    ...(Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {}),
-  })
+  const shown = { call: call && hideCallSecrets(call), test: running?.title ?? null };
+  const at = Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {};
+  budget.spend(frame.data.length);
+  const posted = own.asked
+    ? postBody(own, encodeLiveMessage(liveFrameHeader(own.id, { ...shown, ...at }), frame.data), LIVE_FRAME_TYPE)
+    : post(own, { type: 'frame', ...own.id, data: frame.data.toString('base64'), ...shown, ...at });
+  own.framePost = posted
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
@@ -747,7 +1053,7 @@ function nextLog(own: Link): void {
     return;
   }
   const log = own.log;
-  if (!active(own) || !view || !log || own.logRefused) return;
+  if (!active(own) || !view || !log || own.logRefused || !shownInFull(own)) return;
   own.logPosting = true;
   own.logSentAt = Date.now();
   let again = false;
@@ -769,13 +1075,22 @@ function post(own: Link, message: WorkerToInstance): Promise<number | null> {
   return active(own) ? send(own, message) : Promise.resolve(null);
 }
 
-/**
- * Post a message to the run's endpoint, with a key the instance takes; resolves with the answer's status, or null
- * when none came. Never throws.
- */
+/** Post a body of the media type `type` to the run's endpoint while the run is shared. */
+function postBody(own: Link, body: Uint8Array, type: string): Promise<number | null> {
+  return active(own) ? sendBody(own, body, type) : Promise.resolve(null);
+}
+
+/** Post a message to the run's endpoint as JSON (`sendBody`). */
 function send(own: Link, message: WorkerToInstance): Promise<number | null> {
+  return sendBody(own, JSON.stringify(message), 'application/json');
+}
+
+/**
+ * Post a body of the media type `type` to the run's endpoint, with a key the instance takes; resolves with the
+ * answer's status, or null when none came. Never throws.
+ */
+function sendBody(own: Link, body: string | Uint8Array, type: string): Promise<number | null> {
   if (own.ended || own.refused !== null) return Promise.resolve(null);
-  const body = JSON.stringify(message);
   return new Promise<number | null>((resolve) => {
     let settled = false;
     const settle = (status: number | null): void => {
@@ -790,8 +1105,8 @@ function send(own: Link, message: WorkerToInstance): Promise<number | null> {
       method: 'POST',
       agent: own.agent,
       headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
+        'Content-Type': type,
+        'Content-Length': typeof body === 'string' ? Buffer.byteLength(body) : body.length,
         Authorization: `Bearer ${own.address.key}`,
       },
     });

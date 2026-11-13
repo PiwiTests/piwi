@@ -5,6 +5,7 @@ import type { RefetchResult } from '../../app/utils/refetch-keeping';
 /**
  * A run page opened while its run initializes refetches the run once it starts, so the page goes live without a
  * reload: on the run's lifecycle events, and each time the shared stream opens, for an event sent while it was closed.
+ * A running run's tally (`run-progress`) reaches the lists' `useRunProgress` listeners alone: it refetches nothing.
  */
 
 const { unmounts, demo } = vi.hoisted(() => ({
@@ -312,5 +313,75 @@ describe('useRunStart', () => {
     expect(run.refetches).toBe(1);
     demo.handler!({ scope: 'global', event: { type: 'run-started', runId: 7, projectId: 1 } });
     expect(run.refetches).toBe(2);
+  });
+});
+
+describe('useRunProgress', () => {
+  const TALLY = {
+    runId: 7,
+    projectId: 1,
+    totalTests: 400,
+    passedTests: 118,
+    failedTests: 2,
+    skippedTests: 0,
+    didNotRunTests: 0,
+  };
+
+  test('hears each tally of the shared stream, which refreshes no list and reaches no lifecycle listener', async () => {
+    vi.useFakeTimers();
+    try {
+      stubBrowser();
+      const { useRunEvents, useRunProgress, useRunStart, useRunStream } = await composables();
+      const tallies: unknown[] = [];
+      useRunProgress((event) => tallies.push(event));
+      let refreshes = 0;
+      useRunStream(async () => refreshes++);
+      const lifecycle: unknown[] = [];
+      useRunEvents((event) => lifecycle.push(event));
+      const { run, status, refresh } = runPage('initializing');
+      useRunStart(7, status, refresh);
+      expect(FakeSource.all).toHaveLength(1);
+      const source = FakeSource.all[0]!;
+      source.open();
+      expect(run.refetches).toBe(1);
+
+      source.send({ type: 'run-progress', ...TALLY });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(tallies).toEqual([{ type: 'run-progress', ...TALLY }]);
+      expect(refreshes).toBe(0);
+      expect(lifecycle).toEqual([]);
+      expect(run.refetches).toBe(1);
+
+      // A lifecycle event still refreshes the lists, and reaches no tally listener.
+      source.send({ type: 'run-finished', runId: 7, projectId: 1, status: 'passed' });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(refreshes).toBe(1);
+      expect(tallies).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('keeps the stream open while only a list hearing tallies listens, and closes it once it leaves', async () => {
+    stubBrowser();
+    const { useRunProgress } = await composables();
+    useRunProgress(() => {});
+    expect(FakeSource.all).toHaveLength(1);
+    expect(FakeSource.all[0]!.closed).toBe(false);
+    for (const unmount of unmounts) unmount();
+    expect(FakeSource.all[0]!.closed).toBe(true);
+  });
+
+  test('in the demo, hears the tallies the service worker broadcasts, as the server’s stream sends them', async () => {
+    stubBrowser(true);
+    const { useRunProgress, useRunStream } = await composables();
+    const tallies: unknown[] = [];
+    useRunProgress((event) => tallies.push(event));
+    let refreshes = 0;
+    useRunStream(async () => refreshes++);
+
+    demo.handler!({ scope: 'progress', event: TALLY });
+    expect(tallies).toEqual([{ type: 'run-progress', ...TALLY }]);
+    expect(refreshes).toBe(0);
   });
 });

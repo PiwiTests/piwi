@@ -101,11 +101,13 @@ describe('clusterKnownIssues', () => {
     expect((await clusterKnownIssues(db as never, [])).size).toBe(0);
   });
 
-  test('a tracker link needs a key and a Jira provider or a connection', () => {
+  test('a tracker link needs a key and a Jira provider or a tracker connection', () => {
     expect(isTrackerLink({ provider: 'jira', key: 'PIWI-1', connectionId: null })).toBe(true);
     expect(isTrackerLink({ provider: 'generic', key: 'OPS-3', connectionId: 4 })).toBe(true);
     expect(isTrackerLink({ provider: 'github', key: '#7', connectionId: null })).toBe(false);
     expect(isTrackerLink({ provider: 'jira', key: null, connectionId: null })).toBe(false);
+    // A test cycle a results sync made sits on a connection and is not an issue.
+    expect(isTrackerLink({ provider: 'zephyr-scale', key: 'SHOP-R2', connectionId: 5 })).toBe(false);
   });
 });
 

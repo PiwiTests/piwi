@@ -1,4 +1,4 @@
-import type { LiveViewRunState } from '#shared/live-view';
+import type { LiveAskView, LiveViewRunState } from '#shared/live-view';
 
 export interface RunLiveViewReadiness {
   desktop: boolean;
@@ -36,4 +36,40 @@ export function runLiveViewStatus(run: RunLiveViewReadiness) {
   // A worker opens the view from the capture fixtures, before its first test: tests without one mean none did.
   if (run.testsWithoutWorkers) return { kind: 'no-workers', label: 'No worker connected' };
   return { kind: 'waiting', label: 'Live view waiting' };
+}
+
+/** What the toolbar offers beside **Not shared live** to a viewer who may ask the developer to share the run. */
+export interface AskToWatchView {
+  /** What it says of the viewer's latest ask: it waits for the developer's answer, or they answered Not now. */
+  note: 'asked' | 'not-now' | null;
+  /** The button: **Ask to watch**, **Ask again** after an ask, or none while the viewer waits to ask again. */
+  action: 'ask' | 'ask-again' | null;
+  /** The minutes before the viewer may ask again, while they may not. */
+  waitMinutes: number | null;
+}
+
+export interface AskToWatchInput {
+  /** The toolbar's status (`runLiveViewStatus`): asking is offered only on a run that is not shared live. */
+  status: string;
+  /** The run's stream says this viewer may ask (`canAsk`). */
+  canAsk: boolean;
+  /** The viewer's latest ask, null for none. */
+  ask: LiveAskView | null;
+  /** When the viewer may ask again, by this browser's clock; null when they may. */
+  askAgainAt: number | null;
+  now: number;
+}
+
+/**
+ * **Ask to watch** on a run nobody shares: offered to a viewer who may ask, then what came of their ask (waiting, Not
+ * now) and, once the wait between two asks passed, **Ask again**. A shared run shows its live view instead: nothing.
+ */
+export function askToWatchView(input: AskToWatchInput): AskToWatchView | null {
+  if (input.status !== 'unshared' || !input.canAsk) return null;
+  const waiting = input.askAgainAt !== null && input.askAgainAt > input.now;
+  const waitMinutes = waiting ? Math.ceil((input.askAgainAt! - input.now) / 60_000) : null;
+  const answer = input.ask?.answer;
+  const note = !input.ask ? null : answer === null ? 'asked' : answer === 'not-now' ? 'not-now' : null;
+  if (waiting) return { note, action: null, waitMinutes };
+  return { note, action: input.ask ? 'ask-again' : 'ask', waitMinutes };
 }

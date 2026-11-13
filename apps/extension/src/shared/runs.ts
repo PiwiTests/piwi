@@ -1,26 +1,31 @@
 /**
  * The Runs window: the runs the paired editor started, as the background worker hears them from each editor
  * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
- * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
+ * server is, the CI runs in progress the connected instance lists (`background/ci-runs.ts`), read-only, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
  * frame of a live view or of a watched lane as an image, never as markup. A frame is kept in memory, the latest one
- * alone, never stored.
+ * alone, never stored; so are a watched lane's layers (its call's log, its page's events, its text, its filmstrip).
  */
+import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
-import type {
-  HubAction,
-  HubCodeAction,
-  HubCodeIntent,
-  HubControlAction,
-  HubImage,
-  HubIntent,
-  HubKeptRequest,
-  HubSession,
-  HubStop,
-  HubTest,
-  HubWorker,
+import type { LaneLayerData } from '@piwitests/core/run-channel';
+import {
+  type HubCodeAction,
+  type HubCodeIntent,
+  type HubWindowAction,
+  type HubControlAction,
+  type HubImage,
+  type HubIntent,
+  type HubKeptRequest,
+  type HubSession,
+  type HubWorker,
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
+import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
+import type { CiRun } from '@piwitests/run-model/ci';
+import type { LaneState } from '@piwitests/core/live-lane';
+import type { LiveViewEnd } from '@piwitests/core/live-view';
+import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
 export const RUNS_PORT = 'piwi-runs';
@@ -72,12 +77,34 @@ export interface RunsHub {
   desktop: boolean;
   /** It shows a lane of a run while it runs (`lanes` among the features it welcomed the worker with). */
   lanes: boolean;
+  /** It sends a watched lane's layers beside its frames, as `watch` asks them (`layers` among its features). */
+  layers: boolean;
+  /** It says who is present on each run, lane and stop, and takes `drive` (`presence` among its features). */
+  presence: boolean;
+  /** It keeps a Hold failures for each run a person attends (`hold` among its features): a run without one is unattended. */
+  holds: boolean;
+  /** It stops a whole run as the tool that started it does (`stop` among its features), for a run `canStopRun` names. */
+  stops: boolean;
+  /**
+   * It opens Playwright's trace viewer on a lane's running test, on its own machine (`trace` among its features), for a
+   * worker `canOpenTrace` names.
+   */
+  traces: boolean;
+  /**
+   * It shares each run of its editor window live until the person stops (`share-window` among its features): Share
+   * live offers the window's runs beside the run's own.
+   */
+  sharesWindow: boolean;
+  /** Its editor window shares each of its runs live now, until the person stops or the window closes. */
+  windowShared: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
 export interface RunsRun {
   hub: string;
   session: HubSession;
+  /** An ended run that failed or timed out while no Runs window had the focus, until one takes it. */
+  unseen?: boolean;
 }
 
 export interface RunsState {
@@ -87,19 +114,88 @@ export interface RunsState {
   hubs: RunsHub[];
   /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
   runs: RunsRun[];
+  /**
+   * The CI runs in progress of the projects this browser maps, read-only, from the instance the extension is
+   * connected to (`background/ci-runs.ts`); none without connected mode.
+   */
+  ci?: RunsCiRun[];
 }
+
+/**
+ * A test a CI run runs now, as its lane on the instance stands (`lane` of the run's stream): its shard (null for a run
+ * not sharded), its lane (Playwright's `parallelIndex`), the worker in it, where it stands and the test's title.
+ */
+export interface RunsCiTest {
+  shard: number | null;
+  lane: number;
+  worker: number | null;
+  state: LaneState;
+  title: string;
+  retry: number;
+}
+
+/**
+ * A CI run in progress as the window lists it: the instance's list, then, for a run whose own stream the worker reads
+ * (`MAX_CI_STREAMS`, the newest), the tests it runs now and whether its lanes can be watched (its project's live view
+ * on and the run holding a key).
+ */
+export interface RunsCiRun extends CiRun {
+  tests: RunsCiTest[];
+  watchable: boolean;
+}
+
+/** A lane of a CI run, as the window and the worker name it: the run on the instance, its shard and its lane. */
+export interface RunsCiLane {
+  runId: number;
+  shard: number | null;
+  lane: number;
+}
+
+/**
+ * An image of a CI lane the window watches: a JPEG as the instance sent it, base64, with the test and the call it was
+ * taken at; or the instance's sentence saying why the lane sends none now (`refused`), until an image comes again.
+ */
+export type RunsCiFrame = RunsCiLane &
+  ({ data: string; test: string | null; call: string | null } | { refused: string });
+
+/**
+ * Why a CI lane the window watched ended without its asking: as the instance said it (`LiveViewEnd`), or it stopped
+ * answering (`silent`), closed the watch (`closed`), its stream broke (`broken`), or another Runs window took the one
+ * watch to another lane (`moved`).
+ */
+export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
+
+/**
+ * Why a CI lane was not watched: the run is no longer listed (`unlisted`), it is listed but its lanes are not followed
+ * now, newer runs' being (`unfollowed`), its lanes cannot be watched (`unwatchable`), no test ran in the lane yet
+ * (`no-test`), the instance did not answer (`offline`) or not in time (`late`), its live view is not one the extension
+ * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`).
+ */
+export type CiWatchFailure =
+  | 'unlisted'
+  | 'unfollowed'
+  | 'unwatchable'
+  | 'no-test'
+  | 'offline'
+  | 'late'
+  | 'older'
+  | 'refused';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
  * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; an
  * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
  * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
- * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch).
+ * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch); or
+ * the stop driven from here, an agent's actions there refused, or given back (`drive`, Take control and Give back); or
+ * the whole run stopped (`stop`, Stop the run); or Playwright's trace viewer opened on a lane's running test, on the
+ * hub's machine (`trace`, Open the trace so far: the hub's `openTrace`).
  */
 export type RunsWhat =
   | HubControlAction
   | HubIntent
   | HubCodeIntent
+  | HubWindowAction
   | 'requests'
   | 'mock'
   | 'image'
@@ -107,7 +203,11 @@ export type RunsWhat =
   | 'input'
   | 'pick-at'
   | 'share'
-  | 'watch';
+  | 'hold'
+  | 'watch'
+  | 'drive'
+  | 'stop'
+  | 'trace';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -119,6 +219,7 @@ const WHATS: readonly string[] = [
   'record',
   'assert',
   'assert-region',
+  'front',
   'requests',
   'mock',
   'image',
@@ -126,8 +227,12 @@ const WHATS: readonly string[] = [
   'input',
   'pick-at',
   'share',
+  'hold',
   'watch',
   'give-up',
+  'drive',
+  'stop',
+  'trace',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -141,6 +246,18 @@ export type RunsRequest =
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }
+  /** Whether the person can see the window: the CI runs' streams are read while one that can does. */
+  | { type: 'shown'; shown: boolean }
+  /**
+   * Stop sharing each run of the hub's editor window live (`share` with `scope: 'window'` and no run named), answered
+   * with `answer` of the same `id`.
+   */
+  | { type: 'unshare-window'; id: number; hub: string }
+  /**
+   * Watch a running test's lane of a CI run (`on`), read-only, or stop: answered with `answer` of the same `id`, then
+   * its images as `ci-frame` and its end as `ci-ended`.
+   */
+  | ({ type: 'ci-watch'; id: number; on: boolean } & RunsCiLane)
   /** A command for a run, answered with `answer` of the same `id`. */
   | {
       type: 'command';
@@ -154,11 +271,22 @@ export type RunsRequest =
       request?: number;
       /**
        * For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop; for `watch`:
-       * start watching the lane, or stop.
+       * start watching the lane, or stop; for `drive`: drive the stop, or give it back.
        */
       on?: boolean;
-      /** For `watch` alone: the lane, Playwright's `parallelIndex`. */
+      /**
+       * For `share` alone: each run of the hub's editor window from now on, the run named included, until the person
+       * stops (`window`), rather than the run alone; with `on: false`, every run of the window stops sharing.
+       */
+      scope?: 'window';
+      /** For `watch` and `trace`: the lane, Playwright's `parallelIndex`. */
       lane?: number;
+      /**
+       * For `watch` alone, at a hub that sends layers: the layers of the lane the window takes beside its frames
+       * (`@piwitests/core/live-layers`); asked again for a lane it watches, they change, and `text` takes the page's
+       * text now.
+       */
+      layers?: LaneLayer[];
       /** For `input` alone: the events to play on the page, in CSS pixels of its viewport. */
       events?: ViewInput[];
       /** For `pick-at` alone: the point of an image of the page, in CSS pixels of its viewport. */
@@ -183,6 +311,12 @@ export interface RunsAnswer {
   requests?: HubKeptRequest[];
   /** For `pick-at`: the locator sent to the editor, null when none was found. */
   locator?: string | null;
+  /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
+  /** For `ci-watch`: why the lane was not watched; the instance's own sentence in `message` when it gave one. */
+  ci?: CiWatchFailure;
+  /** For `ci-watch` refused by the instance with no sentence: its status. */
+  status?: number;
 }
 
 /**
@@ -234,6 +368,12 @@ export type RunsLaneFrame = RunsLane & { worker: number; since: string | null } 
     | { test: string | null; refused: string }
   );
 
+/**
+ * A layer of a lane the window watches and asked for (`watch`'s `layers`): of the worker `worker` and the test `test`
+ * (Playwright's id; null for the text of a page no test shows), as the hub sent it, read by `parseHubMessage`.
+ */
+export type RunsLaneLayer = RunsLane & { worker: number; test: string | null } & LaneLayerData;
+
 /** What the worker sends the window. */
 export type RunsEvent =
   | { type: 'state'; state: RunsState }
@@ -244,7 +384,13 @@ export type RunsEvent =
   | ({ type: 'view-ended' } & RunsView)
   | ({ type: 'lane-frame' } & RunsLaneFrame)
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
-  | ({ type: 'lane-ended' } & RunsLane);
+  | ({ type: 'lane-ended' } & RunsLane)
+  | ({ type: 'lane-layer' } & RunsLaneLayer)
+  | ({ type: 'ci-frame' } & RunsCiFrame)
+  /** A CI lane the window watched ended without the window asking, and why. */
+  | ({ type: 'ci-ended'; why: CiWatchEnd } & RunsCiLane)
+  /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
+  | { type: 'found' };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -263,6 +409,19 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
     case 'find':
     case 'ping':
       return { type: value.type };
+    case 'shown':
+      return typeof value.shown === 'boolean' ? { type: 'shown', shown: value.shown } : null;
+    case 'unshare-window': {
+      const { id, hub } = value;
+      if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
+      return { type: 'unshare-window', id, hub };
+    }
+    case 'ci-watch': {
+      const { id, runId, shard, lane, on } = value;
+      if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
+      if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
+      return typeof on === 'boolean' ? { type: 'ci-watch', id, runId, shard, lane, on } : null;
+    }
     case 'command': {
       const { id, hub, ref, worker, since, what } = value;
       if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
@@ -270,38 +429,53 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (worker !== null && !isIndex(worker)) return null;
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
-      if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
-      // Share live names the run alone, and Watch the run and its lane.
-      if ((what === 'share' || what === 'watch') && (worker !== null || since !== null)) return null;
+      if ((what === 'image' || what === 'drive' || VIEW_WHATS.includes(what)) && worker === null) return null;
+      // Share live, Hold failures and Stop the run name the run alone, and Watch and Open the trace so far the run and
+      // its lane.
+      if (['share', 'hold', 'stop', 'watch', 'trace'].includes(what) && (worker !== null || since !== null))
+        return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
       // test while a Pause waits for a call names none, and its worker.
       if (what === 'give-up' && (since !== null || worker === null)) return null;
-      if (!['pause', 'image', 'share', 'watch', 'give-up'].includes(what) && since === null) return null;
+      if (!['pause', 'image', 'share', 'hold', 'stop', 'watch', 'trace', 'give-up'].includes(what) && since === null)
+        return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
-      // its events, a pick on the image its point, Watch the lane and whether it is on.
+      // its events, a pick on the image its point, Watch the lane and whether it is on, Open the trace so far the lane.
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
-        share: ['on'],
-        watch: ['lane', 'on'],
+        share: ['on', 'scope'],
+        hold: ['on'],
+        drive: ['on'],
+        watch: ['lane', 'on', 'layers'],
+        trace: ['lane'],
         input: ['events'],
         'pick-at': ['x', 'y'],
       };
       const fields = own[what] ?? [];
-      if (['request', 'on', 'lane', 'events', 'x', 'y'].some((f) => !fields.includes(f) && value[f] !== undefined)) {
-        return null;
-      }
+      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y', 'scope'];
+      if (named.some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
       switch (what) {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
-        case 'view':
         case 'share':
+          if (typeof value.on !== 'boolean' || (value.scope !== undefined && value.scope !== 'window')) return null;
+          return value.scope === 'window'
+            ? { ...command, on: value.on, scope: 'window' }
+            : { ...command, on: value.on };
+        case 'view':
+        case 'hold':
+        case 'drive':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
-        case 'watch':
-          return typeof value.on === 'boolean' && isIndex(value.lane)
-            ? { ...command, lane: value.lane, on: value.on }
-            : null;
+        case 'watch': {
+          if (typeof value.on !== 'boolean' || !isIndex(value.lane)) return null;
+          if (value.layers === undefined) return { ...command, lane: value.lane, on: value.on };
+          const layers = readLaneLayers(value.layers);
+          return layers ? { ...command, lane: value.lane, on: value.on, layers } : null;
+        }
+        case 'trace':
+          return isIndex(value.lane) ? { ...command, lane: value.lane } : null;
         case 'input': {
           const events = readViewInput(value.events);
           return typeof events === 'string' ? null : { ...command, events };
@@ -317,66 +491,6 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
   }
 }
 
-/** The actions in the test's window, which the pause bar shows, or a viewer drives through a headless stop's view. */
-export const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
-
-/**
- * What a stop takes from this window (`stop.intents`, as the hub tells each connection): its live view, the input on
- * it while the window watches it, Pick on the image, the actions in the test's window where the pause bar shows or
- * while the window watches the view, Mock a request, End the test but at a failure. From a service that predates it,
- * what the worker's reporter takes where the pause bar shows, and Mock a request at any stop: no live view.
- */
-export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubStop, 'bar' | 'intents'>): HubAction[] {
-  if (stop.intents) return stop.intents;
-  return worker.intents.filter(
-    (what) => what === 'mock' || (stop.bar && (IN_WINDOW as readonly string[]).includes(what)),
-  );
-}
-
-/**
- * The actions in the test's window a stop no pause bar shows takes from this window once it watches the stop (`view`,
- * or its worker's lane), while it does not: those the worker's reporter takes, shown held, saying to watch first. None
- * at a stop the bar shows, at one the window watches, at one that cannot be watched (`watchable`: the stop takes
- * `view`, or its lane can be watched), and from a service that predates `stop.intents`.
- */
-export function heldUntilWatched(
-  worker: Pick<HubWorker, 'intents'>,
-  stop: Pick<HubStop, 'bar' | 'intents'>,
-  watchable: boolean,
-): Array<(typeof IN_WINDOW)[number]> {
-  if (stop.bar || !stop.intents || !watchable) return [];
-  const taken = stop.intents;
-  return IN_WINDOW.filter((what) => worker.intents.includes(what) && !taken.includes(what));
-}
-
-/**
- * Whether a worker's lane can be watched while it runs (Watch): `watch` at a hub whose features list `lanes`, the
- * worker's reporter listing `watch`; `outdated` for a reporter that does not, at such a hub; null at a hub that
- * predates it, where a stop's own view (`view`) is all there is.
- */
-export function laneWatchOf(
-  hub: Pick<RunsHub, 'lanes'> | undefined,
-  worker: Pick<HubWorker, 'intents'>,
-): 'watch' | 'outdated' | null {
-  if (!hub?.lanes) return null;
-  return worker.intents.includes('watch') ? 'watch' : 'outdated';
-}
-
-/**
- * Whether a frame of a lane shows where its worker stands now: sent by that worker, of the stop it stands at, or, while
- * it runs, of its running test. Another one (taken before a Step, a Resume, a test that ended, or by the worker
- * Playwright replaced) shows dimmed until the next frame comes.
- */
-export function laneFrameNow(
-  frame: { worker: number; test: string | null; since: string | null },
-  worker: Pick<HubWorker, 'worker' | 'state' | 'test' | 'stop'> | undefined,
-): boolean {
-  if (!worker || frame.worker !== worker.worker) return false;
-  if (worker.state === 'stopped') return !!worker.stop && frame.since === worker.stop.since;
-  if (worker.state === 'between') return false;
-  return frame.since === null && !!worker.test && frame.test === worker.test.id;
-}
-
 /**
  * The state as one window reads it: the background worker's single connection to a hub watches every stop and lane a
  * window watches, so a stop the window does not watch itself (`watches`: its live view, or the lane of its worker,
@@ -387,7 +501,8 @@ export function laneFrameNow(
 export function stateForViewer(state: RunsState, watches: (view: RunsView, lane: number | null) => boolean): RunsState {
   return {
     ...state,
-    runs: state.runs.map(({ hub, session }) => ({
+    runs: state.runs.map(({ hub, session, ...run }) => ({
+      ...run,
       hub,
       session: {
         ...session,
@@ -414,25 +529,29 @@ export function viewKey(view: RunsView): string {
   return `${view.hub}|${view.ref}|${view.worker}|${view.since}`;
 }
 
-/**
- * A point of an image of a stopped page, from where the pointer is on it to CSS pixels of the page's viewport: the
- * image is shown scaled to `shown` (its content box, the border left out), and names the viewport it shows
- * (`viewport`). Kept within the viewport, at a hundredth of a pixel; null for an image shown at no size.
- */
-export function pagePoint(
-  offset: { x: number; y: number },
-  shown: { width: number; height: number },
-  viewport: { width: number; height: number },
-): { x: number; y: number } | null {
-  if (!(shown.width > 0) || !(shown.height > 0) || !(viewport.width > 0) || !(viewport.height > 0)) return null;
-  const at = (value: number, size: number, page: number) =>
-    Math.round(Math.min(Math.max((value * page) / size, 0), page - 0.01) * 100) / 100;
-  return { x: at(offset.x, shown.width, viewport.width), y: at(offset.y, shown.height, viewport.height) };
-}
-
 /** The live runs of a state. */
 export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
+}
+
+/** The runs of the hubs whose connection answers now: a lost hub's runs, as last heard, are left out. */
+export function answeringRuns(state: Pick<RunsState, 'runs' | 'hubs'>): RunsRun[] {
+  return state.runs.filter((run) => state.hubs.some((hub) => hub.id === run.hub && hub.connected));
+}
+
+/**
+ * What the runs whose hub answers ask of the person now (`runsAttention`), and the failed tests of the runs that ended
+ * `unseen` (a run that failed with no test failed counts as one): the toolbar's badge, the popup's Runs tile and the
+ * Runs window's title say it.
+ */
+export function attentionOf(state: Pick<RunsState, 'runs' | 'hubs'>): RunAttention | null {
+  const live = runsAttention(answeringRuns(state).map((run) => run.session));
+  const missed = state.runs
+    .filter((run) => run.unseen)
+    .reduce((sum, run) => sum + Math.max(1, run.session.progress?.failed ?? 0), 0);
+  if (missed === 0) return live;
+  const { waiting = 0, heldFailures = 0, failed = 0 } = live ?? {};
+  return { state: waiting > 0 ? 'waiting' : 'failing', waiting, heldFailures, failed: failed + missed };
 }
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */
@@ -478,10 +597,21 @@ export interface ShortcutCommand {
 }
 
 /**
- * What the global shortcut does: resume every stopped test, each at the stop it stands at; with none stopped, pause
- * every run with a worker, each worker before its next call. Nothing when no run is live.
+ * Whether a person attends a run: not one whose hub keeps a Hold failures for each run a person attends but gives it
+ * none (a Flake Lab run, a bisect, a lab job, a run that repeats its tests past a failure, UI mode). A hub that keeps
+ * none, of an older version, names no run unattended.
  */
-export function shortcutCommands(runs: readonly RunsRun[]): ShortcutCommand[] {
+export function attendedRun(run: RunsRun, hubs: readonly RunsHub[]): boolean {
+  const hub = hubs.find((h) => h.id === run.hub);
+  return !hub?.holds || !!run.session.hold;
+}
+
+/**
+ * What the global shortcut does: resume every stopped test, each at the stop it stands at, a run nobody attends
+ * included (a person paused it); with none stopped, pause every run a person attends (`attendedRun`) with a worker,
+ * each worker before its next call, the others left to run. Nothing when no run is live.
+ */
+export function shortcutCommands(runs: readonly RunsRun[], hubs: readonly RunsHub[] = []): ShortcutCommand[] {
   const live = runs.filter((run) => !run.session.ended);
   const stopped = live.flatMap(({ hub, session }) =>
     session.workers.flatMap((worker): ShortcutCommand[] =>
@@ -492,56 +622,103 @@ export function shortcutCommands(runs: readonly RunsRun[]): ShortcutCommand[] {
   );
   if (stopped.length > 0) return stopped;
   return live
-    .filter(({ session }) => session.workers.length > 0)
+    .filter((run) => run.session.workers.length > 0 && attendedRun(run, hubs))
     .map(({ hub, session }) => ({ hub, ref: session.ref, worker: null, action: 'pause', since: null }));
 }
 
-/** A `file:` URI as a path with `/` separators: `/home/me/shop/tests/cart.spec.ts`, `C:/shop/tests/cart.spec.ts`. */
-function uriPath(uri: string): string | null {
-  try {
-    const url = new URL(uri);
-    if (url.protocol !== 'file:') return null;
-    const path = decodeURIComponent(url.pathname);
-    return /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
-  } catch {
-    return null;
-  }
+/** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */
+export const RUNS_BOUNDS_KEY = 'runsWindowBounds';
+
+/** A window's place and size on screen, in CSS pixels. */
+export interface RunsBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
-/** A file of the run, relative to the run's folder when it is inside it, else as its whole path. */
-export function runFile(uri: string, root: string | null): string {
-  const path = uriPath(uri);
-  if (path === null) return uri;
-  const base = root?.replace(/\\/g, '/').replace(/\/+$/, '');
-  if (base && path.toLowerCase().startsWith(`${base.toLowerCase()}/`)) return path.slice(base.length + 1);
-  return path;
+/** A kept place, checked: whole numbers, a size a window can have and a place on some screen; null otherwise. */
+export function readRunsBounds(value: unknown): RunsBounds | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { left, top, width, height } = value as Record<string, unknown>;
+  const whole = (n: unknown, min: number, max: number): n is number =>
+    typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
+  if (!whole(width, 240, 8000) || !whole(height, 200, 8000)) return null;
+  if (!whole(left, -20000, 20000) || !whole(top, -20000, 20000)) return null;
+  return { left, top, width, height };
 }
 
-/** Where a stop stands, as text: `tests/pages/cart.page.ts:13`, with the 1-based line. */
-export function stopPlace(stop: Pick<HubStop, 'uri' | 'line'>, root: string | null): string {
-  return `${runFile(stop.uri, root)}:${stop.line + 1}`;
+/** The keys of the stop controls, as the debuggers have them: Resume, Step and Finish. */
+export type StopKey = 'resume' | 'step' | 'finish';
+
+/** Each control's keys, as `aria-keyshortcuts` names them: Resume on F8 (and F5), Step on F10, Finish on Shift+F11. */
+export const STOP_KEYS: Record<StopKey, string> = { resume: 'F8 F5', step: 'F10', finish: 'Shift+F11' };
+
+/** The control a key press asks for, of `STOP_KEYS`; null for any other key or one held with Ctrl, Alt or Meta. */
+export function stopKeyOf(event: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+}): StopKey | null {
+  if (event.ctrlKey || event.altKey || event.metaKey) return null;
+  if ((event.key === 'F8' || event.key === 'F5') && !event.shiftKey) return 'resume';
+  if (event.key === 'F10' && !event.shiftKey) return 'step';
+  if (event.key === 'F11' && event.shiftKey) return 'finish';
+  return null;
+}
+
+/** A stopped test a key steers: its run, its worker and its stop. */
+export interface KeyTarget {
+  run: RunsRun;
+  worker: number;
+  since: string;
+  failed: boolean;
 }
 
 /**
- * The error a failure's stop names: its `error`, else, from a service or a reporter that predates it, read from its
- * title, which the reporter makes of `Failed: ` and the error's first line, which Playwright starts with the error's
- * name (`Error: expect(locator).toBeVisible() failed`).
+ * The stopped test a key steers: the one whose row holds the focus (`focused`, its `workerKey`), else the only stopped
+ * test of the live runs whose hub answers (`answering`, by hub id); null when there is none, or several and the focus
+ * is in none of them.
  */
-export function stopError(stop: Pick<HubStop, 'error' | 'title'>): string {
-  return stop.error ?? stop.title.replace(/^Failed:\s*(?:Error:\s*)?/, '');
-}
-
-/** A test's name: its `describe` blocks' titles, then its own. */
-export function testName(test: Pick<HubTest, 'title'>): string {
-  return test.title.join(' › ');
+export function keyTargetOf(
+  runs: readonly RunsRun[],
+  focused: string | null,
+  answering: (hub: string) => boolean = () => true,
+): KeyTarget | null {
+  const stopped = runs.flatMap((run) =>
+    run.session.ended || !answering(run.hub)
+      ? []
+      : run.session.workers.flatMap((worker): KeyTarget[] =>
+          worker.state === 'stopped' && worker.stop
+            ? [{ run, worker: worker.worker, since: worker.stop.since, failed: worker.stop.reason === 'failure' }]
+            : [],
+        ),
+  );
+  const chosen = focused ? stopped.find((s) => workerKey(s.run.hub, s.run.session.ref, s) === focused) : undefined;
+  return chosen ?? (stopped.length === 1 ? stopped[0]! : null);
 }
 
 /**
  * Names a worker's slot within a run (Playwright's `parallelIndex`), which a worker started in its place after a failure
- * takes: what the window keeps Watch live by.
+ * takes: what the window keeps the stop's Watch by.
  */
 export function slotKey(hub: string, ref: string, parallelIndex: number): string {
   return `${hub}|${ref}|slot-${parallelIndex}`;
+}
+
+/** Names a lane of a CI run, for the worker's watch and the window's rows. */
+export function ciLaneKey(lane: RunsCiLane): string {
+  return `${lane.runId}|${lane.shard ?? ''}|${lane.lane}`;
+}
+
+/**
+ * A CI lane's view on the run's page (`?watch=`, the shard and the worker's number from 1, `2` or `1.2`): **Watch on
+ * the dashboard**.
+ */
+export function ciDashboardWatch(run: Pick<RunsCiRun, 'url'>, lane: Pick<RunsCiLane, 'shard' | 'lane'>): string {
+  return `${run.url}?watch=${lane.shard !== null ? `${lane.shard}.` : ''}${lane.lane + 1}`;
 }
 
 /** Names a worker within the state, for the window's focus and its images. */

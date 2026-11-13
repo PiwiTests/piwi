@@ -3,6 +3,7 @@
  * one (`desktop_run_requested_tests`) and streams its output as `piwi:local-run` events under the id the start
  * resolves with, so events that arrive before the id is known wait here and are applied once it is.
  */
+import type { RunPage } from '@piwitests/core/run-channel';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -16,7 +17,17 @@ export interface RunnerRun {
   shellId: number | null;
   status: RunnerRunStatus;
   stopRequested: boolean;
+  /**
+   * **Hold failures**: a failure no pause bar shows waits in the window for an answer while the run shows there, as a
+   * `page.pause()` does. Off until the person turns it on.
+   */
+  holdFailures: boolean;
   exitCode: number | null;
+  /**
+   * The run's page on the instance (**Run #78 · Open**), once its own process named it to the hub (`HubSession.page`),
+   * kept after the run ended; null until then.
+   */
+  page: RunPage | null;
   /** The last `RUNNER_MAX_LINES` lines of output. */
   lines: string[];
 }
@@ -46,6 +57,40 @@ export const RUNNER_MAX_LINES = 2000;
 export const RUNNER_MAX_FINISHED = 15;
 /** Events kept while their run's id is unknown. */
 const MAX_WAITING_EVENTS = 500;
+
+/**
+ * Whether the hub's run `ref` is the shell's run `shellId`: the shell names each run it starts `desktop-<id>` on the
+ * host's run channel (`PIWI_RUN_REF`), ending in `-unattended` for a run nobody attends.
+ */
+export function isRunnerRunRef(ref: string, shellId: number | null): boolean {
+  if (shellId === null) return false;
+  return ref === `desktop-${shellId}` || ref === `desktop-${shellId}-unattended`;
+}
+
+/** The shell's id of the run the hub's `ref` names; null for a ref the shell did not make. */
+export function runnerShellIdOf(ref: string): number | null {
+  const match = /^desktop-(\d+)(?:-unattended)?$/.exec(ref);
+  return match ? Number(match[1]) : null;
+}
+
+/** The refs the window says `show` for: the running runs whose Hold failures is on. */
+export function runnerShownRefs(runs: readonly RunnerRun[]): string[] {
+  return runs
+    .filter((run) => run.status === 'running' && run.holdFailures && run.shellId !== null)
+    .map((run) => `desktop-${run.shellId}`);
+}
+
+/** Keeps on each run the page the hub's live run of it names (`HubSession.page`), so it stays once the run ended. */
+export function noteRunPages(
+  runs: readonly RunnerRun[],
+  sessions: ReadonlyArray<{ ref: string; page?: RunPage }>,
+): void {
+  for (const session of sessions) {
+    if (!session.page) continue;
+    const run = runs.find((r) => isRunnerRunRef(session.ref, r.shellId));
+    if (run && (run.page?.id !== session.page.id || run.page.url !== session.page.url)) run.page = { ...session.page };
+  }
+}
 
 /** The status a run ends in: the person's stop wins, then the exit code. */
 export function finishedStatus(run: Pick<RunnerRun, 'stopRequested'>, code: number | null): RunnerRunStatus {
@@ -114,7 +159,9 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
       shellId: null,
       status: 'running',
       stopRequested: false,
+      holdFailures: false,
       exitCode: null,
+      page: null,
       lines: [],
     });
     const run = runs[0]!;

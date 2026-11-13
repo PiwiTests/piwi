@@ -106,6 +106,19 @@ describe('the record kept', () => {
     await expect(withConnectionHealth(INSTANCE, async () => 42)).resolves.toBe(42);
   });
 
+  it('records nothing for a request the extension aborted itself', async () => {
+    await withConnectionHealth(INSTANCE, async () => 'answer');
+    const before = await getConnectionHealth(INSTANCE);
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      withConnectionHealth(INSTANCE, async () => {
+        throw abort.signal.reason;
+      }),
+    ).rejects.toBe(abort.signal.reason);
+    expect(await getConnectionHealth(INSTANCE)).toEqual(before);
+  });
+
   it('passes the answer or the error on unchanged', async () => {
     await expect(withConnectionHealth(INSTANCE, async () => 'answer')).resolves.toBe('answer');
     expect((await getConnectionHealth(INSTANCE))?.outcome).toBe('ok');

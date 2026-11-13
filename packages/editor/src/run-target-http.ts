@@ -52,7 +52,7 @@ export async function readJsonBody(
   }
 }
 
-/** The session route: the cookie and the redirect for the token on the query string, else a refusal. */
+/** The session route: the cookie and the redirect for the session code on the query string, else a refusal. */
 function serveSession(req: IncomingMessage, res: ServerResponse, token: string): void {
   req.resume();
   const answer = answerSession(queryOf(req.url ?? '/'), token);
@@ -116,7 +116,7 @@ function serveStream<T>(
 
 /**
  * Answer `req` when it names a run-target route, the window's session or an event stream, with the access token
- * `token`: 401 without it, except on the session route, which takes the token on its query string. Answers false,
+ * `token`: 401 without it, except on the session route, which takes a session code on its query string. Answers false,
  * having written nothing, for any other path, for the host to answer. Never rejects.
  */
 export async function serveRunTarget(req: IncomingMessage, res: ServerResponse, token: string): Promise<boolean> {
