@@ -6,12 +6,14 @@
 //
 //   npm run app:generate:brand
 
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { FontAssetType, generateFonts } from 'fantasticon';
 import { chromium } from 'playwright';
+import svg2ttf from 'svg2ttf';
+import { SVGIcons2SVGFontStream } from 'svgicons2svgfont';
+import ttf2woff from 'ttf2woff';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -438,29 +440,36 @@ function markData(png) {
   };
 }
 
-// VS Code's product icon font: `$(piwi)` in the status item and the failures view, from the outline mark. Its code
-// points are fixed, so a glyph keeps its character across runs; the font carries no build time.
-const glyphs = mkdtempSync(join(tmpdir(), 'piwi-icons-'));
-try {
-  writeFileSync(join(glyphs, 'piwi.svg'), outlineGlyph());
-  await generateFonts({
-    inputDir: glyphs,
-    outputDir: glyphs,
-    name: 'piwi-icons',
-    fontTypes: [FontAssetType.WOFF],
-    assetTypes: [],
-    codepoints: { piwi: 0xe000 },
-    normalize: false,
-    fontHeight: IDE_VIEW.h,
-    descent: 0,
-    formatOptions: { ttf: { ts: 0, version: '1.0' } },
+// VS Code's product icon font: `$(piwi)` in the status item and the failures view, from the outline mark. Each glyph
+// has a fixed code point, so it keeps its character across runs; the font carries no build time.
+const ICON_FONT_GLYPHS = [{ name: 'piwi', codepoint: 0xe000, svg: outlineGlyph() }];
+
+/** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */
+async function iconFont(glyphs) {
+  const svgFont = await new Promise((done, fail) => {
+    const chunks = [];
+    const fonts = new SVGIcons2SVGFontStream({
+      fontName: 'piwi-icons',
+      fontHeight: IDE_VIEW.h,
+      descent: 0,
+      normalize: false,
+    });
+    fonts
+      .on('data', (chunk) => chunks.push(String(chunk)))
+      .on('end', () => done(chunks.join('')))
+      .on('error', fail);
+    for (const glyph of glyphs) {
+      const source = Readable.from([glyph.svg]);
+      source.metadata = { name: glyph.name, unicode: [String.fromCodePoint(glyph.codepoint)] };
+      fonts.write(source);
+    }
+    fonts.end();
   });
-  mkdirSync(resolve(ROOT, 'apps/vscode/media'), { recursive: true });
-  copyFileSync(join(glyphs, 'piwi-icons.woff'), resolve(ROOT, 'apps/vscode/media/piwi-icons.woff'));
-  console.log('-> apps/vscode/media/piwi-icons.woff');
-} finally {
-  rmSync(glyphs, { recursive: true, force: true });
+  const ttf = svg2ttf(svgFont, { ts: 0, version: '1.0' });
+  return Buffer.from(ttf2woff(new Uint8Array(ttf.buffer)).buffer);
 }
+
+write('apps/vscode/media/piwi-icons.woff', await iconFont(ICON_FONT_GLYPHS));
 
 const browser = await chromium.launch();
 try {

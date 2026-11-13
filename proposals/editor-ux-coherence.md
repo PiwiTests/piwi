@@ -56,17 +56,17 @@ part: one failure-tree node table for both editors, held to the protocol's icon 
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye
 at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMappings.json`, VS Code's `$(piwi)` in a
-product icon font fantasticon builds, drawn by the status item, both trees' run node and VS Code's views (IC8, IC9). §14
-adds the findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has
-built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the
-editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the
-study the live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does
-not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and VS
+Code's views (IC8, IC9). §14 adds the findings the code that built the plan raised. The live-run study,
+[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
+of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
+debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
