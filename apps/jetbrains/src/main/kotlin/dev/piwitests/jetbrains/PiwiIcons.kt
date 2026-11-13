@@ -13,6 +13,12 @@ object PiwiIcons {
     /** A failed test or run: the result icon, the status item, the tool window's nodes and a held failure. */
     val FAILED: Icon = AllIcons.RunConfigurations.TestError
 
+    /**
+     * A flaky test: the dashboard's shuffle on the outcome palette's flaky color (`STATUS_COLORS.flaky`), drawn by Piwi
+     * as no platform icon says flaky; `status-mark-colors.test.ts` holds its colors.
+     */
+    val FLAKY: Icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/testFlaky.svg", PiwiIcons::class.java)
+
     /** Open in dashboard, on a file, a node or a failure. */
     val OPEN_IN_DASHBOARD: Icon = AllIcons.Ide.External_link_arrow
 

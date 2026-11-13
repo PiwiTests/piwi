@@ -24,17 +24,18 @@ and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Po
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
 say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
 and Open run #78 (running) beside the same run's page row joins Q8's one Open in dashboard; its three new groups
-(`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. §14 adds the
-findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
-P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
-lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
-live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+(`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in
+part: VS Code's outcome marks in the dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result
+icon and JetBrains' CI tab), held by `status-mark-colors.test.ts`. §14 adds the findings the code that built the plan
+raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
+leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
+each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
+phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
@@ -226,16 +227,14 @@ Recording" in the status bar and names no icon. ([M4](#m4), [LI2](#li2))
 
 ### 3.3 Outcomes
 
-<a id="ic4"></a>**IC4. Flaky has seven marks and four colors across Piwi's tools, and amber, its color in both editors,
-means "did not run" on the dashboard and "paused" in the desktop tray.** Flaky is an amber '!' in VS Code
-(`apps/vscode/media/test-flaky.svg`), the inspection warning in JetBrains (`PiwiTestAnnotator.kt:101`), a fuchsia
-shuffle on the dashboard (`apps/application/app/utils/index.ts:320-321`), a '~' in the editor service's hover
-(`packages/editor/src/server.ts:726`) and a purple dot in Piwi Picker
-(`apps/extension/src/content/results-panel.ts:170`), and the CI views add `$(warning)` and the amber X `TestFailed`
-([NF1](#nf1)). `apps/application/shared/status-colors.ts:42` makes amber `didnotrun`, and the tray's dot is amber for
-paused or interrupted (`apps/desktop/src-tauri/src/lib.rs:545`). VS Code's marks use GitHub hues, and no test holds any
-of these copies to STATUS_COLORS. **(seen)** Fix: [LI3](#li3)'s outcome palette in every tool, and the word "flaky" in
-the hover. Codicons have no shuffle, so VS Code needs `$(piwi-flaky)` ([IC8](#ic8)). ([Q2](#q2), [M5](#m5), [LI3](#li3))
+<a id="ic4"></a>**IC4. Outside the editors' outcome marks, flaky still has other marks and colors, and amber means "did
+not run" on the dashboard and "paused" in the desktop tray.** Both editors draw flaky with the dashboard's shuffle on
+its fuchsia, held to `STATUS_COLORS` by `apps/application/tests/unit/status-mark-colors.test.ts`; the editor service's
+hover still marks it '~' (`packages/editor/src/server.ts:736`), Piwi Picker a purple dot
+(`apps/extension/src/content/results-panel.ts:170`), and VS Code's CI view `$(warning)` ([NF1](#nf1)).
+`apps/application/shared/status-colors.ts:42` makes amber `didnotrun`, and the tray's dot is amber for paused or
+interrupted (`apps/desktop/src-tauri/src/lib.rs:545`). **(read)** Fix: [LI3](#li3)'s outcome palette in Piwi Picker and
+the tray, and the word "flaky" in the hover. ([M5](#m5), [LI3](#li3))
 
 ### 3.4 Run controls
 
@@ -457,12 +456,9 @@ editors, as a refactor-kind action from the service ([TL7](#tl7)). ([M7](#m7), [
 
 ### 5.4 The marks
 
-<a id="tl13"></a>**TL13. JetBrains draws a flaky test as the inspection warning, in a failure's amber, and no fixture
-check fails when a flaky test carries no flaky mark.** `PiwiTestAnnotator.kt:101` draws flaky with
-`AllIcons.General.Warning`, `#FFAF0F` in the new UI, the color of `TestFailed`, so a flaky line reads as a warning or a
-failure. Neither VS Code's nightly suite nor `PiwiPluginTest` looks for a flaky mark on the editor fixture's flaky test.
-**(read)** Fix: JetBrains ships `icons/testFlaky.svg` in the outcome palette's flaky glyph ([IC4](#ic4)); the fixture
-checks fail when a flaky test carries no flaky mark. ([Q2](#q2), [L6](#l6), [LI3](#li3), [LI19](#li19))
+<a id="tl13"></a>**TL13. No fixture check fails when a flaky test carries no flaky mark.** Neither VS Code's nightly
+suite nor `PiwiPluginTest` looks for a flaky mark on the editor fixture's flaky test. **(read)** Fix: the fixture checks
+fail when a flaky test carries no flaky mark. ([Q2](#q2), [L6](#l6), [LI19](#li19))
 
 ### 5.6 Debug
 
@@ -1308,7 +1304,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="q2"></a>Q2 | **A flaky test marked flaky in JetBrains**: the outcome palette's flaky glyph ([M5](#m5)) on the result icon and in the CI Run tab, where the warning and the amber `TestFailed` draw it now; a fixture check fails when a flaky test carries no flaky mark | `ide` | [TL13](#tl13), [IC4](#ic4) |
+| <a id="q2"></a>Q2 | **A fixture check that fails when a flaky test carries no flaky mark**, in both editors | `ide` | [TL13](#tl13) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup (not Open run #78 (running) beside the same run's page row) | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
@@ -1327,7 +1323,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
 | <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
-| <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
+| <a id="m5"></a>M5 | **The outcome palette in Piwi Picker and the tray** ([LI3](#li3)), and the CI views' marks from it | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
 | <a id="m6"></a>M6 | **Glyphs on the pause bar**, drawn anew in picker-dom (MIT) | `extension` | [IC6](#ic6) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
@@ -1433,12 +1429,12 @@ way.** In VS Code, `$(beaker)` marks Run the tests that reach this file (`apps/v
 and the idle status item (`apps/vscode/src/glue.ts:293, 388, 512`), and `$(debug-disconnect)` both Disconnect
 (`package.json:195`) and 'Piwi: unreachable' (`glue.ts:321`); the CI view draws a skipped test with Step's
 `debug-step-over` and flaky with `warning` (`apps/vscode/src/run-control.ts:2178-2179`). JetBrains' CI Run tab draws a
-run with Run the Test at the Caret's `Actions.Execute`, Watch with Show the Paused Page's `Actions.Preview`, flaky with
-the amber `TestFailed`, and running with `Process.Step_1`, which has no New UI glyph (`PiwiCiRuns.kt:244-255`). The eye
-is still the status item's live share beside Watch ([LR14](#lr14)), and "Open run #N" is a globe in the commands and an
-external link in the CI lists (`run-control.ts:2215`, `PiwiCiRuns.kt:248`). **(read)** Fix: the CI rows take the
-gutter's outcome marks and Appendix A's glyphs from one map per client, unreachable and the file's tests take glyphs of
-their own, and Appendix A gains the rows they lack. ([Q26](#q26), [M5](#m5))
+run with Run the Test at the Caret's `Actions.Execute`, Watch with Show the Paused Page's `Actions.Preview`, and running
+with `Process.Step_1`, which has no New UI glyph (`PiwiCiRuns.kt:244-255`). The eye is still the status item's live
+share beside Watch ([LR14](#lr14)), and "Open run #N" is a globe in the commands and an external link in the CI lists
+(`run-control.ts:2215`, `PiwiCiRuns.kt:248`). **(read)** Fix: the CI rows take the gutter's outcome marks and Appendix
+A's glyphs from one map per client, unreachable and the file's tests take glyphs of their own, and Appendix A gains the
+rows they lack. ([Q26](#q26), [M5](#m5))
 
 <a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**
 Open Log and Open the log (`plugin.xml:126`, `apps/vscode/package.json:206`); Turn Hold Failures On or Off and Hold

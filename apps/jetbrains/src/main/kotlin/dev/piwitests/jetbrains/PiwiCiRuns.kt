@@ -251,8 +251,8 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
             else -> {
                 icon = when (value.status) {
                     "running" -> AllIcons.Process.Step_1
-                    "failed" -> AllIcons.RunConfigurations.TestError
-                    "flaky" -> AllIcons.RunConfigurations.TestFailed
+                    "failed" -> PiwiIcons.FAILED
+                    "flaky" -> PiwiIcons.FLAKY
                     "skipped" -> AllIcons.RunConfigurations.TestIgnored
                     else -> AllIcons.RunConfigurations.TestPassed
                 }

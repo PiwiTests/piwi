@@ -289,9 +289,11 @@ two toggles, whose menu rows show a check mark; the record actions' `Ide.Macro.R
 record glyph; and the actions that wait for a glyph of their own: Disconnect, Pair, Pause and Watch, Assert a region,
 Mock a request, Share the run live, Stop sharing, and the four no mapped platform icon says (Run the tests that reach
 this file, Reset the runs' MCP server token, Show the stopped test's browser, Share with Playwright tools). The icons
-drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree and a
-held failure, Open in dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a branch)
-and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
+drawn in code come from `PiwiIcons`: the flaky mark (`FLAKY`, Piwi's shuffle on the outcome palette's flaky color, held
+to `STATUS_COLORS` by `status-mark-colors.test.ts`) on the result icon and the CI run tab, the failed mark (`TestError`)
+on the result icon, the status item, the tree and a held failure, Open in dashboard's external link, the hand-offs of
+this menu (an archive, an image, a desktop, a branch) and the stop's code actions in its popups. `PiwiPluginTest` holds
+both lists.
 
 **Re-run the failing tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
