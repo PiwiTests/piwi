@@ -1306,9 +1306,9 @@ whether M14's places are interim.
    [LI11](#li11)): `packages/editor`, bundled by both clients, or `apps/application/shared` beside `piwi-features.ts`
    and `piwi-ecosystem.ts`? Both are FSL; `packages/core` is MIT and cannot take Piwi Picker's drawings. Are
    `package.json` and `plugin.xml` generated from them, or kept by hand under a test?
-5. **Which glyphs VS Code's icon font takes beyond `$(piwi-mark)`**: the flaky mark, Pause and watch, Stop sharing, or a
-   word ('flaky') where none fits? The codicons proposed exist in 1.143.1 and are unchecked against the 1.91 engines
-   floor.
+5. **Reload Piwi's and Run to the cursor's glyphs** ([IC1](#ic1)): the drawings both editors take, VS Code's in its
+   icon font beside `$(piwi-mark)`, `$(piwi-flaky)`, `$(piwi-pause-watch)` and `$(piwi-stop-live)`. The codicons
+   proposed exist in 1.143.1 and are unchecked against the 1.91 engines floor.
 6. **VS Code's status click**: the status menu with the state's action preselected (Enter keeps today's refresh), or a
    refresh while a chord opens the menu?
 7. **What turns the status item to its alarm** ([HM2](#hm2)): failures new against the baseline, only those a run

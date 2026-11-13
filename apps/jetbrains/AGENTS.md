@@ -187,6 +187,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
 - **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte**, in
   `STATUS_COLORS`' fills. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
+- **`icons/testFlaky.svg`, `pauseWatch.svg` and `stopLive.svg` are also VS Code's font glyphs**: after editing one, run
+  `npm run app:generate:brand` (`apps/application/`), which draws them into `apps/vscode/media/piwi-icons.woff`.
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
 
 ## Workflow

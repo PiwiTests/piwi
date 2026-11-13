@@ -189,6 +189,7 @@ function samplePath(d) {
       at = [x, y];
     } else if (command === 'Z') {
       run.push(run[0]);
+      at = run[0];
     } else {
       throw new Error(`samplePath: a coordinate where a command was expected in ${d.slice(0, 40)}…`);
     }
@@ -266,16 +267,24 @@ function outlineGlyph() {
  */
 function pluginGlyph(file) {
   const source = readFileSync(resolve(ROOT, 'apps/jetbrains/src/main/resources/icons', file), 'utf-8');
-  const [vx, vy, vw] = source
+  const [vx, vy, vw, vh] = source
     .match(/viewBox="([^"]+)"/)[1]
     .trim()
     .split(/\s+/)
     .map(Number);
+  if (vw !== vh) throw new Error(`${file}: a glyph's view is square, this one is ${vw} × ${vh}`);
   const k = IDE_VIEW.w / vw;
   // The editors' line weight, whatever the drawing's own: the font's glyphs stand side by side.
   const width = IDE_LINE;
-  const fills = [...source.matchAll(/<path d="([^"]+)"/g)]
-    .map(([, d]) =>
+  const paths = [];
+  for (const [, tag, attributes] of source.matchAll(/<(path|line|circle|ellipse|rect|polyline|polygon)\b([^>]*)>/g)) {
+    const d = tag === 'path' ? attributes.match(/\bd=["']([^"']+)["']/)?.[1] : undefined;
+    const filledOnly = /\bfill=["'](?!none)/.test(attributes) && !/\bstroke=/.test(attributes);
+    if (d) paths.push(d);
+    else if (!filledOnly) throw new Error(`${file}: the font reads strokes drawn as <path d>, not this <${tag}>`);
+  }
+  const fills = paths
+    .map((d) =>
       strokeAsFill(
         new SVGPathData(d)
           .toAbs()
