@@ -287,6 +287,11 @@ test.describe('Desktop repro request', () => {
 
     await dialog.getByRole('button', { name: 'Bisect', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here').length),
+      )
+      .toBe(1);
     const runs = await page.evaluate(() =>
       window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here'),
     );
@@ -387,6 +392,11 @@ test.describe('Desktop repro request', () => {
     await dialog.getByRole('button', { name: 'Run the lab', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     // The window names the project and the request only: the shell reads the commit and the plan itself.
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job').length),
+      )
+      .toBe(1);
     const runs = await page.evaluate(() =>
       window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job'),
     );
