@@ -2590,6 +2590,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         runChannel: channel && { path: channel.path, token: channel.token },
         recorderBundle: fs.existsSync(bundle) ? bundle : null,
         unattended: true,
+        checkout: true,
       };
       publishDiscovery();
     });

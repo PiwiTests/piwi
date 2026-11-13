@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { ChannelAddress, HubAddress } from '@piwitests/core/editor-discovery';
+import { sinceBoot as sinceMachineBoot, type ChannelAddress, type HubAddress } from '@piwitests/core/editor-discovery';
 import { formatPairing, parsePairing, type EditorPairing } from '@piwitests/core/editor-send';
 import { parseRecordChannel } from '@piwitests/core/ide-recorder';
 
@@ -48,15 +48,13 @@ export function ownProcessAlive(pid: number): boolean {
   }
 }
 
-/** The longest a clock may have moved between a process writing its file and this run reading it. */
-const CLOCK_SLACK_MS = 60_000;
-
 /**
- * Whether a time a file names, in milliseconds since the epoch, is since this machine started: a file of before names
- * a process its restart ended, whose id another may have taken since.
+ * Whether a time a file names, in milliseconds since the epoch, is since this machine started (`sinceBoot` of
+ * `@piwitests/core/editor-discovery`): a file of before names a process its restart ended, whose id another may have
+ * taken since.
  */
 export function sinceBoot(time: number, now: number = Date.now()): boolean {
-  return time >= now - os.uptime() * 1000 - CLOCK_SLACK_MS;
+  return sinceMachineBoot(time, now, os.uptime() * 1000);
 }
 
 /**

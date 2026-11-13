@@ -8,6 +8,8 @@ import {
   parseEditorDiscovery,
   pidOfDiscoveryName,
   readLiveEditors,
+  sinceBoot,
+  writtenSinceBoot,
   type EditorDiscovery,
 } from '../src/editor-discovery';
 
@@ -95,6 +97,9 @@ describe('the editors’ discovery files', () => {
     // A service knows a run nobody attends only when it says so.
     expect(parseEditorDiscovery(text({ unattended: true }))).toMatchObject({ unattended: true });
     expect(parseEditorDiscovery(text({ unattended: 'yes' }))).not.toHaveProperty('unattended');
+    // A service knows a job the desktop app runs in a throwaway checkout only when it says so.
+    expect(parseEditorDiscovery(text({ checkout: true }))).toMatchObject({ checkout: true });
+    expect(parseEditorDiscovery(text({ checkout: 'yes' }))).not.toHaveProperty('checkout');
     for (const broken of ['{', '[]', text({ pid: 0 }), text({ pid: '4242' }), 'null']) {
       expect(parseEditorDiscovery(broken), broken).toBeNull();
     }
@@ -142,6 +147,19 @@ describe('the editors’ discovery files', () => {
     expect(files.removed).toEqual([]);
     expect(files.opened).not.toContain('16.json');
     expect(files.opened).not.toContain('17.json');
+  });
+
+  test('takes a file written since this machine started, a minute of clock slack allowed', () => {
+    const now = Date.parse('2026-11-13T12:00:00.000Z');
+    const hour = 3_600_000;
+    expect(sinceBoot(now - hour, now, 2 * hour)).toBe(true);
+    expect(sinceBoot(now - 2 * hour - 59_000, now, 2 * hour)).toBe(true);
+    expect(sinceBoot(now - 2 * hour - 61_000, now, 2 * hour)).toBe(false);
+    expect(writtenSinceBoot({ startedAt: '2026-11-13T11:00:00.000Z' }, now, 2 * hour)).toBe(true);
+    // A file of before the restart names a process the restart ended, whose id another may hold.
+    expect(writtenSinceBoot({ startedAt: '2001-01-01T00:00:00.000Z' }, now, 2 * hour)).toBe(false);
+    // A file with no time it can be read by passes as far as the time goes.
+    expect(writtenSinceBoot({ startedAt: '' }, now, 2 * hour)).toBe(true);
   });
 
   describe('the service a run started in a terminal attaches to', () => {

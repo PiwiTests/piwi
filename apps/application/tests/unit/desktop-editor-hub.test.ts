@@ -10,7 +10,8 @@ import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { writeDiscovery } from '@piwitests/editor/discovery';
-import { editorHubFor } from '../../server/utils/desktop-editor-hub';
+import { stillServing } from '../../../../packages/reporter/src/internal/config/hub';
+import { editorHubFor, editorStillServing } from '../../server/utils/desktop-editor-hub';
 
 const TOKEN = 'Ab3_-Ab3_-Ab3_-Ab3_-Ab';
 
@@ -53,6 +54,7 @@ function editors(discovery: Partial<EditorDiscovery> = {}): string {
     runChannel: { path: socketPath, token: TOKEN },
     recorderBundle: null,
     unattended: true,
+    checkout: true,
     ...discovery,
   });
   return dir;
@@ -83,6 +85,10 @@ describe('the editor a job of a linked folder runs on', () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
+  test('is none for a discovery file written before this machine started, whose id another process may hold', () => {
+    expect(editorHubFor(workspace, true, editors({ startedAt: '2001-01-01T00:00:00.000Z' }))).toBeNull();
+  });
+
   test('is none whose run channel is no longer its own socket', () => {
     expect(
       editorHubFor(workspace, true, editors({ runChannel: { path: path.join(base, 'gone.sock'), token: TOKEN } })),
@@ -92,20 +98,49 @@ describe('the editor a job of a linked folder runs on', () => {
 
   test('takes a job nobody attends only to an editor that knows such runs', () => {
     expect(editorHubFor(workspace, false, editors())).not.toBeNull();
-    const knowsNone = fs.mkdtempSync(path.join(base, 'editors-'));
-    writeDiscovery(knowsNone, {
+    const knowsNone = editors({ unattended: undefined });
+    expect(editorHubFor(workspace, false, knowsNone)).toBeNull();
+    expect(editorHubFor(workspace, true, knowsNone)).toEqual({
+      runChannel: `${socketPath}#${TOKEN}`,
+      client: 'Visual Studio Code',
+    });
+  });
+
+  test('takes a job only to an editor that knows a throwaway checkout’s runs', () => {
+    const knowsNone = editors({ checkout: undefined });
+    expect(editorHubFor(workspace, true, knowsNone)).toBeNull();
+    expect(editorHubFor(workspace, false, knowsNone)).toBeNull();
+  });
+
+  test('takes an editor as still serving as a run started in a terminal does', () => {
+    const open = fs.mkdtempSync(path.join(base, 'open-'));
+    fs.chmodSync(open, 0o755);
+    const fresh: EditorDiscovery = {
       pid: process.pid,
       host: os.hostname(),
-      version: '0.60.0',
+      version: '0.70.0',
       client: null,
       startedAt: new Date().toISOString(),
       roots: [workspace],
       hub: null,
       runChannel: { path: socketPath, token: TOKEN },
       recorderBundle: null,
-    });
-    expect(editorHubFor(workspace, false, knowsNone)).toBeNull();
-    expect(editorHubFor(workspace, true, knowsNone)).toEqual({ runChannel: `${socketPath}#${TOKEN}`, client: null });
+    };
+    const cases: [string, EditorDiscovery, boolean][] = [
+      ['fresh', fresh, true],
+      ['written before this machine started', { ...fresh, startedAt: '2001-01-01T00:00:00.000Z' }, false],
+      ['with no time', { ...fresh, startedAt: '' }, true],
+      ['its socket gone', { ...fresh, runChannel: { path: path.join(base, 'gone.sock'), token: TOKEN } }, false],
+      [
+        'its channel in a folder others enter',
+        { ...fresh, runChannel: { path: path.join(open, 'c.sock'), token: TOKEN } },
+        false,
+      ],
+    ];
+    for (const [name, editor, serving] of cases) {
+      if (process.platform !== 'win32') expect(editorStillServing(editor), name).toBe(serving);
+      expect(editorStillServing(editor), name).toBe(stillServing(editor));
+    }
   });
 
   test('takes an absolute folder alone', () => {

@@ -115,6 +115,7 @@ describe('the hub’s address', () => {
         // Unbundled, the service has no recorder bundle beside it.
         recorderBundle: null,
         unattended: true,
+        checkout: true,
       },
     ]);
     expect(hub.token).toMatch(/^[\w-]{32}$/);

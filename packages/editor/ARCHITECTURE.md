@@ -1506,6 +1506,8 @@ could), `startServer` hands `publish` what the file says:
   follows the service one of whose `roots` holds the run, `editorForRun`);
 - the recorder bundle's path;
 - `unattended`: the service knows a run nobody attends, which a piped run then follows;
+- `checkout`: the service knows a job the desktop app runs in a throwaway checkout (`RunSession.checkout`), which the
+  app runs on it then, else on its own hub;
 - `send`: where a run's picks go, the client's Send to editor pairing as it names it
   (`InitializationOptions.runPairing`, `piwi/setRunPairing`), so a terminal's run posts **Pick a locator** to the
   editor. The file is written again, in place, as the client names another.

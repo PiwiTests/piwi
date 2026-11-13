@@ -336,6 +336,7 @@ describe('the run channel the shell names in a run', () => {
         hub: null,
         runChannel: channel,
         recorderBundle: null,
+        checkout: true,
       });
       expect(runs.editorHubFor(folder, true)).toEqual({
         runChannel: `${channel.path}#${channel.token}`,

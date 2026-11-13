@@ -74,8 +74,8 @@ the editor starts.
 
 A job [the desktop app](./desktop) runs in a throwaway worktree of a commit (**Reproduce here**, a bisect step, a
 [Flake Lab](./flake-lab) run) follows the editor window whose workspace holds the project's linked folder, by the same
-rules, else the app as before. A bisect step or a Flake Lab run, which nobody attends, follows only an editor
-extension that knows such runs.
+rules, else the app as before. It follows only an editor extension that knows these reproductions (an older one
+leaves it to the app), and a bisect step or a Flake Lab run, which nobody attends, only one that knows such runs too.
 
 - **Its stops show in the editor** at the failing line of the worktree's file, outside the workspace, marked
   **the desktop app's reproduction at commit abc1234, in a throwaway checkout**. A reproduction holds its failures from

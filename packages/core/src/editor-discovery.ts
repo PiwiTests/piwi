@@ -66,6 +66,12 @@ export interface EditorDiscovery {
    */
   unattended?: boolean;
   /**
+   * The service knows a job the desktop app runs in a throwaway checkout (a ref naming its commit, `checkoutCommitOf`
+   * of `@piwitests/core/run-channel`): it shows its stops as that commit's and offers their code to copy. Absent from a
+   * service that does not, which the desktop app runs no such job on.
+   */
+  checkout?: boolean;
+  /**
    * Where a run's picks go (**Pick a locator**, as `PIWI_EDITOR_SEND` names it): the client's Send to editor endpoint,
    * on this machine's loopback interface. Absent while the client named none.
    */
@@ -179,6 +185,7 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     runChannel: readChannel(value.runChannel),
     recorderBundle: text(value.recorderBundle, 4096),
     ...(value.unattended === true ? { unattended: true } : {}),
+    ...(value.checkout === true ? { checkout: true } : {}),
     ...readSend(value.send),
     ...readAgents(value.agents),
   };
@@ -201,6 +208,24 @@ export function readLiveEditors(folder: DiscoveryFolder): EditorDiscovery[] {
     else folder.remove(name);
   }
   return found.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.pid - b.pid);
+}
+
+/** The longest a clock may have moved between a process writing its file and a reader reading it. */
+const CLOCK_SLACK_MS = 60_000;
+
+/**
+ * Whether a time a file names, in milliseconds since the epoch, is since this machine started, `uptimeMs` before `now`
+ * (a minute of clock slack allowed): a file of before names a process its restart ended, whose id another may have
+ * taken since.
+ */
+export function sinceBoot(time: number, now: number, uptimeMs: number): boolean {
+  return time >= now - uptimeMs - CLOCK_SLACK_MS;
+}
+
+/** Whether a service's file was written since this machine started (`sinceBoot`); one with no time it reads passes. */
+export function writtenSinceBoot(editor: Pick<EditorDiscovery, 'startedAt'>, now: number, uptimeMs: number): boolean {
+  const written = Date.parse(editor.startedAt);
+  return !Number.isFinite(written) || sinceBoot(written, now, uptimeMs);
 }
 
 /** A folder as `editorForRun` compares them: forward slashes and lower case on Windows, no trailing slash. */
