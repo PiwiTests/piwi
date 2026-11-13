@@ -27,7 +27,7 @@ import type {
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
-import type { CiRerunSettings } from '#shared/ci-rerun';
+import type { CiActionTarget } from '#shared/ci-actions';
 
 /** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
 async function githubError(res: Response, action: string): Promise<Error> {
@@ -593,14 +593,13 @@ export class GitHubProvider extends ScmProvider {
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
   override async dispatchRerun(
-    settings: CiRerunSettings,
+    target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    const target = settings.github;
-    if (!target) throw new Error('No GitHub workflow configured for CI re-run');
+    if (target.type !== 'github') throw new Error('No GitHub workflow configured for CI re-run');
     const ref = request.ref || target.ref;
-    const inputs: Record<string, string> = { [target.inputName]: playwrightArgs };
+    const inputs: Record<string, string> = { ...request.inputs, [target.argsInput]: playwrightArgs };
     if (target.dispatchIdInput && request.dispatchId) inputs[target.dispatchIdInput] = request.dispatchId;
 
     const res = await fetch(

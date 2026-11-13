@@ -193,6 +193,8 @@ export function prepareCiServerRequest(input: {
   kind: 'rerun' | 'flakeLab';
   baseUrl: string;
   values: CiTemplateValues;
+  /** An action's inputs, sent beside the template's own fields. */
+  inputs?: Record<string, string>;
   projectToken: { url: string; token: string } | null;
   instanceCredential: CiServerCredential | null;
 }): OutgoingCiRequest {
@@ -201,7 +203,7 @@ export function prepareCiServerRequest(input: {
     throw new Error(
       input.kind === 'flakeLab' ? 'No Flake Lab request is configured' : 'No re-run request is configured',
     );
-  const rendered = renderCiRequest(input.baseUrl, spec.template, input.values);
+  const rendered = renderCiRequest(input.baseUrl, spec.template, input.values, Object.entries(input.inputs ?? {}));
   const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
   const credential = credentialFor(rendered.url, [project, instance]);
   const headers: Record<string, string> = {};
@@ -309,6 +311,7 @@ export async function dispatchToCiServer(
   target: CiServerTarget,
   kind: 'rerun' | 'flakeLab',
   values: CiTemplateValues,
+  inputs: Record<string, string> = {},
 ): Promise<CiServerDispatchResult> {
   const baseUrl = ciServerBaseUrl(target);
   const problem = ciServerBaseUrlProblem(baseUrl);
@@ -318,6 +321,7 @@ export async function dispatchToCiServer(
     kind,
     baseUrl,
     values,
+    inputs,
     projectToken: await projectCiServerToken(db, projectId),
     instanceCredential: instanceCiServer().credential,
   });
@@ -399,6 +403,7 @@ export async function checkCiServerTarget(
   db: DbClient,
   projectId: number,
   target: CiServerTarget,
+  inputNames: string[] = [],
 ): Promise<CiServerCheckResult[]> {
   const baseUrl = ciServerBaseUrl(target);
   const problem = ciServerBaseUrlProblem(baseUrl);
@@ -410,7 +415,7 @@ export async function checkCiServerTarget(
   const projectToken = await projectCiServerToken(db, projectId);
   const instanceCredential = instanceCiServer().credential;
   const results: CiServerCheckResult[] = [];
-  for (const plan of ciServerCheckPlans(target, baseUrl)) {
+  for (const plan of ciServerCheckPlans(target, baseUrl, inputNames)) {
     if ('error' in plan) {
       results.push({ kind: plan.kind, ok: false, missing: [], message: plan.error });
       continue;

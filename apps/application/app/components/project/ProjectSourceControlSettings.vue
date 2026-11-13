@@ -2,13 +2,13 @@
 /**
  * Project settings → Source control: the repository, its token and default branch,
  * whether quarantined failures fail the commit status, whether the gate verdict
- * gets a commit status of its own, where a CI re-run dispatches (the repository
- * host's target per provider with its optional Flake Lab target, or a CI
- * server), and where the specs generated from bug reports go. The tokens are
- * write-only: a blank field keeps the stored one.
+ * gets a commit status of its own, the CI actions Piwi starts (their targets,
+ * inputs, defaults and the CI server credential), and where the specs generated
+ * from bug reports go. The tokens are write-only: a blank field keeps the stored
+ * one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
-import { ciServerFormState, ciServerTargetFromForm } from '~/utils/ci-server-form';
+import type { CiActionsSettings } from '#shared/ci-actions';
 
 const props = defineProps<{ project: ProjectWithTestRuns; showGeneratedSpecs: boolean }>();
 const emit = defineEmits<{ saved: [] }>();
@@ -23,28 +23,9 @@ const { state, dirty } = useStoredForm(() => {
     gateStatus: props.project.gateStatus === true,
     ciRerun: {
       enabled: ci?.enabled ?? false,
-      via: ci?.via === 'ci-server' ? ('ci-server' as const) : ('repository' as const),
-      ciServer: ciServerFormState(ci?.ciServer),
-      github: {
-        workflow: ci?.github?.workflow ?? '',
-        ref: ci?.github?.ref ?? '',
-        inputName: ci?.github?.inputName ?? '',
-        dispatchIdInput: ci?.github?.dispatchIdInput ?? '',
-      },
-      gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
-      bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
-      flakeLab: {
-        github: {
-          workflow: ci?.flakeLab?.github?.workflow ?? '',
-          inputName: ci?.flakeLab?.github?.inputName ?? '',
-        },
-        gitlab: { variableName: ci?.flakeLab?.gitlab?.variableName ?? '' },
-        bitbucket: {
-          pipeline: ci?.flakeLab?.bitbucket?.pipeline ?? '',
-          variableName: ci?.flakeLab?.bitbucket?.variableName ?? '',
-        },
-      },
-    },
+      actions: ci?.actions ?? [],
+      defaults: ci?.defaults ?? {},
+    } satisfies CiActionsSettings,
     generatedSpecs: {
       bugsFolder: props.project.generatedSpecs?.bugsFolder ?? '',
       testImport: props.project.generatedSpecs?.testImport ?? '',
@@ -54,35 +35,15 @@ const { state, dirty } = useStoredForm(() => {
 const scmToken = ref('');
 const hasToken = computed(() => Boolean(props.project.hasScmToken));
 const ciServerToken = ref('');
-const viaItems = [
-  {
-    label: 'Repository host',
-    value: 'repository',
-    description: 'A GitHub workflow, or a GitLab or Bitbucket pipeline',
-  },
-  { label: 'CI server', value: 'ci-server', description: 'One request to Jenkins, or a request you write' },
-];
-const toast = useToast();
 
 const { saving, save } = useProjectPatch(() => props.project.id);
 
-/** The CI server form shows, and its token is sent, only while CI re-run is on and dispatches through it. */
-const ciServerActive = computed(() => state.value.ciRerun.enabled && state.value.ciRerun.via === 'ci-server');
+/** Whether a CI server token is sent: only while CI actions are on and one of them targets a CI server. */
+const ciServerActive = computed(
+  () => state.value.ciRerun.enabled && state.value.ciRerun.actions.some((a) => a.target.type === 'ci-server'),
+);
 
 async function submit() {
-  const { ciServer: ciServerForm, via, ...repositoryTargets } = state.value.ciRerun;
-  const ciServer = ciServerTargetFromForm(ciServerForm, { instanceUrl: props.project.ciServerInstanceUrl ?? null });
-  // A CI server form that cannot be saved stops the whole save: nothing in the section is sent.
-  if (ciServerActive.value && ciServer.error) {
-    toast.add({
-      title: 'Source control not saved',
-      description: `${ciServer.error} Nothing in this section was saved.`,
-      color: 'warning',
-    });
-    return;
-  }
-  // A hidden form that cannot be saved keeps the stored target.
-  const ciServerTarget = ciServer.target ?? props.project.ciRerun?.ciServer ?? null;
   const stored = await save(
     {
       scmToken: scmToken.value.trim() || undefined,
@@ -91,11 +52,7 @@ async function submit() {
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
       gateStatus: state.value.gateStatus,
-      ciRerun: {
-        ...repositoryTargets,
-        ...(via === 'ci-server' ? { via } : {}),
-        ...(ciServerTarget ? { ciServer: ciServerTarget } : {}),
-      },
+      ciRerun: state.value.ciRerun,
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
         bugsFolder: state.value.generatedSpecs.bugsFolder.trim() || null,
@@ -201,141 +158,21 @@ async function removeCiServerToken() {
         <UFormField
           name="ciRerun"
           data-tour="project-ci-rerun"
-          description="Let Maintainers, Project admins and administrators re-run a cluster's affected tests, or one test, in CI from their pages: through the repository host with the SCM token above, or through your CI server. Off by default."
+          description="Named ways to start CI from a failure's page: each action has its own target, inputs and environment. Maintainers, Project admins and administrators can use them. Off by default."
         >
           <template #label>
-            <span class="inline-flex items-center gap-1">CI re-run <HelpHint topic="project.ci-rerun" /></span>
+            <span class="inline-flex items-center gap-1">CI actions <HelpHint topic="project.ci-rerun" /></span>
           </template>
-          <div class="space-y-3">
-            <USwitch v-model="state.ciRerun.enabled" label="Enable re-run from the dashboard" />
-            <URadioGroup
-              v-if="state.ciRerun.enabled"
-              v-model="state.ciRerun.via"
-              :items="viaItems"
-              orientation="horizontal"
-              legend="Dispatch through"
-              data-testid="ci-rerun-via"
-            />
-            <div v-if="ciServerActive" class="rounded-md border border-default p-3">
-              <CiServerTargetFields
-                v-model="state.ciRerun.ciServer"
-                v-model:token="ciServerToken"
-                :project-id="project.id"
-                :instance-url="project.ciServerInstanceUrl ?? null"
-                :has-token="Boolean(project.hasCiServerToken)"
-                :token-url="project.ciServerTokenUrl ?? null"
-                :saving="saving"
-                @remove-token="removeCiServerToken"
-              />
-            </div>
-            <div v-else-if="state.ciRerun.enabled" class="space-y-4 rounded-md border border-default p-3">
-              <div class="space-y-2">
-                <p class="text-xs text-muted">GitHub — workflow_dispatch</p>
-                <div class="grid gap-2 sm:grid-cols-3">
-                  <UInput
-                    v-model="state.ciRerun.github.workflow"
-                    placeholder="workflow file, e.g. e2e.yml"
-                    aria-label="GitHub workflow file"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.github.ref"
-                    placeholder="ref, e.g. main"
-                    aria-label="GitHub ref"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.github.inputName"
-                    placeholder="input name, e.g. args"
-                    aria-label="GitHub input name"
-                    class="font-mono"
-                  />
-                </div>
-                <UInput
-                  v-model="state.ciRerun.github.dispatchIdInput"
-                  placeholder="dispatch id input (optional), e.g. piwi_dispatch"
-                  aria-label="GitHub dispatch id input"
-                  class="font-mono w-full sm:max-w-xs"
-                />
-              </div>
-              <div class="space-y-2">
-                <p class="text-xs text-muted">GitLab — pipeline</p>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <UInput
-                    v-model="state.ciRerun.gitlab.ref"
-                    placeholder="ref, e.g. main"
-                    aria-label="GitLab ref"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.gitlab.variableName"
-                    placeholder="variable name, e.g. PIWI_RERUN_ARGS"
-                    aria-label="GitLab variable name"
-                    class="font-mono"
-                  />
-                </div>
-              </div>
-              <div class="space-y-2">
-                <p class="text-xs text-muted">Bitbucket — custom pipeline</p>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <UInput
-                    v-model="state.ciRerun.bitbucket.pipeline"
-                    placeholder="custom pipeline name, e.g. rerun"
-                    aria-label="Bitbucket custom pipeline"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.bitbucket.variableName"
-                    placeholder="variable name, e.g. PIWI_RERUN_ARGS"
-                    aria-label="Bitbucket variable name"
-                    class="font-mono"
-                  />
-                </div>
-              </div>
-              <div class="space-y-2 border-t border-default pt-3" data-testid="ci-rerun-flake-lab">
-                <p class="text-sm text-highlighted">Flake Lab (optional)</p>
-                <p class="text-xs text-muted">
-                  A workflow or pipeline that runs <code class="font-mono">npx @piwitests/reporter</code> with the
-                  arguments it receives (<code class="font-mono">flake 12</code>,
-                  <code class="font-mono">flake verify 12</code>), so a flaky test's experiment can run in CI from its
-                  page. GitHub and GitLab use the ref above.
-                </p>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <UInput
-                    v-model="state.ciRerun.flakeLab.github.workflow"
-                    placeholder="GitHub workflow, e.g. flake.yml"
-                    aria-label="Flake Lab GitHub workflow file"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.flakeLab.github.inputName"
-                    placeholder="input name, e.g. piwi_flake"
-                    aria-label="Flake Lab GitHub input name"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.flakeLab.gitlab.variableName"
-                    placeholder="GitLab variable, e.g. FLAKE_ARGS"
-                    aria-label="Flake Lab GitLab variable name"
-                    class="font-mono"
-                  />
-                  <div class="hidden sm:block" />
-                  <UInput
-                    v-model="state.ciRerun.flakeLab.bitbucket.pipeline"
-                    placeholder="Bitbucket custom pipeline, e.g. flake"
-                    aria-label="Flake Lab Bitbucket custom pipeline"
-                    class="font-mono"
-                  />
-                  <UInput
-                    v-model="state.ciRerun.flakeLab.bitbucket.variableName"
-                    placeholder="variable name, e.g. FLAKE_ARGS"
-                    aria-label="Flake Lab Bitbucket variable name"
-                    class="font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <ProjectCiActions
+            v-model="state.ciRerun"
+            v-model:token="ciServerToken"
+            :project-id="project.id"
+            :instance-url="project.ciServerInstanceUrl ?? null"
+            :has-token="Boolean(project.hasCiServerToken)"
+            :token-url="project.ciServerTokenUrl ?? null"
+            :saving="saving"
+            @remove-token="removeCiServerToken"
+          />
         </UFormField>
 
         <UFormField

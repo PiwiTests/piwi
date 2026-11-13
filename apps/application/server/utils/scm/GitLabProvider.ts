@@ -27,7 +27,7 @@ import type {
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
-import type { CiRerunSettings } from '#shared/ci-rerun';
+import type { CiActionTarget } from '#shared/ci-actions';
 
 /** Turn a non-2xx GitLab response into an Error carrying the API's own message. */
 async function gitlabError(res: Response, action: string): Promise<Error> {
@@ -613,12 +613,11 @@ export class GitLabProvider extends ScmProvider {
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
   override async dispatchRerun(
-    settings: CiRerunSettings,
+    target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    const target = settings.gitlab;
-    if (!target) throw new Error('No GitLab pipeline configured for CI re-run');
+    if (target.type !== 'gitlab') throw new Error('No GitLab pipeline configured for CI re-run');
     const ref = request.ref || target.ref;
 
     const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/pipeline`, {
@@ -626,7 +625,10 @@ export class GitLabProvider extends ScmProvider {
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ref,
-        variables: [{ key: target.variableName, value: playwrightArgs }],
+        variables: [
+          ...Object.entries(request.inputs ?? {}).map(([key, value]) => ({ key, value })),
+          { key: target.argsVariable, value: playwrightArgs },
+        ],
       }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });

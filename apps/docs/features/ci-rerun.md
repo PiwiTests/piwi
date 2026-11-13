@@ -8,55 +8,57 @@ lang: en-US
 
 <Needs reporter />
 
-Once a cluster is fixed, the fastest way to prove it is to re-run the affected tests, and a
-[filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
-trigger that run in CI: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow, pipeline or job with
+A [filtered run that passes every affected test closes a cluster](./failure-clusters#did-the-fix-work). The cluster page
+can trigger that run in CI: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow, pipeline or job with
 the cluster's retry arguments (each affected test's `file:line` from its latest failure, and the projects it failed
 in) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
-that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that test at its
-line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. In the
-Verify section, the last dispatch says where it went (_dispatched to Jenkins_), when, by whom, and links to the build.
+that run has no branch. An execution's Verify section offers **Re-run this test in CI** beside **Re-run the
+cluster in CI**; both are recorded as the cluster's last re-run, which says where it went, when, by whom, and links to
+the build.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
-under **CI re-run**. Turn it on and pick what it dispatches through:
+under **CI actions**: a list of named [CI actions](#ci-actions), each saying where Piwi starts CI and what it sends.
 
-- **Repository host**: the CI of the repository host, with the project's SCM token.
-- **CI server**: one HTTP request to a CI server, such as Jenkins, with its own credential.
+Its buttons show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once an action serves the
+run; through the repository, an SCM token must be set too.
 
-Its buttons, and a next step that runs in CI, show to people with
-[`run:control`](/operate/project-access#what-each-role-can-do) once the feature is on and a target is set; through the
-repository, an SCM token must be set too. A CI server request goes without a credential when none applies.
+*Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run the same tests on your
+machine. On a run's page, its menu adds run options the browser remembers (headed, trace, repeat each up to 10 without
+retries, workers up to 4), and one project the tests ran in.
 
-*Copy retry command* is the local counterpart of **Re-run in CI**: it copies an `npx playwright test` command to run
-the same tests on your machine. On a run's page, its menu adds run options the browser remembers (headed, trace,
-repeat each up to 10 without retries, workers up to 4), and one project the tests ran in.
+An action that accepts **Flake Lab** runs `piwi flake` for one flaky test: [Run it in CI](./flake-lab#run-it-in-ci)
+shows the GitHub workflow, and [Flake Lab on Jenkins](#flake-lab-on-jenkins) the Jenkins job.
 
-An optional **Flake Lab** target names a second workflow, pipeline or job that runs `piwi flake` for one flaky test,
-started from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the GitHub workflow, and
-[Flake Lab on Jenkins](#flake-lab-on-jenkins) the Jenkins job.
+## CI actions
 
-## Repository host
+A CI action is a named way to start CI. It has:
 
-Fill in the block for your provider:
+- a **name**, unique in the project, ignoring case;
+- a **target**: a GitHub workflow, a GitLab or Bitbucket pipeline, a Jenkins job or a Custom request;
+- **inputs**: a *fixed* value (`TARGET_ENV=staging`) or a *choice* with a default and options. They are sent beside the
+  Playwright arguments, never inside them: as workflow inputs on GitHub, variables on GitLab and Bitbucket, and
+  parameters on Jenkins. A Custom request sends none;
+- what it **accepts**: re-runs, Run on CI, Flake Lab;
+- an optional **environment**, such as `staging`;
+- the kinds it is the **default** for.
 
-| Provider | Target you configure | Token scope |
-|---|---|---|
-| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | `actions:write` (a classic PAT's `workflow` scope) |
-| **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
-| **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
+A button uses the project's default action for what it starts; MCP and the API can name another by id or name. A
+repository action serves only a run whose repository is on that host; a CI server action serves any run. Settings
+saved before CI actions existed were converted when read: each configured target is now an action, and nothing needs
+re-entering.
 
-The dispatch uses the project's [SCM token](/guide/source-control), which needs the write scope above.
+**Check** reads an action's target without starting it and says whether it declares every name a dispatch sends, the
+inputs included. It reads a GitHub workflow file and a Jenkins job; GitLab and Bitbucket pipelines and Custom requests
+cannot be read, and Check says so.
 
-Your workflow has to actually consume the value. A minimal GitHub example that forwards the input to Playwright:
+Two actions on one workflow, one per environment, differ only in their inputs:
 
 ```yaml
 on:
   workflow_dispatch:
     inputs:
-      args:
-        description: Playwright arguments
-        required: false
-        default: ''
+      args: { description: Playwright arguments, default: '' }
+      TARGET_ENV: { description: Environment under test, default: staging }
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -64,10 +66,28 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci
       - run: npx playwright test ${{ inputs.args }}
+        env:
+          TARGET_ENV: ${{ inputs.TARGET_ENV }}
 ```
 
-On GitLab and Bitbucket, set the variable name to `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which
-reads the quoted arguments without a shell (unset, it fails):
+*Smoke · staging* and *Smoke · production* both target `e2e.yml` with `args` as the arguments input, and each has
+one fixed input, `TARGET_ENV=staging` or `TARGET_ENV=production`. Check on either confirms the workflow declares
+`args` and `TARGET_ENV`.
+
+## Repository host
+
+Choose the provider of the action:
+
+| Provider | What the target names | Token scope |
+|---|---|---|
+| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | `actions:write` (a classic PAT's `workflow` scope) |
+| **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
+| **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
+
+The dispatch uses the project's [SCM token](/guide/source-control) with the scope above.
+
+On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the
+quoted arguments without a shell:
 
 ::: code-group
 
@@ -94,19 +114,18 @@ pipelines:
 
 :::
 
-GitHub's `workflow_dispatch` returns no run id, so the link goes to the workflow's runs page filtered to the branch;
-GitLab and Bitbucket link straight to the pipeline.
+GitHub returns no run id, so its link goes to the workflow's runs page for the branch; GitLab and Bitbucket link to the
+pipeline.
 
 ## CI server
 
-A CI server target is a **preset**, which builds the request from a few fields, or a **Custom request** you write.
-The form shows the request a re-run sends, filled with sample values and the credential masked, as you type.
+A CI server action is a **preset**, which builds the request from a few fields, or a **Custom request** you write.
+The form shows the request a re-run sends, with sample values and the credential masked.
 
-**Jenkins** takes the job as Jenkins shows its path (`polaris/e2e`; `polaris/e2e/{branch}` for a multibranch pipeline,
-where `{branch}` becomes the run's branch) and posts to its `buildWithParameters` with two string parameters:
-`PIWI_RERUN_ARGS` (the arguments) and `PIWI_ORIGIN_REF` (the dispatch id), names you can change. The credential is
-a user and their API token, sent as Basic authentication, which Jenkins accepts without a crumb. The link goes to the
-job's page. The job declares both parameters and runs `rerun`:
+**Jenkins** takes the job as Jenkins shows its path (`polaris/e2e`; `polaris/e2e/{branch}` for a multibranch pipeline)
+and posts to its `buildWithParameters` with `PIWI_RERUN_ARGS` (the arguments) and `PIWI_ORIGIN_REF` (the dispatch id),
+names you can change, plus the action's inputs. The credential is a user and their API token, sent as Basic
+authentication. The link goes to the job's page. The job declares both parameters and runs `rerun`:
 
 ```groovy
 pipeline {
@@ -126,17 +145,15 @@ pipeline {
 }
 ```
 
-**Check the jobs** reads each Jenkins job the form names, the re-run's and Flake Lab's, without starting it, and says
-whether it declares the parameters a dispatch sends. Jenkins drops a parameter its job does not declare, so a re-run
-would then fail (`rerun` needs `PIWI_RERUN_ARGS`) or never be matched to its dispatch. A Pipeline job declares the
-parameters of its Jenkinsfile on its first build: run a new job once, then check it. Check reads the form as it is,
-unsaved fields included, with the credential a dispatch would carry; a token you just typed goes only once saved. A
-multibranch pipeline is checked on its default branch.
+**Check** reads the Jenkins job as it is in the form, unsaved fields included, without starting it, and says whether
+it declares the parameters a dispatch sends, the inputs included. Jenkins drops a parameter its job does not declare,
+so a re-run would fail or never be matched. A Pipeline job declares its Jenkinsfile's parameters on its first build: run
+a new job once, then check it. A multibranch pipeline is checked on its default branch.
 
 ### Flake Lab on Jenkins
 
-The preset's Flake Lab job receives `flake 12` or `flake verify 12` in its arguments parameter and hands it to the
-reporter, which reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`:
+A Jenkins action that accepts Flake Lab receives `flake 12` or `flake verify 12` in its arguments parameter and hands
+it to the reporter, which reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`:
 
 ```groovy
 pipeline {
@@ -161,15 +178,14 @@ pipeline {
 }
 ```
 
-On a Windows agent the steps are `bat` steps, and the last reads `%PIWI_RERUN_ARGS%`.
+On a Windows agent use `bat` steps, and read `%PIWI_RERUN_ARGS%`.
 
 ### Custom requests
 
 **Customize the request** turns the preset into a Custom request that sends the same thing, to edit from there. A
-Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-Token" }`), a `rerun` request and an
-optional `flakeLab` one, each with a `method` (`POST` or `PUT`), a `path` relative to the base URL, and optional
-`query`, `headers` and `body` (JSON, or form fields), `link` (a JSON pointer, a response header, or a path) and
-`buildNumber` (a JSON pointer). Its values may name these placeholders:
+Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-Token" }`) and a `rerun` request with a
+`method` (`POST` or `PUT`), a `path` relative to the base URL, and optional `query`, `headers`, `body`, `link` and
+`buildNumber`. Its values may name these placeholders:
 
 | Placeholder | Value |
 |---|---|
@@ -184,32 +200,27 @@ refused. In a JSON body it fills a whole string value.
 
 ### The credential and the hosts
 
-The token field is write-only: leave it empty to keep the stored token. A token is stored with the base URL in effect
-when it is saved and sent only to URLs under it, so changing the base URL asks for the token again. A project without
-a base URL uses the instance's CI server (`PIWI_CI_SERVER_URL`), and one without a token the instance's
-(`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`): it goes only with a preset's request under that URL, never with a
-Custom one. A base URL or a request path is refused when a segment would climb once a server decodes it (`..%2F`,
-`..;`), so a token bound to a folder stays in it.
+The token is project-wide and write-only: leave the field empty to keep it. It is stored with the base URL of the first
+CI server action (else `PIWI_CI_SERVER_URL`) and sent only to URLs under it, so changing that URL asks for the token
+again. A project without a token uses the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`), only with a
+preset's request under that URL. A base URL or request path is refused when a segment would climb once a server decodes
+it (`..%2F`, `..;`).
 
 A request never follows a redirect, and a link from the answer is kept only when it is an `http(s)` URL or a path from
-the base URL's root (`/queue/item/12/`). A CI server
-is reached over `https`. Over `http`, or on a private address (a `10.x` host, `localhost`), it is reached only when it
-is the host and port of the instance's `PIWI_CI_SERVER_URL` or is listed in `PIWI_CI_SERVER_HOSTS` (`host` for any
-port, `host:port` for one); the desktop app reaches any address. The
-variables are in the [configuration reference](/reference/configuration).
+the base URL's root. A CI server is reached over `https`; over `http` or on a private address it is reached only when
+it is the host and port of `PIWI_CI_SERVER_URL` or is listed in `PIWI_CI_SERVER_HOSTS` (the desktop app reaches any
+address). See the [configuration reference](/reference/configuration).
 
 ## Matching the run
 
 When the re-run finishes, Piwi recognizes it and records its [origin](/reference/test-metadata#run-origin) as `ci-rerun`.
 A Jenkins job matches by the dispatch id it passes on as `PIWI_ORIGIN_REF`; a Custom request by that id too, or by the
-build number its `buildNumber` pointer reads from the answer, for a run of the same branch and spec files that started
-after the dispatch. GitLab matches by its pipeline id and
-Bitbucket by its build number, which the dispatch answered with; GitHub by the dispatch id when the workflow passes it
-on. Once matched, the last dispatch links to the build the
-run recorded.
+build number its `buildNumber` pointer reads from the answer. GitLab matches by its pipeline id and Bitbucket by its
+build number; GitHub by the dispatch id when the workflow passes it on. Once matched, the last dispatch links to the
+build the run recorded.
 
-GitHub rejects an input the workflow does not declare, so that input is a separate, optional setting. Declare it and
-hand it to the reporter as `PIWI_ORIGIN_REF`:
+GitHub rejects an input the workflow does not declare, so the dispatch id input is optional. Declare it and hand it to
+the reporter as `PIWI_ORIGIN_REF`:
 
 ```yaml
 on:
@@ -232,19 +243,19 @@ jobs:
           PIWI_ORIGIN_REF: ${{ inputs.piwi_dispatch }}
 ```
 
-Without it, a GitHub run, or a CI server run with neither, is matched on its branch, a start within six hours of the
-dispatch, and running exactly the dispatched spec files.
+Without it, a run is matched on its branch, a start within six hours of the dispatch, and exactly the dispatched spec
+files.
 
 ## Limits
 
-- A dispatch is one request: Piwi does not poll the CI for the build's state, it waits for the run to report.
-- The demo records a CI server dispatch without sending it, and links to the job's page. Its Check sends nothing
-  either: it answers as a job that declares the default parameters.
+- A dispatch is one request: Piwi does not poll the CI, it waits for the run to report.
+- The demo records a CI server action's dispatch without sending it. Its Check sends nothing either: it answers as a
+  job that declares the default parameters. It runs only CI server actions.
 
 ## Related
 
 - [Pull-request feedback](./pr-feedback): the result posted on the pull request
 - [Source control](/guide/source-control): the SCM token and its scopes
 - [Failure clusters & the inbox](./failure-clusters): the clusters a re-run acts on
-- [Flake Lab](./flake-lab): the experiment a Flake Lab target runs in CI
+- [Flake Lab](./flake-lab): the experiment a Flake Lab action runs in CI
 - [CLI](/reference/cli#rerun): the `rerun` command a pipeline runs

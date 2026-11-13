@@ -1,19 +1,18 @@
 /**
- * CI re-run — server-side settings access and the shared dispatch flow, for a
- * cluster's affected tests and for one execution's test.
+ * CI re-run — the shared dispatch flow, for a cluster's affected tests, for
+ * one execution's test, and for a Flake Lab experiment.
  *
- * The settings live on the project row (`projects.ciRerun`). Through the
- * repository host, the token is the project's SCM token, and the provider is
- * decided by the repository URL of the run the tests come from (a cluster's
- * most recent run, or the execution's). Through a CI server (`via:
- * 'ci-server'`), the request goes to the project's or the instance's CI server
- * (`server/utils/ci-server-dispatch.ts`), whatever hosts the repository. This
- * module ties those together so the availability check (for the button's
- * enabled/disabled state) and the dispatch route agree.
+ * The project's CI actions (`server/utils/ci-actions.ts`) say where a dispatch
+ * goes: each action names a repository host's CI (a GitHub workflow, a GitLab
+ * or Bitbucket pipeline, which use the project's SCM token on the repository
+ * of the run the tests come from) or a CI server (`server/utils/ci-server-dispatch.ts`),
+ * whatever hosts the repository. `pickCiAction` chooses the action for a kind
+ * and a run. This module ties those together so the availability check (for
+ * the button's enabled/disabled state) and the dispatch route agree.
  */
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
-import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../database/schema';
+import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
@@ -28,16 +27,21 @@ import {
 } from '#shared/handlers/ci-rerun-target';
 import {
   flakeLabCiArgs,
-  flakeLabRerunSettings,
-  resolveCiRerunSettings,
-  hasRerunTarget,
   matchRerunDispatch,
   RERUN_CLOCK_SLACK_MS,
   RERUN_MATCH_WINDOW_MS,
   type CiRerunProvider,
-  type CiRerunSettings,
   type ClusterRerunDispatch,
 } from '#shared/ci-rerun';
+import {
+  ciActionInputValues,
+  ciServerTargetOf,
+  pickCiAction,
+  type CiAction,
+  type CiActionKind,
+  type CiActionsSettings,
+} from '#shared/ci-actions';
+import { getCiActionsSettings } from './ci-actions';
 import { ciServerRequestTemplate } from '#shared/ci-server';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
@@ -50,15 +54,8 @@ import {
 } from './ci-server-dispatch';
 import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
-import type { ScmProviderName } from '#shared/scm-urls';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
-
-/** The resolved CI re-run settings for a project (disabled defaults when unset). */
-export async function getCiRerunSettings(db: DbClient, projectId: number): Promise<CiRerunSettings> {
-  const [project] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
-  return resolveCiRerunSettings((project?.ciRerun as Partial<CiRerunSettings> | null) ?? null);
-}
 
 /** The repository URL from a cluster's most recent run, normalized, or null. */
 export async function clusterRepositoryUrl(db: DbClient, lastSeenRunId: number): Promise<string | null> {
@@ -75,28 +72,27 @@ export interface CiRerunAvailability {
   provider: CiRerunProvider | null;
   enabled: boolean;
   hasToken: boolean;
+  /** The action a dispatch would use, when one can serve the run. */
+  action: { id: string; name: string } | null;
 }
 
+const actionRef = (action: CiAction | null) => (action ? { id: action.id, name: action.name } : null);
+
 /**
- * Whether a CI server dispatch of `kind` can be sent for a run, and whether it
- * would carry a credential: a target with a request for it, a base URL that is
- * https (or http on a listed place), and a request its values fill, built as
- * the dispatch builds it. DNS is checked at dispatch.
+ * Whether a CI server action can be dispatched for a run, and whether it would
+ * carry a credential: a request its target builds, a base URL that is https
+ * (or http on a listed place), and a request its values fill, built as the
+ * dispatch builds it. DNS is checked at dispatch.
  */
 async function ciServerReadiness(
   db: DbClient,
   projectId: number,
-  settings: CiRerunSettings,
-  kind: 'rerun' | 'flakeLab',
+  action: CiAction & { target: { type: 'ci-server' } },
   runId: number | null,
 ): Promise<{ reason: string | null; hasToken: boolean }> {
-  const target = settings.ciServer;
-  if (!target || !ciServerRequestTemplate(target, kind)) {
-    const reason =
-      kind === 'flakeLab'
-        ? 'No Flake Lab request is configured for the CI server.'
-        : 'No CI server is configured for this project.';
-    return { reason, hasToken: false };
+  const target = ciServerTargetOf(action.target);
+  if (!ciServerRequestTemplate(target, 'rerun')) {
+    return { reason: 'No CI server is configured for this project.', hasToken: false };
   }
   const baseUrl = ciServerBaseUrl(target);
   const problem = ciServerBaseUrlProblem(baseUrl);
@@ -104,9 +100,10 @@ async function ciServerReadiness(
   try {
     const request = prepareCiServerRequest({
       target,
-      kind,
+      kind: 'rerun',
       baseUrl,
       values: await ciServerValues(db, runId, target, 'args', 'dispatch'),
+      inputs: ciActionInputValues(action),
       projectToken: await projectCiServerToken(db, projectId),
       instanceCredential: instanceCiServer().credential,
     });
@@ -116,57 +113,90 @@ async function ciServerReadiness(
   }
 }
 
+/** What decides whether a dispatch of a kind can be sent for a run. */
+interface DispatchReadiness {
+  available: boolean;
+  reason: string | null;
+  provider: CiRerunProvider | null;
+  enabled: boolean;
+  hasToken: boolean;
+  action: CiAction | null;
+}
+
+/**
+ * Whether a dispatch of `kind` can be sent for a run: CI actions on, an action
+ * that accepts the kind and serves the run's repository (`pickCiAction`), and
+ * what that action needs (an SCM token, or a CI server request that builds).
+ */
+async function dispatchReadiness(
+  db: DbClient,
+  projectId: number,
+  runId: number | null,
+  kind: CiActionKind,
+  actionId?: string | null,
+): Promise<DispatchReadiness> {
+  const settings = await getCiActionsSettings(db, projectId);
+  const repositoryUrl = runId ? await clusterRepositoryUrl(db, runId) : null;
+  const detected = detectScmProvider(repositoryUrl);
+  const pick = pickCiAction(settings, kind, { provider: detected, actionId });
+  const action = pick.action;
+  const provider = action ? action.target.type : detected;
+  const hasScmToken = Boolean(await resolveScmToken(db, projectId));
+  if (!settings.enabled) {
+    return {
+      available: false,
+      reason: 'CI re-run is off for this project.',
+      provider,
+      enabled: false,
+      hasToken: hasScmToken,
+      action,
+    };
+  }
+  if (!action) {
+    return { available: false, reason: pick.reason, provider, enabled: true, hasToken: hasScmToken, action: null };
+  }
+  if (action.target.type === 'ci-server') {
+    const ready = await ciServerReadiness(db, projectId, { ...action, target: action.target }, runId);
+    return {
+      available: !ready.reason,
+      reason: ready.reason,
+      provider,
+      enabled: true,
+      hasToken: ready.hasToken,
+      action,
+    };
+  }
+  if (!hasScmToken) {
+    const reason =
+      kind === 'flakeLab'
+        ? 'No SCM token is configured to dispatch the experiment.'
+        : 'No SCM token is configured to dispatch the re-run.';
+    return { available: false, reason, provider, enabled: true, hasToken: false, action };
+  }
+  return { available: true, reason: null, provider, enabled: true, hasToken: true, action };
+}
+
 /**
  * Decide whether a cluster can be re-run in CI, with a reason when it cannot —
  * the same checks the dispatch route enforces, so the button never offers an
- * action the POST would reject.
+ * action the POST would reject. `actionId` names the action to use (an id or
+ * an exact name); without it the project's default for re-runs applies.
  */
 export async function ciRerunAvailability(
   db: DbClient,
   projectId: number,
   lastSeenRunId: number,
+  actionId?: string | null,
 ): Promise<CiRerunAvailability> {
-  const settings = await getCiRerunSettings(db, projectId);
-  if (settings.via === 'ci-server') {
-    const ready = await ciServerReadiness(db, projectId, settings, 'rerun', lastSeenRunId);
-    const reason = settings.enabled ? ready.reason : 'CI re-run is off for this project.';
-    return { available: !reason, reason, provider: 'ci-server', enabled: settings.enabled, hasToken: ready.hasToken };
-  }
-  const repositoryUrl = await clusterRepositoryUrl(db, lastSeenRunId);
-  const provider = detectScmProvider(repositoryUrl);
-  const hasToken = Boolean(await resolveScmToken(db, projectId));
-
-  if (!settings.enabled) {
-    return { available: false, reason: 'CI re-run is off for this project.', provider, enabled: false, hasToken };
-  }
-  if (!provider) {
-    return {
-      available: false,
-      reason: 'Its run has no supported repository to dispatch to.',
-      provider: null,
-      enabled: true,
-      hasToken,
-    };
-  }
-  if (!hasRerunTarget(settings, provider)) {
-    return {
-      available: false,
-      reason: `No ${provider} re-run target is configured for this project.`,
-      provider,
-      enabled: true,
-      hasToken,
-    };
-  }
-  if (!hasToken) {
-    return {
-      available: false,
-      reason: 'No SCM token is configured to dispatch the re-run.',
-      provider,
-      enabled: true,
-      hasToken: false,
-    };
-  }
-  return { available: true, reason: null, provider, enabled: true, hasToken: true };
+  const ready = await dispatchReadiness(db, projectId, lastSeenRunId, 'tests', actionId);
+  return {
+    available: ready.available,
+    reason: ready.reason,
+    provider: ready.provider,
+    enabled: ready.enabled,
+    hasToken: ready.hasToken,
+    action: actionRef(ready.action),
+  };
 }
 
 /** The branch a re-run runs on: the branch of the run it re-runs, when that run has one. */
@@ -178,8 +208,85 @@ async function rerunRef(db: DbClient, runId: number): Promise<string | null> {
 export type DispatchedRerun = Omit<ClusterRerunDispatch, 'at' | 'byName' | 'byUserId'>;
 
 /**
+ * Send a dispatch of these arguments through an action, on the repository and
+ * branch of the run they come from (the target's configured ref when that run
+ * has none). The action's inputs go beside the arguments, never into them.
+ * Throws with the provider's message on a failure.
+ */
+async function dispatchWithAction(
+  db: DbClient,
+  input: {
+    projectId: number;
+    runId: number | null;
+    action: CiAction;
+    args: string;
+    id: string;
+    /** The spec files and the number of tests the arguments name, recorded for matching the run it starts. */
+    cases?: RetryCase[];
+  },
+): Promise<DispatchedRerun> {
+  const { action, args, id } = input;
+  const inputs = ciActionInputValues(action);
+  const named = input.cases ? { files: rerunFiles(input.cases), tests: input.cases.length } : {};
+  const target = action.target;
+
+  if (target.type === 'ci-server') {
+    const server = ciServerTargetOf(target);
+    const values = await ciServerValues(db, input.runId, server, args, id);
+    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs);
+    return {
+      id,
+      actionId: action.id,
+      provider: 'ci-server',
+      preset: target.preset,
+      url: sent.url,
+      args,
+      ref: values.ref || null,
+      ...named,
+      ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
+    };
+  }
+
+  const repositoryUrl = input.runId ? await clusterRepositoryUrl(db, input.runId) : null;
+  if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
+    throw new Error('No supported repository to dispatch to');
+  }
+  const scm = await createScmProvider(repositoryUrl, db, input.projectId);
+  if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
+
+  const ref = input.runId ? await rerunRef(db, input.runId) : null;
+  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs });
+  return {
+    id,
+    actionId: action.id,
+    provider: target.type,
+    url: sent.url,
+    args,
+    ref: sent.ref ?? ref,
+    ...named,
+    ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
+    ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
+  };
+}
+
+/** The action a dispatch of `kind` for a run uses, or the error a dispatch throws. */
+async function actionFor(
+  db: DbClient,
+  projectId: number,
+  runId: number | null,
+  kind: CiActionKind,
+  actionId?: string | null,
+): Promise<CiAction> {
+  const settings: CiActionsSettings = await getCiActionsSettings(db, projectId);
+  const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
+  const pick = pickCiAction(settings, kind, { provider, actionId });
+  if (!pick.action) throw new Error(pick.reason);
+  return pick.action;
+}
+
+/**
  * Dispatch a CI re-run of a cluster's affected tests on the branch of its
- * latest run (the target's configured ref when that run has none). Assumes
+ * latest run (the action's configured ref when that run has none). Assumes
  * availability was already checked (the route does). Returns what was sent and
  * what the provider answered. Throws with the provider's message on a dispatch
  * failure.
@@ -187,66 +294,30 @@ export type DispatchedRerun = Omit<ClusterRerunDispatch, 'at' | 'byName' | 'byUs
 export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
+  actionId?: string | null,
 ): Promise<DispatchedRerun> {
   return dispatchRerunOf(db, {
     projectId: cluster.projectId,
     runId: cluster.lastSeenRunId,
     cases: await clusterRerunCases(db, cluster.id),
+    actionId,
   });
 }
 
-/**
- * Dispatch a CI re-run of these cases, on the repository and branch of the run
- * they come from (the target's configured ref when that run has none).
- */
+/** Dispatch a CI re-run of these cases, through the action the project's settings pick for the run. */
 async function dispatchRerunOf(
   db: DbClient,
-  input: { projectId: number; runId: number; cases: RetryCase[] },
+  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null },
 ): Promise<DispatchedRerun> {
-  const settings = await getCiRerunSettings(db, input.projectId);
-  const cases = input.cases;
-  const args = buildRetryArgs(cases);
-  const files = rerunFiles(cases);
-  const id = randomBytes(8).toString('hex');
-
-  if (settings.via === 'ci-server') {
-    const target = settings.ciServer;
-    if (!target) throw new Error('No CI server is configured for this project.');
-    const values = await ciServerValues(db, input.runId, target, args, id);
-    const sent = await dispatchToCiServer(db, input.projectId, target, 'rerun', values);
-    return {
-      id,
-      provider: 'ci-server',
-      preset: target.preset,
-      url: sent.url,
-      args,
-      ref: values.ref || null,
-      files,
-      tests: cases.length,
-      ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
-    };
-  }
-
-  const repositoryUrl = await clusterRepositoryUrl(db, input.runId);
-  const provider = detectScmProvider(repositoryUrl);
-  if (!repositoryUrl || !provider) throw new Error('No supported repository to dispatch to');
-
-  const scm = await createScmProvider(repositoryUrl, db, input.projectId);
-  if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
-
-  const ref = await rerunRef(db, input.runId);
-  const sent = await scm.dispatchRerun(settings, args, { ref, dispatchId: id });
-  return {
-    id,
-    provider,
-    url: sent.url,
-    args,
-    ref: sent.ref ?? ref,
-    files,
-    tests: cases.length,
-    ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
-    ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
-  };
+  const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
+  return dispatchWithAction(db, {
+    projectId: input.projectId,
+    runId: input.runId,
+    action,
+    args: buildRetryArgs(input.cases),
+    id: randomBytes(8).toString('hex'),
+    cases: input.cases,
+  });
 }
 
 /** Who asked for a re-run, as the dispatch record names them. */
@@ -268,6 +339,7 @@ export async function rerunClusterInCi(
   db: DbClient,
   clusterId: number,
   actor: CiRerunActor,
+  options: { actionId?: string | null } = {},
 ): Promise<ClusterRerunOutcome> {
   const [cluster] = await db
     .select({
@@ -279,7 +351,7 @@ export async function rerunClusterInCi(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return { ok: false, error: 'not-found', message: 'Failure cluster not found' };
 
-  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId);
+  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId, options.actionId);
   if (!availability.available) {
     return {
       ok: false,
@@ -290,7 +362,7 @@ export async function rerunClusterInCi(
 
   let dispatched: DispatchedRerun;
   try {
-    dispatched = await dispatchClusterRerun(db, cluster);
+    dispatched = await dispatchClusterRerun(db, cluster, options.actionId);
   } catch (e) {
     return {
       ok: false,
@@ -441,46 +513,27 @@ export interface FlakeLabCiAvailability {
   available: boolean;
   reason: string | null;
   provider: CiRerunProvider | null;
+  /** The action a dispatch would use, when one can serve the test's newest run. */
+  action: { id: string; name: string } | null;
 }
 
 /**
- * Decide whether a test's Flake Lab experiment can run in CI: CI re-run on, a
- * Flake Lab target for the provider of the repository of the test's newest run,
- * and a token. The same checks the dispatch makes.
+ * Decide whether a test's Flake Lab experiment can run in CI: CI actions on,
+ * an action that accepts Flake Lab and serves the repository of the test's
+ * newest run, and what that action needs. The same checks the dispatch makes.
  */
 export async function flakeLabCiAvailability(
   db: DbClient,
   projectId: number,
   testCaseId: number,
 ): Promise<FlakeLabCiAvailability> {
-  const settings = await getCiRerunSettings(db, projectId);
-  if (settings.via === 'ci-server') {
-    if (!settings.enabled)
-      return { available: false, reason: 'CI re-run is off for this project.', provider: 'ci-server' };
-    const { reason } = await ciServerReadiness(
-      db,
-      projectId,
-      settings,
-      'flakeLab',
-      await latestTestRunId(db, testCaseId),
-    );
-    return { available: !reason, reason, provider: 'ci-server' };
-  }
-  if (!settings.enabled || !settings.flakeLab) {
-    return { available: false, reason: 'No Flake Lab target is configured for CI re-run.', provider: null };
-  }
-  const runId = await latestTestRunId(db, testCaseId);
-  const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
-  if (!provider) {
-    return { available: false, reason: 'This test has no supported repository to dispatch to.', provider: null };
-  }
-  if (!flakeLabRerunSettings(settings, provider)) {
-    return { available: false, reason: `No ${provider} Flake Lab target is configured.`, provider };
-  }
-  if (!(await resolveScmToken(db, projectId))) {
-    return { available: false, reason: 'No SCM token is configured to dispatch the experiment.', provider };
-  }
-  return { available: true, reason: null, provider };
+  const ready = await dispatchReadiness(db, projectId, await latestTestRunId(db, testCaseId), 'flakeLab');
+  return {
+    available: ready.available,
+    reason: ready.reason,
+    provider: ready.provider,
+    action: actionRef(ready.action),
+  };
 }
 
 export type FlakeLabCiOutcome =
@@ -488,7 +541,7 @@ export type FlakeLabCiOutcome =
   | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string };
 
 /**
- * Run a test's Flake Lab experiment in CI: the Flake Lab target receives the
+ * Run a test's Flake Lab experiment in CI: the Flake Lab action receives the
  * `piwi flake` arguments, through the same dispatch as a cluster's re-run, on
  * the branch of the test's newest run. The experiment the command records is
  * the trace; nothing else is stored.
@@ -502,61 +555,20 @@ export async function runFlakeLabInCi(
   const [tc] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, testCaseId));
   if (!tc) return { ok: false, error: 'not-found', message: 'Test case not found' };
   const availability = await flakeLabCiAvailability(db, tc.projectId, testCaseId);
-  if (!availability.available || !availability.provider) {
+  if (!availability.available) {
     return { ok: false, error: 'unavailable', message: availability.reason ?? 'Flake Lab in CI is not available' };
   }
-  const runId = await latestTestRunId(db, testCaseId);
-  const settings = await getCiRerunSettings(db, tc.projectId);
-  if (availability.provider === 'ci-server') {
-    try {
-      const target = settings.ciServer!;
-      const args = flakeLabCiArgs(testCaseId, kind);
-      const id = randomBytes(8).toString('hex');
-      const values = await ciServerValues(db, runId, target, args, id);
-      const sent = await dispatchToCiServer(db, tc.projectId, target, 'flakeLab', values);
-      return {
-        ok: true,
-        dispatch: {
-          id,
-          provider: 'ci-server',
-          preset: target.preset,
-          url: sent.url,
-          args,
-          ref: values.ref || null,
-          ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
-          at: Date.now(),
-          byName: actor.name,
-          byUserId: actor.id,
-        },
-      };
-    } catch (e) {
-      return { ok: false, error: 'dispatch-failed', message: e instanceof Error ? e.message : 'Dispatch failed' };
-    }
-  }
-  const repositoryUrl = await clusterRepositoryUrl(db, runId!);
-  const providerSettings = flakeLabRerunSettings(settings, availability.provider as ScmProviderName)!;
   try {
-    const scm = await createScmProvider(repositoryUrl!, db, tc.projectId);
-    if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
-    const args = flakeLabCiArgs(testCaseId, kind);
-    const id = randomBytes(8).toString('hex');
-    const ref = await rerunRef(db, runId!);
-    const sent = await scm.dispatchRerun(providerSettings, args, { ref, dispatchId: id });
-    return {
-      ok: true,
-      dispatch: {
-        id,
-        provider: availability.provider,
-        url: sent.url,
-        args,
-        ref: sent.ref ?? ref,
-        ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
-        ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
-        at: Date.now(),
-        byName: actor.name,
-        byUserId: actor.id,
-      },
-    };
+    const runId = await latestTestRunId(db, testCaseId);
+    const action = await actionFor(db, tc.projectId, runId, 'flakeLab');
+    const dispatched = await dispatchWithAction(db, {
+      projectId: tc.projectId,
+      runId,
+      action,
+      args: flakeLabCiArgs(testCaseId, kind),
+      id: randomBytes(8).toString('hex'),
+    });
+    return { ok: true, dispatch: { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id } };
   } catch (e) {
     return { ok: false, error: 'dispatch-failed', message: e instanceof Error ? e.message : 'Dispatch failed' };
   }

@@ -34,6 +34,7 @@ export const PROJECT = {
   BUG_REPORTS_JIRA: 'bug-reports-jira-test',
   CAPABILITY_OPT_OUT: 'capability-opt-out-test',
   CASE_FILES_LIVE: 'case-files-live-test',
+  CI_ACTIONS: 'ci-actions-test',
   CLEANUP_WRITES: 'cleanup-writes-test',
   CLUSTER_MERGE: 'cluster-merge-test',
   CLUSTER_NAMING: 'cluster-naming-test',

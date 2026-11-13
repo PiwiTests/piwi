@@ -1,27 +1,35 @@
 /**
- * CI re-run in the browser demo. A project that dispatches through a CI server
- * (`ciRerun.via: 'ci-server'`) re-runs as the server does, up to the request:
- * the demo has no CI to reach, so the dispatch is recorded with the link the
- * preset names (the job's page) and nothing is sent. A project that dispatches
- * through its repository's CI answers that the demo cannot re-run it.
+ * CI actions in the browser demo. A project whose re-run action targets a CI
+ * server re-runs as the server does, up to the request: the demo has no CI to
+ * reach, so the dispatch is recorded with the link the preset names (the job's
+ * page) and nothing is sent. An action that targets a repository host's CI
+ * (GitHub, GitLab, Bitbucket) answers that the demo cannot dispatch it.
  */
 import { eq } from 'drizzle-orm';
 import { failureClusters, projects, users } from '~~/server/database/schema.sqlite';
-import { resolveCiRerunSettings, type CiRerunSettings, type ClusterRerunDispatch } from '#shared/ci-rerun';
+import type { ClusterRerunDispatch } from '#shared/ci-rerun';
+import {
+  ciActionInputValues,
+  ciActionsProblem,
+  ciServerTargetOf,
+  pickCiAction,
+  resolveCiActionsSettings,
+  type CiAction,
+  type CiActionCheckResult,
+  type CiActionsSettings,
+} from '#shared/ci-actions';
 import {
   CI_SERVER_HTTPS_PROBLEM,
   ciServerCheckFinding,
   ciServerCheckPlans,
   ciServerRequestTemplate,
-  ciServerTargetProblem,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
-  resolveCiServerTarget,
-  type CiServerCheckResult,
   isUnderBaseUrl,
   normalizeCiServerBaseUrl,
   readCiServerAnswer,
   renderCiRequest,
+  type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
@@ -48,17 +56,23 @@ interface DemoRerunAvailability {
   provider: 'ci-server' | null;
   enabled: boolean;
   hasToken: boolean;
+  action: { id: string; name: string } | null;
 }
 
-async function projectCiRerun(db: DemoDB, projectId: number) {
+async function projectCiActions(db: DemoDB, projectId: number) {
   const [row] = await db
     .select({ ciRerun: projects.ciRerun, ciServerToken: projects.ciServerToken })
     .from(projects)
     .where(eq(projects.id, projectId));
   return {
-    settings: resolveCiRerunSettings((row?.ciRerun as Partial<CiRerunSettings> | null) ?? null),
+    settings: resolveCiActionsSettings(row?.ciRerun ?? null),
     tokenUrl: demoCiServerTokenUrl(row?.ciServerToken),
   };
+}
+
+/** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
+function pickRerunAction(settings: CiActionsSettings, actionId?: string | null) {
+  return pickCiAction(settings, 'tests', { provider: null, actionId });
 }
 
 /**
@@ -66,17 +80,17 @@ async function projectCiRerun(db: DemoDB, projectId: number) {
  * be built: the server's checks, with no instance CI server and no listed hosts.
  */
 function prepare(
-  settings: CiRerunSettings,
+  target: CiServerTarget,
   values: CiTemplateValues,
+  inputs: [string, string][],
 ): { link: string; url: string; sendsCredential: boolean } | { error: string } {
-  const target = settings.ciServer;
   const spec = target ? ciServerRequestTemplate(target, 'rerun') : null;
-  if (!target || !spec || !target.baseUrl) return { error: NO_TARGET };
+  if (!spec || !target.baseUrl) return { error: NO_TARGET };
   if (!target.baseUrl.startsWith('https:')) {
     return { error: CI_SERVER_HTTPS_PROBLEM };
   }
   try {
-    const { url } = renderCiRequest(target.baseUrl, spec.template, values);
+    const { url } = renderCiRequest(target.baseUrl, spec.template, values, inputs);
     const { link } = readCiServerAnswer(target.baseUrl, spec.template, values, { header: () => null, json: null });
     return { link, url, sendsCredential: spec.auth !== 'none' };
   } catch (e) {
@@ -84,20 +98,43 @@ function prepare(
   }
 }
 
-async function availability(db: DemoDB, projectId: number, runId: number): Promise<DemoRerunAvailability> {
-  const { settings, tokenUrl } = await projectCiRerun(db, projectId);
-  if (settings.via !== 'ci-server') {
-    return { available: false, reason: UNAVAILABLE, provider: null, enabled: false, hasToken: false };
+async function availability(
+  db: DemoDB,
+  projectId: number,
+  runId: number,
+  actionId?: string | null,
+): Promise<DemoRerunAvailability> {
+  const { settings, tokenUrl } = await projectCiActions(db, projectId);
+  const pick = pickRerunAction(settings, actionId);
+  const action = pick.action;
+  const ref = action ? { id: action.id, name: action.name } : null;
+  if (!settings.enabled) {
+    return { available: false, reason: OFF_REASON, provider: null, enabled: false, hasToken: false, action: ref };
   }
-  const target = settings.ciServer;
-  const prepared = target
-    ? prepare(settings, await ciServerValues(db, runId, target, 'args', 'dispatch'))
-    : { error: NO_TARGET };
+  if (!action || action.target.type !== 'ci-server') {
+    // Only a repository host's action is left: the demo has no repository to dispatch to.
+    const reason = pick.reason ?? UNAVAILABLE;
+    const hasHostAction = settings.actions.some((a) => a.accepts.includes('tests') && a.target.type !== 'ci-server');
+    return {
+      available: false,
+      reason: !action && hasHostAction ? UNAVAILABLE : reason,
+      provider: null,
+      enabled: true,
+      hasToken: false,
+      action: ref,
+    };
+  }
+  const target = ciServerTargetOf(action.target);
+  const prepared = prepare(
+    target,
+    await ciServerValues(db, runId, target, 'args', 'dispatch'),
+    Object.entries(ciActionInputValues(action)),
+  );
   // As the server: a request whose auth is `none` carries no credential, token or not.
   const hasToken =
     'url' in prepared && prepared.sendsCredential && !!tokenUrl && isUnderBaseUrl(tokenUrl, prepared.url);
-  const reason = !settings.enabled ? OFF_REASON : 'error' in prepared ? prepared.error : null;
-  return { available: !reason, reason, provider: 'ci-server', enabled: settings.enabled, hasToken };
+  const reason = 'error' in prepared ? prepared.error : null;
+  return { available: !reason, reason, provider: 'ci-server', enabled: true, hasToken, action: ref };
 }
 
 async function clusterTarget(db: DemoDB, clusterId: number) {
@@ -109,11 +146,11 @@ async function clusterTarget(db: DemoDB, clusterId: number) {
 }
 
 /** `GET /api/failure-clusters/:id/rerun` in the demo. */
-export async function demoClusterRerunInfo(db: DemoDB, clusterId: number) {
+export async function demoClusterRerunInfo(db: DemoDB, clusterId: number, actionId?: string | null) {
   const target = await clusterTarget(db, clusterId);
   if (!target) throw demoHttpError(404, 'Failure cluster not found');
   return {
-    ...(await availability(db, target.projectId, target.runId)),
+    ...(await availability(db, target.projectId, target.runId, actionId)),
     lastDispatch: await clusterLastDispatch(db, clusterId),
   };
 }
@@ -142,21 +179,25 @@ async function actorName(db: DemoDB, userId: number | null): Promise<string | nu
 /** Record a re-run as the server dispatches it, without sending anything. */
 async function dispatch(
   db: DemoDB,
-  input: { projectId: number; runId: number; clusterId: number | null; cases: RetryCase[] },
+  input: { projectId: number; runId: number; clusterId: number | null; cases: RetryCase[]; actionId?: string | null },
   userId: number | null,
 ) {
-  const ready = await availability(db, input.projectId, input.runId);
+  const ready = await availability(db, input.projectId, input.runId, input.actionId);
   if (!ready.available) throw demoHttpError(400, ready.reason ?? UNAVAILABLE);
-  const { settings } = await projectCiRerun(db, input.projectId);
-  const target = settings.ciServer;
-  if (!target) throw demoHttpError(400, NO_TARGET);
+  const { settings } = await projectCiActions(db, input.projectId);
+  const action = pickRerunAction(settings, input.actionId).action as
+    | (CiAction & { target: { type: 'ci-server' } })
+    | null;
+  if (!action) throw demoHttpError(400, NO_TARGET);
+  const target = ciServerTargetOf(action.target);
   const args = buildRetryArgs(input.cases);
   const id = randomId();
   const values = await ciServerValues(db, input.runId, target, args, id);
-  const prepared = prepare(settings, values);
+  const prepared = prepare(target, values, Object.entries(ciActionInputValues(action)));
   if ('error' in prepared) throw demoHttpError(400, prepared.error);
   const record: ClusterRerunDispatch = {
     id,
+    actionId: action.id,
     provider: 'ci-server',
     preset: target.preset,
     url: prepared.link,
@@ -173,10 +214,10 @@ async function dispatch(
 }
 
 /** `POST /api/failure-clusters/:id/rerun` in the demo. */
-export async function demoRerunCluster(db: DemoDB, clusterId: number, userId: number | null) {
+export async function demoRerunCluster(db: DemoDB, clusterId: number, userId: number | null, actionId?: string | null) {
   const target = await clusterTarget(db, clusterId);
   if (!target) throw demoHttpError(404, 'Failure cluster not found');
-  return dispatch(db, { ...target, clusterId, cases: await clusterRerunCases(db, clusterId) }, userId);
+  return dispatch(db, { ...target, clusterId, cases: await clusterRerunCases(db, clusterId), actionId }, userId);
 }
 
 /** `POST /api/test-run-cases/:id/rerun` in the demo. */
@@ -187,11 +228,9 @@ export async function demoRerunExecution(db: DemoDB, executionId: number, userId
   return dispatch(db, { projectId, runId, clusterId, cases: [rerunCase] }, userId);
 }
 
-/** Refuse, as the server does, a CI server target a save sends that cannot dispatch. */
-export function assertDemoCiServerTarget(body: { ciRerun?: unknown } | null): void {
-  const sent = (body?.ciRerun as { ciServer?: unknown } | null | undefined)?.ciServer;
-  if (sent == null) return;
-  const problem = ciServerTargetProblem(sent);
+/** Refuse, as the server does, a save whose CI actions cannot dispatch. */
+export function assertDemoCiActions(body: { ciRerun?: unknown } | null): void {
+  const problem = ciActionsProblem(body?.ciRerun);
   if (problem) throw demoHttpError(400, problem);
 }
 
@@ -200,33 +239,61 @@ const DEMO_JOB_JSON = {
   property: [{ parameterDefinitions: [{ name: DEFAULT_ARGS_PARAMETER }, { name: DEFAULT_DISPATCH_PARAMETER }] }],
 };
 
+const CANNOT_CHECK = {
+  gitlab:
+    "GitLab pipelines can't be checked: GitLab reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
+  bitbucket:
+    "Bitbucket pipelines can't be checked: Bitbucket reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
+  github: 'The demo has no repository to read the workflow from.',
+  custom: "A Custom request can't be checked: it names no job Piwi can read.",
+};
+
 /**
- * `POST /api/projects/:id/ci-server-check` in the demo: the server's checks up
- * to the request, then the answer of a job that declares the default
- * parameters, so a renamed parameter shows as missing. Nothing is sent.
+ * `POST /api/projects/:id/ci-actions/:actionId/check` in the demo: an action
+ * the request carries (else the saved one) is checked as the server checks it,
+ * up to the request. A Jenkins job answers as one that declares the default
+ * parameters, so a renamed parameter or an input shows as missing. Nothing is
+ * sent.
  */
-export function demoCiServerCheck(body: { ciServer?: unknown } | null): { results: CiServerCheckResult[] } {
-  const problem = ciServerTargetProblem(body?.ciServer);
-  const target = problem ? null : resolveCiServerTarget(body?.ciServer);
-  if (!target) throw demoHttpError(400, problem ?? 'Invalid CI server target');
-  if (!target.baseUrl) return { results: [{ kind: 'rerun', ok: false, missing: [], message: NO_TARGET }] };
-  if (!target.baseUrl.startsWith('https:')) {
-    return { results: [{ kind: 'rerun', ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM }] };
+export async function demoCiActionCheck(
+  db: DemoDB,
+  projectId: number,
+  actionId: string,
+  body: { action?: unknown } | null,
+): Promise<CiActionCheckResult> {
+  let action: CiAction | undefined;
+  if (body?.action !== undefined) {
+    const problem = ciActionsProblem({ actions: [body.action] });
+    if (problem) throw demoHttpError(400, problem);
+    action = resolveCiActionsSettings({ enabled: true, actions: [body.action], defaults: {} }).actions[0];
+  } else {
+    const { settings } = await projectCiActions(db, projectId);
+    action = settings.actions.find((a) => a.id === actionId);
   }
-  return {
-    results: ciServerCheckPlans(target, target.baseUrl).map((plan) =>
-      'error' in plan
-        ? { kind: plan.kind, ok: false, missing: [], message: plan.error }
-        : ciServerCheckFinding(plan, DEMO_JOB_JSON),
-    ),
-  };
+  if (!action) throw demoHttpError(404, 'CI action not found');
+  const target = action.target;
+  if (target.type !== 'ci-server') return { ok: null, missing: [], message: CANNOT_CHECK[target.type] };
+  if (target.preset === 'custom') return { ok: null, missing: [], message: CANNOT_CHECK.custom };
+  const server = ciServerTargetOf(target);
+  if (!server.baseUrl) return { ok: false, missing: [], message: NO_TARGET };
+  if (!server.baseUrl.startsWith('https:')) return { ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM };
+  const [plan] = ciServerCheckPlans(
+    server,
+    server.baseUrl,
+    action.inputs.map((i) => i.name),
+  );
+  if (!plan) return { ok: null, missing: [], message: 'Nothing was checked.' };
+  if ('error' in plan) return { ok: false, missing: [], message: plan.error };
+  const finding = ciServerCheckFinding(plan, DEMO_JOB_JSON);
+  return { ok: finding.ok, missing: finding.missing, message: finding.message };
 }
 
 /**
  * What the demo stores for a CI server token a save sends: never the token,
- * only the base URL a server would bind it to (the request's, else the stored
- * target's). `undefined` keeps the stored value, `null` removes it. Throws the
- * server's 400 answers for an invalid or a missing base URL.
+ * only the base URL a server would bind it to (the first CI server action's,
+ * in the request else the stored settings). `undefined` keeps the stored
+ * value, `null` removes it. Throws the server's 400 answers for an invalid or
+ * a missing base URL.
  */
 export async function demoCiServerTokenMarker(
   db: DemoDB,
@@ -237,10 +304,9 @@ export async function demoCiServerTokenMarker(
   if (token === undefined) return undefined;
   if (typeof token !== 'string' || !token.trim()) return null;
   const [row] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
-  const sent = (body?.ciRerun === undefined ? row?.ciRerun : body.ciRerun) as {
-    ciServer?: { baseUrl?: unknown };
-  } | null;
-  const rawBaseUrl = sent?.ciServer?.baseUrl;
+  const settings = resolveCiActionsSettings(body?.ciRerun === undefined ? row?.ciRerun : body.ciRerun);
+  const first = settings.actions.find((a) => a.target.type === 'ci-server');
+  const rawBaseUrl = first?.target.type === 'ci-server' ? first.target.baseUrl : undefined;
   const baseUrl = normalizeCiServerBaseUrl(rawBaseUrl);
   if (typeof rawBaseUrl === 'string' && rawBaseUrl.trim() && !baseUrl) {
     throw demoHttpError(400, 'The CI server base URL must be an http(s) URL');

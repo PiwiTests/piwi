@@ -28,7 +28,7 @@ import { isValidGitRef } from './refs';
 import { splitGitDiff } from './diff-text';
 import { TtlCache } from '../ttl-cache';
 import { desktopLinkedFolder } from '../desktop-links';
-import type { CiRerunSettings } from '#shared/ci-rerun';
+import type { CiActionTarget } from '#shared/ci-actions';
 import { canonicalScmHostname, type ScmProviderName } from '#shared/scm-urls';
 
 // The demo's service worker bundles this module through `createScmProvider` and
@@ -635,10 +635,10 @@ export class LocalGitProvider extends ScmProvider {
   }
 
   override dispatchRerun(
-    settings: CiRerunSettings,
+    target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    return this.hosted.dispatchRerun(settings, playwrightArgs, request);
+    return this.hosted.dispatchRerun(target, playwrightArgs, request);
   }
 }

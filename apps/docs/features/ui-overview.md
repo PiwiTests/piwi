@@ -69,7 +69,7 @@ tabs:
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
 - **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's
-  [members](/operate/project-access), [source control](/guide/source-control) (token, default branch, CI re-run),
+  [members](/operate/project-access), [source control](/guide/source-control) (token, default branch, CI actions),
   [AI instructions](./ai-diagnosis#custom-instructions), [capabilities](/operate/capabilities),
   [targets](./analytics#targets), the [issue tracker](./issue-tracking), the
   [browser extension URLs](./extension-connection#url-patterns) and, in the desktop app, the

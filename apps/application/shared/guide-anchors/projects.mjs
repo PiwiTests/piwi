@@ -494,7 +494,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses, CI re-run and generated specs.',
+      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses, CI actions and generated specs.',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
@@ -515,7 +515,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The CI re-run setting: the repository’s workflow or pipeline, or the Jenkins job or CI server request, that re-runs a cluster’s tests or a Flake Lab experiment.',
+      'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests, with inputs and defaults, that re-run tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
     doc: 'features/ci-rerun',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },

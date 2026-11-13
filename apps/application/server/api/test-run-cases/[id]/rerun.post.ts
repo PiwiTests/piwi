@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: "Re-run an execution's test in CI",
     description:
-      "Dispatches a CI workflow/pipeline to re-run this one test, at its line and in its Playwright project, on the branch of its run, using the project's SCM token and the configured CI re-run target, or, when `ciRerun.via` is `ci-server`, one request to the project's CI server. The dispatch is recorded on the execution's failure cluster as its last re-run. Returns the provider's runs URL.",
+      "Dispatches a CI workflow/pipeline to re-run this one test, at its line and in its Playwright project, on the branch of its run, using the project's default CI action for re-runs, with the project's SCM token or one request to the project's CI server. The dispatch is recorded on the execution's failure cluster as its last re-run. Returns the provider's runs URL.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'run:control',
   },

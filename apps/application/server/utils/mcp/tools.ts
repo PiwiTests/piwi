@@ -2951,16 +2951,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async rerun_cluster_in_ci(db, params, ctx) {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
-    const outcome = await rerunClusterInCi(db, id, {
-      id: ctx.user?.id || null,
-      name: ctx.user?.name || ctx.user?.username || null,
-    });
+    const action = typeof params.action === 'string' ? params.action.trim().slice(0, 100) : '';
+    const outcome = await rerunClusterInCi(
+      db,
+      id,
+      { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null },
+      { actionId: action || undefined },
+    );
     if (!outcome.ok) {
       if (outcome.error === 'not-found') return null;
       throw new Error(outcome.message);
     }
-    const { provider, url, args, at } = outcome.dispatch;
-    return dropNulls({ clusterId: id, provider, url, args, dispatchedAt: iso(at) });
+    const { provider, url, args, at, actionId } = outcome.dispatch;
+    return dropNulls({ clusterId: id, actionId, provider, url, args, dispatchedAt: iso(at) });
   },
 
   // ── set_cluster_bisect ─────────────────────────────────────────────────────

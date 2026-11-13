@@ -33,13 +33,9 @@ const {
   flakeLabCiAvailability,
   ciRerunAvailability,
 } = await import('../../server/utils/ci-rerun');
-const {
-  flakeLabRerunSettings,
-  matchRerunDispatch,
-  resolveCiRerunSettings,
-  RERUN_CLOCK_SLACK_MS,
-  RERUN_MATCH_WINDOW_MS,
-} = await import('#shared/ci-rerun');
+const { matchRerunDispatch, resolveCiRerunSettings, RERUN_CLOCK_SLACK_MS, RERUN_MATCH_WINDOW_MS } =
+  await import('#shared/ci-rerun');
+const { ciActionsFromLegacy, pickCiAction } = await import('#shared/ci-actions');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -310,26 +306,28 @@ describe('the Flake Lab target', () => {
     ).toBeUndefined();
   });
 
-  test('takes the place of the provider target, on its ref', () => {
-    const settings = resolveCiRerunSettings({
-      enabled: true,
-      github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args' },
-      flakeLab: {
-        github: { workflow: 'flake.yml', inputName: 'piwi_flake' },
-        bitbucket: { pipeline: 'flake', variableName: 'FLAKE_ARGS' },
-      },
-    });
-    expect(flakeLabRerunSettings(settings, 'github')).toEqual({
-      enabled: true,
-      github: { workflow: 'flake.yml', ref: 'main', inputName: 'piwi_flake' },
-    });
-    expect(flakeLabRerunSettings(settings, 'bitbucket')).toEqual({
-      enabled: true,
-      bitbucket: { pipeline: 'flake', variableName: 'FLAKE_ARGS' },
-    });
-    // GitLab dispatches on the re-run target's ref, which is missing here.
-    expect(flakeLabRerunSettings(settings, 'gitlab')).toBeNull();
-    expect(flakeLabRerunSettings({ ...settings, enabled: false }, 'github')).toBeNull();
+  test('becomes a Flake Lab action on the re-run target’s ref, the default for Flake Lab', () => {
+    const settings = ciActionsFromLegacy(
+      resolveCiRerunSettings({
+        enabled: true,
+        github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args' },
+        flakeLab: {
+          github: { workflow: 'flake.yml', inputName: 'piwi_flake' },
+          bitbucket: { pipeline: 'flake', variableName: 'FLAKE_ARGS' },
+        },
+      }),
+    );
+    const flake = settings.actions.filter((a) => a.accepts.includes('flakeLab'));
+    expect(flake.map((a) => a.target)).toEqual([
+      { type: 'github', workflow: 'flake.yml', ref: 'main', argsInput: 'piwi_flake' },
+      { type: 'bitbucket', pipeline: 'flake', argsVariable: 'FLAKE_ARGS' },
+    ]);
+    expect(settings.defaults.flakeLab).toBe(flake[0]!.id);
+    expect(pickCiAction(settings, 'flakeLab', { provider: 'github' }).action?.id).toBe(flake[0]!.id);
+    expect(pickCiAction(settings, 'flakeLab', { provider: 'bitbucket' }).action?.id).toBe(flake[1]!.id);
+    // GitLab has no Flake Lab target here.
+    expect(pickCiAction(settings, 'flakeLab', { provider: 'gitlab' }).action).toBeNull();
+    expect(pickCiAction({ ...settings, actions: [] }, 'flakeLab', { provider: 'github' }).action).toBeNull();
   });
 
   test('is unavailable until configured, then dispatches the flake command on the test’s branch', async () => {
@@ -356,6 +354,7 @@ describe('the Flake Lab target', () => {
       available: true,
       reason: null,
       provider: 'github',
+      action: { id: 'flakelab-github', name: 'Flake Lab' },
     });
     const outcome = await runFlakeLabInCi(db as never, 1, 'verify', { id: 1, name: 'Ada' });
     expect(outcome).toMatchObject({
@@ -365,9 +364,11 @@ describe('the Flake Lab target', () => {
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]!.args).toBe('flake verify 1');
     expect(dispatched[0]!.request.ref).toBe('feature/coupon');
-    expect(dispatched[0]!.settings).toEqual({
-      enabled: true,
-      github: { workflow: 'flake.yml', ref: 'main', inputName: 'piwi_flake' },
+    expect(dispatched[0]!.settings).toMatchObject({
+      type: 'github',
+      workflow: 'flake.yml',
+      ref: 'main',
+      argsInput: 'piwi_flake',
     });
     expect(await runFlakeLabInCi(db as never, 404, 'reproduce', { id: 1, name: 'Ada' })).toMatchObject({
       error: 'not-found',
@@ -423,8 +424,7 @@ describe('a CI server dispatch', () => {
     await useCiServer(null);
     expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
       available: false,
-      provider: 'ci-server',
-      reason: 'No CI server is configured for this project.',
+      reason: 'No CI action re-runs tests for this project.',
     });
     await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } }, false);
     expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
@@ -438,6 +438,7 @@ describe('a CI server dispatch', () => {
       provider: 'ci-server',
       enabled: true,
       hasToken: true,
+      action: { id: 'rerun-ci-server', name: 'Re-run failed tests' },
     });
     delete process.env.PIWI_CI_SERVER_URL;
     expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
@@ -493,6 +494,64 @@ describe('a CI server dispatch', () => {
     });
   });
 
+  test('sends an action’s inputs beside the arguments, and records the action', async () => {
+    await seed(GITHUB);
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'staging',
+              name: 'Staging',
+              target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' } },
+              inputs: [
+                { name: 'TARGET_ENV', kind: 'fixed', value: 'staging' },
+                { name: 'SUITE', kind: 'choice', options: ['smoke', 'full'], default: 'full' },
+              ],
+              accepts: ['tests'],
+            },
+          ],
+          defaults: { rerun: 'staging' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    const form = new URLSearchParams(received[0]!.body);
+    expect(form.get('TARGET_ENV')).toBe('staging');
+    expect(form.get('SUITE')).toBe('full');
+    expect(form.get('PIWI_RERUN_ARGS')).not.toContain('staging');
+    expect(await lastDispatch()).toMatchObject({ actionId: 'staging', provider: 'ci-server' });
+  });
+
+  test('sends the action the caller names instead of the default', async () => {
+    await seed(GITHUB);
+    const action = (id: string, job: string) => ({
+      id,
+      name: id,
+      target: { type: 'ci-server', preset: 'jenkins', fields: { job } },
+      inputs: [],
+      accepts: ['tests'],
+    });
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [action('main', 'main-job'), action('nightly', 'nightly-job')],
+          defaults: { rerun: 'main' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await rerunClusterInCi(db as never, 1, { id: null, name: null }, { actionId: 'nightly' })).ok).toBe(true);
+    expect(received[0]!.url).toBe('/job/nightly-job/buildWithParameters');
+    expect(await rerunClusterInCi(db as never, 1, { id: null, name: null }, { actionId: 'missing' })).toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+  });
+
   test('sends no instance credential to a base URL a project set elsewhere', async () => {
     await seed(GITHUB);
     const other = base.replace('127.0.0.1', 'localhost');
@@ -533,10 +592,10 @@ describe('a CI server dispatch', () => {
   test('runs Flake Lab on its own job', async () => {
     await seed(GITHUB);
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
-    expect(await flakeLabCiAvailability(db as never, 1, 1)).toEqual({
+    expect(await flakeLabCiAvailability(db as never, 1, 1)).toMatchObject({
       available: false,
-      reason: 'No Flake Lab request is configured for the CI server.',
-      provider: 'ci-server',
+      reason: 'No CI action runs Flake Lab for this project.',
+      action: null,
     });
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' }, flakeLab: { job: 'flake-lab' } });
     const outcome = await runFlakeLabInCi(db as never, 1, 'reproduce', { id: 1, name: 'Ada' });
