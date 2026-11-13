@@ -113,6 +113,7 @@ import {
   formatResourceSummary,
   parseResourceCensus,
   parseResourceResults,
+  fixturesTornDownOf,
   tallyLifecycleSteps,
   userFixturesOf,
   type LifecycleTally,
@@ -323,6 +324,8 @@ export class PiwiDashboardReporter {
   private readonly sourceLines = sourceLineReader();
   /** The user fixtures set up by the tests that left a page unused, by test id. */
   private fixturesByTest = new Map<string, string[]>();
+  /** Per test that a fixture with a timeout of its own opened something in: the fixtures torn down with it. */
+  private testFixtures = new Map<string, string[]>();
   /** The file workers append their shutdown census to, set in `onBegin`. */
   private resourcesFile: string | null = null;
   /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
@@ -1274,6 +1277,9 @@ export class PiwiDashboardReporter {
       if (resources) testCase.resources = resources;
       const leftIdle = census.closed.some((c) => c.used === false) || census.open.some((o) => o.used === false);
       if (leftIdle) this.fixturesByTest.set(test.id, userFixturesOf(result.steps ?? []));
+      if (census.born.some((birth) => birth.fixture?.timed)) {
+        this.testFixtures.set(test.id, fixturesTornDownOf(result.steps ?? []));
+      }
       return;
     }
     if (!result.steps?.length) return;
@@ -1312,7 +1318,12 @@ export class PiwiDashboardReporter {
     try {
       const report =
         censuses.length > 0 || this.lifecycleTallies.length > 0
-          ? buildResourceReport({ censuses, fixturesByTest: this.fixturesByTest, tallies: this.lifecycleTallies })
+          ? buildResourceReport({
+              censuses,
+              fixturesByTest: this.fixturesByTest,
+              testFixtures: this.testFixtures,
+              tallies: this.lifecycleTallies,
+            })
           : null;
       if (report) lines.push(...formatResourceSummary(report, readLeakCheck(this.options.leakCheck)));
       if (profile) {
