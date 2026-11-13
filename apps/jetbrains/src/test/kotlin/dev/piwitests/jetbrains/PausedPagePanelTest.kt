@@ -282,7 +282,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         layers.heard(page("- a"), null)
         assertEquals(3, text.caretPosition)
 
-        val again = descendants(layers).filterIsInstance<JButton>().single { it.text == "Take the Text Again" }
+        val again = descendants(layers).filterIsInstance<JButton>().single { it.text == "Take the text again" }
         layers.textAsking = true
         assertFalse(again.isEnabled)
         layers.textAsking = false

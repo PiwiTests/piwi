@@ -27,7 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * The editor service's log in this project, as VS Code's Piwi output channel holds it: the service's starts and ends,
  * why it could not start, what it wrote to stderr (its errors, a crash's stack) and the plugin's requests that failed.
- * The Piwi tool window's **Log** tab shows it, opened by **Open Log**; the last [Glue.LOG_LINES] lines are kept.
+ * The Piwi tool window's **Log** tab shows it, opened by **Open log**; the last [Glue.LOG_LINES] lines are kept.
  */
 @Service(Service.Level.PROJECT)
 class PiwiLog(private val project: Project) : Disposable {

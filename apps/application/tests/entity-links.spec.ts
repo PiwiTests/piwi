@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { detectProvider, extractKey } from '#shared/link-detect';
 import type { LinkProvider } from '#shared/link-detect';
 

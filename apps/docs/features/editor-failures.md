@@ -85,10 +85,11 @@ the progress of the run you started (`running 4/9`). Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, **Group By** in the tool window's toolbar. The choice is kept for the
+  **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
-  edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
+  edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
+  hover.
 
 In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
 named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`). Its run and failures
@@ -106,9 +107,9 @@ The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failin
 run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
 menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
-title and its icon's red dot do. A JetBrains IDE keeps Connect, Piwi Picker's pairing, the MCP configurations and the
-settings in the tool window's gear menu, and a hover on a node says what VS Code's does. The tree is read again when a
-run ends or an edit moves a failure.
+title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP
+configurations, **Reload Piwi**, the settings and **Documentation**, and a node's hover says what VS Code's does. The
+tree is read again when a run ends or an edit moves a failure.
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
@@ -118,7 +119,7 @@ again on its own too); a desktop app to restart or update; an instance still bei
 ## Compare with another run
 
 By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:
-Compare with…** (**Tools → Piwi → Compare With…** in a JetBrains IDE, and the failures view's title bar) chooses another
+Compare with…** (**Tools → Piwi → Compare with…** in a JetBrains IDE, and the failures view's title bar) chooses another
 run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
 machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
 failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need

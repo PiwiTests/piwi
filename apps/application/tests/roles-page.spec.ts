@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Settings → Roles', () => {
   test('shows what each project role can do, read-only', async ({ page }) => {

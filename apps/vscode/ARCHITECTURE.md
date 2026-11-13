@@ -60,7 +60,7 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 
 **Glyphs.** Every command in `package.json` has a codicon from the concept table of
 [editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), checked by
-hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Refresh, Run to the cursor, Pause and
+hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Reload Piwi, Run to the cursor, Pause and
 watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
 context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
 `tests/menus.test.ts` holds both.
@@ -138,7 +138,7 @@ A setting left empty keeps the environment's own variable. A change of one of th
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
 output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
 (`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
-view's welcome offers it while the service does not answer, and so does a Refresh it did not answer. A failed request
+view's welcome offers it while the service does not answer, and so does a Reload Piwi it did not answer. A failed request
 reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
 service is down. The client writes to the extension's own log channel (`outputChannel`), which a restart keeps; a
 service whose first start failed starts again only with the window.
@@ -154,7 +154,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
-| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
+| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
 | `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
@@ -277,8 +277,8 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as
-the `piwi.runNotifications` setting allows (`always`, `failures`, `never`):
+When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as the
+`piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;
@@ -515,7 +515,7 @@ command started with or was last sent (`breakpointUpdates`), and once to a run a
 hears them as they stand too (`piwi/setBreakpoints`, as the service starts, as the Playwright configs change and as they
 change, only when they differ): a run started in a terminal starts with them.
 
-**A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
+**A held failure** (`reason: 'failure'`) is `Held at its failure · <how it failed> · attempt N` after `$(error)`, with Resume alone
 among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.
 
 **Who else is there.** The paused page's caption (`stopCaption`), the worker panel's (`laneShown`) and a stop's hover
@@ -641,10 +641,11 @@ counts the window's runs from the same events, with or without an instance.
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
   a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
-- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**, its tooltip
+- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
   linking it, **Piwi: Restart the editor service** and **Piwi: Connect**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
-  `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;
+  `retry` action): **Piwi: Reload Piwi**; the service also reads it again as the restarted app rewrites its discovery
+  file;
 - not connected: **Piwi: Connect**;
 - the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
   (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
@@ -832,10 +833,11 @@ id. An item is kept while its id stays, so its result stays too.
 
 ### Results and test runs
 
-**The latest results** are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line
-from `TestFailure`) whenever `resultsKey` changes. A read that made items anew publishes the results again. **A run in
-progress** (`RunStatus.live`) is a test run of its own (`liveRunName`), showing `liveTests` as they come. It ends once
-the run was read, and nothing is published again for it.
+**The latest results** are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line from
+`TestFailure`, its headline left out where the diagnostic on the line gives it, `diagnosed`) whenever `resultsKey`
+changes. A read that made items anew publishes the results again. **A run in progress** (`RunStatus.live`) is a test run
+of its own (`liveRunName`), showing `liveTests` as they come. It ends once the run was read, and nothing is published
+again for it.
 
 **The run profiles**, **Run with Piwi** and **Verify ×3 with Piwi**, run the picked tests through `runTests`
 (`testRunsOf`: one run per config, by id when every test has one, else by location). The commands are queued in their
@@ -863,8 +865,10 @@ The spec URIs the service answers are spelled as VS Code spells a document's (`a
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
 has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
 carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
-(`flakyMark`). With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed ring. The
-API `activate` returns gives what the view shows (`testExplorer`).
+(`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
+its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. With the view off, a test with no recent
+result (`unknown`) has its own gutter icon, a dashed ring. The API `activate` returns gives what the view shows
+(`testExplorer`).
 
 ## Connect
 
@@ -877,11 +881,13 @@ API `activate` returns gives what the view shows (`testExplorer`).
 4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
    `SecretStorage`.
 
-The requests to the instance (`needsKey`, `startSignIn`, `waitForSignIn`, `listProjects`) are in `src/connect.ts`, which
-uses no VS Code API and is tested against a stub (`tests/connect.test.ts`). The order in which the service picks a
-connection:
-[Connection order and watching `HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the
-editor service's reference.
+A failure is said in the JetBrains plugin's words (`connectFailure`, as its `Glue.connectFailure`): a refused key, a 404
+or a page that is not a Piwi instance, a certificate the editor does not trust (its host and `NODE_EXTRA_CA_CERTS`), one
+expired or issued for another address, HTTPS asked of an HTTP server, no answer, nothing listening, a name not found;
+else the deepest cause's own message, never the bare `fetch failed`. The requests to the instance (`needsKey`,
+`startSignIn`, `waitForSignIn`, `listProjects`) are in `src/connect.ts`, which uses no VS Code API and is tested against
+a stub (`tests/connect.test.ts`). The order in which the service picks a connection: [Connection order and watching
+`HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the editor service's reference.
 
 ## The pure half
 

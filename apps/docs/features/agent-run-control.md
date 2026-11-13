@@ -38,13 +38,13 @@ beside **Piwi**, which then leaves the desktop app's run tools of the same names
 Each editor's server listens on `127.0.0.1` once the extension starts, at a port and behind a token the extension
 keeps for this workspace (in a JetBrains IDE, this project). If another program holds that port, the server moves,
 with a new token, and says so. To give an agent one window's runs alone, copy its entry: **Piwi: Copy the runs' MCP
-server configuration for agents** in VS Code, **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code
+server configuration for agents** in VS Code, **Tools → Piwi → Copy the runs' MCP server configuration for Claude Code
 or Cursor** (an `http` entry, the token as a bearer header) or **…for Agents** (one that runs
 `npx -y mcp-remote@0.14.3 <url> --transport http-only`, for the JetBrains AI Assistant) in a JetBrains IDE.
 
 **The configuration holds the token.** Keep it in your user settings, never in a file of the repository such as a
 project's `.mcp.json`: whoever reads it can drive your runs while the editor is open. **Reset the token** (**Piwi:
-Reset the runs' MCP server token**; **Tools → Piwi → Reset the Runs' MCP Server Token**) gives the server a new one:
+Reset the runs' MCP server token**; **Tools → Piwi → Reset the runs' MCP server token**) gives the server a new one:
 an agent with the old one is refused until you copy the configuration again. `piwi.serveRunsToAgents` in VS Code, and
 **Settings → Tools → Piwi** in a JetBrains IDE, turn the server off.
 

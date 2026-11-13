@@ -61,7 +61,7 @@ data class TestAtParams(val uri: String, val line: Int, val character: Int)
 
 /**
  * The tests of a spec: those Piwi knows, by id, and the spec as a location without a line (`location`), which runs every
- * test of the file as saved: Run This Spec runs it.
+ * test of the file as saved: Run this spec runs it.
  */
 data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, val location: String? = null)
 
@@ -81,7 +81,8 @@ data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean?
 
 /**
  * A test of a spec as it stands: its title and describe blocks, the 0-based lines of its `test(…)` call, its location
- * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed.
+ * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed, its tags, owner
+ * and quarantine, and its average duration.
  */
 data class SpecTest(
     val title: String? = null,
@@ -93,6 +94,10 @@ data class SpecTest(
     val status: String? = null,
     val failure: TestFailure? = null,
     val url: String? = null,
+    val tags: List<String>? = null,
+    val owner: String? = null,
+    val quarantined: Boolean = false,
+    val durationMs: Long? = null,
 )
 
 /** The tests of one spec, `file` relative to its Playwright config's folder. */
@@ -461,7 +466,7 @@ data class CiFrame(
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
  * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
- * were ended at a stop (End the Test), null for none.
+ * were ended at a stop (End the test), null for none.
  */
 data class RunEnded(
     val root: String? = null,
@@ -560,8 +565,8 @@ data class FailuresOverlay(
  * not the tree's run failing as it stands; `icon` one of `context`, `run`, `history`, `failed`, `passed`, `file`,
  * `cluster`, `owner`, `failing`, `edited`, `fixed`; `expanded` whether a node with children opens expanded; `url` the
  * page a run opens (a context's run too); `executionId` a failure's item in `FailuresResult.items`; `root`, on a
- * `context` node and a `run` node, the Playwright config's folder whose failures Re-run the Failing Tests runs from them
- * and whose baseline Compare With… chooses.
+ * `context` node and a `run` node, the Playwright config's folder whose failures Re-run the failing tests runs from them
+ * and whose baseline Compare with… chooses.
  */
 data class FailureTreeNode(
     val key: String = "",
@@ -592,7 +597,7 @@ data class FailuresView(val state: String = "failures", val message: String? = n
  * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
  * (`run`, null when a developer's own runs are read alone), the runs laid over it, newest first, when they were read
  * (ISO 8601) and the baseline chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or
- * without a failure), how many tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run
+ * without a failure), how many tests still fail (`failing`) and what Re-run the failing tests runs (`rerun`, one run
  * per Playwright config). When several contexts have one, the tree holds a `context` node each, which carries its run,
  * and `run`, `overlays`, `baseline` and `runLabel` are null.
  */
@@ -649,7 +654,7 @@ data class RenderStepsParams(
 data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val importEdit: FileEdit? = null)
 
 /**
- * `piwi/newTestFile`: where Record a New Test File offers to create its spec, from the file or folder at hand (`uri`):
+ * `piwi/newTestFile`: where Record a new test file offers to create its spec, from the file or folder at hand (`uri`):
  * beside the spec at hand, else in the test folder of the config holding it (`testDir`, as Playwright resolves it),
  * named `recorded` with the suffix the suite's specs use, a name the folder does not hold yet.
  */
@@ -928,9 +933,9 @@ data class RunWorker(
     val watchable: Boolean = false,
     /** Its reporter sends the layers of its slot's view: the call log, the page's events, its text, the filmstrip. */
     val layers: Boolean = false,
-    /** Its reporter brings the test's window to the front at a stop its pause bar shows (`front`, Show the Browser). */
+    /** Its reporter brings the test's window to the front at a stop its pause bar shows (`front`, Show the browser). */
     val showsWindow: Boolean = false,
-    /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
+    /** While pausing, the call its test waits in, End the test ending it there (`give-up`); null otherwise. */
     val waiting: RunWaiting? = null,
     /** The tools that watch its page now, its slot's view or its stop's, each once; null while none does. */
     val watchers: List<RunPresence>? = null,
@@ -940,7 +945,7 @@ data class RunWorker(
 
 /**
  * The call a pausing worker's test waits in: its title, its file and 0-based line (null when the worker names none),
- * when it began (`since`, ISO 8601; null when the worker cannot tell), and whether End the Test gives it up at once.
+ * when it began (`since`, ISO 8601; null when the worker cannot tell), and whether End the test gives it up at once.
  */
 data class RunWaiting(
     val title: String = "",
@@ -1054,7 +1059,7 @@ data class AnswerAskParams(val ref: String, val id: String, val answer: String =
 data class HoldRunParams(val ref: String, val on: Boolean)
 
 /**
- * `piwi/stopRun` (request, server to client): stop the run of `ref` this IDE started, as Stop the Run does, as another
+ * `piwi/stopRun` (request, server to client): stop the run of `ref` this IDE started, as Stop the run does, as another
  * tool asks through the hub. Sent only to a client that said `stopsRuns`, never for a run started in a terminal.
  * Answered with `RunControlResult`: refused for a run this IDE did not start, saying where to stop it.
  */
@@ -1150,7 +1155,7 @@ data class LaneViewParams(
 )
 
 /**
- * `piwi/openTrace`: **Open the Trace So Far** for the slot `lane` of the run `ref` (its `RunWorker.parallelIndex`): the
+ * `piwi/openTrace`: **Open the trace so far** for the slot `lane` of the run `ref` (its `RunWorker.parallelIndex`): the
  * service starts Playwright's trace viewer, on the machine the run runs on, on the running test's trace up to now.
  * Answered with `RunControlResult`, its message said to the person; the trace's path never reaches the IDE.
  */
@@ -1298,7 +1303,7 @@ data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
 /**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
  * `worker`: `pick`, `record`, `assert` and `assert-region` in the test's window (where the pause bar shows), `mock`
- * with `request`, a response `piwi/stopRequests` lists, and `front` (Show the Browser), which brings the test's window
+ * with `request`, a response `piwi/stopRequests` lists, and `front` (Show the browser), which brings the test's window
  * to the front where the pause bar shows. Answered with whether it started, or why not; the code of `assert`,
  * `assert-region` and `mock` comes in `piwi/stopCode`.
  */
@@ -1367,7 +1372,7 @@ data class StopCode(
  */
 data class AgentsParams(
     val enabled: Boolean,
-    /** A new token (Reset the Runs' MCP Server Token), the one before refused from then on. */
+    /** A new token (Reset the runs' MCP server token), the one before refused from then on. */
     val newToken: Boolean? = null,
 )
 

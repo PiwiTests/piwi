@@ -383,7 +383,16 @@ beforeAll(async () => {
       return res.end(
         JSON.stringify({
           items: [
-            { id: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed' },
+            {
+              id: 1,
+              title: 'pays',
+              filePath: 'tests/checkout.spec.ts',
+              status: 'passed',
+              // Stored without their '@', the second one as an older instance kept it.
+              tags: ['smoke', '@checkout', 'smoke'],
+              owner: 'ada',
+              avgDuration: 1234.4,
+            },
             { id: 3, title: 'removes a row', filePath: 'shop/tests/rows.spec.ts', status: 'failed' },
             { id: 9, title: 'was deleted', filePath: 'tests/gone.spec.ts', status: 'passed' },
           ],
@@ -1519,7 +1528,7 @@ describe('the Piwi language server', () => {
       {
         line: 6,
         title: 'Screenshot',
-        command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+        command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
       },
       {
         line: 6,
@@ -1677,6 +1686,11 @@ describe('the test tree', () => {
                   status: 'passed',
                   failure: null,
                   url: `${url}/test-cases/1`,
+                  // The catalog's tags, owner and average duration, and the project's quarantine.
+                  tags: ['@smoke', '@checkout'],
+                  owner: 'ada',
+                  quarantined: true,
+                  durationMs: 1234,
                 },
               ],
             },
@@ -1736,6 +1750,10 @@ describe('the test tree', () => {
             status: null,
             failure: null,
             url: null,
+            tags: [],
+            owner: null,
+            quarantined: false,
+            durationMs: null,
           },
         ],
       },
@@ -4842,7 +4860,7 @@ describe('a test the instance does not know yet', () => {
     await local.sendNotification('textDocument/didOpen', {
       textDocument: { uri: specUri(), languageId: 'typescript', version: 1, text: RECORDED },
     });
-    // A spec the instance does not know: Run This Spec runs every test of it by its path.
+    // A spec the instance does not know: Run this spec runs every test of it by its path.
     const spec = { uri: specUri(), testIds: [], location: 'tests/checkout.spec.ts' };
     expect(await at(2)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:3' });
     for (const line of [4, 6, 7]) {

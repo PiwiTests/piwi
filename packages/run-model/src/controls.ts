@@ -20,12 +20,15 @@ import type { RunWordKey } from './words';
 /** A control of a worker: the run controls, the actions in the test's window, Show the browser and Mock a request. */
 export type Control = HubControlAction | HubIntent | HubCodeIntent | HubWindowAction | 'mock';
 
-/** The icon of a control, by its meaning. */
+/**
+ * The icon of a control, by its meaning, as the editors draw it: Finish steps out, End the test is blocked, and the square
+ * is left to stopping the run.
+ */
 export type ControlIcon =
   | 'play'
   | 'skip'
-  | 'next'
-  | 'stop'
+  | 'step-out'
+  | 'blocked'
   | 'browser'
   | 'pick'
   | 'record'
@@ -49,9 +52,9 @@ export interface ControlLook {
 export const CONTROLS = {
   resume: { label: 'runs_resume', title: 'runs_resumeTitle', icon: 'play', tone: 'primary' },
   step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
-  finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
-  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop', tone: 'remove' },
-  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop', tone: 'remove' },
+  finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'step-out' },
+  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'blocked', tone: 'remove' },
+  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'blocked', tone: 'remove' },
   front: { label: 'runs_front', title: 'runs_frontTitle', icon: 'browser', tone: 'ghost' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick', tone: 'ghost' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record', tone: 'ghost' },

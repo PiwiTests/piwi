@@ -19,7 +19,7 @@ import javax.swing.JComponent
 
 /**
  * The banner over a file a recording writes into: what it does, how many steps it wrote, and Stop, Pause or Resume;
- * once the developer changed the recorded lines, Resume or Keep My Edits. The service's command, when it offers one,
+ * once the developer changed the recorded lines, Resume or Keep my edits. The service's command, when it offers one,
  * is a link too.
  */
 class PiwiRecordingNotificationProvider : EditorNotificationProvider, DumbAware {
@@ -37,7 +37,7 @@ class PiwiRecordingNotificationProvider : EditorNotificationProvider, DumbAware 
                         Glue.RecordingAction.STOP -> createActionLabel("Stop") { recordings.stop(session) }
                         Glue.RecordingAction.PAUSE -> createActionLabel("Pause") { recordings.pause(session) }
                         Glue.RecordingAction.RESUME -> createActionLabel("Resume") { recordings.resume(session) }
-                        Glue.RecordingAction.KEEP_EDITS -> createActionLabel("Keep My Edits") { recordings.stop(session) }
+                        Glue.RecordingAction.KEEP_EDITS -> createActionLabel("Keep my edits") { recordings.stop(session) }
                     }
                 }
                 val title = command?.title

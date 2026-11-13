@@ -20,12 +20,12 @@ sent](/guide/concepts#watch-share-live).
 | Where | Open it | At a stop |
 |---|---|---|
 | VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: **Piwi: worker 2** beside the editor | A headless stop of the worker shows there, with **Interact** and the pick on a click, instead of the paused page |
-| JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** beside it, for **Interact**, unless that tab holds another stop |
+| JetBrains IDEs | **Tools → Piwi → Watch a worker's test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused page** beside it, for **Interact**, unless that tab holds another stop |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
 | Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
-**Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and Watch a
-Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
+**Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and watch a
+worker's test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
 workers to choose from, the editor asks which.
 
 ## A CI run of your branch
@@ -36,7 +36,7 @@ nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
 - **VS Code**: the **CI Runs** view of the Piwi panel lists it as `CI run #78`, its branch and progress beside it,
   then **Open run #78** and its tests: those running, then the latest that ended, failures first. A running test
   opens the call it is at, else its spec.
-- **JetBrains IDEs**: the **CI Run** tab of the Piwi tool window, added while one runs, lists the same rows; a double
+- **JetBrains IDEs**: the **CI run** tab of the Piwi tool window, added while one runs, lists the same rows; a double
   click opens one.
 - **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
   Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
@@ -86,7 +86,7 @@ JetBrains Piwi tool window's **Page** tab, each test named as it begins.
 
 **Open the trace so far** opens Playwright's trace viewer on the running test's trace up to now, on the machine the
 run runs on ([what it shows](/guide/concepts#trace-so-far)): beside **Watch** in the VS Code panel (or **Piwi: Open the
-trace so far**), as **Open the Trace So Far** in the JetBrains **Worker** tab, and in a watched page's head in the Runs
+trace so far**), as **Open the trace so far** in the JetBrains **Worker** tab, and in a watched page's head in the Runs
 window and the desktop app's tray, while the worker runs a test, stopped or not, with a reporter newer than 0.68.0.
 
 It shows only where it can open: the machine the run runs on has a display (on Linux, `DISPLAY` or `WAYLAND_DISPLAY`

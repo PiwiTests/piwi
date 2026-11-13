@@ -153,7 +153,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
         if (index >= 0) list.selectedIndex = index
     }
 
-    private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI Run" else "CI Runs (${now.size})"
+    private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI run" else "CI runs (${now.size})"
 
     /**
      * The tab's list: a row opens its lane in the Worker tab, its file at its line, or its page on the dashboard, on a
@@ -241,21 +241,22 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
         value ?: return
         when (value.kind) {
             "run" -> {
-                icon = AllIcons.Actions.Execute
+                icon = PiwiIcons.CI_RUN
                 append(value.text, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
             "open", "watch", "ci-watch" -> {
-                icon = if (value.kind == "ci-watch") AllIcons.Actions.Preview else AllIcons.Ide.External_link_arrow
+                // Watch is `Piwi.WatchWorker`'s eye, the run's page `Piwi.OpenRunPage`'s globe, a watch on the
+                // dashboard Open in dashboard's.
+                icon = when (value.kind) {
+                    "ci-watch" -> AllIcons.Actions.Show
+                    "open" -> AllIcons.General.Web
+                    else -> PiwiIcons.OPEN_IN_DASHBOARD
+                }
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {
-                icon = when (value.status) {
-                    "running" -> AllIcons.Process.Step_1
-                    "failed" -> AllIcons.RunConfigurations.TestError
-                    "flaky" -> AllIcons.RunConfigurations.TestFailed
-                    "skipped" -> AllIcons.RunConfigurations.TestIgnored
-                    else -> AllIcons.RunConfigurations.TestPassed
-                }
+                // The test's outcome as its line's result icon draws it.
+                icon = PiwiIcons.outcome(value.status ?: "passed")
                 append(value.text)
             }
         }

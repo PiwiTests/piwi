@@ -93,7 +93,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Refresh](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Reload Piwi](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {
@@ -215,7 +215,7 @@
       },
       {
         "command": "piwi.refresh",
-        "title": "Refresh",
+        "title": "Reload Piwi",
         "category": "Piwi"
       },
       {
@@ -233,7 +233,7 @@
       {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
-        "icon": "$(beaker)",
+        "icon": "$(references)",
         "category": "Piwi"
       },
       {
@@ -394,7 +394,7 @@
       },
       {
         "command": "piwi.openScreenshot",
-        "title": "Open the failure screenshot",
+        "title": "Open the screenshot",
         "category": "Piwi",
         "icon": "$(device-camera)"
       },
@@ -981,6 +981,11 @@
           "group": "inline@1"
         },
         {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
+          "group": "3_open@1"
+        },
+        {
           "command": "piwi.rerunFailing",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.context\\..*\\bfailing\\b/",
           "group": "inline@1"
@@ -1192,7 +1197,7 @@
             "Only when the run failed a test.",
             "Never: the status bar, the gutter and the failures view still show it."
           ],
-          "default": "always",
+          "default": "failures",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         },
         "piwi.failureSeverity": {

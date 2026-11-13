@@ -30,16 +30,24 @@ enum class PiwiNotice(val group: String) {
 }
 
 /**
- * Every Piwi balloon: titled Piwi, in the group of its kind ([PiwiNotice]), with Piwi's icon when it is an information
- * (a warning or an error keeps the platform's icon, which says how serious it is).
+ * Every Piwi balloon: titled Piwi (a run's verdict, by its run), in the group of its kind ([PiwiNotice]), with Piwi's
+ * icon when it is an information (a warning or an error keeps the platform's icon, which says how serious it is).
  */
 object PiwiNotifier {
     private val ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiNotifier::class.java)
 
-    /** A balloon of `kind` saying `content` (HTML: escape plain text first), not shown until `notify`. */
-    fun create(kind: PiwiNotice, content: String, type: NotificationType = NotificationType.INFORMATION): Notification =
+    /**
+     * A balloon of `kind` saying `content` (HTML: escape plain text first), not shown until `notify`, titled Piwi or,
+     * for a run's verdict, by its run (`Glue.runVerdictTitle`).
+     */
+    fun create(
+        kind: PiwiNotice,
+        content: String,
+        type: NotificationType = NotificationType.INFORMATION,
+        title: String = TITLE,
+    ): Notification =
         NotificationGroupManager.getInstance().getNotificationGroup(kind.group)
-            .createNotification(TITLE, content, type)
+            .createNotification(title, content, type)
             .setIcon(if (type == NotificationType.INFORMATION) ICON else null)
             .setSuggestionType(kind == PiwiNotice.OFFER)
 

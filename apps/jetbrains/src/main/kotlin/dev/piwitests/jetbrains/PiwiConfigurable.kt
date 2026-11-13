@@ -43,6 +43,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private lateinit var disconnectButton: JButton
     private lateinit var nodeButton: JButton
     private lateinit var overridden: JEditorPane
+    private lateinit var tested: JEditorPane
 
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
@@ -63,7 +64,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     button("Reconnect") { service.sendCredentials() }
                         .comment("Hand the connection to the editor service again, which reads everything with it")
-                    nodeButton = button("Node.js Settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
+                    nodeButton = button("Node.js settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
             group("Instance") {
@@ -80,7 +81,17 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         }
                         .comment("Kept in .idea/piwi.xml, which the team can share")
                         .component
+                    button("Test connection") { testConnection() }
                 }
+                row {
+                    tested = text("", maxLineLength = 90).align(AlignX.FILL).component
+                }
+                // What Test connection said is of the address it tried: an edit of the field takes it away.
+                urlField.document.addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
+                    override fun textChanged(e: javax.swing.event.DocumentEvent) {
+                        tested.text = ""
+                    }
+                })
                 row("Project:") {
                     projectField = textField()
                         .bindText({ settings.project }, { settings.project = it.trim() })
@@ -97,7 +108,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     disconnectButton = button("Disconnect") { disconnect() }.component
                 }
             }
-            group("Piwi Desktop App") {
+            group("Piwi desktop app") {
                 row {
                     desktopState = text("").component
                 }
@@ -119,7 +130,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
                         .label("When a run started here ends:", LabelPosition.TOP)
-                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "always" })
+                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "failures" })
                         .comment(
                             "A balloon says what the run changed: the failures it fixed, those still failing, its new ones. " +
                                 "Kept for you only, in .idea/workspace.xml",
@@ -140,7 +151,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
                             "A run with a breakpoint in a test or page object pauses before the action on that line, " +
-                                "headless unless Run Headed is on: its page shows in the Paused Page tab. Needs " +
+                                "headless unless Run headed is on: its page shows in the Paused page tab. Needs " +
                                 "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
                                 "older reporter, or one whose version Piwi cannot read, the run starts headed. " +
                                 "Kept for you only, in .idea/workspace.xml",
@@ -152,7 +163,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment(
                             "A verification too. Otherwise a run is headless but for a spec with a page.pause(), and " +
                                 "for a run with breakpoints when @piwitests/reporter is older than 0.62.0. " +
-                                "Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
+                                "Tools → Piwi → Run headed. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {
@@ -163,7 +174,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                             { local.runHoldFailures = it ?: "auto" },
                         )
                         .comment(
-                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold Failures " +
+                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold failures " +
                                 "still turns it on or off while it runs. Kept for you only, in .idea/workspace.xml",
                         )
                 }
@@ -187,7 +198,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .label("Piwi's MCP server signs the agent in with:", LabelPosition.TOP)
                         .bindItem({ local.mcpAuthorization }, { local.mcpAuthorization = it ?: "key" })
                         .comment(
-                            "As Copy the MCP Server Configuration writes it. The browser gives the agent a token of its own, " +
+                            "As Copy the MCP server configuration writes it. The browser gives the agent a token of its own, " +
                                 "which Settings → Account → API keys on the instance lists and revokes; the desktop app takes " +
                                 "its own token either way. Kept for you only, in .idea/workspace.xml",
                         )
@@ -209,7 +220,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         return content
     }
 
-    /** Whether **Node.js Settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
+    /** Whether **Node.js settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
     private var nodeSettingsShown = false
 
     /** The Node.js page in this Settings dialog, else in a dialog of its own. */
@@ -280,6 +291,28 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 },
                 ModalityState.any(),
             )
+        }
+    }
+
+    /**
+     * Test connection: whether the address typed in the field answers, before it is saved, said in Connect's words under
+     * the field. The request runs with modal progress, as Connect's do from this page.
+     */
+    private fun testConnection() {
+        val url = Glue.normalizeServerUrl(urlField.text)
+        if (url == null) {
+            tested.text = Glue.escapeHtml(Glue.TEST_CONNECTION_NO_URL)
+            return
+        }
+        tested.text = try {
+            val reached = com.intellij.openapi.progress.ProgressManager.getInstance().runProcessWithProgressSynchronously<PiwiInstance.Reached, Exception>(
+                { PiwiInstance.reach(url) }, "Piwi: Test connection", true, project,
+            )
+            reached?.let { Glue.escapeHtml(Glue.testConnectionText(it.url, it.needsKey)) } ?: return
+        } catch (_: com.intellij.openapi.progress.ProcessCanceledException) {
+            return
+        } catch (e: Exception) {
+            Glue.escapeHtml(Glue.testConnectionFailure(url, Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)))
         }
     }
 

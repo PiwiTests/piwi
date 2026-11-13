@@ -921,11 +921,11 @@ const tests = {
         bar: true,
       });
       const failed = await waitFor(async () => {
-        const titles = await stopLenses(spec, '$(error) Failed · ');
+        const titles = await stopLenses(spec, '$(error) Held at its failure · ');
         return titles.length ? titles : null;
       }, 'the failure’s lenses');
       assert.deepEqual(failed, [
-        "$(error) Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
+        "$(error) Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
         'Resume',
         'Write code…',
       ]);

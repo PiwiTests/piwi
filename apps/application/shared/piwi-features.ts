@@ -578,7 +578,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
         needs: [],
-        where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
+        where: 'Piwi: Record here; Tools → Piwi → Record here in a JetBrains IDE',
         doc: 'features/editor-recording',
       },
       {
@@ -645,7 +645,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           "The page of a test running on your machine, up to ten images a second, through its next tests and stops: from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app, with Pause and watch to stop it there.",
         needs: ['fixtures'],
         where:
-          "Piwi: Watch a worker's test; Tools → Piwi → Watch a Worker's Test in a JetBrains IDE; Watch on a worker of the Runs window or the desktop app",
+          "Piwi: Watch a worker's test; Tools → Piwi → Watch a worker's test in a JetBrains IDE; Watch on a worker of the Runs window or the desktop app",
         doc: 'features/watch-running-test',
       },
       {
@@ -663,7 +663,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
         needs: ['fixtures'],
         where:
-          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
+          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the test in a JetBrains IDE",
         doc: 'features/end-the-test',
       },
       {
@@ -872,7 +872,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend'],
-        where: 'Application files in the editor; Piwi: Toggle the coverage marks, Tools → Piwi → Show Coverage Marks',
+        where: 'Application files in the editor; Piwi: Toggle the coverage marks, Tools → Piwi → Show coverage marks',
         doc: 'features/editor-coverage',
       },
       {

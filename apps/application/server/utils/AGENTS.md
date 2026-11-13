@@ -75,11 +75,10 @@ Ranked replacement locators for a broken selector. Generation, scoring and finge
 bundled into the reporter by tsup. **There is no hand-mirrored copy**: `tests/unit/reporter-core-identity.test.ts`
 asserts the reporter re-exports the exact core functions, so a re-implementation fails the suite.
 
-- **The in-page probe cannot reference module closures.** The reporter fixtures capture locators (mirrored by the
-  dogfood `tests/fixtures.ts`) with `probeElementAttrs` (`packages/picker-dom/src/probe.ts`), which `evaluate`
-  serializes into the browser. The ARIA role maps (`TAG_TO_ROLE`, `INPUT_TYPE_TO_ROLE`) reach it as `tagRoles` and
-  `inputRoles` of its argument: **never declare them again inside the probe**, and have the dogfood fixture import and
-  call it rather than copy it.
+- **The in-page probe cannot reference module closures.** The reporter fixtures, which the E2E suite's
+  `tests/fixtures.ts` extends, capture locators with `probeElementAttrs` (`packages/picker-dom/src/probe.ts`), which
+  `evaluate` serializes into the browser. The ARIA role maps (`TAG_TO_ROLE`, `INPUT_TYPE_TO_ROLE`) reach it as
+  `tagRoles` and `inputRoles` of its argument: **never declare them again inside the probe**.
 - **The live input `value` is never captured**: it can hold a secret.
 - **Snapshots ride the wire as the per-case `locatorSnapshots` field** (`shared/types.ts`), **never a column**. Every
   ingest site passes it to `persistRunCases`, which calls the shared `upsertLocatorSnapshots`

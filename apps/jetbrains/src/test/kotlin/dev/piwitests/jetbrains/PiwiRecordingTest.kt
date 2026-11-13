@@ -227,7 +227,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
     /**
      * Typing in the block pauses the recording: nothing is written until Resume, which writes the block over the edit;
-     * after Keep My Edits, the last update is not written either.
+     * after Keep my edits, the last update is not written either.
      */
     fun testTypingInTheBlockPausesUntilResumeAndKeepMyEditsKeepsTheEdits() {
         val original = "test('pays', async ({ page }) => {\n  \n});\n"

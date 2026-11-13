@@ -184,14 +184,16 @@ responsibilities.
    ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
    release cycles, so a path or shape change must land in both, and a request that carries the token goes through the
    proof described in [`ARCHITECTURE.md`](ARCHITECTURE.md#the-desktop-apps-discovery-file).
-5. **The dogfooded capture modules.** The dashboard's E2E fixtures (`apps/application/tests/fixtures.ts`) import five
-   capture modules from `dist/internal/capture/`, each its own entry in `tsup.config.ts`. Renaming or moving one, or
-   changing what it exports, breaks the dashboard's suite.
+5. **The capture fixtures' own build entry.** `src/internal/capture/capture-fixtures.ts` is its own entry in
+   `tsup.config.ts`, so the public entry's types re-export `piwiFixtures` and `extendPiwiFixtures` from
+   `dist/internal/capture/capture-fixtures.js`: renaming or moving it changes the published types. The dashboard's
+   E2E suite takes those fixtures from the public entry (`apps/application/tests/fixtures.ts`), so a change to them
+   runs through its suite too.
 6. **Invisible capture.** Nothing the capture fixtures do may show up as the test's own. A Playwright method a wrapper
    forwards is called on its receiver (`callMethod`, never `fn.apply`, which renames the call `locator.apply`), and
    every page read the fixtures make goes through `internalCall` (never a bare `page.evaluate` / `ariaSnapshot`), so it
-   is neither a step nor a trace action. A copy that wraps locators from its own file (the dogfood mirror,
-   `apps/application/tests/fixtures.ts`) passes that file to `boxCaptureFrames` so its frames are boxed too. `tests/integration/verify-reporter.ts` checks both.
+   is neither a step nor a trace action. The `piwiResources` worker fixture calls `boxCaptureFrames` before any hook,
+   so this package's own frames name the spec's line. `tests/integration/verify-reporter.ts` checks both.
 7. **The docs read this package.** Every option in `src/public/options.ts` has a JSDoc comment stating its default,
    under the `// ── Group ──` comment it belongs to: the docs build generates the Reporter options page from them and
    from `PIWI_ENV_KEYS`, and fails on an option without one. A new `piwi` flag goes into `apps/docs/reference/cli.md`

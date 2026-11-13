@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('request guards', () => {
   test('a state-changing request a browser sends from another site is refused', async ({ request }) => {

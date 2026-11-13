@@ -25,7 +25,7 @@ a stop, the editor also writes code from the page: [Code from a pause](./editor-
 | **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
-| **Stop** | Ends the run's process | `Shift+F5` | **Stop the Run**, or the Run tool window's Stop |
+| **Stop** | Ends the run's process | `Shift+F5` | **Stop the run**, or the Run tool window's Stop |
 
 The keys are the IDE's debugger keys (in a JetBrains IDE, [your keymap's](./jetbrains)), Piwi's only while their control
 applies and the debugger does not take them. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** and **End the
@@ -35,8 +35,8 @@ of an answer, until that worker stops, a key answers no other worker and starts 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
   test stops), in the palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under
   `…`).
-- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
-  menu, whose text starts `Piwi: paused · checkout.page.ts:12` while a test is stopped.
+- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
+  whose text says why and where a test stopped.
 
 The progress beside them comes from the run, so it counts offline and with the desktop app
 ([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
@@ -80,9 +80,9 @@ has none.
 ## A headless run
 
 A run Piwi starts follows your config, headless by default, unless you choose
-[**Run headed**](./editor-runs#how-a-run-starts) or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
+[**Run headed**](./editor-runs#how-a-run-starts) or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused page** in the JetBrains
 Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to cursor** from the editor
-waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**)
+waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
 opens it at any stop.
 
 <figure>

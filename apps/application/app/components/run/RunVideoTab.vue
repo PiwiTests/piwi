@@ -44,6 +44,8 @@ const laneItems = computed(() =>
     value: r.key,
   })),
 );
+/** The checklist search, kept here so it stays when another worker or the grouping is picked. */
+const search = ref('');
 const laneModel = computed({
   get: () => reel.value?.key,
   set: (key) => (chosenKey.value = key ?? null),
@@ -87,7 +89,7 @@ watch(group, () => (chosenKey.value = null));
         This run has more tests than the tab lists: the first {{ LISTED_LIMIT.toLocaleString() }} with a video and the
         first {{ LISTED_LIMIT.toLocaleString() }} without are shown.
       </p>
-      <RunVideoReel :key="`${group}:${reel.key}`" :reel="reel" :group="group" />
+      <RunVideoReel :key="`${group}:${reel.key}`" v-model:search="search" :reel="reel" :group="group" searchable />
     </div>
   </div>
 </template>

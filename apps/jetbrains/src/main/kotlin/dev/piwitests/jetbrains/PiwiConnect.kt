@@ -259,7 +259,7 @@ object PiwiConnectFlow {
             "$url asks for an API key. Sign in with the browser to create one for this IDE, " +
                 "or paste one from the dashboard's Settings → API keys.",
             TITLE,
-            arrayOf("Sign In with the Browser", "Paste an API Key", Messages.getCancelButton()),
+            arrayOf("Sign in with the browser", "Paste an API key", Messages.getCancelButton()),
             0,
             AllIcons.General.User,
         )
