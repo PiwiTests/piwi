@@ -107,6 +107,10 @@ Terms used in this file:
 - **`minimum_chrome_version`** (118) is Chromium-only too. From that version Chrome keeps the worker running while a
   debugging session is attached. That matters because the sessions' state (`debugger.ts`, `cdp-*.ts`, `step-views.ts`)
   lives in the worker's memory.
+- **`content_security_policy`** is Firefox-only: `firefoxManifest` gives its extension pages `script-src 'self';`.
+  Firefox's default for a Manifest V3 extension adds `upgrade-insecure-requests`, which turns the run hubs'
+  `ws://127.0.0.1` into a `wss://` they do not serve, and an instance's `http://` into an `https://`
+  (`build-manifests.test.ts`).
 - **`optional_host_permissions`** (`http://*/*`, `https://*/*`) is declared but **grants nothing by default**. The popup
   requests a single origin (`https://<the-recorded-site>/*`, built by `hostPattern`) with `chrome.permissions.request`,
   inside the click on **Record actions**, **Report a bug** or **Replay a bug report**. The settings page and the
