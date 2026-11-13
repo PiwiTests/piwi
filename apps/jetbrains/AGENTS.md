@@ -183,6 +183,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
+- **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte**, in
+  `STATUS_COLORS`' fills. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
 
 ## Workflow
