@@ -11,10 +11,11 @@ can say what stayed open longer than it was needed, and where the `close()` belo
 [resource-consumption-next.md](resource-consumption-next.md) (nothing built); where an item here sharpens one of
 theirs, it says which. **Built 2026-11-07**, quick wins 1, 4 and 5 and medium items 6 and 7 in part:
 
-- R1, narrowed: a fixture with a `timeout` of its own is judged as a test fixture once it opened objects in two tests
-  of one worker, its own teardown did not close them and no later test used them. Playwright's own worker fixtures (no
-  location) are never judged. The first version judged any timed fixture whose object no later test used, and flagged
-  Playwright's `browser` (`timeout: 0`) in a worker that ran one test.
+- R1: a fixture with a `timeout` of its own is judged as a test fixture when its test's `After Hooks` steps tore it
+  down, or once it opened objects in two tests of one worker; in both, only when its own teardown did not close them
+  and no later test used them. Playwright's own worker fixtures (no location) are never judged. The first version judged
+  any timed fixture whose object no later test used, and flagged Playwright's `browser` (`timeout: 0`) in a worker
+  that ran one test. A boxed fixture (`box: true`) leaves no step, so only the two-test rule reads it.
 - R2 (a page from `newPage` is never a popup), R3 (pages counted through every fold, a persistent context folded into
   itself with its browser), R5 (§5.1's connection wrapper marks pages used; the page-method wrappers remain for a
   Playwright without it), and R6 in part (listeners on contexts and the browser).
@@ -27,8 +28,15 @@ theirs, it says which. **Built 2026-11-07**, quick wins 1, 4 and 5 and medium it
   close or the worker's end, each lingering one from its last use to its close, the share of open pages left open on the
   open pages track and strip, a tooltip with the object's lines, a click that opens its test, and **Show leaks**.
 
-Not built: R4, R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S1 to S9
-(filed as PiwiTests/piwi#1174 with the reporter's R1 to R4), the failure timeline's object lanes, and §6's larger items.
+Built since: R4 (the fixture-free tier tallied per scope; an API request context stays uncounted, since its
+`dispose()` leaves no step), S1 to S3 and S5 to S7 (the history changes a finding only from full default-branch runs,
+moves one only from them, keys it by its opening line, joins a finding another run stored at once, and counts a clean
+run only when its report could show the finding; the gate checks the capability), S4 (a handle's line and count on the
+Resources tab) and S8 in part (each new leak in the pull-request comment with its fix, and every fact).
+
+Not built: R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S8's
+servers and processes and its line for a leak the change fixed, S9, the failure timeline's object lanes, and §6's
+larger items. All of R1 to R4 and S1 to S8 were filed as PiwiTests/piwi#1174.
 
 ## 0. The findings that matter most
 
