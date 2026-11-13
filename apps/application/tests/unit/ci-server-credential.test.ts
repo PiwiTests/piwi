@@ -205,6 +205,7 @@ describe('a redirect', () => {
       headers: { Authorization: 'Bearer project-secret' },
       body: null,
       credential: 'project',
+      droppedInputs: [],
     });
     expect(answer.status).toBe(302);
     expect(hits).toEqual(['/build']);

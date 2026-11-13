@@ -1,4 +1,5 @@
 import { INVALID_EXTERNAL_ID_URL, normalizeExternalIdUrl } from '#shared/external-id-link';
+import { resolveCiActionsSettings } from '#shared/ci-actions';
 import {
   projects,
   testRuns,
@@ -322,6 +323,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     const latestRun = latestRunByProjectId.get(project.id) ?? null;
     return {
       ...project,
+      ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
       latestRun: latestRun ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] } : null,
       statusFilter: resolveProjectRunScope(project.statusFilter),
       statusDefaultBranch: statusRuns.defaultBranches.get(project.id) ?? null,
@@ -526,6 +528,7 @@ export async function getProject(
     effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
     hasCiServerToken: !!project.ciServerToken,
+    ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
@@ -822,6 +825,7 @@ export async function updateProject(
     success: true,
     project: {
       ...updatedProjectPublic,
+      ciRerun: updatedProjectPublic.ciRerun == null ? null : resolveCiActionsSettings(updatedProjectPublic.ciRerun),
       tags: projectTagRows.map((r: any) => r.tag),
     },
   };

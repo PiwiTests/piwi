@@ -400,7 +400,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'A cluster’s affected tests re-run in CI from its page: a GitHub, GitLab or Bitbucket pipeline, or a Jenkins job or any CI server one request reaches.',
         needs: [],
-        where: 'Project → Settings → Source control → CI re-run',
+        where: 'Project → Settings → CI',
         doc: 'features/ci-rerun',
       },
       {

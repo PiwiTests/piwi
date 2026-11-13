@@ -1361,6 +1361,16 @@ export const PIWI_ENV_VARS = {
     since: '0.67.0',
     docs: 'features/ci-rerun',
   },
+  PIWI_CI_SERVER_ALLOWED_INPUTS: {
+    description:
+      "Input names (comma-separated, e.g. TARGET_ENV,SUITE) a CI action may send to a request that carries the instance CI server token. A request under PIWI_CI_SERVER_URL with that token sends the Playwright arguments and the dispatch id and no other input, so a project admin cannot set other parameters on jobs the token can build; names listed here are sent. A project's own token is not limited. Names are case-sensitive; empty by default.",
+    category: 'integrations',
+    type: 'list',
+    example: 'TARGET_ENV,SUITE',
+    since: '0.70.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+    docs: 'features/ci-rerun',
+  },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',

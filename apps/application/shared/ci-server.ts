@@ -1,8 +1,7 @@
 /**
- * CI server dispatch: the target a project's CI re-run and Flake Lab dispatch
- * go to when `ciRerun.via` is `ci-server`, the preset registry that turns a few
- * fields into an HTTP request template, and the renderer that fills a template
- * with a dispatch's values.
+ * CI server dispatch: the target of a CI action of type CI server, the preset
+ * registry that turns a few fields into an HTTP request template, and the
+ * renderer that fills a template with a dispatch's values.
  *
  * A request never leaves the base URL: a template names a path relative to
  * it, each placeholder fills one percent-encoded path segment or an encoded
@@ -568,11 +567,16 @@ export interface RenderedCiRequest {
   body: { contentType: string; text: string } | null;
 }
 
-/** Fill a template with a dispatch's values, each encoded for its place. Throws `CiTemplateError`. */
+/**
+ * Fill a template with a dispatch's values, each encoded for its place. Throws
+ * `CiTemplateError`. `inputs` are an action's inputs: appended to a form body
+ * as they are, never read as placeholders.
+ */
 export function renderCiRequest(
   baseUrl: string,
   template: CiRequestTemplate,
   values: CiTemplateValues,
+  inputs: [name: string, value: string][] = [],
 ): RenderedCiRequest {
   const vars = placeholderValues(values);
   const url = urlUnder(baseUrl, template.path, vars);
@@ -599,6 +603,7 @@ export function renderCiRequest(
   } else if (template.body?.type === 'form') {
     const form = new URLSearchParams();
     for (const [name, value] of template.body.fields) form.append(name, fillText(value, vars));
+    for (const [name, value] of inputs) form.append(name, value);
     body = { contentType: 'application/x-www-form-urlencoded', text: form.toString() };
   }
   return { method: template.method, url: url.href, headers, body };
@@ -615,11 +620,13 @@ export interface CiServerCheckPlan {
 /**
  * What Check reads for a target: the re-run's job, and Flake Lab's when the
  * target has one. A plan that cannot be built is the reason, for the user. A
- * multibranch job is read on the target's default branch.
+ * multibranch job is read on the target's default branch. `inputNames` are an
+ * action's inputs, which the job must declare as well.
  */
 export function ciServerCheckPlans(
   target: CiServerTarget,
   baseUrl: string,
+  inputNames: string[] = [],
 ): Array<CiServerCheckPlan | { kind: 'rerun' | 'flakeLab'; error: string }> {
   const kinds: Array<'rerun' | 'flakeLab'> = target.flakeLab ? ['rerun', 'flakeLab'] : ['rerun'];
   if (target.preset === 'custom') {
@@ -639,7 +646,7 @@ export function ciServerCheckPlans(
       const vars = placeholderValues({ args: '', dispatchId: '', ref, commit: '' });
       const url = urlUnder(baseUrl, request.path, vars);
       for (const [name, value] of request.query) url.searchParams.append(name, fillText(value, vars));
-      return { kind, url: url.href, required: check.required(fields), declared: check.declared };
+      return { kind, url: url.href, required: [...check.required(fields), ...inputNames], declared: check.declared };
     } catch (e) {
       return { kind, error: e instanceof Error ? e.message : 'The check request cannot be built.' };
     }

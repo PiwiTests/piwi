@@ -44,6 +44,31 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(PiwiSearchableOptions.CONFIGURABLE_ID, page.id)
     }
 
+    /**
+     * Settings → Tools → Piwi stays within 100 columns of its font, its texts wrapped at 90, with every text the page
+     * fills as it opens or as Test connection answers holding a long sentence and an instance's address.
+     */
+    fun testTheSettingsPageStaysWithinItsColumnsWithLongTexts() {
+        val page = PiwiConfigurable(project)
+        try {
+            val content = page.createComponent()!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            val texts = all(content).filterIsInstance<javax.swing.JEditorPane>()
+            val intro = texts.first()
+            assertTrue(intro.text.contains("Where this project reads its test history from"))
+            val column = intro.getFontMetrics(intro.font).charWidth('0')
+            assertTrue("the intro is ${intro.preferredSize.width} px, 90 columns ${90 * column} px", intro.preferredSize.width <= 90 * column)
+            val long = List(4) { "Saved for https://piwi.platform-team.example-company.internal:8443 in the IDE's password safe." }
+                .joinToString(" ")
+            val filled = texts.filter { it.document.getText(0, it.document.length).isBlank() }
+            assertTrue(filled.size >= 5)
+            filled.forEach { it.text = long }
+            assertTrue("the page is ${content.preferredSize.width} px, 100 columns ${100 * column} px", content.preferredSize.width <= 100 * column)
+        } finally {
+            page.disposeUIResources()
+        }
+    }
+
     fun testRegistersItsExtensionsAndActions() {
         assertTrue(LspServerSupportProvider.EP_NAME.extensionList.any { it is PiwiLspServerSupportProvider })
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList

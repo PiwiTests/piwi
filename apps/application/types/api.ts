@@ -452,8 +452,8 @@ export interface ProjectWithTestRuns {
   /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
   externalIdUrl?: string | null;
   serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
-  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
-  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** The project's CI actions (secrets excluded). */
+  ciRerun?: import('#shared/ci-actions').CiActionsSettings | null;
   /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
@@ -498,8 +498,8 @@ export interface ProjectDetails {
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
-  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
-  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** The project's CI actions (secrets excluded). */
+  ciRerun?: import('#shared/ci-actions').CiActionsSettings | null;
   /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */

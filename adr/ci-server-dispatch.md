@@ -1,6 +1,7 @@
 # CI re-run on any CI server
 
-- Status: accepted
+- Status: superseded
+- Superseded by: [ci-actions.md](ci-actions.md), which replaces D2 (`ciRerun.via`); the other decisions stand
 - Date: 2026-11-05
 
 A proposal to let **Re-run in CI** and Flake Lab's **Reproduce in CI** start a build on the team's CI server through

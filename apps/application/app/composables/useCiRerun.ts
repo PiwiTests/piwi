@@ -5,6 +5,8 @@ export interface RerunInfo {
   available: boolean;
   reason: string | null;
   provider: string | null;
+  /** The CI action a dispatch would run, or null when none can. */
+  action?: { id: string; name: string } | null;
   enabled: boolean;
   hasToken: boolean;
   lastDispatch: {
@@ -17,6 +19,8 @@ export interface RerunInfo {
     byName: string | null;
     /** How many tests it re-ran. */
     tests?: number;
+    /** The CI action it ran. */
+    actionId?: string;
   } | null;
 }
 

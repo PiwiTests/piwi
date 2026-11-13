@@ -1,7 +1,8 @@
 /**
- * The CI server part of the CI re-run form: the editable state a stored target
+ * The CI server part of a CI action's form: the editable state a stored target
  * opens as, the target a save sends, and the request preview the form shows.
  */
+import { ciServerTargetOf, type CiActionTarget } from '#shared/ci-actions';
 import {
   CiTemplateError,
   CI_SERVER_PRESET_REGISTRY,
@@ -42,6 +43,8 @@ const fields = (input?: Record<string, string>): CiServerPresetFields => ({
   argsParameter: input?.argsParameter ?? '',
   dispatchParameter: input?.dispatchParameter ?? '',
 });
+
+type CiServerActionTarget = Extract<CiActionTarget, { type: 'ci-server' }>;
 
 /** The state a stored target opens as; a new form starts on Jenkins. */
 export function ciServerFormState(target: CiServerTarget | null | undefined): CiServerFormState {
@@ -109,6 +112,32 @@ export function ciServerTargetFromForm(
   return { target, error: null };
 }
 
+/** The form state a CI action's CI server target opens as; a new one starts on Jenkins. */
+export function ciServerFormFromAction(target: CiServerActionTarget | null | undefined): CiServerFormState {
+  return ciServerFormState(target ? ciServerTargetOf(target) : null);
+}
+
+/** The CI action target a form saves, or why it cannot be saved; the same checks as {@link ciServerTargetFromForm}. */
+export function ciActionTargetFromForm(
+  state: CiServerFormState,
+  opts?: { instanceUrl: string | null },
+): { target: CiServerActionTarget; error: null } | { target: null; error: string } {
+  const resolved = ciServerTargetFromForm(state, opts);
+  if (!resolved.target) return resolved;
+  const { preset, baseUrl, user, rerun, custom } = resolved.target;
+  return {
+    target: {
+      type: 'ci-server',
+      preset,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(user ? { user } : {}),
+      fields: rerun,
+      ...(custom ? { custom: { auth: custom.auth, request: custom.rerun } } : {}),
+    },
+    error: null,
+  };
+}
+
 /** The form state of a preset turned into Custom, sending the same requests. */
 export function customizeCiServerForm(state: CiServerFormState): CiServerFormState {
   const resolved = ciServerTargetFromForm(state);
@@ -141,6 +170,8 @@ export interface CiServerPreviewOptions {
   typedToken?: boolean;
   /** The base URL the stored token is bound to, or null without one. */
   tokenUrl?: string | null;
+  /** The action's inputs, sent beside the arguments, as name and value pairs. */
+  inputs?: [string, string][];
 }
 
 export function ciServerPreviewCredential(
@@ -183,7 +214,7 @@ export function ciServerRequestPreview(
     ref: opts.branch || resolved.target.rerun.ref || 'main',
   };
   try {
-    const request = renderCiRequest(baseUrl, spec.template, values);
+    const request = renderCiRequest(baseUrl, spec.template, values, opts.inputs ?? []);
     const headers: [string, string][] = [];
     const setHeader = (name: string, value: string) => {
       const at = headers.findIndex(([n]) => n.toLowerCase() === name.toLowerCase());

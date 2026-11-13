@@ -7,6 +7,7 @@
  */
 
 import { mergeTestCases } from '#shared/handlers/test-case-merge';
+import { resolveCiActionsSettings } from '#shared/ci-actions';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ZodType } from 'zod';
 import {
@@ -505,8 +506,8 @@ import {
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
-  assertDemoCiServerTarget,
-  demoCiServerCheck,
+  assertDemoCiActions,
+  demoCiActionCheck,
   demoCiServerTokenMarker,
   demoCiServerTokenUrl,
   demoClusterRerunInfo,
@@ -1023,9 +1024,11 @@ const routes: RouteEntry[] = [
       try {
         const db = await getDemoDb();
         const update = body as Parameters<typeof updateProject>[2];
-        assertDemoCiServerTarget(update);
+        assertDemoCiActions(update);
         const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
-        const project = await updateProject(db, +m[1]!, { ...update, ciServerToken });
+        // As the server: store the normalized actions (a value with no `actions` list converts to actions).
+        const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
+        const project = await updateProject(db, +m[1]!, { ...update, ciRerun, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -1343,11 +1346,16 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/projects\/(\d+)\/ci-server-check$/,
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/([^/]+)\/check$/,
     permission: 'project:manage',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return demoCiServerCheck(body as { ciServer?: unknown } | null);
+      return demoCiActionCheck(
+        await getDemoDb(),
+        +m[1]!,
+        decodeURIComponent(m[2]!),
+        body as { action?: unknown } | null,
+      );
     },
   },
   {
@@ -2035,9 +2043,18 @@ const routes: RouteEntry[] = [
     // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     permission: 'run:control',
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return demoRerunCluster(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
+      const action = (b as { action?: unknown } | null)?.action;
+      if (action != null && (typeof action !== 'string' || action.length > 100)) {
+        throw demoHttpError(400, 'action must be a CI action id or name');
+      }
+      return demoRerunCluster(
+        await getDemoDb(),
+        +m[1]!,
+        ctx?.actingUserId ?? null,
+        typeof action === 'string' && action.trim() ? action.trim() : null,
+      );
     },
   },
   {

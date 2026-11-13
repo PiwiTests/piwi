@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'CI re-run availability for an execution',
     description:
-      "Whether this execution's test can be re-run in CI (feature enabled, a target configured for the repository's provider, a token present), with a reason when it cannot, plus its cluster's id and most recent dispatch.",
+      "Whether this execution's test can be re-run in CI (feature enabled, a CI action that re-runs tests for the repository's provider, a token present), with a reason when it cannot, the CI action that would run, plus its cluster's id and most recent dispatch.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },

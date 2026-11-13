@@ -9,8 +9,10 @@
  *   and no redirect is followed.
  * - The instance token goes only with a preset's request, whose shape the preset
  *   fixes (Jenkins: a job's `buildWithParameters`, and the read of the job's
- *   parameters Check sends). A Custom request carries the project's own token or
- *   none.
+ *   parameters Check sends), and with no action input except the names in
+ *   `PIWI_CI_SERVER_ALLOWED_INPUTS`: a project admin chooses an input, so one the
+ *   operator did not list never rides on the instance's credential. A Custom
+ *   request carries the project's own token or none.
  * - A private address is reached only on a place the operator named (the host
  *   and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS`),
  *   or on the desktop app. Any other host must resolve to public addresses only, checked when the
@@ -60,6 +62,16 @@ export function instanceCiServer(): { url: string | null; credential: CiServerCr
   const token = process.env.PIWI_CI_SERVER_TOKEN?.trim();
   const user = process.env.PIWI_CI_SERVER_USER?.trim() || null;
   return { url, credential: url && token ? { url, user, token } : null };
+}
+
+/** The input names an action may send on a request that carries the instance credential: `PIWI_CI_SERVER_ALLOWED_INPUTS`, none by default. */
+export function instanceAllowedInputs(): Set<string> {
+  return new Set(
+    (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
 }
 
 /** A URL's host name, lowercased and without IPv6 brackets, and its port (the scheme's default when absent). */
@@ -180,6 +192,8 @@ export interface OutgoingCiRequest {
   body: string | null;
   /** Which credential the request carries. */
   credential: 'project' | 'instance' | null;
+  /** The action inputs left off because the request carries the instance credential and the operator did not list them. */
+  droppedInputs: string[];
 }
 
 /**
@@ -193,6 +207,8 @@ export function prepareCiServerRequest(input: {
   kind: 'rerun' | 'flakeLab';
   baseUrl: string;
   values: CiTemplateValues;
+  /** An action's inputs, sent beside the template's own fields. */
+  inputs?: Record<string, string>;
   projectToken: { url: string; token: string } | null;
   instanceCredential: CiServerCredential | null;
 }): OutgoingCiRequest {
@@ -201,9 +217,19 @@ export function prepareCiServerRequest(input: {
     throw new Error(
       input.kind === 'flakeLab' ? 'No Flake Lab request is configured' : 'No re-run request is configured',
     );
-  const rendered = renderCiRequest(input.baseUrl, spec.template, input.values);
+  const inputs = Object.entries(input.inputs ?? {});
+  let rendered = renderCiRequest(input.baseUrl, spec.template, input.values, inputs);
   const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
   const credential = credentialFor(rendered.url, [project, instance]);
+  let droppedInputs: string[] = [];
+  if (credential && credential === instance && spec.auth !== 'none' && inputs.length > 0) {
+    const allowed = instanceAllowedInputs();
+    const kept = inputs.filter(([name]) => allowed.has(name));
+    if (kept.length < inputs.length) {
+      droppedInputs = inputs.filter(([name]) => !allowed.has(name)).map(([name]) => name);
+      rendered = renderCiRequest(input.baseUrl, spec.template, input.values, kept);
+    }
+  }
   const headers: Record<string, string> = {};
   const setHeader = (name: string, value: string) => {
     for (const key of Object.keys(headers)) if (key.toLowerCase() === name.toLowerCase()) delete headers[key];
@@ -220,6 +246,7 @@ export function prepareCiServerRequest(input: {
     headers,
     body: rendered.body?.text ?? null,
     credential: !credential || !auth ? null : credential === project ? 'project' : 'instance',
+    droppedInputs,
   };
 }
 
@@ -309,6 +336,7 @@ export async function dispatchToCiServer(
   target: CiServerTarget,
   kind: 'rerun' | 'flakeLab',
   values: CiTemplateValues,
+  inputs: Record<string, string> = {},
 ): Promise<CiServerDispatchResult> {
   const baseUrl = ciServerBaseUrl(target);
   const problem = ciServerBaseUrlProblem(baseUrl);
@@ -318,6 +346,7 @@ export async function dispatchToCiServer(
     kind,
     baseUrl,
     values,
+    inputs,
     projectToken: await projectCiServerToken(db, projectId),
     instanceCredential: instanceCiServer().credential,
   });
@@ -366,6 +395,7 @@ export function prepareCiServerCheck(input: {
     headers,
     body: null,
     credential: !credential || !auth ? null : credential === project ? 'project' : 'instance',
+    droppedInputs: [],
   };
 }
 
@@ -399,6 +429,7 @@ export async function checkCiServerTarget(
   db: DbClient,
   projectId: number,
   target: CiServerTarget,
+  inputNames: string[] = [],
 ): Promise<CiServerCheckResult[]> {
   const baseUrl = ciServerBaseUrl(target);
   const problem = ciServerBaseUrlProblem(baseUrl);
@@ -410,13 +441,16 @@ export async function checkCiServerTarget(
   const projectToken = await projectCiServerToken(db, projectId);
   const instanceCredential = instanceCiServer().credential;
   const results: CiServerCheckResult[] = [];
-  for (const plan of ciServerCheckPlans(target, baseUrl)) {
+  for (const plan of ciServerCheckPlans(target, baseUrl, inputNames)) {
     if ('error' in plan) {
       results.push({ kind: plan.kind, ok: false, missing: [], message: plan.error });
       continue;
     }
     try {
       const request = prepareCiServerCheck({ target, url: plan.url, projectToken, instanceCredential });
+      // A request with the instance credential sends only the listed inputs, so the job need declare only those.
+      const allowed = request.credential === 'instance' ? instanceAllowedInputs() : null;
+      const notSent = allowed ? inputNames.filter((name) => !allowed.has(name)) : [];
       const answer = await sendCiServerRequest(request);
       if (answer.status < 200 || answer.status >= 300) {
         results.push({
@@ -427,7 +461,21 @@ export async function checkCiServerTarget(
         });
         continue;
       }
-      results.push(ciServerCheckFinding(plan, parseJson(answer.text)));
+      const finding = ciServerCheckFinding(
+        notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
+        parseJson(answer.text),
+      );
+      results.push(
+        notSent.length === 0
+          ? finding
+          : {
+              ...finding,
+              ok: false,
+              message:
+                `${finding.message} Not sent: ${notSent.join(', ')}, because this request carries the instance credential ` +
+                'and the operator did not list the input in PIWI_CI_SERVER_ALLOWED_INPUTS.',
+            },
+      );
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       results.push({

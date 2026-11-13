@@ -361,7 +361,27 @@ describe('rerun_cluster_in_ci', () => {
       args: 'tests/cart.spec.ts',
       dispatchedAt: '2026-10-02T00:00:00.000Z',
     });
-    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin' });
+    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin' }, { actionId: undefined });
+  });
+
+  test('runs the CI action the agent names and reports its id', async () => {
+    rerun.fn.mockResolvedValue({
+      ok: true,
+      dispatch: {
+        provider: 'github',
+        url: 'https://github.com/acme/shop/actions',
+        args: 'tests/cart.spec.ts',
+        at: Date.UTC(2026, 9, 2),
+        actionId: 'smoke-staging',
+      },
+    });
+    const result = (await tool('rerun_cluster_in_ci')(
+      db as never,
+      { clusterId: 1, action: ' Smoke · staging ' },
+      maintainer,
+    )) as { actionId: string };
+    expect(result.actionId).toBe('smoke-staging');
+    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin' }, { actionId: 'Smoke · staging' });
   });
 
   test('passes on why the re-run is not available', async () => {
