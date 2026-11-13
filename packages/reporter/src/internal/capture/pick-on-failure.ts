@@ -9,7 +9,6 @@ import {
   generateAnchoredAlternatives,
   mergeCandidates,
   type PickedAnchorInfo,
-  type PickedLeafInfo,
   type PickerOverlayArg,
   type ProbeArg,
   type ProbedAttrs,
@@ -53,7 +52,7 @@ import {
  * Re-exported here so existing importers keep importing them from this module.
  */
 export { installPickerOverlay, showAnchorPicker, showPickerChoices, generateAnchoredAlternatives, mergeCandidates };
-export type { PickedAnchorInfo, PickedLeafInfo };
+export type { PickedAnchorInfo };
 
 /**
  * The probe dependency, passed in by the capture fixture to avoid an import

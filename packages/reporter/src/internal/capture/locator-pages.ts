@@ -9,8 +9,8 @@
  * "On arrival" says no locator interaction happened on the page since its last
  * main-frame navigation, so the element was there as the page loaded rather
  * than after the test opened a menu or a dialog. The count lives per page, so
- * the capture fixtures and the dogfood fixtures share it through
- * {@link noteNavigation} and {@link noteLocatorCall}.
+ * the capture fixtures keep it through {@link noteNavigation} and
+ * {@link noteLocatorCall}.
  */
 import { pageKey } from '@piwitests/core/page-key';
 import type { LocatorPageUse } from '@piwitests/core/wire';
