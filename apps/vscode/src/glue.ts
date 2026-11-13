@@ -603,7 +603,7 @@ export interface FailureNode {
   children: FailureNode[];
 }
 
-/** The codicon of each icon of the service's tree. */
+/** The codicon of each icon of the service's tree, as the JetBrains plugin's `PiwiIcons.FAILURE_NODES` draws it. */
 const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   context: 'root-folder',
   run: 'beaker',
@@ -611,7 +611,7 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   failed: 'error',
   passed: 'pass',
   file: 'file',
-  cluster: 'symbol-namespace',
+  cluster: 'layers',
   owner: 'person',
   failing: 'error',
   edited: 'edit',
@@ -849,6 +849,7 @@ export const VERDICT_ACTIONS = {
   dashboard: 'Open in dashboard',
   rerun: 'Re-run failing',
   onlyOnFailure: 'Only on failure',
+  settings: 'Settings',
 } as const;
 
 /** Titles as a verdict lists them: the first ones, then how many more. */
@@ -860,7 +861,8 @@ function titleList(titles: string[], count: number): string {
 /**
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`.
+ * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`; each
+ * last with **Settings**, which opens `piwi.runNotifications`.
  * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
  * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
@@ -902,6 +904,7 @@ export function runVerdict(
       VERDICT_ACTIONS.dashboard,
       ...(failing ? [VERDICT_ACTIONS.rerun] : []),
       ...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []),
+      VERDICT_ACTIONS.settings,
     ],
   };
 }

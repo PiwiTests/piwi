@@ -33,7 +33,7 @@ export type ControlIcon =
   | 'pick'
   | 'record'
   | 'check-circle'
-  | 'layers'
+  | 'viewport'
   | 'network'
   | 'pause';
 
@@ -59,7 +59,7 @@ export const CONTROLS = {
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick', tone: 'ghost' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record', tone: 'ghost' },
   assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle', tone: 'ghost' },
-  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'layers', tone: 'ghost' },
+  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'viewport', tone: 'ghost' },
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<Control, ControlLook>;

@@ -121,7 +121,7 @@ export const DESKTOP_RUN_ICONS: Record<WorkerIcon | ControlIcon, string> = {
   pick: 'i-lucide-crosshair',
   record: 'i-lucide-circle-dot',
   'check-circle': 'i-lucide-circle-check',
-  layers: 'i-lucide-layers',
+  viewport: 'i-lucide-scan',
   network: 'i-lucide-arrow-down-up',
 };
 

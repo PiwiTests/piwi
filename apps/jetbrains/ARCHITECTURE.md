@@ -254,6 +254,9 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
   above its tree, and the header line counts them.
+- **Each node's glyph** is the one `PiwiIcons.FAILURE_NODES` gives its icon key, the table VS Code's `FAILURE_ICONS`
+  draws too (a cluster Lucide's `layers`, `icons/layers.svg`; an owner `General.User`; a spec a file), which
+  `PiwiPluginTest` holds to the protocol's `FailureTreeIcon` keys.
 - **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
   as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
   session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.

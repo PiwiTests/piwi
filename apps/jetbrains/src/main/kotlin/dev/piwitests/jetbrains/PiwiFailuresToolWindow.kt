@@ -470,16 +470,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         ) {
             val node = nodeOf(value) ?: return
             toolTipText = node.tooltip.takeIf { it.isNotEmpty() }?.let { Glue.htmlTooltip(it.joinToString("\n")) }
-            icon = when (node.icon) {
-                "context" -> AllIcons.Nodes.Module
-                "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
-                "edited" -> AllIcons.General.Information
-                "failing", "failed" -> PiwiIcons.FAILED
-                "file", "cluster", "owner" -> AllIcons.Nodes.Folder
-                "history" -> AllIcons.Vcs.History
-                "flaky" -> PiwiIcons.FLAKY
-                else -> AllIcons.RunConfigurations.TestState.Run
-            }
+            icon = PiwiIcons.FAILURE_NODES[node.icon]
             append(node.label)
             val failure = node.failure
             if (failure == null) {

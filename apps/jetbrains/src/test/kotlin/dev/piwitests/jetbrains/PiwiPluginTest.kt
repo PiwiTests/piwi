@@ -1,6 +1,7 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.util.Disposer
@@ -170,6 +171,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals("Open run #78", shown.text)
         // With no page named and no run of this project, there is nothing to open.
         assertFalse(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.OpenRunPage")).isEnabled)
+    }
+
+    fun testEveryIconKeyOfTheFailuresTreeHasItsGlyph() {
+        // The keys the editor service sends (`FailureTreeIcon`), each drawn, and none drawn that it never sends.
+        val protocol = java.io.File("../../packages/editor/src/protocol.ts").readText()
+        val union = Regex("export type FailureTreeIcon =([^;]+);").find(protocol)!!.groupValues[1]
+        val keys = Regex("'([a-z-]+)'").findAll(union).map { it.groupValues[1] }.toSet()
+        assertEquals(keys, PiwiIcons.FAILURE_NODES.keys)
+        // Each grouping draws what it groups: a cluster, a person, a file, never a folder.
+        assertSame(PiwiIcons.CLUSTER, PiwiIcons.FAILURE_NODES["cluster"])
+        assertFalse(listOf("file", "cluster", "owner").any { PiwiIcons.FAILURE_NODES[it] == AllIcons.Nodes.Folder })
     }
 
     /**

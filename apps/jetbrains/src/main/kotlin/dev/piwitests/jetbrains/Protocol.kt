@@ -565,7 +565,7 @@ data class FailuresOverlay(
  * `description` is a context's project and counts, a group's counts or a failure's place, after which a client adds the
  * age of `startTime` (a run's); `tooltip` its lines, plain text; `note` what a failure says about its run when that is
  * not the tree's run failing as it stands; `icon` one of `context`, `run`, `history`, `failed`, `passed`, `file`,
- * `cluster`, `owner`, `failing`, `edited`, `fixed`; `expanded` whether a node with children opens expanded; `url` the
+ * `cluster`, `owner`, `failing`, `edited`, `fixed`, `flaky`; `expanded` whether a node with children opens expanded; `url` the
  * page a run opens (a context's run too); `executionId` a failure's item in `FailuresResult.items`; `root`, on a
  * `context` node and a `run` node, the Playwright config's folder whose failures Re-run the failing tests runs from them
  * and whose baseline Compare with… chooses.
