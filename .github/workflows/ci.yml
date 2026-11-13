@@ -322,7 +322,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -368,6 +368,10 @@ jobs:
       - name: Typecheck the dashboard
         working-directory: apps/application
         run: npm run app:typecheck
+
+      - name: Typecheck the dashboard's tests
+        working-directory: apps/application
+        run: npm run app:typecheck:tests
 
       # Only the dashboard's install prepares its `.nuxt`; the Runner's window typecheck reads its own.
       - name: Prepare the Runner window
