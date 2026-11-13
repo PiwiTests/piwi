@@ -52,6 +52,24 @@ test.describe('showPauseBar', () => {
     expect(await page.evaluate(takePauseState)).toBe('record');
   });
 
+  test('draws its glyphs at their own size and color whatever the page styles an svg with', async ({ page }) => {
+    await page.setContent(
+      '<!doctype html><html><head><style>svg{width:100%;height:auto} svg path{fill:red;stroke:none}</style></head>' +
+        '<body></body></html>',
+    );
+    await page.evaluate(showPauseBar, ARG);
+    const glyphs = page.getByRole('toolbar', { name: 'Piwi: test paused' }).locator('svg[data-piwi-glyph]');
+    for (const box of await glyphs.evaluateAll((all) => all.map((svg) => svg.getBoundingClientRect()))) {
+      expect([box.width, box.height]).toEqual([14, 14]);
+    }
+    const pick = glyphs.and(page.locator('[data-piwi-glyph="pick"]')).locator('path').first();
+    expect(await pick.evaluate((path) => [getComputedStyle(path).fill, getComputedStyle(path).stroke])).toEqual([
+      'none',
+      'rgb(243, 244, 246)',
+    ]);
+    await page.evaluate(takePauseState);
+  });
+
   test('offers End the test only where the test can end there, and never at a failure', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });

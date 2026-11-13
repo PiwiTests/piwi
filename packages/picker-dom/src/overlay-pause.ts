@@ -106,36 +106,27 @@ export function showPauseBar(arg: PauseBarArg): void {
   // Each control's glyph on a 16 × 16 grid, drawn with the text's color: a stroke, or `fill:` for a filled shape.
   const glyphs: Record<string, string[]> = {
     resume: ['fill:M5 3.2v9.6l7.5-4.8z'],
-    step: [
-      'M2.8 10.5a5.2 5.2 0 0 1 9.6-2.9',
-      'M12.8 4.3v3.6H9.2',
-      'fill:M7 12.8a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0z',
-    ],
-    finish: ['M8 10V2.8', 'M4.8 6l3.2-3.2L11.2 6', 'fill:M6.9 13a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0z'],
+    step: ['M3 9.5a5 5 0 0 1 10 0', 'M11 7.7l2 2 2-2', 'fill:M6.9 13a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0z'],
+    finish: ['M8 11V3', 'M5 6l3-3 3 3', 'M4 13.5h8'],
     end: ['M2.5 8a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0z', 'M4.1 4.1l7.8 7.8'],
-    pick: ['M4 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0z', 'M8 1v2.5', 'M8 12.5V15', 'M1 8h2.5', 'M12.5 8H15'],
+    pick: ['M2.5 8a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0z', 'fill:M6.5 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0z'],
     record: ['fill:M3.5 8a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0z'],
   };
   const SVG = 'http://www.w3.org/2000/svg';
   const glyph = (choice: string) => {
     const svg = doc.createElementNS(SVG, 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('data-piwi-glyph', choice);
-    svg.style.cssText = 'flex:none;display:block;';
+    // Inline styles, as the bar's other elements have, so that no rule of the page sizes or paints the glyph.
+    svg.style.cssText = 'flex:none;display:block;width:14px;height:14px;margin:0;padding:0;overflow:visible;';
     for (const part of glyphs[choice] ?? []) {
       const path = doc.createElementNS(SVG, 'path');
       const filled = part.startsWith('fill:');
       path.setAttribute('d', filled ? part.slice(5) : part);
-      path.setAttribute('fill', filled ? 'currentColor' : 'none');
-      if (!filled) {
-        path.setAttribute('stroke', 'currentColor');
-        path.setAttribute('stroke-width', '1.5');
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-linejoin', 'round');
-      }
+      path.style.cssText = filled
+        ? 'fill:currentColor;stroke:none;'
+        : 'fill:none;stroke:currentColor;stroke-width:1.5px;stroke-linecap:round;stroke-linejoin:round;';
       svg.appendChild(path);
     }
     return svg;
