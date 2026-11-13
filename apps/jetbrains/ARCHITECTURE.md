@@ -282,18 +282,19 @@ registered `Piwi.Failure.*` actions (`FailureNodeAction`, the `Piwi.FailureActio
   `Glue.FailureNode.root`);
 - on a run's node: choose its baseline and open its run.
 
-**Icons.** Every action of `plugin.xml` draws a platform icon from the concept table of
-[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), one that has
-a New UI glyph on 2024.1 and 2026.3 (checked by hand against each `PlatformIconMappings.json`). The exceptions are the
-two toggles, whose menu rows show a check mark; the record actions' `Ide.Macro.Recording_1`, which waits for Piwi's
-record glyph; and the actions that wait for a glyph of their own: Disconnect, Pair, Pause and Watch, Assert a region,
-Mock a request, Share the run live, Stop sharing, and the four no mapped platform icon says (Run the tests that reach
-this file, Reset the runs' MCP server token, Show the stopped test's browser, Share with Playwright tools). The icons
-drawn in code come from `PiwiIcons`: the flaky mark (`FLAKY`, Piwi's shuffle on the outcome palette's flaky color, held
-to `STATUS_COLORS` by `status-mark-colors.test.ts`) on the result icon and the CI run tab, the failed mark (`TestError`)
-on the result icon, the status item, the tree and a held failure, Open in dashboard's external link, the hand-offs of
-this menu (an archive, an image, a desktop, a branch) and the stop's code actions in its popups. `PiwiPluginTest` holds
-both lists.
+**Icons.** Every action of `plugin.xml` draws its concept's glyph from the concept table of
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft): a platform
+icon that has a New UI glyph on 2024.1 and 2026.3 (checked by hand against each `PlatformIconMappings.json`), or, where
+no mapped platform icon says the concept, one Piwi draws in `src/main/resources/icons/` (16 px, 1 px strokes in the New
+UI's `#6C707E`, with a `_dark` copy in `#CED0D6`): Connect, Disconnect, Pair, Pause and watch, Assert a region, Mock a
+request, Share live and Stop sharing, Run the tests that reach this file, Reset the runs' MCP server token, Show the
+stopped test's browser, Share with Playwright tools and a CI run. The exceptions are the two toggles, whose menu rows
+show a check mark. The icons drawn in code come from `PiwiIcons`: the flaky and running marks (Piwi's, on the outcome
+palette, held to `STATUS_COLORS` by `status-mark-colors.test.ts`) on the result icon and the CI run tab, the failed mark
+(`TestError`) on the result icon, the status item, the tree and a held failure, Connect and Share live on the status
+item, Open in dashboard's external link, a CI run's cloud, the hand-offs of this menu (an archive, an image, a desktop,
+a branch) and the stop's code actions in its popups. `PiwiPluginTest` checks that every action but the toggles has one,
+that each of Piwi's resolves to a file, and lists the actions that share a glyph.
 
 **Re-run the failing tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
@@ -323,7 +324,8 @@ reference.
 The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel`, since the
 platform's text presentations take no color. It shows:
 
-- an icon (`Glue.StatusIcon`): the plugin's, an `AllIcons` icon for the connection and for a failing or passed run,
+- an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
+  instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared,
   `AnimatedIcon.Default` for a run in progress or a read;
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) while tests of the run it counts fail,
   a run in progress by its own failures (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's

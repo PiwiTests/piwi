@@ -126,6 +126,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for ((action, id) in registered) assertEquals(id, glyph(PiwiIcons.stopAction(action)), glyph(actions.getAction(id).templatePresentation.icon))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
         assertEquals(glyph(PiwiIcons.CONNECT), glyph(actions.getAction("Piwi.Connect").templatePresentation.icon))
+        // Each glyph Piwi draws is a file of the plugin, with its dark copy.
+        for (id in ids.filter { it !in toggles }) {
+            val path = glyph(actions.getAction(id).templatePresentation.icon)
+            if (!path.startsWith("icons/")) continue
+            assertNotNull(id, PiwiIcons::class.java.getResource("/$path"))
+            assertNotNull(id, PiwiIcons::class.java.getResource("/${path.removeSuffix(".svg")}_dark.svg"))
+        }
         // The actions that share a glyph are one concept.
         val concepts = setOf(
             setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
@@ -152,7 +159,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     /** The resource an icon is loaded from, however it was asked for: `icons/region.svg`. */
     private fun glyph(icon: javax.swing.Icon?): String =
-        icon.toString().substringAfter("path=").takeWhile { it !in ",])" }.removePrefix("/")
+        icon.toString().substringAfterLast("path=").takeWhile { it !in ",])" }.removePrefix("/")
 
     /** A popup's registered action updates with what the popup is about: a run page's row is enabled for its page. */
     fun testAPopupsRegisteredActionUpdatesWithItsData() {

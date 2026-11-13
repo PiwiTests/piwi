@@ -2392,7 +2392,12 @@ describe('the CI runs of the branch', () => {
     });
     expect(run!.tooltip).toContain('Read-only');
     const [open, running, failed] = run!.children;
-    expect(open).toMatchObject({ label: 'Open run #78', open: { url: 'https://piwi.example/test-runs/78' } });
+    // The run pages' globe, as Open the run page draws it.
+    expect(open).toMatchObject({
+      label: 'Open run #78',
+      icon: 'globe',
+      open: { url: 'https://piwi.example/test-runs/78' },
+    });
     expect(running).toMatchObject({
       label: 'checkout › pays',
       description: "chromium · worker 2 · Click getByRole('button')",

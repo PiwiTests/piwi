@@ -864,7 +864,8 @@ The spec URIs the service answers are spelled as VS Code spells a document's (`a
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
 has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
 carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
-(`flakyMark`). With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed ring. The
+(`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
+its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed ring. The
 API `activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect

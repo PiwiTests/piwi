@@ -33,11 +33,12 @@ through one `PiwiIcons.outcome`. Q26, IC7 and Q9 in part: the JetBrains plugin d
 the 13 actions that had none, Connect's plug and a CI run's cloud, its status item a shared run with Share live's
 broadcast; VS Code's Run the tests that reach this file and 'Piwi: unreachable' leave the glyphs of the Piwi mark and
 Disconnect, and its CI lists open a run with the run pages' globe; `menus.test.ts` and `PiwiPluginTest` fail on a glyph
-two concepts share but those they list (NF1). §14 adds the findings the code that built the plan raised. The live-run
-study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names,
-and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and
-the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+two concepts share but those they list (NF1). M20 in part: VS Code's Testing view shows each test's average duration,
+quarantine, Playwright tags and owner, from the catalog through `SpecTest` (TL20). §14 adds the findings the code that
+built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each
+but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns
+where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and
+its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -317,7 +318,7 @@ one wording per action, from the action catalog both manifests are tested agains
 | Assert | Assert in the stopped test's page | Assert at the Stop | Assert at stop |
 | Region | Assert a region of the stopped test's page | Assert a Region at the Stop | Assert region at stop |
 | Mock | Mock a request of the stopped test | Mock a Request at the Stop | Mock at stop… |
-| Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
+| Connect | Connect | Connect… | Connect… |
 | Settings | Open settings | Settings… | Settings… |
 
 <a id="ac9"></a>**AC9. Record here names two different actions on a paused line, and inside JetBrains each stop control
@@ -483,12 +484,10 @@ test tree comes only with its Playwright runner, off by default and never offere
 ([editor-extensions-audit.md](../adr/editor-extensions-audit.md) §6.4), and give other runs an SMTRunner console fed by
 the run channel's test events. Local progress is [LR9](#lr9). ([L2](#l2), [LI8](#li8))
 
-<a id="tl20"></a>**TL20. VS Code's Testing view shows no durations and no tag but flaky: a CI run's header reads "5/7
-1.0ms", and Playwright's tags, quarantined and owner never show.** Results are published with no duration
-(`apps/vscode/src/test-explorer.ts:347-377`), `testItemExtras` gives only a flaky description and tag
-(`apps/vscode/src/glue.ts:1658-1660`), and `SpecTest` has no duration or tags
-(`packages/editor/src/protocol.ts:178-195`). **(read)** Fix: durations, and `TestTag`s for Playwright's tags,
-quarantined and owner, from `SpecTest`. ([M20](#m20), [LI8](#li8))
+<a id="tl20"></a>**TL20. VS Code's Testing view publishes its results with no duration: a CI run's header reads "5/7
+1.0ms".** Results are published with none (`apps/vscode/src/test-explorer.ts:347-377`), as `SpecTest` carries only a
+test's average over its recent runs (`durationMs`), which its item shows beside its title with its tags, owner and
+quarantine. **(read)** Fix: each result's own duration, from the run it comes from. ([M20](#m20), [LI8](#li8))
 
 ### 5.8 A test card
 
@@ -1323,7 +1322,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m18"></a>M18 | **A flaky group in both failures trees**, selected from the flaky row of the status popup and the status menu | `ide` | [HM10](#hm10) |
-| <a id="m20"></a>M20 | **Piwi's per-test data in VS Code's Testing view**: durations, and the Playwright, owner and quarantine tags beside the flaky one | `ide` | [TL20](#tl20) |
+| <a id="m20"></a>M20 | **Each result's own duration in VS Code's Testing view**, from the run it comes from | `ide` | [TL20](#tl20) |
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
@@ -1485,7 +1484,7 @@ such action.
 
 | Concept | Dashboard and desktop (lucide) | Piwi Picker (ICONS key) | VS Code (codicon or `$(piwi-*)`) | JetBrains (AllIcons or plugin SVG) |
 |---|---|---|---|---|
-| Connect | `plug` | `plug` | `$(plug)` | `connect.svg` (new) |
+| Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg` (new) |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` (new) |

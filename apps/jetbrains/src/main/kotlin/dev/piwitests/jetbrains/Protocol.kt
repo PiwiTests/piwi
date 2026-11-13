@@ -81,7 +81,8 @@ data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean?
 
 /**
  * A test of a spec as it stands: its title and describe blocks, the 0-based lines of its `test(…)` call, its location
- * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed.
+ * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed, its tags, owner
+ * and quarantine, and its average duration.
  */
 data class SpecTest(
     val title: String? = null,
@@ -93,6 +94,10 @@ data class SpecTest(
     val status: String? = null,
     val failure: TestFailure? = null,
     val url: String? = null,
+    val tags: List<String>? = null,
+    val owner: String? = null,
+    val quarantined: Boolean = false,
+    val durationMs: Long? = null,
 )
 
 /** The tests of one spec, `file` relative to its Playwright config's folder. */

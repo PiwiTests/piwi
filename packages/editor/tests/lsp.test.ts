@@ -375,7 +375,15 @@ beforeAll(async () => {
       return res.end(
         JSON.stringify({
           items: [
-            { id: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed' },
+            {
+              id: 1,
+              title: 'pays',
+              filePath: 'tests/checkout.spec.ts',
+              status: 'passed',
+              tags: ['@smoke'],
+              owner: 'ada',
+              avgDuration: 1234.4,
+            },
             { id: 3, title: 'removes a row', filePath: 'shop/tests/rows.spec.ts', status: 'failed' },
             { id: 9, title: 'was deleted', filePath: 'tests/gone.spec.ts', status: 'passed' },
           ],
@@ -1669,6 +1677,11 @@ describe('the test tree', () => {
                   status: 'passed',
                   failure: null,
                   url: `${url}/test-cases/1`,
+                  // The catalog's tags, owner and average duration, and the project's quarantine.
+                  tags: ['@smoke'],
+                  owner: 'ada',
+                  quarantined: true,
+                  durationMs: 1234,
                 },
               ],
             },
@@ -1728,6 +1741,10 @@ describe('the test tree', () => {
             status: null,
             failure: null,
             url: null,
+            tags: [],
+            owner: null,
+            quarantined: false,
+            durationMs: null,
           },
         ],
       },

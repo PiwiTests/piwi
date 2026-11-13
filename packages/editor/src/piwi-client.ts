@@ -87,6 +87,11 @@ export interface CatalogCase {
   passedRuns?: number;
   failedRuns?: number;
   flakyRuns?: number;
+  /** Its Playwright tags (`@smoke`) and its `piwi:owner` annotation. */
+  tags?: string[] | null;
+  owner?: string | null;
+  /** Its average duration over its recent runs, in ms. */
+  avgDuration?: number | null;
 }
 
 /** The stored alternatives of one call site. */

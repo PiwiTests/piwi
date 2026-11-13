@@ -3434,6 +3434,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           status,
           failure: failure ?? null,
           url: found ? (context.client?.testUrl(found.id) ?? null) : null,
+          tags: found?.tags?.filter((tag) => typeof tag === 'string') ?? [],
+          owner: found?.owner?.trim() || null,
+          quarantined: found ? context.quarantined.has(found.id) : false,
+          durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
         }),
       );
       specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);
