@@ -24,6 +24,14 @@ the screen without scrolling the page; only the list of tests scrolls.
 Only the final attempt of a test is listed. A test that has no video stays on the checklist and takes a small block on
 the bar. It is ticked as the reel moves on. The tab is off while the run is live.
 
+## Search the checklist
+
+The box above the checklist finds tests by their title, the way the **Tests** tab's search reads words (case and accents
+ignored, `"…"` for a phrase, `*` for anything, `-` to leave a word out). The list keeps the tests that match, with the
+matched words marked, and the line above it says how many match. Searching only hides rows: the video, the bar, the
+ticks and the marks stay as they were, and a click on a test still jumps there. The search stays when you pick
+another worker or group by file. The **x** in the box clears it.
+
 ## Open a video review from Evidence
 
 On a finished execution that has a video, the Evidence header has an **Open video review** button, beside **Open trace**.

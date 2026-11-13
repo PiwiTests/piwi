@@ -3,10 +3,15 @@
  * One reel of the Video tab: the video on show, the bar with a block for each test, and the checklist of the tests.
  * The reel's playing is `useReelPlayer`. The Evidence's video review plays a reel around one test: that test is tagged
  * (`focusId`), the playhead starts at it (`startIndex`), and tests listed only for context are dimmed and not played.
+ *
+ * On the Video tab (`searchable`) a box above the checklist searches the tests' titles the way the Tests tab does. It
+ * only hides rows: each row keeps its index in the reel, so playing, the ticks and the bar never change with it. The
+ * Video tab holds the search (`v-model:search`), so it stays when the tab shows another worker or groups by file.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
 import { statusPalette } from '@piwitests/run-ui/status-palette';
+import { REEL_SEARCH_FIELDS, reelSearchCount, searchReelEntries } from '~/utils/video-reel-search';
 
 const props = defineProps<{
   reel: Reel;
@@ -15,6 +20,8 @@ const props = defineProps<{
   focusId?: number | null;
   /** The entry the playhead starts at; the reel's first video when none. */
   startIndex?: number | null;
+  /** A search box above the checklist (the Video tab). */
+  searchable?: boolean;
 }>();
 
 const player = useReelPlayer(toRef(props, 'reel'), toRef(props, 'startIndex'));
@@ -46,6 +53,8 @@ const hasContext = computed(() => props.reel.entries.some((e) => e.context));
 /** The tests the reel plays; the others of a file are listed beside the one in focus. */
 const playedTotal = computed(() => props.reel.entries.filter((e) => !e.context).length);
 const contextTotal = computed(() => props.reel.entries.length - playedTotal.value);
+const search = defineModel<string>('search', { default: '' });
+const searched = computed(() => searchReelEntries(props.reel.entries, props.searchable ? search.value : ''));
 const isFocus = (entry: ReelEntry) => props.focusId != null && entry.execution.executionId === props.focusId;
 
 const bar = ref<HTMLElement | null>(null);
@@ -180,15 +189,32 @@ function blockLabel(entry: ReelEntry): string {
     </div>
 
     <div class="flex min-h-24 min-w-0 flex-1 flex-col lg:min-h-0 lg:flex-none">
-      <p v-if="hasContext" class="mb-1 shrink-0 text-xs text-muted tabular-nums">
+      <TestSearchInput
+        v-if="searchable"
+        v-model="search"
+        :fields="REEL_SEARCH_FIELDS"
+        :find-shortcut="false"
+        :suggest="false"
+        class="mb-2 shrink-0"
+      />
+      <p v-if="searched.highlights" class="mb-1 shrink-0 text-xs text-muted tabular-nums" aria-live="polite">
+        {{ reelSearchCount(searched.rows.length, reel.entries.length) }}
+      </p>
+      <p v-else-if="hasContext" class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         This test's video · {{ contextTotal }} other {{ contextTotal === 1 ? 'test' : 'tests' }} in its file, not played
       </p>
       <p v-else class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         {{ tickedCount }} of {{ playedTotal }} tests · {{ reel.videoCount }}
         {{ reel.videoCount === 1 ? 'video' : 'videos' }}
       </p>
-      <ul class="relative min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
-        <li v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
+      <EmptyState
+        v-if="searched.highlights && searched.rows.length === 0"
+        icon="i-lucide-search-x"
+        text="No tests match your search."
+        class="rounded-lg border border-default"
+      />
+      <ul v-else class="relative min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
+        <li v-for="{ entry, index: i } in searched.rows" :key="entry.execution.executionId">
           <button
             type="button"
             class="flex w-full items-start gap-2 px-3 py-2 text-left"
@@ -216,7 +242,7 @@ function blockLabel(entry: ReelEntry): string {
             }}</span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm text-highlighted">
-                {{ entry.execution.title }}
+                <SearchHighlight :text="entry.execution.title" :patterns="searched.highlights?.title" />
               </span>
               <span class="block text-xs text-muted">
                 <template v-if="isFocus(entry)">This test · </template>

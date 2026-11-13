@@ -6,6 +6,8 @@
  * an empty term lists the qualifiers the list knows, a qualifier lists the
  * values it can take, a word lists the qualifiers and values it starts or
  * contains. Ctrl+F (⌘F) focuses it; pressed again, the browser's find opens.
+ * The Video tab's checklist uses it for titles alone, with neither the
+ * completion list nor the shortcut.
  *
  * It only edits the text: the language, matching and highlighting live in
  * `#shared/test-search`.
@@ -30,8 +32,10 @@ const props = withDefaults(
     label?: string;
     /** Ctrl+F (⌘F) focuses the box. */
     findShortcut?: boolean;
+    /** The list of qualifiers and values opens under the box; off for a list that searches its titles alone. */
+    suggest?: boolean;
   }>(),
-  { values: null, placeholder: 'Search tests', label: 'Search tests', findShortcut: true },
+  { values: null, placeholder: 'Search tests', label: 'Search tests', findShortcut: true, suggest: true },
 );
 
 // The attributes a caller sets (class, data-shot) belong on the box, not on the popover root.
@@ -61,7 +65,9 @@ const hint = computed(() => {
   const def = testSearchFieldDef(field);
   return def.match === 'contains' ? def : null;
 });
-const open = computed(() => focused.value && !dismissed.value && (suggestions.value.length > 0 || hint.value !== null));
+const open = computed(
+  () => props.suggest && focused.value && !dismissed.value && (suggestions.value.length > 0 || hint.value !== null),
+);
 const listingQualifiers = computed(
   () => suggestions.value.length > 0 && suggestions.value.every((s) => s.kind === 'field'),
 );
@@ -227,10 +233,10 @@ function onOpenChange(value: boolean) {
           size="sm"
           class="w-full"
           :placeholder="placeholder"
-          role="combobox"
-          aria-autocomplete="list"
+          :role="suggest ? 'combobox' : undefined"
+          :aria-autocomplete="suggest ? 'list' : undefined"
           :aria-label="label"
-          :aria-expanded="open"
+          :aria-expanded="suggest ? open : undefined"
           :aria-controls="open ? listboxId : undefined"
           :aria-activedescendant="open && activeIndex >= 0 ? optionId(activeIndex) : undefined"
           autocomplete="off"
