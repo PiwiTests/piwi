@@ -218,6 +218,11 @@ describe('the failures tree', () => {
         browserName: 'chromium',
         retries: 1,
         url: 'http://piwi/test-run-cases/25',
+        rate: 'flaky 18%',
+        flakeLab: 'flaky 18% · reproduced by --repeat-each=10',
+        actions: [
+          { title: 'Open its Flakiness tab', command: 'piwi.openInDashboard' as const, arguments: ['http://piwi/f'] },
+        ],
       },
     ];
     const [run] = failureTree({ ...result, flaky }, 'file');
@@ -235,13 +240,18 @@ describe('the failures tree', () => {
         key: 'flaky:2\nchromium',
         kind: 'flaky',
         label: 'adds',
-        description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1',
-        tooltip: ['adds', 'Flaky: passed on retry 1 on chromium'],
+        description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1 · flaky 18%',
+        tooltip: [
+          'adds',
+          'Flaky: passed on retry 1 on chromium',
+          'Flake Lab: flaky 18% · reproduced by --repeat-each=10',
+        ],
         icon: 'flaky',
         expanded: false,
         url: 'http://piwi/test-run-cases/25',
         uri: 'file:///w/tests/cart.spec.ts',
         line: 2,
+        actions: flaky[0]!.actions,
         children: [],
       },
     ]);

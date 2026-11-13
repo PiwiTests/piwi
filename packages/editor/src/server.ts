@@ -74,6 +74,7 @@ import {
   callsLocatorsFrom,
   filePages,
   flakeLabLens,
+  flakeRateText,
   functionSnippet,
   functionSuggestions,
   headedCommand,
@@ -1299,6 +1300,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             const placeable = flakyPlaceable(f, run.id);
             const at = pass.place(context, placeable);
             if (!at || at.state === 'gone') return [];
+            const lab = flakeLabLines(context, f.testCaseId, at.line - 1, env, desktopJobs.available(context));
             return [
               {
                 testCaseId: f.testCaseId,
@@ -1309,6 +1311,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                 browserName: f.browserName,
                 retries: f.retries,
                 url: client.executionUrl(f.executionId),
+                rate: flakeRateText(context.flakeLab.get(f.testCaseId)?.flakeRate),
+                flakeLab: lab[0]?.title ?? null,
+                actions: lab.length
+                  ? lab.flatMap((l) => (l.command ? [l.command] : []))
+                  : [
+                      {
+                        title: 'Open its Flakiness tab',
+                        command: 'piwi.openInDashboard',
+                        arguments: [client.flakinessUrl(f.testCaseId)],
+                      },
+                    ],
               },
             ];
           })

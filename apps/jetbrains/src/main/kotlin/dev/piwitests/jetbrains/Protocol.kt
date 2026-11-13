@@ -585,6 +585,8 @@ data class FailureTreeNode(
     /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
     val uri: String? = null,
     val line: Int? = null,
+    /** On a flaky test: what looks into it, its Flakiness tab first, offered in its menu. */
+    val actions: List<PiwiCommand>? = null,
 )
 
 /** `piwi/failures`: `grouping` (`file`, `cluster`, `owner` or `flat`) is kept by the service for what it pushes after. */

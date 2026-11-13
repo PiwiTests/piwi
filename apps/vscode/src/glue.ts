@@ -11,6 +11,7 @@
  */
 import type {
   BaselineChoice,
+  PiwiCommand,
   ConnectionSource,
   CoverageResult,
   DesktopJobUpdate,
@@ -597,6 +598,8 @@ export interface FailureNode {
   failure?: WorkspaceFailure;
   /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
   place?: { uri: string; line: number };
+  /** On a flaky test: what looks into it, which **Look into this flake…** offers. */
+  actions?: PiwiCommand[];
   children: FailureNode[];
 }
 
@@ -651,6 +654,7 @@ export function failureNodes(
         ? { failure: failures.get(node.executionId)! }
         : {}),
       ...(node.uri !== undefined && node.line !== undefined ? { place: { uri: node.uri, line: node.line } } : {}),
+      ...(node.actions?.length ? { actions: node.actions } : {}),
       children: node.children.map(draw),
     };
   };

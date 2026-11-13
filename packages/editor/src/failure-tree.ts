@@ -191,15 +191,20 @@ function flakyGroup(flaky: FailuresFlaky[] | undefined): FailureTreeNode[] {
         key: `flaky:${f.testCaseId}\n${f.browserName ?? ''}`,
         kind: 'flaky' as const,
         label: f.title,
-        description: [`${f.file}:${f.line + 1}`, f.browserName, `passed on retry ${f.retries}`]
+        description: [`${f.file}:${f.line + 1}`, f.browserName, `passed on retry ${f.retries}`, f.rate]
           .filter(Boolean)
           .join(' · '),
-        tooltip: [f.title, `Flaky: passed on retry ${f.retries}${f.browserName ? ` on ${f.browserName}` : ''}`],
+        tooltip: [
+          f.title,
+          `Flaky: passed on retry ${f.retries}${f.browserName ? ` on ${f.browserName}` : ''}`,
+          ...(f.flakeLab ? [`Flake Lab: ${f.flakeLab}`] : []),
+        ],
         icon: 'flaky' as const,
         expanded: false,
         url: f.url,
         uri: f.uri,
         line: f.line,
+        actions: f.actions,
         children: [],
       })),
     },

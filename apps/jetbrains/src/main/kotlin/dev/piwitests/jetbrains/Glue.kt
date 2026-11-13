@@ -571,6 +571,8 @@ object Glue {
         /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
         val uri: String? = null,
         val line: Int? = null,
+        /** On a flaky test: what looks into it, its Flakiness tab first (`FailureTreeNode.actions`). */
+        val actions: List<PiwiCommand> = emptyList(),
     )
 
     /**
@@ -606,6 +608,7 @@ object Glue {
             tooltip = node.tooltip.orEmpty(),
             uri = node.uri,
             line = node.line,
+            actions = node.actions.orEmpty().filter { it.title != null && it.command != null },
         )
         return result?.tree.orEmpty().map { draw(it) }
     }

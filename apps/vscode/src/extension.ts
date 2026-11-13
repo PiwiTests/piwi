@@ -1409,6 +1409,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       desktopJobOf(target, 'reproduce'),
     ),
     vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
+    // A flaky test's Flakiness tab and the Flake Lab commands it can run, as the service lists them.
+    vscode.commands.registerCommand('piwi.lookIntoFlake', async (node?: FailureNode) => {
+      const actions = node?.actions ?? [];
+      if (!node || !actions.length) return;
+      const pick = await vscode.window.showQuickPick(
+        actions.map((action) => ({ label: action.title, action })),
+        { title: `Look into ${node.label}`, placeHolder: node.description },
+      );
+      if (pick) await vscode.commands.executeCommand(pick.action.command, ...(pick.action.arguments ?? []));
+    }),
     vscode.commands.registerCommand('piwi.runTestsForFile', async (target?: vscode.Uri) => {
       const uri = target?.toString() ?? activeUri();
       if (!uri || !connectedOrSay()) return;

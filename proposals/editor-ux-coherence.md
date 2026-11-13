@@ -38,25 +38,26 @@ waits in the pause bar's violet, Piwi Picker's Runs window counting failed and f
 line in fuchsia (`piwi.flakyForeground`) and the hover's flaky test with the word (IC4 in part). Q8: the Piwi tool
 window's header is one line, the connection a link to Settings (`3 Playwright configs` with several) and the baseline a
 link to Compare with…, the baseline in VS Code's failures view description too, and JetBrains' status popup offers one
-entry per page (HM12, HM3). M18 in part: both failures trees list the run's flaky tests under 'Flaky in this run', from
-a `flaky` list the instance's branch failures answer gains, each opening at its `test(…)` line, and VS Code's status
-tooltip and JetBrains' status popup open the group (**Show the run's flaky tests**, `piwi.showFlakyTests`,
-`Piwi.ShowFlakyTests`) (HM10 in part). Q16: VS Code's integration suite stops the editor service and starts it again
-through Restart the editor service (HM19 in part). Q29: Connect's failure words are one table in the editor service
-(`connect-failures.json`), which VS Code reads and `GlueTest` holds the JetBrains plugin's copy to, JetBrains gaining
-the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said (NF7). M6: the pause bar every headed
-stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20 in part: VS Code's Testing view shows each
-test's average duration, quarantine, Playwright tags and owner, from the catalog through `SpecTest` (TL20). §14 adds the
-findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
-P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
-lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
-live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+entry per page (HM12, HM3). M18: both failures trees list the run's flaky tests under 'Flaky in this run', from a
+`flaky` list the instance's branch failures answer gains, each opening at its `test(…)` line, saying Flake Lab's rate
+(`flaky 18%`) and offering its Flakiness tab and Flake Lab's commands in its menu (**Look into this flake…**,
+`piwi.lookIntoFlake`, in VS Code), and VS Code's status tooltip and JetBrains' status popup open the group (**Show the
+run's flaky tests**, `piwi.showFlakyTests`, `Piwi.ShowFlakyTests`) (HM10). Q16: VS Code's integration suite stops the
+editor service and starts it again through Restart the editor service (HM19 in part). Q29: Connect's failure words are
+one table in the editor service (`connect-failures.json`), which VS Code reads and `GlueTest` holds the JetBrains
+plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said
+(NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20 in
+part: VS Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog
+through `SpecTest` (TL20). §14 adds the findings the code that built the plan raised. The live-run study,
+[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
+of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
+debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
@@ -703,12 +704,6 @@ Open the log in VS Code (`apps/vscode/package.json:94-98`), and no check on the 
 **(read)** Fix: the header in the service's state and words; the same links per state in both clients; each state
 checked on the editor fixture in both. ([Q27](#q27), [LI5](#li5))
 
-<a id="hm10"></a>**HM10. A flaky test the failures trees list says neither its pass rate nor how to look into it.** Both
-trees list the run's flaky tests under 'Flaky in this run' (`packages/editor/src/failure-tree.ts`), which VS Code's
-status tooltip and JetBrains' status popup open (**Show the run's flaky tests**), each test at its line with its
-retries, but with no pass rate and no Flake Lab action. **(read)** Fix: each flaky test's pass rate, and a Flake Lab
-action beside it. ([M18](#m18), [LI5](#li5))
-
 ### 7.4 Notifications
 
 <a id="hm15"></a>**HM15. None of VS Code's other messages can be turned off, and neither client's run notice leads to
@@ -1044,7 +1039,7 @@ acting on the selection; the service sends the view's state and words, node icon
 run' group. **Lives in** `failure-tree.ts`, `protocol.ts` and both clients (FSL). **Replaces** the Paused Page and
 Worker N tabs side by side, a log with no place in the home, a gear without Documentation. **Depends on** [LI1](#li1),
 [LI6](#li6). **Revisits** no decision: [editor-local-runs.md](../adr/editor-local-runs.md) Part 6 built the two trees
-apart. Steps [Q27](#q27), [M18](#m18).
+apart. Step [Q27](#q27).
 
 <a id="li7"></a>
 
@@ -1304,7 +1299,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
-| <a id="m18"></a>M18 | **A flaky test's pass rate and Flake Lab action** in both failures trees | `ide` | [HM10](#hm10) |
 | <a id="m20"></a>M20 | **Each result's own duration in VS Code's Testing view**, from the run it comes from | `ide` | [TL20](#tl20) |
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |

@@ -2901,10 +2901,16 @@ class GlueTest {
         val leaf = FailureTreeNode(
             key = "flaky:tests/cart.spec.ts\nadds\nchromium", kind = "flaky", label = "adds", icon = "flaky",
             url = "http://piwi/test-run-cases/25", uri = "file:///w/tests/cart.spec.ts", line = 2,
+            actions = listOf(
+                PiwiCommand("Open its Flakiness tab", "piwi.openInDashboard", listOf("http://piwi/test-cases/2")),
+                PiwiCommand(null, "piwi.runCommand"),
+            ),
         )
         val group = FailureTreeNode(key = "flaky", kind = "group", label = "Flaky in this run", icon = "flaky", children = listOf(leaf))
         val drawn = Glue.failureNodes(FailuresResult(emptyList(), tree = listOf(group))).single().children.single()
         assertEquals(listOf("flaky", "file:///w/tests/cart.spec.ts", "2"), listOf(drawn.icon, drawn.uri, drawn.line.toString()))
+        // Its menu lists what looks into it, but an action with no title.
+        assertEquals(listOf("Open its Flakiness tab"), drawn.actions.map { it.title })
         assertEquals("http://piwi/test-run-cases/25", drawn.url)
     }
 
