@@ -870,6 +870,8 @@ test.describe('Desktop run live view', () => {
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
+    // The tray lists the run before its process starts, which waits for the run's baseline (at most 10 s).
+    await expect.poll(() => page.evaluate(() => window.__runArgs !== undefined), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
 
     // Turned off in the tray, the run ends; Run again starts it as it was left, with Hold failures off.
@@ -896,6 +898,7 @@ test.describe('Desktop run live view', () => {
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await holdSwitch(page).click();
+    await expect.poll(() => page.evaluate(() => window.__runArgs !== undefined), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
     // The hub names the run's step as one nobody attends (a run repeating its tests): the switch goes off, and stays.
     const unattended = session(RUNNING);
