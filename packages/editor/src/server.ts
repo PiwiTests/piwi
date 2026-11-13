@@ -282,6 +282,7 @@ import {
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
+  type LiveTestStatus,
   type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
@@ -664,7 +665,8 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
  * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
  * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
  * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
- * runs`, `never run`, `no recent result`).
+ * runs`, `never run`, `no recent result`). A CI run in progress follows that result, named as CI's (`passed in its
+ * latest run · running in CI run #130`).
  */
 function testVerdict(
   context: PiwiContext,
@@ -673,11 +675,36 @@ function testVerdict(
   fixed: BranchResolved | undefined,
   failure: TestFailure | undefined,
 ): string {
-  const live = context.liveTests.get(found.id);
-  if (live && context.live) {
-    const run = `${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
-    return `${live === 'failed' ? 'failing' : statusWords(live)} in ${run}`;
+  const lineLive = lineLiveState(context, found.id);
+  if (lineLive && context.live) {
+    return `${liveWords(lineLive)} in ${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
   }
+  const settled = settledVerdict(context, found, failed, fixed, failure);
+  const ci = context.live?.ci ? context.liveTests.get(found.id) : undefined;
+  return ci ? `${settled} · ${liveWords(ci)} in CI run #${context.live!.runId}` : settled;
+}
+
+/** A test's state in the run in progress, in the dashboard's words: `running`, `failing`, `passed`. */
+function liveWords(live: LiveTestStatus): string {
+  return live === 'failed' ? 'failing' : statusWords(live);
+}
+
+/**
+ * A test's state in the run in progress that its line takes: none from a CI run's, which the line names beside its own
+ * result and never draws as the developer's tests running.
+ */
+function lineLiveState(context: PiwiContext, testCaseId: number): LiveTestStatus | undefined {
+  return context.live?.ci ? undefined : context.liveTests.get(testCaseId);
+}
+
+/** A test's result in the latest run the failures are read from, else the catalog's: `testVerdict` without a live run. */
+function settledVerdict(
+  context: PiwiContext,
+  found: CatalogCase,
+  failed: BranchFailure | undefined,
+  fixed: BranchResolved | undefined,
+  failure: TestFailure | undefined,
+): string {
   if (failed) {
     const otherBranch =
       context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : '';
@@ -3129,7 +3156,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           }),
       };
       const status =
-        context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
+        lineLiveState(context, found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
       return { call, found, failed, fixed, failure, status };
     });
   };

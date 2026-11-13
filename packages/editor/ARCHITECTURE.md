@@ -516,7 +516,8 @@ result:
 - a test on several Playwright projects shows the first of running, failed, flaky, passed, skipped.
 
 `piwi/fileSummary` gives that result as the test line's `status`, and `piwi/runStatus` gives it in `liveTests`, so the
-clients draw the files again.
+clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
+its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
 Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what the run
 changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries the ref of the command

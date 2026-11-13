@@ -2849,6 +2849,15 @@ describe('runs as they happen', () => {
     expect(fileURLToPath(running.uri!)).toBe(fs.realpathSync(path.join(dir, 'tests/checkout.spec.ts')));
     expect(running.at!.uri).toBe(running.uri);
 
+    // The test's line keeps its own result, and names the CI run beside it: never the developer's tests running.
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.liveTests?.some((t) => t.status === 'running')));
+    const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    const line = summary.lines.find((l) => l.line === 2 && l.status !== undefined);
+    expect(line?.status).not.toBe('running');
+    expect(line?.title).toMatch(/ · running in CI run #60 · /);
+
     // The run ends: the session's last notification.
     runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 3 });
     pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 3, passedTests: 3, failedTests: 0 });
