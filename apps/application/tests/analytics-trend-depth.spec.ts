@@ -132,9 +132,11 @@ test.describe.serial('Analytics trend depth', () => {
     const [sheet] = await readXlsxFile(await file.path());
     expect(sheet!.sheet).toBe('Suite growth');
     expect(sheet!.data[0]).toEqual(['date', 'suite size', 'skipped %', 'did not run %']);
-    // A day is a date cell and the suite size a number.
+    // A day is a date cell and the suite size a number; a day with no run has no suite size.
     expect(sheet!.data[1]![0]).toBeInstanceOf(Date);
-    expect(typeof sheet!.data.at(-1)![1]).toBe('number');
+    const sizes = sheet!.data.slice(1).map((row) => row[1]);
+    expect(sizes.some((size) => typeof size === 'number')).toBe(true);
+    expect(sizes.every((size) => size === null || typeof size === 'number')).toBe(true);
   });
 
   test('a portfolio count opens the project list with the same scope', async ({ page }) => {
