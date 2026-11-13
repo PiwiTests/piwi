@@ -131,8 +131,9 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
   Each is checked before use: without the hooks the ledger stays off, and without the connection a page counts as used
   only when it navigates, loads, runs a script or builds a locator, and no finding names a last use.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
-- A fixture with a `timeout` of its own runs with the slot a worker fixture has: what it leaves open is reported only
-  once it opened something in two tests of the same worker.
+- A fixture with a `timeout` of its own runs with the slot a worker fixture has: what it leaves open is reported once
+  its test's teardown steps show it torn down with the test, or once it opened something in two tests of the same
+  worker. A boxed one (`box: true`) leaves no step, so only the second applies.
 - **Probable leaks** come from step titles, which name no object, and the lines they point at. A close goes to the open
   assigned its name (`ctx` in `ctx.close()`); `page.context().close()`, on no name, may take another object of its
   test. A page counts as `browser.newPage()` when the name before `.newPage` is a browser's. A browser's `close()`

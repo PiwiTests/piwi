@@ -172,14 +172,14 @@ describe('French typography', () => {
     const verdict: ProjectTargetVerdict = {
       projectId: 1,
       projectName: 'checkout',
-      key: 'passRate',
+      key: 'testPassRate',
       metric: 'test-pass-rate',
       direction: 'min',
       stored: 99,
       target: 99,
       actual: 87.5,
       met: false,
-    } as ProjectTargetVerdict;
+    };
     expect(fr.target(verdict, f)).toBe(
       `checkout · Taux de réussite des tests${NBSP}: 87,5${NNBSP}% pour un objectif d’au moins 99${NNBSP}%, manqué.`,
     );

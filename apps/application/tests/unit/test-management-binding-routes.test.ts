@@ -446,7 +446,12 @@ describe('GET options', () => {
   });
 
   test('refuses a bad connection, a Jira connection and a bad key, before any call', async () => {
-    for (const query of [{}, { connectionId: 'x' }, { connectionId: String(jiraId) }, { connectionId: '9999' }]) {
+    for (const query of [
+      {},
+      { connectionId: 'x' },
+      { connectionId: String(jiraId) },
+      { connectionId: '9999' },
+    ] as Record<string, string>[]) {
       await refusal(getOptions(at(10, undefined, query)));
     }
     expect(

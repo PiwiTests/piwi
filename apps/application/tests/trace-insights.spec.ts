@@ -121,7 +121,7 @@ const baseRun = {
 };
 
 async function uploadRun(request: APIRequestContext, traceZip: Buffer | null) {
-  const multipart: Record<string, unknown> = {
+  const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
     projectName: PROJECT.TRACE_INSIGHTS,
     testRun: JSON.stringify(baseRun),
     testCases: JSON.stringify([

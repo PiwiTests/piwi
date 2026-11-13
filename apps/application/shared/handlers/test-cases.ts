@@ -192,13 +192,11 @@ export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | 
       status: c.status ?? 'open',
     })),
     // An execution ended at a stop (End the test) is marked so; its annotations stay on the execution's own page.
-    recentExecutions: recentExecutions.map(
-      ({ testAnnotations, ...e }: { status: string; failureClusterId: number | null; testAnnotations: unknown }) => ({
-        ...e,
-        endedAtStop: isEndedAtStop({ status: e.status, testAnnotations: testAnnotations as TestAnnotation[] | null }),
-        knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
-      }),
-    ),
+    recentExecutions: recentExecutions.map(({ testAnnotations, ...e }) => ({
+      ...e,
+      endedAtStop: isEndedAtStop({ status: e.status, testAnnotations: testAnnotations as TestAnnotation[] | null }),
+      knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
+    })),
     links,
   };
 }

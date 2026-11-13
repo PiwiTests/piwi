@@ -369,7 +369,7 @@ describe('buildExport', () => {
     let content = '';
     for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
       try {
-        content += zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1') + '\n';
+        content += zlib.inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1') + '\n';
       } catch {
         // Not a Flate stream (an embedded image, say) — nothing to read here.
       }

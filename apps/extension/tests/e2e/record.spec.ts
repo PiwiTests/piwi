@@ -1,6 +1,5 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -610,7 +609,8 @@ test.describe('record-panel.js', () => {
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
 
     // Files on disk, as a person chooses them: the browser sets them and sends a trusted `change`.
-    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-record-files-'));
+    const dir = test.info().outputPath('files');
+    mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'invoice.pdf'), '%PDF secret content');
     writeFileSync(path.join(dir, 'photo.png'), 'png');
     await page.getByTestId('attachment').setInputFiles([path.join(dir, 'invoice.pdf'), path.join(dir, 'photo.png')]);

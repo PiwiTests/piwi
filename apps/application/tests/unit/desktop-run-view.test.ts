@@ -126,9 +126,9 @@ describe('how far a run of the tray is, and where its end leads', () => {
       { executionId: 12, title: 'pays', suitePath: ['checkout'], status: 'timedOut' },
       { executionId: 13, title: 'pays', suitePath: ['checkout', 'with a card'], status: 'failed' },
     ];
-    expect(desktopFailedExecution(cases, { title: 'checkout › with a card › pays', error: null })).toBe(13);
-    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(12);
-    expect(desktopFailedExecution(cases, { title: 'refunds', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, { title: 'checkout › with a card › pays' })).toBe(13);
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays' })).toBe(12);
+    expect(desktopFailedExecution(cases, { title: 'refunds' })).toBe(12);
     expect(desktopFailedExecution(cases, null)).toBe(12);
     expect(desktopFailedExecution(cases.slice(0, 1), null)).toBeNull();
   });
@@ -143,12 +143,12 @@ describe('how far a run of the tray is, and where its end leads', () => {
     ];
     // As the reporter sends them: cut at MAX_RUN_FAILURE_TEXT, its secrets hidden.
     const cut = `checkout › ${long}by card`.slice(0, MAX_RUN_FAILURE_TEXT);
-    expect(desktopFailedExecution(cases, { title: cut, error: null })).toBe(23);
+    expect(desktopFailedExecution(cases, { title: cut })).toBe(23);
     const hidden = hideSecretsInText('logs in with AKIAIOSFODNN7EXAMPLE');
     expect(hidden).not.toContain('AKIA');
-    expect(desktopFailedExecution(cases, { title: hidden, error: null })).toBe(24);
+    expect(desktopFailedExecution(cases, { title: hidden })).toBe(24);
     // A title another test's only begins with names that test alone.
-    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(22);
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays' })).toBe(22);
   });
 
   test('leads a run of several steps to the first step that failed, and the failure it named', () => {
@@ -380,7 +380,7 @@ describe('the worker of a running row of the run page', () => {
       kind: 'tests' as const,
       status: 'running',
       originRef: 'desktop:abc',
-      piwiRunId: null,
+      piwiRunId: null as number | null,
       hubRefs: [] as string[],
       ...over,
     });

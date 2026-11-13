@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromiumManifest, firefoxManifest, isReleaseBuild } from '../../scripts/build.mjs';
@@ -63,15 +63,19 @@ describe('the manifests the build writes', () => {
 describe('the build the store zips are made of', () => {
   it('is the release build of the manifest’s version, never a dev build stamped with its build time', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'piwi-zip-'));
-    expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
-    writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`2026-10-02T10:00:00.000Z`;})();');
-    expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
-    writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`v0.44.0`;})();');
-    expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
-    // The minifier writes string literals in backticks.
-    writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`v0.45.0`;})();');
-    expect(isReleaseBuild(dir, '0.45.0')).toBe(true);
-    writeFileSync(path.join(dir, 'background.js'), '(function(){var e="v0.45.0";})();');
-    expect(isReleaseBuild(dir, '0.45.0')).toBe(true);
+    try {
+      expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
+      writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`2026-10-02T10:00:00.000Z`;})();');
+      expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
+      writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`v0.44.0`;})();');
+      expect(isReleaseBuild(dir, '0.45.0')).toBe(false);
+      // The minifier writes string literals in backticks.
+      writeFileSync(path.join(dir, 'background.js'), '(function(){var e=`v0.45.0`;})();');
+      expect(isReleaseBuild(dir, '0.45.0')).toBe(true);
+      writeFileSync(path.join(dir, 'background.js'), '(function(){var e="v0.45.0";})();');
+      expect(isReleaseBuild(dir, '0.45.0')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

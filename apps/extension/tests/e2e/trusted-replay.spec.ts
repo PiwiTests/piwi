@@ -1,8 +1,6 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import type { Page, Worker } from '@playwright/test';
 import {
   clickInShadow,
@@ -212,7 +210,7 @@ test('replays with trusted input: a real hover, a double click, a drag and drop,
   // The file step waits for the developer to choose the file the report names.
   await expect.poll(async () => (await replayState(worker)).position, { timeout: 45_000 }).toBe(11);
   await expect.poll(() => debuggerAttached(worker, tabId)).toBe(true);
-  const file = path.join(mkdtempSync(path.join(tmpdir(), 'piwi-file-')), 'note.txt');
+  const file = test.info().outputPath('note.txt');
   writeFileSync(file, 'hello');
   await chooseInReplayPanel(page, file);
 

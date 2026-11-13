@@ -2,7 +2,6 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-// @ts-expect-error — plain-Node script, no type declarations
 import { copyDemoMedia, projectMediaPath } from '../../scripts/copy-demo-media.mjs';
 
 let root: string;
@@ -48,7 +47,7 @@ describe('copyDemoMedia', () => {
   });
 
   test('copies a path several rows name once', () => {
-    expect(copyDemoMedia(publicDemoDir, storageDir, [stored[0], stored[0]])).toBe(1);
+    expect(copyDemoMedia(publicDemoDir, storageDir, [stored[0]!, stored[0]!])).toBe(1);
   });
 
   test('is idempotent — a second run copies nothing and leaves files untouched', () => {

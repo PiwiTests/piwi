@@ -142,7 +142,8 @@ async function waitFor<T>(read: () => T | undefined | false | null, ms = 20_000)
 async function command(message: Record<string, unknown>): Promise<HubAnswer> {
   const id = ++ids;
   picker.send(JSON.stringify({ ...message, id }));
-  return waitFor(() => messages.find((m): m is HubAnswer => m.type === 'answer' && m.id === id));
+  // Longer than the hub's wait for a worker's answer (`requestMs`), so a late image comes as the hub's refusal.
+  return waitFor(() => messages.find((m): m is HubAnswer => m.type === 'answer' && m.id === id), 40_000);
 }
 
 /** The run's worker as Piwi Picker last heard it. */
@@ -209,10 +210,12 @@ exports.expect = expect;
 module.exports = { ...base, use: { ...base.use, trace: 'on' } };
 `,
   );
+  // The test timeout outlasts every wait of this file (`waitFor`'s 20 s), so a loaded runner times out a wait here,
+  // never the test under it; the list reporter prints a failed test's error in the run's output.
   fs.writeFileSync(
     path.join(project, 'playwright.config.cjs'),
-    `module.exports = { testDir: './tests', outputDir: './test-results', timeout: 10000, workers: 1,
-  reporter: [['./results-reporter.cjs', { outputFile: 'results.json' }]], use: { headless: true, viewport: { width: 800, height: 600 } } };
+    `module.exports = { testDir: './tests', outputDir: './test-results', timeout: 60000, workers: 1,
+  reporter: [['list'], ['./results-reporter.cjs', { outputFile: 'results.json' }]], use: { headless: true, viewport: { width: 800, height: 600 } } };
 `,
   );
   runs = await DesktopRuns.start({
@@ -221,6 +224,8 @@ module.exports = { ...base, use: { ...base.use, trace: 'on' } };
     links: () => [{ id: 1, path: fs.realpathSync(project) }],
     // No editor of this machine is a peer of the hub under test.
     editorsDir: path.join(os.tmpdir(), 'piwi-no-editors-here'),
+    // A worker's image of its stop, on a runner loaded with coverage, may take longer than the default wait.
+    requestMs: 30_000,
   });
   const [hub] = runs.live();
   picker = new WebSocket(hub!.url, { origin: ORIGIN });
@@ -289,11 +294,12 @@ function runPlaywright(
   if (!extra.PIWI_EDITOR_SEND) delete env.PIWI_EDITOR_SEND;
   let output = '';
   let ended = false;
+  // Its own process group, so `stop` ends its workers and browsers with it: `execFile` hands `detached` to `spawn`.
+  const options = { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' };
   const child = execFile(
     process.execPath,
     [requireHere.resolve('@playwright/test/cli'), 'test', ...[spec].flat()],
-    // Its own process group, so `stop` ends its workers and browsers with it.
-    { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' },
+    options,
     () => {},
   );
   child.stdout?.on('data', (chunk) => (output += chunk));

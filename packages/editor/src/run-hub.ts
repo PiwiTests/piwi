@@ -8,11 +8,12 @@
  * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
  * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
- * set, checked field by field and answered once; nothing it asks evaluates code or reaches an instance, and none names
+ * set, checked field by field and answered once, an answer whose sentence a surface may say in its own words with its
+ * code (`HubAnswer.code`); nothing it asks evaluates code or reaches an instance, and none names
  * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
  * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
- * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
+ * runs for its own surfaces) does not, and is refused every command but the reads (`OBSERVER_COMMANDS`). A failure no pause bar shows waits only in a run whose Hold failures is
  * on, which any connection turns over (`hold`); `follow`, a Runs window open, holds nothing. The code actions it starts at a stop (Assert, Assert a region,
  * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
  * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
@@ -72,7 +73,14 @@ import {
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { LaneViewFrame, LaneViewLayer, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import {
+  answerCodeOf,
+  type LaneViewFrame,
+  type LaneViewLayer,
+  type RunSessions,
+  type ViewFrame,
+  type Viewer,
+} from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -113,6 +121,12 @@ export function hubFeatures(
   );
   return options.sharesWindow ? [...features, 'share-window'] : features;
 }
+
+/** The commands a connection that observes (`observe`) may send: it reads the runs, and steers none of them. */
+const OBSERVER_COMMANDS: ReadonlySet<string> = new Set(['subscribe', 'pausedPage', 'requests']);
+
+/** Why any other command is refused to it. */
+const OBSERVES_ONLY = 'This connection observes the runs: it cannot steer them.';
 
 /** Why `openTrace` is refused to a connection that came through a port the client forwards. */
 const TRACE_ELSEWHERE = "Playwright's trace viewer would open on the machine the run runs on, not this one.";
@@ -203,7 +217,7 @@ interface Connection {
    */
   forwarded: boolean;
   subscribed: boolean;
-  /** It subscribed only to observe (`observe`): it answers no stop. */
+  /** It subscribed only to observe (`observe`): it answers no stop, and sends `OBSERVER_COMMANDS` alone. */
   observes: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
@@ -613,18 +627,23 @@ export class RunHub {
     command: ParsedHubCommand,
     respond: (answer: HubAnswer) => void,
   ): Promise<void> {
-    const reply = (result: RunControlResult, extra: Partial<HubAnswer> = {}) =>
+    const reply = (result: RunControlResult, extra: Partial<HubAnswer> = {}) => {
+      const code = answerCodeOf(result.message);
       respond({
         type: 'answer',
         id: command.id,
         ok: result.ok,
         message: cut(result.message, MAX_HUB_MESSAGE)!,
+        ...(code ? { code } : {}),
         ...extra,
       });
+    };
     if (command.type === 'unknown') {
       return reply({ ok: false, message: `Piwi does not know the command ${JSON.stringify(command.what)}.` });
     }
     if (command.type === 'invalid') return reply({ ok: false, message: command.message });
+    if (connection.observes && !OBSERVER_COMMANDS.has(command.type))
+      return reply({ ok: false, message: OBSERVES_ONLY });
     if (connection.pending >= MAX_HUB_PENDING) {
       return reply({ ok: false, message: 'Too many commands at once: wait for their answers.' });
     }
@@ -719,14 +738,18 @@ export class RunHub {
             ...(picked.taken !== undefined ? { taken: picked.taken } : {}),
           });
         }
-        case 'share':
-          if (command.scope !== 'window') return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'share': {
+          if (command.scope !== 'window') {
+            const shared = sessions.share({ ref: command.ref, on: command.on });
+            return reply(shared, shared.ok ? { code: command.on ? 'share-on' : 'share-off' } : {});
+          }
           if (!this.options.sharesWindow) {
             return reply({ ok: false, message: 'This hub shares one run at a time: share each run from its card.' });
           }
           return reply(
             sessions.share({ on: command.on, scope: 'window', ...(command.ref !== null ? { ref: command.ref } : {}) }),
           );
+        }
         case 'hold':
           return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
         case 'stop':

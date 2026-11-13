@@ -26,7 +26,7 @@ import { RUN_TAKES } from '@piwitests/core/run-channel';
 import type { AgentsResult, RunSession, StartRunParams } from '../src/protocol';
 import { writeDiscovery } from '../src/discovery';
 import { RunHub, type RunHubOptions } from '../src/run-hub';
-import type { RunSessions } from '../src/run-sessions';
+import { ANSWER_SENTENCES, answerCodeOf, type RunSessions } from '../src/run-sessions';
 import { FakeWorker, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
@@ -562,7 +562,11 @@ describe('the commands', () => {
 
       // A control naming the stop it answers: the next stop is not skipped by a click made twice.
       client.send({ type: 'runControl', id: 6, ref, action: 'step', since: stop.since });
-      expect(await client.answer(6)).toMatchObject({ ok: true, message: 'Stepping to the next call.' });
+      expect(await client.answer(6)).toMatchObject({
+        ok: true,
+        message: 'Stepping to the next call.',
+        code: 'stepping',
+      });
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'step', stop: 1 });
       worker.send({ type: 'running', stop: 1 });
       worker.stopAt(2, 31, false);
@@ -725,6 +729,7 @@ describe('the commands', () => {
       expect(await client.answer(2)).toMatchObject({
         ok: true,
         message: expect.stringMatching(/^Sharing the run live/),
+        code: 'share-on',
       });
       expect(await worker.next('share')).toEqual({ type: 'share', on: true });
       worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
@@ -732,6 +737,7 @@ describe('the commands', () => {
       expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 1 });
       client.send({ type: 'share', id: 3, ref });
       expect(await client.answer(3)).toMatchObject({ ok: false, message: expect.stringMatching(/^share needs on/) });
+      expect(await client.answer(3)).not.toHaveProperty('code');
     } finally {
       worker.socket.destroy();
       client.socket.close();
@@ -887,6 +893,65 @@ describe('a stop nobody else can answer, with the editor’s client unable to', 
       worker.stopAt(1, 30);
       expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
       expect(observer.messages.some((m) => m.type === 'session' && m.session.ref === ref)).toBe(true);
+    } finally {
+      worker.socket.destroy();
+      observer.socket.close();
+    }
+  });
+
+  test('codes each sentence Piwi Picker says in its own words, its English catalog saying the same', () => {
+    const catalog = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../../apps/extension/public/_locales/en/messages.json'), 'utf8'),
+    ) as Record<string, { message: string }>;
+    const english = Object.entries(catalog).flatMap(([key, entry]) =>
+      key.startsWith('runs_answer') ? [entry.message] : [],
+    );
+    for (const [code, sentence] of Object.entries(ANSWER_SENTENCES)) {
+      expect(answerCodeOf(sentence)).toBe(code);
+      expect(english, code).toContain(sentence);
+    }
+    expect(answerCodeOf('Resuming')).toBeNull();
+  });
+
+  test('refuses a process that observes the runs every command that steers one, and answers its reads', async () => {
+    const observer = (await open({ origin: '' })) as Client;
+    observer.send({ type: 'hello', token: hub.token });
+    await waitFor(() => observer.messages[0]);
+    observer.send({ type: 'subscribe', id: 1, observe: true });
+    expect(await observer.answer(1)).toMatchObject({ ok: true });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const since = '2026-09-27T12:00:00.000Z';
+    const click = { type: 'mouse', action: 'click', x: 20, y: 90, button: 'left', clickCount: 1 };
+    const steering = [
+      { type: 'hold', ref, on: true },
+      { type: 'share', ref, on: true },
+      { type: 'stop', ref },
+      { type: 'follow', on: true },
+      { type: 'runControl', ref, action: 'pause' },
+      { type: 'runControl', ref, action: 'resume', since },
+      { type: 'view', ref, since, on: true },
+      { type: 'input', ref, since, events: [click] },
+      { type: 'drive', ref, since, on: true },
+      { type: 'pick', ref, since },
+      { type: 'mock', ref, since, request: 1 },
+    ];
+    try {
+      await waitFor(() => observer.session(ref));
+      for (const [i, command] of steering.entries()) {
+        observer.send({ ...command, id: 10 + i });
+        expect(await observer.answer(10 + i), command.type).toEqual({
+          type: 'answer',
+          id: 10 + i,
+          ok: false,
+          message: 'This connection observes the runs: it cannot steer them.',
+        });
+      }
+      // Its reads are answered as any connection's.
+      observer.send({ type: 'requests', id: 30, ref, since });
+      expect((await observer.answer(30)).message).not.toMatch(/observes the runs/);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(worker.heard.some((m) => m.type === 'share' || m.type === 'control')).toBe(false);
     } finally {
       worker.socket.destroy();
       observer.socket.close();

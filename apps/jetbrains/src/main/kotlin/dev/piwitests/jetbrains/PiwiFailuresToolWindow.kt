@@ -202,7 +202,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val line = Glue.toolWindowHeader(service.status, result, local.desktop, service.startProblem, service.trusted())
+            val line = Glue.toolWindowHeader(service.status, result, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
             connectionLink.text = line.connection
             connectionLink.toolTipText = Glue.htmlTooltip(line.tooltip)
             baselineLink.text = line.baseline ?: ""

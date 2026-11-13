@@ -25,7 +25,7 @@ describe('desktop MCP catalog', () => {
   });
 
   it('desktop tool names never collide with the shared catalog', () => {
-    const shared = new Set(MCP_TOOL_DEFS.map((t) => t.name));
+    const shared = new Set<string>(MCP_TOOL_DEFS.map((t) => t.name));
     for (const t of DESKTOP_MCP_TOOL_DEFS) expect(shared.has(t.name)).toBe(false);
   });
 });
@@ -47,7 +47,7 @@ describe("the run tools of the desktop app's runs", () => {
     const tools = desktopRunTools(true);
     expect(tools.map((t) => t.name)).toEqual(RUN_TOOLS);
     for (const tool of tools) expect(tool.module).toBe('agents');
-    const catalog = new Set([...MCP_TOOL_DEFS, ...DESKTOP_MCP_TOOL_DEFS].map((t) => t.name));
+    const catalog = new Set<string>([...MCP_TOOL_DEFS, ...DESKTOP_MCP_TOOL_DEFS].map((t) => t.name));
     for (const name of RUN_TOOLS) {
       expect(catalog.has(name), name).toBe(false);
       expect(isDesktopRunTool(name)).toBe(true);
