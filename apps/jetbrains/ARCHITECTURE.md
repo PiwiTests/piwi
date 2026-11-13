@@ -848,8 +848,9 @@ thread.
 ### Warnings, quick fixes and the banner
 
 - **The block** is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark that offers Stop, Pause and Resume. The mark
-  and the banner draw `PiwiIcons.recording`: a red disc while recording (`icons/recording.svg`), a gray ring while
-  paused (`icons/recordPaused.svg`); the actions that start one draw the gray disc (`icons/record.svg`), and Stop
+  and the banner draw `PiwiIcons.recording`: a red dot in a ring while recording (`icons/recording.svg`), apart from a
+  breakpoint's disc, and a gray ring while paused or after an edit of the block (`icons/recordPaused.svg`), the mark
+  set again on each change of the state; the actions that start one draw the gray disc (`icons/record.svg`), and Stop
   recording a ring around a square (`icons/stopRecording.svg`).
 - **Warnings.** The recording's warnings are weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop
   until their line changes.

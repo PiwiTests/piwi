@@ -372,6 +372,8 @@ class RecordingSession internal constructor(
 
     internal fun refreshView() {
         view = Glue.recordingBanner(state, steps, edited, stopping, message)
+        // The gutter mark draws the state again: a renderer set anew repaints it.
+        if (ApplicationManager.getApplication().isDispatchThread) tint?.takeIf { it.isValid }?.gutterIconRenderer = RecordingGutter(this)
         EditorNotifications.getInstance(project).updateNotifications(file)
         recordings.viewChanged()
     }
@@ -718,7 +720,7 @@ private class StartMark(document: Document) : BasicUndoableAction(document) {
 
 /** The recorded block's mark in the gutter: what the recording does, and Stop, Pause or Resume on a click. */
 private class RecordingGutter(private val session: RecordingSession) : GutterIconRenderer(), DumbAware {
-    override fun getIcon(): Icon = PiwiIcons.recording(session.state)
+    override fun getIcon(): Icon = PiwiIcons.recording(session.state, session.edited)
 
     override fun getTooltipText(): String = Glue.htmlTooltip(session.view.text)
 

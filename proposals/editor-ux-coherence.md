@@ -66,8 +66,8 @@ in a product icon font built from the mark's strokes drawn as fills, drawn by th
 VS Code's views (IC8, IC9). Q9: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs and the
 new Reload Piwi (`icons/reload.svg`, JetBrains' too) and Run to the cursor glyphs, at one line weight, so every VS Code
 command draws one (IC1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
-Stop recording with a ring around a square, and a recording's gutter mark and banner with a red disc, a gray ring while
-paused, and VS Code a paused recording with `$(circle-large-outline)` (IC2 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray ring
+while paused, and VS Code a paused recording with `$(circle-large-outline)` (IC2 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14).
 §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
@@ -243,8 +243,8 @@ concept table.
 <a id="ic2"></a>**IC2. Recording's Pause and Resume reuse the run's debugger glyphs in JetBrains, and VS Code tints a recording
 with no gutter mark.** Pause and Resume Recording draw `Actions.Pause` and `Resume` (`plugin.xml`), as the run's two do,
 in the same Tools → Piwi menu. VS Code tints the block in the running blue with no gutter mark
-(`apps/vscode/package.json:1309-1316`). **(seen)** Fix: a recording's Pause and Resume glyphs of their own, and a gutter
-mark on VS Code's recorded block, as JetBrains' red disc and gray ring. ([M4](#m4), [LI2](#li2))
+(`piwi.recordingBlockBackground` in `apps/vscode/package.json`). **(seen)** Fix: a recording's Pause and Resume glyphs of their own, and a gutter
+mark on VS Code's recorded block, as JetBrains' red dot in a ring and gray ring. ([M4](#m4), [LI2](#li2))
 
 ### 3.3 Outcomes
 

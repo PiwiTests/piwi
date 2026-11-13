@@ -100,8 +100,12 @@ object PiwiIcons {
         Glue.StopAction.MOCK -> piwi("mock")
     }
 
-    /** A recording in progress, in the red JetBrains keeps for it; paused, the gray ring. */
-    fun recording(state: String): Icon = if (state == "paused") piwi("recordPaused") else piwi("recording")
+    /**
+     * A recording in progress, in the red JetBrains keeps for it, a dot in a ring a breakpoint's disc is not; paused, or
+     * paused by an edit of its block, the gray ring.
+     */
+    fun recording(state: String, edited: Boolean): Icon =
+        if (state == "paused" || edited) piwi("recordPaused") else piwi("recording")
 
     private fun piwi(name: String): Icon = IconLoader.getIcon("/icons/$name.svg", PiwiIcons::class.java)
 }

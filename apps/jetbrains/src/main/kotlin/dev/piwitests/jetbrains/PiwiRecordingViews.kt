@@ -29,7 +29,7 @@ class PiwiRecordingNotificationProvider : EditorNotificationProvider, DumbAware 
         val command = session.command
         return Function { fileEditor ->
             EditorNotificationPanel(fileEditor, EditorNotificationPanel.Status.Info).apply {
-                icon(PiwiIcons.recording(session.state))
+                icon(PiwiIcons.recording(session.state, session.edited))
                 text(view.text)
                 for (action in view.actions) {
                     when (action) {
