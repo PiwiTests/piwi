@@ -44,7 +44,7 @@ import {
   StopActions,
   type StopCode,
 } from '../../../../packages/editor/src/run-host.js';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithExtension, removedOnClose } from './fixtures.js';
 
 /**
  * The editor the Runs window follows: the real editor service, started in-process on a workspace folder as its own
@@ -148,7 +148,7 @@ export async function pairedExtension(
   const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   manifest.host_permissions = [editor, options.desktop].filter((paired) => !!paired).map((p) => `${p!.origin}/*`);
   writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-  const context = await launchWithExtension(dir, options);
+  const context = removedOnClose(await launchWithExtension(dir, options), dir);
   const worker = await extensionWorker(context);
   if (options.desktop) {
     await worker.evaluate(

@@ -1,7 +1,7 @@
 import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,8 @@ function languageLaunchOptions(language: string): {
  * reloaded copy again.
  *
  * `args` adds command-line switches, and `userDataDir` names the profile
- * directory, for a spec that reads files the browser writes there.
+ * directory, for a spec that reads files the browser writes there. A profile
+ * made here is removed once the context closes; a named one is kept.
  *
  * `language` runs the browser in another language (`fr`). On Linux the
  * `--lang` flag alone makes `chrome.i18n.getMessage` answer in that language
@@ -58,6 +59,33 @@ export async function launchWithExtension(
   } = {},
 ): Promise<BrowserContext> {
   const userDataDir = opts.userDataDir ?? mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
+  if (opts.userDataDir) return launchContext(extensionPath, userDataDir, opts);
+  try {
+    return removedOnClose(await launchContext(extensionPath, userDataDir, opts), userDataDir);
+  } catch (error) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** Wraps `context.close` to remove `dir` once the browser has closed and released its files. */
+export function removedOnClose(context: BrowserContext, dir: string): BrowserContext {
+  const close = context.close.bind(context);
+  context.close = async (options) => {
+    try {
+      await close(options);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  return context;
+}
+
+async function launchContext(
+  extensionPath: string,
+  userDataDir: string,
+  opts: NonNullable<Parameters<typeof launchWithExtension>[1]>,
+): Promise<BrowserContext> {
   if (opts.developerMode) {
     mkdirSync(path.join(userDataDir, 'Default'));
     writeFileSync(
