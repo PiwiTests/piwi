@@ -18,7 +18,7 @@ same stops: [Pause and step from the editor](./editor-run-control).
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), or with the
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), the popup shows a **Runs** tile under
 **More tools**, muted with **Not connected** while none of them answers. It opens the Runs window where you left it last. While a test waits at a stop for you (a breakpoint, a **Pause**, a failure held
-at its line, not a stop an agent drives), the tile says how many in amber, as do the toolbar's badge and the Runs
+at its line, not a stop an agent drives), the tile says how many in the pause bar's violet, as do the toolbar's badge and the Runs
 window's title (`1 waiting · Runs · Piwi Picker`); while none waits, how many failed, in red, a run that failed while
 the Runs window was not in front counted until you bring it there. For each run
 the editor [started](./editor-runs): its folder and command, how many of its tests ended (`3 of 9 tests · 1 failed`),
