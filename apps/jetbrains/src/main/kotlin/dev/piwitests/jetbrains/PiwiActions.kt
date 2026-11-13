@@ -190,11 +190,46 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repea
         val project = e.project ?: return
         val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
         val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
-        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec, repeat)
+        val line = e.getData(TEST_LINE)
+        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat)
     }
 }
 
 class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+/** The 0-based line of the test a popup's run acts on (the result icon's), which the run reads before the caret's. */
+val TEST_LINE: DataKey<Int> = DataKey.create("piwi.testLine")
+
+/**
+ * The registered action `id` with `data` added to its data context when it runs, under `label` and `icon` where given:
+ * a popup offers the action itself, its key shown and Find Action's entry the same, acting on what the popup is about.
+ */
+fun registeredWith(
+    id: String,
+    label: String? = null,
+    icon: javax.swing.Icon? = null,
+    data: (com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder) -> Unit,
+): AnAction? {
+    val registered = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return null
+    return object : com.intellij.openapi.actionSystem.AnActionWrapper(registered) {
+        init {
+            if (label != null) templatePresentation.text = label
+            if (icon != null) templatePresentation.icon = icon
+        }
+
+        override fun update(e: AnActionEvent) {
+            super.update(e.withDataContext(withData(e.dataContext)))
+            if (label != null) e.presentation.text = label
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            registered.actionPerformed(e.withDataContext(withData(e.dataContext)))
+        }
+
+        private fun withData(parent: com.intellij.openapi.actionSystem.DataContext) =
+            com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder().setParent(parent).also(data).build()
+    }
+}
 
 class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glue.VERIFY_REPEAT)
 

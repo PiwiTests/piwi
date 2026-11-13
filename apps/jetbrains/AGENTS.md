@@ -172,6 +172,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **One undo step per recording.** A `StartMarkAction` in a command of its own just before the first write, and a
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
+- **A Piwi entry in a popup is a registered action**, wrapped by `registeredWith` to act on what the popup is about
+  (`STOP`, `TEST_LINE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one gets an id in D25.
 - **Every action but a toggle draws its concept's platform icon, one with a New UI glyph on 2024.1, or is listed as
   waiting for Piwi's glyph.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`; the failed mark, Open in
   dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`

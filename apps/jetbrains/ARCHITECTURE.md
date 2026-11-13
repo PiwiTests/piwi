@@ -139,9 +139,10 @@ tells the views, starts the service for the open files and offers the first-run 
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); its click runs what
-  the line names (Open in dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**
-  (`PiwiCommands.runTestAt`), at the line a range marker follows through edits;
+- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); its click runs what the
+  line names (Open in dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, the
+  registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather than
+  the caret's, at the line a range marker follows through edits;
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
   why. The test's background goes around that line, since two backgrounds on one line have no set order.
@@ -271,7 +272,9 @@ gives the selected node's page as `DASHBOARD_URL`, which Open in dashboard opens
 run. Open in dashboard and Run selection… are enabled only while a context is connected (`piwiConnected`), Open in
 Dashboard also on a selected page, and Re-run the failing tests while failures are listed; `PiwiPluginTest` holds both.
 
-The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`:
+The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`, a failure's entries as the
+registered `Piwi.Failure.*` actions (`FailureNodeAction`, the `Piwi.FailureActions` group), which read the selected node
+(`FAILURE_NODE`) so their keys show and Find Action reaches them:
 
 - on a failure: run the test, open the trace, the screenshot or the page, copy the context for an agent
   (`piwi/agentContext`), and, on a CI failure while the desktop app runs, pass it to the app;
@@ -508,8 +511,9 @@ with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
-  `AllIcons.Debugger.NextStatement` in the gutter, whose click and right-click list the stop's controls
-  (`stopActions`);
+  `AllIcons.Debugger.NextStatement` in the gutter, whose click and right-click list the stop's controls (`stopActions`):
+  the registered `Piwi.ResumeRun` to `Piwi.EndTest`, the code actions and the browser's, each acting on that stop
+  (`STOP`, `registeredWith`) with its key shown;
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
   `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
   **Resume**, **Step**, **Run to caret** and **Finish** as links, and **End test** at a stop whose worker takes `end`

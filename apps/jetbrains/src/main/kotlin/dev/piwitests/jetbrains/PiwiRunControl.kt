@@ -1,6 +1,5 @@
 package dev.piwitests.jetbrains
 
-import com.intellij.ide.BrowserUtil
 import com.intellij.execution.ExecutionListener
 import com.intellij.execution.ExecutionManager
 import com.intellij.execution.configurations.RunProfile
@@ -13,10 +12,12 @@ import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.icons.AllIcons
+import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -24,9 +25,10 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.CustomShortcutSet
-import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
@@ -104,29 +106,29 @@ import java.awt.BorderLayout
 import java.awt.Cursor
 import java.awt.FlowLayout
 import java.awt.Font
-import java.awt.RenderingHints
 import java.awt.Graphics
 import java.awt.Rectangle
+import java.awt.RenderingHints
 import java.awt.datatransfer.StringSelection
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import java.awt.event.MouseMotionAdapter
-import java.awt.event.KeyAdapter
-import java.awt.event.KeyEvent
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
 import java.awt.event.InputEvent
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.net.URI
 import java.nio.file.Path
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.imageio.ImageIO
@@ -135,14 +137,14 @@ import javax.swing.BoxLayout
 import javax.swing.DefaultListModel
 import javax.swing.ImageIcon
 import javax.swing.JButton
+import javax.swing.JCheckBox
+import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JViewport
-import javax.swing.JCheckBox
-import javax.swing.JComponent
 import javax.swing.KeyStroke
-import javax.swing.SwingConstants
 import javax.swing.ScrollPaneConstants
+import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 import javax.swing.text.DefaultHighlighter
 
@@ -1856,8 +1858,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         editor: Editor?,
         offers: (Glue.ShownStop) -> Boolean = { true },
         control: Boolean = false,
+        clicked: Glue.ShownStop? = null,
         action: (Glue.ShownStop) -> Unit,
     ) {
+        if (clicked != null && offers(clicked)) return action(clicked)
         val uri = editor?.virtualFile?.let { fileUri(it) }
         val line = editor?.caretModel?.logicalPosition?.line
         val all = stops()
@@ -1891,56 +1895,30 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         answer(stop, "run-to", EditorBreakpoint(uri, line))
     }
 
-    /** The actions offered at a stop, which act on it: its controls, the paused page, then its code actions. */
+    /**
+     * The actions offered at a stop, which act on it: its controls, the paused page, then its code actions, the browser
+     * and sharing it. Each is the registered action (`Piwi.ResumeRun`, `Piwi.PickAtStop`, …), so its key shows and Find
+     * Action reaches it, wrapped to act on this stop (`STOP`) under the stop's own short label.
+     */
     fun stopActions(stop: Glue.ShownStop): ActionGroup = DefaultActionGroup().apply {
-        for (control in Glue.stopControls(stop)) {
-            add(
-                object : DumbAwareAction(control.label, null, CONTROL_ICONS[control]) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-                    override fun actionPerformed(e: AnActionEvent) = perform(stop, control, e.getData(CommonDataKeys.EDITOR))
-                },
-            )
-        }
-        add(
-            object : DumbAwareAction(SHOW_PAUSED_PAGE, null, AllIcons.Actions.Preview) {
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-                override fun actionPerformed(e: AnActionEvent) = showPage(stop)
-            },
-        )
+        for (control in Glue.stopControls(stop)) onStop(CONTROL_IDS.getValue(control), stop, control.label, CONTROL_ICONS[control])?.let(::add)
+        onStop("Piwi.ShowPausedPage", stop, SHOW_PAUSED_PAGE, AllIcons.Actions.Preview)?.let(::add)
         val actions = Glue.stopActions(stop)
         if (actions.isNotEmpty()) addSeparator()
-        for (action in actions) {
-            add(
-                object : DumbAwareAction(action.label, null, PiwiIcons.stopAction(action)) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-                    override fun actionPerformed(e: AnActionEvent) = start(stop, action)
-                },
-            )
-        }
+        for (action in actions) onStop(CODE_ACTION_IDS.getValue(action), stop, action.label, PiwiIcons.stopAction(action))?.let(::add)
         if (Glue.canShowBrowser(stop)) {
             addSeparator()
-            add(
-                object : DumbAwareAction(SHOW_THE_BROWSER) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-                    override fun actionPerformed(e: AnActionEvent) = showBrowser(stop)
-                },
-            )
+            onStop("Piwi.ShowBrowser", stop, SHOW_THE_BROWSER, null)?.let(::add)
         }
         if (Glue.canShare(stop)) {
             addSeparator()
-            add(
-                object : DumbAwareAction(SHARE_WITH_PLAYWRIGHT) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-                    override fun actionPerformed(e: AnActionEvent) = share(stop)
-                },
-            )
+            onStop("Piwi.ShareWithPlaywright", stop, SHARE_WITH_PLAYWRIGHT, null)?.let(::add)
         }
     }
+
+    /** The registered action `id`, acting on `stop` (`STOP` in its data context), under `label` and `icon`. */
+    private fun onStop(id: String, stop: Glue.ShownStop, label: String, icon: javax.swing.Icon?): AnAction? =
+        registeredWith(id, label, icon) { it.add(STOP, stop) }
 
     /**
      * Share a stop's browser with Playwright's own tools until its test ends, once the person said yes to the warning,
@@ -2235,6 +2213,27 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 }
             }
         }.getOrNull()
+
+        /** The stop a popup's actions act on, which the registered controls and code actions read before the caret. */
+        val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
+
+        /** Each control's registered action. */
+        val CONTROL_IDS = mapOf(
+            Glue.StopControl.RESUME to "Piwi.ResumeRun",
+            Glue.StopControl.STEP to "Piwi.StepRun",
+            Glue.StopControl.RUN_TO_CARET to "Piwi.RunToCaret",
+            Glue.StopControl.FINISH to "Piwi.FinishRun",
+            Glue.StopControl.END to "Piwi.EndTest",
+        )
+
+        /** Each code action's registered action. */
+        val CODE_ACTION_IDS = mapOf(
+            Glue.StopAction.PICK to "Piwi.PickAtStop",
+            Glue.StopAction.RECORD to "Piwi.RecordAtStop",
+            Glue.StopAction.ASSERT to "Piwi.AssertAtStop",
+            Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
+            Glue.StopAction.MOCK to "Piwi.MockAtStop",
+        )
 
         val CONTROL_ICONS = mapOf(
             Glue.StopControl.RESUME to AllIcons.Actions.Resume,
@@ -3296,7 +3295,9 @@ abstract class StopControlAction(private val control: Glue.StopControl) : RunCon
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
         val sessions = sessions(e) ?: return
-        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true) { sessions.perform(it, control, editor) }
+        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true, clicked = e.getData(PiwiRunSessions.STOP)) {
+            sessions.perform(it, control, editor)
+        }
     }
 }
 
@@ -3358,7 +3359,7 @@ class ShowPausedPageAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        sessions.atCaret(e.getData(CommonDataKeys.EDITOR)) { sessions.showPage(it) }
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.showPage(it) }
     }
 }
 
@@ -3412,7 +3413,9 @@ abstract class StopCodeAction(private val action: Glue.StopAction) : RunControlA
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), { action in Glue.stopActions(it) }) { sessions.start(it, action) }
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), { action in Glue.stopActions(it) }, clicked = e.getData(PiwiRunSessions.STOP)) {
+            sessions.start(it, action)
+        }
     }
 }
 
@@ -3510,7 +3513,7 @@ class ShowBrowserAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShowBrowser) { sessions.showBrowser(it) }
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShowBrowser, clicked = e.getData(PiwiRunSessions.STOP)) { sessions.showBrowser(it) }
     }
 }
 
@@ -3523,7 +3526,7 @@ class ShareWithPlaywrightAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShare) { sessions.share(it) }
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShare, clicked = e.getData(PiwiRunSessions.STOP)) { sessions.share(it) }
     }
 }
 

@@ -17,16 +17,18 @@ hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run n
 run's balloon titled by its run, VS Code's Connect failures in JetBrains' words (ST20), and Q23, the desktop app's
 product name, Piwi Desktop, which #1317 shipped (AC13); and M6's End the test off the square and Finish's step-out glyph
 in the Runs window and the desktop app, and the pause bar in the editors' order (IC5); and M22's held failure worded as
-the run page words it, and JetBrains' status item saying why a test stopped (LR15). §14 adds the findings the code that
-built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each
-but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns
-where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and
-its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
-fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
+the run page words it, and JetBrains' status item saying why a test stopped (LR15); and M2's stop popup, result icon
+menu and failures tree built from registered actions, the tree's as new `Piwi.Failure.*` ids, with Find Action synonyms.
+§14 adds the findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has
+built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the
+editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the
+study the live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does
+not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
+step moves the document to `adr/`.
 
 **Summary.**
 
@@ -305,18 +307,12 @@ on config folders only. ([M3](#m3), [M17](#m17), [LI4](#li4), [LI16](#li16))
 
 ### 4.3 Registered and discoverable
 
-<a id="ac6"></a>**AC6. Piwi's JetBrains popups are built from unregistered actions, so their keys never show, Find
-Action cannot reach them and they cannot be bound.** The stop's popup, on its gutter mark and its inlay, builds Resume,
-Step, Run to Caret, Finish, End and the code actions anew (`PiwiRunControl.kt:1725-1773`) beside the registered
-`Piwi.ResumeRun` to `Piwi.FinishRun`, which carry the debugger's keys (`plugin.xml:222-236`). The result icon's menu
-builds Run with Piwi and Verify ×3 anew beside `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor`
-(`PiwiTestAnnotator.kt:124-135`), the failures tree builds its menu the same way (`PiwiFailuresToolWindow.kt:385-410`,
-[HM11](#hm11)), and so does the status popup for Go to the Recorded Lines, Node.js Settings…, a Go to row per stop
-([LR4](#lr4)), a row per run page ([NF2](#nf2)) and Open the Failures (`PiwiStatusBar.kt:174, 180, 189, 199, 201`). At a
-stop the popup never shows F9, F8 or Shift+F8, and with no `<synonym>` in `plugin.xml`, Find Action finds nothing for
-codegen or trace. **(seen)** Fix: one registered `Piwi.RunControl` group wherever a stop's controls appear
-([LR3](#lr3)), reading the clicked stop from a `DataKey`; the result icon's menu built from `Piwi.RunTestAtCursor` and
-`Piwi.VerifyTestAtCursor`, new ids for the rest, and synonyms such as Playwright Codegen. ([M2](#m2), [LI1](#li1))
+<a id="ac6"></a>**AC6. JetBrains' status popup still builds its own rows, so their keys never show and Find Action
+cannot reach them.** Go to the recorded lines, Node.js settings…, a Go to row per stop ([LR4](#lr4)), a row per run page
+([NF2](#nf2)) and Open the failures are built in `PiwiStatusBar.kt` (`:174, 180, 189, 199, 201` at `b0ff6772`), where
+the stop popup, the result icon's menu and the failures tree offer the registered actions (`registeredWith`). **(read)**
+Fix: registered actions for these rows too, and one `Piwi.RunControl` group wherever a stop's controls appear
+([LR3](#lr3)). ([M2](#m2), [LI1](#li1))
 
 ### 4.4 Names
 
@@ -746,14 +742,11 @@ developer opens the dashboard to find the test. **(seen)** Fix: a 'Flaky in this
 service, each test with its retries, pass rate and a Flake Lab action, in the outcome palette's flaky glyph; the status
 menu's 'N flaky' row selects it. ([M18](#m18), [LI5](#li5))
 
-<a id="hm11"></a>**HM11. The failures trees' right-click menus differ: JetBrains' are anonymous actions no key reaches,
-VS Code's run node offers Open in Dashboard on hover only, and the screenshot action has two names.** `failureMenu`
-builds `ConfigAction` and `FailureAction` instances and registers none (`PiwiFailuresToolWindow.kt:373-411`); the run
-node's Open in dashboard is inline only (`apps/vscode/package.json:968-971`), out of Shift+F10's reach; the screenshot
-is 'Open the failure screenshot' (`package.json:396-397`) and 'Open the Screenshot' (`PiwiFailuresToolWindow.kt:397`).
-**(read)** Fix: registered `Piwi.Failure.*` actions on a `DataKey` of the selected node, with Verify ×3, Debug this
-failure ([TL17](#tl17)) and Jump to Source; VS Code's inline actions in its menu too; one wording. ([M2](#m2),
-[LI5](#li5))
+<a id="hm11"></a>**HM11. VS Code's run node offers Open in dashboard on hover only, and the screenshot action has two
+names.** The run node's Open in dashboard is inline only (`apps/vscode/package.json:968-971`), out of Shift+F10's reach;
+the screenshot is 'Open the failure screenshot' in VS Code (`package.json:396-397`) and 'Open the screenshot' in
+JetBrains. **(read)** Fix: VS Code's inline actions in its menu too; one wording; Debug this failure ([TL17](#tl17)) and
+Jump to Source in both trees. ([M2](#m2), [LI5](#li5))
 
 <a id="hm12"></a>**HM12. The Piwi tool window's header is two lines of inert gray text that repeat the run row and name
 only the first connection.** It is a static label (`PiwiFailuresToolWindow.kt:115-119, 180-182`) built from the first
@@ -800,10 +793,10 @@ that stops the service and starts it again through `piwi.restartService`. ([Q16]
 
 ## 8. Live runs in the editors: where they sit
 
-The split with the live-run study ([live-runs.md](../adr/live-runs.md)) is the Status paragraph's. A finding that overlaps the
-study says where the result lands in each editor, and names the study's finding and phase where that phase is not
-built; its fix adds only what the study does not. At `b0ff6772` the study has built P0 to P6 and P8 to P10, each but for
-leftovers its Status names, and part of P7 and P11, its P4 without E2, E3 and E13 in the editors.
+The split with the live-run study ([live-runs.md](../adr/live-runs.md)) is the Status paragraph's. A finding that
+overlaps the study says where the result lands in each editor, and names the study's finding and phase where that phase
+is not built; its fix adds only what the study does not. At `b0ff6772` the study has built P0 to P6 and P8 to P10, each
+but for leftovers its Status names, and part of P7 and P11, its P4 without E2, E3 and E13 in the editors.
 
 ### 8.1 The glance
 
@@ -1354,7 +1347,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
-| <a id="m2"></a>M2 | **Registered actions in every JetBrains popup**, the stop in a `DataKey`, Find Action synonyms, one `Piwi.RunControl` group in every place; new ids, `Piwi.OpenRunPage` and `Piwi.OpenTraceSoFar` among them, in D25 | `ide` | [AC6](#ac6), [HM11](#hm11), [NF2](#nf2) |
+| <a id="m2"></a>M2 | **Registered actions in the status popup too**, one `Piwi.RunControl` group in every place; `Piwi.OpenRunPage` and `Piwi.OpenTraceSoFar` in D25 | `ide` | [AC6](#ac6), [HM11](#hm11), [NF2](#nf2) |
 | <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1 and M2; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
@@ -1470,16 +1463,13 @@ external link in the CI lists (`run-control.ts:2215`, `PiwiCiRuns.kt:248`). **(r
 gutter's outcome marks and Appendix A's glyphs from one map per client, unreachable and the file's tests take glyphs of
 their own, and Appendix A gains the rows they lack. ([Q26](#q26), [M5](#m5))
 
-<a id="nf2"></a>**NF2. New JetBrains entries are built as unregistered actions, and the run's controls come in two
-orders.** The stop popup builds Show the Browser and Share with Playwright Tools anew, with no icon and other labels
-than the registered `Piwi.ShowBrowser` and `Piwi.ShareWithPlaywright` (`PiwiRunControl.kt:1756, 1766`,
-`plugin.xml:266-271`). The status popup's run page entry is an unregistered `OpenRunPageAction` beside "Open Run #78
-(Running)" for the same run (`PiwiActions.kt:250, 269`, `PiwiStatusBar.kt:199`), and Open the Trace So Far is a button
-of the Worker tab alone (`PiwiRunControl.kt:2144`) while VS Code registers `piwi.openTraceSoFar`
+<a id="nf2"></a>**NF2. The run's page and the trace so far have no registered action in JetBrains, and the run's
+controls come in two orders.** The status popup's run page entry is an unregistered `OpenRunPageAction` beside "Open run
+#78 (running)" for the same run (`PiwiActions.kt:250, 269`, `PiwiStatusBar.kt:199`), and Open the trace so far is a
+button of the Worker tab alone (`PiwiRunControl.kt:2144`) while VS Code registers `piwi.openTraceSoFar`
 (`apps/vscode/package.json:508`). The status popup orders the run's actions otherwise than Tools → Piwi and leaves out
-sharing the project's runs (`PiwiStatusBar.kt:264-268`, `plugin.xml:222-290`). **(read)** Fix: the registered actions in
-every popup, `Piwi.OpenRunPage` and `Piwi.OpenTraceSoFar` registered in D25, and one `Piwi.RunControl` group in both
-places. ([M2](#m2))
+sharing the project's runs (`PiwiStatusBar.kt:264-268`, `plugin.xml:222-290`). **(read)** Fix: `Piwi.OpenRunPage` and
+`Piwi.OpenTraceSoFar` registered in D25, and one `Piwi.RunControl` group in both places. ([M2](#m2))
 
 <a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**
 Open Log and Open the log (`plugin.xml:126`, `apps/vscode/package.json:206`); Turn Hold Failures On or Off and Hold

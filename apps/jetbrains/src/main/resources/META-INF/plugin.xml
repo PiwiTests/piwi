@@ -156,6 +156,7 @@
                     text="Re-run the failing tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
                     description="Run every test that still fails, or whose failing line changed since its run">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+                <synonym text="Rerun failed tests"/>
             </action>
             <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
                     icon="AllIcons.Actions.Diff"
@@ -191,11 +192,14 @@
                     icon="AllIcons.Ide.Macro.Recording_1"
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                <synonym text="Playwright codegen"/>
+                <synonym text="Record a test"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
                     text="Record a new test file…" icon="AllIcons.Ide.Macro.Recording_1"
                     description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
                 <add-to-group group-id="NewGroup" anchor="last"/>
+                <synonym text="Playwright codegen"/>
             </action>
             <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
                     icon="AllIcons.Actions.Suspend"
@@ -295,6 +299,24 @@
             <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"
                     icon="AllIcons.Actions.Help"
                     description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
+        </group>
+        <!-- The Piwi tool window's actions on its selected failure (`FAILURE_NODE`): its right-click menu, and Find Action. -->
+        <group id="Piwi.FailureActions">
+            <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run this test"
+                    description="Run the selected failure's test as Piwi runs it"/>
+            <action id="Piwi.Failure.OpenTrace" class="dev.piwitests.jetbrains.OpenFailureTraceAction" text="Open the trace"
+                    description="Open the selected failure's trace in Playwright's trace viewer">
+                <synonym text="Playwright trace viewer"/>
+            </action>
+            <action id="Piwi.Failure.OpenScreenshot" class="dev.piwitests.jetbrains.OpenFailureScreenshotAction"
+                    text="Open the screenshot" description="Open the selected failure's screenshot"/>
+            <action id="Piwi.Failure.CopyContext" class="dev.piwitests.jetbrains.CopyFailureContextAction"
+                    text="Copy context for agent" description="Copy the selected failure as an agent reads it"/>
+            <action id="Piwi.Failure.Reproduce" class="dev.piwitests.jetbrains.ReproduceFailureAction"
+                    text="Reproduce in the desktop app" description="Reproduce the selected CI failure on this machine, in the desktop app"/>
+            <action id="Piwi.Failure.FindBreakingCommit" class="dev.piwitests.jetbrains.FindBreakingCommitAction"
+                    text="Find the breaking commit in the desktop app"
+                    description="Find the commit that broke the selected CI failure's test, in the desktop app"/>
         </group>
         <!--
           Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS

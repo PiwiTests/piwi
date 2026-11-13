@@ -47,7 +47,7 @@ describe('the editor ids D25 freezes', () => {
   test("list every action id of the JetBrains plugin's plugin.xml", () => {
     const pluginXml = readFileSync(resolve(root, 'apps/jetbrains/src/main/resources/META-INF/plugin.xml'), 'utf8');
     const declared = [...pluginXml.matchAll(/<action id="([^"]+)"/g)].map((m) => m[1]!);
-    const registered = idsIn(bullet('- **The JetBrains plugin**'), /^Piwi\.[A-Za-z]+$/);
+    const registered = idsIn(bullet('- **The JetBrains plugin**'), /^Piwi\.[A-Za-z]+(\.[A-Za-z]+)?$/);
     expect(registered).toEqual([...new Set(declared)].sort());
   });
 

@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.actionSystem.ToggleAction
@@ -250,9 +251,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
      */
     private class FailuresPanel(private val project: Project, private val tree: JTree) :
         SimpleToolWindowPanel(true, true), OccurenceNavigator {
-        /** The selected node's dashboard page, for Open in dashboard. */
-        override fun getData(dataId: String): Any? =
-            if (DASHBOARD_URL.`is`(dataId)) nodeOf(tree.lastSelectedPathComponent)?.url else super.getData(dataId)
+        /** The selected node's dashboard page, for Open in dashboard, and the node, for the `Piwi.Failure.*` actions. */
+        override fun getData(dataId: String): Any? = when {
+            DASHBOARD_URL.`is`(dataId) -> nodeOf(tree.lastSelectedPathComponent)?.url
+            FAILURE_NODE.`is`(dataId) -> nodeOf(tree.lastSelectedPathComponent)
+            else -> super.getData(dataId)
+        }
 
         private fun failurePaths(): List<TreePath> {
             val paths = mutableListOf<TreePath>()
@@ -357,61 +361,30 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     /** An action of the right-click menu on a failure, shown when it applies to the selected one. */
-    private class FailureAction(
-        text: String,
-        icon: Icon?,
-        private val selected: () -> Glue.FailureNode?,
-        private val applies: (WorkspaceFailure) -> Boolean,
-        private val perform: (WorkspaceFailure) -> Unit,
-    ) : AnAction(text, null, icon), DumbAware {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun update(e: AnActionEvent) {
-            e.presentation.isEnabledAndVisible = selected()?.failure?.let(applies) == true
-        }
-
-        override fun actionPerformed(e: AnActionEvent) {
-            selected()?.failure?.let(perform)
-        }
-    }
-
+    /**
+     * The tree's right-click menu: the selected config's actions, then the registered `Piwi.Failure.*` actions, which act
+     * on the selected failure (`FAILURE_NODE`), their keys shown and Find Action reaching them.
+     */
     private fun failureMenu(project: Project, selected: () -> Glue.FailureNode?): DefaultActionGroup {
         val service = project.service<PiwiProjectService>()
-        val evidence = { f: WorkspaceFailure -> TraceParams(f.uri ?: "", f.executionId) }
-        val failing = { f: WorkspaceFailure -> !Glue.isFixedLocally(f) }
-        val desktop = { f: WorkspaceFailure -> failing(f) && f.source == "ci" && service.status?.desktopUrl != null }
-        val job = { f: WorkspaceFailure, kind: String ->
-            (f.root ?: Glue.contextRootOf(service.status, f.uri))?.let {
-                PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, kind = kind))
-            }
-            Unit
-        }
+        val actions = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+        fun registered(vararg ids: String): Array<AnAction> = ids.mapNotNull { actions.getAction(it) }.toTypedArray()
         val failingIn = { n: Glue.FailureNode -> n.kind == "context" && n.root != null && Glue.failingRuns(service.failuresResult, n.root).isNotEmpty() }
         return DefaultActionGroup(
             ConfigAction("Re-run the failing tests", AllIcons.RunConfigurations.RerunFailedTests, selected, failingIn) {
                 PiwiCommands.rerunFailing(project, it.root)
             },
             ConfigAction("Compare with…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
-            ConfigAction("Open in dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
+            // The selected node's page, a run's or a failure's (`DASHBOARD_URL`).
+            *registered("Piwi.OpenInDashboard"),
             Separator.getInstance(),
-            FailureAction("Run this test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
-                Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
-            },
+            *registered("Piwi.Failure.RunTest"),
             Separator.getInstance(),
-            FailureAction("Open the trace", PiwiIcons.TRACE, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
-            FailureAction("Open the screenshot", PiwiIcons.SCREENSHOT, selected, { it.hasScreenshot == true }) {
-                PiwiCommands.openScreenshot(project, evidence(it))
-            },
-            FailureAction("Open in dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { f ->
-                f.url?.let { BrowserUtil.browse(it) }
-            },
+            *registered("Piwi.Failure.OpenTrace", "Piwi.Failure.OpenScreenshot"),
             Separator.getInstance(),
-            FailureAction("Copy context for agent", AllIcons.Actions.Copy, selected, failing) {
-                PiwiCommands.copyAgentContext(project, evidence(it))
-            },
+            *registered("Piwi.Failure.CopyContext"),
             Separator.getInstance(),
-            FailureAction("Reproduce in the desktop app", PiwiIcons.REPRODUCE, selected, desktop) { job(it, "reproduce") },
-            FailureAction("Find the breaking commit in the desktop app", PiwiIcons.BISECT, selected, desktop) { job(it, "bisect") },
+            *registered("Piwi.Failure.Reproduce", "Piwi.Failure.FindBreakingCommit"),
         )
     }
 
@@ -489,4 +462,87 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
 
         private fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     }
+}
+
+/** The failure node the Piwi tool window has selected, which the `Piwi.Failure.*` actions act on. */
+val FAILURE_NODE: DataKey<Glue.FailureNode> = DataKey.create("piwi.failureNode")
+
+/**
+ * An action on the failure the Piwi tool window has selected (`FAILURE_NODE`), shown and enabled only where it applies;
+ * its words are `plugin.xml`'s.
+ */
+abstract class FailureNodeAction(icon: Icon) : AnAction(null, null, icon), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+    abstract fun applies(project: Project, failure: WorkspaceFailure): Boolean
+
+    abstract fun perform(project: Project, failure: WorkspaceFailure)
+
+    override fun update(e: AnActionEvent) {
+        val project = e.project
+        val failure = e.getData(FAILURE_NODE)?.failure
+        e.presentation.isEnabledAndVisible = project != null && failure != null && applies(project, failure)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        e.getData(FAILURE_NODE)?.failure?.let { perform(project, it) }
+    }
+
+    protected fun evidence(f: WorkspaceFailure) = TraceParams(f.uri ?: "", f.executionId)
+
+    /** Whether a desktop job applies: a CI failure not fixed here, while the desktop app runs. */
+    protected fun desktop(project: Project, f: WorkspaceFailure) =
+        !Glue.isFixedLocally(f) && f.source == "ci" && project.service<PiwiProjectService>().status?.desktopUrl != null
+
+    protected fun job(project: Project, f: WorkspaceFailure, kind: String) {
+        val service = project.service<PiwiProjectService>()
+        (f.root ?: Glue.contextRootOf(service.status, f.uri))?.let {
+            PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, kind = kind))
+        }
+    }
+}
+
+/** **Run this test**: the selected failure's test, as Piwi runs it. */
+class RunFailureTestAction : FailureNodeAction(AllIcons.Actions.Execute) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = Glue.failureRunArgs(failure) != null
+
+    override fun perform(project: Project, failure: WorkspaceFailure) {
+        Glue.failureRunArgs(failure)?.let { PiwiCommands.runTests(project, it) }
+    }
+}
+
+/** **Open the trace** of the selected failure. */
+class OpenFailureTraceAction : FailureNodeAction(PiwiIcons.TRACE) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.hasTrace
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = PiwiCommands.openTrace(project, evidence(failure))
+}
+
+/** **Open the screenshot** of the selected failure. */
+class OpenFailureScreenshotAction : FailureNodeAction(PiwiIcons.SCREENSHOT) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.hasScreenshot == true
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = PiwiCommands.openScreenshot(project, evidence(failure))
+}
+
+/** **Copy context for agent**: the selected failure, as an agent reads it. */
+class CopyFailureContextAction : FailureNodeAction(AllIcons.Actions.Copy) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = !Glue.isFixedLocally(failure)
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = PiwiCommands.copyAgentContext(project, evidence(failure))
+}
+
+/** **Reproduce in the desktop app**: the selected CI failure, reproduced on this machine. */
+class ReproduceFailureAction : FailureNodeAction(PiwiIcons.REPRODUCE) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = desktop(project, failure)
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "reproduce")
+}
+
+/** **Find the breaking commit in the desktop app**: the commit that broke the selected CI failure's test. */
+class FindBreakingCommitAction : FailureNodeAction(PiwiIcons.BISECT) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = desktop(project, failure)
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "bisect")
 }
