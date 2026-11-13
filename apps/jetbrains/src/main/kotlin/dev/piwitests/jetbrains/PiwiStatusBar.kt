@@ -295,8 +295,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
     }
 
-    /** **Node.js Settings…**: the interpreter the editor service starts with, the service started again once closed. */
-    private inner class NodeSettingsAction : DumbAwareAction("Node.js Settings…", null, AllIcons.General.Settings) {
+    /** **Node.js settings…**: the interpreter the editor service starts with, the service started again once closed. */
+    private inner class NodeSettingsAction : DumbAwareAction("Node.js settings…", null, AllIcons.General.Settings) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun actionPerformed(e: AnActionEvent) = service().openNodeSettings()

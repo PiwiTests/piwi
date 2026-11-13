@@ -462,7 +462,7 @@ object Glue {
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
-    const val NODE_SETTINGS_LINK = "Node.js Settings…"
+    const val NODE_SETTINGS_LINK = "Node.js settings…"
 
 
 
@@ -2418,14 +2418,14 @@ object Glue {
 
     /**
      * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the run page**, **Copy the
-     * Run Page's Link** (while its page is known) and **Stop sharing the run…**, each naming its run when several are
+     * run page's link** (while its page is known) and **Stop sharing the run…**, each naming its run when several are
      * shared (`runLabel`); then **Stop sharing this project's runs…** while the project's runs are shared. Both stops ask
      * first ([stopSharingQuestion]).
      */
     fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
         val shared = sharedRunsOf(sessions).filter { it.live.shared }
         val entries = shared.flatMap { run ->
-            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it) } else null
+            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it).replaceFirstChar { c -> c.lowercaseChar() } } else null
             listOfNotNull(
                 run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the page of $n" } ?: "Open the run page", run.ref, it) },
                 run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the link of $n" } ?: "Copy the run page's link", run.ref, it) },

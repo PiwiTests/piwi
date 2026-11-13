@@ -33,7 +33,7 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 desktop app's tray say the call it waits in and, for a locator call, how long it has run, and offer **End the test**
 there. In VS Code, the status bar reads `Pausing… 12 s`, the call in its tooltip, with **End the test** beside it; in
 a JetBrains IDE, the status bar item reads `Piwi: pausing… · waits in` and the call, and **Tools → Piwi → End the
-Test** ends it:
+test** ends it:
 
 - **A locator call or an assertion**, with Playwright 1.62 or later, is given up at once, and the test is skipped.
 - **Another call** (a `waitForTimeout`, a navigation) finishes first, and the test is skipped at its next locator

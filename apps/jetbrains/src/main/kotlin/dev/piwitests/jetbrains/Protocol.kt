@@ -649,7 +649,7 @@ data class RenderStepsParams(
 data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val importEdit: FileEdit? = null)
 
 /**
- * `piwi/newTestFile`: where Record a New Test File offers to create its spec, from the file or folder at hand (`uri`):
+ * `piwi/newTestFile`: where Record a new test file offers to create its spec, from the file or folder at hand (`uri`):
  * beside the spec at hand, else in the test folder of the config holding it (`testDir`, as Playwright resolves it),
  * named `recorded` with the suffix the suite's specs use, a name the folder does not hold yet.
  */

@@ -34,7 +34,7 @@ In a project opened in safe mode, Piwi runs nothing and says it waits for your t
 then the desktop app. When the environment or the workspace `.env` names another instance, the page says so above the
 fields, and an empty **Server URL** shows its address. **Test connection** beside the URL says whether the address typed
 there answers and asks for a key, before you apply it. While the service cannot start, the page and the **Piwi** tool
-window offer **Node.js Settings…**, and the service starts again once you close the settings.
+window offer **Node.js settings…**, and the service starts again once you close the settings.
 
 When the service stops, the **Piwi** tool window says so and offers **Restart the editor service** and **Open log**, as
 does a balloon that says it is not running; both are also under **Tools → Piwi** and in the tool window's gear. The

@@ -946,7 +946,7 @@ one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.
 **Tools → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and
 Disconnect save the connection themselves, then the page shows the connection rows as saved, and its other edits stay
 pending until Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
-(`sendCredentials`) and, while the service cannot start, **Node.js Settings…**, which selects the Node.js page of the
+(`sendCredentials`) and, while the service cannot start, **Node.js settings…**, which selects the Node.js page of the
 open Settings dialog and starts the service again as the dialog closes; then the instance, whose **Test connection**
 reaches the URL in the field, saved or not, with Connect's `reach` and says the answer under it
 (`Glue.testConnectionText`, `Glue.testConnectionFailure`); then the desktop app, whose field reads **Desktop app

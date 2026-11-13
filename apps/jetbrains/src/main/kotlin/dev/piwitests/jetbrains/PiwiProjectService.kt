@@ -450,11 +450,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
         changed()
         if (problem == null) return
         PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
-            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
+            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js settings") { openNodeSettings() })
             .notify(project)
     }
 
-    /** The id of the Node.js settings page, which **Node.js Settings…** opens. */
+    /** The id of the Node.js settings page, which **Node.js settings…** opens. */
     val nodeSettingsId get() = NODE_SETTINGS_ID
 
     /** The Node.js settings, then the service started again with the interpreter chosen there. */

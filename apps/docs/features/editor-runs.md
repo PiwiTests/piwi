@@ -72,7 +72,7 @@ the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
 ## Re-run the failing tests
 
 **Piwi: Re-run the failing tests** (`Ctrl+Shift+Alt+F`, `Cmd+Shift+Alt+F` on macOS; **Tools → Piwi → Re-run the
-Failing Tests**) runs every test still failing, or edited since its run, one command per Playwright config, or those
+failing tests**) runs every test still failing, or edited since its run, one command per Playwright config, or those
 of one config from its node in the [failures view](./editor-failures#the-failures-view); when none fails, it says so.
 
 ## After a run
@@ -120,8 +120,8 @@ or retries an [unreachable instance](./editor-connection#an-unreachable-instance
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or
 of the connection, and the text takes the theme's error color while tests of that run fail, a run in progress
 included. A click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Refresh the
-Latest Run**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
-connected, **Node.js Settings…** when Node.js is missing or too old, or **Go to the recorded lines** while a recording
+latest run**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
+connected, **Node.js settings…** when Node.js is missing or too old, or **Go to the recorded lines** while a recording
 runs, with **Pause recording**, **Resume recording** and **Stop recording**.
 
 ## Related

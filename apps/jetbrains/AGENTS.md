@@ -174,7 +174,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
 - **Every action but a toggle draws its concept's platform icon, one with a New UI glyph on 2024.1, or is listed as
   waiting for Piwi's glyph.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`; the failed mark, Open in
-  Dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`
+  dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`
   (`testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph`); the New UI glyph, by hand.
 - **Every label is in sentence case, as the VS Code extension's**: actions, buttons, dialog and popup titles, tabs and
   settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
