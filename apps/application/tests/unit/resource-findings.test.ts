@@ -19,6 +19,7 @@ const { getRunResources } = await import('../../shared/handlers/run-resources');
 const {
   recordRunResourceFindings,
   runFindingsNovelty,
+  runClosedFindings,
   runLeakFacts,
   listResourceFindings,
   pairMoved,
@@ -425,6 +426,47 @@ describe('finding history', () => {
     await db.insert(schema.testRuns).values({ id: 99, projectId: 1, status: 'passed', startTime: new Date() });
     expect(await runFindingsNovelty(db as any, 99)).toBeNull();
     expect(await record(99)).toEqual({ seen: 0, fixed: [], reopened: [] });
+  });
+});
+
+describe('the leaks a change closes', () => {
+  /** What the pull request's run closed of the default branch's open leaks. */
+  async function closedBy(id: number) {
+    const novelty = (await runFindingsNovelty(db as any, id))!;
+    return (await runClosedFindings(db as any, id, novelty)).map((f) => f.site);
+  }
+  const passed = [{ file: 'tests/cart.spec.ts', status: 'passed' }];
+  const change = (more: Parameters<typeof run>[0] = {}) =>
+    run({ branch: 'feature/fix', baseBranch: 'main', findings: [], cases: passed, ...more });
+
+  test('an open leak of the default branch that a full run of the change could show and did not', async () => {
+    await record(await run({ findings: [leakAt(10), leakAt(40, 'tests/admin.spec.ts')] }));
+    expect(await closedBy(await change())).toEqual(['tests/admin.spec.ts:40', 'tests/cart.spec.ts:10']);
+    // A run of the default branch closes nothing for a change.
+    expect(await closedBy(await run({ findings: [], cases: passed }))).toEqual([]);
+  });
+
+  test('never one the change still shows, at its own line or moved by an edit above it', async () => {
+    await record(await run({ findings: [leakAt(10)] }));
+    expect(await closedBy(await change({ findings: [leakAt(10)] }))).toEqual([]);
+    expect(await closedBy(await change({ findings: [leakAt(14)] }))).toEqual([]);
+  });
+
+  test('never from a run that could not have shown it', async () => {
+    await record(await run({ findings: [leakAt(10)] }));
+    expect(await closedBy(await change({ full: false }))).toEqual([]);
+    expect(await closedBy(await change({ cases: [{ file: 'tests/cart.spec.ts', status: 'failed' }] }))).toEqual([]);
+  });
+
+  test('never one the default branch no longer shows itself', async () => {
+    await record(await run({ findings: [leakAt(10)] }));
+    await record(await run({ findings: [], cases: passed }));
+    expect(await closedBy(await change())).toEqual([]);
+  });
+
+  test('never against a base branch other than the default branch', async () => {
+    await record(await run({ findings: [leakAt(10)] }));
+    expect(await closedBy(await change({ baseBranch: 'release/1' }))).toEqual([]);
   });
 });
 

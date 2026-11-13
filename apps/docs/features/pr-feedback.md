@@ -45,8 +45,11 @@ What the comment says, in this order:
 5. **New failure clusters**: root causes never seen before in this project.
 6. **Fixed by this change**: clusters this pull request closed, with how long they were open. See
    [Did the fix work?](./failure-clusters#did-the-fix-work)
-7. **Left open by this change**: [resource leaks](./leak-history) the base branch never showed, each with the
-   line that opened it, its last use and where its close goes: its test, an `afterAll`, or its fixture's teardown.
+7. **Left open by this change**: [resource leaks](./leak-history) and servers or processes left running that the base
+   branch never showed, each with the line that opened it, its last use and where its close goes: its test, an
+   `afterAll`, or its fixture's teardown.
+8. **Closed by this change**: open leaks of the default branch that the run no longer shows, when it is a full run
+   whose tests that could show them passed.
 
 Each failure carries its error, its owner and tags when the test declares them (see
 [ownership metadata](/reference/test-metadata#ownership-metadata-piwi-annotations)), and, when a locator broke, the

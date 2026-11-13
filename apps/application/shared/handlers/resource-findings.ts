@@ -514,6 +514,61 @@ export async function runFindingsNovelty(db: DrizzleDB, runId: number): Promise<
   };
 }
 
+/**
+ * The open leaks and Node handles of the default branch that a full run of
+ * another branch no longer shows, when the run compares with the default
+ * branch: each one its latest full default-branch run showed (no clean run
+ * since), that this run could have shown (`reportReach`) and showed under no
+ * identity, its own nor a moved one. Empty for a run of the default branch, a
+ * partial run, or one that sent no report.
+ */
+export async function runClosedFindings(
+  db: DrizzleDB,
+  runId: number,
+  novelty: RunFindingsNovelty,
+): Promise<WireResourceFinding[]> {
+  const run = await readRun(db, runId);
+  if (!run || run.parts.length === 0 || !run.isFullRun) return [];
+  const defaultBranch = await readProjectDefaultBranch(db, run.projectId, run.metadata);
+  if (novelty.baseBranch !== defaultBranch || !run.branch || run.branch === defaultBranch) return [];
+  const shown = new Set(novelty.findings.flatMap((f) => [f.fingerprint, f.historyFingerprint]));
+  const open = await db
+    .selectDistinct({
+      fingerprint: resourceFindings.fingerprint,
+      verdict: resourceFindings.verdict,
+      kind: resourceFindings.kind,
+      place: resourceFindings.place,
+      site: resourceFindings.site,
+    })
+    .from(resourceFindings)
+    .innerJoin(resourceOccurrences, eq(resourceOccurrences.findingId, resourceFindings.id))
+    .innerJoin(testRuns, eq(testRuns.id, resourceOccurrences.runId))
+    .where(
+      and(
+        eq(resourceFindings.projectId, run.projectId),
+        eq(resourceFindings.status, 'open'),
+        eq(resourceFindings.cleanRuns, 0),
+        inArray(resourceFindings.verdict, ['leaked', 'probable', 'handle']),
+        lt(testRuns.startTime, run.startTime),
+        shownOnBranch(defaultBranch, true),
+      ),
+    );
+  const unseen = open.filter((row) => !shown.has(row.fingerprint));
+  if (unseen.length === 0) return [];
+  const couldShow = await reportReach(db, run);
+  return unseen
+    .filter((row) => couldShow(row))
+    .sort((a, b) => a.place.localeCompare(b.place))
+    .map((row) => ({
+      verdict: row.verdict as WireResourceFinding['verdict'],
+      kind: row.kind as WireResourceFinding['kind'],
+      where: row.place,
+      site: row.site,
+      tests: 0,
+      count: 0,
+    }));
+}
+
 /** What the gate's leak rules read of a run. */
 export type RunLeakFacts = NonNullable<GateFacts['resources']>;
 
