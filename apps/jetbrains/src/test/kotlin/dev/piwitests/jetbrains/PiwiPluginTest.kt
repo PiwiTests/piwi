@@ -1379,6 +1379,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     ),
                     specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
                 )
+                // The service answers a flaky test of the catalog as flaky on its line, which the result icon draws as the flaky mark.
+                val catalog = File(dir, "tests/catalog.spec.ts").toURI().toString().replace("file:/", "file:///")
+                val flaky = server.fileSummary(UriParams(catalog)).get(5, TimeUnit.SECONDS)?.lines.orEmpty().single { it.status != null }
+                assertEquals(2 to "flaky", flaky.line to flaky.status)
+                assertSame(PiwiIcons.FLAKY, PiwiIcons.outcome(flaky.status))
+
                 val shot = server.screenshot(TraceParams(spec, 900)).get(10, TimeUnit.SECONDS)
                 assertEquals("PNG-stub", shot?.path?.let { File(it).readText() })
 
@@ -1571,6 +1577,15 @@ class PiwiPluginTest : BasePlatformTestCase() {
             ).joinToString("\n"),
         )
         write(
+            "tests/catalog.spec.ts",
+            listOf(
+                "import { test } from '@playwright/test';",
+                "",
+                "test('filters in-stock products', async ({ page }) => {});",
+                "",
+            ).joinToString("\n"),
+        )
+        write(
             "src/BasketService.cs",
             listOf(
                 "public class BasketService",
@@ -1662,7 +1677,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 """.trimIndent(),
                 "/api/projects/7/test-cases" to """
                     {"items":[{"id":3,"title":"removes a row","filePath":"tests/checkout.spec.ts","status":"failed",
-                      "totalRuns":4,"passedRuns":3}]}
+                      "totalRuns":4,"passedRuns":3},
+                     {"id":5,"title":"filters in-stock products","filePath":"tests/catalog.spec.ts","status":"flaky",
+                      "totalRuns":4,"passedRuns":4,"flakyRuns":2}]}
                 """.trimIndent(),
                 "/api/files/shots/900.png" to "PNG-stub",
                 "/api/projects/7/locator-alternatives" to """{"items":[]}""",
