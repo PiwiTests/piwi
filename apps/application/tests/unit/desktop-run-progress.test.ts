@@ -143,9 +143,9 @@ describe('finishedRunFlash', () => {
     }
   });
 
-  test('an interrupted run flashes amber, not as a failure', () => {
+  test('an interrupted run flashes slate, not as a failure nor as a test that waits', () => {
     expect(finishedRunFlash('interrupted')?.progress).toEqual({
-      state: 'paused',
+      state: 'interrupted',
       fraction: 1,
       label: 'Run interrupted',
       failing: false,

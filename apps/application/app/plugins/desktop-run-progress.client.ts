@@ -12,12 +12,12 @@
  * lifecycle + progress deltas. The active runs are aggregated
  * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
  * command; as a run of this window's local runs ends (`trayListsRun`), its outcome
- * flashes (green pass / amber interrupted / red fail) for a moment, whatever else
+ * flashes (green pass / slate interrupted / red fail) for a moment, whatever else
  * runs, and a red one asks for the user's attention; an editor's, a terminal's,
  * CI's, another window's run, or one from before a reload, never flashes. While a
  * test of the app's runs waits at a stop for the person (the hub's runs,
  * `runsAttention`), or one of an editor's runs (`editor-runs`, which the server
- * observes and never steers), the shell says so first, amber (`paused`): `1 test
+ * observes and never steers), the shell says so first, violet (`paused`): `1 test
  * waits for you`, and, for the app's own, the tray's menu offers Show the stopped
  * test (`waiting`), which opens the Local runs tray on the first of them
  * (`firstWaiting`). The Windows

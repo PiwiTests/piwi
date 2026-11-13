@@ -641,7 +641,7 @@ fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
     match state {
         "normal" => Some(ProgressBarStatus::Normal),
         "indeterminate" => Some(ProgressBarStatus::Indeterminate),
-        "paused" => Some(ProgressBarStatus::Paused),
+        "paused" | "interrupted" => Some(ProgressBarStatus::Paused),
         "error" => Some(ProgressBarStatus::Error),
         _ => None,
     }
@@ -653,19 +653,22 @@ fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
 const DOT_FAILED: (u8, u8, u8) = (244, 63, 94); // rose-500
 const DOT_PASSED: (u8, u8, u8) = (16, 185, 129); // emerald-500
 const DOT_RUNNING: (u8, u8, u8) = (59, 130, 246); // blue-500
-/// A run that waits for you at a stop, or was interrupted: the pause bar's own violet.
+const DOT_INTERRUPTED: (u8, u8, u8) = (100, 116, 139); // slate-500
+/// A run that waits for you at a stop: the pause bar's own violet.
 const DOT_PAUSED: (u8, u8, u8) = (124, 58, 237); // violet-600
 
 /// The colour of the status dot drawn on the tray icon (all platforms) and the
 /// taskbar overlay icon (Windows) for a run state, or `None` when the run is
 /// idle and the app's own icon should show instead. A determinate `normal` at
-/// 100% is the finished-pass flash (passed); a running `normal` is running, or
-/// failed while `failing` (a test has failed so far); a paused or interrupted
-/// run is the pause bar's violet.
+/// 100% is the finished-pass flash (passed); a running `normal` is the running
+/// color, or the failed one while `failing` (a test has failed so far); a run
+/// that waits at a stop (`paused`) is the pause bar's violet, and an
+/// interrupted run's flash (`interrupted`) the palette's slate.
 fn status_dot_color(state: &str, fraction: Option<f64>, failing: bool) -> Option<(u8, u8, u8)> {
     match state {
         "error" => Some(DOT_FAILED),
         "paused" => Some(DOT_PAUSED),
+        "interrupted" => Some(DOT_INTERRUPTED),
         "normal" | "indeterminate" if failing => Some(DOT_FAILED),
         "normal" if fraction.is_some_and(|f| f >= 1.0) => Some(DOT_PASSED),
         "normal" | "indeterminate" => Some(DOT_RUNNING),
@@ -706,7 +709,7 @@ fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
 /// be watched with the window minimised or in the tray: the taskbar/Dock progress
 /// bar, the window title (which the Windows taskbar shows on hover) and the tray
 /// tooltip. Driven by the dashboard, which aggregates its active runs into one
-/// `state` (`normal`/`indeterminate`/`paused`/`error`/`none`), an optional 0–1
+/// `state` (`normal`/`indeterminate`/`paused`/`interrupted`/`error`/`none`), an optional 0–1
 /// `fraction`, a `label` and whether any of them is `failing`, which turns the
 /// status dot red. `state = "none"` clears the bar and restores the resting
 /// title; run progress leaves the tooltip while the unread count (if any) stays.
@@ -4007,7 +4010,7 @@ mod tests {
         notification_wanted, read_event_stream, NotificationChoices, ServerNotification,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
-        DOT_FAILED, DOT_PAUSED, DOT_PASSED, DOT_RUNNING,
+        DOT_FAILED, DOT_INTERRUPTED, DOT_PAUSED, DOT_PASSED, DOT_RUNNING,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
@@ -4749,6 +4752,10 @@ mod tests {
             Some(ProgressBarStatus::Indeterminate)
         ));
         assert!(matches!(progress_bar_status("paused"), Some(ProgressBarStatus::Paused)));
+        assert!(matches!(
+            progress_bar_status("interrupted"),
+            Some(ProgressBarStatus::Paused)
+        ));
         assert!(matches!(progress_bar_status("error"), Some(ProgressBarStatus::Error)));
         // "none" and anything unrecognised clear the bar.
         assert!(progress_bar_status("none").is_none());
@@ -4762,6 +4769,10 @@ mod tests {
         assert_eq!(
             status_dot_color("paused", None, false),
             Some(DOT_PAUSED)
+        );
+        assert_eq!(
+            status_dot_color("interrupted", Some(1.0), false),
+            Some(DOT_INTERRUPTED)
         );
         // Running is blue; the finished-pass flash (normal at 100%) is green.
         assert_eq!(

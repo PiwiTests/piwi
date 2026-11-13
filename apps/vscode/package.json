@@ -1282,12 +1282,12 @@
       },
       {
         "id": "piwi.flakyForeground",
-        "description": "The word flaky after a flaky test's line while the Testing view lists Piwi's tests: the dashboard's flaky color.",
+        "description": "The word flaky after a flaky test's line while the Testing view lists Piwi's tests: the dashboard's flaky text color.",
         "defaults": {
-          "dark": "#d946ef",
-          "light": "#d946ef",
-          "highContrast": "#d946ef",
-          "highContrastLight": "#d946ef"
+          "dark": "#e879f9",
+          "light": "#a21caf",
+          "highContrast": "#e879f9",
+          "highContrastLight": "#86198f"
         }
       },
       {
