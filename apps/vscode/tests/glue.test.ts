@@ -18,6 +18,8 @@ import type {
 } from '@piwitests/editor/protocol';
 import {
   OwnRunCounts,
+  flakyTestsByRoot,
+  isFlakyGroup,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
   heldStops,
@@ -142,10 +144,10 @@ describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
     '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
-  /** The links of a run with flaky tests: one more, to them. */
+  /** The links of a run whose flaky tests the failures view lists: one more, to the config's. */
   const FLAKY_LINKS = LINKS.replace(
     ' · [Open in dashboard]',
-    ' · [Show the flaky tests](command:piwi.showFlakyTests) · [Open in dashboard]',
+    ` · [Show the run's 2 flaky tests](command:piwi.showFlakyTests?${encodeURIComponent('["/w"]')}) · [Open in dashboard]`,
   );
 
   test('without a Playwright config, says so', () => {
@@ -205,7 +207,7 @@ describe('statusBarView', () => {
   test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
-      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${FLAKY_LINKS}`,
+      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
       url: 'http://piwi/test-runs/41',
       liveUrl: null,
@@ -213,10 +215,19 @@ describe('statusBarView', () => {
     });
   });
 
+  test("links the run's flaky tests once the failures view lists them, for the config shown", () => {
+    const listed = (root: string) => (root === '/w' ? 2 : 0);
+    expect(statusBarView(connected, run({}), false, Date.now(), null, undefined, listed).tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${FLAKY_LINKS}`,
+    );
+    const one = statusBarView(connected, run({}), false, Date.now(), null, undefined, () => 1).tooltip;
+    expect(one).toContain("[Show the run's flaky test](command:piwi.showFlakyTests?");
+  });
+
   test('the tooltip names the reporter the project installs', () => {
     const withReporter: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: '0.47.0' }] };
     expect(statusBarView(connected, withReporter).tooltip).toBe(
-      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${FLAKY_LINKS}`,
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${LINKS}`,
     );
     const unknown: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: null }] };
     expect(statusBarView(connected, unknown).tooltip).not.toContain('reporter');
@@ -231,7 +242,7 @@ describe('statusBarView', () => {
       'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped',
       'Updated 12 s ago · live',
       FROM,
-      FLAKY_LINKS,
+      LINKS,
     ]);
     expect(statusBarView(connected, read('polling'), false, now).tooltip).toContain(
       '\n\nUpdated 12 s ago · read every minute\n\n',
@@ -1588,6 +1599,23 @@ describe('the failures view', () => {
       url: 'http://piwi/test-run-cases/25',
       place: { uri: 'file:///w/tests/cart.spec.ts', line: 2 },
     });
+    expect(flakyTestsByRoot(flaky)).toEqual(new Map([['', 1]]));
+    // With several configs, each config's group is counted under the folder its node names.
+    const several = {
+      ...flaky,
+      tree: [{ ...flaky.tree[0]!, key: 'context:/w/apps/admin', root: '/w/apps/admin' }, flaky.tree[0]!],
+    };
+    expect(flakyTestsByRoot(several)).toEqual(
+      new Map([
+        ['/w/apps/admin', 1],
+        ['', 1],
+      ]),
+    );
+    expect([isFlakyGroup('flaky'), isFlakyGroup('/w/apps/admin\nflaky'), isFlakyGroup('flaky:t\nchromium')]).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 
   test('a hover is the service’s lines as Markdown, a failure’s title in bold', () => {

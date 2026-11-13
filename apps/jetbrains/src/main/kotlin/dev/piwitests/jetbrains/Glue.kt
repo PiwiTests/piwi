@@ -648,12 +648,32 @@ object Glue {
     /** Whether a node of the failures tree is a run's `Flaky in this run` group, a context's or the only run's. */
     fun isFlakyGroup(key: String): Boolean = key == "flaky" || key.endsWith("\nflaky")
 
-    /** How many flaky tests the failures tree lists, under each run's `Flaky in this run` group. */
-    fun flakyTestsListed(result: FailuresResult?): Int {
-        fun count(nodes: List<FailureTreeNode>): Int =
-            nodes.sumOf { node -> if (isFlakyGroup(node.key)) node.children.orEmpty().size else count(node.children.orEmpty()) }
-        return count(result?.tree.orEmpty())
+    /**
+     * How many flaky tests the failures tree lists, by the folder of the Playwright config whose run's `Flaky in this
+     * run` group lists them: its `run` or `context` node's `root`, the empty string when no node names one.
+     */
+    fun flakyTestsByRoot(result: FailuresResult?): Map<String, Int> {
+        val counts = linkedMapOf<String, Int>()
+        fun walk(nodes: List<FailureTreeNode>, root: String) {
+            for (node in nodes) {
+                val at = node.root ?: root
+                if (isFlakyGroup(node.key)) counts[at] = (counts[at] ?: 0) + node.children.orEmpty().size
+                else walk(node.children.orEmpty(), at)
+            }
+        }
+        walk(result?.tree.orEmpty(), "")
+        return counts
     }
+
+    /** The flaky tests the tree lists for the config at `root`, else those of the only config it lists any for. */
+    fun flakyTestsListed(result: FailuresResult?, root: String?): Int {
+        val counts = flakyTestsByRoot(result)
+        return counts[root] ?: counts.values.singleOrNull() ?: 0
+    }
+
+    /** What opens a config's flaky tests: `Show the run's 2 flaky tests`, as VS Code's status tooltip says it. */
+    fun showFlakyTestsLabel(count: Int): String =
+        if (count == 1) "Show the run's flaky test" else "Show the run's $count flaky tests"
 
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }

@@ -364,7 +364,9 @@ A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi** do
 the group by `PiwiPluginTest`): the controls, the page and the trace so far (`Piwi.OpenTraceSoFar`), the code actions,
 sharing, then Stop. Every row that a registered action does is that action, the stops as `Piwi.ShowStop` and the run
 pages as `Piwi.OpenRunPage`, each wrapped to act on its stop or page (`registeredWith`). Then come the registered
-actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest run in the dashboard
+actions, by id: Re-run the failing tests, Open the failures (the tool window), Show the run's flaky tests
+(`Piwi.ShowFlakyTests`, enabled while the tool window lists flaky tests for the item's config, `Glue.flakyTestsListed`;
+it selects and opens that config's group, found in the tree's model, not its rows), Open the latest run in the dashboard
 (unless a row above opens its page: one entry per page), Compare with…, Run the test at the caret, Record here, Reload
 Piwi, Connect (in this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 

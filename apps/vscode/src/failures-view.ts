@@ -17,7 +17,15 @@ import {
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
-import { FAILURES_GROUPINGS, failingRuns, failureNodes, failuresViewDescription, type FailureNode } from './glue';
+import {
+  FAILURES_GROUPINGS,
+  failingRuns,
+  failureNodes,
+  failuresViewDescription,
+  flakyTestsByRoot,
+  isFlakyGroup,
+  type FailureNode,
+} from './glue';
 
 const GROUPING = 'piwi.failuresGrouping';
 const FOLLOW = 'piwi.followEditor';
@@ -76,6 +84,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     private readonly lc: LanguageClient,
     private readonly status: () => StatusResult | null,
     private readonly runs: () => RunStatusResult | null,
+    /** Called once the view drew an answer, for what reads it (the status item's link to the flaky tests). */
+    private readonly drawn: () => void = () => {},
   ) {
     this.view = vscode.window.createTreeView('piwi.failures', { treeDataProvider: this, showCollapseAll: true });
     this.disposables.push(
@@ -160,6 +170,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
           ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
           : undefined;
     this.changed.fire(undefined);
+    this.drawn();
   }
 
   getTreeItem(node: FailureNode): vscode.TreeItem {
@@ -199,20 +210,30 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     return item;
   }
 
-  /** Shows the view with the run's `Flaky in this run` group selected and open; false when no run lists one. */
-  async revealFlaky(): Promise<boolean> {
-    const find = (nodes: FailureNode[]): FailureNode | undefined => {
+  /**
+   * Shows the view with the `Flaky in this run` group of the config at `root` selected and open, else the only one
+   * the tree lists; false when it lists none of them.
+   */
+  async revealFlaky(root?: string): Promise<boolean> {
+    const groups: Array<{ node: FailureNode; root: string }> = [];
+    const find = (nodes: FailureNode[], at: string) => {
       for (const node of nodes) {
-        if (node.key === 'flaky' || node.key.endsWith('\nflaky')) return node;
-        const found = find(node.children);
-        if (found) return found;
+        const here = node.root ?? at;
+        if (isFlakyGroup(node.key)) groups.push({ node, root: here });
+        else find(node.children, here);
       }
-      return undefined;
     };
-    const group = find(this.roots);
+    find(this.roots, '');
+    const group = groups.find((g) => g.root === root) ?? (groups.length === 1 ? groups[0] : undefined);
     if (!group) return false;
-    await this.view.reveal(group, { select: true, focus: true, expand: true });
+    await this.view.reveal(group.node, { select: true, focus: true, expand: true });
     return true;
+  }
+
+  /** The flaky tests the tree lists for the config at `root`. */
+  flakyListed(root: string): number {
+    const counts = flakyTestsByRoot(this.result);
+    return counts.get(root) ?? (counts.size === 1 ? [...counts.values()][0]! : 0);
   }
 
   getChildren(node?: FailureNode): FailureNode[] {
