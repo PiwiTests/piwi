@@ -68,6 +68,7 @@ import {
   serviceEnvironment,
   sourceLabel,
   statusBarView,
+  statusMenu,
   statusContext,
   testAtRun,
   testDecorations,
@@ -138,6 +139,86 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
       },
     },
   ],
+});
+
+describe('statusMenu', () => {
+  const idle = {
+    action: 'refresh' as const,
+    recording: null,
+    run: { active: false, stopped: false, pausable: false, page: false },
+    failing: false,
+    flaky: false,
+    connected: true,
+    spec: false,
+  };
+  const commands = (entries: ReturnType<typeof statusMenu>) =>
+    entries.map((e) => ('separator' in e ? `— ${e.separator}` : e.command));
+
+  test('leads with the item’s action, then the dashboard and the connection, each once', () => {
+    expect(commands(statusMenu(idle))).toEqual([
+      'piwi.refreshRun',
+      '— Dashboard',
+      'piwi.openRun',
+      'piwi.compareWith',
+      '— Connection',
+      'piwi.refresh',
+      'piwi.connect',
+      'piwi.openSettings',
+    ]);
+    expect(statusMenu(idle)[0]).toEqual({ command: 'piwi.refreshRun', label: 'Refresh the latest run' });
+  });
+
+  test('offers Connect first, once, when the item calls for it, and the log beside a restart', () => {
+    const notConnected = commands(statusMenu({ ...idle, action: 'connect', connected: false }));
+    expect(notConnected[0]).toBe('piwi.connect');
+    expect(notConnected.filter((c) => c === 'piwi.connect')).toHaveLength(1);
+    expect(commands(statusMenu({ ...idle, action: 'restart' })).slice(0, 2)).toEqual([
+      'piwi.restartService',
+      'piwi.openLog',
+    ]);
+  });
+
+  test('puts a recording’s controls first, and the run’s controls while a run is live', () => {
+    const recording = commands(statusMenu({ ...idle, recording: 'paused', spec: true }));
+    expect(recording.slice(0, 3)).toEqual(['piwi.stopRecording', 'piwi.resumeRecording', 'piwi.refreshRun']);
+    expect(recording).not.toContain('piwi.record');
+    const stopped = commands(
+      statusMenu({
+        ...idle,
+        run: { active: true, stopped: true, pausable: false, page: true },
+        failing: true,
+        flaky: true,
+      }),
+    );
+    expect(stopped).toEqual([
+      'piwi.refreshRun',
+      '— Run control',
+      'piwi.resumeRun',
+      'piwi.stepRun',
+      'piwi.showPausedPage',
+      'piwi.openRunPage',
+      'piwi.stopRun',
+      '— Dashboard',
+      'piwi.rerunFailing',
+      'piwi.showFlakyTests',
+      'piwi.openRun',
+      'piwi.compareWith',
+      '— Connection',
+      'piwi.refresh',
+      'piwi.connect',
+      'piwi.openSettings',
+    ]);
+  });
+
+  test('offers the test at the cursor and Record here on a spec, titled as the catalog titles them', () => {
+    const entries = statusMenu({ ...idle, spec: true });
+    expect(
+      entries.filter((e) => 'command' in e && ['piwi.runTestAtCursor', 'piwi.record'].includes(e.command)),
+    ).toEqual([
+      { command: 'piwi.runTestAtCursor', label: 'Run the test at the cursor' },
+      { command: 'piwi.record', label: 'Record here…' },
+    ]);
+  });
 });
 
 describe('statusBarView', () => {
@@ -212,6 +293,7 @@ describe('statusBarView', () => {
       url: 'http://piwi/test-runs/41',
       liveUrl: null,
       error: false,
+      flaky: false,
     });
   });
 

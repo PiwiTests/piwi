@@ -44,6 +44,7 @@ import type {
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 import { laneDuration } from './run-control';
@@ -104,9 +105,93 @@ export interface StatusBarView {
   error: boolean;
   /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
   ownLive?: boolean;
+  /** The failures view lists flaky tests for the config the item speaks for. */
+  flaky?: boolean;
 }
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
+
+/** What the status menu offers depends on. */
+export interface StatusMenuState {
+  /** The item's own action, offered first and preselected, so Enter does what a click on the item did. */
+  action: StatusBarView['action'];
+  recording: 'recording' | 'paused' | null;
+  run: { active: boolean; stopped: boolean; pausable: boolean; page: boolean };
+  failing: boolean;
+  flaky: boolean;
+  connected: boolean;
+  /** The active editor holds a spec. */
+  spec: boolean;
+}
+
+/** A row of the status menu: a command and its title, or a separator naming the section after it. */
+export type StatusMenuEntry = { command: string; label: string } | { separator: string };
+
+/**
+ * The status menu, in the JetBrains plugin's status popup's order: the item's action (with Open the log beside a
+ * restart, and a recording's controls while one runs), the run's controls while a run is live, the failures and the
+ * dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action catalog.
+ */
+export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
+  const title = (command: string) => {
+    const action = EDITOR_ACTIONS.find((a) => a.vscode === command);
+    return action ? actionTitle(action, 'vscode') : command;
+  };
+  const sections: Array<[string, Array<string | false>]> = [
+    [
+      '',
+      [
+        ...(state.recording
+          ? ['piwi.stopRecording', state.recording === 'paused' ? 'piwi.resumeRecording' : 'piwi.pauseRecording']
+          : []),
+        {
+          refresh: 'piwi.refreshRun',
+          retry: 'piwi.refresh',
+          connect: 'piwi.connect',
+          restart: 'piwi.restartService',
+          none: false as const,
+        }[state.action],
+        state.action === 'restart' && 'piwi.openLog',
+      ],
+    ],
+    [
+      'Run control',
+      state.run.active
+        ? [
+            state.run.stopped && 'piwi.resumeRun',
+            state.run.stopped && 'piwi.stepRun',
+            state.run.stopped && 'piwi.showPausedPage',
+            state.run.pausable && 'piwi.pauseRun',
+            state.run.page && 'piwi.openRunPage',
+            'piwi.stopRun',
+          ]
+        : [],
+    ],
+    [
+      'Dashboard',
+      [
+        state.failing && 'piwi.rerunFailing',
+        state.flaky && 'piwi.showFlakyTests',
+        state.connected && 'piwi.openRun',
+        state.connected && 'piwi.compareWith',
+      ],
+    ],
+    ['Run and record', [state.spec && 'piwi.runTestAtCursor', state.spec && !state.recording && 'piwi.record']],
+    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.openSettings']],
+  ];
+  const seen = new Set<string>();
+  const entries: StatusMenuEntry[] = [];
+  for (const [name, commands] of sections) {
+    const shown = commands.filter((c): c is string => !!c && !seen.has(c));
+    if (!shown.length) continue;
+    if (entries.length) entries.push({ separator: name });
+    for (const command of shown) {
+      seen.add(command);
+      entries.push({ command, label: title(command) });
+    }
+  }
+  return entries;
+}
 
 /** The commands the status bar item's tooltip links to. */
 export const STATUS_TOOLTIP_COMMANDS = [
@@ -508,7 +593,14 @@ export function statusBarView(
       connect,
     ),
   );
-  const view = { tooltip, action: 'refresh' as const, url: r.url, liveUrl, error: false };
+  const view = {
+    tooltip,
+    action: 'refresh' as const,
+    url: r.url,
+    liveUrl,
+    error: false,
+    flaky: flakyListed(connected.root) > 0,
+  };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';

@@ -645,7 +645,10 @@ told last stays while the instance's is behind it (`OwnRunCounts`), until the in
 the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
 counts the window's runs from the same events, with or without an instance.
 
-**A click** depends on the state:
+**A click** opens the status menu (`piwi.statusMenu`, `statusMenu` in `src/glue.ts`): a quick pick in the JetBrains
+popup's sections and order, each row titled by the action catalog, offered from the context keys this extension last
+set (`src/context-keys.ts`, since VS Code reads none back). Its first row, chosen as it opens, is a recording's controls
+while one runs, else the item's own action, which depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
   a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the

@@ -41,6 +41,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Open the log', vscode: 'piwi.openLog', jetbrains: ['Piwi.OpenLog'] },
   { title: 'Reload Piwi', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
   { title: 'Restart the editor service', vscode: 'piwi.restartService', jetbrains: ['Piwi.RestartService'] },
+  { title: 'Open the Piwi menu', vscode: 'piwi.statusMenu' },
   { title: 'Refresh the latest run', vscode: 'piwi.refreshRun', jetbrains: ['Piwi.RefreshRun'] },
   { title: 'Run the tests that reach this file', vscode: 'piwi.runTestsForFile', jetbrains: ['Piwi.RunTestsForFile'] },
   { title: 'Run the test at the {cursor}', vscode: 'piwi.runTestAtCursor', jetbrains: ['Piwi.RunTestAtCursor'] },

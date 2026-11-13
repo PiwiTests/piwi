@@ -272,6 +272,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.statusMenu",
+        "title": "Open the Piwi menu",
+        "category": "Piwi",
+        "icon": "$(menu)"
+      },
+      {
         "command": "piwi.refreshRun",
         "title": "Refresh the latest run",
         "category": "Piwi",

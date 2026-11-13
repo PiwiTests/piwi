@@ -6,6 +6,7 @@
  * menu, and a config's, run the commands `package.json` binds to its `contextValue`. The grouping and whether the view
  * follows the active editor are kept in `workspaceState`.
  */
+import { setContextKey } from './context-keys';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
@@ -93,7 +94,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       this.changed,
       vscode.window.onDidChangeActiveTextEditor((editor) => void this.follow(editor)),
     );
-    void vscode.commands.executeCommand('setContext', FOLLOW, this.following);
+    setContextKey(FOLLOW, this.following);
   }
 
   get grouping(): FailuresGrouping {
@@ -129,7 +130,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     } catch {
       this.result = null;
       this.render();
-      void vscode.commands.executeCommand('setContext', 'piwi.failuresView', 'unavailable' satisfies ViewState);
+      setContextKey('piwi.failuresView', 'unavailable' satisfies ViewState);
     }
     return this.result;
   }
@@ -139,7 +140,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     this.result = result;
     const state: ViewState = result.view?.state ?? (result.items.length ? 'failures' : 'disconnected');
     this.render();
-    void vscode.commands.executeCommand('setContext', 'piwi.failuresView', state);
+    setContextKey('piwi.failuresView', state);
   }
 
   /** Draw the failures as they were read last, for the run in progress. */
@@ -264,7 +265,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   /** Turn following the active editor on or off, and keep the choice for this workspace. */
   async toggleFollow(): Promise<void> {
     await this.context.workspaceState.update(FOLLOW, !this.following);
-    void vscode.commands.executeCommand('setContext', FOLLOW, this.following);
+    setContextKey(FOLLOW, this.following);
     if (this.following) await this.follow(vscode.window.activeTextEditor);
   }
 
