@@ -1260,7 +1260,7 @@ in…, Paste key… and Remove, a project combo from the instance. The sign-in i
 link (VS Code's gains Copy link); errors come from one table, and waiting for trust and a Node.js start problem become
 states with their fix. **Lives in** `PiwiConnect.kt`, `PiwiConfigurable.kt` and the service's words (FSL). **Replaces**
 up to five modal dialogs, a project typed by hand on the settings page, a page that reads None while connected.
-**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q5](#q5), [Q27](#q27), [Q29](#q29), [M12](#m12).
+**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q27](#q27), [Q29](#q29), [M12](#m12).
 
 **Messages (principle 8).**
 
