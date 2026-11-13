@@ -587,8 +587,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertFalse(id, enabled(id))
         assertTrue("a selected failure's page", enabled("Piwi.OpenInDashboard", "https://piwi.example.com/test-run-cases/9"))
         // Failures listed from a run read before the instance stopped answering re-run all the same.
-        service.failuresChanged(FailuresResult(items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9))))
+        val pays = WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9)
+        service.failuresChanged(FailuresResult(items = listOf(pays), failing = 1))
         assertTrue(enabled("Piwi.RerunFailing"))
+        // A list of failures fixed locally alone has nothing to re-run.
+        service.failuresChanged(FailuresResult(items = listOf(pays.copy(state = "fixed-locally")), failing = 0))
+        assertFalse(enabled("Piwi.RerunFailing"))
         service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
     }

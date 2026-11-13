@@ -402,13 +402,14 @@ function sentence(text: string): string {
 }
 
 /**
- * The state a failures view is in and its words, from the contexts: failures when any fails; else no failure when a
+ * The state a failures view is in and its words, from the contexts and how many tests still fail (`failing`, the
+ * answer's count, which leaves out the failures fixed locally): failures when any test fails; else no failure when a
  * context read a run; else, in this order, the first instance that does not answer, the first desktop app that did not
  * prove it holds the token, an instance still being read, no run for a connected context (its baseline's, when one is
  * chosen), and no connection.
  */
-export function failuresView(contexts: ContextViewState[], failing: boolean): FailuresView {
-  if (failing) return { state: 'failures', message: null };
+export function failuresView(contexts: ContextViewState[], failing: number): FailuresView {
+  if (failing > 0) return { state: 'failures', message: null };
   const read = contexts.find((c) => c.connected && c.hasRun);
   if (read) return { state: 'clear', message: `No failure in the latest run of ${read.branch ?? 'this branch'}.` };
   const unreachable = contexts.find((c) => c.problemKind === 'unreachable');

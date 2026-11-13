@@ -340,10 +340,13 @@ class CompareWithAction : AnAction(), DumbAware {
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    /** Enabled while failures are listed, from a run read before the instance stopped answering too. */
+    /**
+     * Enabled while a listed test still fails (`FailuresResult.failing`, which leaves out those fixed locally), from a
+     * run read before the instance stopped answering too.
+     */
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled =
-            e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failures.orEmpty().isNotEmpty()
+            (e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failuresResult?.failing ?: 0) > 0
     }
 
     override fun actionPerformed(e: AnActionEvent) {

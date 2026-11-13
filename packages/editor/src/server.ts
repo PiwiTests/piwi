@@ -1324,7 +1324,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       projectName: c.project?.name ?? null,
       baseline: c.baseline.kind === 'ladder' ? null : c.baselineLabel || null,
     }));
-    return { ...answer, view: failuresView(states, answer.items.length > 0) };
+    return { ...answer, view: failuresView(states, answer.failing) };
   };
   /** The failures last sent in `piwi/failuresChanged`. */
   let failuresSent = JSON.stringify(failuresAnswer([], 'file'));
