@@ -96,14 +96,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         private val uri: String?,
         private val at: RangeMarker,
     ) : GutterIconRenderer(), DumbAware {
-        override fun getIcon(): Icon = when (line.status) {
-            "failed" -> PiwiIcons.FAILED
-            "flaky" -> PiwiIcons.FLAKY
-            "passed" -> AllIcons.RunConfigurations.TestPassed
-            "skipped" -> AllIcons.RunConfigurations.TestIgnored
-            "running" -> AllIcons.RunConfigurations.TestState.Run
-            else -> AllIcons.RunConfigurations.TestNotRan
-        }
+        override fun getIcon(): Icon = PiwiIcons.outcome(line.status)
 
         override fun getTooltipText(): String = Glue.testResultTooltip(line.title)
 

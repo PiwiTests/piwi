@@ -39,7 +39,7 @@ function asEditorUris(session: CiSession): CiSession {
   };
 }
 
-export function registerCiRuns(): CiRuns {
+export function registerCiRuns(extensionUri: vscode.Uri): CiRuns {
   let sessions: CiSessions = new Map();
   let nodes: CiNode[] = [];
   /** The files marked now, to clear as their positions go. */
@@ -68,7 +68,9 @@ export function registerCiRuns(): CiRuns {
       item.id = node.key;
       item.description = node.description;
       item.tooltip = node.tooltip;
-      item.iconPath = new vscode.ThemeIcon(node.icon);
+      item.iconPath = node.icon.startsWith('mark:')
+        ? vscode.Uri.joinPath(extensionUri, 'media', `test-${node.icon.slice('mark:'.length)}.svg`)
+        : new vscode.ThemeIcon(node.icon);
       const open = node.open;
       if (open && 'url' in open) {
         item.command = { command: 'piwi.openInDashboard', title: node.label, arguments: [open.url] };

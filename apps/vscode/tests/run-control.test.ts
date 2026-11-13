@@ -2423,7 +2423,7 @@ describe('the CI runs of the branch', () => {
     expect(failed).toMatchObject({
       label: 'refunds',
       description: 'chromium · retry 1 · failed',
-      icon: 'error',
+      icon: 'mark:failed',
       open: { uri: spec, line: 10, character: 0 },
       children: [],
     });

@@ -19,6 +19,16 @@ object PiwiIcons {
      */
     val FLAKY: Icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/testFlaky.svg", PiwiIcons::class.java)
 
+    /** A test's outcome as its line's result icon draws it, which the CI run tab draws too. */
+    fun outcome(status: String?): Icon = when (status) {
+        "failed" -> FAILED
+        "flaky" -> FLAKY
+        "passed" -> AllIcons.RunConfigurations.TestPassed
+        "skipped" -> AllIcons.RunConfigurations.TestIgnored
+        "running" -> AllIcons.RunConfigurations.TestState.Run
+        else -> AllIcons.RunConfigurations.TestNotRan
+    }
+
     /** Open in dashboard, on a file, a node or a failure. */
     val OPEN_IN_DASHBOARD: Icon = AllIcons.Ide.External_link_arrow
 

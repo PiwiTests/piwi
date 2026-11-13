@@ -27,11 +27,12 @@ and Open run #78 (running) beside the same run's page row joins Q8's one Open in
 (`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in
 part: VS Code's outcome marks in the dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result
 icon and JetBrains' CI tab), and Piwi Picker's dots in the same palette, held by `status-mark-colors.test.ts`; and the
-dashboard's Reproduce here as the editors' monitor (IC11). §14 adds the findings the code that built the plan raised.
-The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its
-Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor
-hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing
-here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+dashboard's Reproduce here as the editors' monitor (IC11); both CI views draw a test's outcome with its line's own mark,
+JetBrains' through one `PiwiIcons.outcome`. §14 adds the findings the code that built the plan raised. The live-run
+study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names,
+and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and
+the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -1304,7 +1305,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
-| <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: the CI rows from the gutter's outcome marks and Appendix A's rows, unreachable and Run the tests that reach this file off shared glyphs; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
+| <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: unreachable, Run the tests that reach this file and a CI run off shared glyphs, one glyph for Open run #N; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
 | <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7) |
@@ -1418,16 +1419,14 @@ The reviews at `b0ff6772` read the code that built the plan and the live-run stu
 Each finding below is new, read in the code at that commit; Kotlin files are cited by name as above. The defects among
 them, NF4, NF5, NF6 and NF9, are filed as #1315, with NF5's stopped-service status in #1255.
 
-<a id="nf1"></a>**NF1. The new CI views and status states give glyphs a second meaning, and draw outcomes their own
-way.** In VS Code, `$(beaker)` marks Run the tests that reach this file (`apps/vscode/package.json:236`), the run node
-and the idle status item (`apps/vscode/src/glue.ts:293, 388, 512`), and `$(debug-disconnect)` both Disconnect
-(`package.json:195`) and 'Piwi: unreachable' (`glue.ts:321`); the CI view draws a skipped test with Step's
-`debug-step-over` and flaky with `warning` (`apps/vscode/src/run-control.ts:2178-2179`). JetBrains' CI Run tab draws a
-run with Run the Test at the Caret's `Actions.Execute`, Watch with Show the Paused Page's `Actions.Preview`, and running
-with `Process.Step_1`, which has no New UI glyph (`PiwiCiRuns.kt:244-255`). The eye is still the status item's live
-share beside Watch ([LR14](#lr14)), and "Open run #N" is a globe in the commands and an external link in the CI lists
-(`run-control.ts:2215`, `PiwiCiRuns.kt:248`). **(read)** Fix: the CI rows take the gutter's outcome marks and Appendix
-A's glyphs from one map per client, unreachable and the file's tests take glyphs of their own, and Appendix A gains the
+<a id="nf1"></a>**NF1. A few glyphs of the CI views and the status states have a second meaning.** In VS Code,
+`$(beaker)` marks Run the tests that reach this file (`apps/vscode/package.json:236`), the run node and the idle status
+item (`apps/vscode/src/glue.ts:293, 388, 512`), and `$(debug-disconnect)` both Disconnect (`package.json:195`) and
+'Piwi: unreachable' (`glue.ts:321`); JetBrains' CI Run tab draws a run with Run the test at the caret's
+`Actions.Execute` (`PiwiCiRuns.kt`). The eye is still the status item's live share beside Watch ([LR14](#lr14)), and
+"Open run #N" is a globe in VS Code's commands and an external link in the CI lists
+(`apps/vscode/src/run-control.ts:2215`). Both CI views draw a test's outcome with its line's own mark. **(read)** Fix:
+unreachable, the file's tests and a CI run take glyphs of their own, one glyph for Open run #N, and Appendix A gains the
 rows they lack. ([Q26](#q26), [M5](#m5))
 
 <a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**

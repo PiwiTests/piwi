@@ -1089,7 +1089,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /** The CI runs of the branch while they run, read-only. */
-  const ciRuns = registerCiRuns();
+  const ciRuns = registerCiRuns(context.extensionUri);
   context.subscriptions.push(ciRuns);
 
   /** Where the runs started here stop, and their controls. */

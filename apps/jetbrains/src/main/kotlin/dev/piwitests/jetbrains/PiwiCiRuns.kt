@@ -245,17 +245,13 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
                 append(value.text, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
             "open", "watch", "ci-watch" -> {
-                icon = if (value.kind == "ci-watch") AllIcons.Actions.Preview else AllIcons.Ide.External_link_arrow
+                // Watch is `Piwi.WatchWorker`'s eye, an open link Open in dashboard's.
+                icon = if (value.kind == "ci-watch") AllIcons.Actions.Show else PiwiIcons.OPEN_IN_DASHBOARD
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {
-                icon = when (value.status) {
-                    "running" -> AllIcons.Process.Step_1
-                    "failed" -> PiwiIcons.FAILED
-                    "flaky" -> PiwiIcons.FLAKY
-                    "skipped" -> AllIcons.RunConfigurations.TestIgnored
-                    else -> AllIcons.RunConfigurations.TestPassed
-                }
+                // The test's outcome as its line's result icon draws it.
+                icon = PiwiIcons.outcome(value.status ?: "passed")
                 append(value.text)
             }
         }

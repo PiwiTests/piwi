@@ -2462,18 +2462,19 @@ export interface CiNode {
   label: string;
   description: string;
   tooltip: string;
-  /** A codicon id. */
+  /** A codicon id, or `mark:<status>` for the gutter's outcome mark of that status (`media/test-<status>.svg`). */
   icon: string;
   open: CiOpen;
   children: CiNode[];
 }
 
+/** A CI test's outcome as the gutter draws it, the running one spinning. */
 const CI_TEST_ICONS: Record<CiTest['status'], string> = {
   running: 'sync~spin',
-  passed: 'pass',
-  failed: 'error',
-  flaky: 'warning',
-  skipped: 'debug-step-over',
+  passed: 'mark:passed',
+  failed: 'mark:failed',
+  flaky: 'mark:flaky',
+  skipped: 'mark:skipped',
 };
 
 /** A test's name in the view: its describe blocks, then its title, a title's own line breaks as spaces. */
