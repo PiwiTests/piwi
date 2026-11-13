@@ -8,9 +8,11 @@ describe("the dev server's pre-bundled dependencies", () => {
   it('include every highlight.js module the run-ui highlighter imports', () => {
     const highlighter = read('../../../../packages/run-ui/src/highlight.ts');
     const config = read('../../nuxt.config.ts');
+    const include = /optimizeDeps:\s*\{\s*include:\s*\[([\s\S]*?)\]/.exec(config)?.[1] ?? '';
     const imported = [...highlighter.matchAll(/from '(highlight\.js\/[^']+)'/g)].map((m) => m[1]);
     expect(imported.length).toBeGreaterThan(1);
-    const missing = imported.filter((name) => !config.includes(`'${name}'`));
+    expect(include).toContain('highlight.js/lib/core');
+    const missing = imported.filter((name) => !include.includes(`'${name}'`));
     // A module Vite discovers at run time reloads the open page, which drops a test's fake desktop bridge.
     expect(missing).toEqual([]);
   });

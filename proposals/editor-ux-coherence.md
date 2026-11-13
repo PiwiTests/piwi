@@ -16,7 +16,7 @@ sentence, as a warning with its fixes; the MCP copies confirmed, the .NET note o
 answer), Q28 (a CI run's tests never drawn as running on the test lines, which name it 'CI run #130' beside their own
 result; an agent's label on `RunSession`, in the status bars' progress and JetBrains' Run tab) and Q30 (Re-run failing
 only while a test fails; the Worker tab's image named per kind of lane), with a picked locator sent to the project whose
-run made it (#1289). Built since, with their
+run made it (#1289). Also built since, with their
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a

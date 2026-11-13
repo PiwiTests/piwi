@@ -790,7 +790,7 @@ describe('new leaks', () => {
   });
 
   test("offers leakCheck for a test's leak past the ten listed, never for one Piwi closed", () => {
-    const leak = (n: number, more: Record<string, unknown> = {}) => ({
+    const leak = (n: number, more: { where?: string; site?: string; closedByPiwi?: boolean } = {}) => ({
       verdict: 'leaked' as const,
       kind: 'context' as const,
       where: `fixture "ctx${n}" at tests/fixtures.ts:${n}`,
