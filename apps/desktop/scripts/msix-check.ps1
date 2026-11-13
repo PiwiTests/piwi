@@ -102,7 +102,7 @@ if ($installed) {
   $facts.bridge = if ($url -and $facts.alias -eq 'present') { Invoke-Bridge $alias } else { 'not tried' }
 
   if ($Update -and $url) {
-    $sidecars = Get-Process node -ErrorAction SilentlyContinue |
+    $sidecars = Get-Process piwi-desktop-node -ErrorAction SilentlyContinue |
       Where-Object { $_.Path -and $_.Path.StartsWith($installed.InstallLocation) }
     try {
       Add-AppxPackage -Path $Update -ForceApplicationShutdown
@@ -118,7 +118,7 @@ if ($installed) {
   Get-ChildItem -LiteralPath "$appData\logs", "$packageCopy\logs" -Filter *.log -ErrorAction SilentlyContinue |
     ForEach-Object { Write-Host "--- $($_.FullName)"; Get-Content -Tail 40 -LiteralPath $_.FullName }
   Stop-App $installed.InstallLocation
-  Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\WindowsApps\*' } |
+  Get-Process piwi-desktop-node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\WindowsApps\*' } |
     Stop-Process -Force -ErrorAction SilentlyContinue
   Remove-AppxPackage -Package $installed.PackageFullName
 }

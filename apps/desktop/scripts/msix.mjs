@@ -2,7 +2,7 @@
 // Pack the desktop app as an MSIX package for the Microsoft Store.
 //
 // Lays out the release build of `tauri build --no-bundle`, the Node sidecar and the staged server as they sit in an
-// installed app (the executable, node.exe beside it, resources\app-server), fills src-tauri/windows/AppxManifest.xml,
+// installed app (the executable, the Node sidecar beside it, resources\app-server), fills src-tauri/windows/AppxManifest.xml,
 // then runs the Windows SDK's makeappx. The package is unsigned: the Store signs it on certification, and a test
 // install signs a copy with its own certificate.
 //
@@ -61,11 +61,13 @@ const config = JSON.parse(readFileSync(join(tauriDir, 'tauri.conf.json'), 'utf8'
 const version = args.version ?? `${config.version}.0`;
 if (!/^\d+\.\d+\.\d+\.\d+$/.test(version)) fail(`the package version must have four parts: ${version}`);
 
+/** The Node sidecar's name, from `externalBin`: the shell starts it from beside its executable. */
+const NODE_SIDECAR = basename(config.bundle.externalBin[0]);
 const releaseDir = join(tauriDir, 'target', args.target, 'release');
 const executable = ['Piwi Dashboard.exe', 'piwi-desktop.exe'].find((name) => existsSync(join(releaseDir, name)));
 const sources = {
   executable: executable && join(releaseDir, executable),
-  node: join(tauriDir, 'binaries', `node-${args.target}.exe`),
+  node: join(tauriDir, 'binaries', `${NODE_SIDECAR}-${args.target}.exe`),
   server: join(tauriDir, 'resources', 'app-server'),
   icons: join(tauriDir, 'icons'),
 };
@@ -83,7 +85,7 @@ const layout = join(dirname(out), `${basename(out, '.msix')}-layout`);
 rmSync(layout, { recursive: true, force: true });
 mkdirSync(join(layout, 'Assets'), { recursive: true });
 cpSync(sources.executable, join(layout, executable));
-cpSync(sources.node, join(layout, 'node.exe'));
+cpSync(sources.node, join(layout, `${NODE_SIDECAR}.exe`));
 cpSync(sources.server, join(layout, 'resources', 'app-server'), { recursive: true });
 for (const logo of LOGOS) cpSync(join(sources.icons, logo), join(layout, 'Assets', logo));
 
