@@ -175,6 +175,7 @@ const ROW_FAILURE = {
   frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
   traces: ['traces/900.zip'],
   screenshot: 'shots/900.png',
+  duration: 5012,
 };
 
 /** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
@@ -397,6 +398,7 @@ beforeAll(async () => {
               tags: ['smoke', '@checkout', 'smoke'],
               owner: 'ada',
               avgDuration: 1234.4,
+              lastDuration: 987.6,
             },
             { id: 3, title: 'removes a row', filePath: 'shop/tests/rows.spec.ts', status: 'failed' },
             { id: 9, title: 'was deleted', filePath: 'tests/gone.spec.ts', status: 'passed' },
@@ -417,6 +419,7 @@ beforeAll(async () => {
               status: 'failed',
               totalRuns: 9,
               passedRuns: 6,
+              lastDuration: 777,
             },
           ],
         }),
@@ -1122,7 +1125,7 @@ describe('the Piwi language server', () => {
           clusterTitle: null,
           owner: null,
           isNew: false,
-          duration: null,
+          duration: 5012,
           hasScreenshot: true,
         },
       ],
@@ -1724,11 +1727,12 @@ describe('the test tree', () => {
                   status: 'passed',
                   failure: null,
                   url: `${url}/test-cases/1`,
-                  // The catalog's tags, owner and average duration, and the project's quarantine.
+                  // The catalog's tags, owner, average and latest durations, and the project's quarantine.
                   tags: ['@smoke', '@checkout'],
                   owner: 'ada',
                   quarantined: true,
                   durationMs: 1234,
+                  resultDurationMs: 988,
                 },
               ],
             },
@@ -1744,6 +1748,8 @@ describe('the test tree', () => {
                   testCaseId: 3,
                   status: 'failed',
                   failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+                  // The failure's own duration, not the catalog's run's.
+                  resultDurationMs: 5012,
                 }),
               ],
             },
@@ -1792,6 +1798,7 @@ describe('the test tree', () => {
             owner: null,
             quarantined: false,
             durationMs: null,
+            resultDurationMs: null,
           },
         ],
       },

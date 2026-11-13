@@ -52,18 +52,19 @@ run's flaky tests**, `piwi.showFlakyTests`, `Piwi.ShowFlakyTests`) (HM10). Q16: 
 editor service and starts it again through Restart the editor service (HM19 in part). Q29: Connect's failure words are
 one table in the editor service (`connect-failures.json`), which VS Code reads and `GlueTest` holds the JetBrains
 plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said
-(NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20 in
-part: VS Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog
-through `SpecTest` (TL20). §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
-fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
+(NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20: VS
+Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
+`SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). §14 adds the
+findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
+P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
+lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
+live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
+restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
+step moves the document to `adr/`.
 
 **Summary.**
 
@@ -492,11 +493,6 @@ shows counts in the status item and "running x/y" on the Piwi tool window's run 
 test tree comes only with its Playwright runner, off by default and never offered. **(read)** Fix: offer the runner once
 ([editor-extensions-audit.md](../adr/editor-extensions-audit.md) §6.4), and give other runs an SMTRunner console fed by
 the run channel's test events. Local progress is [LR9](#lr9). ([L2](#l2), [LI8](#li8))
-
-<a id="tl20"></a>**TL20. VS Code's Testing view publishes its results with no duration: a CI run's header reads "5/7
-1.0ms".** Results are published with none (`apps/vscode/src/test-explorer.ts:347-377`), as `SpecTest` carries only a
-test's average over the runs the instance keeps (`durationMs`), which its item shows beside its title with its tags,
-owner and quarantine. **(read)** Fix: each result's own duration, from the run it comes from. ([M20](#m20), [LI8](#li8))
 
 ### 5.8 A test card
 
@@ -1074,7 +1070,7 @@ Piwi's coverage bar hidden while the IDE shows its own. Piwi's own marks stay fo
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 (a results-only Testing view, built) and §6.4 (offer
-the IDE's Playwright runner, not built). Steps [M8](#m8), [M9](#m9), [M20](#m20), [L2](#l2).
+the IDE's Playwright runner, not built). Steps [M8](#m8), [M9](#m9), [L2](#l2).
 
 <a id="li9"></a>
 
@@ -1305,7 +1301,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
-| <a id="m20"></a>M20 | **Each result's own duration in VS Code's Testing view**, from the run it comes from | `ide` | [TL20](#tl20) |
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |

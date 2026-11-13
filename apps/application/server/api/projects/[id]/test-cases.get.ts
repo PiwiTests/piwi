@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'List test cases for a project with aggregated stats',
     description:
-      'Paginated test-case catalog with per-case aggregates: total runs, pass/fail/skip/flaky counts, pass rate (passed over passed and failed runs, null when none) and average duration, derived status category, last run, and the line and column its latest execution reported. Returns `{ items, total, limit, offset }`. Timed-out runs are folded into the failed counts.',
+      'Paginated test-case catalog with per-case aggregates: total runs, pass/fail/skip/flaky counts, pass rate (passed over passed and failed runs, null when none) and average duration, derived status category, last run and its longest final attempt (`lastDuration`, ms), and the line and column its latest execution reported. Returns `{ items, total, limit, offset }`. Timed-out runs are folded into the failed counts.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {

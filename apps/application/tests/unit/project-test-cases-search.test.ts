@@ -246,6 +246,42 @@ describe('file order', () => {
   });
 });
 
+describe('the latest run’s duration', () => {
+  test('is its longest final attempt there, over retries and Playwright projects, not an older run’s', async () => {
+    await db.insert(schema.projects).values({ id: 3, name: 'duration-project' });
+    await db.insert(schema.testRuns).values([
+      { id: 12, projectId: 3, status: 'passed', startTime: new Date(now - DAY_MS) },
+      { id: 13, projectId: 3, status: 'passed', startTime: new Date(now) },
+    ]);
+    const [testCase] = await db
+      .insert(schema.testCases)
+      .values({ projectId: 3, filePath: 'tests/pay.spec.ts', title: 'pays' })
+      .returning({ id: schema.testCases.id });
+    const at = new Date(now);
+    const row = { testCaseId: testCase!.id, line: 3, column: 1 };
+    await db.insert(schema.testRunsCases).values([
+      { ...row, testRunId: 12, status: 'passed', duration: 5000, createdAt: new Date(now - DAY_MS) },
+      // Stored in one batch: the same time on every row, the timed-out first attempt superseded by its retry.
+      {
+        ...row,
+        testRunId: 13,
+        browserName: 'chromium',
+        status: 'timedOut',
+        duration: 30_000,
+        retries: 0,
+        finalAttempt: false,
+        createdAt: at,
+      },
+      { ...row, testRunId: 13, browserName: 'chromium', status: 'passed', duration: 1200, retries: 1, createdAt: at },
+      { ...row, testRunId: 13, browserName: 'firefox', status: 'passed', duration: 1500, retries: 0, createdAt: at },
+    ]);
+    const page = await getProjectTestCases(db, 3, {});
+    expect(page.items.map((item: any) => [item.title, item.lastDuration])).toEqual([['pays', 1500]]);
+    const none = await getProjectTestCases(db, 1, { sort: 'file', dir: 'asc' });
+    expect(none.items.find((item: any) => item.title === 'legacy cart').lastDuration).toBeNull();
+  });
+});
+
 describe('getProjectTestCaseFacets', () => {
   test('lists each value with how many test cases carry it', async () => {
     const { values } = await getProjectTestCaseFacets(db, 1);

@@ -68,7 +68,7 @@ import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
-import { latestRunStatusSql } from './latest-run-status';
+import { latestRunDurationSql, latestRunStatusSql } from './latest-run-status';
 import { clusterIssueChips } from './known-issues';
 import { projectHealth } from '../project-health';
 import { deleteProjectStarsOn } from './project-stars';
@@ -1181,6 +1181,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const recentFlaky = recentFlakySql(testCases.id, inPeriod ? and(realExecution, inPeriod)! : realExecution);
   // The latest run's status: failed when one of the test's repetitions failed there.
   const lastStatus = latestRunStatusSql(realExecution);
+  // How long it took in that run, which an editor shows with that result.
+  const lastDuration = latestRunDurationSql(realExecution);
   const category = sql<string>`CASE
       WHEN ${recentFlaky} > 0 THEN 'flaky'
       WHEN ${lastStatus} IN ('timedOut', 'timedout') THEN 'failed'
@@ -1294,6 +1296,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       avgDuration: aggregates.avgDuration,
       lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
+      lastDuration,
       line,
       column,
     })

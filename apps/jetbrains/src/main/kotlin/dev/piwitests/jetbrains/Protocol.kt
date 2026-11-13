@@ -98,6 +98,8 @@ data class SpecTest(
     val owner: String? = null,
     val quarantined: Boolean = false,
     val durationMs: Long? = null,
+    /** The duration of the result `status` stands for, in ms (`SpecTest.resultDurationMs`). */
+    val resultDurationMs: Long? = null,
 )
 
 /** The tests of one spec, `file` relative to its Playwright config's folder. */

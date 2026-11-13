@@ -344,7 +344,7 @@ export class TestExplorer implements vscode.Disposable {
     collection.replace(items);
   }
 
-  /** Publish each test's latest result as one test run, named after the run it comes from. */
+  /** Publish each test's latest result, with its own duration, as one test run named after the run it comes from. */
   private publish(): void {
     if (this.disposed) return;
     this.published = resultsKey(this.runs);
@@ -352,16 +352,17 @@ export class TestExplorer implements vscode.Disposable {
     for (const [item, test] of this.testOf) {
       const outcome = testOutcome(test.status, test.failure);
       // A test the run in progress runs shows in that run's own test run.
-      if (outcome && outcome.state !== 'started') this.show(run, item, outcome);
+      if (outcome && outcome.state !== 'started') this.show(run, item, outcome, test.resultDurationMs ?? undefined);
     }
     run.end();
   }
 
-  private show(run: vscode.TestRun, item: vscode.TestItem, outcome: TestOutcome): void {
+  /** Show a test's outcome in a test run, with the duration of the result it stands for when known (ms). */
+  private show(run: vscode.TestRun, item: vscode.TestItem, outcome: TestOutcome, duration?: number): void {
     this.results.set(item.id, outcome);
     switch (outcome.state) {
       case 'passed':
-        return run.passed(item);
+        return run.passed(item, duration);
       case 'skipped':
         return run.skipped(item);
       case 'started':
@@ -371,7 +372,7 @@ export class TestExplorer implements vscode.Disposable {
         if (item.uri && outcome.line !== null) {
           message.location = new vscode.Location(item.uri, new vscode.Position(outcome.line, 0));
         }
-        return run.failed(item, message);
+        return run.failed(item, message, duration);
       }
     }
   }
