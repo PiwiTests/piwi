@@ -742,14 +742,13 @@ badge elsewhere until answered. Fix: on a held failure or a `page.pause()`, neve
 calls `AppIcon.requestAttention` (raising the IDE when 'Focus application on breakpoint' is on), VS Code notifies with
 Resume and Go to the stopped line while unfocused, and the status item carries the badge. ([M21](#m21), [LI14](#li14))
 
-<a id="hm19"></a>**HM19. JetBrains shows a stopped editor service as one not yet started, and no integration case holds
-VS Code's 'not running' state.** `stopped()` clears the status (`PiwiProjectService.kt:417-430`), so JetBrains' item
-reads 'Piwi' with 'Piwi starts when you open a file of this project.' and its popup leads with Settings…
-(`Glue.kt:390, 462`): with files open, the developer is told Piwi will start and looks for the cause in the settings.
-VS Code's item says 'Piwi: not running' with Restart the editor service and Open the log
-(`apps/vscode/src/glue.ts:261-273`), a state only a unit case holds (`apps/vscode/tests/glue.test.ts:2207-2216`).
-**(read)** Fix: JetBrains' item in VS Code's 'not running' state, Restart first ([NF5](#nf5)); an integration-suite case
-that stops the service and starts it again through `piwi.restartService`. ([Q16](#q16), [Q27](#q27))
+<a id="hm19"></a>**HM19. JetBrains shows a stopped editor service as one not yet started.** `stopped()` clears the
+status (`PiwiProjectService.kt:417-430`), so JetBrains' item reads 'Piwi' with 'Piwi starts when you open a file of this
+project.' and its popup leads with Settings… (`Glue.kt:390, 462`): with files open, the developer is told Piwi will
+start and looks for the cause in the settings. VS Code's item says 'Piwi: not running' with Restart the editor service
+and Open the log (`apps/vscode/src/glue.ts:261-273`), which its integration suite holds by stopping the service and
+starting it again. **(read)** Fix: JetBrains' item in VS Code's 'not running' state, Restart first ([NF5](#nf5)).
+([Q27](#q27))
 
 ## 8. Live runs in the editors: where they sit
 
@@ -1183,7 +1182,7 @@ verdict's words for every run the editor followed, a terminal run's once the stu
 Attention on a live run ([HM17](#hm17)) is the study's P6; in a background editor its interrupt is
 `AppIcon.requestAttention` or a VS Code notification. **Lives in** both clients and `RunEnded` (FSL). **Replaces** one
 'Piwi' title on every balloon, run notices that do not lead to their setting, two hand-worded verdicts. **Depends on**
-[LI6](#li6). **Revisits** no decision of its own. Steps [Q13](#q13), [Q16](#q16), [M21](#m21).
+[LI6](#li6). **Revisits** no decision of its own. Steps [Q13](#q13), [M21](#m21).
 
 **Rider and .NET (principles 5 and 9).**
 
@@ -1288,7 +1287,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup (not Open run #78 (running) beside the same run's page row) | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs in VS Code**: the five commands without one take M4's drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
-| <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
 | <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7) |
@@ -1334,7 +1332,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1, on which most of the rest
+The quick wins that stand alone (Q5, Q8, Q13, Q27 to Q30), each on its own. Then M1, on which most of the rest
 builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
 glyphs and the outcome palette that Q2, Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
