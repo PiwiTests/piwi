@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { STATUS_COLORS } from '#shared/status-colors';
 
 /**
- * The outcome marks have one palette in the dashboard and in the editors: the `fill` of `STATUS_COLORS`, which the VS
- * Code extension's outcome marks and the JetBrains plugin's flaky mark restate, since neither can import it.
+ * The outcome marks have one palette in the dashboard, the editors and Piwi Picker: the `fill` of `STATUS_COLORS`, which
+ * the VS Code extension's outcome marks, the JetBrains plugin's flaky mark and Piwi Picker's dots restate, since none of
+ * them can import it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
@@ -24,5 +25,18 @@ describe('the outcome marks', () => {
     const vscode = read('apps/vscode/media/test-flaky.svg');
     expect(read('apps/jetbrains/src/main/resources/icons/testFlaky.svg')).toBe(vscode);
     expect(disc(read('apps/jetbrains/src/main/resources/icons/testFlaky_dark.svg'))).toBe(STATUS_COLORS.flaky.textDark);
+  });
+
+  test('are Piwi Picker’s dots, in its results panel and its coverage view', () => {
+    for (const file of [
+      'apps/extension/src/content/results-panel.ts',
+      'apps/extension/src/content/coverage-style.ts',
+    ]) {
+      const css = read(file);
+      for (const status of ['passed', 'failed', 'flaky', 'skipped'] as const) {
+        const dot = new RegExp(`\\.dot\\.${status} \\{ background: (#[0-9a-f]{6}); \\}`).exec(css)?.[1];
+        expect(dot, `${file} ${status}`).toBe(STATUS_COLORS[status].fill);
+      }
+    }
   });
 });

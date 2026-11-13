@@ -166,8 +166,8 @@ export async function renderResultsPanel(
     .piwi li { display: flex; align-items: baseline; gap: 7px; padding: 2px 0; }
     .piwi li .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; background: #64748b; }
     .piwi .dot.passed { background: #10b981; }
-    .piwi .dot.failed { background: #e11d48; }
-    .piwi .dot.flaky { background: #9333ea; }
+    .piwi .dot.failed { background: #f43f5e; }
+    .piwi .dot.flaky { background: #d946ef; }
     .piwi .dot.skipped { background: #a1a1aa; }
     .piwi li a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
     .piwi li a:hover { text-decoration-style: solid; }
