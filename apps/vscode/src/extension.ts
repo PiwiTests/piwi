@@ -7,6 +7,7 @@
  * the API key in the secret store, hands Piwi's MCP server to the editor's
  * agent, inserts what Piwi Picker sends, and records tests (`recording.ts`).
  */
+import { contextKey, setContextKey } from './context-keys';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
@@ -200,6 +201,9 @@ import {
   notConnectedNotice,
   RESTART_SERVICE,
   SERVICE_NOT_ANSWERING,
+  SPEC_FILE,
+  statusMenu,
+  type StatusBarView,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -671,7 +675,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     coverage.set(result.uri, result);
     if (!coverageKnown && hasCoverageMarks(result)) {
       coverageKnown = true;
-      void vscode.commands.executeCommand('setContext', 'piwi.hasCoverage', true);
+      setContextKey('piwi.hasCoverage', true);
     }
     const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === result.uri);
     if (document) drawCoverage(document);
@@ -772,6 +776,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const ownRunCounts = new OwnRunCounts();
   /** The flaky tests the failures view lists for a config, once the view exists. */
   let flakyListed: (root: string) => number = () => 0;
+  /** What the status menu offers first, and whether the failures view lists flaky tests, as the item last said. */
+  let menuAction: StatusBarView['action'] = 'none';
+  let menuFlakyRoot: string | null = null;
+  let menuDown = false;
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = serviceDown
@@ -796,14 +804,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
     liveUrl = view.liveUrl;
-    void vscode.commands.executeCommand('setContext', 'piwi.liveRun', !!liveUrl);
-    statusItem.command = {
-      refresh: 'piwi.refreshRun',
-      retry: 'piwi.refresh',
-      connect: 'piwi.connect',
-      restart: 'piwi.restartService',
-      none: undefined,
-    }[view.action];
+    setContextKey('piwi.liveRun', !!liveUrl);
+    menuAction = view.action;
+    menuFlakyRoot = view.flakyRoot ?? null;
+    menuDown = serviceDown;
+    statusItem.command = 'piwi.statusMenu';
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
@@ -834,7 +839,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (!full) return;
     // A connection that changed: the visible files' coverage is asked again.
     askCoverage(true);
-    void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
+    setContextKey('piwi.active', !!status?.contexts.some((c) => c.connected));
     if (status) void offerDesktop(context, lc, status);
     await mcpServersChanged();
   };
@@ -1301,7 +1306,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         });
       await restarting;
     }),
-    // The status bar item's click: the latest run and its failures alone, not the indexes Reload Piwi reads.
+    // The status bar item's click: the status menu, the item's own action first, so Enter does what it calls for.
+    vscode.commands.registerCommand('piwi.statusMenu', async () => {
+      const recording = contextKey('piwi.recording')
+        ? contextKey('piwi.recordingPaused')
+          ? 'paused'
+          : 'recording'
+        : null;
+      const entries = statusMenu({
+        action: menuAction,
+        recording,
+        run: {
+          active: !!contextKey('piwi.runActive'),
+          stopped: !!contextKey('piwi.runStopped'),
+          failed: !!contextKey('piwi.runFailed'),
+          pausable: !!contextKey('piwi.runPausable'),
+          stoppable: !!contextKey('piwi.runStoppable'),
+          page: !!contextKey('piwi.runPage'),
+        },
+        failing: contextKey('piwi.failuresView') === 'failures',
+        flakyRoot: menuFlakyRoot,
+        connected: !menuDown && !!contextKey('piwi.active'),
+        latestRun: !!statusUrl,
+        spec: SPEC_FILE.test(vscode.window.activeTextEditor?.document.uri.path ?? ''),
+      });
+      type Item = vscode.QuickPickItem & { command?: string; args?: unknown[] };
+      const items: Item[] = entries.map((e) =>
+        'separator' in e
+          ? { label: e.separator, kind: vscode.QuickPickItemKind.Separator }
+          : { label: e.label, command: e.command, args: e.args },
+      );
+      const pick = vscode.window.createQuickPick<Item>();
+      pick.title = 'Piwi';
+      pick.items = items;
+      const chosen = await new Promise<Item | undefined>((resolve) => {
+        pick.onDidAccept(() => resolve(pick.selectedItems[0]));
+        pick.onDidHide(() => resolve(undefined));
+        pick.show();
+      });
+      pick.dispose();
+      if (chosen?.command) await vscode.commands.executeCommand(chosen.command, ...(chosen.args ?? []));
+    }),
+    // The latest run and its failures alone, not the indexes Reload Piwi reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
       if (refreshing || !connectedOrSay()) return;
       refreshing = true;

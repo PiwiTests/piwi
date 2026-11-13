@@ -5,6 +5,7 @@
  * **Watch** opens its lane in the worker panel (`piwi.watchWorker` with the lane), read-only. What the view lists and
  * what a line says come from `run-control.ts`, tested without an editor.
  */
+import { setContextKey } from './context-keys';
 import * as vscode from 'vscode';
 import type { CiSession } from '@piwitests/editor/protocol';
 import {
@@ -118,7 +119,7 @@ export function registerCiRuns(extensionUri: vscode.Uri): CiRuns {
   const show = () => {
     nodes = ciNodes(sessions);
     changed.fire();
-    void vscode.commands.executeCommand('setContext', 'piwi.ciRuns', sessions.size > 0);
+    setContextKey('piwi.ciRuns', sessions.size > 0);
     view.description = sessions.size > 1 ? `${sessions.size} running` : undefined;
     draw();
   };

@@ -20,6 +20,7 @@
  * it (`piwi/openTrace`), one ask per slot (`TraceAsks`), and say its answer, with the worker it is for once the panel
  * shows another. The pure half is `run-control.ts`.
  */
+import { setContextKey } from './context-keys';
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
@@ -198,7 +199,7 @@ export function createWorkerPanel(
     const offered = !!panel && openTraceOffered(view);
     if (offered === traceOffered) return;
     traceOffered = offered;
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanOpenTrace', offered);
+    setContextKey('piwi.runCanOpenTrace', offered);
   };
 
   /** The view as it stands, posted to the panel's script, or drawn anew for a new slot (`fresh`). */

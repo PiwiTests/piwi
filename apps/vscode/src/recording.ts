@@ -8,6 +8,7 @@
  * a run started here can ask to record from there (`piwi/recordRequested`): the recording then starts in its file, in
  * the test's own page, without a question.
  */
+import { setContextKey } from './context-keys';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
@@ -166,12 +167,8 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   /** The status bar item and the context keys of the menus, for the current recording. */
   const refresh = () => {
     const s = current();
-    void vscode.commands.executeCommand('setContext', 'piwi.recording', !!s);
-    void vscode.commands.executeCommand(
-      'setContext',
-      'piwi.recordingPaused',
-      !!s && (s.edited || s.state === 'paused'),
-    );
+    setContextKey('piwi.recording', !!s);
+    setContextKey('piwi.recordingPaused', !!s && (s.edited || s.state === 'paused'));
     lensesChanged.fire();
     if (!s) {
       statusItem.hide();

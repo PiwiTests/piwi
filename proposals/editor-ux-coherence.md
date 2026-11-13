@@ -74,7 +74,9 @@ confirmation takes no ellipsis (Stop sharing the run live, in the share menus to
 AC10, AC9 and NF3 in part). M3 in part: JetBrains' Tools → Piwi in six compact sections (run, record, run control,
 dashboard, agents, connection), its editor submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu
 in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
-part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+part). M3's status menu: a click on VS Code's status item opens **Open the Piwi menu**
+(`piwi.statusMenu`), a quick pick in the JetBrains popup's sections, its first row the item's own action, so Enter
+still refreshes (HM1 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
@@ -583,16 +585,12 @@ and the views computed by the editor service ([LI6](#li6)), one notification pol
 
 ### 7.1 The status item
 
-<a id="hm1"></a>**HM1. A click on the status item opens the status popup in JetBrains but only reads the run again in VS
-Code, whose actions hide in a tooltip that offers Connect while connected.** `apps/vscode/src/extension.ts:777-783`
-makes the click a refresh, a retry, a restart or Connect: in VS Code 1.143.1 it draws a spinner. The actions are tooltip
-links (`apps/vscode/src/glue.ts:109-119, 410-416`), with no Re-run failing, Failures view, run control or log, out of
-the keyboard's reach, and the tooltip's '3 failed' faces the item's '2 failing' (`glue.ts:401, 431`). In Rider
-2026.2.4.1 the click opens that popup (`PiwiStatusBar.kt:69-76, 171-223`). **(seen)** Fix: the click opens the status
-menu (a new `piwi.statusMenu` quick pick) in the popup's sections and order, the state's action preselected so Enter
-still refreshes, its run section replacing VS Code's control items while a run is live ([LR1](#lr1)); Connect only when
-not connected; one count in the tooltip ('3 failed in run #124 · 2 still failing'). The click opens it (§13, question 6).
-([M3](#m3), [LI4](#li4))
+<a id="hm1"></a>**HM1. VS Code's status tooltip offers Connect while connected, and its counts differ from the item's.** The
+click opens the status menu (`piwi.statusMenu`), but the tooltip still links Connect while connected
+(`apps/vscode/src/glue.ts`, `statusBarView`), and its '3 failed' faces the item's '2 failing'. The run's controls are
+also items of their own beside the menu's run section ([LR1](#lr1)). **(seen)** Fix: Connect in the tooltip only when
+not connected; one count in the tooltip ('3 failed in run #124 · 2 still failing'); the run's items folded into the
+menu ([M13](#m13)). ([LI4](#li4))
 
 <a id="hm2"></a>**HM2. VS Code paints the status item red all day for any failing test, CI failures the developer did
 not cause included, where JetBrains colors only the text.** `apps/vscode/src/glue.ts:429-431` and
@@ -1207,7 +1205,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): VS Code's status menu, opened by the item's click with the state's action preselected (§13, question 6), New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
+| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): record, and the glyphs Appendix A marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [IC2](#ic2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **Piwi Picker's waiting count in the pause bar's violet** ([LI3](#li3)), both JetBrains color schemes held by the same test, and the running ring animated | `extension` | [IC4](#ic4), [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
@@ -1216,7 +1214,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8), [NF3](#nf3) |
 | <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
-| <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18) |
+| <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state | `ide` | [HM1](#hm1), [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18) |
 | <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |

@@ -27,6 +27,7 @@
  * whose Stop sharing asks to confirm. While the worker panel watches a slot, the line of the call its test is in is
  * dimmed, the call after it (`piwi/runningLine`, `RunningLines`). The pure half is `run-control.ts`.
  */
+import { setContextKey } from './context-keys';
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
@@ -388,20 +389,21 @@ export function registerRunControl(
       clearInterval(ticking);
       ticking = null;
     }
-    void vscode.commands.executeCommand('setContext', 'piwi.runActive', state.active);
-    void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
-    void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
-    void vscode.commands.executeCommand('setContext', 'piwi.runFailed', state.failed);
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
-    void vscode.commands.executeCommand('setContext', 'piwi.runPage', runPagesOf(sessions).length > 0);
+    setContextKey('piwi.runActive', state.active);
+    setContextKey('piwi.runStoppable', state.stoppable);
+    setContextKey('piwi.runPausable', state.pausable);
+    setContextKey('piwi.runStopped', state.stopped);
+    setContextKey('piwi.runFailed', state.failed);
+    setContextKey('piwi.runCanEnd', state.endable || !!state.waiting);
+    setContextKey('piwi.runPage', runPagesOf(sessions).length > 0);
     for (const a of STOP_ACTIONS) {
-      void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
+      setContextKey(a.key, state.actions.includes(a.action));
     }
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanShowBrowser', state.browserShowable);
-    void vscode.commands.executeCommand('setContext', 'piwi.runHoldable', state.holdable);
-    void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
-    void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
+    setContextKey('piwi.runCanShare', state.shareable);
+    setContextKey('piwi.runCanShowBrowser', state.browserShowable);
+    setContextKey('piwi.runHoldable', state.holdable);
+    setContextKey('piwi.runSharedLive', state.liveShared);
+    setContextKey('piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
     const live = liveItem(sessions, windowShared);
     const progress = progressItem(sessions);
@@ -873,10 +875,10 @@ export function registerRunControl(
   /** `F5` stays Piwi's for a moment after a stop was answered (`piwi.runResumed`). */
   const answered = () => {
     if (resumed) clearTimeout(resumed);
-    void vscode.commands.executeCommand('setContext', 'piwi.runResumed', true);
+    setContextKey('piwi.runResumed', true);
     resumed = setTimeout(() => {
       resumed = null;
-      void vscode.commands.executeCommand('setContext', 'piwi.runResumed', false);
+      setContextKey('piwi.runResumed', false);
     }, RESUMED_KEY_MS);
   };
 
@@ -1489,7 +1491,7 @@ export function registerRunControl(
     }),
     lc.onNotification(SHARE_WINDOW_NOTIFICATION, (changed: ShareWindowParams) => {
       windowShared = changed?.on === true;
-      void vscode.commands.executeCommand('setContext', 'piwi.windowSharedLive', windowShared);
+      setContextKey('piwi.windowSharedLive', windowShared);
       drawControls();
     }),
     lc.onNotification(ASK_TO_WATCH_NOTIFICATION, (ask: AskToWatchParams) => void askedToWatch(ask)),
