@@ -2155,11 +2155,15 @@ class GlueTest {
         )
         assertEquals("http://127.0.0.1:3000 answers, and lists its projects without a key.", Glue.testConnectionText("http://127.0.0.1:3000", false))
         assertEquals(
-            "http://localhost:3000 does not answer: nothing answers there. Is the instance running, on that port?",
+            "Could not connect to https://piwi.example: nothing answers there. Is the instance running, on that port?",
             Glue.testConnectionFailure(
-                "http://localhost:3000",
-                Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
+                "https://piwi.example",
+                Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "https://piwi.example"),
             ),
+        )
+        assertEquals(
+            "Could not connect to https://example.com: not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+            Glue.testConnectionFailure("https://example.com", Glue.connectFailure(Exception(), 404, "https://example.com")),
         )
     }
 

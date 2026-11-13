@@ -86,6 +86,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     tested = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
+                // What Test connection said is of the address it tried: an edit of the field takes it away.
+                urlField.document.addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
+                    override fun textChanged(e: javax.swing.event.DocumentEvent) {
+                        tested.text = ""
+                    }
+                })
                 row("Project:") {
                     projectField = textField()
                         .bindText({ settings.project }, { settings.project = it.trim() })
@@ -288,7 +294,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         }
     }
 
-    /** Connect with the URL typed on this page, Apply or not; the page's other edits stay pending. */
     /**
      * Test connection: whether the address typed in the field answers, before it is saved, said in Connect's words under
      * the field. The request runs with modal progress, as Connect's do from this page.
@@ -303,7 +308,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             val reached = com.intellij.openapi.progress.ProgressManager.getInstance().runProcessWithProgressSynchronously<PiwiInstance.Reached, Exception>(
                 { PiwiInstance.reach(url) }, "Piwi: Test connection", true, project,
             )
-            Glue.escapeHtml(Glue.testConnectionText(reached.url, reached.needsKey))
+            reached?.let { Glue.escapeHtml(Glue.testConnectionText(it.url, it.needsKey)) } ?: return
         } catch (_: com.intellij.openapi.progress.ProcessCanceledException) {
             return
         } catch (e: Exception) {
@@ -311,6 +316,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         }
     }
 
+    /** Connect with the URL typed on this page, Apply or not; the page's other edits stay pending. */
     private fun connect() {
         val typed = urlField.text
         val url = Glue.normalizeServerUrl(typed)

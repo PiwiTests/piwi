@@ -832,10 +832,11 @@ id. An item is kept while its id stays, so its result stays too.
 
 ### Results and test runs
 
-**The latest results** are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line
-from `TestFailure`) whenever `resultsKey` changes. A read that made items anew publishes the results again. **A run in
-progress** (`RunStatus.live`) is a test run of its own (`liveRunName`), showing `liveTests` as they come. It ends once
-the run was read, and nothing is published again for it.
+**The latest results** are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line from
+`TestFailure`, its headline left out where the diagnostic on the line gives it, `diagnosed`) whenever `resultsKey`
+changes. A read that made items anew publishes the results again. **A run in progress** (`RunStatus.live`) is a test run
+of its own (`liveRunName`), showing `liveTests` as they come. It ends once the run was read, and nothing is published
+again for it.
 
 **The run profiles**, **Run with Piwi** and **Verify ×3 with Piwi**, run the picked tests through `runTests`
 (`testRunsOf`: one run per config, by id when every test has one, else by location). The commands are queued in their

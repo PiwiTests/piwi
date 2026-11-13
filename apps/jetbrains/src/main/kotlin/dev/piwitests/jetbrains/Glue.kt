@@ -1164,8 +1164,8 @@ object Glue {
         if (needsKey) "$url answers. It asks for an API key: Connect… signs in or takes one."
         else "$url answers, and lists its projects without a key."
 
-    /** What Test connection says of an address that did not answer, with Connect's reason. */
-    fun testConnectionFailure(url: String, reason: String): String = "$url does not answer: $reason"
+    /** What Test connection says of an address it could not use, in Connect's words. */
+    fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
 
     /**
      * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
