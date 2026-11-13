@@ -26,7 +26,7 @@ import type {
 import { TtlCache } from '../ttl-cache';
 import { splitGitDiff } from './diff-text';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
-import type { CiRerunSettings } from '#shared/ci-rerun';
+import type { CiActionTarget } from '#shared/ci-actions';
 import { HEAL_PR_MARKER } from '#shared/heal-pr';
 
 /** Turn a non-2xx Bitbucket response into an Error carrying the API's own message. */
@@ -676,12 +676,11 @@ export class BitbucketProvider extends ScmProvider {
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
   override async dispatchRerun(
-    settings: CiRerunSettings,
+    target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    const target = settings.bitbucket;
-    if (!target) throw new Error('No Bitbucket pipeline configured for CI re-run');
+    if (target.type !== 'bitbucket') throw new Error('No Bitbucket pipeline configured for CI re-run');
 
     // A custom pipeline runs against a branch: the requested one, else the
     // repository's default branch, since the config names only the pipeline.
@@ -696,7 +695,10 @@ export class BitbucketProvider extends ScmProvider {
           ref_name: branch,
           selector: { type: 'custom', pattern: target.pipeline },
         },
-        variables: [{ key: target.variableName, value: playwrightArgs }],
+        variables: [
+          ...Object.entries(request.inputs ?? {}).map(([key, value]) => ({ key, value })),
+          { key: target.argsVariable, value: playwrightArgs },
+        ],
       }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });

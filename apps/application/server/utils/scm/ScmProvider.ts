@@ -5,7 +5,7 @@ import {
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
 import { fnv1a32 } from '@piwitests/core/hash';
-import type { CiRerunSettings } from '#shared/ci-rerun';
+import type { CiActionTarget } from '#shared/ci-actions';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
 /** What a CI re-run dispatch carries besides the Playwright arguments. */
@@ -14,6 +14,8 @@ export interface RerunDispatchRequest {
   ref?: string | null;
   /** The dispatch's id, sent where the target names an input for it. */
   dispatchId?: string;
+  /** An action's inputs, sent beside the arguments; never part of them. */
+  inputs?: Record<string, string>;
 }
 
 /** What a provider answers to a CI re-run dispatch. */
@@ -372,14 +374,14 @@ export abstract class ScmProvider {
 
   /**
    * Dispatch a CI re-run of the given Playwright arguments, using this
-   * provider's target in `settings`, on `request.ref` when given (else the
-   * target's own ref). Returns the runs/pipeline URL to watch and the
+   * provider's `target`, on `request.ref` when given (else the target's own
+   * ref), with the action's `request.inputs`. Returns the runs/pipeline URL to watch and the
    * provider's id for the pipeline it created, when it answers with one.
    * Throws when the provider is unsupported, has no configured target, or the
    * dispatch request fails.
    */
   async dispatchRerun(
-    _settings: CiRerunSettings,
+    _target: CiActionTarget,
     _playwrightArgs: string,
     _request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {

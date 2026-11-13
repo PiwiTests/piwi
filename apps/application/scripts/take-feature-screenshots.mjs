@@ -3541,30 +3541,87 @@ const SCENES = [
     of: '[data-shot="project-settings"]',
   })),
   ...[
-    { name: 'project-ci-server-settings', width: 1280, height: 1600 },
-    { name: 'project-ci-server-settings-mobile', width: 375, height: 2400 },
+    { name: 'project-ci-actions', width: 1280, height: 800 },
+    { name: 'project-ci-actions-mobile', width: 375, height: 1400 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → Source control: a CI re-run to Jenkins, its fields and the request preview, at ${width} px`,
-    route: '/projects/2?tab=settings&section=source-control',
+    description: `Project → Settings → CI: the list of CI actions (a re-run, a staging smoke run with a fixed environment input, a nightly run with a choice input), their defaults and accepts, at ${width} px`,
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
-    of: '[data-shot="project-settings"]',
+    async run({ page, shoot, settle }) {
+      const list = page.locator('[data-shot="ci-actions"]');
+      await list.getByTestId('ci-actions-list').waitFor({ timeout: 90000 });
+      await list.evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'project-ci-action-editor',
+    description:
+      'Project → Settings → CI: the editor of the staging smoke action, with its target, its fixed input, what it accepts, its environment and its defaults',
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=ci',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Smoke · staging' });
+      await row.getByTestId('ci-action-edit').click({ timeout: 90000 });
+      const editor = page.locator('[data-shot="ci-action-editor"]');
+      await editor.waitFor({ timeout: 30000 });
+      // The target fields are long: show what an action adds, its inputs, what it accepts, its environment and defaults.
+      await editor.getByTestId('ci-action-inputs').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    { name: 'project-ci-action-check', width: 1280, height: 800 },
+    { name: 'project-ci-action-check-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: Check on the nightly Jenkins action, whose job does not declare the choice input it sends, at ${width} px`,
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=ci',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Nightly · Jenkins' });
+      await row.getByTestId('ci-action-check').click({ timeout: 90000 });
+      await row.getByTestId('ci-action-check-result').waitFor({ timeout: 30000 });
+      await page.locator('[data-shot="ci-actions"]').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await settle();
+      await shoot();
+    },
   })),
   ...[
-    { name: 'project-ci-server-check', width: 1280, height: 1600 },
-    { name: 'project-ci-server-check-mobile', width: 375, height: 2400 },
+    { name: 'project-ci-settings', width: 1280, height: 1100 },
+    { name: 'project-ci-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → Source control: Check the jobs on the Jenkins target, and what it found, at ${width} px`,
+    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions, the one CI server token and its Save, at ${width} px`,
     mode: 'demo',
-    route: '/projects/2?tab=settings&section=source-control',
+    route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
-    of: '[data-shot="ci-server-target"]',
     async run({ page, shoot, settle }) {
-      const form = page.locator('[data-shot="ci-server-target"]');
-      await form.getByRole('button', { name: 'Check the jobs' }).click();
-      await form.getByTestId('ci-server-check').locator('dd').first().waitFor({ timeout: 30000 });
-      await form.scrollIntoViewIfNeeded();
+      await page.getByTestId('ci-actions-list').waitFor({ timeout: 90000 });
+      await page.getByTestId('ci-server-token').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-ci-token', width: 1280, height: 700 },
+    { name: 'project-ci-token-mobile', width: 375, height: 900 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: the one CI server token field, stating the base URL it is bound to, at ${width} px`,
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=ci',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const field = page.locator('[data-shot="ci-server-token"]');
+      await field.waitFor({ timeout: 90000 });
+      await field.evaluate((node) => node.scrollIntoView({ block: 'center' }));
       await settle();
       await shoot();
     },

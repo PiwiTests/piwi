@@ -213,16 +213,52 @@ const PROJECTS = [
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
-    // the Source control settings show the CI server form.
+    // the CI settings list its CI actions.
     ci_rerun: {
       enabled: true,
-      via: 'ci-server',
-      ciServer: {
-        preset: 'jenkins',
-        baseUrl: 'https://jenkins.example.com/',
-        user: 'piwi-bot',
-        rerun: { job: 'api/integration', ref: 'main' },
-      },
+      actions: [
+        {
+          id: 'rerun-failed-tests',
+          name: 'Re-run failed tests',
+          target: {
+            type: 'ci-server',
+            preset: 'jenkins',
+            baseUrl: 'https://jenkins.example.com/',
+            user: 'piwi-bot',
+            fields: { job: 'api/integration', ref: 'main' },
+          },
+          inputs: [],
+          accepts: ['tests'],
+        },
+        {
+          id: 'smoke-staging',
+          name: 'Smoke · staging',
+          target: {
+            type: 'ci-server',
+            preset: 'jenkins',
+            baseUrl: 'https://jenkins.example.com/',
+            user: 'piwi-bot',
+            fields: { job: 'api/smoke', ref: 'main' },
+          },
+          inputs: [{ name: 'TARGET_ENV', kind: 'fixed', value: 'staging' }],
+          accepts: ['tests', 'suite'],
+          environment: 'staging',
+        },
+        {
+          id: 'nightly-jenkins',
+          name: 'Nightly · Jenkins',
+          target: {
+            type: 'ci-server',
+            preset: 'jenkins',
+            baseUrl: 'https://jenkins.example.com/',
+            user: 'piwi-bot',
+            fields: { job: 'api/nightly', ref: 'main' },
+          },
+          inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
+          accepts: ['suite', 'flakeLab'],
+        },
+      ],
+      defaults: { rerun: 'rerun-failed-tests', suite: 'smoke-staging', flakeLab: 'nightly-jenkins' },
     },
   },
   {

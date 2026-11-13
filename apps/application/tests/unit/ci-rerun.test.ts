@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { resolveCiRerunSettings, hasRerunTarget } from '#shared/ci-rerun';
+import { resolveCiRerunSettings } from '#shared/ci-rerun';
 import { buildRerunCommand, buildRetryArgs } from '#shared/retry-command';
 
 describe('resolveCiRerunSettings', () => {
@@ -24,23 +24,6 @@ describe('resolveCiRerunSettings', () => {
     });
     expect(resolved.github).toBeUndefined();
     expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PIWI_RERUN_ARGS' });
-  });
-});
-
-describe('hasRerunTarget', () => {
-  const settings = resolveCiRerunSettings({
-    enabled: true,
-    gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
-  });
-
-  test('true only when enabled and a target exists for the provider', () => {
-    expect(hasRerunTarget(settings, 'gitlab')).toBe(true);
-    expect(hasRerunTarget(settings, 'github')).toBe(false);
-  });
-
-  test('false when disabled even if a target is present', () => {
-    expect(hasRerunTarget({ ...settings, enabled: false }, 'gitlab')).toBe(false);
-    expect(hasRerunTarget(null, 'gitlab')).toBe(false);
   });
 });
 

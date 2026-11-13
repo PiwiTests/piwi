@@ -102,7 +102,7 @@ export interface NextStepInput {
   why?: FailureWhy | null;
   errorKind?: ParsedErrorKind | null;
 
-  /** A provider is configured, and a CI re-run target is configured for this project. */
+  /** A provider is configured, and a CI action that re-runs tests is configured for this project. */
   aiConfigured?: boolean;
   ciRerunAvailable?: boolean;
 

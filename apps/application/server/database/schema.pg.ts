@@ -61,7 +61,7 @@ export const projects = pgTable(
     externalIdUrl: text('external_id_url'), // link to a test in the team's test management tool, `{id}` replaced by its external ID; null = no link
     serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
-    ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
+    ciRerun: jsonb('ci_rerun'), // CiActionsSettings — the project's named CI actions for re-runs and Flake Lab (off by default)
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
     generatedSpecs: jsonb('generated_specs'), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)

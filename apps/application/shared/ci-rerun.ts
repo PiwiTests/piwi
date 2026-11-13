@@ -1,14 +1,14 @@
 /**
- * CI re-run — settings and the durable shapes shared by the server, the demo
- * and the tests.
+ * CI re-run — the stored settings of a value with no `actions` list, and the
+ * durable shapes of a dispatch shared by the server, the demo and the tests.
  *
  * From a failure cluster's page, a reporter or admin can ask CI to re-run
- * exactly the affected tests. `via` says where the dispatch goes. Through the
- * repository host (the default), it uses the project's SCM token, and the
- * target is provider-specific (a GitHub workflow, a GitLab pipeline, a
- * Bitbucket custom pipeline), so the settings hold one block per provider and
- * the project's repository URL decides which one is used. Through a CI server,
- * it sends one HTTP request a preset builds (`shared/ci-server.ts`).
+ * exactly the affected tests. A project's settings are a list of named
+ * actions (`shared/ci-actions.ts`); a value with no `actions` list is a
+ * {@link CiRerunSettings}, which `ciActionsFromLegacy` converts. In it, `via`
+ * says where a dispatch goes: through the repository host (one block per provider,
+ * decided by the project's repository URL) or through a CI server (one HTTP
+ * request a preset builds, `shared/ci-server.ts`).
  *
  * Off by default: dispatching a pipeline spends CI minutes and needs a token
  * with write scope, so it stays an explicit per-project opt-in.
@@ -138,36 +138,6 @@ export function resolveCiRerunSettings(input?: Partial<CiRerunSettings> | null):
   return out;
 }
 
-/** True when the settings hold a usable target for the given provider. */
-export function hasRerunTarget(settings: CiRerunSettings | null | undefined, provider: ScmProviderName): boolean {
-  if (!settings?.enabled) return false;
-  return Boolean(settings[provider]);
-}
-
-/**
- * The settings `dispatchRerun` sends a Flake Lab dispatch with: the provider's
- * target swapped for the Flake Lab one, on the re-run target's ref. Null when
- * the provider has no usable Flake Lab target.
- */
-export function flakeLabRerunSettings(
-  settings: CiRerunSettings | null | undefined,
-  provider: ScmProviderName,
-): CiRerunSettings | null {
-  const lab = settings?.enabled ? settings.flakeLab : undefined;
-  if (!settings || !lab) return null;
-  if (provider === 'github' && lab.github && settings.github) {
-    return {
-      enabled: true,
-      github: { workflow: lab.github.workflow, ref: settings.github.ref, inputName: lab.github.inputName },
-    };
-  }
-  if (provider === 'gitlab' && lab.gitlab && settings.gitlab) {
-    return { enabled: true, gitlab: { ref: settings.gitlab.ref, variableName: lab.gitlab.variableName } };
-  }
-  if (provider === 'bitbucket' && lab.bitbucket) return { enabled: true, bitbucket: lab.bitbucket };
-  return null;
-}
-
 /** The `npx @piwitests/reporter` arguments a Flake Lab dispatch hands CI. */
 export function flakeLabCiArgs(testCaseId: number, kind: 'reproduce' | 'verify'): string {
   return kind === 'verify' ? `flake verify ${testCaseId}` : `flake ${testCaseId}`;
@@ -182,6 +152,8 @@ export function flakeLabCiArgs(testCaseId: number, kind: 'reproduce' | 'verify')
 export interface ClusterRerunDispatch {
   /** The dispatch's own id, which the run it starts carries as `PIWI_ORIGIN_REF` when the pipeline passes it on. */
   id?: string;
+  /** The CI action the dispatch went through (`shared/ci-actions.ts`); a dispatch recorded without an action has none. */
+  actionId?: string;
   /** Provider the dispatch went to. */
   provider: CiRerunProvider;
   /** The CI server preset, for a `ci-server` dispatch. */
