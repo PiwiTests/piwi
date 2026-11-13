@@ -305,6 +305,22 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
     );
   });
 
+  test('are hidden in a URL in prose, the punctuation that ends it kept', () => {
+    expect(hideSecretsInText('(see https://x.test/?token=abc123)')).toBe(`(see https://x.test/?token=${HIDDEN_VALUE})`);
+    expect(hideSecretsInText('see https://x.test/?token=abc123.')).toBe(`see https://x.test/?token=${HIDDEN_VALUE}.`);
+    for (const end of [',', ';', ':', '!', '?', ']', '),', '...']) {
+      expect(hideSecretsInText(`see https://x.test/?token=abc123${end} then`), end).toBe(
+        `see https://x.test/?token=${HIDDEN_VALUE}${end} then`,
+      );
+    }
+    // A parenthesis or a bracket the URL opened is its own.
+    expect(hideSecretsInText('see https://x.test/wiki/Foo_(bar)?token=abc123')).toBe(
+      `see https://x.test/wiki/Foo_(bar)?token=${HIDDEN_VALUE}`,
+    );
+    expect(hideSecretsInText('(see https://x.test/wiki/Foo_(bar))')).toBe('(see https://x.test/wiki/Foo_(bar))');
+    expect(hideSecretsInText('at http://[::1]/a')).toBe('at http://[::1]/a');
+  });
+
   test('take the autocomplete tokens of a field that holds a secret', () => {
     for (const value of ['current-password', 'section-a one-time-code', 'cc-number', 'billing CC-CSC']) {
       expect(isSecretAutocomplete(value), value).toBe(true);

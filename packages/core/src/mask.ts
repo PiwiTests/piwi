@@ -324,6 +324,27 @@ export function isSecretValue(value: string): boolean {
 /** A URL in a text: a scheme, `//` and what follows up to a space or a quote. */
 const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s"'<>`]+/gi;
 
+/**
+ * The length of a URL found in a text without the punctuation that ends it in the prose around it: a trailing `.`,
+ * `,`, `;`, `:`, `!` or `?`, and a `)` or `]` the URL did not open itself, as a linkifier reads it.
+ */
+function urlEndInText(url: string): number {
+  let end = url.length;
+  while (end > 0) {
+    const last = url[end - 1]!;
+    if ('.,;:!?'.includes(last)) {
+      end--;
+      continue;
+    }
+    const open = last === ')' ? '(' : last === ']' ? '[' : '';
+    if (!open) break;
+    const head = url.slice(0, end);
+    if (head.split(open).length >= head.split(last).length) break;
+    end--;
+  }
+  return end;
+}
+
 /** A URL's parts: its scheme and authority (`//user:password@host:port`), path, query and fragment. */
 const URL_PARTS = /^(?:([a-z][a-z0-9+.-]*:)?\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#[\s\S]*)?$/i;
 
@@ -499,8 +520,9 @@ export function hideSecretsInText(text: string, count: { n: number } = { n: 0 })
   let out = '';
   let last = 0;
   for (const url of text.matchAll(URL_IN_TEXT)) {
-    out += hideInText(text.slice(last, url.index), count) + hideSecretsInUrl(url[0], count);
-    last = url.index + url[0].length;
+    const end = urlEndInText(url[0]);
+    out += hideInText(text.slice(last, url.index), count) + hideSecretsInUrl(url[0].slice(0, end), count);
+    last = url.index + end;
   }
   return out + hideInText(text.slice(last), count);
 }
