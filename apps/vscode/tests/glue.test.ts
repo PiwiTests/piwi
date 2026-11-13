@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type {
@@ -16,7 +17,11 @@ import type {
   TestAtResult,
   TestItemsResult,
 } from '@piwitests/editor/protocol';
+import { NOTICE_KEYS } from '@piwitests/editor/protocol';
 import {
+  DONT_SHOW_AGAIN,
+  noticeShown,
+  withHiddenMessage,
   OwnRunCounts,
   flakyTestsByRoot,
   isFlakyGroup,
@@ -1135,6 +1140,39 @@ describe('Compare with…', () => {
       tooltip: expect.stringMatching(/^2 local runs of Acme on main, 1 test failing\n\nBaseline: your local runs only/),
       error: true,
     });
+  });
+});
+
+describe('a notice of the service', () => {
+  test('offers Don’t Show Again when the service may send it again, and stays hidden once its kind is', () => {
+    expect(noticeShown({ message: 'the [locator](command:x) it saw' }, [])).toEqual({
+      text: 'Piwi: the [locator] (command:x) it saw',
+      actions: [],
+    });
+    const again = { message: 'Run #77 is shared live.', key: 'window-shared' as const };
+    expect(noticeShown(again, ['reporter-missing'])).toEqual({
+      text: 'Piwi: Run #77 is shared live.',
+      actions: [DONT_SHOW_AGAIN],
+    });
+    expect(noticeShown(again, ['window-shared'])).toBeNull();
+    // A value written by hand that is no list hides nothing, and its strings alone count.
+    expect(noticeShown(again, 'window-shared')).not.toBeNull();
+    expect(noticeShown(again, [42, 'window-shared'])).toBeNull();
+  });
+
+  test('adds a kind to the hidden messages once, keeping what was there', () => {
+    expect(withHiddenMessage(undefined, 'window-shared')).toEqual(['window-shared']);
+    expect(withHiddenMessage(['reporter-missing'], 'window-shared')).toEqual(['reporter-missing', 'window-shared']);
+    expect(withHiddenMessage(['window-shared'], 'window-shared')).toBeNull();
+    expect(withHiddenMessage('reporter-missing', 'window-shared')).toEqual(['window-shared']);
+  });
+
+  test('can be hidden by every kind the service names, in the settings', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
+    const setting = manifest.contributes.configuration.properties['piwi.hiddenMessages'];
+    expect(setting.items.enum).toEqual([...NOTICE_KEYS]);
+    expect(setting.items.enumDescriptions).toHaveLength(NOTICE_KEYS.length);
+    expect(setting.scope).toBe('application');
   });
 });
 

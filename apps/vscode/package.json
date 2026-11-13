@@ -1291,6 +1291,28 @@
           "default": "auto",
           "markdownDescription": "**Hold failures** of each run Piwi starts from this window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it."
         },
+        "piwi.hiddenMessages": {
+          "type": "array",
+          "scope": "application",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "agent-let-go",
+              "window-shared",
+              "unattended-resumed",
+              "reporter-missing"
+            ],
+            "enumDescriptions": [
+              "A stop an agent held goes on once the agent went idle.",
+              "A run is shared live, as this window's runs are.",
+              "A test stopped where nobody attends the run goes on.",
+              "A run did not reach the instance, from a config without the Piwi reporter."
+            ]
+          },
+          "default": [],
+          "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [

@@ -907,6 +907,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const answers: ResponseCache = new Map();
   let credentials: EditorCredentials = {};
   let folders: string[] = [];
+  /** A sentence for the client to show once (`piwi/notice`), its `key` kept as sent. */
+  const sendNotice = (notice: Notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice);
   const appAnalyses = new Map<string, AppAnalysis>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -1806,7 +1808,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       sendRunStatus();
       pollRuns();
     },
-    notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
+    notice: (notice) => sendNotice(notice),
     // Created below, before any command can end.
     reporterHeard: (ref) => runSessions.heardFrom(ref),
     endedAtStop: (ref) => runSessions.endedAtStopOf(ref),
@@ -2055,8 +2057,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
       runHub?.shareWindowChanged(on);
     },
-    notice: (root, severity, message) =>
-      void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
+    notice: (root, severity, message, key) => sendNotice({ root, severity, message, key }),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
     rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
     writesCode: () => writesCode,
@@ -2210,12 +2211,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const { ok, message } = stopActions.agentCode(stop, input);
       return { ok, message };
     },
-    notice: (root, message) =>
-      void connection.sendNotification(NOTICE_NOTIFICATION, {
-        root: root ?? folders[0] ?? '',
-        severity: 'information',
-        message,
-      } satisfies Notice),
+    notice: (root, message, key) =>
+      sendNotice({ root: root ?? folders[0] ?? '', severity: 'information', message, key }),
     command: (ref) => runCommands.get(ref) ?? null,
     startRun: (start) => startAgentRun(start),
     startsRuns: () => startsRuns,

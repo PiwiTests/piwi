@@ -25,6 +25,7 @@ import type {
   LiveRun,
   RunProgress,
   McpServerDefinition,
+  Notice,
   RecordingPlacement,
   RecordingStep,
   RecordingUpdate,
@@ -1693,6 +1694,32 @@ export const SPEC_FILE = /[^/]\.(?:spec|test)\.[cm]?[jt]sx?$/;
  */
 export function inertLinks(text: string): string {
   return text.replace(/\]\(/g, '] (');
+}
+
+/** The button of a notice the service may send again (`Notice.key`): it adds the notice's kind to `piwi.hiddenMessages`. */
+export const DONT_SHOW_AGAIN = "Don't Show Again";
+
+/**
+ * How a service notice shows: its text with no link in it, with Don't Show Again when the service may send it again;
+ * null for a kind `piwi.hiddenMessages` holds.
+ */
+export function noticeShown(
+  notice: Pick<Notice, 'message' | 'key'>,
+  hidden: unknown,
+): { text: string; actions: string[] } | null {
+  if (notice.key && hiddenMessages(hidden).includes(notice.key)) return null;
+  return { text: inertLinks(`Piwi: ${notice.message}`), actions: notice.key ? [DONT_SHOW_AGAIN] : [] };
+}
+
+/** The kinds `piwi.hiddenMessages` holds, as read from the settings: its strings alone, whatever was written there. */
+export function hiddenMessages(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** `piwi.hiddenMessages` with `key` added, or null when it holds it already. */
+export function withHiddenMessage(value: unknown, key: string): string[] | null {
+  const hidden = hiddenMessages(value);
+  return hidden.includes(key) ? null : [...hidden, key];
 }
 
 /**

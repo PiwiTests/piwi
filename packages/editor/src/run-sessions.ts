@@ -92,6 +92,7 @@ import type {
   AskToWatchParams,
   AnswerAskParams,
   LaneViewLayer,
+  NoticeKey,
   OpenTraceParams,
 } from './protocol.js';
 import { MAX_HUB_PRESENCE, type HubAction, type HubAnswerCode } from '@piwitests/core/run-hub';
@@ -448,7 +449,7 @@ export interface RunSessionsOptions {
    */
   answersStops(): boolean;
   /** A sentence for the client to show once, about the folder `root`. */
-  notice(root: string, severity: 'information' | 'warning', message: string): void;
+  notice(root: string, severity: 'information' | 'warning', message: string, key?: NoticeKey): void;
   /** The folder of the Playwright config a run's working directory is, as the workspace names it; null for none. */
   rootOf(cwd: string): string | null;
   /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
@@ -2581,6 +2582,7 @@ export class RunSessions {
             session.root ?? worker.cwd,
             'information',
             `${run} is shared live${where}, as this window's runs are until you stop sharing them.`,
+            'window-shared',
           );
         }
         return this.changed(session, true);
@@ -2604,6 +2606,7 @@ export class RunSessions {
       session.root ?? worker.cwd,
       'information',
       `Piwi let the test stopped at ${path.basename(place.file)}:${place.line} go on: nobody attends this run.`,
+      'unattended-resumed',
     );
   }
 
