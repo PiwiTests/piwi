@@ -21,6 +21,12 @@ import javax.swing.JList
  * the next watch only when asked, and gives the stop back whenever Interact goes off, Escape included.
  */
 class PausedPagePanelTest : BasePlatformTestCase() {
+    fun testTheImageIsNamedForTheKindOfPageItShows() {
+        assertEquals("The page of the paused test", PausedPagePanel().pageName())
+        assertEquals("The page of the worker's test", PausedPagePanel().apply { forWorker() }.pageName())
+        assertEquals("The page of the CI worker's test", PausedPagePanel().apply { forCiWorker() }.pageName())
+    }
+
     fun testWatchingAndInteractionAreOptInAndAnOlderReporterShowsNeither() {
         val panel = PausedPagePanel()
         val asked = mutableListOf<Boolean>()

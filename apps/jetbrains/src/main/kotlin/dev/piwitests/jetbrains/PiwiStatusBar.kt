@@ -104,7 +104,15 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private fun service() = project.service<PiwiProjectService>()
 
     private fun view() = service().let {
-        Glue.statusView(it.status, it.runs, it.local().desktop, startProblem = it.startProblem, file = shownFile(project), trusted = it.trusted())
+        Glue.statusView(
+            it.status,
+            it.runs,
+            it.local().desktop,
+            startProblem = it.startProblem,
+            file = shownFile(project),
+            trusted = it.trusted(),
+            stopped = it.serviceStopped,
+        )
     }
 
     private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
@@ -189,6 +197,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
                 Glue.StatusAction.CONNECT -> manager.getAction("Piwi.Connect")
                 Glue.StatusAction.NODE_SETTINGS -> manager.getAction("Piwi.NodeSettings")
                 Glue.StatusAction.SETTINGS -> manager.getAction("Piwi.OpenSettings")
+                Glue.StatusAction.RESTART -> manager.getAction("Piwi.RestartService")
                 Glue.StatusAction.NONE -> null
             }
         }
@@ -222,6 +231,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             if (!shareShown) addLive()
             if (first != null) {
                 add(first)
+                if (recording() == null && view().action == Glue.StatusAction.RESTART) addAll(registered("Piwi.OpenLog"))
                 addAll(registered("Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording"))
                 addSeparator()
             }

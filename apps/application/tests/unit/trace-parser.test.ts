@@ -19,7 +19,7 @@ function buildTraceZip(events: unknown[], extraLines: string[] = []): Buffer {
 /** Build a trace ZIP holding a fixture's runner and page event files, without the events `drop` names. */
 function buildFixtureZip(fixture: TraceFixture, drop: string[] = []): Buffer {
   return buildZip(
-    Object.entries(fixture).map(([name, events]) => ({
+    (Object.entries(fixture) as Array<[string, Array<Record<string, unknown>>]>).map(([name, events]) => ({
       name,
       data: Buffer.from(
         events
@@ -56,6 +56,8 @@ function makeData(overrides: Partial<ParsedTraceData> = {}): ParsedTraceData {
     frameSnapshots: [],
     failingAction,
     failingActionIndex: 0,
+    contexts: [],
+    errors: [],
     eventCount: 0,
     timeoutFallback: false,
     traceEndTime: 0,

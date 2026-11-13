@@ -55,7 +55,7 @@ describe('HTML_REPORT_BOOTSTRAP', () => {
     vm.runInNewContext(HTML_REPORT_BOOTSTRAP, { window });
 
     window.addEventListener('focus', (event) => {
-      void event.target!.document;
+      void (event.target as Window).document;
     });
     const target = {} as EventTarget & { document: unknown };
     Object.defineProperty(target, 'document', {
@@ -65,11 +65,11 @@ describe('HTML_REPORT_BOOTSTRAP', () => {
         throw error;
       },
     });
-    expect(() => focusListener?.({ target } as FocusEvent)).not.toThrow();
+    expect(() => focusListener?.({ target } as unknown as FocusEvent)).not.toThrow();
 
     window.addEventListener('focus', () => {
       throw new Error('report failure');
     });
-    expect(() => focusListener?.({ target: window } as FocusEvent)).toThrow('report failure');
+    expect(() => focusListener?.({ target: window } as unknown as FocusEvent)).toThrow('report failure');
   });
 });

@@ -253,12 +253,12 @@ describe('the latest run’s duration', () => {
       { id: 12, projectId: 3, status: 'passed', startTime: new Date(now - DAY_MS) },
       { id: 13, projectId: 3, status: 'passed', startTime: new Date(now) },
     ]);
-    const [{ id }] = await db
+    const [testCase] = await db
       .insert(schema.testCases)
       .values({ projectId: 3, filePath: 'tests/pay.spec.ts', title: 'pays' })
       .returning({ id: schema.testCases.id });
     const at = new Date(now);
-    const row = { testCaseId: id!, line: 3, column: 1 };
+    const row = { testCaseId: testCase!.id, line: 3, column: 1 };
     await db.insert(schema.testRunsCases).values([
       { ...row, testRunId: 12, status: 'passed', duration: 5000, createdAt: new Date(now - DAY_MS) },
       // Stored in one batch: the same time on every row, the timed-out first attempt superseded by its retry.

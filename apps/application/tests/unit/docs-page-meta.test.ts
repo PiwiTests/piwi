@@ -144,7 +144,7 @@ describe('every docs page', () => {
   const frontmatter = (markdown: string) => {
     const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? '';
     return Object.fromEntries(
-      [...block.matchAll(/^(\w+):\s*(.*)$/gm)].map(([, key, value]) => [key, value.replace(/^(['"])(.*)\1$/, '$2')]),
+      [...block.matchAll(/^(\w+):\s*(.*)$/gm)].map(([, key, value]) => [key, value!.replace(/^(['"])(.*)\1$/, '$2')]),
     );
   };
 

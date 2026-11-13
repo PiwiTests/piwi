@@ -4,6 +4,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import type { ScoredGap } from '../../shared/handlers/scenario-gaps';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
@@ -175,7 +176,7 @@ beforeEach(async () => {
   await db.insert(schema.projects).values({ id: 1, name: 'p' });
 });
 
-const scoredGap = (over: Partial<gaps.ScoredGap> = {}): gaps.ScoredGap => ({
+const scoredGap = (over: Partial<ScoredGap> = {}): ScoredGap => ({
   detector: 'not-handled',
   kind: 'finding',
   class: 'unhandled',

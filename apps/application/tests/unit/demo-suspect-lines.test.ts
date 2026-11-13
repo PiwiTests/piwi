@@ -251,7 +251,9 @@ describe('demo suspect lines', () => {
       const context = await getClusterContext(db, story.clusterId);
       const section = context.sections.find((s) => s.id === 'suspectLines');
       expect(section?.markdown).toContain(`\`${answer.suspects[0]!.path}\``);
-      expect(context.coverage.suspectLines).toMatchObject({ suspects: answer.suspects.length });
+      expect('suspectLines' in context.coverage ? context.coverage.suspectLines : undefined).toMatchObject({
+        suspects: answer.suspects.length,
+      });
       expect(context.scmChanges?.files[0]?.filename).toBe(answer.suspects[0]!.path);
       expect(answer.range!.to.startsWith(context.coverage.scm!.range!.to)).toBe(true);
     }

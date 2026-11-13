@@ -371,6 +371,12 @@ test.describe('the Runs window in another language', () => {
         await expect(runs.locator('.share-refused')).toHaveText(readCatalog(language).runs_shareRefusedLocal!.message);
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
+        // The service's answers to Hold failures, read out in the window's language.
+        const hold = runs.getByRole('button', { name: readCatalog(language).runs_holdFailures!.message });
+        await hold.click();
+        await expect(runs.locator('#announce')).toHaveText(readCatalog(language).runs_answerHoldOn!.message);
+        await hold.click();
+        await expect(runs.locator('#announce')).toHaveText(readCatalog(language).runs_answerHoldOff!.message);
         stopAtCheckout(run.worker, 1);
         await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
         await runs.getByRole('button', { name: mock }).click();

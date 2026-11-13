@@ -416,10 +416,32 @@ describe('findingView', () => {
     });
     expect(handle).toEqual({
       label: 'Left running server',
-      where: null,
-      site: null,
+      where: 'tests/reports.spec.ts:27',
+      site: 'tests/reports.spec.ts:27',
       facts: ['left running in the worker by "exports" (tests/reports.spec.ts)'],
       lastUse: null,
+    });
+  });
+
+  test('places a handle at the line that started it, and counts several', () => {
+    const handle = {
+      verdict: 'handle',
+      kind: 'handle',
+      where: 'ChildProcess',
+      site: 'tests/mock.spec.ts:12',
+      tests: 1,
+      count: 2,
+      detail: '"starts the mock" (tests/mock.spec.ts)',
+    } as const;
+    expect(findingView(handle)).toMatchObject({
+      where: 'tests/mock.spec.ts:12',
+      site: 'tests/mock.spec.ts:12',
+      facts: ['2 processes', 'left running in the worker by "starts the mock" (tests/mock.spec.ts)'],
+    });
+    expect(findingView({ ...handle, where: 'TCPServerWrap', site: null, count: 1 })).toMatchObject({
+      label: 'Left running server',
+      where: null,
+      facts: ['left running in the worker by "starts the mock" (tests/mock.spec.ts)'],
     });
   });
 });

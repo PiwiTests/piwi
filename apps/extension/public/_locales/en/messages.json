@@ -9101,5 +9101,89 @@
   "runs_shareRefusedUnknown": {
     "message": "This run cannot be shared live: the Piwi reporter gave its workers no live view key.",
     "description": "Runs window, under a run’s heading in place of Share live: the reporter set nothing for its workers’ live view."
+  },
+  "runs_answerPausing": {
+    "message": "Pausing at the next call.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Pause, for one worker."
+  },
+  "runs_answerStepping": {
+    "message": "Stepping to the next call.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Step."
+  },
+  "runs_answerResuming": {
+    "message": "Resuming.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Resume."
+  },
+  "runs_answerFinishing": {
+    "message": "Finishing the test without stopping at a breakpoint.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Finish."
+  },
+  "runs_answerEndingSkipped": {
+    "message": "Ending the test: it is reported as skipped.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to End the test, at a stop that is not a failure."
+  },
+  "runs_answerEndingFailed": {
+    "message": "The test failed already: it ends as it failed.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to End the test, at a failure."
+  },
+  "runs_answerWentOn": {
+    "message": "The test went on.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered: the stop a control answered is over, so nothing was done."
+  },
+  "runs_answerRunning": {
+    "message": "The test is running.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered: a control that answers a stop, refused because the test is not stopped."
+  },
+  "runs_answerStoppedAlready": {
+    "message": "The test is stopped already.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered: Pause refused because the test is stopped."
+  },
+  "runs_answerDriveOn": {
+    "message": "You drive this stop: an agent would wait until you give it back.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Take control of a stop."
+  },
+  "runs_answerDriveTaken": {
+    "message": "You drive this stop: the agent waits until you give it back.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Take control of a stop the agent drove."
+  },
+  "runs_answerDriveBack": {
+    "message": "You gave this stop back: an agent may act on it.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Give back a stop."
+  },
+  "runs_answerDriveNone": {
+    "message": "You did not drive this stop.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Give back a stop this window did not drive."
+  },
+  "runs_answerHoldOn": {
+    "message": "A failure no pause bar shows waits at its line in this run until someone answers it.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to turning Hold failures on."
+  },
+  "runs_answerHoldOff": {
+    "message": "A failure of this run no pause bar shows goes on at once.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to turning Hold failures off."
+  },
+  "runs_answerHoldUnattended": {
+    "message": "Nobody attends a run of this kind: its failures go on at once, whoever watches it.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered: Hold failures refused for a run nobody attends (a Flake Lab run, a bisect, a run in UI mode)."
+  },
+  "runs_answerShareOn": {
+    "message": "Sharing the run live on $instance$: whoever may open it there can watch its tests’ pages while someone does.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Share live. $instance$ is the host of the Piwi instance (piwi.example.com), or runs_shareInstance.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_answerShareOff": {
+    "message": "Stopped sharing the run: nothing more goes to $instance$.",
+    "description": "Runs window, under the test or read out: what the editor service or the desktop app answered to Stop sharing. $instance$ is the host of the Piwi instance (piwi.example.com), or runs_shareInstance.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
   }
 }

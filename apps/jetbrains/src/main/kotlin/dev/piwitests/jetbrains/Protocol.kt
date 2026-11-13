@@ -978,6 +978,8 @@ data class RunSession(
     val terminal: Boolean = false,
     val runner: Boolean = false,
     val checkout: RunCheckout? = null,
+    /** Who started the run when a person did not (`Started by Claude Code`, an agent's); null for a person's run. */
+    val label: String? = null,
     val live: RunLive? = null,
     val progress: RunProgress? = null,
     /** The run's page on the instance once its own process names it: its number there and its address. */

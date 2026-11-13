@@ -2,7 +2,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error — plain ESM module of the measurement script, without type declarations
 import * as budgets from '../../scripts/lib/detail-page-budgets.mjs';
 
 const { BUDGET_VIEWPORT, DEFAULT_ROUTES, NEXT_STEP_COPIES, budgetText, evaluateBudgets, pageKind, parseMeasureArgs } =
@@ -13,7 +12,8 @@ interface Verdict {
   label: string;
   value: number | null;
   max: number | null;
-  verdict: 'pass' | 'fail' | 'n/a';
+  /** `pass`, `fail` or `n/a`. */
+  verdict: string;
   note: string | null;
 }
 
@@ -235,7 +235,7 @@ describe('the Next actions the distance budget knows', () => {
         .map(String)
         .filter((file) => file.endsWith('.vue'))
         .flatMap((file) => [...readFileSync(join(components, file), 'utf8').matchAll(/data-copies="([^"]*)"/g)])
-        .flatMap((m) => m[1].split(/\s+/)),
+        .flatMap((m) => m[1]!.split(/\s+/)),
     );
     const budgeted = Object.entries(NEXT_STEP_COPIES)
       .filter(([, kind]) => kind === 'budgeted')

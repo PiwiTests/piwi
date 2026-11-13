@@ -2,23 +2,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import * as sqliteSchema from '../../server/database/schema.sqlite';
-// @ts-expect-error — plain ESM modules of the performance suite, without type declarations
 import { datasetBatches } from '../../scripts/perf/lib/dataset.mjs';
-// @ts-expect-error — see above
 import { SQLITE_MS_TIMESTAMP_COLUMNS } from '../../scripts/perf/lib/seed-writer.mjs';
-// @ts-expect-error — see above
 import { mannWhitneyP, median, mode, quantile } from '../../scripts/perf/lib/stats.mjs';
-// @ts-expect-error — see above
 import { compareMetric, compareResults, sqlDiff } from '../../scripts/perf/lib/compare.mjs';
-// @ts-expect-error — see above
 import { COMMENT_MARKER, renderComparison } from '../../scripts/perf/lib/markdown.mjs';
-// @ts-expect-error — see above
 import { startOtlpReceiver, traceIdFromServerTiming } from '../../scripts/perf/lib/otlp-receiver.mjs';
-// @ts-expect-error — see above
 import { pageScenarios, shardPages } from '../../scripts/perf/lib/scenarios.mjs';
-// @ts-expect-error — see above
 import { mergeResults } from '../../scripts/perf/lib/merge.mjs';
-// @ts-expect-error — see above
 import { statementDelta } from '../../scripts/perf/lib/pg.mjs';
 
 type Batch = { table: string; rows: Record<string, unknown>[] } | { manifest: { counts: Record<string, number> } };
@@ -312,7 +303,7 @@ describe('performance trace receiver', () => {
       }),
     });
     expect(res.ok).toBe(true);
-    const sql = receiver.requestSql('t1');
+    const sql = receiver.requestSql('t1')!;
     await receiver.close();
     expect(sql.statements).toBe(3);
     expect(sql.queries[0]).toMatchObject({ query: 'select 1', calls: 2 });

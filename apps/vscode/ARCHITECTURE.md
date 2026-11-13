@@ -552,7 +552,8 @@ asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
 `piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
 out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
-run's own process tells the service: so it counts offline and with the desktop app.
+run's own process tells the service: so it counts offline and with the desktop app. An agent's run ends it with its
+label (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
