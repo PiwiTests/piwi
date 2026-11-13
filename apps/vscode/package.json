@@ -654,6 +654,10 @@
       {
         "id": "piwi.editorContext",
         "label": "Piwi"
+      },
+      {
+        "id": "piwi.explorerContext",
+        "label": "Piwi"
       }
     ],
     "menus": {
@@ -1163,6 +1167,30 @@
           "command": "piwi.resumeRecording",
           "group": "3_recording@3",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
+        }
+      ],
+      "explorer/context": [
+        {
+          "submenu": "piwi.explorerContext",
+          "group": "piwi@1",
+          "when": "piwi.active && resourceScheme =~ /^(file|vscode-remote)$/"
+        }
+      ],
+      "piwi.explorerContext": [
+        {
+          "command": "piwi.runSpec",
+          "group": "1_run@1",
+          "when": "!explorerResourceIsFolder && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runTestsForFile",
+          "group": "1_run@2",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|html|json|yaml|yml|properties|po|resx|cs|cshtml|razor)$/"
+        },
+        {
+          "command": "piwi.recordFile",
+          "group": "2_record@1",
+          "when": "!piwi.recording"
         }
       ]
     },

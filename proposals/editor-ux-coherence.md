@@ -70,7 +70,10 @@ editors and one title in sentence case, with an ellipsis wherever it asks for so
 for the cursor and the window; `tests/actions.test.ts` holds `package.json` and `plugin.xml` to it, and the titles that
 differed now read alike (Connect…, Open the log, Run a saved selection…, Turn hold failures on or off for the run, Show
 or hide the coverage marks, Finish the test, End the test, Record at the stop, Record here… for the caret alone) (X1, AC7,
-AC10, AC9 and NF3 in part). §14 adds the findings the code that built the plan raised. The live-run study,
+AC10, AC9 and NF3 in part). M3 in part: JetBrains' Tools → Piwi in six compact sections (run, record, run control,
+dashboard, agents, connection), its editor submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu
+in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
+part). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
 debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
@@ -191,7 +194,7 @@ These rules hold them together; each larger item of §10 carries one or more.
    test, as `coverage-mark-colors.test.ts` holds the coverage marks; flaky, quarantine and history always drawn.**
    ([IC4](#ic4))
 4. **One menu shape (Run, Record, Run Control, Dashboard, Agents, Connection, each showing what applies now) and one
-   home per editor, with the same tabs, toolbar order and empty states.** ([AC1](#ac1), [HM1](#hm1), [HM6](#hm6))
+   home per editor, with the same tabs, toolbar order and empty states.** ([HM1](#hm1), [HM6](#hm6))
 5. **The IDE's own places first, with Run, Debug and Coverage meaning what the IDE means; Piwi's own marks only for what
    the IDE cannot show.** ([TL2](#tl2), [TL3](#tl3), [LR3](#lr3), [AC3](#ac3))
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
@@ -261,22 +264,15 @@ violet, held by `apps/application/tests/unit/status-mark-colors.test.ts` as the 
 
 ### 4.1 Menus
 
-<a id="ac1"></a>**AC1. Tools → Piwi is one flat popup of 51 actions in four sections, the first mixing the connection,
-the runs, the latest run and the four MCP rows.** `plugin.xml:110-295` separates `Piwi.Actions` only at `:189`, `:214`
-and `:291`: 23 actions from Connect… to Reset the Runs' MCP Server Token, then the recording's five, the run's 22 and
-Settings…. **(read)** Fix: nested groups in [LI4](#li4)'s six sections, which the status popup and VS Code's status menu
-([HM1](#hm1)) take too. ([M3](#m3), [LI4](#li4))
-
-<a id="ac3"></a>**AC3. Neither editor offers Piwi in the file tree, Rider's Solution Explorer or its Tests menu, and New
-offers Record a New Test File… in JetBrains only.** `plugin.xml` adds to `ToolsMenu`, `NewGroup`, `EditorPopupMenu` and
-`GenerateGroup` only (`:111, 198, 301, 316`), and `apps/vscode/package.json:590-1081` has no `explorer/context` or
-`file/newFile`, though Run This Spec and Run the Tests That Reach This File take a file in both clients. In Rider
-2026.2.4.1 a folder's menu offers the IDE's Run Tests in tests/ and Solution Explorer's offers Run Unit Tests, with
-nothing from Piwi in either, and Add lists Record a New Test File… among the file kinds, on C# project folders too,
-since it needs only a Playwright config in the project (`PiwiRecordingActions.kt:101-104`). **(seen)** Fix: one Piwi
-submenu on files and folders in both, the same group in Solution Explorer and the Tests menu through an optional Rider
-descriptor, and New → Playwright Test (Recorded)…, which [record-from-the-ide.md](record-from-the-ide.md) Part 2 plans,
-on config folders only. ([M3](#m3), [M17](#m17), [LI4](#li4), [LI16](#li16))
+<a id="ac3"></a>**AC3. Piwi is in neither Rider's Solution Explorer nor its Tests menu, and New offers Record a new test file…
+on any folder of a project with a Playwright config.** Both editors' file trees have a **Piwi** submenu
+(`Piwi.ProjectViewPopup`, VS Code's `piwi.explorerContext`), but in Rider 2026.2.4.1 a folder's menu offers the IDE's
+Run Tests in tests/ and Solution Explorer's offers Run Unit Tests, with nothing from Piwi in either, and Add lists
+Record a new test file… among the file kinds, on C# project folders too, since it needs only a Playwright config in the
+project (`PiwiRecordingActions.kt:101-104`). **(seen)** Fix: the same group in Solution Explorer and the Tests menu
+through an optional Rider descriptor, and New → Playwright Test (Recorded)…, which
+[record-from-the-ide.md](record-from-the-ide.md) Part 2 plans, on config folders only. ([M3](#m3), [M17](#m17),
+[LI4](#li4), [LI16](#li16))
 
 ### 4.4 Names
 
@@ -1215,7 +1211,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
+| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): VS Code's status menu once §13's question 6 is settled, New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): record, and the glyphs Appendix A marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [IC2](#ic2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **Piwi Picker's waiting count in the pause bar's violet** ([LI3](#li3)), both JetBrains color schemes held by the same test, and the running ring animated | `extension` | [IC4](#ic4), [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |

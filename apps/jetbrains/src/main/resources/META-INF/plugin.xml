@@ -110,113 +110,77 @@
     -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true" compact="true">
+            <!--
+              Six sections in this order, each showing only what applies: Run, Record, Run control (while a run is
+              live), Dashboard, Agents, Connection.
+            -->
             <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
-                    icon="/icons/connect.svg"
-                    description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
-            <action id="Piwi.Disconnect" icon="/icons/disconnect.svg" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
-                    description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
-            <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload Piwi"
-                    icon="/icons/reload.svg"
-                    description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
-            <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the latest run"
-                    icon="AllIcons.Actions.Refresh"
-                    description="Read the latest run and its failures again, not the indexes Reload Piwi fetches"/>
-            <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
-                    text="Restart the editor service" icon="AllIcons.Actions.Restart"
-                    description="Stop the Piwi editor service and start it again, or start it for the open test files when it does not run"/>
-            <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open the log"
-                    icon="AllIcons.Toolwindows.ToolWindowMessages"
-                    description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
-            <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
-                    text="Run the tests that reach this file" description="Run them in the Run tool window">
-            </action>
-            <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
-                    text="Run the test at the caret" icon="AllIcons.Actions.Execute"
-                    description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
-                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
-            </action>
-            <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
-                    text="Verify the test at the caret ×3"
-                    icon="AllIcons.Actions.Rerun"
-                    description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless Run headed is on, and say how many runs passed">
-            </action>
-            <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
-                    icon="AllIcons.Actions.RunAll"
-                    description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
-            </action>
-            <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run a saved selection…"
-                    icon="AllIcons.Actions.ListFiles"
-                    description="Run one of the project's saved selections"/>
-            <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run headed"
-                    description="Run every test Piwi starts in this project headed, with its browser window shown"/>
-            <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
-                    text="Hold failures from each run's start…"
-                    icon="AllIcons.Debugger.Db_exception_breakpoint"
-                    description="Auto, On or Off: whether a failed test of each run Piwi starts waits at its line for an answer"/>
-            <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
-                    text="Re-run the failing tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
-                    description="Run every test that still fails, or whose failing line changed since its run">
-                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
-                <synonym text="Rerun failed tests"/>
-            </action>
-            <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
-                    icon="AllIcons.Actions.Diff"
-                    description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
-            <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
-                    text="Show or hide the coverage marks"
-                    description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
-            <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
-                    icon="AllIcons.Ide.External_link_arrow"
-                    text="Open in dashboard" description="Open this file's test, or the latest run"/>
-            <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
-                    icon="AllIcons.General.Web"
-                    text="Open the latest run" description="Open the run the status bar shows"/>
-            <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
-                    description="Copy the address Piwi Picker sends locators and recorded steps to"/>
-            <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
-                    text="Copy the MCP server configuration"
-                    icon="AllIcons.Actions.Copy"
-                    description="An mcpServers entry for the AI Assistant's MCP settings"/>
-            <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
-                    text="Copy the runs' MCP server configuration for agents"
-                    icon="AllIcons.Actions.Copy"
-                    description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
-            <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
-                    text="Copy the runs' MCP server configuration for Claude Code or Cursor"
-                    icon="AllIcons.Actions.Copy"
-                    description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
-            <action id="Piwi.ResetRunsMcpToken" icon="/icons/key.svg" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
-                    text="Reset the runs' MCP server token"
-                    description="A new token for the runs' MCP server: every agent given the one before is refused"/>
+            <group id="Piwi.Run" text="Run" compact="true">
+                <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
+                        text="Run the test at the caret" icon="AllIcons.Actions.Execute"
+                        description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
+                    <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
+                </action>
+                <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
+                        text="Verify the test at the caret ×3"
+                        icon="AllIcons.Actions.Rerun"
+                        description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless Run headed is on, and say how many runs passed">
+                </action>
+                <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
+                        icon="AllIcons.Actions.RunAll"
+                        description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
+                </action>
+                <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
+                        text="Run the tests that reach this file" description="Run them in the Run tool window">
+                </action>
+                <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run a saved selection…"
+                        icon="AllIcons.Actions.ListFiles"
+                        description="Run one of the project's saved selections"/>
+                <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
+                        text="Re-run the failing tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
+                        description="Run every test that still fails, or whose failing line changed since its run">
+                    <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+                    <synonym text="Rerun failed tests"/>
+                </action>
+                <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run headed"
+                        description="Run every test Piwi starts in this project headed, with its browser window shown"/>
+                <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
+                        text="Hold failures from each run's start…"
+                        icon="AllIcons.Debugger.Db_exception_breakpoint"
+                        description="Auto, On or Off: whether a failed test of each run Piwi starts waits at its line for an answer"/>
+            </group>
             <separator/>
-            <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record here…"
-                    icon="AllIcons.Ide.Macro.Recording_1"
-                    description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
-                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
-                <synonym text="Playwright codegen"/>
-                <synonym text="Record a test"/>
-            </action>
-            <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
-                    text="Record a new test file…" icon="AllIcons.Ide.Macro.Recording_1"
-                    description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
-                <add-to-group group-id="NewGroup" anchor="last"/>
-                <synonym text="Playwright codegen"/>
-            </action>
-            <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
-                    icon="AllIcons.Actions.Suspend"
-                    description="Close the recording's browser; the recorded lines stay, one undo away">
-                <!-- Record here's chord: the two never apply to the same file at once. -->
-                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
-            </action>
-            <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause recording"
-                    icon="AllIcons.Actions.Pause"
-                    description="Stop writing what is done in the browser until Resume">
-            </action>
-            <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume recording"
-                    icon="AllIcons.Actions.Resume"
-                    description="Write what is done in the browser again, over the recorded lines">
-            </action>
+            <group id="Piwi.Record" text="Record" compact="true">
+                <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record here…"
+                        icon="AllIcons.Ide.Macro.Recording_1"
+                        description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
+                    <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                    <synonym text="Playwright codegen"/>
+                    <synonym text="Record a test"/>
+                </action>
+                <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
+                        text="Record a new test file…" icon="AllIcons.Ide.Macro.Recording_1"
+                        description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
+                    <add-to-group group-id="NewGroup" anchor="last"/>
+                    <synonym text="Playwright codegen"/>
+                </action>
+                <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
+                        icon="AllIcons.Actions.Suspend"
+                        description="Close the recording's browser; the recorded lines stay, one undo away">
+                    <!-- Record here's chord: the two never apply to the same file at once. -->
+                    <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                </action>
+                <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause recording"
+                        icon="AllIcons.Actions.Pause"
+                        description="Stop writing what is done in the browser until Resume">
+                </action>
+                <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume recording"
+                        icon="AllIcons.Actions.Resume"
+                        description="Write what is done in the browser again, over the recorded lines">
+                </action>
+                <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
+                        description="Copy the address Piwi Picker sends locators and recorded steps to"/>
+            </group>
             <separator/>
             <!--
               A run's controls use the debugger's own shortcuts, in every keymap (Pause Program's pauses, Resume
@@ -301,12 +265,64 @@
                     description="End the process of the run started from Piwi"/>
             </group>
             <separator/>
-            <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
-                    icon="AllIcons.General.Settings"
-                    description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
-            <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"
-                    icon="AllIcons.Actions.Help"
-                    description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
+            <group id="Piwi.Dashboard" text="Dashboard" compact="true">
+                <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
+                        icon="AllIcons.Ide.External_link_arrow"
+                        text="Open in dashboard" description="Open this file's test, or the latest run"/>
+                <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
+                        icon="AllIcons.General.Web"
+                        text="Open the latest run" description="Open the run the status bar shows"/>
+                <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the latest run"
+                        icon="AllIcons.Actions.Refresh"
+                        description="Read the latest run and its failures again, not the indexes Reload Piwi fetches"/>
+                <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
+                        icon="AllIcons.Actions.Diff"
+                        description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
+                <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
+                        text="Show or hide the coverage marks"
+                        description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
+            </group>
+            <separator/>
+            <group id="Piwi.Agents" text="Agents" compact="true">
+                <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
+                        text="Copy the MCP server configuration"
+                        icon="AllIcons.Actions.Copy"
+                        description="An mcpServers entry for the AI Assistant's MCP settings"/>
+                <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
+                        text="Copy the runs' MCP server configuration for agents"
+                        icon="AllIcons.Actions.Copy"
+                        description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
+                <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
+                        text="Copy the runs' MCP server configuration for Claude Code or Cursor"
+                        icon="AllIcons.Actions.Copy"
+                        description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
+                <action id="Piwi.ResetRunsMcpToken" icon="/icons/key.svg" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
+                        text="Reset the runs' MCP server token"
+                        description="A new token for the runs' MCP server: every agent given the one before is refused"/>
+            </group>
+            <separator/>
+            <group id="Piwi.Connection" text="Connection" compact="true">
+                <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
+                        icon="/icons/connect.svg"
+                        description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
+                <action id="Piwi.Disconnect" icon="/icons/disconnect.svg" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
+                        description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
+                <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload Piwi"
+                        icon="/icons/reload.svg"
+                        description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
+                <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
+                        text="Restart the editor service" icon="AllIcons.Actions.Restart"
+                        description="Stop the Piwi editor service and start it again, or start it for the open test files when it does not run"/>
+                <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open the log"
+                        icon="AllIcons.Toolwindows.ToolWindowMessages"
+                        description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
+                <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
+                        icon="AllIcons.General.Settings"
+                        description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
+                <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"
+                        icon="AllIcons.Actions.Help"
+                        description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
+            </group>
         </group>
         <!-- The status popup's own rows, registered so their keys show and Find Action reaches them. -->
         <group id="Piwi.StatusActions">
@@ -355,10 +371,19 @@
             <reference ref="Piwi.RunTestsForFile"/>
             <separator/>
             <reference ref="Piwi.RecordHere"/>
+            <reference ref="Piwi.RecordNewFile"/>
             <separator/>
             <reference ref="Piwi.StopRecording"/>
             <reference ref="Piwi.PauseRecording"/>
             <reference ref="Piwi.ResumeRecording"/>
+        </group>
+        <!-- The project view's Piwi submenu on a file or a folder: run a spec, the tests that reach a file, record a new one. -->
+        <group id="Piwi.ProjectViewPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" popup="true">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <reference ref="Piwi.RunSpec"/>
+            <reference ref="Piwi.RunTestsForFile"/>
+            <separator/>
+            <reference ref="Piwi.RecordNewFile"/>
         </group>
         <action id="Piwi.RecordHereGenerate" class="dev.piwitests.jetbrains.RecordHereGenerateAction" text="Piwi: Record here…"
                 icon="AllIcons.Ide.Macro.Recording_1"

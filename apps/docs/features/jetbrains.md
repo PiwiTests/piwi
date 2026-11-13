@@ -74,9 +74,9 @@ line** on the debugger's Show Execution Point key:
   way. A click opens a menu of the actions, led by what the item calls for:
   [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu opens its page,
   copies its link, and has **Stop sharing the run…**, which asks first.
-- **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the test at
-  the caret**, **Verify the test at the caret ×3** and **Run this spec**, then **Run the tests that reach this file**,
-  **Record here** and a recording's controls. There and in **Tools → Piwi**, an entry that does not apply is left out.
+- **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
+  run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
+  menu leaves out what does not apply.
 - **[Recording](./editor-recording)** starts from **Record here**, Alt+Enter or Alt+Insert, and **File → New → Record
   a new test file…**; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**

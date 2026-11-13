@@ -456,8 +456,11 @@ information as a weak warning.
 
 Three actions, under **Tools → Piwi** and in the **Piwi** submenu of the editor's menu on a spec (`Glue.isSpecFile`)
 in a project with a Playwright config (`RunInSpecAction`). The submenu, `Piwi.EditorPopup` (`PiwiEditorPopupGroup`),
-holds the VS Code extension's sections in its order (run, record, a recording's controls), and it and **Tools → Piwi**
-(`Piwi.Actions`, `compact`) leave out what does not apply; `PiwiPluginTest` holds both:
+holds the VS Code extension's sections in its order (run, record, a recording's controls); the project view's
+(`Piwi.ProjectViewPopup`) holds Run this spec, Run the tests that reach this file and Record a new test file… on a file
+or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six compact groups in this order:
+`Piwi.Run`, `Piwi.Record`, `Piwi.RunControl` (while a run is live), `Piwi.Dashboard`, `Piwi.Agents` and
+`Piwi.Connection`. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
 
 - **Run the test at the caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
 - **Verify the test at the caret ×3** (`Piwi.VerifyTestAtCursor`);

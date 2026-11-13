@@ -323,7 +323,9 @@ folder and environment.
 
 Three commands, in the palette, in the **Piwi** submenu of the editor's context menu on a spec
 (`piwi.editorContext` in `contributes.submenus`, the same sections in the same order as the JetBrains plugin's
-`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button
+`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button; the explorer's
+**Piwi** submenu (`piwi.explorerContext`) runs a spec or the tests that reach a file, and records a new test file in a
+folder or beside a file, as the JetBrains project view's does
 (`editor/title/run`), the spec first. The title also holds one Piwi button by state (`editor/title`): Stop recording
 while a recording runs, else Resume at a stop, else Record here on a spec, and in its `…` menu the run's other
 controls and the recording's, each as the palette offers it. Each button has a glyph no other command has, but Record
