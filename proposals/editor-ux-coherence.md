@@ -187,7 +187,7 @@ These rules hold them together; each larger item of §10 carries one or more.
    once.** ([IC2](#ic2))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, restated in each tool and held to them by a
    test, as `coverage-mark-colors.test.ts` holds the coverage marks; flaky, quarantine and history always drawn.**
-   ([TL5](#tl5))
+   ([LI3](#li3))
 4. **One menu shape (Run, Record, Run Control, Dashboard, Agents, Connection, each showing what applies now) and one
    home per editor, with the same tabs, toolbar order and empty states.** ([AC1](#ac1), [HM1](#hm1), [HM6](#hm6))
 5. **The IDE's own places first, with Run, Debug and Coverage meaning what the IDE means; Piwi's own marks only for what
@@ -253,8 +253,6 @@ paused recording with `$(debug-pause)`, a held run's glyph (`apps/vscode/package
 while recording and gray when paused: Appendix A's three record rows on every recording surface and control in both
 editors, and the run's glyphs for the run alone. [record-from-the-ide.md](record-from-the-ide.md) Part 2 puts "●
 Recording" in the status bar and names no icon. ([M4](#m4), [LI2](#li2))
-
-### 3.3 Outcomes
 
 ## 4. Menus, actions, keys and names
 
