@@ -88,6 +88,7 @@ import {
   StopsShown,
   actsOnPage,
   asideColumn,
+  stoppableRuns,
   breakpointUpdates,
   canEnd,
   canShare,
@@ -1291,11 +1292,11 @@ export function registerRunControl(
     counts.moved(last ? { ref: last.ref, worker: last.worker, since: last.stop.since, uri: null, line: null } : null);
   };
 
-  /** The run a Stop names, else the only one live, else the one chosen. */
+  /** The run a Stop names, else the only one it stops (`stoppableRuns`), else the one chosen. */
   const chooseRun = async (arg: unknown): Promise<string | null> => {
     const target = runTargetArg(arg);
     if (target) return target.ref;
-    const live = [...sessions.values()];
+    const live = stoppableRuns(sessions);
     if (live.length < 2) return live[0]?.ref ?? null;
     const picked = await vscode.window.showQuickPick(
       live.map((s) => ({
@@ -1426,16 +1427,20 @@ export function registerRunControl(
     }),
     vscode.commands.registerCommand(RUN_COMMANDS.stop, async (arg?: unknown) => {
       const ref = await chooseRun(arg);
+      const elsewhere = (session: RunSession | undefined) =>
+        say(
+          session?.checkout
+            ? 'the desktop app runs this reproduction: stop it there.'
+            : 'the run was not started in this window: stop it in its terminal.',
+        );
       if (!ref) {
         if (!sessions.size) say('no run started from the editor is running.');
+        // Only runs another tool stops are live: the first says where.
+        else if (!stoppableRuns(sessions).length) elsewhere(sessions.values().next().value);
         return;
       }
       if (options.terminate(ref)) return;
-      say(
-        sessions.get(ref)?.checkout
-          ? 'the desktop app runs this reproduction: stop it there.'
-          : 'the run was not started in this window: stop it in its terminal.',
-      );
+      elsewhere(sessions.get(ref));
     }),
     vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => endTest(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.resume, (arg?: unknown) => answerStop('resume', arg)),

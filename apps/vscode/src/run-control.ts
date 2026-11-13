@@ -1590,12 +1590,20 @@ export function waitedFor(since: string | null, now: number): string | null {
   return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
 }
 
+/**
+ * The runs Stop stops: the editor's own, never one started in a terminal (whose Stop is the terminal's) nor a job the
+ * desktop app runs in a throwaway checkout (whose Stop is the app's).
+ */
+export function stoppableRuns(sessions: Sessions): RunSession[] {
+  return [...sessions.values()].filter((s) => !s.terminal && !s.checkout);
+}
+
 export function controlState(sessions: Sessions): ControlState {
   const workers = [...sessions.values()].flatMap((s) => s.workers);
   const offered = new Set(stopsOf(sessions).flatMap((s) => stopActions(s).map((a) => a.action)));
   return {
     active: sessions.size > 0,
-    stoppable: [...sessions.values()].some((s) => !s.terminal && !s.checkout),
+    stoppable: stoppableRuns(sessions).length > 0,
     pausable: workers.some(canPauseWorker),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),

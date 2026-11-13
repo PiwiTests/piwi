@@ -58,6 +58,7 @@ import {
   accessibleLabel,
   controlItems,
   controlState,
+  stoppableRuns,
   giveBackParams,
   heardSession,
   imageClickOf,
@@ -348,6 +349,10 @@ describe('what the controls offer', () => {
     const job = { ...session('desktop-3-at-abc1234', [worker(0, 'running')]), checkout: { commit: 'abc1234' } };
     expect(controlState(sessionsOf(job)).stoppable).toBe(false);
     expect(controlState(sessionsOf(session('ed-1', [worker(0, 'running')]))).stoppable).toBe(true);
+    // Stop lists neither it nor a run started in a terminal, only the editor's own.
+    const own = session('ed-1', [worker(0, 'running')]);
+    const terminal = { ...session('terminal-9-1', [worker(0, 'running')]), terminal: true };
+    expect(stoppableRuns(sessionsOf(job, own, terminal)).map((s) => s.ref)).toEqual(['ed-1']);
   });
 
   test('Show the browser at a stop its pause bar shows, whose reporter brings its window forward', () => {
