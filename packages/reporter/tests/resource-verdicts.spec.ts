@@ -1098,11 +1098,14 @@ describe('fixture scope, implicit browsers and folded pages', () => {
   });
 
   it('reports what a timed fixture of one test never closes, once its test tore it down', () => {
-    const oneTest = (testFixtures: Map<string, string[]>) =>
+    const oneTest = (
+      testFixtures: Map<string, string[]>,
+      fixture: { title: string; location: string; worker: boolean; timed?: boolean } = timed,
+    ) =>
       buildResourceReport({
         censuses: [
           census(1000, test('t1'), {
-            born: [birth(1, 'context', { fixture: timed, site: `${SPEC}:3` }), birth(2, 'page', { parent: 1, site: `${SPEC}:9` })],
+            born: [birth(1, 'context', { fixture, site: `${SPEC}:3` }), birth(2, 'page', { parent: 1, site: `${SPEC}:9` })],
             open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
           }),
           census(3000, null, { closed: [1, 2].map((id) => close(id, { at: 3000, phase: 'worker', test: null })) }),
@@ -1114,6 +1117,11 @@ describe('fixture scope, implicit browsers and folded pages', () => {
     ]);
     // Without the teardown step, the fixture reads as worker-scoped: its context is held, its page is the test's.
     expect(leaks(oneTest(new Map([['t1', [`otherCtx|${SPEC}:2`]]])).findings).map((f) => f.kind)).toEqual(['page']);
+    // A timeout of its own equal to the project's leaves no `timed` mark: the teardown step alone tells its scope.
+    const { timed: _, ...sameTimeout } = timed;
+    expect(leaks(oneTest(new Map([['t1', [`slowCtx|${SPEC}:2`]]]), sameTimeout).findings)).toEqual([
+      expect.objectContaining({ kind: 'context', where: `fixture "slowCtx" at ${SPEC}:3`, count: 1, pages: 1 }),
+    ]);
   });
 
   it('folds the browser launchPersistentContext opened into its context, with the page', () => {

@@ -415,11 +415,13 @@ function timedFixtureTests(tracked: Iterable<Tracked>): Map<string, Set<string>>
 }
 
 /**
- * Whether an object a fixture with a timeout of its own opened is judged as a
- * test fixture's, which its timeout slot does not tell from a worker
- * fixture's: only when its test's `After Hooks` tore that fixture down
- * (`testFixtures`) or it opened objects in two tests of the worker, its own
- * teardown did not close it, and no later test used it.
+ * Whether an object a suite's fixture with a timeout slot opened is judged as a
+ * test fixture's, which the slot does not tell from a worker fixture's (a
+ * fixture with a timeout of its own has one, the project's timeout perhaps):
+ * only when its test's `After Hooks` tore that fixture down (`testFixtures`),
+ * or, for one whose timeout is not the project's (`timed`), it opened objects
+ * in two tests of the worker; and its own teardown did not close it, and no
+ * later test used it.
  */
 function judgedAsTestScoped(
   entry: Tracked,
@@ -427,10 +429,10 @@ function judgedAsTestScoped(
   testFixtures: Map<string, string[]>,
 ): boolean {
   const fixture = entry.birth.fixture;
-  if (!fixture?.timed) return false;
+  if (!fixture?.worker || !fixture.location) return false;
   const key = fixtureKey(fixture);
   const tornDownWithTest = !!entry.birth.test && !!testFixtures.get(entry.birth.test.id)?.includes(key);
-  if (!tornDownWithTest && (timedTests.get(key)?.size ?? 0) < 2) return false;
+  if (!tornDownWithTest && (!fixture.timed || (timedTests.get(key)?.size ?? 0) < 2)) return false;
   const close = entry.close?.fixture;
   if (close && fixtureKey(close) === fixtureKey(fixture)) return false;
   return !(entry.lastUse?.test && entry.lastUse.test !== entry.birth.test?.id);

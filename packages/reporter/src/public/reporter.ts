@@ -1277,7 +1277,7 @@ export class PiwiDashboardReporter {
       if (resources) testCase.resources = resources;
       const leftIdle = census.closed.some((c) => c.used === false) || census.open.some((o) => o.used === false);
       if (leftIdle) this.fixturesByTest.set(test.id, userFixturesOf(result.steps ?? []));
-      if (census.born.some((birth) => birth.fixture?.timed)) {
+      if (census.born.some((birth) => birth.fixture?.worker && birth.fixture.location)) {
         this.testFixtures.set(test.id, fixturesTornDownOf(result.steps ?? []));
       }
       return;
