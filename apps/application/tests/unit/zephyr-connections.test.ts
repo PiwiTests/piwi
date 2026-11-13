@@ -295,70 +295,83 @@ describe('regionCredentialsForCheck', () => {
 });
 
 describe('the Check and Test budget', () => {
-  /** Every budget a signal was made with; each runs at a hundredth of its length, so 10 s takes 100 ms. */
+  /**
+   * The budgets run on a virtual clock: every budget a signal was made with is recorded with its deadline, and a call
+   * answering after `ms` moves the clock to its answer, or to the first deadline before it, which aborts.
+   */
   const budgets: number[] = [];
-  const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+  const deadlines: { at: number; controller: AbortController }[] = [];
+  let now = 0;
   beforeEach(() => {
     budgets.length = 0;
+    deadlines.length = 0;
+    now = 0;
     vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
       budgets.push(ms);
-      return realTimeout(ms / 100);
+      const controller = new AbortController();
+      deadlines.push({ at: now + ms, controller });
+      return controller.signal;
     });
   });
 
-  /** A call that answers after `ms`, or fails with the signal's reason when it aborts first. */
+  /** A call that answers `ms` later on the virtual clock, or fails with the signal's reason when a deadline comes first. */
   const answerAfter = (ms: number, body: () => Response) => (_input: RequestInfo | URL, init?: RequestInit) =>
     new Promise<Response>((resolve, reject) => {
       const signal = init!.signal!;
-      const timer = setTimeout(() => resolve(body()), ms);
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      });
+      signal.addEventListener('abort', () => reject(signal.reason));
+      const due = deadlines.filter((d) => !d.controller.signal.aborted && d.at <= now + ms);
+      if (due.length === 0) {
+        now += ms;
+        resolve(body());
+        return;
+      }
+      now = Math.min(...due.map((d) => d.at));
+      for (const d of due) {
+        if (d.at <= now) d.controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+      }
     });
-  const elapsed = async <T>(run: () => Promise<T>) => {
-    const started = performance.now();
-    const result = await run();
-    return { result, ms: performance.now() - started };
-  };
 
   test('the check gives up on a host that never answers within the short budget', async () => {
     fetchMock.mockImplementation(answerAfter(60_000, () => json({})));
-    const { result, ms } = await elapsed(() =>
-      CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken: TOKEN } }),
-    );
+    const result = await CONNECTION_CHECKS['zephyr-scale'](db as never, {
+      region: 'us',
+      credentials: { apiToken: TOKEN },
+    });
     expect(result.site).toMatchObject({ ok: false, reachable: false, hint: expect.stringContaining('proxy') });
     expect(result.site.error).toContain('within 10 seconds');
     expect(budgets).not.toContain(120_000);
-    expect(ms).toBeLessThan(600);
+    expect(now).toBe(10_000);
   });
 
   test('the check’s budget covers every page of projects after the sign-in, not each page', async () => {
     const page = () => json({ ...fixture('projects-page-1'), isLast: false, next: 'more', total: undefined });
+    const pages: URL[] = [];
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
-      sent.push({ url, token: null });
       if (url.searchParams.get('maxResults') === '1') return Promise.resolve(json(fixture('projects-first')));
-      return answerAfter(30, page)(input, init);
+      pages.push(url);
+      return answerAfter(3_000, page)(input, init);
     });
-    const { result, ms } = await elapsed(() =>
-      CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken: TOKEN } }),
-    );
+    const result = await CONNECTION_CHECKS['zephyr-scale'](db as never, {
+      region: 'us',
+      credentials: { apiToken: TOKEN },
+    });
     expect(result.auth).toMatchObject({ ok: true });
     expect(result.projects).toMatchObject({ ok: false, hint: expect.stringContaining('proxy') });
-    expect(sent.length).toBeLessThan(10);
-    expect(ms).toBeLessThan(600);
+    // Three pages answer within the 10 s and the fourth is cut at the deadline, though each fits a budget of its own.
+    expect(pages).toHaveLength(4);
+    expect(now).toBe(10_000);
   });
 
   test('Test gives up within the short budget and records the failure', async () => {
     const created = await zephyr();
     fetchMock.mockImplementation(answerAfter(60_000, () => json({})));
-    const { result, ms } = await elapsed(() => testConnection(db as never, created.id));
+    const result = await testConnection(db as never, created.id);
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('within 10 seconds') });
     expect((await getConnectionRow(db as never, created.id))!.status).toBe('failed');
     // The request's own budget and the whole check's, both the short one.
     expect(budgets).toEqual([10_000, 10_000]);
-    expect(ms).toBeLessThan(600);
+    expect(now).toBe(10_000);
   });
 
   test('a request whose wait used up the budget is not sent, and says it timed out', async () => {
