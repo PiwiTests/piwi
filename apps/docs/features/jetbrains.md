@@ -73,14 +73,14 @@ The rest is native, and every action is under **Tools → Piwi**:
   way. A click opens a menu of the actions, led by what the item calls for:
   [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu opens its page,
   copies its link, and has **Stop sharing the run…**, which asks first.
-- **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the Test at
-  the Caret**, **Verify the test at the caret ×3** and **Run this spec**, then **Run the tests that reach this file**,
+- **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the test at
+  the caret**, **Verify the test at the caret ×3** and **Run this spec**, then **Run the tests that reach this file**,
   **Record here** and a recording's controls. There and in **Tools → Piwi**, an entry that does not apply is left out.
 - **[Recording](./editor-recording)** starts from **Record here**, Alt+Enter or Alt+Insert, and **File → New → Record
-  a New Test File…**; its controls are in a banner above the editor.
+  a new test file…**; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
   started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
-  Caret**, **Finish** and **End test**; they are also in the status bar item's menu, after each stop to go to, and
+  caret**, **Finish** and **End test**; they are also in the status bar item's menu, after each stop to go to, and
   under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in the Piwi tool window's **Paused page**
   tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
@@ -102,11 +102,11 @@ The rest is native, and every action is under **Tools → Piwi**:
 - **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → AI Assistant** chooses whether the copied
   configuration holds the IDE's key or has the agent sign in through the browser
   ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
-- **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for
-  Agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
+- **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the runs' MCP server configuration for
+  agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;
   **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
-  Stopped Browser with Playwright Tools**, after a warning.
+  stopped browser with Playwright tools**, after a warning.
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
