@@ -26,7 +26,7 @@ const config: KnipConfig = {
       entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs', 'apps/showcase/*.mts', 'apps/showcase/stage/*.js'],
       // Not workspaces: built on their own toolchains (Tauri, VitePress), resolved from the npm registry, or released on
       // their own (suitebench).
-      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**', 'packages/suitebench/**'],
+      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**', 'packages/suitebench/**', 'packages/suitetune/**'],
       // The showcase runs Playwright from the workspaces' install.
       ignoreDependencies: ['playwright'],
     },

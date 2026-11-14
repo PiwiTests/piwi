@@ -9,6 +9,7 @@ This repository is licensed in two parts.
      packages/core
      packages/picker-dom
      packages/suitebench
+     packages/suitetune
      integrations/
      examples/
 
