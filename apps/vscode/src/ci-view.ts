@@ -92,14 +92,16 @@ export function registerCiRuns(extensionUri: vscode.Uri): CiRuns {
 
   /** Mark the CI positions of the editors in sight, and clear the files no position is in any more. */
   const draw = () => {
-    const now = ciPositionFiles(sessions);
+    // `piwi.ciPositions` off clears every position drawn and draws none.
+    const shown = vscode.workspace.getConfiguration('piwi').get<boolean>('ciPositions') ?? true;
+    const now = shown ? ciPositionFiles(sessions) : new Set<string>();
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
       if (!now.has(uri) && !marked.has(uri)) continue;
       const lines = editor.document.lineCount;
       editor.setDecorations(
         mark,
-        ciPositionsIn(sessions, uri)
+        (shown ? ciPositionsIn(sessions, uri) : [])
           .filter((p) => p.line < lines)
           .map((p) => {
             const end = editor.document.lineAt(p.line).range.end;
@@ -129,6 +131,7 @@ export function registerCiRuns(extensionUri: vscode.Uri): CiRuns {
     mark,
     view,
     vscode.window.onDidChangeVisibleTextEditors(() => draw()),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('piwi.ciPositions') && draw()),
   ];
 
   return {

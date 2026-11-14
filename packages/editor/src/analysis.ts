@@ -1068,3 +1068,15 @@ export function piwiActionTitle(title: string): string {
   if (heal) return `Piwi: heal with ${heal[1]}`;
   return `Piwi: ${title.charAt(0).toLowerCase()}${title.slice(1)}`;
 }
+
+/**
+ * Whether a locator's line says something its test's own line does not: false when its only test (`only`, its id)
+ * is one whose `test(…)` call spans the line (`spans`, each test's lines by its id).
+ */
+export function locatorLineTellsMore(
+  line: number,
+  only: number | null,
+  spans: ReadonlyArray<{ id: number; from: number; to: number }>,
+): boolean {
+  return only === null || !spans.some((s) => s.id === only && line >= s.from && line <= s.to);
+}

@@ -933,6 +933,12 @@ object Glue {
     val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
 
     /**
+     * The lines above the code the service gives (`EditorCredentials.codeLens`), which Code Vision shows: `all`;
+     * `problems`, a failure's and an uncovered change's alone; `off`, none.
+     */
+    val CODE_LENS_CHOICES = listOf("all", "problems", "off")
+
+    /**
      * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
      * `sign-in`, through the instance's OAuth, for a token of its own.
      */

@@ -99,6 +99,7 @@ import {
   type RunIdParams,
   type RunIdResult,
   type EditorCredentials,
+  type CodeLensChoice,
   type FailureSeverity,
   type StatusBarAlert,
   type McpAuthorization,
@@ -367,6 +368,8 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
+    codeLens: settings.get<CodeLensChoice>('codeLens') ?? 'all',
+    locatorWarnings: settings.get<boolean>('locatorWarnings') ?? true,
     statusBarAlert: settings.get<StatusBarAlert>('statusBarAlert') ?? 'new',
     mcpAuthorization: settings.get<McpAuthorization>('mcpAuthorization') ?? 'key',
   };
@@ -548,6 +551,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
+    // `piwi.failingTestTint` off leaves a failing test and its failing line untinted; the gutter still marks them.
+    const tinted = vscode.workspace.getConfiguration('piwi').get<boolean>('failingTestTint') ?? true;
     gutter.set(document.uri.toString(), tests);
     const hovered = (shown: TestDecoration[]) =>
       shown
@@ -573,13 +578,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       editor.setDecorations(
         failingBackground,
         tests
-          .filter((t) => t.failingUntil !== null && t.line < document.lineCount)
+          .filter((t) => tinted && t.failingUntil !== null && t.line < document.lineCount)
           .map((t) => new vscode.Range(t.line, 0, Math.min(t.failingUntil!, document.lineCount - 1), 0)),
       );
       editor.setDecorations(
         failingLine,
         tests
-          .filter((t) => t.failingLine !== null && t.failingLine < document.lineCount)
+          .filter((t) => tinted && t.failingLine !== null && t.failingLine < document.lineCount)
           .map((t) => document.lineAt(t.failingLine!).range),
       );
     }
@@ -1785,12 +1790,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         e.affectsConfiguration('piwi.serverUrl') ||
         e.affectsConfiguration('piwi.project') ||
         e.affectsConfiguration('piwi.failureSeverity') ||
+        e.affectsConfiguration('piwi.codeLens') ||
+        e.affectsConfiguration('piwi.locatorWarnings') ||
         e.affectsConfiguration('piwi.statusBarAlert') ||
         e.affectsConfiguration('piwi.mcpAuthorization')
       )
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
+      if (e.affectsConfiguration('piwi.failingTestTint')) filesChanged();
       if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {

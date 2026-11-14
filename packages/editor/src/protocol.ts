@@ -58,6 +58,11 @@ export interface SummaryLine {
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
   /**
+   * A line about a problem: a failure's reason and evidence above its failing line, a file's uncovered changes. The
+   * lines `EditorCredentials.codeLens` `problems` keeps.
+   */
+  problem?: boolean;
+  /**
    * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
    * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
    */
@@ -605,12 +610,23 @@ export interface EditorCredentials {
   /** Which failures turn the status item to its alarm (`RunStatus.alarm`): `new` when absent, `any` or `never`. */
   statusBarAlert?: StatusBarAlert | null;
   /**
+   * The lines `piwi/fileSummary` gives above the code, which the clients show as lenses: `all` when absent; `problems`,
+   * a failure's and an uncovered change's alone (`SummaryLine.problem`); `off`, none. A test's line, its gutter mark
+   * (`SummaryLine.status`), stays.
+   */
+  codeLens?: CodeLensChoice | null;
+  /** The brittle locators' diagnostics (`brittle`, `watch`): published unless false. */
+  locatorWarnings?: boolean | null;
+  /**
    * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
    * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
    * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
    */
   mcpAuthorization?: McpAuthorization | null;
 }
+
+/** The lines above the code the editor's setting shows (`EditorCredentials.codeLens`). */
+export type CodeLensChoice = 'all' | 'problems' | 'off';
 
 /** The severity of a failure's diagnostic, as the editor's setting chooses it. */
 export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';

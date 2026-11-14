@@ -174,6 +174,10 @@ other one is each person's own, application-scoped, which a committed `.vscode/s
 | `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.         |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
+| `piwi.codeLens`          | `all`, `problems`, `off`                 | The lines the service gives above the code (`EditorCredentials.codeLens`). Application scope.   |
+| `piwi.locatorWarnings`   | `true`, `false`                          | The brittle locators' diagnostics (`EditorCredentials.locatorWarnings`). Application scope.     |
+| `piwi.failingTestTint`   | `true`, `false`                          | A failing test's and its failing line's background (`decorateTests`). Application scope.        |
+| `piwi.ciPositions`       | `true`, `false`                          | The CI positions at the ends of lines ([CI runs of the branch](#ci-runs-of-the-branch)). Application scope.                 |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
 | `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
 | `piwi.testExplorer`      | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |

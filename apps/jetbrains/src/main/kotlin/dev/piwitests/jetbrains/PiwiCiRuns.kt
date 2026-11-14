@@ -104,6 +104,9 @@ class PiwiCiRuns(private val project: Project) : Disposable {
         )
     }
 
+    /** The marks drawn again, as the CI positions' switch changed. On the event thread. */
+    fun positionsSwitched() = drawMarks(sessions.values)
+
     /** The tab and the marks, as the sessions stand. On the event thread. */
     private fun draw() {
         val now = sessions
@@ -196,7 +199,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
     private fun drawMarks(now: Collection<CiSession>) {
         for (inlays in drawn.values) inlays.forEach { if (it.isValid) Disposer.dispose(it) }
         drawn.clear()
-        if (Glue.ciMarkedFiles(now).isEmpty()) return
+        if (!project.service<PiwiProjectService>().local().ciPositions || Glue.ciMarkedFiles(now).isEmpty()) return
         for (editor in EditorFactory.getInstance().allEditors) {
             if (editor.project.let { it != null && it != project }) continue
             val document = editor.document
