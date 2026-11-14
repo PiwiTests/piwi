@@ -258,14 +258,9 @@ export function stopKey(stop: ShownStop): string {
 /** How many stops `attentionStops` remembers having called attention to. */
 const MAX_ATTENDED = 200;
 
-/**
- * The stops that call for the person's attention, each once (`attended` keeps their keys): a test held at its failure
- * or stopped at `page.pause()`, never a stop the person asked for (a breakpoint, Step, Pause, Run to the cursor).
- */
+/** The stops that call for the person's attention as the service says (`RunStop.calls`), each once (`attended`). */
 export function attentionStops(stops: readonly ShownStop[], attended: Set<string>): ShownStop[] {
-  const due = stops.filter(
-    (s) => (s.stop.reason === 'failure' || s.stop.reason === 'page-pause') && !attended.has(stopKey(s)),
-  );
+  const due = stops.filter((s) => s.stop.calls && !attended.has(stopKey(s)));
   for (const s of due) attended.add(stopKey(s));
   while (attended.size > MAX_ATTENDED) attended.delete(attended.values().next().value!);
   return due;

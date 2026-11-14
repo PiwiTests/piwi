@@ -450,8 +450,9 @@ platform's, which says how serious it is. D25 lists the five group ids, which us
 `.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting, as
 `Run #124 · Failed 1 of 3`, a warning when one of the runs failed. The balloon is titled by its run, `Piwi: run #124`
 (`Glue.runVerdictTitle`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
-the IDE is in the background calls once (`Glue.attentionStops`, `PiwiRunSessions.heard`): `AppIcon.requestAttention`,
-which the system shows as a bouncing or flashing icon; never a stop the person asked for.
+this project's frame is in the background calls once, as the service says (`RunStop.calls`, `Glue.attentionStops`,
+`PiwiRunSessions.heard`): `AppIcon.requestAttention`, which the system shows as a bouncing or flashing icon, a modal
+dialog open or not; never a stop the person asked for, one an agent drives or holds, or a desktop app's job's.
 
 **Diagnostic severity.** The severity of a failure's diagnostic is `PiwiLocalSettings.failureSeverity`
 (`Glue.FAILURE_SEVERITIES`, in the Runs group of the same page), sent in `credentials()`. The LSP client shows an

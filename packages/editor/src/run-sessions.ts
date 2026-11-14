@@ -2715,6 +2715,15 @@ export class RunSessions {
 
   /** A session as the client hears it. */
   private view(session: Session): RunSession {
+    // A held failure or a page.pause() of a run launched here calls the person once a client is out of sight: never a
+    // desktop app's job in its own checkout, which calls from its window, nor a stop an agent asked for, drives or holds.
+    const launchedHere = !checkoutCommitOf(session.ref);
+    const heldForAgent = this.holds(session.ref) && this.holdOf(session.ref).by === 'agent';
+    const calls = (worker: Worker): boolean => {
+      const stop = worker.stop?.view;
+      if (!stop || !launchedHere || stop.by === 'agent' || worker.driver === AGENT_VIEWER) return false;
+      return stop.reason === 'page-pause' || (stop.reason === 'failure' && !heldForAgent);
+    };
     const view: RunSession = {
       ref: session.ref,
       root: session.root,
@@ -2729,6 +2738,7 @@ export class RunSessions {
             ? {
                 ...worker.stop.view,
                 ...(worker.driver?.who ? { driver: presenceOf(worker.driver, null) } : {}),
+                ...(calls(worker) ? { calls: true as const } : {}),
               }
             : null,
           pausing: worker.pausing,

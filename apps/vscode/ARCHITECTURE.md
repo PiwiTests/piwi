@@ -297,8 +297,9 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
 when one of the runs failed. A test held at its failure or stopped at `page.pause()` while the window is in the
-background calls once, as a warning with **Resume** and **Go to the stopped line** (`attentionStops`, `callAttention`
-in `src/run-view.ts`); never a stop the person asked for. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+background calls once, as the service says (`RunStop.calls`), as a warning with **Resume** and **Go to the stopped
+line**, which reveals it with the focus (`attentionStops` in `src/run-control.ts`, `callAttention` in
+`src/run-view.ts`); never a stop the person asked for, one an agent drives or holds, or a desktop app's job's. A `piwi/notice` is shown as a warning or an information message, as its severity says.
 One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
 one write after the other); a key that setting holds is not shown (`noticeShown`).
 

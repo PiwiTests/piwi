@@ -110,6 +110,14 @@ describe('the verdict both clients show of a run that ended', () => {
     });
   });
 
+  test('counts its failures in the plural and one fixed CI failure in the singular', () => {
+    const titles = ['a.spec.ts › 1', 'a.spec.ts › 2', 'a.spec.ts › 3', 'a.spec.ts › 4', 'a.spec.ts › 5'];
+    expect(verdictWords({ ...ended, failed: 7, newFailures: titles, newFailureCount: 7 }).text).toBe(
+      `7 new failures (${titles.join(', ')} and 2 more)`,
+    );
+    expect(verdictWords({ ...ended, fixed: 1 }).text).toBe('1 of 1 CI failure fixed');
+  });
+
   test('says its counts when it changed nothing, the tests ended at a stop beside the skipped', () => {
     expect(verdictWords({ ...ended, flaky: 1, skipped: 2, endedAtStop: 1 })).toEqual({
       text: '9 passed, 0 failed, 1 flaky, 2 skipped (1 ended at a stop)',

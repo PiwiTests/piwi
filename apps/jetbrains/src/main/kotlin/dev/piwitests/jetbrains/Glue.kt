@@ -955,8 +955,7 @@ object Glue {
      * What a run the editor started changed, once it ended, in the service's words (`RunEnded.verdict`): `Run #124 · 1 of
      * 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the
      * service's actions when something fails, and **Only on failure** when nothing does while `setting` is `always`.
-     * Null when `setting` keeps it quiet, or for a service that sent no verdict; a run of each test several times says
-     * how its runs went whatever the setting.
+     * Null when `setting` keeps it quiet; a run of each test several times says how its runs went whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
         val words = ended.verdict ?: return null
@@ -1972,13 +1971,9 @@ object Glue {
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
 
-    /**
-     * The stops that call for the person's attention, each once (`attended` keeps their keys, the last 200): a test held
-     * at its failure or stopped at `page.pause()`, never a stop the person asked for (a breakpoint, Step, Pause, Run to
-     * the caret), as VS Code's `attentionStops`.
-     */
+    /** The stops that call for the person's attention as the service says (`RunStop.calls`), each once (`attended`, the last 200). */
     fun attentionStops(stops: List<ShownStop>, attended: LinkedHashSet<String>): List<ShownStop> {
-        val due = stops.filter { (it.stop.reason == "failure" || it.stop.reason == "page-pause") && stopKey(it) !in attended }
+        val due = stops.filter { it.stop.calls && stopKey(it) !in attended }
         due.forEach { attended += stopKey(it) }
         while (attended.size > 200) attended.remove(attended.first())
         return due

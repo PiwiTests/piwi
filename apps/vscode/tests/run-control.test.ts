@@ -668,11 +668,16 @@ describe('Hold failures', () => {
 });
 
 describe('a stop that calls for attention', () => {
-  test('is a held failure or a page.pause(), each once, never a stop the person asked for', () => {
-    const at = (line: number, reason: RunStop['reason']) =>
-      worker(line, 'stopped', { stop: { ...stopAt(spec, line), reason } });
+  test('is one the service says calls, each once', () => {
+    const at = (line: number, reason: RunStop['reason'], calls: boolean) =>
+      worker(line, 'stopped', { stop: { ...stopAt(spec, line), reason, ...(calls ? { calls: true as const } : {}) } });
     const sessions = sessionsOf(
-      session('ed-1', [at(1, 'failure'), at(2, 'page-pause'), at(3, 'breakpoint'), at(4, 'step'), at(5, 'run-to')]),
+      session('ed-1', [
+        at(1, 'failure', true),
+        at(2, 'page-pause', true),
+        at(3, 'breakpoint', false),
+        at(4, 'failure', false),
+      ]),
     );
     const attended = new Set<string>();
     expect(attentionStops(stopsOf(sessions), attended).map((s) => s.stop.reason)).toEqual(['failure', 'page-pause']);

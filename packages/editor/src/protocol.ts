@@ -1041,8 +1041,8 @@ export interface RunEnded {
   flaky: number;
   skipped: number;
   /**
-   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: a client says it
-   * beside the skipped. Absent for none, and for a reporter that predates the count.
+   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: the verdict says
+   * it beside the skipped. Absent for none, and for a reporter that predates the count.
    */
   endedAtStop?: number;
   fixed: number;
@@ -1052,9 +1052,8 @@ export interface RunEnded {
   newFailureCount: number;
   /**
    * For a run of each test several times (`RunTestsArgs.repeat`): how many of those runs passed, `Passed 3 of 3` or
-   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which a client shows
-   * in place of what the run changed, whatever its run notifications setting, and whether one of them failed. Absent
-   * otherwise.
+   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which the verdict
+   * says in place of what the run changed, and whether one of them failed. Absent otherwise.
    */
   repeat?: RepeatVerdict;
   /** The verdict as both clients show it (`verdictWords`). */
@@ -1853,6 +1852,12 @@ export interface RunStop {
    * client shows beside the stop. Absent for a stop a person or a breakpoint made.
    */
   by?: 'agent';
+  /**
+   * The stop calls for the person's attention while their client is out of sight, once: a test held at its failure or
+   * stopped at `page.pause()`, in a run launched here (not a desktop app's job in its own checkout), that no agent
+   * asked for, drives or holds. Absent otherwise.
+   */
+  calls?: true;
   /**
    * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the surface whose
    * person took it (a click, a key or text on its view, a pick, an intent, or a hub's `drive`), which takes it from the

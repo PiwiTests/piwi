@@ -65,7 +65,8 @@ remain (HM15 in part). M21 in part: the service words a run's verdict once for b
 `verdictWords`), its text, whether it fails, whether it is said whatever the setting and its actions' ids (HM16 in
 part: a verdict for every run the editor followed, and its scope, remain), and a test held at its failure or at
 `page.pause()` while the editor is in the background calls once, VS Code with a notification offering Resume and Go to
-the stopped line, JetBrains with `AppIcon.requestAttention` (HM17 in part: the status item's badge remains). M4 in
+the stopped line, JetBrains with `AppIcon.requestAttention`, as the service marks the stop (`RunStop.calls`) (HM17 in
+part: the status item's badge and raising the IDE on 'Focus application on breakpoint' remain). M4 in
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye

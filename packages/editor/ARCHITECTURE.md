@@ -551,6 +551,11 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
 
+A stop calls for the person's attention (`RunStop.calls`, `RunSessions.view`) when it is a test held at its failure
+or stopped at `page.pause()` in a run launched here: never a desktop app's job in its own checkout (its window calls),
+a stop an agent asked for or drives, or a failure held because an agent turned Hold failures on. Each client calls
+once per stop while it is out of sight.
+
 ### CI runs of the branch
 
 A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs

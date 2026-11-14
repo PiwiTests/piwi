@@ -1563,9 +1563,10 @@ class GlueTest {
     }
 
     @Test
-    fun `a stop calls for attention at a held failure or a page pause, each once, never at one the person asked for`() {
-        fun at(worker: Int, reason: String) = Glue.ShownStop("ed-1", worker, stopAt(specUri, worker + 1).copy(reason = reason), runTest())
-        val stops = listOf(at(0, "failure"), at(1, "page-pause"), at(2, "breakpoint"), at(3, "step"), at(4, "run-to"))
+    fun `a stop calls for attention when the service says so, each once`() {
+        fun at(worker: Int, reason: String, calls: Boolean) =
+            Glue.ShownStop("ed-1", worker, stopAt(specUri, worker + 1).copy(reason = reason, calls = calls), runTest())
+        val stops = listOf(at(0, "failure", true), at(1, "page-pause", true), at(2, "breakpoint", false), at(3, "failure", false))
         val attended = LinkedHashSet<String>()
         assertEquals(listOf("failure", "page-pause"), Glue.attentionStops(stops, attended).map { it.stop.reason })
         assertEquals(emptyList<Glue.ShownStop>(), Glue.attentionStops(stops, attended))
@@ -3258,8 +3259,6 @@ class GlueTest {
             ),
             Glue.runVerdict(ended),
         )
-        // A service that sent no verdict says none.
-        assertEquals(null, Glue.runVerdict(ended.copy(verdict = null)))
     }
 
     @Test

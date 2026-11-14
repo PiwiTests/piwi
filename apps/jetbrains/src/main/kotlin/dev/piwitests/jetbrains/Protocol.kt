@@ -911,6 +911,11 @@ data class RunStop(
     val since: String? = null,
     val by: String? = null,
     /**
+     * The stop calls for the person's attention while the IDE is out of sight, once: a held failure or a `page.pause()`
+     * in a run launched here that no agent asked for, drives or holds.
+     */
+    val calls: Boolean = false,
+    /**
      * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
      * person last acted on it. A person's action takes it from the agent. Null while nobody drives.
      */

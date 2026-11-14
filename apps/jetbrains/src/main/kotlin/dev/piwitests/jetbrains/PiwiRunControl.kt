@@ -568,12 +568,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         // Before the draws that follow, so a rerun under the ref starts with Interact off.
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
-        // A test held at its failure or at page.pause() while the IDE is in the background calls once.
+        // A stop the service says calls (`RunStop.calls`) calls once while this project's frame is in the background,
+        // a modal dialog open or not.
         val due = synchronized(lock) { Glue.attentionStops(Glue.stopsOf(sessions), attended) }
         if (due.isNotEmpty()) {
             ApplicationManager.getApplication().invokeLater({
-                if (!ApplicationManager.getApplication().isActive) com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
-            }, gone)
+                val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)
+                if (frame?.isActive != true) com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+            }, com.intellij.openapi.application.ModalityState.any(), gone)
         }
     }
 

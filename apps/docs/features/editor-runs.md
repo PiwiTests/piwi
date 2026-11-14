@@ -102,7 +102,8 @@ setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 
 A test held at its failure, or stopped at `page.pause()`, while the editor is in the background, calls you once: a
 notification with **Resume** and **Go to the stopped line** in VS Code, the system's attention request (a bouncing or
-flashing icon) in a JetBrains IDE. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does.
+flashing icon) in a JetBrains IDE. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does, nor
+one an agent drives or a desktop app's job, which calls from its own window.
 [A paused run](./editor-run-control) has the controls.
 
 ## Related
