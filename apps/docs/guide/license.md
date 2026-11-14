@@ -40,7 +40,7 @@ years are up.
 |---|---|
 | Dashboard, server (`@piwitests/server` and the Docker image), desktop app, browser extension | FSL-1.1-MIT |
 | Playwright reporter (`@piwitests/reporter`) | MIT |
-| Faster test runs (`@piwitests/turbo`) | MIT |
+| Faster test runs (`@piwitests/turbo`) | MIT, except its differential snapshot script, derived from Playwright: Apache-2.0 |
 | Backend-log integrations (Nitro, ASP.NET Core, Serilog) | MIT |
 | Examples | MIT |
 

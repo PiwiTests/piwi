@@ -72,6 +72,11 @@ export default {
       env: { ...stock, BENCH_LIGHT_TRACES: 'actions' },
     },
     {
+      name: 'differential-snapshots',
+      description: 'Traces for every test, with the experimental differentialSnapshots hook.',
+      env: { ...stock, BENCH_DIFFERENTIAL_SNAPSHOTS: '1' },
+    },
+    {
       name: 'failure-screenshots',
       description: 'failureScreenshots: screenshots of failed tests only, in place of only-on-failure.',
       env: { ...stock, BENCH_FAILURE_SCREENSHOTS: '1' },

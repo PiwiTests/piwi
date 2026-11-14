@@ -102,8 +102,8 @@ const config: KnipConfig = {
     },
     'packages/run-model': {},
     'packages/turbo': {
-      // The benchmark: its CLI, the reference workload's server, browser scripts and suite.
-      entry: ['bench/cli.mjs', 'bench/workload/app/server.mjs', 'bench/workload/app/public/*.js', 'bench/workload/bench.config.mjs'],
+      // The benchmark: its CLI, the reference workload's server, browser scripts and suite; the vendoring script.
+      entry: ['scripts/*.mjs', 'bench/cli.mjs', 'bench/workload/app/server.mjs', 'bench/workload/app/public/*.js', 'bench/workload/bench.config.mjs'],
       playwright: { config: ['tests/e2e/playwright.config.ts', 'bench/workload/playwright.config.ts'] },
     },
     'apps/runner': {

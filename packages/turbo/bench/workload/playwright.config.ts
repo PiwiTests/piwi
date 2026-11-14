@@ -13,6 +13,7 @@ import { withOptimizations } from '../../src/index';
 //   BENCH_BLOCK_RESOURCES    comma-separated resource types: @piwitests/turbo's blockResources
 //   BENCH_PRESET             safe | fast | experimental: @piwitests/turbo's preset (BENCH_TRACE would win over it)
 //   BENCH_FAIL_FAST          1: the experimental failFast hook
+//   BENCH_DIFFERENTIAL_SNAPSHOTS 1: the experimental differentialSnapshots hook
 //   BENCH_FAILING            1: also run the failing tests (tests/failing.spec.ts), to measure a red run
 //   BENCH_FAST_SCREENSHOTS   1: the experimental fastScreenshots hook
 //   BENCH_RETRY_INTERVALS    comma-separated milliseconds: the experimental retryIntervals hook
@@ -76,6 +77,7 @@ export default withOptimizations(config, {
   experimental: {
     fastScreenshots: env.BENCH_FAST_SCREENSHOTS === '1' || undefined,
     failFast: env.BENCH_FAIL_FAST === '1' || undefined,
+    differentialSnapshots: env.BENCH_DIFFERENTIAL_SNAPSHOTS === '1' || undefined,
     retryIntervals: env.BENCH_RETRY_INTERVALS ? env.BENCH_RETRY_INTERVALS.split(',').map(Number) : undefined,
   },
 });

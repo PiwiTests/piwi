@@ -120,11 +120,15 @@ own suite. The benchmark lives in the repository and is not part of the npm pack
 The experimental hooks follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a fork of
 Playwright that makes them its defaults: faster PNG encoding with the same pixels, and less waiting between the checks
 of actions and assertions. @piwitests/turbo applies a subset of them to stock Playwright at runtime instead of forking
-it. It contains no Flashwright or Playwright code; both are Apache-2.0.
+it. Both are Apache-2.0. It contains no Flashwright code, and one file of Playwright code: the
+differential DOM snapshot script (`src/vendor/differential-snapshots.ts`), Playwright's own script as changed in
+[PhenX/playwright](https://github.com/PhenX/playwright/tree/perf/exact-snapshots), under Apache-2.0 with Playwright's
+`NOTICE`.
 
 @piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by
 Microsoft or the Flashwright project. Playwright is a trademark of Microsoft Corporation.
 
 ## License
 
-MIT
+MIT, except `src/vendor/differential-snapshots.ts` (bundled in `dist/test.js`), which is Apache-2.0: see
+`LICENSE-APACHE` and `NOTICE`.
