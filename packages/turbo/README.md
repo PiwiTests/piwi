@@ -104,7 +104,7 @@ withOptimizations(config, {
 ```
 
 - **`fastScreenshots`** (Chromium): adds CDP's `optimizeForSpeed` to PNG screenshots. The decoded pixels are the same;
-  the files are larger (often 2–3×). Runs that write snapshots keep stock encoding, so baselines do too.
+  the files are larger (often 2–3×). A run with `--update-snapshots` keeps stock encoding; a missing baseline that a run writes is encoded for speed.
 - **`retryIntervals`**: the waits between the checks of Playwright's retry loop. Stock is `[20, 50, 100, 100, 500]` ms.
   Shorter waits pay where the UI settles between stock checks, and cost a round trip each.
 - **`failFast`**: a failing web-first assertion ends once nothing can change the page before its timeout: no request
@@ -126,8 +126,9 @@ The hooks wrap Playwright's server inside each test worker: the server `Page.pro
 `BrowserContext.prototype.resetForReuse`, from the first page the frame class, the element handle class and Chromium's
 CDP session, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a
 `playwright-core` version they were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another
-shape, or when the browser runs outside the worker. To try a new Playwright version, run `npm run turbo:test:e2e` and
-the benchmark with `PIWI_TURBO_ALLOW_UNTESTED=1`, then add it to `TESTED_VERSIONS`.
+shape, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at
+your own risk. What each lever was measured to save, and what was tried and dropped, is in the
+[decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 
 ## The benchmark
 

@@ -37,12 +37,36 @@ export default withOptimizations(
 );
 ```
 
-Then take `test` from `@piwitests/turbo/test`, in your tests or as the base of your own fixtures file. With the
-[capture fixtures](./capture-fixtures), extend it: `extendPiwiFixtures(test)`.
+Then take `test` from `@piwitests/turbo/test`, in your tests or as the base of your own fixtures file.
 
 ```ts
 import { test, expect } from '@piwitests/turbo/test';
 ```
+
+With Piwi's reporter, wrap the config `wrapConfig` returns, so a preset sees the trace and screenshot settings it
+fills in, and extend turbo's `test` with the [capture fixtures](./capture-fixtures):
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+import { wrapConfig } from '@piwitests/reporter';
+import { withOptimizations } from '@piwitests/turbo';
+
+export default withOptimizations(wrapConfig(defineConfig({ testDir: './tests' })), { preset: 'fast' });
+```
+
+```ts
+// fixtures.ts
+import { extendPiwiFixtures } from '@piwitests/reporter';
+import { test as base, expect } from '@piwitests/turbo/test';
+
+export const test = extendPiwiFixtures(base);
+export { expect };
+```
+
+`failureScreenshots`, in every preset, turns Playwright's `screenshot` option off, and the capture fixtures follow
+it: the run keeps screenshots of a failed test's pages, but not Piwi's screenshot of the page it last acted on. Name
+`failureScreenshots: false` to keep that one.
 
 ## Presets
 
@@ -60,8 +84,8 @@ setup, `safe` took 5% off a run's wall time and 19% off its CPU time, and `fast`
 
 These need your paths and URLs, so no preset sets them.
 
-- `signIn: { storageState }` adds a `setup` project that runs your `*.setup.ts` files and saves the signed-in state;
-  every other project loads it. Tests that change server-side state still need their own account or data, and the
+- `signIn: { storageState }` adds a `setup` project that runs your `*.setup.ts` files, which sign in and save the
+  state to `storageState`; every other project loads it. Tests that change server-side state still need their own account or data, and the
   state file stays out of Git.
 - `blockRequests` aborts the requests that match a glob, a regular expression or a predicate, typically third-party
   scripts that hold the `load` event. Routes a test adds with `page.route` run first; never block a script the app
@@ -105,8 +129,8 @@ suite before keeping any of these.
 **Experimental.** Six options reach into Playwright's internals inside each test worker. `max` turns them all on;
 name them under `experimental` to pick some.
 
-- `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger. Runs
-  that write snapshots keep the stock encoding.
+- `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger. A
+  run with `--update-snapshots` keeps the stock encoding; a missing baseline that a run writes is encoded for speed.
 - `retryIntervals`: the waits between the checks of Playwright's retry loop. Stock is `[20, 50, 100, 100, 500]` ms.
 - `failFast`: a failing assertion ends once nothing can change the page before its timeout. It shortens red runs on
   pages that go idle, does nothing on a page that polls, and must stay off for a test that changes the page from its
@@ -134,9 +158,9 @@ withOptimizations(config, {
 ```
 
 They run only on the Playwright versions they were tested with, and throw instead of falling back: on another
-version, on an internal they do not recognize, or when the browser runs outside the worker. The package's
-[README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-hooks) explains how to test a new
-Playwright version. Several levers follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a
+version, on an internal they do not recognize, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1`
+runs them on another version, at your own risk. What each hook was measured to save, and what was tried and dropped,
+is in the package's [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md). Several levers follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a
 fork of Playwright; `@piwitests/turbo` applies them to stock Playwright instead.
 
 ## Measure on your suite

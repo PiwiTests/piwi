@@ -274,7 +274,7 @@ extensions are under the [Functional Source License, Version 1.1, MIT Future Lic
 Piwi, or a product built from it, as a commercial product or service that competes with it. Each release
 becomes MIT two years after it is published.
 
-The reporter, the integrations and the examples are MIT. Releases up to v0.39.x stay MIT.
+The reporter, `@piwitests/turbo`, the integrations and the examples are MIT. Releases up to v0.39.x stay MIT.
 See [License](https://piwitests.dev/guide/license) for what is and is not allowed.
 
 ---

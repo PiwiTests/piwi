@@ -562,9 +562,12 @@ jobs:
         working-directory: packages/run-model
         run: npm run run-model:test
 
-      # The unit tests, and the experimental hooks against the installed Playwright (their compatibility suite).
+      # The unit tests, and the experimental hooks against the installed Playwright (their compatibility suite), also
+      # when it is not yet in TESTED_VERSIONS, so a Playwright update shows whether the hooks still work on it.
       - name: Test turbo
         working-directory: packages/turbo
+        env:
+          PIWI_TURBO_ALLOW_UNTESTED: '1'
         run: |
           npm run turbo:test
           npm run turbo:test:e2e
