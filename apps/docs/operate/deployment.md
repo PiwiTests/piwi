@@ -92,7 +92,7 @@ Everything else is a `PIWI_*` variable, listed with its default and the Settings
 ## One-click deploy
 
 No server to run Docker on? Templates for Railway, Render, Fly.io, Koyeb and Coolify / Dokploy stand up the same
-single container with a persistent volume and authentication on. [One-click deploy](./one-click-deploy) covers each
+single container with authentication on and a persistent volume, which on Koyeb you attach yourself. [One-click deploy](./one-click-deploy) covers each
 provider and what to check before you rely on it.
 
 ## Docker Compose
@@ -101,7 +101,7 @@ The repository ships a ready-to-use [`docker-compose.yml`](https://github.com/Pi
 
 ```yaml
 services:
-  piwi-dashboard:
+  piwi:
     image: phenx/piwitests-server:latest
     ports:
       - "127.0.0.1:3000:3000" # "3000:3000" once authentication is on
@@ -117,8 +117,8 @@ docker compose up -d
 ```
 
 With authentication off, a container that reaches the dashboard by its service name, such as a reporter in a
-Playwright container sending to `http://piwi-dashboard:3000`, gets a `403` until that name is in `PIWI_ALLOWED_HOSTS`:
-add `PIWI_ALLOWED_HOSTS=piwi-dashboard` to the dashboard's `environment`
+Playwright container sending to `http://piwi:3000`, gets a `403` until that name is in `PIWI_ALLOWED_HOSTS`:
+add `PIWI_ALLOWED_HOSTS=piwi` to the dashboard's `environment`
 ([why](./authentication#disabling-authentication)).
 
 ### Docker Compose with PostgreSQL
@@ -137,7 +137,7 @@ services:
       - pg-data:/var/lib/postgresql/data
     restart: unless-stopped
 
-  piwi-dashboard:
+  piwi:
     image: phenx/piwitests-server:latest
     ports:
       - "127.0.0.1:3000:3000" # "3000:3000" once authentication is on
@@ -366,11 +366,11 @@ Map to a different host port:
 ::: code-group
 
 ```bash [Linux / macOS]
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
+docker run -p 127.0.0.1:8080:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 ```powershell [Windows (PowerShell)]
-docker run -p 8080:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
+docker run -p 127.0.0.1:8080:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 :::

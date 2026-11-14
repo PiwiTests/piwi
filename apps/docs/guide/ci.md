@@ -270,8 +270,8 @@ live in one place.
 for the full request trace. The usual causes are a `PIWI_DASHBOARD_URL` the runner cannot
 reach, or a missing API key while authentication is on.
 
-**Shards create several runs instead of one.** The run label wasn't detected, the shards disagree on
-`projectName`, or streaming is off. Set `runLabel` explicitly.
+**Shards create several runs instead of one.** The run label wasn't detected, or the shards disagree on
+`projectName` or the shard count. Set `runLabel` explicitly.
 
 **Traces or screenshots are missing.** Playwright records neither by default, so there is nothing to upload. Set
 `use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' }` in your Playwright config, or install through

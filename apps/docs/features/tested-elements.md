@@ -30,7 +30,7 @@ page is sent to your instance: the index comes down, the matching happens in the
   <figcaption>Fourteen elements reached by eight tests, twenty reached by none: the newsletter form, the favorite buttons, the footer links.</figcaption>
 </figure>
 
-Each box carries the number of tests that reach it; **Heatmap** shades the boxes by that number
+Each box carries the number of tests that reach it; **Heat map** shades the boxes by that number
 instead. A dotted border means every locator reaching the element matches several elements on
 this page: the test may use it on another page, or in a state where only one of them exists.
 
@@ -39,8 +39,9 @@ links to its page in the dashboard. **Find these locators in Piwi ↗** opens th
 [Locators page](./locator-usage#the-locators-page) with the element's locators already checked.
 
 The side panel sums up the page: how many of its interactive elements a test reaches, how many
-none does, and how many tests have locators resolving here. Its three tabs list the matched
-elements, the tests, and the elements no test reaches, each with a filter. A row of the last tab
+none does, and how many tests have locators resolving here. Three of its four tabs list the matched
+elements, the tests, and the elements no test reaches, each with a filter; the fourth is
+[**At risk**](#brittle-locators). A row of the third
 copies a ranked locator for that element, to start writing its test. The page is re-checked as it
 changes, so opening a menu or a dialog adds what the tests reach inside it.
 
@@ -49,7 +50,7 @@ changes, so opening a menu or a dialog adds what the tests reach inside it.
 **Limit to an element**, in the panel, narrows the view to one part of the page: point at it
 and click, with `↑` to widen the outline to its container and `↓` to narrow it back. The click
 that chooses never reaches the page, so a link or a button is chosen without being followed or
-pressed. The boxes, the summary and the three tabs then count only the element and what is
+pressed. The boxes, the summary and the tabs then count only the element and what is
 inside it: a form, a card, a menu.
 
 **Around it** lists the tested elements that contain it: a test checking that the product card
@@ -96,7 +97,7 @@ corner; **Brittle**, in the panel, hides the marks.
 The **At risk** tab lists the brittle locators finding something on the page, those used by a failing or flaky test
 first, with their tests and call sites. For one that finds a single element, it offers a replacement: a locator for
 that element that the same rules call stable and that finds only it on this page, in the test's own style when that
-style is stable. **Copy edit** copies each call site with the old and the new locator. When no stable locator finds
+style is stable. **Copy the change** copies each call site with the old and the new locator. When no stable locator finds
 only the element, the row says to give it a test id. The element's card says the same next to the locator, and picking
 the element with the extension names the brittle locators finding it.
 

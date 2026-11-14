@@ -5,7 +5,16 @@ audits where it says it. Three questions: does the site describe the dashboard a
 two pages say different things, and is the same thing explained twice. It ends with what the app itself could change,
 seen while answering the first. State audited: `main` at v0.69.0 (`e3ddb84b`), 2026-11-14.
 
-**Status.** Proposed 2026-11-14. Nothing is built. [The plan](#the-plan) starts with the one-line corrections.
+**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit: step 1 of [the plan](#the-plan),
+the corrections. Every row of the S, T, C and D tables that is not marked **likely** or **unsure** is corrected in
+the page, the catalog or the registry it names, each checked in the code again before the edit, with C1.1 for its
+Runs window half; the rows marked likely or unsure are untouched. Where the correction found more than the row said:
+the default-branch chain has five steps (C3.2), the privacy page's sentence on what opens a socket names five more
+clients (D12), and the UI overview now claims "its main pages and tabs" (S12), still without the analytics dashboard
+routes, the bug report page and the test case's tabs. One destination is still missing from the privacy table: a
+project's OpenAPI document URL, which the server fetches when a project sets it. The two strings of the Capabilities
+page (item 2 of [What the app could change](#what-the-app-could-change)) and the palette's tabs (item 1) are fixed
+in a pull request of their own.
 
 **Summary.** The pages are careful one by one and unreliable as a set. Five readers found 70 places where two
 passages disagree, about 60 where a page or the catalog disagrees with the app or its code, 58 explanations held in

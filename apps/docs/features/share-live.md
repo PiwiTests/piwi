@@ -91,7 +91,7 @@ Asks are kept in the instance's memory, never stored, and end with the run.
 
 ## Stops, shared or not
 
-A test of a run on your machine stops at a breakpoint, a `page.pause()`, a step or **Run to here**, and its row on the
+A test of a run on your machine stops at a breakpoint, a `page.pause()`, a step or **Run to the cursor**, and its row on the
 run's page says why, at the stopped call: **Stopped at a breakpoint**, **Stopped at page.pause()**, **Paused**. The
 call's place opens in your editor. A shared run's row tells it from its live view. A run nobody shares tells it as
 text, with `@piwitests/reporter` 0.68.0 or later, and says for how long once the stop has stood a minute: its results

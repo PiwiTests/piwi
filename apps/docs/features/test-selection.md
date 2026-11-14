@@ -127,7 +127,7 @@ exempt: quarantine already means "don't gate on this test".
 
 ## In the dashboard, and for agents
 
-The project's **Selections** tab lists the built-ins and your saved selections, with a builder that previews what a
+The project's **Selections** page lists the built-ins and your saved selections, with a builder that previews what a
 definition resolves to (the matching tests, the estimated duration, any warnings and the exact command) before you save
 it. Agents use the selection tools of the [MCP server](/reference/mcp-tools#workflow) and the `run-the-right-tests`
 skill.
@@ -152,13 +152,13 @@ get the same data from `analyze_selections`.
 
 `piwi run impact --base <ref>` runs only the tests your change affects: the tests a changed file defines, the ones
 that failed inside it, and the ones that executed it, down to those that ran the changed lines when tests record
-coverage. A changed file that maps to no test widens the run to the full suite. How each file is mapped:
+coverage. A changed file that maps to no test, or only through source frames, widens the run to the full suite. How each file is mapped:
 [Impact from a diff](/features/change-impact).
 
 ## Suggestions
 
 Piwi can _propose_ selections and tags from the history it keeps, with the evidence attached, never applied. The
-**Suggestions** panel on the Selections tab (and the `suggest_selections` MCP tool) surface three kinds:
+**Suggestions** panel on the Selections page (and the `suggest_selections` MCP tool) surface three kinds:
 
 - **`@slow` tags**: tests whose average duration is above the suite's 95th percentile.
 - **`@feature` tags**: the dominant route family a test hits (say `checkout`) when it carries no `feature` annotation.

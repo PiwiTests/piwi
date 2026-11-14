@@ -76,14 +76,14 @@ text only that card shows, such as its heading. It warns when only `.nth()` coul
 
 ## Assertion suggester
 
-Pick an element to get the `expect(...)` candidates that apply to it, most telling first (`toHaveValue`,
+With the popup's **Assertions** tile, pick an element to get the `expect(...)` candidates that apply to it, most telling first (`toHaveValue`,
 `toBeChecked`, `toContainText` with the start of a long text, `toHaveText`, `toHaveAccessibleName`, `toBeVisible`),
 built on its top-ranked locator. `toHaveAccessibleName` is offered only for an
 element that has a name, as Playwright computes it: a paragraph takes none from its text, a field takes its label's.
 
 ## Copy context for agent
 
-Pick an element to copy one block for a coding agent: the page URL, the element and every ranked locator.
+With the popup's **Agent context** tile, pick an element to copy one block for a coding agent: the page URL, the element and every ranked locator.
 
 ## Related
 

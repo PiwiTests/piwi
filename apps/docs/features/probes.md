@@ -97,7 +97,7 @@ has decided yet.
 It needs:
 
 - the Nitro plugin or the ASP.NET Core package in the application under test, with `PIWI_PROBE_SECRET` set and
-  `PIWI_SERVER_PROBES=true`. Both apply faults only outside production. The ASP.NET Core package applies throw,
+  `PIWI_SERVER_PROBES=true`. Both apply faults only in development and test environments by default. The ASP.NET Core package applies throw,
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
 - **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,

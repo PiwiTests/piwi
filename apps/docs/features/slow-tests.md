@@ -27,7 +27,7 @@ This reads the per-test timeout the [reporter captures](/reference/test-metadata
 
 ## Network and Web Vitals
 
-- **Network analysis** — slow API calls grouped by method and normalized route (e.g. `/users/:id`), for a run picked from the tab.
+- **Slow endpoints** — slow API calls grouped by method and normalized route (e.g. `/users/:id`), for a run picked from the tab.
 - **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more, with color-coded thresholds, shown per execution in the **Performance** tab of the execution page's evidence rather than on the project.
 
 Both require the [capture fixtures](/guide/capture-fixtures) in your test setup — without them the reporter has no network timings or Web Vitals to aggregate.

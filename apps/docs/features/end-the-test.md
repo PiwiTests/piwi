@@ -18,8 +18,7 @@ steps you were missing, and the rest of the test has nothing to show you.
 
 It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 
-- **VS Code**: **End test** in the stopped line's hover, the status bar beside **Finish**, and **Piwi: End the test
-  here, skipping the rest of it** in the palette. It has no key: bind one in **Preferences: Open Keyboard Shortcuts**
+- **VS Code**: **End test** in the stopped line's hover, the status bar beside **Finish**, and **Piwi: End the test** in the palette. It has no key: bind one in **Preferences: Open Keyboard Shortcuts**
   (search `piwi`). - **A JetBrains IDE**: **End test** in the stopped line's inlay and the arrow's menu, **Tools → Piwi
   → End the test** and the status bar item's menu. Give it a key in **Settings → Keymap**. - **The [pause
   bar](./editor-breakpoints#pause-a-run)**: **End the test**. - **Piwi Picker's [Runs window](./runs-window)** and the

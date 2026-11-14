@@ -6,7 +6,7 @@ lang: en-US
 
 # Upgrading
 
-Piwi is pre-1.0. Patch and minor releases can carry breaking changes, and the database schema moves
+Piwi is pre-1.0. Minor releases can carry breaking changes, and the database schema moves
 with them. Upgrading is normally a one-line change — but it's a one-way door, so it's worth knowing
 what happens before you pull a new tag.
 

@@ -83,7 +83,7 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'retain-on-failure', // optional: wrapConfig does not set it
   },
 })
 ```
@@ -105,8 +105,8 @@ capture, failure-time ARIA snapshots and the locator snapshots behind [locator h
 ## Configuration options
 
 Options go in the reporter's entry in `playwright.config.ts` or `wrapConfig`'s second argument. Most can also be
-set with a `PIWI_*` environment variable, which an option in the config overrides, except `PIWI_VERBOSE`, which
-overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
+set with a `PIWI_*` environment variable, which an option in the config overrides, except `PIWI_DESKTOP_APP` and,
+outside `wrapConfig`, `PIWI_VERBOSE`, which override the option. `PIWI_DASHBOARD_URL`,
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
 [`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and variable, and [Test metadata](/reference/test-metadata) what the reporter

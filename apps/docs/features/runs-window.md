@@ -124,7 +124,7 @@ it off. It needs Playwright 1.60 or later, and says so on an older one.
 lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug reports
 included, with the same controls and live view, and its failures to reach the app name the app (**Not connected to the
 desktop app**). With no editor paired, it follows the app alone. The app holds no
-editor, so **Pick**, **Record** and **Assert** in the test's window are not offered; the code of **Assert a region**
+editor, so its **Pick**, **Record** and **Assert** buttons are not offered; the code of **Assert a region**
 and **Mock a request** goes to the app's window to copy, as the window here says: [Desktop app runs](./desktop-runs).
 
 ## Limits

@@ -8,7 +8,7 @@ lang: en-US
 
 Code reach answers "which tests reach this file?" for application code: an opt-in capture records the source files
 whose functions ran during each test in the browser, so a change to a component or a module maps to the tests that
-execute it. An ASP.NET Core backend built for coverage adds the code each test ran on the server:
+execute it. An ASP.NET Core or Nitro backend built for coverage adds the code each test ran on the server:
 [server coverage](./server-coverage).
 
 ## Turn it on

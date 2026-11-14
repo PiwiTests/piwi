@@ -56,8 +56,8 @@ since the run started ([Code from a pause](./editor-stop-code)); **End the test*
 
 ## When it fails
 
-In a run Piwi started, a failing test holds its page where someone can see it (a headed browser, or while the Runs
-window is open), and the editor shows the failure as a stop, with the same actions. Otherwise its page on the
+In a run Piwi started, a failing test holds its page where someone can see it (a headed browser, or a headless one
+while [Hold failures](/guide/concepts#hold-failures) is on), and the editor shows the failure as a stop, with the same actions. Otherwise its page on the
 instance explains it: the clues rank the likely cause, and the Locator fix panel offers the replacement locator.
 **Debug in my editor** on that page runs the failing test again from the editor and stops at the line it failed on.
 

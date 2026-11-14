@@ -56,20 +56,21 @@ Filter the flaky table by category to triage a class of failures at once.
 
 ### Suspects
 
-A flaky test's page has a **Flakiness** tab listing its **suspects**: what its failures share and its passes do not,
+A flaky test's **Flakiness** tab lists its **suspects**: what its failures share and its passes do not,
 over its last 30 days (at most 200 attempts, from the runs the flaky list reads).
 
-| Factor | Measured per attempt | Condition a lab would apply |
+| Factor | Measured per attempt | Lab condition |
 |--------|----------------------|-----------------------------|
 | Slow route | a request's slowest duration, over the threshold that best separates failures from passes | delay it to the failures' median |
 | Failed route | a request answering 5xx, or with no response | fail it the same way, or abort it |
 | Load | other tests of the same shard running at once, over a threshold | CPU ×4 |
-| Alongside | another test overlapping it in time | run both together |
-| Before | the test that ran just before on its worker | run that test first |
+| Time zone, locale | the runner's, when it varied | run the browser in it |
+| Alongside | another test overlapping it | run both together |
+| Before | the test just before on its worker | run that test first |
 | Browser | its Playwright project | pin the project |
 
-Each suspect shows its raw counts: `GET /api/cart slower (≥1.6 s)`, 7 of 8 failures, 3 of 44 passes. It needs 3
-failures and a lift of at least 2, `(fw + 1)/(f + 2) ÷ (pw + 1)/(p + 2)`; at most 5 are listed, ranked by lift ×
+Each shows its raw counts: `GET /api/cart slower (≥1.6 s)`, 7 of 8 failures, 3 of 44 passes. It needs 3
+failures and a lift of at least 2, `(fw+1)/(f+2) ÷ (pw+1)/(p+2)`; at most 5 are listed, ranked by lift ×
 those failures. A neighbor names the paths both tests write, marked approximate when the overlap crosses shards,
 whose clocks agree only roughly. First attempts, the UTC hour and other runs on the same environment are context,
 without a condition. Nothing is stored.
@@ -141,7 +142,7 @@ A run's tests carry badges:
 
 - **New regression** (red) — failing here, passing in the baseline: the same Playwright project in the last complete
   passing run
-- **Newly flaky** (fuchsia) — the first run in which the test was flaky
+- **Newly flaky** (fuchsia) — flaky here, passed with no failed attempt in the baseline
 - **Passed on retry** (fuchsia) — failed at least once in this run, then passed
 
 Filters on the run's test-case list show only new regressions or new flaky tests.

@@ -13,8 +13,8 @@ you already have, in about a minute.
 
 ## 1. Open the run's Changes tab
 
-A run compares itself against **one baseline** — the last passing run on the same branch by default —
-and sorts the failures for you. The distinction you want is right there in the headings:
+A run compares itself against **one baseline** — by default the last passing run in the same environment, on the same
+branch first ([the ladder](/features/run-changes#the-baseline)) — and sorts the failures for you. The distinction you want is right there in the headings:
 
 - **New failures** — this test was passing on the baseline and is failing now.
 - **Still failing** — it was already failing before your change.

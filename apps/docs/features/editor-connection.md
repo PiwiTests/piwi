@@ -35,8 +35,8 @@ The editor sends the app's token only to a server that proves it holds that toke
 carries the token, the editor asks the address in `desktop.json` for the app's proof. A server that gives none, or the
 wrong one, gets no token, and the editor says the app's token was not sent. An app that does not answer is asked
 again on the next request, and so is an app after a request with the token failed to connect or was refused, or after
-the app restarts (a new process in `desktop.json`). The MCP server entries the editor offers for AI assistants (**Copy MCP Server
-Configuration** and the VS Code agent's server list) include the app's token only after the same proof; the
+the app restarts (a new process in `desktop.json`). The MCP server entries the editor offers for AI assistants (**Copy the MCP server
+configuration…** and the VS Code agent's server list) include the app's token only after the same proof; the
 assistant that receives the entry sends the token to the address itself.
 
 The app is looked for on the machine the extension runs on: in a remote window of VS Code (Remote SSH, WSL, Dev

@@ -25,7 +25,7 @@ docker run -d --name piwi -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data phen
 docker run -d --name piwi -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
 ```
 
-Open `http://localhost:3000`. The SQLite database and the file storage are created inside `.data/` on the first request; nothing to configure.
+Open `http://localhost:3000`. The SQLite database and the file storage are created inside `.data/` when the server starts; nothing to configure.
 
 > **Reachable from this machine only.** With authentication off, the default, anyone who reaches the port is an administrator. Publish it on every interface (`-p 3000:3000`) only once [authentication](https://piwitests.dev/operate/authentication) is on.
 

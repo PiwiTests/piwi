@@ -49,8 +49,8 @@ click **Save and test**. An instance older than the one-step connection needs th
 The [desktop app](./desktop) runs a Piwi instance on your computer that answers only requests carrying its access
 token. Once the app is [paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) and no instance is
 connected, **Use the desktop app as your instance** fills in the app's address and token as the API key, checks them
-and connects. If the app refuses the token (installed again since the pairing), paste the one from its **Connect
-Piwi Picker**, or pair again.
+and connects. If the app refuses the token (installed again since the pairing), paste the one from its **Pair with
+Piwi Picker** card, or pair again.
 
 The token goes out only after the program at that address proves it holds it, before every request, as for **Run
 with Playwright**: another program on the app's port receives nothing, after **Unpair** too. Typed under **Use an API
@@ -116,12 +116,12 @@ the instance takes a role that edits the project; without one, the settings say 
 
 ## What is sent
 
-Connecting sends the browser's and the operating system's names, nothing else about the machine. Afterwards the
-extension downloads the URL patterns, each mapped project's function catalog and its locator index; adding a site
-sends that one pattern. A recording is never sent to the instance: **Send to editor** sends it only to an editor paired
-on the same computer. A bug report is sent only from **Send to Piwi…**, after a preview of exactly what goes (see
-[Bug reports](./bug-reports)). Only the settings page and the extension's background worker talk to the instance or
-the editor, never a script running in a page.
+Connecting sends the browser's and operating system's names, nothing else about the machine. It then downloads
+the projects, the URL patterns, each mapped project's function catalog, locator index and bug reports, and the runs
+in progress; adding a site sends that one pattern. A recording never goes to the instance: **Send to editor** sends
+it only to a paired editor on this computer. A bug report is sent only from **Send to Piwi…**, after a preview of
+what goes ([Bug reports](./bug-reports)). Only the settings page and its background worker talk to the instance or
+the editor, never a script in a page.
 
 While connected, Piwi Picker also marks your instance's pages in this browser: a script sets `data-piwi-picker`, with
 the extension's version, on each page. The dashboard then stops suggesting Piwi Picker, as it does once you click
@@ -130,6 +130,6 @@ the extension's version, on each page. The dashboard then stops suggesting Piwi 
 ## Related
 
 - [Browser extension](./extension): everything Piwi Picker does, with or without a connection
-- [API keys](/operate/api-keys): create, list and revoke keys, those Piwi Picker created included
+- [API keys](/operate/api-keys): create, list and revoke keys; Piwi Picker's is under Connected apps
 - [Tested elements](./tested-elements): what a connection shows on the page
 - [Access, roles and groups](/operate/project-access): which projects, and so which patterns, a user sees

@@ -92,7 +92,7 @@ section is absent, it says why.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run before it where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on
-  GitHub and GitLab only.
+  GitHub, GitLab and Bitbucket Cloud only.
 
 ## Related
 

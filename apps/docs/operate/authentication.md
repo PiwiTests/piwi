@@ -59,7 +59,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 The endpoint is rate-limited per client address. On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to
 a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot create the
-administrator first. The [one-click deploy templates](./one-click-deploy) generate it.
+administrator first. The Railway, Render and Coolify [one-click deploy templates](./one-click-deploy) generate it.
 
 ## Logging in
 

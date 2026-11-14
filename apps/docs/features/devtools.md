@@ -117,7 +117,7 @@ The labels follow scrolling and come back after the page changes. Labels of elem
 another: each sits above its element, or a row or a few lower or higher when that place is taken. Where elements crowd
 too closely for that, the labels left over are not drawn and the panel says how many. The panel in the corner counts
 each kind, and **Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
-**Esc** or `V` again to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
+**Esc** to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
 add.
 
 ## Related

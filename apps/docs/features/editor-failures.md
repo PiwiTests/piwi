@@ -87,7 +87,7 @@ the progress of the run you started (`running 4/9`). Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
+  **Group the failures by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
@@ -109,7 +109,8 @@ Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) 
 line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
-run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
+latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected
+failure or run),
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
 menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
 title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP

@@ -41,11 +41,11 @@ with its evidence. Each gap names its detector and its **[class](/guide/concepts
 [Server probes](/features/probes#server-probes) add **findings** in two more classes, **unhandled** and **degraded**:
 the application itself did not cope with the fault, whatever the tests saw.
 
-Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code behind a node changes,
-whether it was part of an earlier escaped failure and the priority of the tests that reach it, and, for a changed file,
+Gaps are ranked by a score, the detector's confidence times **[exposure](/guide/concepts#exposure)**: how often the
+code behind a node changes, whether it was in an earlier escaped failure and the priority of the tests reaching it, and, for a changed file,
 how long it has been changing. The score and its factors show on every gap, and
 [which gaps get which factors](/reference/gap-detectors#exposure) varies. Counts are per class, never a coverage percentage: a percentage over an observed
-surface looks complete exactly when that surface is sparse.
+surface looks complete when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
 open [bug reports](/features/bug-reports), and code no suite runs, error paths no suite runs, or code only one test runs.
@@ -135,7 +135,7 @@ Beyond what tests observe, the map can hold what the application *declares* it e
 reaches is named a **declared, never hit** blind spot instead of staying invisible. Three sources feed it:
 
 - **The instrumentation's route manifest.** The [backend instrumentation](/guide/backend-logs#route-manifest) serves
-  the application's routes at `/__piwi/manifest` outside production, and the reporter uploads it with the run.
+  the application's routes at `/__piwi/manifest` in development and test, and the reporter uploads it with the run.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
 - **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi reads the document

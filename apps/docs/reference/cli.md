@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, rerun, probe, flake, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, plan, rerun, probe, flake, ai, codegen, preflight, bug and mcp."
 lang: en-US
 ---
 
@@ -35,6 +35,7 @@ npx @piwitests/reporter <command> [options]
 | [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
+| [`mcp`](#mcp) | Serve the run tools of this machine's editors and desktop app to a coding agent, over stdio |
 
 The commands that talk to a dashboard, all but `ai resolve`, find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). `bug`, `codegen` and `preflight` read the `.env` of the Playwright config's folder (the nearest one within the repository), the working directory and the repository root, in that order: the URL comes from the first of them that names one, with that file's API key or none, and the project from the first that sets one. A key in a `.env` that names no URL is never sent to another file's URL. The other commands read the working directory's `.env`. An empty variable counts as unset. `PIWI_DESKTOP_APP` places the desktop app with the reporter's three modes: `off` never uses it, `prefer` uses it before the environment and the `.env` outside CI (a `--server-url` flag still wins), and `fallback`, the default, uses it only when no flag, variable or `.env` names a URL or an API key. The command line reads the mode from `PIWI_DESKTOP_APP` only, not from the `desktopApp` option of the Playwright config that `init --desktop-app` writes: set `PIWI_DESKTOP_APP=prefer` in the environment to get the same behavior from the commands. `ai resolve` reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` from the environment only.
 
@@ -130,7 +131,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
 
-The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule is required.
+The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule or warn-only flag is required.
 
 - **A quarantined test does not count** toward the failure rules ([CI & sharding](/guide/ci#blocking-a-merge)).
 - **A test that passed on retry satisfies `--require-tag`.**

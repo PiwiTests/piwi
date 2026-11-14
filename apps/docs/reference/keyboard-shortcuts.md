@@ -120,6 +120,7 @@ When you [pick a replacement locator](/features/locator-healing) on a captured p
 |---|---|
 | `↑` | Select the parent of the highlighted element |
 | `↓` | Go back down to the child |
+| `Enter` | Pick the highlighted element |
 | `Esc` | Skip picking, without choosing an element |
 
 ## Permission grid

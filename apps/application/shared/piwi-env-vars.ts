@@ -500,7 +500,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
-      'Set to "true" to allow minting read-only public share links for executions and failure clusters. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
+      'Set to "true" to allow minting read-only public share links for executions, failure clusters, report snapshots and saved dashboards. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
     category: 'auth',
     type: 'boolean',
     default: 'false',

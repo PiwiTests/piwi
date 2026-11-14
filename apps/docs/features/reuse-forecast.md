@@ -8,7 +8,7 @@ lang: en-US
 
 The reuse forecast answers two questions from the coverage your runs already record: how much of the last month's test
 time re-ran code that had already passed unchanged, and which tests failed even though the code they ran had not
-changed. It lives on a project's **Selections** tab and in the `get_reuse_forecast`
+changed. It lives on a project's **Selections** page and in the `get_reuse_forecast`
 [MCP tool](/reference/mcp-tools#workflow).
 
 <Needs reporter fixtures />

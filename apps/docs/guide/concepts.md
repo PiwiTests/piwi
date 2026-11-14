@@ -156,7 +156,8 @@ passing run from the same environment exists, the card says which environment th
 environment label out of the diff.
 
 The **default branch** is resolved per project: an explicit setting in **project settings**, else the
-repository's default branch read from the SCM provider, else `main`. The **base branch** of a
+repository's default branch read from the SCM provider, else the one the reporter names, else the branch most of the
+project's runs are on, else `main`. The **base branch** of a
 pull-request run is the branch the CI provider says the pull request targets (`GITHUB_BASE_REF` and its
 equivalents), or `PIWI_BASE_BRANCH` when you set it — see [Branches](/features/branches).
 
@@ -358,15 +359,15 @@ reached from six different spec files, through a shared helper or page object, s
 whose values are all masked, a test timeout, or a bare `TypeError` or `ReferenceError` line. Unrelated
 tests fail with the same generic error, so its fingerprint also hashes the file of its failing stack frame:
 the spec file, or the helper it failed in. Full detail:
-[Failure clustering & AI diagnosis](/features/ai-diagnosis).
+[Failure clusters & the inbox](/features/failure-clusters#how-failures-are-grouped).
 
 ### Story
 
 The **one explanation** a failure page leads with. When several [clues](/features/evidence#clues)
 (deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
 *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
-member's strength, with every clue folded under it. When no combination matches, the story is the strongest
-clue alone. A cluster's completed [AI diagnosis](/features/ai-diagnosis) leads instead of a weak story or a lone
+member's strength, with every clue folded under it. When no combination matches, there is no story and the
+strongest clue stands alone. A cluster's completed [AI diagnosis](/features/ai-diagnosis) leads instead of a weak story or a lone
 clue, never instead of a strong or medium story, by one rule on the execution and the cluster page.
 
 ### Situation
@@ -491,7 +492,7 @@ no one feature, so it links none. See [how features group](/reference/gap-detect
 ### Code reach
 
 The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
-coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core backend with
+coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core or Nitro backend with
 [server coverage](/features/server-coverage) on, and the handler files of the routes it called
 when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
 [impact-from-diff](/features/change-impact) and [Uncovered changes](/features/uncovered-changes).
@@ -603,9 +604,9 @@ lists them all.
 
 ### Exposure
 
-The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how long a changed
+The geometric mean of four factors (how often the files involved change, how long a changed
 file has been changing, whether they were part of an earlier escaped failure, and the `piwi:priority` of the tests
-that reach the node), multiplied by the detector's confidence. A factor with no input counts as 0.1. See
+that reach the node). A gap's score, which ranks it, is its exposure multiplied by the detector's confidence. A factor with no input counts as 0.1. See
 [Gap detectors & exposure](/reference/gap-detectors#exposure).
 
 ### Probe

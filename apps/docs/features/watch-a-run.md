@@ -37,7 +37,7 @@ results are sent, and the tools show it without one.
 
 The reporter's own process tells the editor or the desktop app how many tests the run holds, how many ended and how,
 and how the run ended with its first failure. The editors' status bars and the Runs window count it the same way: each
-test once, by its last attempt. The desktop tray counts the lines of the run's output instead, a retry again.
+test once, by its last attempt. The desktop tray counts as the run's own process does ([Local runs tray](./local-runs-tray#each-run)).
 
 On the dashboard, Home's **Recent activity**, a project's runs list and the **Projects** page show a running run with
 the count bar and how many results are in: `120 of 400 · 2 failed`. Its row moves on by itself as results reach the

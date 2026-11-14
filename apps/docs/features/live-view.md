@@ -113,7 +113,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
   [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
-  that person's oldest. Its workers send 4 MB of images and pages a second at most together.
+  that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
   ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
   run's setup, its CI workers and the people watching are separate clients.

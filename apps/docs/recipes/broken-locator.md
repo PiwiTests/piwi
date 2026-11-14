@@ -78,7 +78,7 @@ has been captured with the fixtures in place.
 ## If you can't add the fixtures
 
 Some suites can't take the code change — a vendored test pack, a repo you don't own, a migration you
-don't want mid-release. Four routes that don't need it:
+don't want mid-release. Three routes don't need it, and a fourth, for an agent, still does:
 
 **Pick from the trace, after the fact.** When the failing execution has an uploaded trace, the
 alternative-locators panel offers **Pick from trace**: it opens the trace in the dashboard's bundled

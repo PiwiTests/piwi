@@ -114,7 +114,7 @@ In the dashboard UI, every row of a run's Tests tab shows the browser icon (from
 
 The reporter traverses the test's parent chain (`test.parent`) to build a `suitePath` array — the list of describe-block names from the root to the test's immediate parent. Each level's `suiteConfig` (mode: `parallel` | `serial` | `default`, plus any suite-level `annotations`) is captured alongside the path. This data is sent in both streaming and batch submission payloads and stored in the `test_suites` and `test_cases` tables.
 
-In the dashboard UI, the test run detail page offers a **Tree** view that groups test cases by their suite hierarchy, with expandable/collapsible describe nodes showing mode badges and annotation counts.
+In the dashboard UI, **Group by: File + Describe** on a run's Tests tab groups the tests under their file and describe blocks, each of which collapses.
 
 ### Test annotations (Playwright marks)
 

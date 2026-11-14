@@ -12,7 +12,7 @@ When a CI run of the whole suite finishes, Piwi can write its results to Zephyr 
 cycle in Zephyr) holding one result for each test case key the run's tests carry. The test run links back to the
 run's page in Piwi, and the run's page shows what was sent.
 
-It is **off until an [administrator connects Zephyr Scale and binds the project](/operate/zephyr-scale#bind-a-project)**,
+It is **off until an [administrator connects Zephyr Scale and a Project admin binds the project](/operate/zephyr-scale#bind-a-project)**,
 and a new binding starts as a **dry run** that sends nothing.
 
 ## When a run is sent

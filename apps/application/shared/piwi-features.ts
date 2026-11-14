@@ -104,7 +104,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Branches',
         summary: 'Branch as a first-class dimension: filter by it, and compare against a baseline computed per branch.',
         needs: [],
-        where: 'Project → filter bar',
+        where: 'Project → Filters',
         doc: 'features/branches',
       },
       {
@@ -221,7 +221,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
         needs: [],
-        where: 'Test run → Failures; Home',
+        where: 'Test run → Tests → Group by: Cluster; Project → Failures → Clusters; Home',
         doc: 'features/failure-clusters',
       },
       {
@@ -229,7 +229,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'A run that failed because the app under test was down, recognized and kept out of flaky scores, baselines, fix verification and the gate.',
         needs: [],
-        where: 'Test run header; Home inbox; Project → Timeline',
+        where: 'Test run header; Home inbox; Project → Runs chart → Markers',
         doc: 'features/environment-incidents',
       },
       {
@@ -237,7 +237,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Where each run executed (runner, browsers, servers under test) and what changed between runs, shards, or a failure and its last pass.',
         needs: [],
-        where: 'Test run → Environment, Changes; Test → State',
+        where: 'Test run header → Environment; Test run → Changes; Test → State',
         doc: 'features/run-environment',
       },
       {
@@ -332,7 +332,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Before changing an element, the tests whose steps reach it and the lines they reach it from, or check pasted locators against every run.',
         needs: [],
-        where: 'Execution → Locators; Project → Locators',
+        where: 'Execution → Locators; Project → More actions → Locators',
         doc: 'features/locator-usage',
       },
       {
@@ -419,7 +419,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Run only the tests that matter — changed files, a subset, balanced shards — from the CLI or the dashboard.',
         needs: [],
-        where: 'Project → Selections; CLI',
+        where: 'Project → More actions → Selections; CLI',
         doc: 'features/test-selection',
       },
       {
@@ -435,7 +435,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',
         needs: ['fixtures'],
-        where: 'Project → Selections; MCP get_reuse_forecast',
+        where: 'Project → More actions → Selections; MCP get_reuse_forecast',
         doc: 'features/reuse-forecast',
       },
       {
@@ -457,7 +457,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Routes and pages your runs reach but no test checks, ranked by exposure, each with a skeleton to start from.',
         needs: ['fixtures'],
-        where: 'Project → Gaps',
+        where: 'Project → Coverage → Gaps',
         doc: 'features/scenario-gaps',
       },
       {
@@ -497,7 +497,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The coverage reports of your unit tests (Vitest, coverlet, Microsoft code coverage), uploaded per commit and suite, next to the coverage the Playwright suite records.',
         needs: [],
-        where: 'CLI (`piwi coverage upload`); API and MCP tools',
+        where: 'CLI (`piwi coverage upload`); Project → Coverage → Code; API and MCP tools',
         doc: 'features/combined-coverage',
       },
       {
@@ -505,7 +505,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'From the coverage tests record: the code a failure ran that its last pass did not, a path that depends on which tests ran first, the code only some tests run before you quarantine them, and whether a new test reaches its target lines.',
         needs: ['fixtures', 'backend'],
-        where: 'API and MCP tools; the AI diagnosis',
+        where: 'Execution → Source; Test case → Path variation; API and MCP tools; the AI diagnosis',
         doc: 'features/coverage-insights',
       },
       {
@@ -513,7 +513,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Whether a passing test would notice a fault behind a request: client probes run through the capture fixtures; server probes inject the fault inside the server, needing a backend package.',
         needs: ['fixtures'],
-        where: 'Project → Gaps; reporter (`piwi probe`)',
+        where: 'Project → Coverage → Gaps; reporter (`piwi probe`)',
         doc: 'features/probes',
       },
     ],
@@ -695,7 +695,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'MCP server',
         summary:
-          'A Model Context Protocol server that gives coding agents read access to your runs, failures and diagnoses.',
+          'A Model Context Protocol server that gives coding agents tools over your runs, failures and diagnoses, mostly read-only.',
         needs: [],
         where: 'Settings → MCP server',
         doc: 'features/mcp',
@@ -813,7 +813,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
         needs: ['extension'],
-        where: 'Project → More → Bug reports',
+        where: 'Project → More actions → Bug reports',
         doc: 'features/bug-reports',
       },
       {
@@ -836,7 +836,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],
-        where: 'Project → Test functions',
+        where: 'Project → More actions → Test functions',
         doc: 'features/test-functions',
       },
       {
@@ -876,7 +876,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend', 'editor'],
         where:
-          'Application files in the editor; Piwi: Show or hide the coverage marks, in VS Code and under Tools → Piwi',
+          'Application files in the editor; Piwi: Show or hide the coverage marks in VS Code, Tools → Piwi → Show coverage marks in a JetBrains IDE',
         doc: 'features/editor-coverage',
       },
       {

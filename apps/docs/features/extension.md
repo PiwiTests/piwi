@@ -16,15 +16,17 @@ project's history.
 ## What it does
 
 Every tool below runs on the live page, from the toolbar popup. The last three need a
-[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others never reach it.
+[connection to a Piwi instance](#connecting-to-a-piwi-instance); the others work without one, and some do more with it:
+a pick names the tests that reach the element, Report a bug sends its report, Developer tools lists your projects'
+viewports.
 
 | Tool | For |
 |---|---|
 | [Pick an element](./pick-an-element) | a ranked locator for one element, re-checked against the page |
 | [Multi-pick](./pick-an-element#multi-pick) | the shared pattern of a list's rows or cards |
 | [Lint overlay](./lint-overlay) | the elements that would make bad locator targets |
-| [Assertion suggester](./pick-an-element#assertion-suggester) | `expect(...)` lines for an element |
-| [Copy context for agent](./pick-an-element#copy-context-for-agent) | one block about an element for a coding agent |
+| [Assertions](./pick-an-element#assertion-suggester) | `expect(...)` lines for an element |
+| [Agent context](./pick-an-element#copy-context-for-agent) | one block about an element for a coding agent |
 | [Record actions](./record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
 | [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
@@ -82,7 +84,7 @@ written in the extension's language; locators, test ids and specs never are.
 | Permission | Why |
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
-| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./mock-requests#slow-down-or-fail-a-request), attached only while one of them runs, under Chrome's own debugging bar. Without it (Firefox, or **Cancel** there), they use the page's events. Nothing leaves your machine |
+| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, DevTools' [throttling](./mock-requests#slow-down-or-fail-a-request) and the [viewport it sets in the tab](./devtools#open-this-page-at-a-viewport), attached only while one of them runs, under Chrome's own debugging bar. Without it (Firefox, or **Cancel** there), they use the page's events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand, and marks your instance's pages once [connected](./extension-connection#what-is-sent); nothing else runs unasked |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens live in the extension's own database, out of reach of web pages; the session and a running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |

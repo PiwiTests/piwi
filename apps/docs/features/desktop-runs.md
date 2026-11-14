@@ -124,7 +124,8 @@ for an agent that left.
 
 ## Limits
 
-- **No recording.** **Record here**, and **Pick** and **Assert** in the test's window, end in an editor: run the test
+- **No recording.** **Record here**, and a stopped test's **Pick** and **Assert** buttons, which act in the test's
+  window, end in an editor: run the test
   from VS Code or a JetBrains IDE to use them.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
   stops make no code here. With an editor open on the linked folder, the job runs on that editor instead, which offers

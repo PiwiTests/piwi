@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs reporter />
 
-The [MCP server](/features/mcp) gives an agent read access to your results; **skills** tell it what to *do* with them.
+The [MCP server](/features/mcp) gives an agent tools over your results, mostly read-only; **skills** tell it what to *do* with them.
 A skill is a single `SKILL.md` file, the portable open format (front matter plus Markdown instructions) that Claude
 Code and other coding agents read from a project's skills directory. Piwi ships seven, and the reporter's CLI installs
 them into your test project.
@@ -25,12 +25,13 @@ them into your test project.
 | `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and add it in the same change. |
 | `fix-a-reported-bug` | Take a [bug report](/features/bug-reports), write its failing test with `piwi bug <id> --write`, reproduce, fix, then remove `test.fail()` and run the spec and the tests that visit the page. |
 
-Each skill prefers a connected Piwi [MCP tool](/reference/mcp-tools) and falls back to the dashboard UI when MCP is
-not connected, so a skill works before the MCP server is set up, only more slowly.
+Each skill but `setup-piwi`, which uses no MCP tool, prefers a connected Piwi [MCP tool](/reference/mcp-tools). When
+MCP is not connected it falls back to the dashboard UI (`run-the-right-tests` and `fix-a-reported-bug` to the
+reporter's CLI), so a skill works before the MCP server is set up, only more slowly.
 
 ## What agents report back
 
-Each workflow skill ends by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
+Three workflow skills end by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
 detectors learn from it:
 
 | Skill | Reports back with |

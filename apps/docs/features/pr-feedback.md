@@ -14,8 +14,9 @@ see [Re-run in CI](./ci-rerun).
 
 ## What gets posted
 
-A comment and a commit status get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
-partial run from a developer's machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
+A comment and a commit status get posted when a run finishes, unless it is a run from an editor, a Flake Lab or probe run, a bisect step, a
+reproduction, a run flagged as an [environment incident](./environment-incidents), or a partial run from a developer's
+machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
 
 - **A summary comment** on the run's open pull request (the one its CI names when the CI runs in the repository Piwi
   posts to, a pull request from a fork included, else the one open on its branch): one comment per pull request, edited on each later run rather than appended, so a busy

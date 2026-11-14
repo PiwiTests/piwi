@@ -57,7 +57,7 @@ list only grows.
 [Quarantine in Piwi](/features/flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting. It
 is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run's commit status, and nothing else:
 
-- Passing runs accumulate as a **streak**; one failure resets it.
+- Passing runs accumulate as a **streak**; a failure or a pass on retry resets it, a skip does neither.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
 - **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
 - **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest

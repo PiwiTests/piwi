@@ -62,7 +62,7 @@ Import `test` from this file in your specs instead of `@playwright/test`. A spec
 
 ## Configuration
 
-Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE`). The full option and env-var reference lives in [Reporter options](https://piwitests.dev/reference/reporter-options); authentication for CI is covered under [API keys](https://piwitests.dev/operate/api-keys).
+Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE` and `PIWI_DESKTOP_APP`). The full option and env-var reference lives in [Reporter options](https://piwitests.dev/reference/reporter-options); authentication for CI is covered under [API keys](https://piwitests.dev/operate/api-keys).
 
 ## Requirements
 

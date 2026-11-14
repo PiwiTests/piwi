@@ -37,7 +37,7 @@ The defaults are conservative, so the checklist above is short. Without any extr
 
 ## Optional, and worth a thought
 
-- **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution or cluster without signing in — see [Share links](/features/share-links).
+- **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution, cluster, report snapshot or dashboard it opens without signing in — see [Share links](/features/share-links).
 - **Retention.** Automatic pruning is opt-in; set `PIWI_RETENTION_DAYS` to cap how much run history you keep. See [Storage → Data retention](./storage#data-retention).
 - **Observability.** Both are off by default. `PIWI_METRICS_ENABLED=true` serves the metric catalog to a Prometheus you run, and naming an OpenTelemetry collector sends it a trace of each request with the SQL statements it ran, their parameters as placeholders. See [Metrics and rollup export](./metrics) and [Tracing with OpenTelemetry](./tracing).
 

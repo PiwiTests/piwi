@@ -96,7 +96,7 @@ docker run -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-ser
 It answers at `http://localhost:3000`, on this machine only: with authentication off, anyone who
 reaches the port is an administrator, so publish it on every interface (`-p 3000:3000`) only once
 [authentication](https://piwitests.dev/operate/authentication) is on. The SQLite database and the
-`.data/` storage are created on the first request. On a Linux host, the `chown` matters: without it,
+`.data/` storage are created when the server starts. On a Linux host, the `chown` matters: without it,
 Docker creates `.data` owned by `root` and the container cannot write to it
 ([details](https://piwitests.dev/operate/deployment#permission-issues-with-volumes)).
 
