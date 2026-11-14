@@ -56,6 +56,11 @@ its line ends with *flaky*. An item is named by its test's title alone, as a scr
 filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@piwi:@smoke`) or an owner
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
+Each test's actions are one list in both editors: **Run with Piwi** and **Verify ×3 with Piwi**, a failure's trace and
+screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab commands. In VS Code, **Piwi:
+Show the test's actions…** opens them from the Testing view's gutter and its menus, the line number's menu with the
+view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon.
+
 <figure>
   <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">
   <figcaption>The Testing view with the latest run's results, and why <strong>pays by card</strong> failed, at its line.</figcaption>

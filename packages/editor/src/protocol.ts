@@ -15,8 +15,8 @@ export interface PiwiCommand {
   /**
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
-   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`) or
-   * `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
+   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`),
+   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`) or `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
    */
   command:
     | 'piwi.openInDashboard'
@@ -25,6 +25,7 @@ export interface PiwiCommand {
     | 'piwi.openScreenshot'
     | 'piwi.runCommand'
     | 'piwi.copyText'
+    | 'piwi.copyAgentContext'
     | 'piwi.desktopJob';
   arguments: unknown[];
 }
@@ -56,6 +57,25 @@ export interface SummaryLine {
   failure?: TestFailure;
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
+  /**
+   * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
+   * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
+   */
+  actions?: TestAction[];
+}
+
+/**
+ * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
+ * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
+ * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
+ * Verify ×3); every other action runs `command`.
+ */
+export interface TestAction {
+  group: 'run' | 'evidence' | 'agent' | 'lab';
+  section: string;
+  kind?: 'run' | 'verify';
+  title: string;
+  command: PiwiCommand;
 }
 
 /**

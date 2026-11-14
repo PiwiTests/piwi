@@ -104,6 +104,7 @@ import {
   type LineLocator,
   type LineState,
   type TestCall,
+  testActions,
 } from './analysis.js';
 import {
   BlobTexts,
@@ -381,6 +382,7 @@ import {
   type SpecTests,
   type RunCommandArgs,
   type TraceParams,
+  type PiwiCommand,
   type TraceResult,
   type WorkspaceFailure,
 } from './protocol.js';
@@ -3335,20 +3337,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ].join('')
           : '';
         const endLine = call.endLine;
+        const open: PiwiCommand = {
+          title: 'Open in dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: [context.client!.testUrl(found.id)],
+        };
+        const lab = flakeLabLines(context, found.id, i, env, desktopJobs.available(context));
         out.push({
           line: i,
           title: `${verdict}${passRate}${quarantine}${flakiness}${selectionsText}`,
-          command: {
-            title: 'Open in dashboard',
-            command: 'piwi.openInDashboard',
-            arguments: [context.client!.testUrl(found.id)],
-          },
+          command: open,
           status: testStatus!,
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
+          actions: testActions(params.uri, relative!, i, found.id, open, failed && failure ? failed : null, lab),
         });
-        out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
+        out.push(...lab);
         if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         // The failure's diagnostic says why it failed: the line above says so only where no diagnostic does.

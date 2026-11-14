@@ -302,6 +302,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.testActions",
+        "title": "Show the test's actions…",
+        "icon": "$(list-selection)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runSpec",
         "title": "Run this spec",
         "icon": "$(run-all)",
@@ -901,6 +907,10 @@
         {
           "command": "piwi.codeAtStop",
           "when": "piwi.runCanPick || piwi.runCanRecord || piwi.runCanAssert || piwi.runCanAssertRegion || piwi.runCanMock"
+        },
+        {
+          "command": "piwi.testActions",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         }
       ],
       "editor/title": [
@@ -1207,6 +1217,33 @@
           "command": "piwi.recordFile",
           "group": "2_record@1",
           "when": "!piwi.recording"
+        }
+      ],
+      "testing/item/gutter": [
+        {
+          "command": "piwi.testActions",
+          "when": "controllerId == piwi && testId =~ /^[a-z][a-z0-9+.-]*:[^\\x1f\\x1e]*\\x1f/"
+        }
+      ],
+      "testing/item/context": [
+        {
+          "command": "piwi.testActions",
+          "group": "piwi@1",
+          "when": "controllerId == piwi && testId =~ /^[a-z][a-z0-9+.-]*:[^\\x1f\\x1e]*\\x1f/"
+        }
+      ],
+      "testing/message/context": [
+        {
+          "command": "piwi.testActions",
+          "group": "piwi@1",
+          "when": "controllerId == piwi"
+        }
+      ],
+      "editor/lineNumber/context": [
+        {
+          "command": "piwi.testActions",
+          "group": "piwi@1",
+          "when": "piwi.active && !config.piwi.testExplorer && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         }
       ]
     },

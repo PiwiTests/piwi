@@ -10,6 +10,7 @@
  * window starts.
  */
 import type {
+  TestAction,
   RunLine,
   RunLineState,
   BaselineChoice,
@@ -39,6 +40,7 @@ import type {
   RunTestsArgs,
   SpecTest,
   StatusResult,
+  FileSummary,
   SummaryLine,
   TestAtResult,
   TestFailure,
@@ -895,12 +897,17 @@ export interface TestDecoration {
   dashboardUrl: string | null;
   /** The test's id, which **Run** in its hover runs; null from a service that does not give it. */
   testCaseId: number | null;
+  /** The service lists the test's actions (`SummaryLine.actions`): **More…** opens them. */
+  actions: boolean;
 }
 
 /** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
-export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests'];
+export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions'];
 
-/** A test's gutter hover in the file at `uri`: its result, then **Run** and **Open in dashboard** when it has them. */
+/**
+ * A test's gutter hover in the file at `uri`: its result, then **Run**, **Open in dashboard** and **More…**, its
+ * actions (`piwi.testActions`), when it has them.
+ */
 export function testHoverMarkdown(test: TestDecoration, uri: string): string {
   const link = (title: string, command: string, args: unknown[]) =>
     `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
@@ -909,6 +916,7 @@ export function testHoverMarkdown(test: TestDecoration, uri: string): string {
       ? link('Run', 'piwi.runTests', [{ uri, testIds: [test.testCaseId] } satisfies RunTestsArgs])
       : '',
     test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
+    test.actions ? link('More…', 'piwi.testActions', [{ uri, line: test.line } satisfies TestLine]) : '',
   ].filter(Boolean);
   return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
 }
@@ -929,6 +937,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
                 ? (l.command.arguments[0] as string)
                 : null,
             testCaseId: l.testCaseId ?? null,
+            actions: !!l.actions?.length,
           },
         ]
       : [],
@@ -1503,6 +1512,47 @@ export interface TestLine {
   uri: string;
   /** 0-based. */
   line: number;
+}
+
+/**
+ * The test line `piwi.testActions` acts on: a Testing view item's (`testing/item/*`, or the test of a message,
+ * `testing/message/context`), the gutter line clicked with the Testing view off (`editor/lineNumber/context`, 1-based),
+ * or a `{ uri, line }`; null for anything else.
+ */
+export function testActionsAt(arg: unknown): TestLine | null {
+  const a = arg as {
+    test?: { uri?: unknown; range?: { start: { line: number } } };
+    uri?: unknown;
+    range?: { start: { line: number } };
+    lineNumber?: number;
+  } | null;
+  const item = a?.test ?? a;
+  if (item?.uri && item.range) return { uri: String(item.uri), line: item.range.start.line };
+  if (a?.uri && typeof a.lineNumber === 'number') return { uri: String(a.uri), line: a.lineNumber - 1 };
+  return testLineArg(arg);
+}
+
+/** The test a line of a spec's summary is in, with its actions: the test whose `test(…)` call is at `line`, or spans it. */
+export function testLineAt(summary: FileSummary, line: number): SummaryLine | null {
+  const tests = summary.lines.filter((l) => l.actions?.length);
+  return (
+    tests.find((l) => l.line === line) ?? tests.find((l) => l.line <= line && line <= (l.endLine ?? l.line)) ?? null
+  );
+}
+
+/**
+ * A test's actions as the quick pick lists them: each group after a separator with the service's words for it
+ * (`TestAction.section`), in the service's order.
+ */
+export function testActionPicks(actions: readonly TestAction[]): Array<{ action: TestAction } | { separator: string }> {
+  const picks: Array<{ action: TestAction } | { separator: string }> = [];
+  let group: TestAction['group'] | null = null;
+  for (const action of actions) {
+    if (action.group !== group && group !== null) picks.push({ separator: action.section });
+    group = action.group;
+    picks.push({ action });
+  }
+  return picks;
 }
 
 /** The line a run command's argument names; null for anything else, such as the file a context menu passes. */

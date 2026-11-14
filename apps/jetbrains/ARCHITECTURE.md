@@ -139,10 +139,14 @@ tells the views, starts the service for the open files and offers the first-run 
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); its click runs what the
-  line names (Open in dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, the
-  registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather than
-  the caret's, at the line a range marker follows through edits;
+- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); either click opens the
+  service's list of the test's actions (`SummaryLine.actions`, `TestResultGutter`, a `DumbAwareAction`), a separator
+  with the service's words between its groups (`TestAction.section`): **Run with Piwi** and **Verify ×3 with Piwi**,
+  the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather
+  than the caret's, at the line a range marker follows through edits, **Open in dashboard** the registered
+  `Piwi.OpenInDashboard` with the test's page (`DASHBOARD_URL`), then its trace and screenshot, its context for an
+  agent and its Flake Lab commands through `PiwiCommands.execute`, each with the Piwi tool window's glyph
+  (`testActionIcon`); without a list, the click runs what the line names (Open in dashboard);
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
   why. The test's background goes around that line, since two backgrounds on one line have no set order.
@@ -481,8 +485,8 @@ or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is 
 Each asks `piwi/testAt` for the caret on a pooled thread, and saves the spec's document on the event thread when it
 has unsaved changes. Then it runs as `PiwiCommands.runTests` does (`PiwiCommands.runTestAt`): the test by its id when
 Piwi knows it, else by its location (`Glue.testAtRun`); to verify, by its location, three times (`Glue.VERIFY_REPEAT`).
-When there is no test, a balloon says so. The gutter icon's click stays Open in dashboard; its right-click menu runs
-and verifies the test the same way.
+When there is no test, a balloon says so. The gutter icon's clicks run and verify the test the same way, among its
+actions.
 
 ### How a run starts
 

@@ -17,7 +17,8 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
  * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
- * tooltip, `endLine` where its call ends, `failure` where and why it failed, and `testCaseId` the test's id.
+ * tooltip, `endLine` where its call ends, `failure` where and why it failed, `testCaseId` the test's id, and
+ * `actions` what its gutter mark offers.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -27,6 +28,20 @@ data class SummaryLine(
     val endLine: Int? = null,
     val failure: TestFailure? = null,
     val testCaseId: Int? = null,
+    val actions: List<TestAction>? = null,
+)
+
+/**
+ * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
+ * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
+ * it at the test's line; any other runs `command`.
+ */
+data class TestAction(
+    val group: String = "run",
+    val section: String = "",
+    val kind: String? = null,
+    val title: String = "",
+    val command: PiwiCommand? = null,
 )
 
 /**
