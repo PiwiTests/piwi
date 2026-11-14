@@ -305,9 +305,27 @@ object Glue {
 
     /** A run in progress in the status bar: `Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the editor's own. */
     private fun liveText(live: LiveRun): String {
-        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
         val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${live.done}/${live.total}$failing" + if (live.own) " · yours" else ""
+        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
+    }
+
+    /**
+     * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a
+     * stop`, each outcome only when there is one (VS Code's `countWords`).
+     */
+    fun countWords(done: Int, total: Int, failed: Int = 0, flaky: Int = 0, endedAtStop: Int = 0): String =
+        listOfNotNull(
+            "$done of $total",
+            if (failed > 0) "$failed failed" else null,
+            if (flaky > 0) "$flaky flaky" else null,
+            if (endedAtStop > 0) "$endedAtStop ended at a stop" else null,
+        ).joinToString(" · ")
+
+    /** A run's status in the dashboard's words: `timed out` for `timedout` (VS Code's `statusWords`). */
+    fun statusWords(status: String): String = when (status) {
+        "timedout", "timedOut" -> "timed out"
+        "didnotrun" -> "didn't run"
+        else -> status
     }
 
     /**
@@ -325,13 +343,12 @@ object Glue {
 
     /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
     private fun liveLine(live: LiveRun): String {
-        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
         val run = when {
             live.own -> "Your run"
             live.ci -> "CI run"
             else -> "Run"
         }
-        return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
+        return "\n$run #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -454,14 +471,13 @@ object Glue {
             live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING, liveFailing)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
-                val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh, StatusIcon.RUNNING, alert == "any" && r.failedTests > 0)
+                StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING, alert == "any" && r.failedTests > 0)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
                 StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarmed(run, failing, alert))
             }
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${statusWords(r.status.orEmpty())}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)
         }
@@ -608,7 +624,7 @@ object Glue {
             kind = node.kind,
             label = node.label,
             description = if (running != null && node.kind == "run" && (liveRoot == null || node.root == null || node.root == liveRoot)) {
-                "running ${running.done}/${running.total}" + if (running.failed > 0) " · ${running.failed} failed" else ""
+                "running ${countWords(running.done, running.total, running.failed)}"
             } else {
                 listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
             },
@@ -2351,20 +2367,23 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, how many failed, and how many were ended at a stop, then who started the one run that says
+     * of how many they hold, how many failed, were flaky and were ended at a stop, then who started the one run that says
      * when a person did not (`RunSession.label`); null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
         val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
         val progress = told.mapNotNull { it.progress }
-        val failed = progress.sumOf { it.failed }
-        val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
         val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
         val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
-        return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
-            (if (failed > 0) " · $failed failed" else "") +
-            (if (endedAtStop > 0) " · $endedAtStop ended at a stop" else "") + by
+        val counts = countWords(
+            progress.sumOf { it.done },
+            progress.sumOf { it.total },
+            progress.sumOf { it.failed },
+            progress.sumOf { it.flaky },
+            progress.sumOf { it.endedAtStop ?: 0 },
+        )
+        return "Piwi: $number$counts$by"
     }
 
     /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
@@ -3597,7 +3616,7 @@ object Glue {
         stopping -> "Piwi: stopping the recording"
         state == "starting" -> "Piwi: opening the browser"
         edited || state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}"
-        else -> "Piwi: ● recording · ${stepCount(steps)}"
+        else -> "Piwi: recording · ${stepCount(steps)}"
     }
 
     /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */

@@ -84,7 +84,10 @@ still refreshes. M13 in part: VS Code's status tooltip links Connect only while 
 failing count after the local runs, and says how many tests the failed results are when a test failed on several
 Playwright projects (HM1); both editors' status items turn red only for a failure new against the baseline that a run
 of this machine produced (`RunStatus.newFailingTests`), as `piwi.statusBarAlert` and its JetBrains twin choose (`new`,
-`any`, `never`), never for a run in progress (HM2). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+`any`, `never`), never for a run in progress (HM2); both word a run's count alike, `run #78 · 3 of 9 · 1 failed · 1
+flaky` (`countWords`, `Glue.countWords`), flaky included, in the status item, VS Code's count item, which draws the
+running spinner rather than the idle mark, and the run's node; a run's status in the dashboard's words (`timed out`),
+a recording as `recording` or `recording paused` with the recording glyph in JetBrains too (LR18, HM4 in part). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which

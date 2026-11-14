@@ -264,10 +264,21 @@ class GlueTest {
     }
 
     @Test
+    fun `a run's count and its status are worded as VS Code words them`() {
+        assertEquals("3 of 9", Glue.countWords(3, 9))
+        assertEquals("4 of 10 · 1 failed · 1 flaky · 1 ended at a stop", Glue.countWords(4, 10, 1, 1, 1))
+        assertEquals("2 of 2 · 1 ended at a stop", Glue.countWords(2, 2, 0, 0, 1))
+        assertEquals("timed out", Glue.statusWords("timedout"))
+        assertEquals("didn't run", Glue.statusWords("didnotrun"))
+        assertEquals("interrupted", Glue.statusWords("interrupted"))
+        assertEquals("Piwi: timed out", Glue.statusView(connected, runs(passed.copy(status = "timedout"))).text)
+    }
+
+    @Test
     fun `a failing run, a running run, an interrupted run and no run`() {
         assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(connected, runs(passed.copy(status = "failed", failedTests = 3))).text)
         assertEquals(
-            "Piwi: 41/120 · 1 failing",
+            "Piwi: 41 of 120 · 1 failed",
             Glue.statusView(connected, runs(passed.copy(status = "running", passedTests = 40, failedTests = 1, flakyTests = 0))).text,
         )
         assertEquals("Piwi: interrupted", Glue.statusView(connected, runs(passed.copy(status = "interrupted"))).text)
@@ -314,22 +325,22 @@ class GlueTest {
         fun live(run: RunInfo?, live: LiveRun?) =
             RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run, failingTests = 3, live = live)))
         val own = Glue.statusView(connected, live(failed, inProgress))
-        assertEquals("Piwi: run #124 · 4/9 · 1 failing · yours", own.text)
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · yours", own.text)
         assertEquals(
             "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
-                "Your run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env",
+                "Your run #124 is running: 4 of 9 · 1 failed\nhttp://piwi, from the workspace .env",
             own.tooltip,
         )
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
-        assertEquals("Piwi: run #124 · 4/9", other.text)
-        assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4/9\n"))
+        assertEquals("Piwi: run #124 · 4 of 9", other.text)
+        assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.
         val first = Glue.statusView(connected, live(null, inProgress.copy(done = 0, failed = 0)))
-        assertEquals("Piwi: run #124 · 0/9 · yours", first.text)
+        assertEquals("Piwi: run #124 · 0 of 9 · yours", first.text)
         assertEquals(
-            "No run of Acme on feature/pay yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env",
+            "No run of Acme on feature/pay yet\nYour run #124 is running: 0 of 9\nhttp://piwi, from the workspace .env",
             first.tooltip,
         )
     }
@@ -2000,13 +2011,13 @@ class GlueTest {
         val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 0, own = false, ci = true)
         fun live(vararg contexts: RunStatus) = RunStatusResult(contexts.toList())
         val ci = Glue.statusView(connected, live(RunStatus(root = "/w", branch = "main", live = inProgress)))
-        assertEquals("Piwi: CI run #124 · 4/9", ci.text)
-        assertEquals(true, ci.tooltip.contains("\nCI run #124 is running: 4/9"))
+        assertEquals("Piwi: CI run #124 · 4 of 9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 is running: 4 of 9"))
         // Two configs: the file is in the second, the editor's own run in the first.
         val two = StatusResult(listOf(connected.contexts!!.single(), connected.contexts!!.single().copy(root = "/w/admin")))
         val own = inProgress.copy(own = true, ci = false, url = "http://piwi/test-runs/124")
         val runs = live(RunStatus(root = "/w", live = own), RunStatus(root = "/w/admin"))
-        assertEquals("Piwi: run #124 · 4/9 · yours", Glue.statusView(two, runs, file = "/w/admin/tests/a.spec.ts").text)
+        assertEquals("Piwi: run #124 · 4 of 9 · yours", Glue.statusView(two, runs, file = "/w/admin/tests/a.spec.ts").text)
         assertEquals(own, Glue.liveRun(two, runs, "/w/admin/tests/a.spec.ts"))
         val notOwn = live(RunStatus(root = "/w", live = own.copy(own = false)), RunStatus(root = "/w/admin"))
         assertEquals(null, Glue.liveRun(two, notOwn, "/w/admin/tests/a.spec.ts"))
@@ -2832,7 +2843,7 @@ class GlueTest {
     @Test
     fun `the status bar shows a recording's state and step count`() {
         assertEquals("Piwi: opening the browser", Glue.recordingStatus("starting", 0, edited = false, stopping = false))
-        assertEquals("Piwi: ● recording · 2 steps", Glue.recordingStatus("recording", 2, edited = false, stopping = false))
+        assertEquals("Piwi: recording · 2 steps", Glue.recordingStatus("recording", 2, edited = false, stopping = false))
         assertEquals("Piwi: recording paused · 1 step", Glue.recordingStatus("paused", 1, edited = false, stopping = false))
         assertEquals("Piwi: recording paused · 2 steps", Glue.recordingStatus("recording", 2, edited = true, stopping = false))
         assertEquals("Piwi: stopping the recording", Glue.recordingStatus("recording", 2, edited = true, stopping = true))
@@ -3013,9 +3024,9 @@ class GlueTest {
     @Test
     fun `while the editor's own run is live, the run counts it`() {
         val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
-        assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live).single().description)
+        assertEquals("running 4 of 9", Glue.failureNodes(treeFailures, treeNow, live).single().description)
         assertEquals("4 min ago", Glue.failureNodes(treeFailures, treeNow, live.copy(own = false)).single().description)
-        assertEquals("running 4/9 · 1 failed", Glue.failureNodes(treeFailures, treeNow, live.copy(failed = 1)).single().description)
+        assertEquals("running 4 of 9 · 1 failed", Glue.failureNodes(treeFailures, treeNow, live.copy(failed = 1)).single().description)
     }
 
     @Test
@@ -3066,9 +3077,9 @@ class GlueTest {
             listOf(shop.kind, shop.label, shop.description, shop.icon, shop.root, shop.url),
         )
         assertEquals("4 min ago" to "/w/apps/shop", shop.children.single().description to shop.children.single().root)
-        assertEquals("running 4/9", admin.children.single().description)
+        assertEquals("running 4 of 9", admin.children.single().description)
         // A run node that names no config: the editor's own run shows on it.
-        assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
+        assertEquals("running 4 of 9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
     }
 
     @Test

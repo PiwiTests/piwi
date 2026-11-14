@@ -146,7 +146,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             else -> view.text
         }
         label.icon = when {
-            recording != null -> PiwiIcons.PIWI
+            recording != null -> PiwiIcons.recording(recording.state, recording.edited)
             // A held failure shows the error's icon, any other stop the pause's.
             stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
             shared != null -> PiwiIcons.LIVE

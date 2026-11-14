@@ -48,7 +48,7 @@ import type {
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
-import { laneDuration } from './run-control';
+import { countWords, laneDuration } from './run-control';
 
 /** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
@@ -260,16 +260,21 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
  * editor's own.
  */
 function liveText(live: LiveRun): string {
-  const failing = live.failed ? ` · ${live.failed} failing` : '';
   const run = live.ci ? 'CI run' : 'run';
-  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${live.done}/${live.total}${failing}${live.own ? ' · yours' : ''}`;
+  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${live.own ? ' · yours' : ''}`;
 }
 
-/** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+/** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
 function liveLine(live: LiveRun): string {
-  const failing = live.failed ? ` · ${live.failed} failing` : '';
   const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
-  return `${run} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+  return `${run} #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}`;
+}
+
+/** A run's status in the dashboard's words: `timed out` for `timedout`. */
+export function statusWords(status: string): string {
+  if (status === 'timedout' || status === 'timedOut') return 'timed out';
+  if (status === 'didnotrun') return "didn't run";
+  return status;
 }
 
 /** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
@@ -628,10 +633,9 @@ export function statusBarView(
   };
   if (active) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
-    const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests)}`,
       ownLive: !!live?.own,
     };
   }
@@ -644,7 +648,9 @@ export function statusBarView(
       error: alarmed(run, failing, alert),
     };
   }
-  if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
+  if (r.status !== 'passed' && r.status !== 'failed') {
+    return { ...view, text: `$(warning) Piwi: ${statusWords(r.status)}` };
+  }
   if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
   return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
 }
@@ -761,11 +767,13 @@ export function failureNodes(
       key: node.key,
       kind: node.kind,
       label: node.label,
-      description: running ? `running ${live.done}/${live.total}` : [node.description, age].filter(Boolean).join(' · '),
+      description: running
+        ? `running ${countWords(live.done, live.total, live.failed)}`
+        : [node.description, age].filter(Boolean).join(' · '),
       tooltip: lines(
         node.kind === 'failure' && first ? `**${first}**` : first,
         ...rest,
-        running ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null,
+        running ? liveLine(live) : null,
       ),
       icon: FAILURE_ICONS[node.icon] ?? 'circle-outline',
       state: node.children.length ? (node.expanded ? 'expanded' : 'collapsed') : 'none',
@@ -1443,7 +1451,7 @@ export function recordingView(
     return {
       title: `$(circle-large-outline) Paused while you edit · ${count}`,
       actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(circle-large-outline) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
@@ -1451,7 +1459,7 @@ export function recordingView(
     return {
       title: `$(circle-large-outline) Paused · ${count}`,
       actions: [stop, resume],
-      status: `$(circle-large-outline) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }

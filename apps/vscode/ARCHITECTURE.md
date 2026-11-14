@@ -561,7 +561,7 @@ sharing…** for each shared run, **Stop sharing this window's runs…** while t
 asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
 `piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
-out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
+out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of 9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`), from `RunSession.progress`, which the
 run's own process tells the service: so it counts offline and with the desktop app. An agent's run ends it with its
 label (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 

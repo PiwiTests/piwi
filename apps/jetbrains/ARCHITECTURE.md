@@ -261,7 +261,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **Each node's glyph** is the one `PiwiIcons.FAILURE_NODES` gives its icon key, the table VS Code's `FAILURE_ICONS`
   draws too (a cluster Lucide's `layers`, `icons/layers.svg`; an owner `General.User`; a spec a file), which
   `PiwiPluginTest` holds to the protocol's `FailureTreeIcon` keys.
-- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
+- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4 of 9 · 1 failed`, counted
   as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
   session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
 - **A row.** A `ColoredTreeCellRenderer` draws a failure's title, run and place; its headline is in the hover, the
