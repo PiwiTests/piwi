@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 
 /**
  * The capability states keep what they show when a later read fails (a proxy's 502 while the instance restarts): a
@@ -8,24 +8,31 @@ import { computed, ref, type Ref } from 'vue';
 
 type Answer = () => Promise<{ items: Array<{ id: string; module: string; state: string }> }>;
 
-/** `useAsyncData` as Nuxt runs it for these reads: the handler's answer becomes the key's data, on each refresh too. */
+/**
+ * `useAsyncData` as Nuxt runs it for these reads: the handler's answer becomes the key's data and its payload entry,
+ * on each refresh too.
+ */
 const keys = new Map<string, { data: Ref<unknown>; refresh: () => Promise<void> }>();
+const payload = { data: {} as Record<string, unknown> };
 let answer: Answer;
 
 beforeEach(() => {
   keys.clear();
+  payload.data = {};
   vi.stubGlobal('computed', computed);
+  vi.stubGlobal('useNuxtApp', () => ({ payload }));
   vi.stubGlobal('useAuth', () => ({ can: () => true, canSeeAdmin: ref(true) }));
   vi.stubGlobal('useIsDesktop', () => false);
   vi.stubGlobal('useRequestFetch', () => () => answer());
   vi.stubGlobal('reuseWithinRender', () => undefined);
   vi.stubGlobal(
     'useAsyncData',
-    async (key: string, handler: () => Promise<unknown>, options: { default: () => unknown }) => {
+    async (keyOf: MaybeRefOrGetter<string>, handler: () => Promise<unknown>, options: { default: () => unknown }) => {
+      const key = toValue(keyOf);
       if (!keys.has(key)) {
         const data = ref(options.default());
         const refresh = async () => {
-          data.value = await handler();
+          data.value = payload.data[key] = await handler();
         };
         keys.set(key, { data, refresh });
         await refresh();

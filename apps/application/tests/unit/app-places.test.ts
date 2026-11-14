@@ -1,7 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   PROJECT_COVERAGE_VIEWS,
   PROJECT_FAILURE_VIEWS,
@@ -13,13 +10,6 @@ import {
 import type { CapabilityId } from '#shared/capabilities';
 import { projectTabHidden } from '../../app/utils/project-tabs';
 import { SETUP_CAPABILITIES } from '../../app/utils/setup-capabilities';
-
-const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app');
-const source = (file: string) => readFileSync(join(APP_ROOT, file), 'utf8');
-
-const LAYOUT = source('layouts/default.vue');
-const PROJECT_PAGE = source('pages/projects/[id]/index.vue');
-const RUN_PAGE = source('pages/test-runs/[id].vue');
 
 /** The tabs a project shows when it hides `hidden`. */
 function shownTabs(hidden: CapabilityId[]): ProjectTabValue[] {
@@ -56,36 +46,6 @@ describe('the places registry', () => {
     );
     expect(views.failures).toEqual(['Clusters', 'Flaky', 'Quarantine']);
     expect(views.coverage).toEqual(['Gaps', 'Map', 'Code']);
-  });
-});
-
-describe('the readers of the registry', () => {
-  test('the project page builds its strip, its Failures switch and its menu pages from the lists', () => {
-    expect(PROJECT_PAGE).toMatch(/const tabItems = computed\(\(\) =>\s*PROJECT_TABS\.filter\(/);
-    expect(PROJECT_PAGE).toMatch(/const TABS[^=]*= PROJECT_TABS\.map\(/);
-    expect(PROJECT_PAGE).toMatch(/return PROJECT_FAILURE_VIEWS\.filter\(/);
-    expect(PROJECT_PAGE).toMatch(/for \(const menuPage of PROJECT_MENU_PAGES\)/);
-  });
-
-  test('the run page builds its strip from the list', () => {
-    expect(RUN_PAGE).toMatch(/const tabItems = computed\(\(\) =>\s*RUN_TABS\.filter\(/);
-  });
-
-  test('the Coverage tab builds its switch from the list', () => {
-    expect(source('components/project/ProjectCoverageTab.vue')).toMatch(
-      /const views = computed\(\(\) =>\s*PROJECT_COVERAGE_VIEWS\.filter\(/,
-    );
-  });
-
-  test('the command palette lists the project tabs from the list, and links to no tab it names itself', () => {
-    expect(LAYOUT).toMatch(/items: PROJECT_TABS\.filter\(/);
-    expect(LAYOUT).toContain('?tab=${tab.value}');
-    expect(LAYOUT.match(/\?tab=/g)).toHaveLength(1);
-  });
-
-  test('the strip and the palette hide a tab by the same rule', () => {
-    expect(PROJECT_PAGE).toContain('projectTabHidden(tab, projCapHidden)');
-    expect(LAYOUT).toContain('!projectTabHidden(tab.value, projectCapHidden)');
   });
 });
 

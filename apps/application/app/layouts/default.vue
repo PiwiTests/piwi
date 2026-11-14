@@ -122,10 +122,11 @@ const currentProjectId = computed(() => {
   return match?.[1] ? parseInt(match[1], 10) : null;
 });
 
-// What the current project hides: its own capability states once one of its
-// pages has read them, the instance's until then.
-const loadedProjectCapabilities = useLoadedProjectCapabilities(() => currentProjectId.value);
-const projectCapHidden = (id: CapabilityId) => loadedProjectCapabilities.isHidden(id) ?? capHidden(id);
+// What the current project hides: its own capability states once they have
+// arrived, the instance's until then.
+const routeProjectCapabilities = useRouteProjectCapabilities();
+const projectCapHidden = (projectId: number, id: CapabilityId) =>
+  routeProjectCapabilities.isHidden(projectId, id) ?? capHidden(id);
 
 // Generate project navigation items with children
 const ACTIVE_WINDOW_DAYS = 10;
@@ -383,15 +384,17 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     staticGroups.unshift({
       id: 'project-tabs',
       label: 'This project',
-      items: PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, projectCapHidden)).map((tab) => ({
-        id: `project-tab-${tab.value}`,
-        label: tab.label,
-        icon: tab.icon,
-        to: `/projects/${pid}?tab=${tab.value}`,
-        onSelect: () => {
-          open.value = false;
-        },
-      })),
+      items: PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, (id) => projectCapHidden(pid, id))).map(
+        (tab) => ({
+          id: `project-tab-${tab.value}`,
+          label: tab.label,
+          icon: tab.icon,
+          to: `/projects/${pid}?tab=${tab.value}`,
+          onSelect: () => {
+            open.value = false;
+          },
+        }),
+      ),
     });
   }
 
