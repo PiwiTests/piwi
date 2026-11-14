@@ -24,8 +24,9 @@ partial run from a developer's machine or the desktop app ([run origin](/referen
   list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
   the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
-  failures** follows the same rule: such a run gets no comment, unless its change left a file no test reached, which
-  the [uncovered changes](./uncovered-changes) section names. When the run has a
+  failures** follows the same rule: such a run gets no comment, unless it fixed a failure cluster, left a new leak,
+  closed one, or its change left a file no test reached, which the [uncovered changes](./uncovered-changes) section
+  names. When the run has a
   diff to read, a second status that never fails joins it, `/change-coverage`
   ([what it counts](./uncovered-changes#on-the-pull-request)).
 - **A pending status while a CI run runs**, under the same context: how many of its tests have a result and how many
@@ -48,8 +49,11 @@ What the comment says, in this order:
 7. **Left open by this change**: [resource leaks](./leak-history) and servers or processes left running that the base
    branch never showed, each with the line that opened it, its last use and where its close goes: its test, an
    `afterAll`, or its fixture's teardown.
-8. **Closed by this change**: open leaks of the default branch that the run no longer shows, when it is a full run
-   whose tests that could show them passed.
+8. **Closed by this change**: open leaks, servers and processes of the default branch that the run no longer shows.
+   Listed only for a full run of a pull request into the default branch, and only for a leak whose spec file had a
+   test that passed in the run and none that failed; a fixture's leak is never listed. The run is read as the change
+   merged with its target, as GitHub's `pull_request` checkout is: a branch built on its own head, behind a leak
+   added to the default branch since it forked, may list that leak.
 
 Each failure carries its error, its owner and tags when the test declares them (see
 [ownership metadata](/reference/test-metadata#ownership-metadata-piwi-annotations)), and, when a locator broke, the

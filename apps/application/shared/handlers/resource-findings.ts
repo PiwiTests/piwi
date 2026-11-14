@@ -371,11 +371,13 @@ async function insertFinding(
  * such a test in the run, that holds only for a finding whose identity names a
  * spec file of the run with a test that passed and none of those others: a
  * fixture's or a helper's finding, or one that names no file, may be that
- * test's.
+ * test's. With `inOwnFile`, that holds for every finding, whatever the other
+ * tests of the run did.
  */
 async function reportReach(
   db: DrizzleDB,
   run: RunFacts,
+  { inOwnFile = false }: { inOwnFile?: boolean } = {},
 ): Promise<(row: Pick<FindingRow, 'verdict' | 'fingerprint'>) => boolean> {
   const withLedger = ledgerRan(run.parts);
   const cut = cutVerdicts(run.parts);
@@ -400,7 +402,7 @@ async function reportReach(
   return (row) => {
     if (row.verdict !== 'probable' && !withLedger) return false;
     if (cut.has(row.verdict)) return false;
-    if (unjudged.size === 0) return true;
+    if (unjudged.size === 0 && !inOwnFile) return true;
     const file = identityFile(row.fingerprint);
     if (!file) return false;
     const specs = [...new Set([...passed, ...unjudged])].filter((spec) => sameFile(spec, file));
@@ -515,11 +517,13 @@ export async function runFindingsNovelty(db: DrizzleDB, runId: number): Promise<
 }
 
 /**
- * The open leaks and Node handles of the default branch that a full run of
- * another branch no longer shows, when the run compares with the default
- * branch: each one its latest full default-branch run showed (no clean run
- * since), that this run could have shown (`reportReach`) and showed under no
- * identity, its own nor a moved one. Empty for a run of the default branch, a
+ * The open leaks and Node handles of the default branch that a full run of a
+ * pull request into it no longer shows: each one a full default-branch run
+ * showed before this run, with no clean run since, whose spec file has a test
+ * that passed in this run and none that failed (`reportReach`, `inOwnFile`),
+ * and that this run showed under no identity, its own nor a moved one. A
+ * fixture's or a helper's finding, whose identity names no spec file of the
+ * run, is never one. Empty for a run that names no pull request's target, a
  * partial run, or one that sent no report.
  */
 export async function runClosedFindings(
@@ -530,7 +534,8 @@ export async function runClosedFindings(
   const run = await readRun(db, runId);
   if (!run || run.parts.length === 0 || !run.isFullRun) return [];
   const defaultBranch = await readProjectDefaultBranch(db, run.projectId, run.metadata);
-  if (novelty.baseBranch !== defaultBranch || !run.branch || run.branch === defaultBranch) return [];
+  const base = resolveFallbackBranch(run.metadata, defaultBranch);
+  if (base.source !== 'pull-request' || base.branch !== defaultBranch || run.branch === defaultBranch) return [];
   const shown = new Set(novelty.findings.flatMap((f) => [f.fingerprint, f.historyFingerprint]));
   const open = await db
     .selectDistinct({
@@ -550,15 +555,16 @@ export async function runClosedFindings(
         eq(resourceFindings.cleanRuns, 0),
         inArray(resourceFindings.verdict, ['leaked', 'probable', 'handle']),
         lt(testRuns.startTime, run.startTime),
+        eq(testRuns.isFullRun, 1),
         shownOnBranch(defaultBranch, true),
       ),
     );
   const unseen = open.filter((row) => !shown.has(row.fingerprint));
   if (unseen.length === 0) return [];
-  const couldShow = await reportReach(db, run);
+  const couldShow = await reportReach(db, run, { inOwnFile: true });
   return unseen
     .filter((row) => couldShow(row))
-    .sort((a, b) => a.place.localeCompare(b.place))
+    .sort((a, b) => (a.site ?? a.place).localeCompare(b.site ?? b.place))
     .map((row) => ({
       verdict: row.verdict as WireResourceFinding['verdict'],
       kind: row.kind as WireResourceFinding['kind'],

@@ -207,7 +207,8 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
     const view = findingView(finding);
     const facts = view.facts.join(' · ');
     const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
-    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
+    const where = view.where ? ` · ${codeSpan(view.where)}` : '';
+    return `- **${view.label}**${where}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
   });
   const leakCheck = nl.leaks.some(isTestLeak)
     ? " Set `leakCheck: 'fail'` to catch the next one a test leaves open, locally."
@@ -224,18 +225,18 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
 /**
  * Render the closed-leaks section: one line per open leak or handle of the
  * base branch this run could have shown and did not, with the line that
- * opened it. Null when there is none.
+ * opened it when it is known. Null when there is none.
  */
 export function renderClosedLeaks(nl: PrNewLeaks): string | null {
   const closed = nl.closed ?? [];
   if (closed.length === 0) return null;
   const lines = closed.slice(0, MAX_LEAKS_LISTED).map((finding) => {
     const view = findingView(finding);
-    return `- **${view.label}** · ${codeSpan(view.where ?? finding.where)}`;
+    return `- **${view.label}**${view.where ? ` · ${codeSpan(view.where)}` : ''}`;
   });
   const blocks = [
     `#### 🟢 Closed by this change (${closed.length})`,
-    `Open on ${codeSpan(nl.baseBranch)}, and not in this run, which ran every test that could show it.`,
+    `Open on ${codeSpan(nl.baseBranch)}, and not in this run, where a test of its file passed and none failed.`,
     lines.join('\n'),
   ];
   if (closed.length > MAX_LEAKS_LISTED) blocks.push(`…and ${closed.length - MAX_LEAKS_LISTED} more`);

@@ -845,6 +845,25 @@ describe('new leaks', () => {
     );
   });
 
+  test('leaves out the line of a handle that has none', () => {
+    const watcher = {
+      verdict: 'handle',
+      kind: 'handle',
+      where: 'FSEventWrap',
+      detail: '"watches" (tests/a.spec.ts)',
+      tests: 1,
+      count: 1,
+    } as const;
+    const body = buildPrComment(
+      summary({ newLeaks: { baseBranch: 'main', leaks: [watcher], closed: [{ ...watcher, tests: 0, count: 0 }] } }),
+    );
+    expect(body).toContain(
+      '- **Left running file watcher** · left running in the worker by "watches" (tests/a.spec.ts) · stop it before its test ends',
+    );
+    expect(body).toContain('none failed.\n\n- **Left running file watcher**\n');
+    expect(body).not.toContain('``');
+  });
+
   test('lists each open leak of the base branch the change closed, and posts for it alone', () => {
     const closed = {
       baseBranch: 'main',
@@ -871,7 +890,7 @@ describe('new leaks', () => {
     const body = buildPrComment(summary({ newLeaks: closed }));
     expect(body).not.toContain('Left open');
     expect(body).toContain(
-      '#### 🟢 Closed by this change (2)\n\nOpen on `main`, and not in this run, which ran every test that could show it.\n\n- **Leaked context** · `tests/cart.spec.ts:12`\n- **Left running server** · `tests/reports.spec.ts:30`',
+      '#### 🟢 Closed by this change (2)\n\nOpen on `main`, and not in this run, where a test of its file passed and none failed.\n\n- **Leaked context** · `tests/cart.spec.ts:12`\n- **Left running server** · `tests/reports.spec.ts:30`',
     );
     expect(isQuietRun({ onlyOnFailure: true }, summary({ newLeaks: closed }))).toBe(false);
     expect(isQuietRun({ onlyOnFailure: true }, summary({ newLeaks: { ...closed, closed: [] } }))).toBe(true);

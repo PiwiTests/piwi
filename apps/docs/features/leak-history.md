@@ -32,9 +32,9 @@ Three places read it:
   objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
   A run that sent no resource report fails either rule rather than passing on silence, and so does a run of a project
   that declined the **Resources** capability, whose leaks are not measured. Neither counts a lingering object.
-- The [pull-request comment](./pr-feedback) lists each leak the branch introduces under **Left open by this change**,
-  and each open leak of the default branch that a full run of the branch no longer shows under **Closed by this
-  change**.
+- The [pull-request comment](./pr-feedback) lists each leak, server and process the branch introduces under **Left
+  open by this change** (the gate's leak rules count no server nor process), and each open one of the default branch
+  that a full run of the pull request no longer shows under **Closed by this change**.
 - Agents read `list_resource_findings` and `get_resource_profile` over [MCP](/reference/mcp-tools).
 
 ```bash

@@ -435,13 +435,25 @@ describe('the leaks a change closes', () => {
     const novelty = (await runFindingsNovelty(db as any, id))!;
     return (await runClosedFindings(db as any, id, novelty)).map((f) => f.site);
   }
-  const passed = [{ file: 'tests/cart.spec.ts', status: 'passed' }];
+  const passed = [
+    { file: 'tests/cart.spec.ts', status: 'passed' },
+    { file: 'tests/reports.spec.ts', status: 'passed' },
+  ];
   const change = (more: Parameters<typeof run>[0] = {}) =>
     run({ branch: 'feature/fix', baseBranch: 'main', findings: [], cases: passed, ...more });
+  const serverAt = (line: number): WireResourceFinding => ({
+    verdict: 'handle',
+    kind: 'handle',
+    where: 'TCPServerWrap',
+    site: `tests/reports.spec.ts:${line}`,
+    detail: '"exports" (tests/reports.spec.ts)',
+    tests: 1,
+    count: 1,
+  });
 
-  test('an open leak of the default branch that a full run of the change could show and did not', async () => {
-    await record(await run({ findings: [leakAt(10), leakAt(40, 'tests/admin.spec.ts')] }));
-    expect(await closedBy(await change())).toEqual(['tests/admin.spec.ts:40', 'tests/cart.spec.ts:10']);
+  test('an open leak or server of the default branch that a full run of the change could show and did not', async () => {
+    await record(await run({ findings: [leakAt(10), serverAt(30)] }));
+    expect(await closedBy(await change())).toEqual(['tests/cart.spec.ts:10', 'tests/reports.spec.ts:30']);
     // A run of the default branch closes nothing for a change.
     expect(await closedBy(await run({ findings: [], cases: passed }))).toEqual([]);
   });
@@ -452,10 +464,32 @@ describe('the leaks a change closes', () => {
     expect(await closedBy(await change({ findings: [leakAt(14)] }))).toEqual([]);
   });
 
-  test('never from a run that could not have shown it', async () => {
+  test('only one whose spec file had a test that passed in the run and none that failed', async () => {
+    await record(await run({ findings: [leakAt(10), leakAt(40, 'tests/admin.spec.ts')] }));
+    expect(await closedBy(await change())).toEqual(['tests/cart.spec.ts:10']);
+    expect(await closedBy(await change({ cases: [{ file: 'tests/cart.spec.ts', status: 'skipped' }] }))).toEqual([]);
+    expect(
+      await closedBy(
+        await change({
+          cases: [
+            { file: 'tests/cart.spec.ts', status: 'passed' },
+            { file: 'tests/cart.spec.ts', status: 'failed' },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  test("never a fixture's leak, whose file holds no test", async () => {
+    await record(await run({ findings: [leakAt(14, 'tests/fixtures.ts')] }));
+    expect(await closedBy(await change())).toEqual([]);
+  });
+
+  test('never from a partial run, nor for a leak only a partial run of the default branch showed', async () => {
     await record(await run({ findings: [leakAt(10)] }));
     expect(await closedBy(await change({ full: false }))).toEqual([]);
-    expect(await closedBy(await change({ cases: [{ file: 'tests/cart.spec.ts', status: 'failed' }] }))).toEqual([]);
+    await record(await run({ findings: [leakAt(20, 'tests/reports.spec.ts')], full: false }));
+    expect(await closedBy(await change())).toEqual(['tests/cart.spec.ts:10']);
   });
 
   test('never one the default branch no longer shows itself', async () => {
@@ -464,9 +498,11 @@ describe('the leaks a change closes', () => {
     expect(await closedBy(await change())).toEqual([]);
   });
 
-  test('never against a base branch other than the default branch', async () => {
+  test('only for a run of a pull request into the default branch', async () => {
     await record(await run({ findings: [leakAt(10)] }));
     expect(await closedBy(await change({ baseBranch: 'release/1' }))).toEqual([]);
+    // A push build of the branch names no target.
+    expect(await closedBy(await run({ branch: 'feature/fix', findings: [], cases: passed }))).toEqual([]);
   });
 });
 
