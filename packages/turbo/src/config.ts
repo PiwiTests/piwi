@@ -98,15 +98,21 @@ function defined<T extends object>(options: T): Partial<T> {
   return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
 
-/** The options a preset stands for, given the config it applies to. */
+function modeOf(setting: unknown): string | undefined {
+  return typeof setting === 'object' && setting !== null ? (setting as { mode?: string }).mode : (setting as string | undefined);
+}
+
+/**
+ * The options a preset stands for, given the config it applies to. A preset only lowers a cost the config has: it
+ * never turns on traces, screenshots or video the config leaves off.
+ */
 export function presetOptions(preset: Preset, config: AnyConfig): Optimizations {
   const retries = typeof config.retries === 'number' && config.retries > 0;
-  const safe: Optimizations = {
-    // With retries, the first retry records the trace; without, every test records and only failures keep it.
-    trace: retries ? 'on-first-retry' : 'retain-on-failure',
-    failureScreenshots: true,
-    videoOnRetry: true,
-  };
+  const trace = modeOf(config.use?.trace);
+  const safe: Optimizations = { videoOnRetry: true };
+  // With retries, the first retry records the trace; without, every test records and only failures keep it.
+  if (trace === 'on' || trace === 'retain-on-failure') safe.trace = retries ? 'on-first-retry' : 'retain-on-failure';
+  if (modeOf(config.use?.screenshot) === 'only-on-failure') safe.failureScreenshots = true;
   if (preset === 'safe') return safe;
   const fast: Optimizations = { ...safe, reducedMotion: true, instantAnimations: true };
   if (preset === 'fast') return fast;
@@ -128,7 +134,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   const result: AnyConfig = { ...config, use: { ...config.use } };
   const use = result.use as Record<string, unknown> & { contextOptions?: Record<string, unknown> };
   if (config.projects) result.projects = config.projects.map((project) => ({ ...project }));
-  if (options.trace) use.trace = options.trace;
+  if (options.trace) use.trace = typeof use.trace === 'object' && use.trace ? { ...use.trace, mode: options.trace } : options.trace;
   if (options.lightTraces) {
     const current = use.trace as TraceMode | { mode: TraceMode } | undefined;
     const mode = typeof current === 'object' ? current.mode : (current ?? 'off');

@@ -86,7 +86,7 @@ describe('withOptimizations', () => {
 describe('presets', () => {
   test('safe keeps traces for failures and screenshots failed tests only', () => {
     const result = withOptimizations<PlaywrightTestConfig>(
-      { use: { screenshot: 'only-on-failure' } },
+      { use: { trace: 'on', screenshot: 'only-on-failure' } },
       { preset: 'safe' },
     );
     expect(result.use).toMatchObject({ trace: 'retain-on-failure', screenshot: 'off', failureScreenshots: true });
@@ -94,7 +94,7 @@ describe('presets', () => {
   });
 
   test('safe records traces on the first retry when the config retries', () => {
-    const result = withOptimizations<PlaywrightTestConfig>({ retries: 2 }, { preset: 'safe' });
+    const result = withOptimizations<PlaywrightTestConfig>({ retries: 2, use: { trace: 'on' } }, { preset: 'safe' });
     expect(result.use?.trace).toBe('on-first-retry');
   });
 
@@ -133,6 +133,23 @@ describe('presets', () => {
       { preset: 'experimental', trace: undefined, instantAnimations: undefined, experimental: { failFast: undefined } },
     );
     expect(result.use).toMatchObject({ trace: 'retain-on-failure', instantAnimations: true, fastScreenshots: true });
+  });
+
+  test('turns on no trace, screenshot or video the config leaves off', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { use: { trace: 'off', screenshot: 'off', video: 'off' } },
+      { preset: 'experimental' },
+    );
+    expect(result.use).toMatchObject({ trace: 'off', screenshot: 'off', video: 'off' });
+    expect(result.use).not.toHaveProperty('failureScreenshots');
+  });
+
+  test('keeps the sub-options of a trace it lowers', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { use: { trace: { mode: 'on', screenshots: false } } },
+      { preset: 'safe' },
+    );
+    expect(result.use?.trace).toEqual({ mode: 'retain-on-failure', screenshots: false });
   });
 
   test('refuses an unknown preset', () => {
