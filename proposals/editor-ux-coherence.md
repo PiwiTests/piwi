@@ -77,8 +77,8 @@ or hide the coverage marks, Finish the test, End the test, Record at the stop, R
 confirmation takes no ellipsis (Stop sharing the run live, in the share menus too) (X1, AC7,
 AC10, AC9 and NF3 in part). M3 in part: JetBrains' Tools → Piwi in six compact sections (run, record, run control,
 dashboard, agents, connection), its editor submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu
-in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
-part). M3's status menu: a click on VS Code's status item opens **Open the Piwi menu**
+in both editors' file trees that runs a spec or the tests that reach a file and records a new test file, and JetBrains' New offering **Playwright test (recorded)…** on a folder of a Playwright config
+alone (AC1, AC3 in part). M3's status menu: a click on VS Code's status item opens **Open the Piwi menu**
 (`piwi.statusMenu`), a quick pick in the JetBrains popup's sections, its first row the item's own action, so Enter
 still refreshes. M13 in part: VS Code's status tooltip links Connect only while not connected, gives the item's
 failing count after the local runs, and says how many tests the failed results are when a test failed on several
@@ -1178,7 +1178,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
+| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): the glyphs Appendix A still marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **The running ring animated** ([LI3](#li3)) where the gutter allows it (§13, question 3) | `ide` | [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |

@@ -77,8 +77,8 @@ line** on the debugger's Show Execution Point key:
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
   menu leaves out what does not apply.
-- **[Recording](./editor-recording)** starts from **Record here**, Alt+Enter or Alt+Insert, and **File → New → Record
-  a new test file…**; its controls are in a banner above the editor.
+- **[Recording](./editor-recording)** starts from **Record here**, Alt+Enter or Alt+Insert, and **New → Playwright test
+  (recorded)…** on a folder of a Playwright config; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
   started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
   caret**, **Finish** and **End test**; they are also in the status bar item's menu, after each stop to go to, and

@@ -95,7 +95,7 @@ class RecordHereGenerateAction : RecordHereAction() {
  * Piwi: Record a new test file… — a spec created where the service offers it (`piwi/newTestFile`: beside the spec at
  * hand in a test folder, else in the test folder of the config holding the file at hand), then recorded into.
  */
-class RecordNewFileAction : AnAction(), DumbAware {
+open class RecordNewFileAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -115,9 +115,30 @@ class RecordNewFileAction : AnAction(), DumbAware {
     }
 
     /** The folder selected, or the selected file's; null when nothing on disk is. */
-    private fun directoryAtHand(e: AnActionEvent): VirtualFile? {
+    protected fun directoryAtHand(e: AnActionEvent): VirtualFile? {
         val selected = e.getData(CommonDataKeys.VIRTUAL_FILE)?.takeIf { it.isInLocalFileSystem } ?: return null
         return if (selected.isDirectory) selected else selected.parent
+    }
+}
+
+/**
+ * New → Playwright test (recorded)…: Record a new test file… among the file kinds of New, on a folder a new spec may go
+ * in (`Glue.newSpecFolder`). The spec is offered in that folder when a test folder holds it, else in its config's test
+ * folder.
+ */
+class NewRecordedTestAction : RecordNewFileAction() {
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        val folder = directoryAtHand(e)?.nioPathOrNull()
+        e.presentation.isEnabledAndVisible = service != null && Glue.newSpecFolder(folder, service.playwrightConfigDirs())
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val service = project.service<PiwiProjectService>()
+        val folder = directoryAtHand(e) ?: return
+        val fallback = folder.nioPathOrNull()?.takeIf { Glue.newSpecFolder(it, service.playwrightConfigDirs()) } ?: return
+        PiwiRecordFlow.recordNewFile(project, folder, fallback)
     }
 }
 

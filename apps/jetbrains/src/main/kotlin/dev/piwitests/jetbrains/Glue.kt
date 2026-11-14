@@ -3425,6 +3425,17 @@ object Glue {
     }
 
     /**
+     * Whether New offers a recorded test on `folder`: a Playwright config's folder or one inside it, apart from
+     * `node_modules` and a hidden folder (`.git`, `.idea`) below the config's.
+     */
+    fun newSpecFolder(folder: Path?, configDirs: List<Path>): Boolean {
+        val dir = folder?.let { runCatching { it.toAbsolutePath().normalize() }.getOrNull() } ?: return false
+        val config = configDirs.map { it.toAbsolutePath().normalize() }.filter { dir.startsWith(it) }.maxByOrNull { it.nameCount }
+            ?: return false
+        return config.relativize(dir).none { it.toString() == "node_modules" || it.toString().startsWith(".") }
+    }
+
+    /**
      * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: outside
      * every test, function and class (`file`), a new test (`test`); anywhere else, the steps there (`steps`), which the
      * editor service refuses where they cannot go.

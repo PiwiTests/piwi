@@ -161,7 +161,6 @@
                 <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
                         text="Record a new test file…" icon="/icons/record.svg"
                         description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
-                    <add-to-group group-id="NewGroup" anchor="last"/>
                     <synonym text="Playwright codegen"/>
                 </action>
                 <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
@@ -389,6 +388,11 @@
                 icon="/icons/record.svg"
                 description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
             <add-to-group group-id="GenerateGroup" anchor="last"/>
+        </action>
+        <action id="Piwi.NewRecordedTest" class="dev.piwitests.jetbrains.NewRecordedTestAction"
+                text="Playwright test (recorded)…" icon="/icons/record.svg"
+                description="Create a spec file in this test folder, else in its Playwright config's, then write what you do in a browser the project's Playwright opens into it">
+            <add-to-group group-id="NewGroup" anchor="last"/>
         </action>
     </actions>
 </idea-plugin>
