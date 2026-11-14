@@ -599,6 +599,58 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /** The IDE run icon's menu on a test runs it with Piwi from its line, in a spec under a config's folder alone. */
+    fun testTheIdeRunIconsMenuRunsTheTestWithPiwiInAConfigsFolder() {
+        val actions = ActionManager.getInstance()
+        val additional = actions.getAction("JSTestRunLineMarkersAdditionalActionGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        assertTrue(additional.childActionsOrStubs.any { actions.getId(it) == "Piwi.RunLineMarker" })
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
+        val inside = File(base, "e2e/icon.spec.ts")
+        val outside = File(base, "other/icon.spec.ts").apply { parentFile.mkdirs() }
+        try {
+            config.writeText("export default {};\n")
+            for (spec in listOf(inside, outside)) spec.writeText("import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n")
+            service.searchPlaywright()
+            val offered = { spec: File ->
+                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(spec)!!
+                com.intellij.openapi.application.runReadAction {
+                    val psi = com.intellij.psi.PsiManager.getInstance(project).findFile(file)!!
+                    val element = psi.findElementAt(psi.text.indexOf("test('pays'"))!!
+                    val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+                        .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+                        .add(com.intellij.execution.Location.DATA_KEY, com.intellij.execution.PsiLocation(element))
+                        .build()
+                    PiwiRunLineMarkerActions().getChildren(com.intellij.testFramework.TestActionEvent.createTestEvent(context))
+                        .map { (it as? com.intellij.openapi.actionSystem.Separator)?.text ?: it.templatePresentation.text }
+                }
+            }
+            assertEquals(listOf("Piwi", "Run with Piwi", "Verify ×3 with Piwi"), offered(inside))
+            assertEquals(emptyList<String>(), offered(outside))
+        } finally {
+            config.delete()
+            inside.delete()
+            outside.delete()
+            service.searchPlaywright()
+        }
+    }
+
+    /** Piwi test results on the Gutter Icons page is the switch of Piwi's result icon. */
+    fun testPiwisResultIconIsSwitchedOnTheGutterIconsPage() {
+        val providers = com.intellij.codeInsight.daemon.LineMarkerProviders.getInstance()
+            .allForLanguage(com.intellij.lang.javascript.JavascriptLanguage.INSTANCE)
+        assertTrue(providers.any { it is PiwiTestResultsGutter })
+        val settings = com.intellij.codeInsight.daemon.LineMarkerSettings.getSettings()
+        assertTrue(PiwiTestResultsGutter.shown())
+        try {
+            settings.setEnabled(PiwiTestResultsGutter(), false)
+            assertFalse(PiwiTestResultsGutter.shown())
+        } finally {
+            settings.setEnabled(PiwiTestResultsGutter(), true)
+        }
+    }
+
     /** New offers a recorded Playwright test on a folder of a Playwright config, and on no other folder. */
     fun testNewOffersARecordedTestOnAPlaywrightConfigsFoldersAlone() {
         val actions = ActionManager.getInstance()

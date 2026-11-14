@@ -72,6 +72,8 @@
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot8"/>
         <config.codeVisionGroupSettingProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSettings"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
+        <!-- Piwi test results on the Gutter Icons page: the switch PiwiTestAnnotator's result icon reads. -->
+        <codeInsight.lineMarkerProvider language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestResultsGutter"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiRecordingAnnotator"/>
         <intentionAction>
             <language>JavaScript</language>
@@ -400,5 +402,9 @@
                 description="Create a spec file in this test folder, else in its Playwright config's, then write what you do in a browser the project's Playwright opens into it">
             <add-to-group group-id="NewGroup" anchor="last"/>
         </action>
+        <!-- The IDE run icon's menu on a test: Run with Piwi and Verify ×3 with Piwi on its line. -->
+        <group id="Piwi.RunLineMarker" class="dev.piwitests.jetbrains.PiwiRunLineMarkerActions">
+            <add-to-group group-id="JSTestRunLineMarkersAdditionalActionGroup" anchor="last"/>
+        </group>
     </actions>
 </idea-plugin>

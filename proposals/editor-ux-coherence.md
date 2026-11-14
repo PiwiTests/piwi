@@ -116,7 +116,10 @@ view; and **Debug this failure** on the failure nodes of both editors, from the 
 breakpoints stays open). M7 continued: the failure nodes of both editors gain **Verify the test ×3** and **Go to the
 test**, from what the service finds of the failure's test (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11),
 and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and the clients' recorded-locator ones alike
-(TL7 in part: that a quick fix only edits and the IDE run icon (M9) remain). Record here is a code action where the
+(TL7 in part: that a quick fix only edits remains). M9: the IDE run icon's menu on a test offers Run with Piwi and
+Verify ×3 with Piwi on its line (`JSTestRunLineMarkersAdditionalActionGroup`, TL3), Piwi test results on the Gutter
+Icons page switches Piwi's result icon (TL4), and the editor fixture carries this repository's Playwright; TL3's check
+in Rider and every IDE of `verifyIdes` remains. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),

@@ -159,15 +159,9 @@ async function startShop() {
   return { server, url: `http://127.0.0.1:${server.address().port}` };
 }
 
-/** The fixture project, with this repository's Playwright copied in and the loop's spec and config written. */
+/** The fixture project, with the loop's spec and config written. */
 function prepareWorkspace(parent, baseURL, debugPort) {
   const { workspace, commit } = writeWorkspace(parent);
-  // Copied, not linked: the recorder takes only a Playwright whose real path is in the project's node_modules.
-  for (const name of ['@playwright/test', 'playwright', 'playwright-core']) {
-    const to = path.join(workspace, 'node_modules', name);
-    fs.rmSync(to, { recursive: true, force: true });
-    fs.cpSync(path.join(repoRoot, 'node_modules', name), to, { recursive: true, dereference: true });
-  }
   fs.writeFileSync(path.join(workspace, 'playwright.config.ts'), config(baseURL, debugPort));
   fs.writeFileSync(path.join(workspace, SPEC), COUPON_SPEC);
   fs.mkdirSync(path.join(workspace, '.vscode'));

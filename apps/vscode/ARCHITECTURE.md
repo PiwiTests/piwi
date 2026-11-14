@@ -1033,8 +1033,8 @@ Chromium. The window keeps its secrets in a file (`--password-store=basic`): wit
 never answers and no run starts.
 
 `scripts/record-loop.mjs` films the docs' loop of a recording, `apps/docs/public/videos/editor-recording-loop.mp4`, on
-the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, copied into its
-`node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from the loop's
+the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, which
+`writeWorkspace` copies into its `node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from the loop's
 Playwright config (`--window-position`, `--window-size`), and the script drives it over its debugging port, as a
 person's trusted input. The stub instance lists the page object method the coupon's steps fold into.
 

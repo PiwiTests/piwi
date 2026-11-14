@@ -151,6 +151,15 @@ latest result from `piwi/fileSummary`:
 - `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
   why. The test's background goes around that line, since two backgrounds on one line have no set order.
 
+**Piwi test results** on Settings → Editor → General → Gutter Icons switches the gutter icon off, the backgrounds
+staying: `PiwiTestResultsGutter` (`PiwiRunLineMarker.kt`) is a `LineMarkerProviderDescriptor` that marks nothing,
+registered for the page to list it, and the annotator reads its switch (`LineMarkerSettings`). The IDE's own run icon
+on a test (`JSTestRunLineMarkersProvider`) lists `Piwi.RunLineMarker` in its menu
+(`JSTestRunLineMarkersAdditionalActionGroup`): `PiwiRunLineMarkerActions` reads the test's element from
+`Location.DATA_KEY`, which the platform's `LineMarkerActionWrapper` sets for every action of that menu, and offers
+**Run with Piwi** and **Verify ×3 with Piwi** on its line (`TEST_LINE`) in a spec under a config's folder, so a test
+with no Piwi result yet runs with Piwi from its line too.
+
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
 then that run's result. Code Vision (`PiwiCodeVisionProvider.kt`) draws the summary's other lines and skips the test

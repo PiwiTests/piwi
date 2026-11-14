@@ -60,7 +60,8 @@ Each test's actions are one list in both editors: **Run with Piwi**, **Debug wit
 a failure's trace and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab
 commands. In VS Code, **Piwi:
 Show the test's actions…** opens them from the Testing view's gutter and its menus, the line number's menu with the
-view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon.
+view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon. The IDE's own run
+icon offers **Run with Piwi** and **Verify ×3 with Piwi** too, and **Gutter Icons** settings hide **Piwi test results**.
 
 <figure>
   <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">

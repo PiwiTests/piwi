@@ -130,6 +130,23 @@ export const test = base.extend(piwiFixtures).extend<{ cart: { add(name: string)
 export { expect };
 `;
 
+const CART_TYPES = `export interface CartLine {
+  sku: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface Cart {
+  lines: CartLine[];
+  discount: number;
+}
+
+export interface Coupon {
+  rate: number;
+  expiresAt: number;
+}
+`;
+
 const SERVICE = `import type { Cart, Coupon } from './types';
 
 export function addItem(cart: Cart, sku: string, quantity = 1): Cart {
@@ -192,19 +209,11 @@ export default wrapConfig(
 );
 `;
 
-/** Enough of the two packages' types, and of Nitro's auto-imports, for the editor's TypeScript to report nothing of its own. */
+/**
+ * Enough of the reporter's types, and of Nitro's auto-imports, for the editor's TypeScript to report nothing of its own.
+ * Playwright itself is this repository's, copied in by `writeWorkspace`.
+ */
 const TYPE_STUBS = {
-  'node_modules/@playwright/test/package.json': JSON.stringify({
-    name: '@playwright/test',
-    version: '1.63.0',
-    types: 'index.d.ts',
-  }),
-  'node_modules/@playwright/test/index.d.ts': `export interface Page { [key: string]: any }
-export interface Locator { [key: string]: any }
-export declare const test: any;
-export declare const expect: any;
-export declare function defineConfig(config: any): any;
-`,
   'node_modules/@piwitests/reporter/package.json': JSON.stringify({
     name: '@piwitests/reporter',
     version: '0.56.0',
@@ -235,6 +244,7 @@ export const FILES = {
         moduleResolution: 'Bundler',
         strict: false,
         noEmit: true,
+        skipLibCheck: true,
         types: ['nitro-auto-imports'],
       },
       include: ['tests', 'src', 'server', 'playwright.config.ts'],
@@ -259,6 +269,7 @@ export const FILES = {
   'tests/search.spec.ts': SEARCH_SPEC,
   'tests/privacy.spec.ts': PRIVACY_SPEC,
   'src/cart/cart-service.ts': SERVICE,
+  'src/cart/types.ts': CART_TYPES,
   'server/api/orders.post.ts': ORDERS_ROUTE,
   [UNCOVERED_ROUTE_FILE]: GIFT_CARDS_ROUTE,
   ...TYPE_STUBS,
@@ -305,7 +316,7 @@ export function checkoutPage({ coupon = '' } = {}) {
 }
 
 /**
- * Writes the project as `acme-mugs` under `parent` and commits it, so the run's commit names files the editor can
+ * Writes the project as `acme-mugs` under `parent`, with this repository's Playwright, and commits it, so the run's commit names files the editor can
  * read. Returns the project's path and that commit.
  */
 export function writeWorkspace(parent) {
@@ -313,6 +324,14 @@ export function writeWorkspace(parent) {
   for (const [file, text] of Object.entries(FILES)) {
     fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true });
     fs.writeFileSync(path.join(workspace, file), text);
+  }
+  // This repository's Playwright, copied, not linked: the recorder takes only a Playwright whose real path is in the
+  // project's node_modules, and a JetBrains IDE draws its run icon on a test only with the real package.
+  for (const name of ['@playwright/test', 'playwright', 'playwright-core']) {
+    fs.cpSync(path.join(repoRoot, 'node_modules', name), path.join(workspace, 'node_modules', name), {
+      recursive: true,
+      dereference: true,
+    });
   }
   const git = (...a) =>
     execFileSync('git', ['-c', 'user.email=dev@acme.test', '-c', 'user.name=Acme', ...a], {
