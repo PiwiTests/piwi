@@ -105,7 +105,7 @@ line** on the debugger's Show Execution Point key:
   configuration holds the IDE's key or has the agent sign in through the browser
   ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
 - **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the runs' MCP server configuration for
-  agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
+  agents** gives an agent that starts commands (the AI Assistant among them) the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;
   **Settings → Tools → Piwi → Agents (MCP)** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
   stopped test's browser with Playwright tools**, after a warning.

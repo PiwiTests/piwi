@@ -44,7 +44,7 @@ Playwright Test suites in JavaScript and TypeScript.
 The plugin reads the connection the Piwi reporter already uses: the `PIWI_*` variables in the environment or the
 workspace `.env`, or the Piwi desktop app. Otherwise, **Settings → Tools → Piwi** signs you in with the browser. Paths
 clicked in the dashboard open at their line in the IDE, locators picked in the Piwi Picker browser extension land at
-the caret, and Piwi's MCP server is one copy away for the AI Assistant.
+the caret, and Piwi's MCP server is one copy away for your agent.
 
 Self-hosted, zero telemetry. No file of your workspace is sent to the instance: its locator index, code reach and
 latest run are compared with your files locally.

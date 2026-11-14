@@ -59,7 +59,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         val text = document.charsSequence
         // Piwi test results, switched off on the Gutter Icons page, leaves the backgrounds alone, which have their own switch.
         val icons = PiwiTestResultsGutter.shown()
-        val tinted = file.project.service<PiwiProjectService>().local().failingTestTint
+        val tinted = PiwiUserSettings.state().failingTestTint
         for (line in lines.orEmpty()) {
             if (line.line !in 0 until document.lineCount) continue
             val start = document.getLineStartOffset(line.line)

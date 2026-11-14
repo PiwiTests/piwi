@@ -177,6 +177,22 @@
       ]
     },
     {
+      "key": "piwi.gutterIcons",
+      "jetbrains": null,
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.coverageMarks",
+      "jetbrains": "coverageMarks",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
       "key": "piwi.failureSeverity",
       "jetbrains": "failureSeverity",
       "group": "editor",

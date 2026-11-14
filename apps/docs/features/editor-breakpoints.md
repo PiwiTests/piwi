@@ -90,7 +90,7 @@ the test goes on.
 ## The setting
 
 Breakpoints are on by default. Turn them off with the `piwi.breakpoints` setting in VS Code, or **Pause the runs Piwi
-starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a JetBrains IDE, kept on your machine only.
+starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a JetBrains IDE, your choice in every project.
 
 ## What it needs
 

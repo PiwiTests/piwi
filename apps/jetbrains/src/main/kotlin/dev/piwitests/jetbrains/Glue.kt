@@ -58,7 +58,7 @@ object Glue {
     }
 
     /**
-     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * **Hold failures** from each run's start (`PiwiUserSettings.runHoldFailures`): `auto` leaves it to the service, on
      * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
      */
     val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
@@ -134,6 +134,33 @@ object Glue {
         val idea = Regex("/\\.idea(/|$)").find(path) ?: return path
         return path.substring(0, idea.range.first).ifEmpty { "/" }
     }
+
+    /** Where a project keeps the settings the team can share, and the ones kept for the person alone. */
+    data class StoreFiles(val shared: String, val workspace: String)
+
+    /**
+     * A project's settings files, from the path of its project file (`Project.projectFilePath`): `piwi.xml` and
+     * `workspace.xml` in `.idea`, or in Rider's `.idea/.idea.<name>/.idea`, relative to the folder holding the project
+     * (`projectFolder`); a project of one `.ipr` file keeps them in it and its `.iws`.
+     */
+    fun storeFiles(projectFilePath: String?): StoreFiles {
+        val path = projectFilePath?.replace('\\', '/') ?: return StoreFiles(".idea/piwi.xml", ".idea/workspace.xml")
+        if (path.endsWith(".ipr")) {
+            val name = path.substringAfterLast('/')
+            return StoreFiles(name, name.removeSuffix(".ipr") + ".iws")
+        }
+        val folder = path.substringBeforeLast('/', "")
+        val relative = if (Regex("/\\.idea(/|$)").containsMatchIn(folder)) folder.removePrefix(projectFolder(folder)).trim('/') else ""
+        val store = relative.ifEmpty { ".idea" }
+        return StoreFiles("$store/piwi.xml", "$store/workspace.xml")
+    }
+
+    /**
+     * Where a copied MCP configuration is pasted: the agent's MCP settings, the AI Assistant's page named only while
+     * that plugin (`com.intellij.ml.llm`, not bundled) is enabled.
+     */
+    fun mcpPasteWhere(aiAssistant: Boolean): String =
+        if (aiAssistant) "your agent's MCP settings, such as Settings → Tools → AI Assistant → Model Context Protocol" else "your agent's MCP settings"
 
     /** The folders, each once, without those inside another one. */
     fun outermost(folders: List<Path>): List<Path> {
@@ -915,13 +942,13 @@ object Glue {
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
     /**
-     * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
+     * Whose runs say what they changed (`PiwiUserSettings.runNotificationsScope`, VS Code's
      * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
      */
     val RUN_NOTIFICATION_SCOPES = listOf("mine", "mineAndCi")
 
     /**
-     * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
+     * Which failures turn the status item to its alarm, its text in the error color (`PiwiUserSettings.statusBarAlert`,
      * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
      */
     val STATUS_BAR_ALERTS = listOf("new", "any", "never")

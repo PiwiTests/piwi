@@ -155,8 +155,8 @@ object PiwiCommands {
      * with the failures, the run's page and **Re-run failing** one click away.
      */
     fun runEnded(project: Project, ended: RunEnded) {
-        val local = project.service<PiwiProjectService>().local()
-        val verdict = Glue.runVerdict(ended, local.runNotifications, local.runNotificationsScope) ?: return
+        val user = PiwiUserSettings.state()
+        val verdict = Glue.runVerdict(ended, user.runNotifications, user.runNotificationsScope) ?: return
         val notification = PiwiNotifier.create(
             PiwiNotice.RESULT,
             com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(verdict.text),
@@ -172,7 +172,7 @@ object PiwiCommands {
                         Glue.OPEN_IN_DASHBOARD -> ended.url?.let { BrowserUtil.browse(it) }
                         Glue.RERUN_FAILING -> rerunFailing(project)
                         Glue.ONLY_ON_FAILURE -> {
-                            project.service<PiwiProjectService>().local().runNotifications = "failures"
+                            PiwiUserSettings.state().runNotifications = "failures"
                             PiwiNotifier.confirm(project, Glue.ONLY_ON_FAILURE_SET)
                         }
                     }
@@ -192,8 +192,8 @@ object PiwiCommands {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
-            val local = service.local()
-            val started = Glue.withRunStart(args, local.runHeaded, local.runHoldFailures)
+            val user = service.user()
+            val started = Glue.withRunStart(args, user.runHeaded, user.runHoldFailures)
             val withBreakpoints = if (breakpoints.isEmpty()) started else started.copy(breakpoints = breakpoints.map { it.place })
             val server = service.server()
             val command = server?.runArgs(withBreakpoints)?.orNull()
@@ -289,7 +289,7 @@ object PiwiCommands {
         val address = if (pauses) PiwiSendHandler.runPairing() else null
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
         val args = Glue.playwrightTestArgs(line)
-        if (args != null && project.service<PiwiProjectService>().local().playwrightRunner && PlaywrightRunnerGate.available()) {
+        if (args != null && PiwiUserSettings.state().playwrightRunner && PlaywrightRunnerGate.available()) {
             val ref = command.ref
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its

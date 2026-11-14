@@ -43,8 +43,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
 - **The settings page's group titles and choice labels are the editor service's settings registry**
-  (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option's default is its field's in
-  `PiwiLocalSettings` or `PiwiSettings`; `GlueTest` holds the copy and the defaults to the file.
+  (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
+  its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
+  level); `GlueTest` holds the copy, the scopes and the defaults to the file.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
@@ -88,8 +89,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The API key lives in the IDE's `PasswordSafe`, per instance** (`Glue.apiKeyEntry`). A project's settings
   (`.idea/piwi.xml`), which a repository may commit, never select another instance's key.
   ([Settings and secrets](ARCHITECTURE.md#settings-and-secrets))
-- **Choices made on this machine live in `.idea/workspace.xml`** (`PiwiLocalSettings`). Choosing the desktop app never
-  changes the instance, its project or its key.
+- **A person's own options hold in every project, each change handed and drawn again in every open project**
+  (`PiwiUserSettings.changed`, also on a reload of the IDE's settings); this project's choices live in
+  `.idea/workspace.xml` (`PiwiLocalSettings`). Choosing the desktop app never changes the instance, its project or its
+  key.
 - **A text from a run never renders as HTML, and an image from a run is sized before it is decoded.** Labels set
   `html.disable`, and a tooltip goes through `Glue.htmlTooltip`, which escapes it: the platform renders every
   component's tooltip as HTML. A filmstrip image is decoded only once its JPEG header names a size within twice a

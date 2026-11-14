@@ -281,8 +281,6 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
-/** Whether the coverage marks are shown (the default) or hidden with Show or hide the coverage marks: workspace state. */
-const COVERAGE_SHOWN = 'piwi.coverageShown';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -530,8 +528,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone,
-  // and a flaky test, which the view shows as passed, says so after its line.
+  // While the Testing view lists Piwi's tests, its gutter shows their results; with it or with `piwi.gutterIcons` off,
+  // the test's line keeps the hover alone, and a flaky test, which no Piwi icon marks, says so after its line.
   const testHover = vscode.window.createTextEditorDecorationType({});
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
@@ -553,6 +551,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const tests = testDecorations(lines);
     // `piwi.failingTestTint` off leaves a failing test and its failing line untinted; the gutter still marks them.
     const tinted = vscode.workspace.getConfiguration('piwi').get<boolean>('failingTestTint') ?? true;
+    // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, the test's line keeps the hover.
+    const icons = !explorer && (vscode.workspace.getConfiguration('piwi').get<boolean>('gutterIcons') ?? true);
     gutter.set(document.uri.toString(), tests);
     const hovered = (shown: TestDecoration[]) =>
       shown
@@ -564,12 +564,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         });
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
-        editor.setDecorations(type, explorer ? [] : hovered(tests.filter((t) => t.status === status)));
+        editor.setDecorations(type, icons ? hovered(tests.filter((t) => t.status === status)) : []);
       }
-      editor.setDecorations(testHover, explorer ? hovered(tests) : []);
+      editor.setDecorations(testHover, icons ? [] : hovered(tests));
       editor.setDecorations(
         flakyMark,
-        explorer
+        !icons
           ? tests
               .filter((t) => t.status === 'flaky' && t.line < document.lineCount)
               .map((t) => document.lineAt(t.line).range)
@@ -673,11 +673,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(coverageRun, coverageNotRun, coverageChanged, uncoveredChange);
   /** Each file's `piwi/coverage` answer, by URI: the one the service pushes changes against. */
   const coverage = new Map<string, CoverageResult>();
-  let coverageShown = context.workspaceState.get<boolean>(COVERAGE_SHOWN, true);
+  /** `piwi.coverageMarks`: each person's own, which **Piwi: Show or hide the coverage marks** writes. */
+  const coverageShown = () => vscode.workspace.getConfiguration('piwi').get<boolean>('coverageMarks') ?? true;
   /** Whether a file shows coverage marks: the command that hides them is offered from then on. */
   let coverageKnown = false;
   const drawCoverage = (document: vscode.TextDocument) => {
-    const marks = coverageDecorations(coverage.get(document.uri.toString()), document.lineCount, coverageShown);
+    const marks = coverageDecorations(coverage.get(document.uri.toString()), document.lineCount, coverageShown());
     const ranges = (spans: Array<{ start: number; end: number }>) =>
       spans.map((s) => new vscode.Range(s.start, 0, s.end, 0));
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
@@ -1526,9 +1527,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.toggleCoverage', async () => {
-      coverageShown = !coverageShown;
-      await context.workspaceState.update(COVERAGE_SHOWN, coverageShown);
-      for (const editor of vscode.window.visibleTextEditors) drawCoverage(editor.document);
+      await vscode.workspace
+        .getConfiguration('piwi')
+        .update('coverageMarks', !coverageShown(), vscode.ConfigurationTarget.Global);
     }),
     vscode.commands.registerCommand('piwi.stopFollowingEditor', () => failuresView.toggleFollow()),
     // From the failures view, a failure; from a quick fix, the failure it names.
@@ -1798,7 +1799,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
-      if (e.affectsConfiguration('piwi.failingTestTint')) decorateVisible();
+      if (e.affectsConfiguration('piwi.failingTestTint') || e.affectsConfiguration('piwi.gutterIcons'))
+        decorateVisible();
+      if (e.affectsConfiguration('piwi.coverageMarks')) {
+        for (const editor of vscode.window.visibleTextEditors) drawCoverage(editor.document);
+      }
       if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {
@@ -2074,7 +2079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     gutter: (uri) => gutter.get(uri) ?? [],
     coverage: (uri) => {
       const result = coverage.get(uri);
-      return result ? { result, shown: coverageShown } : null;
+      return result ? { result, shown: coverageShown() } : null;
     },
     testExplorer: () => explorer?.shown() ?? null,
     runSessions: () => runControl.sessions(),

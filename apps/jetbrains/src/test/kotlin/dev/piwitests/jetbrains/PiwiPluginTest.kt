@@ -432,11 +432,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
-            // The agent signing in to Piwi's MCP server through the instance, chosen on this machine.
-            service.local().mcpAuthorization = "sign-in"
+            // The agent signing in to Piwi's MCP server through the instance, the person's own choice in every project.
+            service.user().mcpAuthorization = "sign-in"
             assertEquals("sign-in", service.credentials().mcpAuthorization)
         } finally {
-            service.local().mcpAuthorization = "key"
+            service.user().mcpAuthorization = "key"
             service.saveCredentials("https://b.example", "", null)
             service.disconnect()
         }
@@ -862,13 +862,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
             .build()
         fun event() = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
         val action = ActionManager.getInstance().getAction("Piwi.RunHeaded") as com.intellij.openapi.actionSystem.ToggleAction
-        val local = project.service<PiwiProjectService>().local()
+        val user = project.service<PiwiProjectService>().user()
         assertFalse(action.isSelected(event()))
         action.setSelected(event(), true)
-        assertTrue(local.runHeaded)
+        assertTrue(user.runHeaded)
         assertTrue(action.isSelected(event()))
         action.setSelected(event(), false)
-        assertFalse(local.runHeaded)
+        assertFalse(user.runHeaded)
     }
 
     /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */

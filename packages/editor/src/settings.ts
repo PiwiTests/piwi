@@ -41,3 +41,19 @@ export function vscodeScope(setting: EditorSetting): 'application' | 'window' {
 export function choiceLabel(choice: SettingChoice, editor: Editor): string {
   return typeof choice.label === 'string' ? choice.label : choice.label[editor];
 }
+
+const SETTINGS_DOCS_URL = 'https://piwitests.dev/reference/editor-settings';
+
+/**
+ * The address of a group's section on the docs' Editor settings page, which lists every option: its heading's anchor as
+ * the docs site writes it (`Agents (MCP)`, `#agents-mcp`). The JetBrains plugin's `SettingsWords.docsUrl` gives the
+ * same addresses.
+ */
+export function settingsDocsUrl(group: string): string {
+  const title = SETTING_GROUPS.find((g) => g.id === group)?.title ?? group;
+  const anchor = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${SETTINGS_DOCS_URL}#${anchor}`;
+}

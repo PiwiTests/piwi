@@ -1,13 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { choiceLabel, EDITOR_SETTINGS, SETTING_GROUPS, vscodeScope } from '@piwitests/editor/settings';
+import { choiceLabel, EDITOR_SETTINGS, SETTING_GROUPS, settingsDocsUrl, vscodeScope } from '@piwitests/editor/settings';
 
 interface ManifestSetting {
   type: string;
   default: unknown;
   order: number;
   scope: string;
+  markdownDescription: string;
   enum?: string[];
   enumItemLabels?: string[];
 }
@@ -41,6 +42,14 @@ describe('the settings', () => {
           setting.choices?.map((c) => c.value),
           setting.choices?.map((c) => choiceLabel(c, 'vscode')),
         ]);
+      }
+    }
+  });
+
+  test('each end on a link to its group on the docs’ Editor settings page', () => {
+    for (const [i, group] of SETTING_GROUPS.entries()) {
+      for (const [key, entry] of Object.entries(groups[i]!.properties)) {
+        expect(entry.markdownDescription.endsWith(` [Documentation](${settingsDocsUrl(group.id)})`), key).toBe(true);
       }
     }
   });

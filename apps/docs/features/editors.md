@@ -95,8 +95,8 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
 connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: VS Code's
-`mcp.json` or Cursor's `mcpServers`, as you choose; the AI Assistant's in a JetBrains IDE, an `mcpServers` entry
-running `mcp-remote`. It holds your API key: keep it out of the repository.
+`mcp.json` or Cursor's `mcpServers`, as you choose; in a JetBrains IDE, an `mcpServers` entry running `mcp-remote`,
+for your agent's MCP settings (the AI Assistant's, when it is installed and enabled). It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
 to `sign-in` (**Settings → Tools → Piwi → Agents (MCP)** in a JetBrains IDE): the server comes without a key, and the
@@ -121,12 +121,11 @@ window's runs are), `unattended-resumed` (a test stopped where nobody attends th
 (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
 
 VS Code's Piwi settings come in five groups, Connection, Runs, In the editor, Agents (MCP) and Advanced, as JetBrains'
-settings page does. **In the editor** chooses the lines Piwi writes above the code (`piwi.codeLens`: every one, a
-failure's and an uncovered change's alone, or none; a test's gutter mark stays), and turns off the brittle locators'
-warnings (`piwi.locatorWarnings`), the failing test's tint (`piwi.failingTestTint`) and the CI positions
-(`piwi.ciPositions`). Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
+settings page does: [Editor settings](/reference/editor-settings) lists each one, what the editor shows among them.
+Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
 every workspace: a repository's `.vscode/settings.json` sets only the instance and the project, the failure severity,
-serving runs to agents and Piwi's tests in the Testing view.
+serving runs to agents and Piwi's tests in the Testing view. A JetBrains IDE keeps the same choices in its own
+settings, for every project, and the failure severity and serving runs to agents for each project.
 
 ## Commands
 

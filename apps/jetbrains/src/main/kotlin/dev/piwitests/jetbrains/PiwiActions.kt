@@ -462,11 +462,11 @@ class RunSelectionAction : AnAction(), DumbAware {
                             val service = project.service<PiwiProjectService>()
                             val breakpoints = service.breakpoints()
                             val places = breakpoints.map { it.place }.ifEmpty { null }
-                            val local = service.local()
+                            val user = service.user()
                             val params = Glue.withRunStart(
                                 RunSelectionParams(uri, picked.key, places),
-                                local.runHeaded,
-                                local.runHoldFailures,
+                                user.runHeaded,
+                                user.runHoldFailures,
                             )
                             val command = server?.runSelection(params)?.orNull()
                             if (command != null) PiwiCommands.startRun(project, command, breakpoints)
@@ -480,42 +480,43 @@ class RunSelectionAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Turn headed runs on or off — every run Piwi starts in this project runs headed (`RunTestsArgs.headed`), a verification's too;
- * kept on this machine, as **Settings → Tools → Piwi** shows it.
+ * Piwi: Turn headed runs on or off — every run Piwi starts runs headed (`RunTestsArgs.headed`), a verification's too;
+ * each person's own, in every project (`PiwiUserSettings`), as **Settings → Tools → Piwi** shows it.
  */
 class RunHeadedAction : ToggleAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    override fun isSelected(e: AnActionEvent): Boolean = e.project?.service<PiwiProjectService>()?.local()?.runHeaded ?: false
+    override fun isSelected(e: AnActionEvent): Boolean = PiwiUserSettings.state().runHeaded
 
     override fun setSelected(e: AnActionEvent, state: Boolean) {
-        e.project?.service<PiwiProjectService>()?.local()?.runHeaded = state
+        PiwiUserSettings.state().runHeaded = state
     }
 }
 
 /**
- * Piwi: Hold failures from each run's start… — Auto, On or Off for every run Piwi starts in this project
- * (`Glue.HOLD_FAILURES_CHOICES`), kept on this machine, as **Settings → Tools → Piwi** shows it.
+ * Piwi: Hold failures from each run's start… — Auto, On or Off for every run Piwi starts
+ * (`Glue.HOLD_FAILURES_CHOICES`), each person's own, in every project (`PiwiUserSettings`), as **Settings → Tools → Piwi**
+ * shows it.
  */
 class RunHoldFailuresAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val local = project.service<PiwiProjectService>().local()
-        val current = local.runHoldFailures
+        val user = PiwiUserSettings.state()
+        val current = user.runHoldFailures
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
             .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
             .setSelectedValue(current, true)
             .setTitle("Hold failures from each run's start")
-            .setItemChosenCallback { local.runHoldFailures = it }
+            .setItemChosenCallback { user.runHoldFailures = it }
             .createPopup()
             .showCenteredInCurrentWindow(project)
     }
 }
 
-/** Piwi: Copy the MCP server configuration — for the AI Assistant's MCP settings and other agents. */
+/** Piwi: Copy the MCP server configuration — for an agent's MCP settings. */
 class CopyMcpConfigurationAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -545,8 +546,8 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
                 CopyPasteManager.getInstance().setContents(StringSelection(Glue.mcpConfiguration(servers)))
                 PiwiNotifier.confirm(
                     project,
-                    ("The MCP configuration is on the clipboard: paste it in Settings → Tools → AI Assistant → Model " +
-                        "Context Protocol (or your agent's MCP settings). ${Glue.mcpAuthorizationNote(servers)}").trimEnd(),
+                    ("The MCP configuration is on the clipboard: paste it in ${Glue.mcpPasteWhere(aiAssistantEnabled())}. " +
+                        Glue.mcpAuthorizationNote(servers)).trimEnd(),
                 )
             }
         }
@@ -558,28 +559,34 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             properties.setValue(OFFERED, true)
             PiwiNotifier.create(
                 PiwiNotice.OFFER,
-                "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
+                "Add Piwi's MCP server to your agent? It can read your suite's failures, flaky tests and healings.",
             )
                 .addAction(NotificationAction.createSimpleExpiring("Copy the configuration") { copyMcpConfiguration(project) })
                 .notify(project)
         }
 
         private const val OFFERED = "piwi.mcpOffered"
+
+        /** Whether the JetBrains AI Assistant is installed and enabled, whose MCP settings the notices then name. */
+        fun aiAssistantEnabled(): Boolean {
+            val id = com.intellij.openapi.extensions.PluginId.getId("com.intellij.ml.llm")
+            return com.intellij.ide.plugins.PluginManagerCore.isPluginInstalled(id) && !com.intellij.ide.plugins.PluginManagerCore.isDisabled(id)
+        }
     }
 }
 
 /**
  * Piwi: Copy the runs' MCP server configuration — for an agent of this machine to follow, stop and act on the test
  * runs this project starts (the editor service's own MCP server, `piwi/agents`), bridged through `mcp-remote` for an
- * agent that starts only commands (the AI Assistant's settings). The platform has no public way to register an MCP
- * server for the AI Assistant, so the person pastes it.
+ * agent that starts only commands (the AI Assistant's settings among them). The platform has no public way to register
+ * an MCP server for an agent, so the person pastes it.
  */
 class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        copyRunsMcp(project, "Settings → Tools → AI Assistant → Model Context Protocol, or your agent's MCP settings", Glue::runsMcpConfiguration)
+        copyRunsMcp(project, Glue.mcpPasteWhere(CopyMcpConfigurationAction.aiAssistantEnabled()), Glue::runsMcpConfiguration)
     }
 
     companion object {
