@@ -78,6 +78,13 @@ pull-request feedback and the AI diagnosis all read it, and so do the environmen
 failing execution. Which run it is, and what happens when none passed: [The baseline](/features/run-changes#the-baseline).
 The default and base branches it falls back to: [Branches](/features/branches).
 
+### New regression, newly flaky
+
+**What a test did differently from the [baseline](#baseline-last-green-run)**: a **new regression** fails here and
+passed there; a **newly flaky** test passed here only on a retry and passed at its first attempt there. Both name a
+change between two runs, not its cause: a newly flaky test can be your change or an old flake. How to tell:
+[What newly flaky says about your change](/features/run-changes#what-newly-flaky-says-about-your-change).
+
 ### Environment
 
 A free-text label on a run (`production`, `staging`, a preview URL, whatever you use), set with the reporter's

@@ -56,7 +56,7 @@ strongest thing the dashboard does, so the posture is conservative by design.
   fixtures**, which record the snapshots every edit but a diff rename comes from.
 - An **SCM token with write scope**, resolved as [Source control](/guide/source-control#set-the-token) describes: a per-project token, falling back
   to the global one. It needs:
-  - **GitHub** — `repo` (classic), or a fine-grained token with `contents: write` + `pull_requests: write`.
+  - **GitHub** — `repo` (classic), or a fine-grained token with **Contents: write** + **Pull requests: write**.
   - **GitLab** — `api`.
   - **Bitbucket** — an access token that can write to the repository. Bitbucket Cloud has no draft pull requests, so
     the draft setting is ignored there.

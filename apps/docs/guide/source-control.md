@@ -70,7 +70,7 @@ only to a host you named. A run without a remote URL has nothing to diff.
 
 | Host | Read features | Write features |
 |---|---|---|
-| GitHub | read access to repository contents | `repo` (classic), or fine-grained `contents: write` and `pull_requests: write`; `actions: write` (classic `workflow`) for re-runs |
+| GitHub | read access to repository contents | `repo` (classic), or fine-grained **Contents: write**, **Pull requests: write** and **Commit statuses: write**; **Actions: write** for re-runs |
 | GitLab | `read_api` | `api` |
 | Bitbucket | repository read | repository write; `pullrequest` for pull-request comments; `pipeline:write` for re-runs |
 
