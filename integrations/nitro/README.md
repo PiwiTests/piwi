@@ -4,7 +4,7 @@ Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captu
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in the Piwi Dashboard, and are included in the AI diagnosis context.
 
-**Active in development and test only, by default.** Capture and probe verification run only outside production, using the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
+**Active in development and test only, by default.** Capture and probe verification run only when `NODE_ENV` is `development` or `test`, the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
 - unset — capture is on when `NODE_ENV` is `development` or `test`; off for any other value (`production`, `staging`, `prod`, …) and when `NODE_ENV` is not set at all, as when a built server is started with `node .output/server/index.mjs`
 - `PIWI_TEST_LOGS_DISABLED=true` — capture is off everywhere
@@ -32,7 +32,7 @@ That's all. Nitro auto-loads every file in that directory on startup (`server/pl
 
 ## Route manifest
 
-Outside production, the plugin serves `GET /__piwi/manifest`: the routes the app declares. The Piwi reporter fetches it when a run starts and uploads it, so a declared route no test reaches becomes a **declared, never hit** gap in the Test Map. Nitro has no route table to read while it runs, so add the package's module, which reads it when the server is bundled (again on each rebuild in development):
+While capture is on, the plugin serves `GET /__piwi/manifest`: the routes the app declares. The Piwi reporter fetches it when a run starts and uploads it, so a declared route no test reaches becomes a **declared, never hit** gap in the Test Map. Nitro has no route table to read while it runs, so add the package's module, which reads it when the server is bundled (again on each rebuild in development):
 
 ```typescript
 // Standalone Nitro: nitro.config.ts
@@ -151,8 +151,8 @@ path. A verified header is always recorded on the request scope
 (`event.context._piwiProbe`); a fault is **applied** only when the server runs with
 `PIWI_SERVER_PROBES=true`, off by default, and the project has server probes on in the dashboard.
 
-The header is honored only outside production, under the **same guard as log
-capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
+The header is honored only while capture is on, under the **same guard as log
+capture** (`NODE_ENV` and `PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
 
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|

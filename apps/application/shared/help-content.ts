@@ -524,7 +524,7 @@ export const HELP_TOPICS = {
     doc: 'features/branches#the-project-status',
   },
   'project.url-patterns': {
-    title: 'Browser extension URLs',
+    title: 'URL patterns',
     text: [
       'The addresses this project’s application is served at, as patterns over the whole URL: `*` matches within one path segment, `**` across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there.',
       '',

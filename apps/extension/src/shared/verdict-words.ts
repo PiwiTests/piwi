@@ -27,7 +27,7 @@ export interface VerdictInput {
 export type VerdictTone = 'good' | 'warn';
 
 export interface VerdictWords {
-  /** One or two words: `stable`, `brittle`, `could break`, `unique by position`, `3 matches`, `not checked`. */
+  /** One or two words: `stable`, `brittle`, `watch`, `unique by position`, `3 matches`, `not checked`. */
   word: string;
   /** Good for a locator finding the element alone that no rule calls brittle; a warning otherwise. */
   tone: VerdictTone;

@@ -21,6 +21,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
@@ -43,6 +44,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.Icon
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JTree
 import javax.swing.SwingUtilities
@@ -62,10 +64,10 @@ import javax.swing.tree.TreePath
  * where the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
  * config's (Re-run the failing tests, Compare with…, Open in dashboard, for that config); Next and Previous Occurrence
  * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
- * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, the Group
- * by menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
- * configurations, Reload Piwi, the settings and Documentation are in the gear menu. The tab is Failures, and the tool
- * window's icon has a red dot while tests fail.
+ * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, Group
+ * the failures by…, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the
+ * MCP configurations, Read the instance and the configs again, the settings and Open the documentation are in the gear
+ * menu. The tab is Failures, and the tool window's icon has a red dot while tests fail.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -248,7 +250,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 actions.getAction("Piwi.RerunFailing"),
                 actions.getAction("Piwi.OpenInDashboard"),
                 actions.getAction("Piwi.CompareWith"),
-                groupByMenu(service),
+                actions.getAction("Piwi.GroupFailuresBy"),
                 Separator.getInstance(),
                 common.createPrevOccurenceAction(panel),
                 common.createNextOccurenceAction(panel),
@@ -327,17 +329,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
     }
 
-    /** **Group by**: the toolbar's one drop-down of the groupings, one of them checked. */
-    private fun groupByMenu(service: PiwiProjectService): DefaultActionGroup =
-        DefaultActionGroup("Group by", true).apply {
-            templatePresentation.icon = AllIcons.Actions.ShowAsTree
-            templatePresentation.description = "Group the failures by file, cluster or owner, or list them flat"
-            add(GroupFailuresAction(service, "file", "File"))
-            add(GroupFailuresAction(service, "cluster", "Cluster"))
-            add(GroupFailuresAction(service, "owner", "Owner"))
-            add(GroupFailuresAction(service, "flat", "Flat"))
-        }
-
     /**
      * The tool window's gear menu: the connection, Piwi Picker's pairing, the MCP configurations, and the reading, the
      * editor service, its log, the settings of Piwi itself and its documentation.
@@ -351,23 +342,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             addAll(registered("Piwi.PairPicker", "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration"))
             addSeparator()
             addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings", "Piwi.OpenDocumentation"))
-        }
-    }
-
-    /** One way to group the failures, in the Group by menu: selecting it keeps it for this project and reads them so grouped. */
-    private class GroupFailuresAction(
-        private val service: PiwiProjectService,
-        private val grouping: String,
-        text: String,
-    ) : ToggleAction(text), DumbAware {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun isSelected(e: AnActionEvent): Boolean = service.local().failuresGrouping == grouping
-
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            if (!state) return
-            service.local().failuresGrouping = grouping
-            service.regroup()
         }
     }
 
@@ -622,4 +596,53 @@ class FindBreakingCommitAction : FailureNodeAction(PiwiIcons.BISECT) {
     override fun applies(project: Project, failure: WorkspaceFailure) = desktop(project, failure)
 
     override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "bisect")
+}
+
+/**
+ * **Group the failures by…**: the groupings of the Piwi tool window's failures in a popup, the current one checked,
+ * under its toolbar button or where the action was asked for (Tools → Piwi, Find Action, a key). Enabled while
+ * connected, as Refresh the latest run is.
+ */
+class GroupFailuresByAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>() ?: return
+        val groupings = DefaultActionGroup(
+            GroupFailuresAction(service, "file", "File"),
+            GroupFailuresAction(service, "cluster", "Cluster"),
+            GroupFailuresAction(service, "owner", "Owner"),
+            GroupFailuresAction(service, "flat", "Flat"),
+        )
+        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+            "Group the failures by",
+            groupings,
+            e.dataContext,
+            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+            true,
+        )
+        val button = e.inputEvent?.component
+        if (e.isFromActionToolbar && button is JComponent) popup.showUnderneathOf(button) else popup.showInBestPositionFor(e.dataContext)
+    }
+
+    /** One way to group the failures: selecting it keeps it for this project and reads them so grouped. */
+    private class GroupFailuresAction(
+        private val service: PiwiProjectService,
+        private val grouping: String,
+        text: String,
+    ) : ToggleAction(text), DumbAware {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean = service.local().failuresGrouping == grouping
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            if (!state) return
+            service.local().failuresGrouping = grouping
+            service.regroup()
+        }
+    }
 }

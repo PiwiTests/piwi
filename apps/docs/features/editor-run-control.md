@@ -21,7 +21,7 @@ answer the same stops; the code a stop writes is on [Code from a pause](./editor
 | **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Pause Program's |
 | **Resume** | Runs the stopped test on to the next breakpoint | `F5` | Resume Program's, `F9` |
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
-| **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
+| **Run to the cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | **Stop the run**, or the Run tool window's Stop |
@@ -32,14 +32,14 @@ test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcut
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls are in the Piwi item's menu while they apply, after **Go to the stopped line**, in the
-  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under `…`).
+  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, others under `…`).
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
   whose text says why and where a test stopped.
 
 The item's line comes from the run, so it counts offline and with the desktop app
 ([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
 
-**Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
+**Pause** stops every run Piwi started in this window (a JetBrains IDE's project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
 finishes first ([End the test](./end-the-test#while-a-pause-waits-for-a-call) gives up a locator call at once), and a
 worker between tests stops at the next test's first call. A test that never stops, under CI or
@@ -53,7 +53,7 @@ line, and marks it:
 an arrow in the gutter, the debugger's execution point color, and above it the call, as Playwright names it, with the
 controls:
 
-`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish  End test
+`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to the cursor  Finish  End the test
 
 It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. VS Code's CodeLens holds Resume, Step, Finish and **Write code…**, its hover all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
@@ -61,7 +61,7 @@ the arrow's click lists the controls, and the color is **Settings → Editor →
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, and Resume, Step and Finish above the line">
+  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to the cursor and Finish, and Resume, Step and Finish above the line">
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
@@ -72,13 +72,13 @@ cursor's line, else the only one shown, else it asks which. A control answers th
 went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
-**Run to cursor** in an edited file runs to the run's line for the cursor's, or says a line written since has none.
+**Run to the cursor** in an edited file runs to the run's line for the cursor's, or says a line written since has none.
 
 ## A headless run
 
-A run Piwi starts follows your config, headless by default, unless you choose
-[**Run headed**](./editor-runs#how-a-run-starts) or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
-Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to cursor** from the editor
+A run Piwi starts follows your config, headless by default, unless you turn
+[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
+Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to the cursor** from the editor
 waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
 opens it at any stop.
 

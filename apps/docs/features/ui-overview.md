@@ -73,7 +73,7 @@ header and every tab that reads run history; with no branch picked it reads the
   [AI instructions](./ai-diagnosis#custom-instructions), the [live view](./live-view),
   [capabilities](/operate/capabilities), coverage, [targets](./analytics#targets), the
   [issue tracker](./issue-tracking), [CI](./ci-rerun), keys in test tags, [test management](./test-management),
-  [browser extension URLs](./extension-connection#url-patterns) and, in the desktop app, the
+  [URL patterns](./extension-connection#url-patterns) and, in the desktop app, the
   [local folder](./desktop#running-tests-from-the-app).
 
 ## Locators

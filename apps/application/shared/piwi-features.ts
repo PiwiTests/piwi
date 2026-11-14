@@ -650,7 +650,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
         needs: ['fixtures'],
         where:
-          "End test on the stopped line's CodeLens, Piwi: End the test; Tools → Piwi → End the test in a JetBrains IDE",
+          "End the test in the stopped line's hover, Piwi: End the test; Tools → Piwi → End the test in a JetBrains IDE",
         doc: 'features/end-the-test',
       },
       {
@@ -802,8 +802,17 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend', 'editor'],
         where:
-          'Application files in the editor; Piwi: Show or hide the coverage marks in VS Code, Tools → Piwi → Show coverage marks in a JetBrains IDE',
+          'Application files in the editor; Piwi: Show or hide the coverage marks, under Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-coverage',
+        part: 'Read results',
+      },
+      {
+        title: 'CI runs in your editor',
+        summary:
+          "A CI run of your branch while it runs, read-only beside your own: its tests and progress, the line each running test is at, and its pages from the team instance's live view.",
+        needs: ['editor'],
+        where: "The CI Runs view of VS Code's Piwi panel; the CI run tab of the Piwi tool window in a JetBrains IDE",
+        doc: 'features/editor-ci-runs',
         part: 'Read results',
       },
       {
@@ -834,7 +843,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
         needs: ['extension'],
-        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
+        where: 'Browser extension → Settings; Project → Settings → Browser extension → URL patterns',
         doc: 'features/extension-connection',
         part: 'Set up',
       },
@@ -843,7 +852,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
         needs: ['extension', 'editor'],
-        where: 'Browser extension → Settings → Send to editor',
+        where: 'Browser extension → Settings → Editor',
         doc: 'features/editor-pairing',
         part: 'Set up',
       },

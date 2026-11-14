@@ -141,11 +141,11 @@ test('pauses, steps and resumes a run from the Runs window, with the image of th
         type: 'answer',
         request: record.request,
         what: 'record',
-        value: { ok: false, message: 'Record here waits: a pick runs in the test’s window.' },
+        value: { ok: false, message: 'Record waits: a pick runs in the test’s window.' },
       });
-      await expect(card.locator('.answer')).toHaveText('Record here waits: a pick runs in the test’s window.');
+      await expect(card.locator('.answer')).toHaveText('Record waits: a pick runs in the test’s window.');
       // A refusal is read out too.
-      await expect(runs.locator('#announce')).toHaveText('Record here waits: a pick runs in the test’s window.');
+      await expect(runs.locator('#announce')).toHaveText('Record waits: a pick runs in the test’s window.');
 
       // Step, with the keyboard: the worker runs the call and stops before the next one, whose image is asked for in
       // turn. The focus stays on Step while the command is on its way, is on Pause while the test runs, and on Step

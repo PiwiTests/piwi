@@ -132,7 +132,7 @@ or at a failure held for a look. Each tool names it by why it stopped, in the sa
 
 **The call a running test of a CI run is at, in your code:** a plain, read-only mark at the end of its line in the
 editors. Never a stop: nothing waits there, and no tool answers it. Which CI runs the editor and Piwi Picker follow:
-[A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch).
+[A CI run of your branch](/features/editor-ci-runs).
 
 ### Hold failures
 

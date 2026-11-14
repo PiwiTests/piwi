@@ -19,22 +19,23 @@ are on [Pause and step from the editor](./editor-run-control).
 | Action | What is written | Where it runs |
 |---|---|---|
 | **Pick a locator** | The locator of the element you pick, in place of the locator chain on the stopped line | The test's window, as the pause bar's [Pick a locator](./editor-breakpoints#where-the-pick-lands) |
-| **Record here** | The steps you take, above the stopped line | The test's window, as the bar's [Record here](./editor-breakpoints#record-from-a-pause) |
+| **Record** | The steps you take, above the stopped line | The test's window, as the bar's [Record](./editor-breakpoints#record-from-a-pause) |
 | **Assert** | The check you choose in the recorder's check panel, `await expect(…).toHaveText(…)` and the like | The test's window |
 | **Assert a region** | `await expect(…).toMatchAriaSnapshot(…)` with the ARIA snapshot of the region you pick | The test's window |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
-From the editor, the first four need the pause bar, so a headed browser: choose **Run headed**
+From the editor, the first four need the pause bar, so a headed browser: turn headed runs on
 ([How a run starts](./editor-runs#how-a-run-starts)). At a headless stop, Piwi Picker's
 [Runs window](./runs-window#code-from-a-stop) runs them through the page it watches. **Mock a request** works
 headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
-  in the palette while a stop offers them (**Piwi: Assert at the stop**, **Piwi: Mock a request at the
-  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
+  in the palette while a stop offers them (**Piwi: Pick a locator at the stop**, **Piwi: Record at the stop**,
+  **Piwi: Assert at the stop**, **Piwi: Assert a region at the stop**, **Piwi: Mock a request at the stop…**), and
+  behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
 - **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
-  bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**).
+  bar item's menu, and under **Tools → Piwi** with the same titles as VS Code's palette.
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search
 `piwi`). A stop offers only the actions its reporter takes: with one that predates them, none.
@@ -136,6 +137,6 @@ and the editor shows nothing of it.
 ## Related
 
 - [Pause and step from the editor](./editor-run-control): the controls, the paused line, a headless test's page.
-- [Breakpoints in the browser](./editor-breakpoints): the pause bar, Pick a locator and Record here.
+- [Breakpoints in the browser](./editor-breakpoints): the pause bar, Pick a locator and Record.
 - [Mock and slow down requests](./mock-requests): the same mocks from Piwi Picker's Network tab.
 - [Recorded code](./recorded-code): what a recording writes, and how the config shapes it.

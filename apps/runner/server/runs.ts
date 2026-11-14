@@ -18,7 +18,7 @@ export const RUNNER_RUNS_WORDS: ShellRunsWords = {
       "Pick a locator in the test's window sends the locator to an editor, and Piwi Runner has none: pick on the " +
       'image of the stop instead, which answers with the locator.',
     record:
-      'Record here records into an editor, and Piwi Runner has none: run the test from VS Code or a JetBrains IDE ' +
+      'Record writes into an editor, and Piwi Runner has none: run the test from VS Code or a JetBrains IDE ' +
       'to record from its stop.',
     assert:
       "Assert makes its check with an editor's recorder, and Piwi Runner has none: assert a region instead, or run " +

@@ -202,7 +202,7 @@ test.describe('Pair with the desktop app', () => {
     await page.getByLabel('Address of the desktop app').fill(gone);
     await pair.click();
     await expect(page.locator('#desktop-status')).toHaveText(
-      `Nothing answers at ${gone}. Is the desktop app running? Its Setup page shows its address.`,
+      `Nothing answers at ${gone}. Is the desktop app running? It shows its address in Settings → Desktop app.`,
     );
   });
 
@@ -212,7 +212,9 @@ test.describe('Pair with the desktop app', () => {
     await page.getByLabel('Address of the desktop app').fill(desktop);
     await page.getByText('Pair by hand').click();
     await page.getByRole('button', { name: 'Save and test' }).last().click();
-    await expect(page.locator('#desktop-status')).toHaveText('Paste the token from the app’s Setup page first.');
+    await expect(page.locator('#desktop-status')).toHaveText(
+      'Paste the token first: the app shows it in Settings → Desktop app.',
+    );
 
     await page.getByLabel('Token').fill('pd_wrong');
     await page.locator('#desktop-save').click();

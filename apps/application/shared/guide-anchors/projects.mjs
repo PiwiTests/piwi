@@ -704,7 +704,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'browser-extension' } }],
     describes:
-      'The Browser extension URLs section: the addresses the project’s application runs at, which tell Piwi Picker the project a page belongs to.',
+      'The URL patterns card, in the Browser extension section: the addresses the project’s application runs at, which tell Piwi Picker the project a page belongs to.',
     requires: { permission: 'project:manage' },
     help: 'project.url-patterns',
     doc: 'features/extension-connection#url-patterns',

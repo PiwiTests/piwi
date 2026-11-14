@@ -271,7 +271,7 @@ test.describe('pick results in connected mode', () => {
       'Classés du plus stable au moins stable, ceux qui trouvent cet élément seul en premier',
     );
     await expect(panel.locator('.row .word').first()).toHaveText(
-      /^(stable|peut casser|fragile|unique par sa position|\d+ correspondances?|non vérifié)$/,
+      /^(stable|à surveiller|fragile|unique par sa position|\d+ correspondances?|non vérifié)$/,
     );
     await expect(panel.getByRole('button', { name: /^Tout copier \(\d+\)$/ })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Locator', exact: true }).first()).toBeVisible();

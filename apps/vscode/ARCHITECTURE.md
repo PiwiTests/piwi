@@ -65,7 +65,7 @@ title bars, a view's inline row and a quick pick, not in the palette or a contex
 their command's glyph in the choice among them (`STOP_ACTIONS.icon`). `tests/menus.test.ts` holds both. Piwi's own
 glyphs are those of the product icon font the brand asset generator writes (`media/piwi-icons.woff`,
 `contributes.icons`, ids of two segments as VS Code takes them): `$(piwi-mark)`, which the idle status item and the
-failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing and Reload Piwi glyphs
+failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing and reload glyphs
 (`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-stop-live)`, `$(piwi-reload)`), and Run to the cursor's
 (`$(piwi-run-to-cursor)`, an arrow into a text caret as the JetBrains platform draws it), at one line weight.
 
@@ -149,10 +149,10 @@ A setting left empty keeps the environment's own variable. A change of one of th
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
 output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
 (`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
-view's welcome offers it while the service does not answer, and so does a Reload Piwi it did not answer. A failed request
-reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
-service is down. The client writes to the extension's own log channel (`outputChannel`), which a restart keeps; a
-service whose first start failed starts again only with the window.
+view's welcome offers it while the service does not answer, and so does **Read the instance and the configs again** when
+it does not answer. A failed request reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and
+the status item and the view say the service is down. The client writes to the extension's own log channel
+(`outputChannel`), which a restart keeps; a service whose first start failed starts again only with the window.
 
 ## Settings and stored state
 
@@ -371,7 +371,8 @@ Every test run takes the person's start options (`withRunStart` in `src/glue.ts`
 `piwi.runHeaded` and `piwi.runHoldFailures` at each run: `headed: true` when Run headed is on, `holdFailures` when Hold
 failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
 Testing view's and Verify ×3 included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
-**Piwi: Run options…** (`piwi.runOptions`) changes them in a QuickPick, writing the workspace's settings when they hold a
+**Piwi: Turn headed runs on or off** (`piwi.toggleRunHeaded`) and **Piwi: Hold failures from each run's start…**
+(`piwi.setRunHoldFailures`) change them, and **Piwi: Run options…** (`piwi.runOptions`) offers both in a QuickPick, writing the workspace's settings when they hold a
 value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
 
 ### Breakpoints
@@ -594,9 +595,9 @@ What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#
 service's reference.
 
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
-`stopActions`): **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a stop the pause bar shows,
+`stopActions`): **Pick a locator**, **Record**, **Assert** and **Assert a region** at a stop the pause bar shows,
 **Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
-Finish (`stopLensControls`): Run to cursor, End test and each action are in its hover, so the row fits beside the line's
+Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits beside the line's
 own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
 (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
 `piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
@@ -684,11 +685,11 @@ the item's own action (a recording's controls follow it), which depends on the s
 - a test is stopped: **Go to the stopped line** (`piwi.showStop`), then the connected state's action;
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`) unless
   it shows the runs' line;
-- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
-  linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
+- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Read the instance and the
+  configs again**, its tooltip linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
-  `retry` action): **Piwi: Reload Piwi**; the service also reads it again as the restarted app rewrites its discovery
-  file;
+  `retry` action): **Piwi: Read the instance and the configs again**; the service also reads it again as the restarted
+  app rewrites its discovery file;
 - not connected: **Piwi: Connect…**;
 - the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
   (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the

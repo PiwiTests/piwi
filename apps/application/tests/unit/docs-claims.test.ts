@@ -278,6 +278,23 @@ describe('quoted editor commands', () => {
     expect(isQuickFix(piwiActionTitle("Use getByTestId('pay')").replace(/^Piwi: /, ''))).toBe(true);
   });
 
+  test('the Editor commands page names every action of both editors', () => {
+    // Each title is a bold span of its own, `**Piwi: X**` or `**X**`, so a title found inside another's words counts not.
+    const named = new Set(
+      [...read('apps/docs/reference/editor-commands.md').matchAll(/\*\*([^*]+)\*\*/g)].map((m) =>
+        normalize(m[1]!).replace(/^Piwi: /, ''),
+      ),
+    );
+    const missing = EDITOR_ACTIONS.filter(
+      (action) =>
+        !named.has(normalize(actionTitle(action, 'vscode'))) && !named.has(normalize(actionTitle(action, 'jetbrains'))),
+    ).map((action) => action.title);
+    expect(
+      missing,
+      'apps/docs/reference/editor-commands.md leaves out these actions of packages/editor/src/actions.ts',
+    ).toEqual([]);
+  });
+
   test.each(handWrittenPages)('%s quotes only commands the editors have', (page) => {
     const quoted = [
       ...read(page)

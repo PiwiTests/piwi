@@ -21,8 +21,11 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 
 ## Desktop app
 
-In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, beside the
-docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
+In the [desktop app](/features/desktop)'s dashboard window. On macOS the menu bar holds the first four with `⌘`, and zoom
+takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in. The macOS menu bar adds Piwi's items to the
+system's: **Settings…** in the app menu, whose **Quit Piwi Desktop** asks first while tests run; **Import Playwright
+report…** in **File**; **Back** and **Forward** in **View**; and **Piwi documentation**, **Report an issue** and
+**Show logs** in **Help**.
 
 | Keys | Action |
 |---|---|

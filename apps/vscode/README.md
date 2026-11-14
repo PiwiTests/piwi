@@ -5,7 +5,8 @@ every run CI throws away, groups the failures by root cause and finds the locato
 brings that into VS Code, Cursor and VSCodium.
 
 **You need a Piwi instance:** the [desktop app](https://piwitests.dev/features/desktop), `npx @piwitests/server` or the
-Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+Docker image. Recording, running a test by its line, and pausing and stepping through it need none. Piwi reads
+Playwright Test suites in JavaScript and TypeScript.
 
 ![The failing line of a page object, with the CI failure as a diagnostic and the heal as a quick fix](https://piwitests.dev/screenshots/vscode-heal.png)
 

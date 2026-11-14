@@ -1548,7 +1548,7 @@ export interface RecordParams {
 
 /**
  * `piwi/recordRequested` (notification, server to client): a test paused in a run the editor started asks to record
- * from there (**Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
+ * from there (**Record** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
  * recording as it starts one at the caret, with `piwi/record` naming `handoff`, without asking anything; a hand-off it
  * does not start within 30 seconds is refused, and the test goes on.
  */
@@ -1838,9 +1838,11 @@ export const RUN_STOP_WORDS: Record<RunStopReason, string> = {
  * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
  * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); End the test at a stop
  * (`end`, `piwi/runControl`); and the run shared live on the team instance (`share`, `piwi/shareRun`). A worker lists
- * Pick a locator only where its run names the client's Send to editor
- * pairing, and Record here and Assert only where it names the record channel, which a run started in a terminal names
- * neither of. An older reporter lists fewer, or none: the service refuses what it does not take.
+ * Pick a locator only where its run names a Send to editor pairing, and Record and Assert only where it names the
+ * record channel. A run started in a terminal that follows an editor names that editor's run channel as its record
+ * channel, and its pairing when the editor's discovery file names one; a run that follows the desktop app names no
+ * record channel, and the app's pairing when the app's discovery file names one. A run that sets its own keeps it. An
+ * older reporter lists fewer, or none: the service refuses what it does not take.
  */
 export type RunTake =
   | 'pick'
@@ -2513,7 +2515,7 @@ export const HUB_REQUEST = 'piwi/hub';
 
 /**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and
- * Record here in the test's window (the locator comes back through the client's Send to editor listener, then
+ * Record in the test's window (the locator comes back through the client's Send to editor listener, then
  * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element
  * there, and `assert-region` the picker, for a region whose ARIA snapshot is read; `mock` makes `page.route(…)` from a
  * response the test kept (`request`, an id `piwi/stopRequests` lists). The code of `assert`, `assert-region` and

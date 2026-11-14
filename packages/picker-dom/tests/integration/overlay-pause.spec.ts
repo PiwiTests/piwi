@@ -30,14 +30,14 @@ test.describe('showPauseBar', () => {
   });
 
   // The controls come first, in the editors' order, then the code a stop can write.
-  test('offers Record here only when the editor can record from the pause', async ({ page }) => {
+  test('offers Record only when the editor can record from the pause', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, ARG);
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
     await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator']);
     await page.evaluate(takePauseState);
     await page.evaluate(showPauseBar, { ...ARG, record: true });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator', 'Record here']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator', 'Record']);
     // Each button draws its control's glyph before its words, hidden from assistive technology.
     const glyphs = bar.locator('button > svg[aria-hidden="true"]');
     await expect(glyphs).toHaveCount(5);
@@ -48,7 +48,7 @@ test.describe('showPauseBar', () => {
       'pick',
       'record',
     ]);
-    await bar.getByRole('button', { name: 'Record here' }).click();
+    await bar.getByRole('button', { name: 'Record' }).click();
     expect(await page.evaluate(takePauseState)).toBe('record');
   });
 

@@ -556,9 +556,9 @@ describe('the commands', () => {
         type: 'answer',
         request: record.request,
         what: 'record',
-        value: { ok: false, message: 'Record here waits: a pick or a recording runs in the test’s window.' },
+        value: { ok: false, message: 'Record waits: a pick or a recording runs in the test’s window.' },
       });
-      expect(await client.answer(5)).toMatchObject({ ok: false, message: expect.stringMatching(/^Record here waits/) });
+      expect(await client.answer(5)).toMatchObject({ ok: false, message: expect.stringMatching(/^Record waits/) });
 
       // A control naming the stop it answers: the next stop is not skipped by a click made twice.
       client.send({ type: 'runControl', id: 6, ref, action: 'step', since: stop.since });
@@ -839,7 +839,7 @@ describe('the commands', () => {
       client.send({ type: 'record', id: 2, ref, since: client.session(ref)!.workers[0]!.stop!.since });
       expect(await client.answer(2)).toMatchObject({
         ok: false,
-        message: "@piwitests/reporter 0.60.0 cannot start Record here from outside the test's window: update it.",
+        message: "@piwitests/reporter 0.60.0 cannot start Record from outside the test's window: update it.",
       });
       expect(worker.heard.filter((m) => m.type === 'request')).toEqual([]);
     } finally {

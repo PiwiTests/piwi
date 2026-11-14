@@ -77,7 +77,7 @@ window forward. The tray menu has:
 - **Quit Piwi Runner**, which stops its runs, after asking.
 
 The window has the same two settings, for a desktop that shows no tray icon (GNOME without an AppIndicator
-extension): turn **Keep running in the tray when the window closes** off there, and closing the window quits.
+extension): turn **Run in background** off there, and closing the window quits.
 
 Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
 taskbar.

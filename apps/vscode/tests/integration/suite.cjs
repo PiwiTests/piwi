@@ -709,8 +709,8 @@ const tests = {
       }, 'the terminal run’s lenses');
       const title = '$(debug-pause) Stopped at a breakpoint · Fill "one" locator(\'input\') · run in a terminal';
       assert.ok(lenses.includes(title), lenses.join(' | '));
-      // End test is in the stop's hover and the palette; the lens row keeps to five entries.
-      assert.ok(!lenses.includes('End test'), lenses.join(' | '));
+      // End the test is in the stop's hover and the palette; the lens row keeps to five entries.
+      assert.ok(!lenses.includes('End the test'), lenses.join(' | '));
       await vscode.commands.executeCommand('piwi.endTest');
       await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
     } finally {

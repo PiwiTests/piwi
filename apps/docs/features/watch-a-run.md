@@ -23,8 +23,8 @@ page elsewhere, which the test's own code could name, is not shown, and the run 
 
 | Where | What it shows |
 |---|---|
-| The terminal | `[Piwi Dashboard] View live progress: https://piwi.example.com/test-runs/78`, once, as the run starts |
-| VS Code | The run-control item: `#78 · 3 of 9`, its tooltip **Open run #78**; the status bar item, while your run goes: **Open run #78 (running)** first in its tooltip; **Piwi: Open the run page** and **Piwi: Open the run in progress** in the Command Palette |
+| The terminal | `[Piwi Dashboard] View live progress: https://piwi.example.com/test-runs/78`, once, at its start |
+| VS Code | The run-control item: `#78 · 3 of 9`, its tooltip **Open run #78**; while your run goes, **Open run #78 (running)** first in the status bar item's tooltip; **Piwi: Open the page of a run of this window** and **Piwi: Open the branch's run in progress** in the palette |
 | JetBrains IDEs | The status bar item: `Piwi: run #78 · 3 of 9`, kept beside a stop or a share; **Open run #78** in its menu; **Open run #78 (running)** in place of **Open the latest run** while it goes |
 | Piwi Picker's [Runs window](./runs-window) | **Run #78**, **Open** and **Copy link** on the run's card, while it runs and after it ended, with its progress and how it ended |
 | The desktop app's [Local runs tray](./desktop-runs) | **Run #78 · Open** under each run of its hub, a run a team instance asked for included, whose page opens in the browser; **Open run #78** on a run the app's own server holds |
@@ -49,7 +49,7 @@ Code, the Testing view's test run of your run writes in its output each test a w
 the line it stands at, and each stop answered.
 
 A run in progress that is not yours, a CI run or a teammate's, shows read-only:
-[A CI run of your branch](./watch-running-test#a-ci-run-of-your-branch).
+[A CI run of your branch](./editor-ci-runs).
 
 ## Where a test stopped
 

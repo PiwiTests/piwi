@@ -337,8 +337,8 @@ export { default } from '@piwitests/instrumentation-nitro';
   `/api/report`, and `/api/failing` throws. An entry's message is every argument of the log call, so the error of
   `/api/report` reads `demo: price sync failed, using cached prices Error: demo: the price feed did not answer in time`,
   with the exception's stack.
-- **Active outside production.** Capture is on when `NODE_ENV` is unset, `development` or `test`, as under
-  `nitro dev`. `PIWI_TEST_LOGS_DISABLED=true` turns it off anywhere, `PIWI_TEST_LOGS_DISABLED=false` on in a production
+- **Active in development and test.** Capture is on when `NODE_ENV` is `development` or `test`, as under
+  `nitro dev`, and off for any other value or none. `PIWI_TEST_LOGS_DISABLED=true` turns it off anywhere, `PIWI_TEST_LOGS_DISABLED=false` on in a production
   build.
 - **Environment.** `nitro.config.ts` gives `nitro dev` (what `backends.ts` and `start:nitro` run) the probe secret,
   `PROBE_SECRET` from `backends.ts`, and `PIWI_SERVER_PROBES=true`, unless the environment sets them.

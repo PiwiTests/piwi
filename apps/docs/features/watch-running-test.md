@@ -30,24 +30,8 @@ machine: [what is sent](#what-is-sent-and-kept).
 
 ## A CI run of your branch
 
-A CI run of the branch your workspace reads or has checked out, or a teammate's on it or on the branch your results
-are compared with, shows beside your runs, read-only: nothing pauses, steps, holds or shares it. VS Code's status bar
-says `CI run #125` or `run #126`, its Testing view `Piwi: CI run #125 on main` with results as they end; your own run
-keeps the status bar.
-
-- **The CI Runs view** of VS Code's Piwi panel, and the **CI run** tab of the JetBrains Piwi tool window while one
-  runs, list `CI run #78`, its branch and progress, **Open run #78** and its tests: those running, then the latest
-  that ended, failures first. A running test opens the call it is at, else its spec (a double click in JetBrains).
-- **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
-  Click getByRole('button')`: a [CI position](/guide/concepts#ci-position), never a stop, on the run's commit's line.
-- **Piwi Picker's Runs window** lists them too: [CI runs](./runs-window#open-it).
-- **Watch**, under a running test whose project has the [live view](./live-view) on, opens its lane read-only, named
-  `CI run #78 · worker 2`, in the VS Code worker panel, the JetBrains **Worker** tab or the Runs window: no
-  **Interact**, no pick. It follows the lane through its next tests, and ends with the run, as you hide or close the
-  view, or as the instance closes it, saying why. Its images come from the
-  [team instance](./live-view#what-is-sent-to-whom-and-what-is-kept).
-- **Watch on the dashboard** opens the lane on the run's page, offered where the editor cannot show it (an older
-  instance, a refused **Watch**).
+A CI run of your branch shows beside your runs, read-only, and **Watch** opens its lanes from the team instance:
+[CI runs in your editor](./editor-ci-runs).
 
 ## What you see
 
@@ -122,3 +106,4 @@ gives way to a lighter image, twice a second; when even that is too heavy, the v
 
 - [Pause and step from the editor](./editor-run-control)
 - [Live view of a run](./live-view)
+- [CI runs in your editor](./editor-ci-runs)

@@ -1840,7 +1840,7 @@ interface FailureStop {
  * element is highlighted, and a locator picked meanwhile is folded into the call site's snapshot (which the call's own
  * capture then leaves as it is); a pick is printed and posted to the editor. The stop is kept for `piwi-pauses` from
  * the moment it shows, whoever answers it. Where its page is a guess (`StopPage`), the bar shows in the guess, and
- * the editor asks in vain for an image. The editor can start the bar's Pick a locator and Record here, the check
+ * the editor asks in vain for an image. The editor can start the bar's Pick a locator and Record, the check
  * panel's Check an element and a region's ARIA snapshot from outside the page (`intentAt`): their results go where the
  * bar's go, the check and the snapshot to the editor, which writes them, each ending with the stop. At a stop no bar
  * shows, they run in the page while its live view is watched, driven through the view's input (`viewHere`), and end
@@ -2685,7 +2685,7 @@ function endStopsWithTestFunction(testInfo: TestInfo, sink: CaptureSink): void {
 }
 
 /**
- * What **Record here** runs at a pause, when the editor that started the run can record (`PIWI_RECORD_CHANNEL`): the
+ * What **Record** runs at a pause, when the editor that started the run can record (`PIWI_RECORD_CHANNEL`): the
  * page handed to its recorder until the recording ends, or the stop does (`ended`), and why not when it did not start.
  * Undefined otherwise.
  */
@@ -2713,7 +2713,7 @@ type PlaywrightPause = (options?: { __testHookKeepTestTimeout?: boolean }) => Pr
 /**
  * `page.pause()` in a headed local run with breakpoints, in one the editor started (`PIWI_RECORD_CHANNEL`), or while
  * the worker's run connection is open: a stop of Playwright's debugger at its line, shown with Piwi's pause bar in
- * place of Playwright's Inspector, with **Record here** when the editor can record, and in the editor. Step stops at
+ * place of Playwright's Inspector, with **Record** when the editor can record, and in the editor. Step stops at
  * the next call, Finish at no breakpoint more. Anywhere else, Playwright's own pause, with its Inspector, which Piwi
  * leaves to the person to end.
  */

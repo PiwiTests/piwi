@@ -91,7 +91,7 @@ shared or not ([where a test stopped](./watch-a-run#where-a-test-stopped)).
   action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
   [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it. A CI
-  lane watched [in your editor](./watch-running-test#a-ci-run-of-your-branch) comes from here, read with the editor's
+  lane watched [in your editor](./editor-ci-runs) comes from here, read with the editor's
   key, and counts among the run's watches for the key's owner, as a dashboard tab does; the editor keeps none.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: never written
   to the database, the logs or an export. A viewer that reads slowly gets the latest image alone. The run's trace stays
