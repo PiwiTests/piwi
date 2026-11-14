@@ -163,8 +163,10 @@ With the result icon off, its list of the test's actions goes with it.
 
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
-then that run's result. Code Vision (`PiwiCodeVisionProvider.kt`) draws the summary's other lines and skips the test
-lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
+then that run's result. `PiwiLocalSettings.failingTestTint` off leaves both backgrounds out, and a change of it draws
+the files with tests again (`testsShownAgain`); `codeLens`, which the service applies, asks every open file's summary
+again once the credentials carry it (`lensesShownAgain`). Code Vision (`PiwiCodeVisionProvider.kt`) draws the
+summary's other lines and skips the test lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
 provider: `PiwiCodeVisionProvider` the first, `PiwiCodeVisionSlot2` to `PiwiCodeVisionSlot8` the next ones, each after
 the one before (`Glue.codeVisionSlot`, `Glue.CODE_VISION_SLOTS`). They share the group `piwi.summary`, which
 `PiwiCodeVisionSettings` names Piwi in the Code Vision settings. The IDE shows as many entries per line as those

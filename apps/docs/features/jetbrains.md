@@ -98,7 +98,7 @@ line** on the debugger's Show Execution Point key:
   off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
   tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate
   and Rider; where it lacks one, the option is off and says why.
-- **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
+- **The severity of a failure**: **Settings → Tools → Piwi → In the editor** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
 - **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → Agents (MCP)** chooses whether the copied

@@ -9,6 +9,10 @@
       "title": "Runs"
     },
     {
+      "id": "editor",
+      "title": "In the editor"
+    },
+    {
       "id": "agents",
       "title": "Agents (MCP)"
     },
@@ -97,38 +101,6 @@
       ]
     },
     {
-      "key": "piwi.failureSeverity",
-      "jetbrains": "failureSeverity",
-      "group": "runs",
-      "scope": "project",
-      "type": "string",
-      "default": "error",
-      "choices": [
-        {
-          "value": "error",
-          "label": "An error"
-        },
-        {
-          "value": "warning",
-          "label": "A warning"
-        },
-        {
-          "value": "information",
-          "label": {
-            "vscode": "Information",
-            "jetbrains": "A weak warning"
-          }
-        },
-        {
-          "value": "off",
-          "label": {
-            "vscode": "Nothing in the Problems panel",
-            "jetbrains": "Nothing in the editor's problems"
-          }
-        }
-      ]
-    },
-    {
       "key": "piwi.breakpoints",
       "jetbrains": "breakpoints",
       "group": "runs",
@@ -181,6 +153,84 @@
       "scope": "user",
       "type": "boolean",
       "default": false
+    },
+    {
+      "key": "piwi.codeLens",
+      "jetbrains": "codeLens",
+      "group": "editor",
+      "scope": "user",
+      "type": "string",
+      "default": "all",
+      "choices": [
+        {
+          "value": "all",
+          "label": "Every line"
+        },
+        {
+          "value": "problems",
+          "label": "A failure's and an uncovered change's alone"
+        },
+        {
+          "value": "off",
+          "label": "None"
+        }
+      ]
+    },
+    {
+      "key": "piwi.failureSeverity",
+      "jetbrains": "failureSeverity",
+      "group": "editor",
+      "scope": "project",
+      "type": "string",
+      "default": "error",
+      "choices": [
+        {
+          "value": "error",
+          "label": "An error"
+        },
+        {
+          "value": "warning",
+          "label": "A warning"
+        },
+        {
+          "value": "information",
+          "label": {
+            "vscode": "Information",
+            "jetbrains": "A weak warning"
+          }
+        },
+        {
+          "value": "off",
+          "label": {
+            "vscode": "Nothing in the Problems panel",
+            "jetbrains": "Nothing in the editor's problems"
+          }
+        }
+      ]
+    },
+    {
+      "key": "piwi.locatorWarnings",
+      "jetbrains": "locatorWarnings",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.failingTestTint",
+      "jetbrains": "failingTestTint",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.ciPositions",
+      "jetbrains": "ciPositions",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
     },
     {
       "key": "piwi.mcpAuthorization",

@@ -29,6 +29,7 @@ data class SummaryLine(
     val failure: TestFailure? = null,
     val testCaseId: Int? = null,
     val actions: List<TestAction>? = null,
+    val problem: Boolean? = null,
 )
 
 /**
@@ -894,6 +895,8 @@ data class EditorCredentials(
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
     val statusBarAlert: String? = null,
+    val codeLens: String? = null,
+    val locatorWarnings: Boolean? = null,
 )
 
 /**

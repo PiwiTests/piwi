@@ -104,6 +104,7 @@ import {
   type LineLocator,
   type LineState,
   type TestCall,
+  locatorLineTellsMore,
   piwiActionTitle,
   testActions,
 } from './analysis.js';
@@ -308,6 +309,7 @@ import {
   type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
+  type CodeLensChoice,
   type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
@@ -583,6 +585,16 @@ function testTitles(text: string): Set<string> {
     if (m) titles.add(m[2]!);
   }
   return titles;
+}
+
+/**
+ * The lines of a summary the person's choice of lenses shows (`EditorCredentials.codeLens`): every one; with
+ * `problems`, a failure's and an uncovered change's alone; with `off`, none. A test's line, its gutter mark, stays.
+ */
+function lensesShown(summary: FileSummary, lens: CodeLensChoice): FileSummary {
+  if (lens !== 'problems' && lens !== 'off') return summary;
+  const kept = (l: SummaryLine) => l.status !== undefined || (lens === 'problems' && l.problem === true);
+  return { file: summary.file && kept(summary.file) ? summary.file : null, lines: summary.lines.filter(kept) };
 }
 
 /**
@@ -2396,7 +2408,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           });
         }
       }
-      for (const finding of stabilityFindings(locatorsInFile(context.index, relative!))) {
+      const findings =
+        credentials.locatorWarnings === false ? [] : stabilityFindings(locatorsInFile(context.index, relative!));
+      for (const finding of findings) {
         const text = lines[finding.line - 1] ?? '';
         const range = locatorRange(text, finding.locator);
         diagnostics.push({
@@ -3314,7 +3328,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   };
 
-  connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> => {
+  connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> =>
+    lensesShown(await fileSummaryOf(params), credentials.codeLens ?? 'all'),
+  );
+
+  /** A file's summary, every line of it, before the person's choice of lenses (`lensesShown`) filters it. */
+  const fileSummaryOf = async (params: FileSummaryParams): Promise<FileSummary> => {
     const empty: FileSummary = { file: null, lines: [] };
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
@@ -3333,17 +3352,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
     if (isTestCode(context, relative)) {
       const out: SummaryLine[] = [];
+      /** Each locator line's one test, when it has one, which a lens inside that test's own call does not repeat. */
+      const onlyTest = new Map<SummaryLine, number>();
       for (const l of locatorsInFile(context.index, relative!)) {
         const counts = testCounts(l.tests);
-        out.push({
+        const locatorLine: SummaryLine = {
           line: l.line - 1,
           title: [plural(l.tests.length, 'test'), l.actions.slice(0, 2).join(', '), counts].filter(Boolean).join(' · '),
           command: run(
             l.tests.map((t) => t.id),
             l.tests.length === 1 ? 'that uses this locator' : 'that use this locator',
           ),
-        });
+        };
+        out.push(locatorLine);
+        if (l.tests.length === 1) onlyTest.set(locatorLine, l.tests[0]!.id);
       }
+      /** The lines each test's call spans in the spec, by its id. */
+      const spans: Array<{ id: number; from: number; to: number }> = [];
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
@@ -3356,6 +3381,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       )) {
         if (!found) continue;
         const i = call.line;
+        spans.push({ id: found.id, from: call.line, to: call.endLine ?? call.line });
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
@@ -3428,6 +3454,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const why = failure.diagnosed || !failed.headline ? null : clip(failed.headline, 120);
         const mark = failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)}` : '✗ Failed here';
         reasons.push({
+          problem: true,
           line: failure.line,
           title: why ? `${mark} · ${why}` : mark,
           command: {
@@ -3437,6 +3464,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           },
         });
         reasons.push({
+          problem: true,
           line: failure.line,
           title: 'Run this test',
           command: {
@@ -3447,6 +3475,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         });
         if (failed.screenshot) {
           reasons.push({
+            problem: true,
             line: failure.line,
             title: 'Screenshot',
             command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
@@ -3454,6 +3483,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         }
         if (failed.traces.length) {
           reasons.push({
+            problem: true,
             line: failure.line,
             title: 'Trace',
             command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
@@ -3477,7 +3507,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           }
         : null;
-      return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
+      // A locator line whose only test is the one whose call holds it says nothing that test's line does not.
+      const shown = out.filter((l) => locatorLineTellsMore(l.line, onlyTest.get(l) ?? null, spans));
+      return { file: fileLine, lines: [...reasons, ...shown].sort((a, b) => a.line - b.line) };
     }
 
     const repoRelative = relativeTo(context.repoRoot, file);
@@ -3549,7 +3581,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             }
           : undefined;
       return {
-        file: { line: 0, title: `Uncovered changes: ${uncovered.label}`, ...(gaps ? { command: gaps } : {}) },
+        file: {
+          problem: true,
+          line: 0,
+          title: `Uncovered changes: ${uncovered.label}`,
+          ...(gaps ? { command: gaps } : {}),
+        },
         lines: [],
       };
     }
@@ -3569,7 +3606,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ),
     };
     return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
-  });
+  };
 
   connection.onRequest(TESTS_FOR_FILE_REQUEST, async (params: TestsForFileParams): Promise<TestsForFile> => {
     const file = uriToPath(params.uri);

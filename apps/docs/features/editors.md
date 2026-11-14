@@ -52,7 +52,7 @@ Lines above the code (CodeLens):
 | File | What it shows | Click |
 |---|---|---|
 | A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover that result's run, the pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
-| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or flake | runs those tests |
+| A page object or spec | above each locator line (in a spec, unless its only test is the one around it), the tests using it, their actions, and how many fail or flake | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
@@ -120,8 +120,11 @@ recorded and the stopped line under **Settings → Editor → Color Scheme → P
 window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing`
 (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
 
-VS Code's Piwi settings come in four groups, Connection, Runs, Agents (MCP) and Advanced, as JetBrains' settings page
-does. Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
+VS Code's Piwi settings come in five groups, Connection, Runs, In the editor, Agents (MCP) and Advanced, as JetBrains'
+settings page does. **In the editor** chooses the lines Piwi writes above the code (`piwi.codeLens`: every one, a
+failure's and an uncovered change's alone, or none; a test's gutter mark stays), and turns off the brittle locators'
+warnings (`piwi.locatorWarnings`), the failing test's tint (`piwi.failingTestTint`) and the CI positions
+(`piwi.ciPositions`). Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
 every workspace: a repository's `.vscode/settings.json` sets only the instance and the project, the failure severity,
 serving runs to agents and Piwi's tests in the Testing view.
 

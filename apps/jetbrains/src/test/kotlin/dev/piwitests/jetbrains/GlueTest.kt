@@ -2290,6 +2290,7 @@ class GlueTest {
             "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
             "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
             "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
+            "codeLens" to Glue.CODE_LENS_CHOICES,
         )
         assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
         // A team's option is the project's shared setting, any other one the person's (`PiwiLocalSettings`), with its default.

@@ -49,9 +49,9 @@ test. Without one, **File an issue** opens the cluster in the dashboard.
 
 A failure of a run on the checked-out branch is an error; one from another branch, such as the default branch's while
 yours has no run yet, is a warning; one whose line you changed since the run is an information (a weak warning in a
-JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → Runs** in a JetBrains IDE) chooses
+JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → In the editor** in a JetBrains IDE) chooses
 `warning` or `information` in place of the error, or `off`: nothing in the Problems panel, while the failures view,
-the gutter and the lines above the tests still show the failures.
+the gutter and the lines above the tests (unless `piwi.codeLens` hides them) still show the failures.
 
 ## Your local runs
 

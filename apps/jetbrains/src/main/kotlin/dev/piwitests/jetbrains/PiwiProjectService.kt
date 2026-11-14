@@ -111,6 +111,10 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
+        var codeLens: String = "all",
+        var locatorWarnings: Boolean = true,
+        var failingTestTint: Boolean = true,
+        var ciPositions: Boolean = true,
         var mcpAuthorization: String = "key",
         var serveRunsToAgents: Boolean = true,
         var agentsPort: Int = 0,
@@ -561,6 +565,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
+            codeLens = local.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES },
+            locatorWarnings = local.locatorWarnings,
             mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
             statusBarAlert = local.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
         )
@@ -933,6 +939,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
             val psi = PsiManager.getInstance(project)
             for (file in files) psi.findFile(file)?.let { analyzer.restart(it) }
         }
+    }
+
+    /** The files that show their tests' results drawn again, as a choice of how they show changed. On the event thread. */
+    fun testsShownAgain() = drawAgain(Glue.Redraw.TESTS)
+
+    /**
+     * Every open file's summary asked again and drawn, as the choice of the lines above the code changed: after the
+     * credentials that carry it, which the service reads first. On the event thread.
+     */
+    fun lensesShownAgain() {
+        pushed.incrementAndGet()
+        drawAgain(Glue.Redraw.ALL)
     }
 
     /** Whether a file shows its tests' results in the gutter, as `PiwiTestAnnotator` last drew it. */

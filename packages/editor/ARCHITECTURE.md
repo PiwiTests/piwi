@@ -429,6 +429,12 @@ The failures are placed again on the timer that analyzes an edited document, and
 
 ### File summary and the test at a position
 
+The summary's lines are filtered once for both clients by the person's choice (`EditorCredentials.codeLens`,
+`lensesShown`): every line; with `problems`, a failure's reason and evidence and a file's uncovered changes alone
+(`SummaryLine.problem`); with `off`, none. A test's line, its gutter mark, always stays. A spec's locator line whose only
+test is the one whose call holds it is left out (`locatorLineTellsMore`), and `EditorCredentials.locatorWarnings` false
+leaves out the brittle locators' diagnostics.
+
 On a spec, `piwi/fileSummary` gives each test's line:
 
 - its latest result (`status`), which the clients draw in the gutter;

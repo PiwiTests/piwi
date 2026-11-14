@@ -149,16 +149,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
                 }
                 row {
-                    comboBox(Glue.FAILURE_SEVERITIES, ChoiceRenderer("failureSeverity"))
-                        .label("A failing test's line in the editor:", LabelPosition.TOP)
-                        .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
-                        .comment(
-                            "A failure of a run on another branch is a warning at most; one whose line changed since its run, " +
-                                "a weak warning. Off leaves the failures to the Piwi tool window and the gutter. " +
-                                "Kept for you only, in .idea/workspace.xml",
-                        )
-                }
-                row {
                     checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
@@ -202,6 +192,37 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                                 Glue.NO_PLAYWRIGHT_RUNNER
                             },
                         )
+                }
+            }
+            group(SettingsWords.GROUPS.getValue("editor")) {
+                row {
+                    comboBox(Glue.CODE_LENS_CHOICES, ChoiceRenderer("codeLens"))
+                        .label("The lines Piwi writes above the code:", LabelPosition.TOP)
+                        .bindItem({ local.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES } ?: "all" }, { local.codeLens = it ?: "all" })
+                        .comment("A test's mark in the gutter stays. Kept for you only, in .idea/workspace.xml")
+                }
+                row {
+                    comboBox(Glue.FAILURE_SEVERITIES, ChoiceRenderer("failureSeverity"))
+                        .label("A failing test's line in the editor:", LabelPosition.TOP)
+                        .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
+                        .comment(
+                            "A failure of a run on another branch is a warning at most; one whose line changed since its run, " +
+                                "a weak warning. Off leaves the failures to the Piwi tool window and the gutter. " +
+                                "Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
+                    checkBox("Warn at a brittle locator, with its stable alternative as a quick fix")
+                        .bindSelected({ local.locatorWarnings }, { local.locatorWarnings = it })
+                }
+                row {
+                    checkBox("Tint a failing test and the line it failed at")
+                        .bindSelected({ local.failingTestTint }, { local.failingTestTint = it })
+                        .comment("The gutter still marks them; the colors are under Editor → Color Scheme → Piwi")
+                }
+                row {
+                    checkBox("Show where a CI run of the branch stands, at the end of each line it runs")
+                        .bindSelected({ local.ciPositions }, { local.ciPositions = it })
                 }
             }
             group(SettingsWords.GROUPS.getValue("agents")) {
@@ -253,7 +274,13 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val before = connection()
         val breakpoints = service.local().breakpoints
         val agents = service.local().serveRunsToAgents
+        val tint = service.local().failingTestTint
+        val lenses = service.local().codeLens
+        val positions = service.local().ciPositions
         super.apply()
+        if (service.local().failingTestTint != tint) service.testsShownAgain()
+        if (service.local().codeLens != lenses) service.lensesShownAgain()
+        if (service.local().ciPositions != positions) project.getServiceIfCreated(PiwiCiRuns::class.java)?.positionsSwitched()
         // The service serves the runs to agents, or stops, at once.
         if (service.local().serveRunsToAgents != agents) {
             ApplicationManager.getApplication().executeOnPooledThread { service.agentsChanged() }
@@ -274,6 +301,8 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             local.desktop,
             local.desktopProject,
             local.failureSeverity,
+            local.codeLens,
+            local.locatorWarnings,
             local.statusBarAlert,
             local.mcpAuthorization,
         )

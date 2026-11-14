@@ -1599,6 +1599,7 @@ describe('the Piwi language server', () => {
         },
       }),
       {
+        problem: true,
         line: 6,
         title: "✗ Failed here · locator('.cart-row').nth(2) was not found",
         command: {
@@ -1608,6 +1609,7 @@ describe('the Piwi language server', () => {
         },
       },
       {
+        problem: true,
         line: 6,
         title: 'Run this test',
         command: {
@@ -1617,11 +1619,13 @@ describe('the Piwi language server', () => {
         },
       },
       {
+        problem: true,
         line: 6,
         title: 'Screenshot',
         command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
       },
       {
+        problem: true,
         line: 6,
         title: 'Trace',
         command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
@@ -3968,6 +3972,31 @@ describe('the severity of a failure', () => {
       // Credentials without the setting: an error, as for a run on the checked-out branch.
       await severityClient.sendNotification('piwi/setCredentials', {});
       await waitFor(() => (failure()?.severity === 1 ? true : undefined));
+
+      // The lines above the code and the brittle locators' warnings follow the person's choices.
+      const brittle = () => published.get(page)?.some((d) => d.code === 'brittle');
+      await severityClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: page, languageId: 'typescript', version: 1, text: PAGE_OBJECT },
+      });
+      await waitFor(() => (brittle() ? true : undefined));
+      const summary = () =>
+        severityClient.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') }) as Promise<FileSummary>;
+      const all = await summary();
+      expect(all.file).not.toBeNull();
+      await severityClient.sendNotification('piwi/setCredentials', { codeLens: 'problems', locatorWarnings: false });
+      await waitFor(() => (published.has(page) && !brittle() && failure() ? true : undefined));
+      const problems = await summary();
+      expect(problems.file).toBeNull();
+      expect(problems.lines.filter((l) => l.status === undefined).map((l) => l.title)).toEqual([
+        "✗ Failed here · locator('.cart-row').nth(2) was not found",
+        'Run this test',
+        'Screenshot',
+        'Trace',
+      ]);
+      expect(problems.lines.filter((l) => l.status === 'failed')).toHaveLength(1);
+      await severityClient.sendNotification('piwi/setCredentials', { codeLens: 'off' });
+      await waitFor(async () => ((await summary()).lines.every((l) => l.status !== undefined) ? true : undefined));
+      expect((await summary()).lines.map((l) => l.status)).toEqual(['failed']);
     } finally {
       stopSeverity();
       severityClient.dispose();

@@ -57,8 +57,9 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         val document = file.viewProvider.document ?: return
         val uri = runCatching { file.virtualFile?.toNioPath()?.toUri()?.toString() }.getOrNull()
         val text = document.charsSequence
-        // Piwi test results, switched off on the Gutter Icons page, leaves the backgrounds alone.
+        // Piwi test results, switched off on the Gutter Icons page, leaves the backgrounds alone, which have their own switch.
         val icons = PiwiTestResultsGutter.shown()
+        val tinted = file.project.service<PiwiProjectService>().local().failingTestTint
         for (line in lines.orEmpty()) {
             if (line.line !in 0 until document.lineCount) continue
             val start = document.getLineStartOffset(line.line)
@@ -74,7 +75,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             }
             val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
             val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), Glue.lineEndWithBreak(document.getLineEndOffset(it.line), document.textLength)) }
-            if (line.status == "failed") {
+            if (tinted && line.status == "failed") {
                 val last = (line.endLine ?: line.line).coerceIn(line.line, document.lineCount - 1)
                 val test = TextRange(start, Glue.lineEndWithBreak(document.getLineEndOffset(last), document.textLength))
                 // Two backgrounds on one line have no set order: the test's goes around the failing line.
@@ -87,7 +88,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                     holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(part).textAttributes(FAILING_TEST).create()
                 }
             }
-            if (failure != null && failedAt != null && !failedAt.isEmpty) {
+            if (tinted && failure != null && failedAt != null && !failedAt.isEmpty) {
                 // Why it failed is the diagnostic's and the hover's, which the service writes.
                 holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(failedAt).textAttributes(FAILING_LINE).create()
             }
