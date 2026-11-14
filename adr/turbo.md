@@ -1,0 +1,129 @@
+# Faster Playwright runs without a fork
+
+- Status: accepted
+- Date: 2026-11-14
+
+## Context
+
+A Playwright suite in CI pays on every test for defaults that only some tests need: a trace, a screenshot and a video
+recorded for every test and thrown away when it passes, a new browser context per test, animations played at their
+real speed, a backoff between the checks of every assertion, a sign-in through the form per test, and third-party
+scripts that hold the `load` event. [Flashwright](https://github.com/xcodebeast/flashwright), an Apache-2.0 fork of
+Playwright 1.64.1, changes several of these defaults inside Playwright and reports 3.5× on its benchmark. A fork means
+leaving `@playwright/test`, its browsers and its upgrades.
+
+The question was how much of that a package can reach on stock Playwright, what it costs in test isolation, and how to
+tell a real gain from noise.
+
+## Decision
+
+1. **A package, not a fork.** `@piwitests/turbo` (MIT, released with the monorepo) wraps a config with
+   `withOptimizations(config, options)` and gives tests a `test` from `@piwitests/turbo/test`. It contains no Playwright
+   or Flashwright code; the techniques it takes from Flashwright are credited in its README.
+2. **Presets first, levers second.** `safe` changes nothing a test observes and only lowers costs the config already
+   has; `fast` adds reduced motion, instant animations and context reuse; `max` adds every experimental hook. An option
+   named beside a preset wins, and one left `undefined` keeps the preset's value.
+3. **Public levers**: `trace`, `lightTraces`, `failureScreenshots`, `videoOnRetry`, `reducedMotion`,
+   `instantAnimations`, `reuseContext` and `compileCache`. `signIn` and `blockRequests` need the suite's own paths and
+   URLs, so no preset sets them.
+4. **Experimental hooks** wrap Playwright's server inside the test worker: `fastScreenshots`, `retryIntervals`,
+   `failFast`, `skipStabilityWait`, `fastReset` and `fastStackTraces`. They install only on the Playwright versions
+   they were tested with, check the shape of every internal they wrap, and throw instead of falling back.
+5. **Context reuse is Playwright's own `reuseContext` plus a reset of what it leaves**: offline mode, extra headers,
+   permissions, geolocation and Cache Storage. A pair of end-to-end tests per kind of state a test can leave checks the
+   next test starts without it, under Playwright's reset and under `fastReset`. Reuse stays in `fast` although it costs
+   a suite of very short tests; the docs say when to turn it off.
+6. **Keep only what measures well.** Every lever was measured before it shipped, and what did not pay was removed
+   rather than documented. The list below is the record of what was tried.
+
+### How it was measured
+
+- **The package's benchmark** (`packages/turbo/bench`) runs whole commands, interleaves the configurations in rotating
+  rounds, and compares each with a baseline round by round, with a bootstrap interval. It reports wall time, the CPU
+  time of every process (Chromium included), peak memory (PSS), artifact size, and where the test time went. Its
+  reference workload is an orders console with a slow API, third-party scripts, animations and a 1,200-row table,
+  tested by 43 tests.
+- **Piwi's own suite**: one CI shard of 242 tests, 4 or 5 runs per configuration, with a local change to its fixtures
+  that was not committed.
+- **Flashwright's benchmark suites** (generated workloads such as 15 trivial tests, TodoMVC, a shop with saved
+  sign-in and a slow API, and an inventory page of about 8,500 elements), run with Flashwright's own harness from its
+  repository and an adapter kept outside this repository: 5 or 6 interleaved runs per configuration, each reported as
+  its median against stock Playwright. Below, "1.20× vs 1.01×" compares a change with the build before it, both
+  against stock.
+- **Profiles**, for what remained: V8 CPU profiles (`--cpu-prof`) of the runner and the worker, timestamped CDP logs
+  (`DEBUG=pw:protocol`) and Chromium traces.
+
+### What shipped, and what it measured
+
+| Lever | Measured |
+|---|---|
+| `signIn`, `blockRequests` | Reference workload: each took a run from 81 s to 48 s. All public levers with four workers: 81 s to 16 s, CPU 40 s to 18 s. |
+| `reducedMotion` | Reference workload: −5.5% wall, −40% CPU, −77% artifacts. |
+| `lightTraces` | Halved the CPU time of a suite that traces every test, −97% artifacts. |
+| `trace: 'on-first-retry'`, `failureScreenshots` | Piwi's suite: −13% wall and −28% CPU with reduced motion, then −5% of each with failure screenshots. |
+| Presets `safe`, `fast` | Reference workload against an unoptimized setup: −5% wall and −19% CPU; −8% and −50%. |
+| `compileCache` | A single-test run started about 55 ms sooner with the cache set from the config, and 143 ms with `NODE_COMPILE_CACHE` set in the environment, which also reaches the runner. |
+| `retryIntervals` | Reference workload: −6.6% wall, lower in all five rounds. |
+| `fastScreenshots` | −3.8% CPU; wall time unchanged where screenshots are 2% of the test time. |
+| `failFast` | −22% on a red run of six failing assertions, with the same failures and no false one. |
+| `skipStabilityWait` | One worker: TodoMVC 1.11× vs 1.03×, Shop 1.20× vs 1.10×, Inventory 1.06× vs 0.99×. |
+| `fastReset` | noop 0.93× vs 0.83×, TodoMVC 1.41× vs 1.21×, Shop 1.28× vs 1.27×. |
+| `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. |
+| Per-test calls on a reused context (below) | `max`: noop 1.20× vs 1.01×, TodoMVC 1.44× vs 1.38×, Shop 1.32× vs 1.29×. |
+| Context reuse in `fast` | TodoMVC 1.18× vs 1.00×, Shop 1.07× vs 1.04×; trivial tests 0.89× vs 0.94×, Inventory 0.95× vs 0.97×. |
+
+The per-test calls came out of the profiles. Instant animations opened a CDP session on the kept tab for every test
+with the Animation domain on; a reused context's sessions stay attached between tests, so they piled up, each
+receiving every animation event. The rate is now set once per tab, with the domain off, through a session that stays
+attached for the tab's life (a detach resets the rate). `failFast`'s page script is added once per context, and
+`fastReset` skips Playwright's mouse move away from a tab no pointer acted in, a move that waits for the next frame.
+`fastStackTraces` came from the same profiles: Playwright captures a 50-frame stack on every API call, and
+source-map-support cloned and looked up a source map for every frame, those of Node and `node_modules` included.
+
+### Tried and dropped
+
+- **Differential DOM snapshots in traces**, from a fork of Playwright, shipped for a while as a vendored Apache-2.0
+  script: no clear difference on the reference workload (+0.8%) or on Piwi's suite (−2.5% wall, interval −8.5% to
+  +3.7%). Removed with the script and its license files.
+- **Blocking images, fonts and media by resource type**: +12% CPU. Removed; blocking third-party URLs stays.
+- **Running the longest test files first**: at four workers, Inventory 1.02× against 0.91× in one run and no change on
+  TodoMVC, Shop and SVGOMG. The same build without it measured 0.91× and 1.02× on Inventory in two runs, so the one
+  gain sits inside that spread. Not shipped.
+- **`fastReset` that closes the tab after each test**: TodoMVC 1.14× against 1.29× with Playwright's reset. A new page
+  per test costs most of what reuse saves.
+- **`fastReset` that clears storage through CDP while the test's page is still loaded**: one TodoMVC test failed in 1
+  of 6 runs, because the app saved to storage after the clear. Session storage cannot be cleared through CDP without a
+  frame of its origin (`DOMStorage.clear` answers "Frame not found").
+- **`fastReset` that moves the tab to `about:blank` before clearing**: correct, but Playwright's reset navigates there
+  again, and the gain was gone (noop 0.93× against 0.95×, TodoMVC 1.31× against 1.33×). The shipped version seals the
+  frames' storage before Playwright's reset and clears the rest in its storage step, after its own navigation. A test
+  that left an origin gets Playwright's reset, since its session storage has no frame left to reach it from.
+- **Skipping the page reset's second navigation to `about:blank`**: about 1.5 ms per test. The context reset navigates
+  before it uninstalls a test's fake clock, whose init script then runs in that first `about:blank` document, which a
+  next test that calls `setContent` without navigating would use. Not done.
+- **Launch flags against the reset's mouse move** (`--disable-frame-rate-limit`, `--disable-gpu-vsync`): a move on
+  `about:blank` takes one frame, 16.7 ms median, with or without them in headless Chromium, which has no switch left
+  for frame-aligned mouse input.
+- **Clearing Cache Storage from a document of each origin** instead of through a CDP session: no measurable change on
+  four suites (noop 0.89× vs 0.90×, TodoMVC 1.18× vs 1.16×, Shop 1.07× vs 1.08×, Inventory 0.95× vs 0.94×).
+  Reverted to the simpler CDP session.
+
+## Consequences
+
+- **The hooks tie the package to the Playwright versions they were tested with** (1.64.1). A new version needs the
+  hooks' end-to-end suite and the benchmark before it joins `TESTED_VERSIONS`; `PIWI_TURBO_ALLOW_UNTESTED=1` lets a
+  user try one.
+- **Context reuse widens what a test can leak to the next one.** The isolation pairs cover storage of every kind,
+  permissions, headers, offline mode, routes, init scripts, bindings, the clock, the viewport, media, pages, service
+  workers, hover state and animation speed; a new kind of state needs a new pair. `fastReset` does not see mouse input
+  a test sends through its own CDP session.
+- **`fast` is slower than stock on suites of very short tests and of very large pages**, where Playwright's reset of a
+  context (three navigations and a mouse move that waits for a frame) takes longer than a new context. Without the
+  experimental hooks turbo cannot shorten that reset.
+- **The gap to Flashwright stays.** Flashwright measured 1.8× to 3× stock on its suites here, turbo's `max` 1.0×
+  to 1.4×. Per run of 15 trivial tests, most of the remaining CPU difference is Node loading Playwright's bundles: 409
+  against 189 ms in the runner and 283 against 138 ms in the worker. A package cannot change how Playwright is
+  bundled; a compile cache set in the environment shortens the runner's share.
+- **`failFast` must stay off for a test that changes the page from its own Node code while an assertion waits**, and
+  the hooks gain little on a suite whose time is mostly waiting on its API.
+- The benchmark lives in the repository, not in the npm package.
