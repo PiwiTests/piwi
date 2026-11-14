@@ -9,7 +9,8 @@ lang: en-US
 <Needs desktop />
 
 The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
-bundles the Docker image's server in a native window and adds what only a local app can.
+bundles the Docker image's server in a native window and adds what only a local app can. Its runs:
+[Local runs tray](./local-runs-tray) for each run, [Desktop app runs](./desktop-runs) for each worker.
 
 ## What it does
 
@@ -33,26 +34,26 @@ What each installer needs:
 | **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
-The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
-Windows, **More info** then **Run anyway** in SmartScreen.
+The installers, [Piwi Runner](./piwi-runner)'s too, are **unsigned**: on macOS, open the app
+once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** then **Run anyway** in SmartScreen.
 
 Where its data lives, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
-Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
-hidden in the tray. The windows open where you left them. The app has its own
-[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
-While a test waits at a stop for you, the tray menu's **Show the stopped test** opens the window on it. **Open in a
+Closing the window quits the app unless **Run in background** is on in the system tray menu; **Start on login**
+launches it hidden in the system tray. The windows open where you left them. The app has its own
+[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The system tray menu lists the tests running from the app, each with **Stop**, the machine kept awake meanwhile, and
+**Show the stopped test** opens the window on one waiting for you. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
-the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on Windows)
+the Dock icon and in the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
 says how it stands: blue while it runs, red once a test failed, violet while a test of the app's runs, or of an
-editor's, waits at a stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome
+editor's, waits at a stop for you (`1 test waits for you`). A run from the window's Local runs tray flashes its outcome
 as it ends (slate when interrupted), whatever else runs, and, failed while you look away, bounces the Dock icon or
 flashes the taskbar button, a bisect or a lab only at its verdict; an editor's, a terminal's or CI's run, or one from
 before a reload, never does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and
 **Stop**, which stops the window's run started last, the next one at a second click. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
-dock icon or tray tooltip.
+dock icon or system tray tooltip.
 
 It listens on port 3000, or the one set in the `.exe` installer or in **Settings → Desktop app** (`serverPort` in
 `settings.json`), a free one when taken.
@@ -94,15 +95,15 @@ A run, an execution, a cluster or a test runs again here with the folder's own P
 
 - **The arrow** shows the command, runs it once headed, in the inspector or UI mode, and sets its
   options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
-  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/desktop-runs#each-worker).
+  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/watch-a-run#hold-failures).
   The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
   **Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with
-  **Compare with run #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
+  **Compare with run #N**. A [bug report](/features/replay-a-bug-report#running-it-with-playwright)
   from Piwi Picker runs there too.
 - **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
-- **Watch, pause and step** each worker from the tray, running or at a stop: [Desktop app
+- **Watch, pause and step** each worker from the Local runs tray, running or stopped: [Desktop app
   runs](/features/desktop-runs). While it goes on, the run's own page shows the same (**On your machine**), with its
   **Stop**, **Hold failures** and output.
 
@@ -114,7 +115,7 @@ folder, **without touching your checkout**:
 - **Reproduce here** checks out the failing commit in a throwaway
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
   unchanged lockfile outside a workspace) and any missing browser, and runs the failing test with that commit's own
-  Playwright, [stopping in your editor](./terminal-runs#a-reproduction-from-the-desktop-app) when one is open.
+  Playwright, [stopping in your editor](./desktop-runs#a-reproduction-in-your-editor) when one is open.
 - **Find the breaking commit here** bisects between the last green commit and the failing one, with live progress and
   a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The first bad commit
   is linked to your SCM host and recorded on the failure cluster.
@@ -160,6 +161,6 @@ signature-checked.
 
 ## Related
 
-- [Reporter](/guide/reporter#finding-the-desktop-app-automatically): finding the app
-- [MCP server](/features/mcp): the assistants' tools
-- [Desktop app runs](/features/desktop-runs): pause, step and watch its runs
+- [Reporter](/guide/reporter#finding-the-desktop-app-automatically)
+- [MCP server](/features/mcp)
+- [Desktop app runs](/features/desktop-runs)

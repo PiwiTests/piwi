@@ -121,4 +121,4 @@ app a spec no editor's workspace holds.
 - [Code from a pause](./editor-stop-code)
 - [MCP server](./mcp)
 - [Runs window](./runs-window)
-- [Share a stop with Playwright tools](./watch-a-run#share-with-playwright-tools)
+- [Share a stop with Playwright tools](./editor-run-control#share-with-playwright-tools)

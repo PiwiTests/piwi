@@ -22,7 +22,7 @@ works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 
 | Editor | Record at the cursor | Record a new test file |
 |---|---|---|
-| VS Code | **Piwi: Record here…**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title; any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file…**, also in the explorer's **Piwi** submenu |
+| VS Code | **Piwi: Record here…**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title; any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file…**, also in the explorer's **Piwi** submenu while the editor is connected to an instance |
 | JetBrains IDE | **Tools → Piwi → Record here…**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **New → Playwright test (recorded)…** on a folder of a Playwright config, or the project view's **Piwi** submenu |
 
 Before the browser opens, the editor asks for:
@@ -70,13 +70,13 @@ Once the recording stopped, a notification says what it wrote, `Recorded 6 steps
 actions for the test that holds the block, the new test or the test you recorded steps into:
 
 - **Run** runs that test, with your breakpoints, as **Piwi: Run the test at the cursor** does.
-- **Verify ×3** runs it three times, without retries and without the breakpoints, as **Piwi: Verify the test at the
-  cursor ×3** does, and says how it went: `Passed 3 of 3`, or `Failed 1 of 3` with **Open the failures** and **Open
-  in dashboard**.
+- **Verify ×3** runs it as a [verification](./editor-runs#when-your-run-ends), as **Piwi: Verify the test at the
+  cursor ×3** does.
 
 Both save the file, then run the test by the line of its `test(…)` call
-(`npx playwright test tests/checkout.spec.ts:42`), so neither needs an instance:
-[When your run ends](./editor-runs#when-your-run-ends) says how a run without one is counted. Steps recorded into a
+(`npx playwright test tests/checkout.spec.ts:42`), so neither needs an instance. A verification that reached none is
+told by its exit code, which cannot tell a pass from a skip: `None of 3 runs failed: tests/checkout.spec.ts:42`, or
+`Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`. Steps recorded into a
 page object or a helper offer neither action: no test holds them.
 
 ### Choose another locator
@@ -93,27 +93,12 @@ page object or helper has none of its own, and offers none.
 ## Send from Piwi Picker
 
 A locator picked with the [Piwi Picker](./extension) browser extension in your everyday browser, or a flow it
-recorded, lands at the editor's cursor too:
-
-1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
-   It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
-2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
-   that local address.
-3. A picked locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
-   [Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
-   locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one.
-
-The editor answers on your machine alone, and proves it holds the token before Piwi Picker sends it; with several VS
-Code windows open, the one holding the paired port receives: [Piwi Picker and your editor](./editor-pairing). With no
-editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
-Containers), the pairing address is the local end of a port VS Code forwards to the listener, listed in the Ports
-view, and Piwi Picker's Runs window lists that window's runs: [Remote development](/guide/remote-development).
-
-Every test run Piwi starts gets the pairing address and token as `PIWI_EDITOR_SEND`, so a locator picked at one of its
-stops reaches the editor: such a run starts the listener and creates the token if there is none. The capture fixtures
-hide it from the processes a test starts; the Playwright runner and its `webServer` still have it, and programs
-running as your user are not kept out.
+recorded, lands at the editor's cursor too, once Piwi Picker is [paired with the editor](./editor-pairing). A picked
+locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
+[Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
+locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
+[`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one. With no editor open, a JetBrains IDE
+puts it in a new scratch file. A locator picked at a stop of a run Piwi starts reaches the editor the same way.
 
 ## Limits
 

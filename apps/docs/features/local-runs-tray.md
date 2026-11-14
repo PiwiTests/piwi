@@ -11,7 +11,9 @@ lang: en-US
 The **Local runs** tray of the [desktop app](./desktop) lists every run the app starts: a **Re-run**, a reproduction, a
 bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It sits at the bottom right of
 the window and opens as a run starts, at each stop, and from **1 local run** in the sidebar. Closing it stops nothing.
-Each run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
+This page is about the runs the tray lists: how far each is, **Stop**, **Run again**, the code their stops make, their
+output and a reload. Each
+run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
 
 <figure>
   <img src="/screenshots/desktop-runs-tray.png" alt="The Local runs tray: a run counted 5 of 12 tests, 1 failed, its first worker stopped at its page.pause() with Resume, Step and Finish and its page, beside Stop and Hold failures">
@@ -33,9 +35,19 @@ in that project's run. **Run again**
 starts an ended run as it ran, with its options and its **Hold failures**.
 
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
-([A reproduction from the desktop app](./terminal-runs#a-reproduction-from-the-desktop-app)) says where its tests wait,
+([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait,
 **In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line reads **Waiting** while
 one does, **Stop** still ends it, and it ends with its own verdict.
+
+## Stops while you look elsewhere
+
+The tray opens at each stop, where a headless test waits for you. With the window in the background, the system tells
+you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every page, again
+as soon as it reloads while a run of the app goes on. On a page without the tray (an analytics dashboard in TV mode,
+an error page), the system tells you of every stop, whatever the window shows, and no failure is held; a
+`page.pause()`, a step or a breakpoint waits until the tray shows it again, or [Piwi Picker's Runs
+window](./runs-window) or [an agent](./desktop-runs#for-agents) answers it. With no run of the app going on, the window
+stops listening, and a stop goes on at once.
 
 ## Compact list
 
@@ -47,6 +59,26 @@ line** folds it again. A stop shows its run whole, as the tray opens on it. The 
 <figure>
   <img src="/screenshots/desktop-runs-tray-compact.png" alt="The Local runs tray as a compact list: a run waiting at a stop with Show the stop, one that passed with Run again, and one that failed with Open the failure">
   <figcaption>Three runs, one line each, each with the action it needs.</figcaption>
+</figure>
+
+## Code from the runs
+
+The app holds no editor, so the code a stop of its runs makes comes to the tray, under **Code from the runs**:
+
+- **Assert a region** picks a region of the page, once you watch a headless stop live: its ARIA snapshot becomes a
+  `toMatchAriaSnapshot` check.
+- **Mock a request** lists the page's fetch and XHR responses, credentials hidden: the one you choose becomes a
+  `page.route`, with what to review in it.
+- **A locator picked**, on the image or with the pause bar's **Pick a locator**, shows with the line it was picked
+  for.
+- **An agent's code** (`code_write`) comes here too ([for agents](./desktop-runs#for-agents)).
+
+Each code shows the line it goes above and, apart, its import lines, each with **Copy**, made from the file as it is
+on disk in the folder linked to the project.
+
+<figure>
+  <img src="/screenshots/desktop-run-live-code.png" alt="Code from the runs in the desktop app's tray: a mocked request, the page.route call to write above tests/checkout.spec.ts:18, with Copy">
+  <figcaption>A mocked request, as code to copy above the stopped line.</figcaption>
 </figure>
 
 ## Its output
@@ -72,8 +104,8 @@ keeps the last 300 lines of each run's output through a reload.
 
 - **One window's runs.** Another window of the app lists its own; this tray shows their workers under **Other runs
   of the desktop app**.
-- **A run that reports to the team instance** (a run it asked for) links no Piwi run here: its page is on the
-  instance.
+- **A run that reports to the team instance** (a run it asked for) has no **Open run #N**, **Compare with run #N** or **Open the
+  failure** here: under its workers, **Run #78 · Open** opens its page on the instance in your browser.
 
 ## Related
 

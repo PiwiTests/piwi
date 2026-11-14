@@ -8,12 +8,11 @@ lang: en-US
 
 <Needs reporter fixtures editor />
 
-A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's own
-commands: no debug session starts, and the IDE's debugger works as usual beside it; so can
-[one started outside Piwi](./terminal-runs). The editor marks the line the test stopped at, as a debugger does, and
-the breakpoints you set or remove reach the run while it goes on. The page's
-[pause bar](./editor-breakpoints#pause-a-run) and Piwi Picker's [Runs window](./runs-window) answer the same stops. At
-a stop, the editor also writes code from the page: [Code from a pause](./editor-stop-code).
+A test run the [editor extensions](./editors) start, or [one started outside Piwi](./terminal-runs), can be paused,
+stepped and resumed from the editor with Piwi's own commands: no debug session starts, and the IDE's debugger works
+as usual beside it. The editor marks the line the test stopped at, and the breakpoints you set or remove reach the run
+while it goes on. The [pause bar](./editor-breakpoints#pause-a-run) and Piwi Picker's [Runs window](./runs-window)
+answer the same stops; the code a stop writes is on [Code from a pause](./editor-stop-code).
 
 ## The controls
 
@@ -43,9 +42,9 @@ The progress beside them comes from the run, so it counts offline and with the d
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
-finishes first, unless you [end the test there](./end-the-test#while-a-pause-waits-for-a-call), and a worker between
-tests stops at the next test's first call. A test that never stops, under CI or
-Playwright's own debugger, says why.
+finishes first ([End the test](./end-the-test#while-a-pause-waits-for-a-call) gives up a locator call at once), and a
+worker between tests stops at the next test's first call. A test that never stops, under CI or
+Playwright's debugger, says why.
 
 ## Where the test stands
 
@@ -74,8 +73,7 @@ cursor's line, else the only one shown, else it asks which. A control answers th
 went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
-**Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test
-has none.
+**Run to cursor** in an edited file runs to the run's line for the cursor's, or says a line written since has none.
 
 ## A headless run
 
@@ -93,15 +91,18 @@ opens it at any stop.
 Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: it replaces the
 stopped line's, and the tab shows the result or refusal.
 
-**Watch** updates the paused page until you hide or close the tab, resume or switch stops. Choose
-[**Interact**](./watch-running-test#interact) to click, scroll or type on it; your first one drives the stop.
-Interact stays on through the worker's stops, and goes off, giving the stop back, on Escape outside a pick or check,
-another
-[lane](/guide/concepts#worker)'s stop, a stop without input, **Watch** off or refused, the tab hidden or closed,
-or the run's end. The caption names who drives and watches the stop
-([driving a stop](/guide/concepts#presence-driving-a-stop)).
+**Watch** updates the paused page until you hide or close the tab, resume or switch stops, and
+[**Interact**](./watch-running-test#interact) plays your input on it, taking the stop.
 The preview uses the editor's connection: no Picker, pairing, live-view setting or port forwarding. Older reporters
 keep the still image. To watch the test before it stops: [Watch a running test](./watch-running-test).
+
+## Share with Playwright tools
+
+At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
+Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
+Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
+It is off until you ask, and asks first each time: any process of yours can then read the browser's pages and run code
+in them. It stays shared until the test ends; no agent can share it.
 
 ## Breakpoints while the run goes on
 
@@ -118,9 +119,8 @@ the test; a condition is not read, so a conditional breakpoint stops at each pas
   <img src="/diagrams/run-control.svg" alt="A test run's workers report to the editor service through the run channel, which the IDE and Piwi Picker (over a WebSocket) steer; the pause bar shows in the test's browser only at a stop">
 </figure>
 
-With a reporter newer than 0.59.0, each worker of a Piwi run stays connected to the editor service, through a socket on
-your machine only you can read (`PIWI_RUN_CHANNEL`): it says which test it runs and where it stops, and the editor
-answers. Closing the IDE closes the connections: a stop with no pause bar then goes on, one the bar shows waits there.
+With a reporter newer than 0.59.0, each worker of a Piwi run stays connected to the editor service through a socket
+only you can read (`PIWI_RUN_CHANNEL`), saying which test it runs and where it stops. Closing the IDE closes the connections: a stop with no pause bar then goes on, one the bar shows waits there.
 
 ## Limits
 
@@ -134,8 +134,8 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 ## Related
 
-- [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
-- [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
-- [Share a run live](./share-live): let a teammate watch a run Piwi started, from the editor.
-- [Debug in my editor](./debug-in-editor): such a run, started from a failure's page.
+- [Breakpoints in the browser](./editor-breakpoints): the breakpoints and the pause bar.
+- [Runs from the editor](./editor-runs): the commands that start a run.
+- [Share a run live](./share-live): let a teammate watch it.
+- [Debug in my editor](./debug-in-editor): a run started from a failure's page.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

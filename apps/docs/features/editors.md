@@ -21,7 +21,7 @@ and draws differently.
 ## Install and connect
 
 **You need a Piwi instance:** the [desktop app](/features/desktop), `npx @piwitests/server` or the Docker image.
-Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+Recording, runs by line, their pauses and steps need none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
 
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`
@@ -142,7 +142,7 @@ the lines above the code with Code Vision, and its actions under **Tools → Piw
 
 ## Related
 
-- [Failures in the editor](./editor-failures): the CI failures at their lines, the quick fixes and the failures view.
-- [Runs from the editor](./editor-runs): run tests, and follow the run in the status bar.
-- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them in a browser.
+- [Failures in the editor](./editor-failures): the CI failures, their quick fixes and the failures view.
+- [Runs from the editor](./editor-runs): run tests, and follow them in the status bar.
+- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them.
 - [Write, run and fix a test](./write-run-fix): the loop across tools.

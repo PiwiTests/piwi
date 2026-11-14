@@ -12,7 +12,8 @@ Under the image of a worker's [live view](./live-view), the panel also shows wha
 the test's requests said, the page as text, and a filmstrip of the test's calls. It is for a test that fails or waits
 for a reason the pixels do not show: a console error, a request that never answered, a 500 and the exception the
 backend logged for it. Each part comes from the worker only while the panel shows it, in a CI run or a run
-[shared from a developer's machine](./share-live), and the dashboard stores none of it.
+[shared from a developer's machine](./share-live), and the dashboard stores none of it. Your editor, Piwi Picker's
+Runs window and the desktop app show the same beside a test they watch: [in your own tools](#in-your-own-tools).
 
 ## Page events
 
@@ -67,6 +68,22 @@ along.
   to the next test or closes.
 
 A worker of an older reporter sends none of them: the sections stay empty, and **Page text** says no text came.
+
+## In your own tools
+
+Under a watched page in your editor's view, a CI run's lane included, and, with a reporter newer than 0.68.0, in
+Piwi Picker's Runs window and the desktop app's tray ([Watch a running test](./watch-running-test)):
+
+- **Why it waits**: the call the test is in, how long it has run, how many elements its locator matches and whether
+  the first is enabled, and the last lines of Playwright's log.
+- **Events**: console and uncaught errors, failed requests, requests pending long (`POST /api/checkout pending 17 s`)
+  and the errors the backend logged, newest first.
+- **Text**: the page as roles and names, its secret fields hidden, read at each test (**Show the page's text** in the
+  Runs window and the tray), then followed through the test's trace. Find searches it.
+- **Filmstrip**: one image per call the test finished; a click shows it larger, with its call.
+
+The text and the filmstrip are read only while open, and kept in memory alone, on your machine. The view says when an
+older reporter, or team instance, may send none of them.
 
 ## In the demo
 

@@ -9,8 +9,24 @@ lang: en-US
 <Needs extension editor />
 
 [Send to editor](./editor-recording#send-from-piwi-picker) and the [Runs window](./runs-window) reach your editor
-through one pairing: the address **Piwi: Pair with Piwi Picker** copies, pasted under **Send to editor** in Piwi
-Picker's settings. The desktop app has a pairing of its own, which the Runs window follows beside it.
+through one pairing. The desktop app has a pairing of its own, which the Runs window follows beside it
+([the desktop app's runs](./runs-window#the-desktop-app-s-runs)).
+
+## Pair
+
+1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
+   It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
+2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
+   that local address.
+
+In a remote window (Remote SSH, WSL, Dev Containers), the pairing address is the local end of a port VS Code forwards
+to the listener, listed in the Ports view, and the Runs window lists that window's runs:
+[Remote development](/guide/remote-development).
+
+Every test run Piwi starts gets the pairing address and token as `PIWI_EDITOR_SEND`, so a locator picked at one of its
+stops reaches the editor: such a run starts the listener and creates the token if there is none. The capture fixtures
+hide it from the processes a test starts; the Playwright runner and its `webServer` still have it, and programs
+running as your user are not kept out.
 
 ## What the pairing reaches
 
@@ -45,6 +61,6 @@ the Runs window says why.
 ## Related
 
 - [Runs window](./runs-window): the runs it follows, and their controls.
-- [Record tests from the editor](./editor-recording#send-from-piwi-picker): pairing, and what Send to editor inserts.
+- [Record tests from the editor](./editor-recording#send-from-piwi-picker): what Send to editor inserts.
 - [Remote development](/guide/remote-development): the pairing address of a remote window.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
