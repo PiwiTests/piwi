@@ -78,6 +78,19 @@ describe('the readers of the registry', () => {
     }
   });
 
+  // A reader that wrote a place's label itself would drift from the list: none holds one as a literal.
+  test.each([
+    ['pages/projects/[id]/index.vue', [...PROJECT_TABS, ...PROJECT_FAILURE_VIEWS, ...PROJECT_MENU_PAGES]],
+    ['pages/test-runs/[id].vue', [...RUN_TABS]],
+    ['components/project/ProjectCoverageTab.vue', [...PROJECT_COVERAGE_VIEWS]],
+  ])('%s writes no label of the lists itself', (file, places) => {
+    const text = source(file);
+    const written = places
+      .map((place) => place.label)
+      .filter((label) => new RegExp(`label:\\s*['"\`]${label}\\b`).test(text));
+    expect(written).toEqual([]);
+  });
+
   test('the project page hides a tab by the rule the command palette follows', () => {
     expect(source('pages/projects/[id]/index.vue')).toMatch(/\bprojectTabHidden\s*\(/);
   });
