@@ -125,7 +125,14 @@ restates under `GlueTest`, its two stop controls the catalog also titles held to
 stop's controls and code actions with their short labels (AC9, AC11), a recording's states, controls and edited
 block's message, JetBrains' banner reading as the status bar, a worker's and a CI lane's name and the worker panel's
 title, and Hold failures' choices, short and whole, and a run's state (NF3 in part: the start options' shape and the
-welcomes' links remain); the pausing line's call and time come from the service's run line (LR18). Record here is a code action where the
+welcomes' links remain); the pausing line's call and time come from the service's run line (LR18). M10 in part: one settings
+registry (`packages/editor/src/settings.json`, `@piwitests/editor/settings`) gives each option its group, order,
+scope, type, default and choice labels; VS Code's settings follow its groups (Connection, Runs, Agents (MCP),
+Advanced) with labeled choices, a team's options window-scoped and every other one application-scoped, the run options
+written to the user's settings (ST7, ST12 and NF8 in part), and JetBrains' page takes its group titles and labels, its
+AI Assistant group renamed Agents (MCP) (ST21 in part). The display switches (ST8), a CI-positions switch (NF8),
+JetBrains' application-level defaults (ST12), one comment per storage group (ST13), the docs links (ST15) and the copy
+notices' agent wording (ST21) remain. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),

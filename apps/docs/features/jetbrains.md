@@ -101,13 +101,13 @@ line** on the debugger's Show Execution Point key:
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
-- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → AI Assistant** chooses whether the copied
+- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → Agents (MCP)** chooses whether the copied
   configuration holds the IDE's key or has the agent sign in through the browser
   ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
 - **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the runs' MCP server configuration for
   agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;
-  **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
+  **Settings → Tools → Piwi → Agents (MCP)** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
   stopped test's browser with Playwright tools**, after a warning.
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.

@@ -156,7 +156,10 @@ the status item and the view say the service is down. The client writes to the e
 
 ## Settings and stored state
 
-The settings (`contributes.configuration` in `package.json`):
+The settings (`contributes.configuration` in `package.json`), in the groups and order of the editor service's settings
+registry (`packages/editor/src/settings.json`), which `tests/settings.test.ts` holds them to with their scope, type,
+default and choice labels (`enumItemLabels`): a team's options (`piwi.serverUrl`, `piwi.project`) are window-scoped,
+every other one application-scoped, each person's own, which a committed `.vscode/settings.json` does not override:
 
 | Setting                  | Values, default first                    | What it does                                                                                    |
 | ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -372,8 +375,8 @@ Every test run takes the person's start options (`withRunStart` in `src/glue.ts`
 failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
 Testing view's and Verify ×3 included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
 **Piwi: Turn headed runs on or off** (`piwi.toggleRunHeaded`) and **Piwi: Hold failures from each run's start…**
-(`piwi.setRunHoldFailures`) change them, and **Piwi: Run options…** (`piwi.runOptions`) offers both in a QuickPick, writing the workspace's settings when they hold a
-value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
+(`piwi.setRunHoldFailures`) change them, and **Piwi: Run options…** (`piwi.runOptions`) offers both in a QuickPick, each written in the user's settings, which no workspace overrides (both are
+application-scoped), and the status bar item's tooltip ends with them (`runStartLine`).
 
 ### Breakpoints
 

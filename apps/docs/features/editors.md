@@ -99,7 +99,7 @@ connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration*
 running `mcp-remote`. It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
-to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
+to `sign-in` (**Settings → Tools → Piwi → Agents (MCP)** in a JetBrains IDE): the server comes without a key, and the
 agent [signs in](/features/mcp#authentication) in your browser when it first connects. You revoke that token with
 your API keys. The desktop app keeps its own token. For the runs the editor starts:
 [Run control for agents](./agent-run-control).

@@ -2271,6 +2271,32 @@ class GlueTest {
     }
 
     @Test
+    fun `the settings page's groups, choices and defaults are the editor service's registry`() {
+        val file = java.io.File("../../packages/editor/src/settings.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val registry = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        val groups = registry.getAsJsonArray("groups").associate { it.asJsonObject.let { g -> g["id"].asString to g["title"].asString } }
+        assertEquals(groups.entries.toList(), SettingsWords.GROUPS.entries.toList())
+        val settings = registry.getAsJsonArray("settings").map { it.asJsonObject }.filter { !it["jetbrains"].isJsonNull }
+        val choices = settings.filter { it.has("choices") }.associate { setting ->
+            setting["jetbrains"].asString to setting.getAsJsonArray("choices").map { it.asJsonObject }.associate { choice ->
+                val label = choice["label"]
+                choice["value"].asString to if (label.isJsonPrimitive) label.asString else label.asJsonObject["jetbrains"].asString
+            }
+        }
+        assertEquals(choices.mapValues { it.value.entries.toList() }.entries.toList(), SettingsWords.CHOICES.mapValues { it.value.entries.toList() }.entries.toList())
+        // Each option's default is its field's in the project's settings.
+        val states = listOf(PiwiLocalSettings.State(), PiwiSettings.State())
+        for (setting in settings) {
+            val field = setting["jetbrains"].asString
+            val state = states.first { s -> s.javaClass.methods.any { it.name == "get" + field.replaceFirstChar(Char::uppercase) } }
+            val value = state.javaClass.getMethod("get" + field.replaceFirstChar(Char::uppercase)).invoke(state)
+            val expected = setting["default"].let { if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asString }
+            assertEquals(field, expected, value)
+        }
+    }
+
+    @Test
     fun `the words both editors write are the editor service's, which VS Code reads`() {
         val file = java.io.File("../../packages/editor/src/words.json")
         assertTrue(file.absolutePath, file.isFile)

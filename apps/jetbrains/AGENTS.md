@@ -42,6 +42,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A word both editors write themselves comes from `packages/editor/src/words.json`, restated in `EditorWords.WORDS`**
   (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
+- **The settings page's group titles and choice labels are the editor service's settings registry**
+  (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option's default is its field's in
+  `PiwiLocalSettings` or `PiwiSettings`; `GlueTest` holds the copy and the defaults to the file.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the

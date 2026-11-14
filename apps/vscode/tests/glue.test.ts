@@ -105,7 +105,6 @@ import {
   type TextSpan,
   type TreeTest,
   runOptionPicks,
-  runOptionTarget,
   runStartChoices,
   runStartLine,
   runStartOptions,
@@ -150,6 +149,14 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
     },
   ],
 });
+
+/** A setting of the extension's manifest, from whichever of its groups holds it. */
+function manifestSetting(key: string): unknown {
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')) as {
+    contributes: { configuration: Array<{ properties: Record<string, unknown> }> };
+  };
+  return manifest.contributes.configuration.find((group) => key in group.properties)?.properties[key];
+}
 
 describe('statusMenu', () => {
   const idle = {
@@ -1241,8 +1248,10 @@ describe('a notice of the service', () => {
   });
 
   test('can be hidden by every kind the service names, in the settings', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
-    const setting = manifest.contributes.configuration.properties['piwi.hiddenMessages'];
+    const setting = manifestSetting('piwi.hiddenMessages') as {
+      items: { enum: string[]; enumDescriptions: string[] };
+      scope: string;
+    };
     expect(setting.items.enum).toEqual([...NOTICE_KEYS]);
     expect(setting.items.enumDescriptions).toHaveLength(NOTICE_KEYS.length);
     expect(setting.scope).toBe('application');
@@ -2634,11 +2643,8 @@ describe('how every run of the window starts', () => {
   });
 
   test('word Hold failures as the editors’ words table does, in the setting too', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
-      contributes: { configuration: { properties: Record<string, { enumDescriptions?: string[] }> } };
-    };
     const whole = (['hold.auto', 'hold.on', 'hold.off'] as const).map((key) => `${CLIENT_WORDS[key]}.`);
-    expect(manifest.contributes.configuration.properties['piwi.runHoldFailures']!.enumDescriptions).toEqual(whole);
+    expect((manifestSetting('piwi.runHoldFailures') as { enumDescriptions: string[] }).enumDescriptions).toEqual(whole);
     expect(HOLD_FAILURES_CHOICES.map((c) => [c.label, `${c.detail}.`])).toEqual([
       ['Auto', whole[0]],
       ['On', whole[1]],
@@ -2656,13 +2662,6 @@ describe('how every run of the window starts', () => {
     expect(picks[0]!.detail).toBe(
       'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
     );
-  });
-
-  test('Run options… writes to the workspace’s settings only when they hold a value', () => {
-    expect(runOptionTarget(undefined)).toBe('global');
-    expect(runOptionTarget({})).toBe('global');
-    expect(runOptionTarget({ workspaceValue: 'off' })).toBe('workspace');
-    expect(runOptionTarget({ workspaceValue: false })).toBe('workspace');
   });
 });
 
