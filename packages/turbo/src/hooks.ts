@@ -255,16 +255,20 @@ function hookContextReset(core: ServerPage): void {
     }
     return resetForReuse.call(this, progress, params);
   };
-  // Playwright's reset restores the storage once no page of the test is left on a visited origin: the rest of their
-  // storage is cleared through CDP, so only the configured storage state's origins are loaded.
+  // Playwright's reset restores the storage once no page of the test is left on a visited origin. Sealed, the rest
+  // of their storage is cleared through CDP, so only the configured storage state's origins are loaded. Otherwise
+  // Playwright loads each origin to clear its storage, all but Cache Storage, cleared here.
   proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
+    const sealed = sealedContexts.delete(this);
     const session = this.pages?.()[0]?.delegate?._mainFrameSession?._client;
-    if (mode === 'resetForReuse' && sealedContexts.delete(this) && session) {
-      state.counters.fastResets++;
+    if (mode === 'resetForReuse' && state.fastReset && session) {
       const origins = this._origins as Set<string>;
-      for (const origin of origins)
-        await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
-      origins.clear();
+      const storageTypes = sealed ? CLEARED_STORAGE : 'cache_storage';
+      for (const origin of origins) await session.send('Storage.clearDataForOrigin', { origin, storageTypes });
+      if (sealed) {
+        state.counters.fastResets++;
+        origins.clear();
+      }
     }
     return setStorageState.call(this, progress, storageState, mode);
   };

@@ -74,9 +74,11 @@ workers, took it to 16 s.
 
 `fast` keeps one browser context per worker and resets it between tests, instead of creating a context for each test:
 Playwright's own `reuseContext`, plus turbo's reset of offline mode, extra HTTP headers, permissions, geolocation and,
-on Chromium, Cache Storage, which Playwright's reset leaves behind. The package's tests check each kind of state a
-test can leave. It needs video off, and `reuseContext: false` turns it off. On Flashwright's benchmark suites it took
-5–25% off the app suites; on a suite whose time is mostly waiting on its API it changes little.
+on Chromium, Cache Storage, which Playwright's reset leaves behind. The package's tests check each kind of state a test
+can leave. It needs video off, and `reuseContext: false` turns it off. On Flashwright's benchmark suites it took 3–20%
+off the app suites, and added 2–8% to a suite of trivial tests and to one of very large pages, where Playwright's reset
+of a context takes longer than a new context: turn it off for such a suite. On a suite whose time is mostly waiting on
+its API it changes little.
 
 ## Advanced: the levers one by one
 

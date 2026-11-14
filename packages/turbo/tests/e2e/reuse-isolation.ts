@@ -79,18 +79,22 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(left).toEqual([null, null]);
   });
 
-  test('leaves session storage on an origin it navigated away from', async ({ page }) => {
+  test('leaves session storage and caches on an origin it navigated away from', async ({ page }) => {
     await page.goto(origin);
-    await page.evaluate(() => sessionStorage.setItem('left', '1'));
+    await page.evaluate(async () => {
+      sessionStorage.setItem('left', '1');
+      await (await caches.open('left')).put('/left', new Response('1'));
+    });
     await page.route('https://elsewhere.test/**', (route) =>
       route.fulfill({ contentType: 'text/html', body: '<p>away' }),
     );
     await page.goto('https://elsewhere.test/');
   });
 
-  test('starts with no session storage of an origin the last test left', async ({ page }) => {
+  test('starts with no session storage or caches of an origin the last test left', async ({ page }) => {
     await page.goto(origin);
-    expect(await page.evaluate(() => sessionStorage.getItem('left'))).toBeNull();
+    const left = await page.evaluate(async () => [sessionStorage.getItem('left'), await caches.keys()]);
+    expect(left).toEqual([null, []]);
   });
 
   test('leaves permissions, geolocation, headers and offline mode behind', async ({ context }) => {

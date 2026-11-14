@@ -248,9 +248,11 @@ export const test = base.extend<
         };
         listeners.push(() => (context.newPage = newPage));
       }
-      const origins = new Set<string>();
       const changed = reuseContextWithReset ? watchSettings(context) : new Set<Setter>();
-      if (reuseContextWithReset) {
+      // The origins whose Cache Storage the reset of a reused context keeps; fastReset clears it itself.
+      const origins = new Set<string>();
+      const clearCaches = reuseContextWithReset && browserName === 'chromium' && !fastReset;
+      if (clearCaches) {
         const onRequest = (request: Request) => {
           const { protocol, origin } = new URL(request.url());
           if (protocol === 'http:' || protocol === 'https:') origins.add(origin);
@@ -271,7 +273,7 @@ export const test = base.extend<
           { extraHTTPHeaders, permissions, geolocation, offline },
           changed,
           origins,
-          browserName === 'chromium' && !fastReset,
+          clearCaches,
         );
       }
     } finally {
