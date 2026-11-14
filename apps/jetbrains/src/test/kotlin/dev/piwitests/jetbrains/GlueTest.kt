@@ -75,21 +75,37 @@ class GlueTest {
     }
 
     @Test
-    fun `the first-run notification shows once, in a trusted project with a Playwright config that nothing connects`() {
+    fun `the Get Started tab opens once, in a trusted project with a Playwright config, connected or not`() {
         val dirs = listOf(Path.of("/w/e2e"))
-        assertEquals(true, Glue.showsFirstRun(shown = false, trusted = true, configDirs = dirs, status = null, instances = listOf(null, "")))
-        assertEquals("once per installation", false, Glue.showsFirstRun(true, true, dirs, null, emptyList()))
-        assertEquals("never in an untrusted project", false, Glue.showsFirstRun(false, false, dirs, null, emptyList()))
-        assertEquals("not without a config", false, Glue.showsFirstRun(false, true, emptyList(), null, emptyList()))
-        assertEquals("not once connected", false, Glue.showsFirstRun(false, true, dirs, connected, emptyList()))
-        val unconnected = StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen.")))
-        assertEquals(true, Glue.showsFirstRun(false, true, dirs, unconnected, emptyList()))
-        assertEquals(
-            "not while the project names an instance, before the service answers",
-            false,
-            Glue.showsFirstRun(false, true, dirs, null, listOf(null, "https://piwi.example.com")),
-        )
+        assertEquals(true, Glue.showsGetStarted(shown = false, trusted = true, configDirs = dirs))
+        assertEquals("once per installation", false, Glue.showsGetStarted(true, true, dirs))
+        assertEquals("never in an untrusted project", false, Glue.showsGetStarted(false, false, dirs))
+        assertEquals("not without a config", false, Glue.showsGetStarted(false, true, emptyList()))
+        // One offer per session: the first to ask.
+        val queue = Glue.FirstRunQueue()
+        assertEquals(listOf(true, false, false), listOf(queue.take(), queue.take(), queue.take()))
     }
+
+    @Test
+    fun `the Get Started tab plays the editor service's onboarding script, in this editor's words`() {
+        val file = java.io.File("../../packages/editor/src/onboarding.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val script = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        assertEquals(script["title"].asString to script["description"].asString, OnboardingSteps.TITLE to OnboardingSteps.DESCRIPTION)
+        val words = { text: String -> text.replace("{cursor}", "caret").replace("{window}", "project") }
+        val steps = script["steps"].asJsonArray.map { it.asJsonObject }
+        assertEquals(
+            steps.map { step ->
+                val text = step["text"].let { if (it.isJsonPrimitive) it.asString else it.asJsonObject["jetbrains"].asString }
+                listOf(step["id"].asString, step["title"].asString, words(text), words(step["action"].asString).removeSuffix("…"))
+                    .plus(step["image"]?.asJsonObject?.get("jetbrains")?.asString)
+            },
+            OnboardingSteps.STEPS.map { listOf(it.id, it.title, it.text, it.label.removeSuffix("…"), it.image) },
+        )
+        // A step's text as HTML: its own markup escaped, its code spans as code.
+        assertEquals("Press <code>Ctrl+K</code> &lt;b&gt;", Glue.onboardingHtml("Press `Ctrl+K` <b>"))
+    }
+
 
     @Test
     fun `the status bar tooltip shows the instance's and the project's text as text, a line per line`() {
@@ -2173,10 +2189,20 @@ class GlueTest {
         val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
         assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
         assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
-        assertEquals(Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT)), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(
-            Glue.EmptyText("Piwi is not connected to an instance, so it has no run to show.", listOf(Glue.EmptyLink.CONNECT)),
-            Glue.failuresEmpty(FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show."), null, null),
+            Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE)),
+            Glue.failuresEmpty(FailuresView("disconnected"), null, null),
+        )
+        assertEquals(
+            Glue.EmptyText(
+                "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
+                listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE),
+            ),
+            Glue.failuresEmpty(
+                FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show. Recording works without one."),
+                null,
+                null,
+            ),
         )
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)

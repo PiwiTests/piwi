@@ -552,10 +552,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             }
         }
 
-        /** Once per installation: offer Piwi's MCP server to the IDE's agent. */
+        /** Once per installation, when the first-run queue gives it the turn (`Glue.FIRST_RUN`): offer Piwi's MCP server to the IDE's agent. */
         fun offer(project: Project) {
             val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-            if (properties.getBoolean(OFFERED)) return
+            if (properties.getBoolean(OFFERED) || !Glue.FIRST_RUN.take()) return
             properties.setValue(OFFERED, true)
             PiwiNotifier.create(
                 PiwiNotice.OFFER,

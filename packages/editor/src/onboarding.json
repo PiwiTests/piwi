@@ -1,0 +1,62 @@
+{
+  "title": "Get started with Piwi",
+  "description": "Connect, then run, stop and record your tests.",
+  "steps": [
+    {
+      "id": "connect",
+      "title": "Connect to your Piwi instance",
+      "text": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already, and recording needs no instance.",
+      "action": "Connect…"
+    },
+    {
+      "id": "failures",
+      "title": "See the failures of the latest CI run",
+      "text": {
+        "vscode": "The Failures view lists the failures of the latest CI run on your branch, with your local runs since. Each one is also in the Problems panel, at the line that failed.",
+        "jetbrains": "The Piwi tool window lists the failures of the latest CI run on your branch, with your local runs since. Each one is also marked in the editor, at the line that failed."
+      },
+      "action": "Open the failures",
+      "vscodeCommand": "piwi.failures.focus",
+      "image": { "vscode": "vscode-failures.png", "jetbrains": "jetbrains-failures.png" }
+    },
+    {
+      "id": "run",
+      "title": "Run the failing tests",
+      "text": "Re-run every test still failing, or, in a spec, run the test at the {cursor} with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.",
+      "action": "Re-run the failing tests",
+      "image": { "vscode": "vscode-testing.png" }
+    },
+    {
+      "id": "breakpoint",
+      "title": "Stop at a breakpoint, and write code there",
+      "text": "Set a breakpoint on a line of a test or a page object, then run the test at the {cursor}: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.",
+      "action": "Run the test at the {cursor}",
+      "image": { "vscode": "vscode-run-control-paused-page.png" }
+    },
+    {
+      "id": "record",
+      "title": "Record a test",
+      "text": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the {cursor}. No instance needed.",
+      "action": "Record a new test file…"
+    },
+    {
+      "id": "pair",
+      "title": "Pair Piwi Picker",
+      "text": "Piwi Picker, the browser extension, sends a locator you pick on any page to the {cursor}, and follows the runs this {window} starts. Pairing gives it this editor's address.",
+      "action": "Pair with Piwi Picker"
+    },
+    {
+      "id": "mcp",
+      "title": "Give your agent Piwi's MCP server",
+      "text": "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings. It holds your API key: keep it out of the repository.",
+      "provided": "VS Code lists Piwi's MCP server for its agent, with your connection: it reads the suite's failures, flaky tests and healings. For another agent, copy the server's configuration into its MCP settings.",
+      "action": "Copy the MCP server configuration"
+    },
+    {
+      "id": "settings",
+      "title": "Open the settings",
+      "text": "Choose the lines Piwi writes above the code, how a failure shows at its line, when a run says what it changed, and whether runs pause at your breakpoints.",
+      "action": "Open settings"
+    }
+  ]
+}

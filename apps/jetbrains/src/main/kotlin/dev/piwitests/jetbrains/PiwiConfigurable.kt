@@ -252,10 +252,10 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                         .bindSelected({ local.serveRunsToAgents }, { local.serveRunsToAgents = it })
                         .comment(
                             "An MCP server on 127.0.0.1, behind a token: an agent follows a run, stops it, reads and acts on " +
-                                "the stopped page, and has Piwi write the code there. Tools → Piwi copies its configuration for " +
-                                "your agent, or for Claude Code or Cursor, and resets its token",
+                                "the stopped page, and has Piwi write the code there",
                         )
                 }
+                for (id in AGENT_ACTIONS) row { actionButton(id) }
             }
             onReset { show() }
         }
@@ -386,6 +386,23 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
 private fun com.intellij.ui.dsl.builder.Panel.kept(text: String, group: String) {
     row {
         comment("${Glue.escapeHtml(text)} <a href=\"${SettingsWords.docsUrl(group)}\">Documentation</a>", maxLineLength = 90)
+    }
+}
+
+/** The actions that give an agent Piwi's MCP servers, as buttons of the Agents (MCP) group. */
+private val AGENT_ACTIONS = listOf(
+    "Piwi.CopyMcpConfiguration",
+    "Piwi.CopyRunsMcpConfiguration",
+    "Piwi.CopyRunsMcpHttpConfiguration",
+    "Piwi.ResetRunsMcpToken",
+)
+
+/** A button that runs the registered action `id`, with its text, from the settings page. */
+private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String) {
+    val action = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return
+    button(action.templatePresentation.text ?: id) { e ->
+        com.intellij.openapi.actionSystem.ActionManager.getInstance()
+            .tryToExecute(action, null, e.source as? java.awt.Component, "PiwiSettings", true)
     }
 }
 

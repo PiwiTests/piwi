@@ -19,6 +19,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A setting is registered in the editor service's settings registry first** (`packages/editor/src/settings.json`: its
   group, order, scope, type, default and choice labels); `package.json`'s groups follow it, a team's option
   window-scoped and a person's application-scoped, written to the user's settings. Checked by `tests/settings.test.ts`.
+- **The walkthrough is the editor service's onboarding script** (`packages/editor/src/onboarding.json`): its steps'
+  titles, texts, buttons and screenshots, which `build.mjs` copies to `dist/walkthrough/`. Checked by
+  `tests/walkthrough.test.ts`, which also holds the settings step to the settings registry.
 - **A command's title is the action catalog's title** (`packages/editor/src/actions.ts`), the same as JetBrains' but
   the cursor for the caret and the window for the project. `packages/editor/tests/actions.test.ts` holds `package.json`
   to it.

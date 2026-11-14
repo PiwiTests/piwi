@@ -417,20 +417,39 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
 
 /**
  * Once per machine, on the first activation in a workspace that holds a Playwright config: the walkthrough, unless
- * `workbench.welcomePage.walkthroughs.openOnInstall` is off. Never in the integration suite's window.
+ * `workbench.welcomePage.walkthroughs.openOnInstall` is off. Never in the integration suite's window. Whether it opened.
  */
-async function openWalkthroughOnce(context: vscode.ExtensionContext): Promise<void> {
-  if (context.globalState.get(WALKTHROUGH_OPENED) || context.extensionMode === vscode.ExtensionMode.Test) return;
-  if (!vscode.workspace.getConfiguration('workbench').get('welcomePage.walkthroughs.openOnInstall', true)) return;
+async function openWalkthroughOnce(context: vscode.ExtensionContext): Promise<boolean> {
+  if (context.globalState.get(WALKTHROUGH_OPENED) || context.extensionMode === vscode.ExtensionMode.Test) return false;
+  if (!vscode.workspace.getConfiguration('workbench').get('welcomePage.walkthroughs.openOnInstall', true)) return false;
   const configs = await vscode.workspace.findFiles(PLAYWRIGHT_CONFIGS, '**/node_modules/**', 1);
-  if (!configs.length) return;
+  if (!configs.length) return false;
   await context.globalState.update(WALKTHROUGH_OPENED, true);
   await vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false);
+  return true;
+}
+
+/**
+ * The first-run queue: one offer per window, the walkthrough first. An offer that does not get the window's turn
+ * keeps its flag unset, so a later window makes it.
+ */
+let firstRun: Promise<boolean> = Promise.resolve(false);
+let firstRunTaken = false;
+
+/** Whether an offer may show in this window now: once the walkthrough is settled, the first offer to ask. */
+async function takeFirstRunTurn(): Promise<boolean> {
+  if (await firstRun) firstRunTaken = true;
+  if (firstRunTaken) return false;
+  firstRunTaken = true;
+  return true;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
-  void openWalkthroughOnce(context);
+  // VS Code 1.101 and later list Piwi's MCP server for the agent: the walkthrough's MCP step says so then.
+  const mcpProvided = !!(vscode as unknown as { lm?: Partial<McpApi> }).lm?.registerMcpServerDefinitionProvider;
+  setContextKey('piwi.mcpProvided', mcpProvided);
+  firstRun = openWalkthroughOnce(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   /** The service as a child process, with the editor's proxy settings in its environment. */
   const service = (): NodeModule => ({
@@ -2217,11 +2236,17 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }
 
-/** Once per machine: tell where Piwi's MCP server went, or offer its configuration where the editor has no provider API. */
+/**
+ * Once per machine, when the first-run queue gives it the window's turn: tell where Piwi's MCP server went, unless the
+ * walkthrough said it, or offer its configuration where the editor has no provider API.
+ */
 async function offerMcp(context: vscode.ExtensionContext, servers: McpServersResult): Promise<void> {
   if (context.globalState.get(MCP_OFFERED) || !servers.servers.length) return;
-  await context.globalState.update(MCP_OFFERED, true);
   const hasApi = !!(vscode as unknown as { lm?: Partial<McpApi> }).lm?.registerMcpServerDefinitionProvider;
+  // Where the editor lists the server itself, the walkthrough's MCP step said so already.
+  if (hasApi && context.globalState.get(WALKTHROUGH_OPENED)) return void context.globalState.update(MCP_OFFERED, true);
+  if (!(await takeFirstRunTurn())) return;
+  await context.globalState.update(MCP_OFFERED, true);
   if (hasApi) {
     void vscode.window.showInformationMessage(
       `Piwi's MCP server is listed for the editor's agent: it can read your suite's failures, flaky tests and healings. ${
@@ -2382,13 +2407,14 @@ async function useInstance(context: vscode.ExtensionContext, lc: LanguageClient,
 let offeringDesktop = false;
 
 /**
- * Once per workspace: when the desktop app runs while another instance is in use, offer to read
- * the workspace from the app. The other instance stays saved, one Piwi: Connect away.
+ * Once per workspace, when the first-run queue gives it the window's turn: when the desktop app runs while another
+ * instance is in use, offer to read the workspace from the app. The other instance stays saved, one Piwi: Connect away.
  */
 async function offerDesktop(context: vscode.ExtensionContext, lc: LanguageClient, status: StatusResult): Promise<void> {
   if (!status.desktopUrl || offeringDesktop || context.workspaceState.get<boolean>(DESKTOP_OFFERED)) return;
   const current = status.contexts.find((c) => c.connected) ?? status.contexts[0];
   if (!current?.serverUrl || current.source === 'desktop') return;
+  if (offeringDesktop || !(await takeFirstRunTurn())) return;
   offeringDesktop = true;
   try {
     await context.workspaceState.update(DESKTOP_OFFERED, true);

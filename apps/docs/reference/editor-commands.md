@@ -24,7 +24,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Open the log** | The editor service's log: its starts and ends, its errors and the requests that failed |
 | **Piwi: Open the Piwi menu** | VS Code: the status bar item's menu, which a JetBrains IDE opens with a click on its item: [The editor's status bar](/features/editor-status-bar) |
 | **Piwi: Node.js settings…** | JetBrains: choose the Node.js the editor service starts with |
-| **Piwi: Get started** | VS Code: open the walkthrough |
+| **Piwi: Get started** | Open the first steps: VS Code's walkthrough, or the Get started tab of the Piwi tool window in a JetBrains IDE |
 | **Piwi: Open the documentation** | Open this site in the browser: [Editor extensions](/features/editors) from VS Code, [JetBrains plugin](/features/jetbrains) from a JetBrains IDE |
 
 ## Runs

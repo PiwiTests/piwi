@@ -341,7 +341,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             addSeparator()
             addAll(registered("Piwi.PairPicker", "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration"))
             addSeparator()
-            addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings", "Piwi.OpenDocumentation"))
+            addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings", "Piwi.GetStarted", "Piwi.OpenDocumentation"))
         }
     }
 

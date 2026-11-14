@@ -12,6 +12,7 @@
     "./connect-failures": "./src/connect-failures.ts",
     "./words": "./src/words.ts",
     "./settings": "./src/settings.ts",
+    "./onboarding": "./src/onboarding.ts",
     "./discovery": "./src/discovery.ts",
     "./run-host": "./src/run-host.ts",
     "./request-host": "./src/request-host.ts",

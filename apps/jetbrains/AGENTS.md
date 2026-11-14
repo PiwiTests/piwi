@@ -46,6 +46,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
   level); `GlueTest` holds the copy, the scopes and the defaults to the file.
+- **The Get Started tab plays the editor service's onboarding script** (`packages/editor/src/onboarding.json`),
+  restated in `OnboardingSteps`, its screenshots bundled by `processResources`; `GlueTest` holds the copy to the file.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the

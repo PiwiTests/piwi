@@ -531,10 +531,6 @@ object Glue {
     const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
         ".env. Trusting it starts Piwi."
 
-    /** What the first-run notification says Piwi does. */
-    const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
-        "with your local runs laid over them, and records tests at the caret."
-
     /**
      * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
      * Piwi reads Playwright Test suites in JavaScript and TypeScript.
@@ -556,14 +552,28 @@ object Glue {
     const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
-     * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a
-     * Playwright config, while no context of `status` is connected and none of `instances` names an instance (the
-     * project's settings, `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app while it
-     * runs). `status` is null until the service starts, with the first file opened.
+     * Whether the Get Started tab opens on its own: not `shown` on this installation yet, in a `trusted` project holding
+     * a Playwright config, connected or not.
      */
-    fun showsFirstRun(shown: Boolean, trusted: Boolean, configDirs: List<Path>, status: StatusResult?, instances: List<String?>): Boolean =
-        !shown && trusted && configDirs.isNotEmpty() &&
-            status?.contexts.orEmpty().none { it.connected } && instances.all { it.isNullOrBlank() }
+    fun showsGetStarted(shown: Boolean, trusted: Boolean, configDirs: List<Path>): Boolean =
+        !shown && trusted && configDirs.isNotEmpty()
+
+    /** A step of the onboarding script as the HTML the Get Started tab shows: its text, its `code` spans as code. */
+    fun onboardingHtml(text: String): String = escapeHtml(text).replace(Regex("`([^`]+)`"), "<code>$1</code>")
+
+    /**
+     * The first-run queue of this IDE session: one offer at a time, the Get Started tab first. An offer that does not
+     * get the turn keeps its flag unset, so a later session makes it.
+     */
+    class FirstRunQueue {
+        private val taken = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** Whether an offer may show now: the first to ask, alone. */
+        fun take(): Boolean = taken.compareAndSet(false, true)
+    }
+
+    /** The IDE's first-run queue, which every project shares. */
+    val FIRST_RUN = FirstRunQueue()
 
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
@@ -1238,6 +1248,7 @@ object Glue {
         RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
         COMPARE("Compare with…", "Piwi.CompareWith"),
+        RECORD_NEW_FILE("Record a new test file…", "Piwi.RecordNewFile"),
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
@@ -1247,10 +1258,10 @@ object Glue {
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
      * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
      * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
-     * with Connect…; else no failure in the run read (`runId`).
+     * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
         "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
         "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
         "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))

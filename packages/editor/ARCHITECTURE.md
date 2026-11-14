@@ -131,6 +131,10 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/settings.ts`, `src/settings.json`: the editors' settings registry: each option's VS Code key and JetBrains
   field, its group and order, its scope (a team's or a person's), type, default and choice labels, the editor's own
   word where the two differ; VS Code's manifest and the JetBrains settings page are held to it.
+- `src/onboarding.ts`, `src/onboarding.json`: the onboarding script, the first steps with Piwi written once: each
+  step's title, its text in each editor's words, its button as an action of the catalog and the docs screenshot it
+  shows; VS Code's walkthrough plays it and the JetBrains plugin's `OnboardingSteps` restates it, held to the file by
+  `tests/onboarding.test.ts`, `apps/vscode/tests/walkthrough.test.ts` and `GlueTest`.
 - `src/words.ts`, `src/words.json`: the words both clients write themselves (a stop's controls and code actions with
   their short labels, a recording's states and controls, a worker's and a CI lane's name, the choices of Hold failures),
   `{name}` for a value the client fills in; VS Code reads them, and the JetBrains plugin's `EditorWords.WORDS` restates

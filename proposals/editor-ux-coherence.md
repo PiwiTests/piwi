@@ -142,7 +142,18 @@ project's own stay in `workspace.xml`. Each JetBrains group says once where its 
 project's store folder, Rider's included (ST13); a reference page, Editor settings, lists every option by group, written by hand
 as the registry holds no descriptions, its keys, defaults and kinds held to the registry by `docs-claims.test.ts`, and each VS Code setting, each JetBrains group and the page's help button link its section (ST15); the
 copy notices name the agent's MCP settings, the AI Assistant's only while it is enabled (ST21). M10 is built but for
-NF3's one shape of the start options; ST7, ST8, ST12, ST13 and ST15 are left out of this document. Record here is a code action where the
+NF3's one shape of the start options; ST7, ST8, ST12, ST13 and ST15 are left out of this document. M11 built: one
+onboarding script (`packages/editor/src/onboarding.json`, `@piwitests/editor/onboarding`) of eight steps, connect,
+the failures, a run, a breakpoint stop, a recording, pairing Piwi Picker, the MCP server and the settings, each with
+its catalog action as the button and a docs screenshot where one exists. VS Code plays it as its walkthrough, with a
+one-line description, the screenshots as `media.image` and an MCP step for 1.101 and later (`piwi.mcpProvided`);
+JetBrains as a Get Started tab of the Piwi tool window (`Piwi.GetStarted`, in Tools → Piwi, the gear and Help),
+opened once per installation, connected or not, in place of the first-run balloon, each step checked off once its
+action ran (ST1, ST2). Both disconnected homes offer Record a new test file…, 'Recording works without one' (ST3). One
+first-run queue in each editor: the first steps, then one offer per window or session; VS Code's MCP notice stays
+silent on 1.101 and later once the walkthrough opened (ST4). JetBrains' Agents (MCP) group holds the copy and token
+actions as buttons (ST21). ST1 to ST4 and ST21 are left out of this document; the settings step is held to the
+registry by a test rather than generated. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -172,7 +183,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **What is left.** Most of the plan's quick wins are built; the steps left center on one concept table and the words
   both clients show (M4, M22), the status menu (M3, M13), the run controls in the debugger's
   places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the start
-  options in one shape and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision (L3).
+  options in one shape (M10), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -231,7 +242,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 
 8. **The settings differ in each editor, and JetBrains introduces Piwi with one balloon**: VS Code's list is
    alphabetical with code values, the scopes differ, the gutter icons, locator warnings and tint cannot be switched off,
-   and JetBrains has no Get Started ([M10](#m10), [ST1](#st1)).
+   and JetBrains has no Get Started (M10, M11).
 
 9. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
 
@@ -491,36 +502,8 @@ once and shown first ([LI13](#li13)).
 
 ### 6.1 The first minutes
 
-<a id="st1"></a>**ST1. A JetBrains IDE has no Get Started: onboarding is one balloon, shown once per installation and
-only while nothing names an instance.** `PiwiProjectService.kt:342-354` shows it in a trusted project with a Playwright
-config while nothing connects it or names an instance (`Glue.showsFirstRun`), with Connect…, Open the Failures and Learn
-More but no Record. A Rider or WebStorm workspace connected through the environment, `.env` or the desktop app never
-sees it, and nothing reopens a missed one. VS Code opens a six-step walkthrough once per machine
-(`apps/vscode/src/extension.ts:396-403`) and keeps **Piwi: Get started**. **(read)** Fix: `Piwi.GetStarted` (Tools →
-Piwi, the Piwi tool window's gear menu, Help) opening a Get Started tab in the Piwi tool window once per installation,
-rendered from the walkthrough's step list with the same buttons and checks. ([M11](#m11), [LI12](#li12))
-
-<a id="st2"></a>**ST2. VS Code's walkthrough is six steps of text that skip breakpoints, the Testing view and Piwi
-Picker, and its description is cut off.** `apps/vscode/package.json:105-184` gives each step a Markdown page, though the
-docs hold screenshots of the same fixture; breakpoints get one sentence (`apps/vscode/walkthrough/run.md:12-13`),
-pairing Piwi Picker none, and `apps/vscode/walkthrough/settings.md` lists 6 of the 11 settings. In VS Code 1.143.1 the
-description ends in 'run and record test…'. A new user never sees a run paused at a breakpoint, the loop Piwi is built
-around. **(seen)** Fix: a one-line description, steps for a breakpoint stop and for pairing Piwi Picker, the docs'
-images as `media.image`, an MCP step per editor through `when`, `settings.md` generated from the settings registry,
-and the six-step cap of `apps/vscode/tests/walkthrough.test.ts:32` raised. ([M11](#m11), [LI12](#li12))
-
-<a id="st3"></a>**ST3. The disconnected home offers only Connect in both editors and never says that recording works
-without an instance.** The Failures view's welcome (`apps/vscode/package.json:74-78`) and the Piwi tool window's empty
-text (`Glue.kt:1119`, from `packages/editor/src/failure-tree.ts:434`) say only that Piwi is not connected, as
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.1 noted for VS Code. **(seen)** Fix: Record a new
-test file… beside Connect…, under a second line, 'Recording works without one'. ([M11](#m11), [LI12](#li12))
-
-<a id="st4"></a>**ST4. VS Code's first activation in an already-connected workspace can raise the walkthrough, the MCP
-notice and the desktop offer together.** The walkthrough opens once per machine
-(`apps/vscode/src/extension.ts:396-403`), then each full status read calls `offerDesktop` and `offerMcp`
-(`extension.ts:815, 826`); on 1.101+ the MCP toast repeats the walkthrough's step (`extension.ts:1968-1974`). **(seen)**
-Fix: one first-run queue in both editors (JetBrains offers MCP at its first connected status): the tour, the desktop
-offer, then the MCP offer after the first failure shown, none on 1.101+. ([M11](#m11), [LI12](#li12), [LI14](#li14))
+Built with M11: one onboarding script both editors play, VS Code's walkthrough with images and JetBrains' Get Started
+tab, the disconnected welcomes offering a recording, and one first-run queue. The Status says how.
 
 ### 6.2 The settings pages
 
@@ -541,14 +524,6 @@ connected, and a browser opened in another profile leaves Cancel as the only way
 and Open browser again, as VS Code's notification also gets. ([M12](#m12), [LI13](#li13))
 
 ### 6.4 Agents
-
-<a id="st21"></a>**ST21. The JetBrains agent setup is named after one product: the 'AI Assistant' group and the copy
-notices point at the AI Assistant's settings, also in a Rider without it.** The group is 'AI Assistant'
-(`PiwiConfigurable.kt:180`), and the notice after a copy names first 'Settings → Tools → AI Assistant → Model Context
-Protocol', a page Rider 2026.2.4.1 lacks without the AI Assistant, and 'your agent's MCP settings' only in parentheses
-or after a comma (`PiwiActions.kt:461-462`, `:495`); VS Code and the docs say 'your agent'. **(seen)** Fix: 'Agents
-(MCP)', with the copy and token actions on the page, the AI Assistant named only when `com.intellij.ml.llm` is enabled,
-and the offer queued ([ST4](#st4)). ([M10](#m10), [M11](#m11), [LI18](#li18))
 
 <a id="st22"></a>**ST22. JetBrains users paste a token-bearing MCP configuration into each agent, while VS Code
 registers Piwi's two MCP servers itself and Rider bundles an MCP server plugin Piwi does not use.** Tools → Piwi holds
@@ -1045,7 +1020,7 @@ queue. **Lives in** `packages/editor` (FSL); the dashboard's `GetStartedWizard` 
 ([extension-ux-audit.md](extension-ux-audit.md) item 23) can read it later. **Replaces** a balloon a `.env`-connected
 workspace never sees, six text-only steps. **Depends on** [LI6](#li6). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8 (a walkthrough in VS Code, a first-run notification
-in JetBrains). Step [M11](#m11).
+in JetBrains). Built as step M11.
 
 <a id="li13"></a>
 
@@ -1115,7 +1090,7 @@ registers `piwi.mcp` and `piwi.runs` itself. The base plugin keeps its 2024.1 fl
 the latest IDEs. The copy actions stay for older IDEs; an agent outside the IDE takes the study's P8 router, `npx
 @piwitests/reporter mcp`. **Lives in** `apps/jetbrains` (FSL). **Replaces** a token-bearing configuration pasted into
 each agent after every reset. **Depends on** [LI4](#li4). **Revisits** the premise that the platform has no public way
-to register an MCP server (`PiwiActions.kt:487-488`). Steps [M10](#m10), [M11](#m11), [M23](#m23).
+to register an MCP server (`PiwiActions.kt:487-488`). Steps [M10](#m10), M11 (built), [M23](#m23).
 
 **Checks (principle 9).**
 
@@ -1188,7 +1163,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m10"></a>M10 | **The start options in one shape in both editors**; the settings registry, its grouped pages, the display switches and the scopes are built (Status) | `ide` | [NF3](#nf3) |
-| <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state, a stop that waits for the person shown in it until answered | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18), [HM17](#hm17) |
 | <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
@@ -1251,9 +1225,8 @@ whether M14's places are interim.
     read-only (P10). Does a CI run ever take the line while none of the developer's own is live?
 11. **Team or personal settings**: which does a team share (`failureSeverity` in particular)? The new switches go into
     D25 before 1.0, and the service filters by them ([LI11](#li11)).
-12. **JetBrains' Get Started tab**: opened once per installation, as SonarQube for IDE's welcome is ([ST1](#st1)'s
-    lean), or only from Tools → Piwi and the first-run balloon, keeping
-    [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8's lighter touch?
+12. **JetBrains' Get Started tab**: answered by M11, opened once per installation, as SonarQube for IDE's welcome is,
+    in place of [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8's first-run balloon.
 13. **Rider's menus and keys**: whether Run Control goes in the Tests menu as well as the Run menu ([LR3](#lr3)); which
     Solution Explorer popup group works on Rider 2026.2; which letters are free in its Visual Studio 2022, Visual Studio
     and ReSharper keymaps; and which action runs when a keymap gives a Piwi chord to another action too?

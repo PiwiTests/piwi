@@ -119,7 +119,7 @@
     "viewsWelcome": [
       {
         "view": "piwi.failures",
-        "contents": "Piwi is not connected to an instance, so it has no run to show.\n[Connect…](command:piwi.connect)",
+        "contents": "Piwi is not connected to an instance, so it has no run to show. Recording works without one.\n[Connect…](command:piwi.connect)\n[Record a new test file…](command:piwi.recordFile)",
         "when": "piwi.failuresView == disconnected"
       },
       {
@@ -152,12 +152,12 @@
       {
         "id": "getStarted",
         "title": "Get started with Piwi",
-        "description": "Connect to your Piwi instance, see the latest CI failures, run and record tests, and give your agent Piwi's MCP server.",
+        "description": "Connect, then run, stop and record your tests.",
         "steps": [
           {
             "id": "connect",
             "title": "Connect to your Piwi instance",
-            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already.\n[Connect…](command:piwi.connect)",
+            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already, and recording needs no instance.\n[Connect…](command:piwi.connect)",
             "media": {
               "markdown": "walkthrough/connect.md"
             },
@@ -170,7 +170,8 @@
             "title": "See the failures of the latest CI run",
             "description": "The Failures view lists the failures of the latest CI run on your branch, with your local runs since. Each one is also in the Problems panel, at the line that failed.\n[Open the failures](command:piwi.failures.focus)",
             "media": {
-              "markdown": "walkthrough/failures.md"
+              "image": "dist/walkthrough/vscode-failures.png",
+              "altText": "See the failures of the latest CI run"
             },
             "completionEvents": [
               "onView:piwi.failures"
@@ -181,7 +182,8 @@
             "title": "Run the failing tests",
             "description": "Re-run every test still failing, or, in a spec, run the test at the cursor with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.\n[Re-run the failing tests](command:piwi.rerunFailing)",
             "media": {
-              "markdown": "walkthrough/run.md"
+              "image": "dist/walkthrough/vscode-testing.png",
+              "altText": "Run the failing tests"
             },
             "completionEvents": [
               "onCommand:piwi.rerunFailing",
@@ -189,6 +191,18 @@
               "onCommand:piwi.verifyTestAtCursor",
               "onCommand:piwi.runSpec",
               "onCommand:piwi.runTest"
+            ]
+          },
+          {
+            "id": "breakpoint",
+            "title": "Stop at a breakpoint, and write code there",
+            "description": "Set a breakpoint on a line of a test or a page object, then run the test at the cursor: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.\n[Run the test at the cursor](command:piwi.runTestAtCursor)",
+            "media": {
+              "image": "dist/walkthrough/vscode-run-control-paused-page.png",
+              "altText": "Stop at a breakpoint, and write code there"
+            },
+            "completionEvents": [
+              "onContext:piwi.runStopped"
             ]
           },
           {
@@ -204,20 +218,44 @@
             ]
           },
           {
+            "id": "pair",
+            "title": "Pair Piwi Picker",
+            "description": "Piwi Picker, the browser extension, sends a locator you pick on any page to the cursor, and follows the runs this window starts. Pairing gives it this editor's address.\n[Pair with Piwi Picker](command:piwi.pairPicker)",
+            "media": {
+              "markdown": "walkthrough/pair.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.pairPicker"
+            ]
+          },
+          {
             "id": "mcp",
             "title": "Give your agent Piwi's MCP server",
-            "description": "Your agent can read the suite's failures, flaky tests and healings. VS Code 1.101 and later lists the server for it with your connection; in another editor, copy its configuration.\n[Copy the MCP server configuration](command:piwi.copyMcpConfiguration)",
+            "description": "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings. It holds your API key: keep it out of the repository.\n[Copy the MCP server configuration…](command:piwi.copyMcpConfiguration)",
             "media": {
               "markdown": "walkthrough/mcp.md"
             },
             "completionEvents": [
               "onCommand:piwi.copyMcpConfiguration"
-            ]
+            ],
+            "when": "!piwi.mcpProvided"
+          },
+          {
+            "id": "mcp-provided",
+            "title": "Give your agent Piwi's MCP server",
+            "description": "VS Code lists Piwi's MCP server for its agent, with your connection: it reads the suite's failures, flaky tests and healings. For another agent, copy the server's configuration into its MCP settings.\n[Copy the MCP server configuration…](command:piwi.copyMcpConfiguration)",
+            "media": {
+              "markdown": "walkthrough/mcp.md"
+            },
+            "completionEvents": [
+              "onContext:piwi.mcpProvided"
+            ],
+            "when": "piwi.mcpProvided"
           },
           {
             "id": "settings",
             "title": "Open the settings",
-            "description": "Choose how a CI failure shows in the Problems panel, when a run started from the editor says what it changed, and whether runs pause at your breakpoints.\n[Open settings](command:piwi.openSettings)",
+            "description": "Choose the lines Piwi writes above the code, how a failure shows at its line, when a run says what it changed, and whether runs pause at your breakpoints.\n[Open settings](command:piwi.openSettings)",
             "media": {
               "markdown": "walkthrough/settings.md"
             },

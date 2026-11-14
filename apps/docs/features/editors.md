@@ -31,6 +31,12 @@ in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jet
 the reporter already uses: the `PIWI_*` variables in the environment or the workspace `.env`, or the
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect…** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
+
+The first workspace with a Playwright config opens the first steps once per machine: in VS Code, the **Get started
+with Piwi** walkthrough, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; in a JetBrains IDE, the
+**Get started** tab of the Piwi tool window ([JetBrains plugin](./jetbrains#install-and-start)). **Piwi: Get started**
+opens them again. The editor's other first offers, the desktop app and the MCP server, come one per window, after the
+first steps.
 In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in editor](./ide-integration#vs-code-the-piwi-extension).
 
@@ -115,10 +121,8 @@ at, `piwi.failurePointBackground` and `piwi.failurePointOverviewRuler` the line 
 marks have [their own](./editor-coverage#the-marks). A JetBrains IDE has the failing test, its line, the lines being
 recorded and the stopped line under **Settings → Editor → Color Scheme → Piwi**.
 
-**Don't Show Again** on a message of the editor service adds its kind to VS Code's `piwi.hiddenMessages`:
-`agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the
-window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing`
-(a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
+**Don't Show Again** on a message of the editor service adds its kind to VS Code's `piwi.hiddenMessages`
+([Editor settings](/reference/editor-settings#advanced) lists the kinds); remove a kind to see its message again.
 
 VS Code's Piwi settings come in five groups, Connection, Runs, In the editor, Agents (MCP) and Advanced, as JetBrains'
 settings page does: [Editor settings](/reference/editor-settings) lists each one, what the editor shows among them.

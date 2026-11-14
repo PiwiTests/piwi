@@ -304,8 +304,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
                         if (gone.value(null)) return@executeOnPooledThread
                         restartServer()
                         val found = playwright ?: return@executeOnPooledThread
-                        val addresses = readKnownAddresses()
-                        offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+                        readKnownAddresses()
+                        openGetStartedOnce(found)
                     }
                 }
             },
@@ -346,14 +346,14 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /**
      * Search for Playwright configs off the event thread; when the answer changes, show or hide the
      * tool window and the status bar item, start the editor service on the folders found, or
-     * restart it there, and offer the first-run notification ([offerFirstRun]).
+     * restart it there, and open the Get Started tab once ([openGetStartedOnce]).
      */
     fun findPlaywright() {
         ApplicationManager.getApplication().executeOnPooledThread {
             if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
-            val addresses = readKnownAddresses()
+            readKnownAddresses()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
@@ -363,7 +363,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
-            offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+            openGetStartedOnce(found)
             noteDotnetPlaywright(found)
         }
     }
@@ -390,23 +390,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
     private val dotnetNoteLock = Any()
 
     /**
-     * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it
-     * (`Glue.showsFirstRun`, with the addresses the project names in `instances`): what Piwi does, with Connect, the
-     * failures and the documentation one click away.
+     * Once per installation, the first time a trusted project holds a Playwright config (`Glue.showsGetStarted`): the
+     * Get Started tab, unfocused, which takes the IDE's first-run turn (`Glue.FIRST_RUN`).
      */
-    fun offerFirstRun(found: Glue.PlaywrightSearch, instances: List<String?>) {
+    fun openGetStartedOnce(found: Glue.PlaywrightSearch, queue: Glue.FirstRunQueue = Glue.FIRST_RUN) {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-        if (!Glue.showsFirstRun(properties.getBoolean(FIRST_RUN_SHOWN), trusted(), found.configDirs, status, instances)) return
-        properties.setValue(FIRST_RUN_SHOWN, true)
-        PiwiNotifier.create(PiwiNotice.OFFER, Glue.FIRST_RUN)
-            .addAction(NotificationAction.createSimpleExpiring("Connect…") { PiwiConnectFlow.run(project) })
-            .addAction(
-                NotificationAction.createSimple(Glue.OPEN_FAILURES) {
-                    ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
-                },
-            )
-            .addAction(NotificationAction.createSimple("Learn more") { BrowserUtil.browse(Glue.DOCS_URL) })
-            .notify(project)
+        if (!Glue.showsGetStarted(properties.getBoolean(PiwiGetStarted.SHOWN), trusted(), found.configDirs)) return
+        if (!queue.take()) return
+        properties.setValue(PiwiGetStarted.SHOWN, true)
+        ApplicationManager.getApplication().invokeLater({ project.service<PiwiGetStarted>().open(focus = false) }, gone)
     }
 
     /**
@@ -1060,8 +1052,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
-     * Once per project: when the desktop app runs while another instance is in use, offer to read
-     * the project from the app. The other instance stays saved, one Connect away.
+     * Once per project, when the first-run queue gives it the turn: when the desktop app runs while another instance is
+     * in use, offer to read the project from the app. The other instance stays saved, one Connect away.
      */
     @Synchronized
     private fun offerDesktop(status: StatusResult?) {
@@ -1069,7 +1061,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (status?.desktopUrl == null || local.desktopOffered) return
         val contexts = status.contexts.orEmpty()
         val current = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull() ?: return
-        if (current.source == "desktop" || current.serverUrl == null) return
+        if (current.source == "desktop" || current.serverUrl == null || !Glue.FIRST_RUN.take()) return
         local.desktopOffered = true
         PiwiNotifier.create(
             PiwiNotice.OFFER,
@@ -1110,9 +1102,6 @@ class PiwiProjectService(private val project: Project) : Disposable {
         /** The answers of where Record here writes kept: a few files' worth of caret lines. */
         private const val RECORD_PLACES_KEPT = 64
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
-
-        /** Whether the first-run notification was shown on this installation: an application-level property. */
-        const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
 
         /** Set in the project once it heard `Glue.DOTNET_PLAYWRIGHT_NOTE`. */
         const val DOTNET_PLAYWRIGHT_NOTED = "piwi.dotnetPlaywrightNoted"

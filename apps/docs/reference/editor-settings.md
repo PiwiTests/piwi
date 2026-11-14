@@ -46,7 +46,7 @@ the choice of the desktop app on this machine only.
 | `piwi.runHeaded` | Whether every run Piwi starts runs headed, its browser window shown | off | Yours |
 | `piwi.runHoldFailures` | [Hold failures](/features/watch-a-run) from each run's start: Auto, On or Off | Auto | Yours |
 | `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results | on | Yours, which a project may set |
-| JetBrains: **Run the tests in the IDE's Playwright runner** | Whether a run starts in the IDE's Playwright runner (a test tree, Debug, Rerun Failed Tests) or in the Run tool window's console | off | Yours |
+| JetBrains: **Run the tests in the IDE's Playwright runner** | Whether a run starts in the IDE's Playwright runner (a test tree, Debug, Rerun Failed Tests) or in the Run tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate and Rider; where it lacks one, the option is off and says why | off | Yours |
 
 ## In the editor
 
@@ -71,7 +71,7 @@ the choice of the desktop app on this machine only.
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid; remove one to see it again | none | Yours |
+| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid: `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing` (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again | none | Yours |
 | `piwi.trace.server` | VS Code: whether the traffic with the editor service is traced in the Piwi output channel | Off | Yours |
 
 ## Related
