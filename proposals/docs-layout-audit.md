@@ -30,8 +30,21 @@ they now hold.
   concepts is under half its length, each entry a definition that links its rule (L12), both built with
   [`docs-content-audit.md`](docs-content-audit.md), which audits what the pages say as opposed to where they are.
   The editor's status bar, a page `main` added meanwhile, sits under Editor extensions.
+- **The follow-ups of [#1413](https://github.com/PiwiTests/piwi/issues/1413)**, in a later pull request. Core
+  concepts is a short page in Get started (`guide/core-concepts.md`: the object model and the words a first run
+  meets), and the full list is the Glossary at `guide/concepts.md`, every anchor kept, shown in the Reference sidebar
+  (decision 5). Self-hosting (L13): Integrations is titled Jira Cloud, under a Connect group with Zephyr Scale Cloud;
+  Metrics and Tracing sit together under Observe; the configuration reference and generator are listed in Reference
+  only, linked from Deployment; the catalog's Self-hosting group adds Choose what you use, Localization and Tracing,
+  and its landing card counts the pages of the Self-hosting sidebar. The loop page is linked from Desktop app, and a
+  Command line tool group holds a page for the `piwi` command, the full reference staying in Reference. A catalog
+  entry's `parent` nests Live view of a run's three pages under it, and Leak history in CI under Resource leaks. The
+  Reference groups are collapsed until the reader is in one. L8: Follow a run, Watch a local test, Share a local run
+  live, Inspect a worker's page and Bug reports on your instance, each page's H1 and label together, no URL changed.
+  L14: no file was renamed, since no page moved. Decision 2 is kept as it was: the four jobs stay four, and the Tools
+  section is where writing and debugging tests lives.
 
-What was not done is under [Left for later](#left-for-later).
+What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -354,13 +367,13 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 
 ## Left for later
 
-- **Core concepts as a short page plus a glossary** (L12): the page is one, at 3,487 words, third in Get started.
-- **The Self-hosting items** (L13) and the file names that differ from their page's title (L14).
-- **The loop page's link on Desktop app**, and a place for the `piwi` CLI among the tools.
-- **Nesting inside a Features group**: Live view of a run over its three pages, Resource leaks over Leak history.
-- **The Reference sidebar**, a screen and a third tall since it has six groups.
-- **Decision 2**: whether writing and debugging tests is a fifth job in `ROADMAP.md` and What Piwi does.
-- **Two pages that need a page split off**, each with a catalog entry: the failure inbox out of Failure clusters,
-  and CI runs in your editor out of Watch a running test.
-- **The labels of L8** that nesting did not settle: the six of the Watch a run group, and Report a bug, Bug reports
-  and Replay a bug report under Bugs.
+Each item is tracked by a GitHub issue of `PiwiTests/piwi`.
+
+- **File names that differ from their page's title** (L14, [#1413](https://github.com/PiwiTests/piwi/issues/1413)):
+  renamed only when the page moves anyway, with a redirect; none has moved.
+- **Decision 2** ([#1413](https://github.com/PiwiTests/piwi/issues/1413)): whether writing and debugging tests is a
+  fifth job in `ROADMAP.md` and What Piwi does. The four jobs are kept; the maintainer may decide otherwise.
+- **CI runs in your editor** ([#1406](https://github.com/PiwiTests/piwi/issues/1406)), still on Watch a local test,
+  need a page and a catalog entry of their own, under Editor extensions.
+- **The other clusters of L8** (Runs, "Extension" and "editor", one word for two things), which no issue lists:
+  nesting under the tool groups tells most of them apart.
