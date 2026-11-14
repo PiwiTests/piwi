@@ -202,4 +202,4 @@ The graph stays proportional to the application's surface, not its data volume:
 
 - [Scenario gaps & the Test Map](/features/scenario-gaps): the Coverage tab and triage
 - [Probes](/features/probes): the source of the false-comfort and resilience classes
-- [Core concepts](/guide/concepts#test-map): the Test Map vocabulary
+- [Glossary](/guide/concepts#test-map): the Test Map vocabulary

@@ -2,7 +2,7 @@
 
 Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header, and, in a coverage build, the server code each test ran.
 
-During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
+During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in the Piwi Dashboard, and are included in the AI diagnosis context.
 
 **Active in development and test only, by default.** Capture and probe verification run only when `NODE_ENV` is `development` or `test`, the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
@@ -134,7 +134,7 @@ Playwright test
                  └─ X-Piwi-Logs: <gzip+base64 JSON>
                       └─ Piwi reporter reads header
                            └─ stored as serverLogs on the network request
-                                └─ visible in test-case detail + AI diagnosis
+                                └─ visible on the execution page + AI diagnosis
 ```
 
 The plugin wraps Nitro's root H3 handler and uses three mechanisms:
@@ -148,8 +148,8 @@ The plugin wraps Nitro's root H3 handler and uses three mechanisms:
 The plugin accepts a signed fault instruction from a Piwi probe run (Test Map,
 level two), so a passing test can be checked against the server's real error
 path. A verified header is always recorded on the request scope
-(`event.context._piwiProbe`); a fault is **applied** only once a project turns
-server probes on (`PIWI_SERVER_PROBES=true`), which stays off by default.
+(`event.context._piwiProbe`); a fault is **applied** only when the server runs with
+`PIWI_SERVER_PROBES=true`, off by default, and the project has server probes on in the dashboard.
 
 The header is honored only while capture is on, under the **same guard as log
 capture** (`NODE_ENV` and `PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
@@ -171,9 +171,9 @@ dependency; when no call matches, nothing is applied). The plugin reports
 the fault it actually applied in `X-Piwi-Trace` (root-span `piwi.probe.applied`),
 so a probe the server did not honor is recorded as **inconclusive**, never a pass.
 
-**Entry condition.** Turn this on when the client probes (level one) report
-"not-noticed" on at least one in ten probed pairs across your pilot projects —
-that is the signal the suite has false comfort the network boundary cannot reveal.
+**Entry condition (experimental, unmeasured).** Turn this on when the client probes (level one) report
+"not-noticed" on at least one in ten probed pairs across your pilot projects — the signal that the suite has false
+comfort the network boundary cannot reveal.
 
 **Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope:
 

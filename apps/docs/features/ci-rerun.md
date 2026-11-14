@@ -82,7 +82,7 @@ Choose the provider of the action:
 
 | Provider | What the target names | Token scope |
 |---|---|---|
-| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | `actions:write` (a classic PAT's `workflow` scope) |
+| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | **Actions: write** (fine-grained), `repo` (classic) |
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
@@ -258,6 +258,6 @@ files.
 
 - [Pull-request feedback](./pr-feedback): the result posted on the pull request
 - [Source control](/guide/source-control): the SCM token and its scopes
-- [Failure clusters & the inbox](./failure-clusters): the clusters a re-run acts on
+- [Failure clusters](./failure-clusters): the clusters a re-run acts on
 - [Flake Lab](./flake-lab): the experiment a Flake Lab action runs in CI
 - [CLI](/reference/cli#rerun): the `rerun` command a pipeline runs

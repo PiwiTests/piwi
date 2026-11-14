@@ -46,7 +46,7 @@ Every flaky test is tagged with one of six categories, using keyword and distrib
 | `timing` | Timeouts, "to be visible", `waitFor`, element-not-found-within |
 | `network` | `net::` / `ERR_` errors, 5xx responses, `ECONNREFUSED`, `waitForResponse` — plus the count of failed and 5xx requests captured on the failing attempts, and any request that failed on the failing attempt but not the passing one |
 | `assertion` | `expect(...)`, "Expected:", snapshot/screenshot comparison — with no timing/network noise |
-| `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
+| `environment` | Fails at least 3 times on exactly one browser, or one runner time zone or locale, while another passed at least 3 times without failing |
 | `order` | Its code path changes with whether another test ran before it in the run, and its failures follow that change ([coverage insights](./coverage-insights#a-path-that-depends-on-the-tests-before-it)) |
 | `other` | No clear signal |
 
@@ -172,4 +172,4 @@ With **Group by: File** on the project's **Tests** tab, each spec file's header 
 - [Cut costly flakiness](/recipes/flaky-cleanup): the costliest flaky tests first
 - [What changed in a run](./run-changes): the Changes tab against a baseline
 - [Slow tests & wasted time](./slow-tests): where the suite's time goes
-- [Failure clusters & the inbox](./failure-clusters): the failures grouped by cause
+- [Failure clusters](./failure-clusters): the failures grouped by cause

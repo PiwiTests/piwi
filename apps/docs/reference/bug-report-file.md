@@ -105,4 +105,4 @@ as a [steps file](/reference/steps-format#checks) is, and a file whose steps fai
 
 - [Report a bug](/features/report-a-bug): recording a report and what it collects
 - [Steps file format](/reference/steps-format): the format of `steps.json`
-- [Bug reports](/features/bug-reports): what the instance does with a report
+- [Bug reports on your instance](/features/bug-reports): what the instance does with a report

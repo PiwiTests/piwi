@@ -72,7 +72,7 @@ A worker of an older reporter sends none of them: the sections stay empty, and *
 ## In your own tools
 
 Under a watched page in your editor's view, a CI run's lane included, and, with a reporter newer than 0.68.0, in
-Piwi Picker's Runs window and the desktop app's tray ([Watch a running test](./watch-running-test)):
+Piwi Picker's Runs window and the desktop app's tray ([Watch a local test](./watch-running-test)):
 
 - **Why it waits**: the call the test is in, how long it has run, how many elements its locator matches and whether
   the first is enabled, and the last lines of Playwright's log.
@@ -94,6 +94,6 @@ names each worker's step, and the panel with its events, text, filmstrip and Ins
 
 - [Live view of a run](./live-view): turning it on, and the image and call of one worker
 - [Watch all workers](./watch-all): every worker of a run at once
-- [Inspect a running test's page](./live-inspect): the page at each call as a document, with the locator picker
+- [Inspect a worker's page](./live-inspect): the page at each call as a document, with the locator picker
 - [Backend logs](/guide/backend-logs): what the backend instrumentation attaches to a response
 - [Failure evidence](./evidence): the console, network and ARIA a finished test keeps

@@ -1,10 +1,10 @@
 ---
-title: Bug reports
+title: Bug reports on your instance
 description: "Bug reports sent from Piwi Picker, kept in Piwi with their steps and evidence, each rendered as a failing Playwright test and followed through its runs until the fix holds."
 lang: en-US
 ---
 
-# Bug reports
+# Bug reports on your instance
 
 <Needs extension />
 

@@ -109,5 +109,5 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 - [CI merge gate](./merge-gate): fail a CI job on the run's analysis
 - [Source control](/guide/source-control): the SCM token and its scopes
 - [Auto-heal PRs](./auto-heal): the pull request Piwi opens itself
-- [Failure clusters & the inbox](./failure-clusters): the clusters the comment reports
+- [Failure clusters](./failure-clusters): the clusters the comment reports
 - [Re-run in CI](./ci-rerun): re-run a cluster's tests from the dashboard

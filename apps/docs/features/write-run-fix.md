@@ -27,7 +27,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 |---|---|---|---|
 | Write the test | **Record a new test file…**, or **Record here…** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
 | Run it | **Run with Piwi** from the gutter, the Testing view or the test at the cursor; **Verify ×3** | the desktop app's **Re-run** of tests | [Runs from the editor](./editor-runs), [Desktop app runs](./desktop-runs) |
-| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Watch a run](./watch-a-run), [Watch a running test](./watch-running-test) |
+| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Follow a run](./watch-a-run), [Watch a local test](./watch-running-test) |
 | Stop it | a breakpoint, **Pause**, **Step**, **Run to the cursor** | the pause bar in the test's page | [Breakpoints in the browser](./editor-breakpoints), [Pause and step from the editor](./editor-run-control) |
 | Fix it at the stop | **Pick a locator**, **Record**, **Assert**, **Mock a request** | **Pick a locator** and **Record** from the pause bar; all four from the Runs window | [Code from a pause](./editor-stop-code) |
 | Debug a failure | **Debug in my editor**, from the failure's page | the failure page's Locator fix | [Debug in my editor](./debug-in-editor), [Locator healing](./locator-healing) |
@@ -43,7 +43,7 @@ lands at the cursor the same way through **Send to editor**: at the top level of
 
 A run Piwi starts reports to the instance like any other, with the run's origin. In a project that runs in CI, a
 failure seen only in developers' own runs stays out of the team's inbox until someone shows it; one that fingerprints
-like a failure CI saw joins that cluster ([Failure clusters & the inbox](./failure-clusters)). A run you start in a
+like a failure CI saw joins that cluster ([Failure clusters](./failure-clusters)). A run you start in a
 terminal is followed too, when the editor is open: [Runs started outside Piwi](./terminal-runs).
 
 ## Stop it and write the fix there
@@ -64,5 +64,5 @@ instance explains it: the clues rank the likely cause, and the Locator fix panel
 ## Related
 
 - [Editor extensions](./editors): what the editor shows from your suite.
-- [Failure clusters & the inbox](./failure-clusters): where failures land once they reach the team's runs.
+- [Failure clusters](./failure-clusters): where failures land once they reach the team's runs.
 - [Run control for agents](./agent-run-control): the same stops, steered by an agent.

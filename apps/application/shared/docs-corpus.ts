@@ -33,12 +33,12 @@ export const DOCS_GROUPS = [
   {
     id: 'operate',
     title: 'Self-hosting',
-    intro: 'Running your own instance: install, configure, keep the data, upgrade.',
+    intro: 'Running your own instance: install, configure, connect trackers, keep the data, observe it, upgrade.',
   },
   {
     id: 'reference',
     title: 'Reference',
-    intro: 'Lookups: all features, configuration, the CLI, file formats and rules.',
+    intro: 'Lookups: all features, the glossary, configuration, the CLI, file formats and rules.',
   },
 ] as const;
 
@@ -306,8 +306,12 @@ const TOOL_PAGES = new Set(
   ),
 );
 
+/** The glossary keeps its path under guide/, where pages link its anchors, and belongs to Reference. */
+const GLOSSARY_PAGE = 'guide/concepts';
+
 function groupOf(path: string): DocsGroupId {
   if (TOOL_PAGES.has(path)) return 'tools';
+  if (path === GLOSSARY_PAGE) return 'reference';
   const prefix = path.split('/')[0];
   return DOCS_GROUPS.find((g) => g.id === prefix)?.id ?? 'home';
 }

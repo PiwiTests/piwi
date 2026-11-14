@@ -9,7 +9,7 @@ lang: en-US
 Piwi is a **server plus a Playwright reporter**. The reporter runs inside `npx playwright test` and sends the results
 to the server, which keeps every run with its traces and renders the dashboard. Three steps set up both.
 [What Piwi does](./what-piwi-does) says what the server does with those runs: its four jobs, and the pieces around it.
-New to the vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the
+New to the vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./core-concepts) defines each term the
 dashboard uses.
 
 <figure>
@@ -163,7 +163,7 @@ tool for each step.
 ## Related
 
 - [What Piwi does](./what-piwi-does): the four jobs, the two rules behind every feature, and the pieces
-- [Core concepts](./concepts): the vocabulary the dashboard and these docs use
+- [Core concepts](./core-concepts): the vocabulary the dashboard and these docs use
 - [Reporter](./reporter): manual setup, options, streaming and authentication
 - [Capture fixtures](./capture-fixtures): what the fixtures file adds
 - [Choose what you use](/operate/capabilities): turn off the capabilities you do not need

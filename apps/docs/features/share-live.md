@@ -1,10 +1,10 @@
 ---
-title: Share a run live
+title: Share a local run live
 description: "Let a teammate watch the tests of a Playwright run on your machine from its page on the team instance, as a CI run's live view: Share live from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app."
 lang: en-US
 ---
 
-# Share a run live
+# Share a local run live
 
 <Needs reporter fixtures />
 

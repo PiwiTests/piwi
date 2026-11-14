@@ -44,7 +44,7 @@ The tray opens at each stop, and tells you of one in the background:
 ## Watch
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off ([Watch a running test](./watch-running-test)).
+stop, until you turn it off ([Watch a local test](./watch-running-test)).
 
 At a stop of a worker nobody watches, **Watch** shows the stopped page as it paints, in place of its image, and stays
 on for the worker's next stops until you turn it off. [**Interact**](./watch-running-test#interact), beside it, plays

@@ -238,7 +238,7 @@ Full docs at **[piwitests.dev](https://piwitests.dev)**. The usual entry points:
 
 - [Getting started](https://piwitests.dev/guide/getting-started): install, reporter, first run
 - [Your first failure, explained](https://piwitests.dev/guide/first-failure): one failing test, from its headline to its evidence
-- [Core concepts](https://piwitests.dev/guide/concepts): runs, test cases, executions, clusters
+- [Core concepts](https://piwitests.dev/guide/core-concepts): runs, test cases, executions, clusters
 - [Reporter](https://piwitests.dev/guide/reporter) and [CI & sharding](https://piwitests.dev/guide/ci): getting results in
 - [Deployment](https://piwitests.dev/operate/deployment) and [Configuration](https://piwitests.dev/reference/configuration): running your instance
 - [Upgrading](https://piwitests.dev/operate/upgrading): what a version bump does, and why downgrading is not a thing

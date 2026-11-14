@@ -21,20 +21,21 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 a pick names the tests that reach the element, Report a bug sends its report, Developer tools lists your projects'
 viewports.
 
-| Tool | For |
-|---|---|
-| [Pick an element](./pick-an-element) | a ranked locator for one element, re-checked against the page |
-| [Multi-pick](./pick-an-element#multi-pick) | the shared pattern of a list's rows or cards |
-| [Lint overlay](./lint-overlay) | the elements that would make bad locator targets |
-| [Assertions](./pick-an-element#assertion-suggester) | `expect(...)` lines for an element |
-| [Agent context](./pick-an-element#copy-context-for-agent) | one block about an element for a coding agent |
-| [Record actions](./record-actions) | a runnable spec from clicks and fills across pages |
-| [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
-| [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
-| [Runs window](./runs-window) | pause, step and resume the tests your editor runs, and watch a headless one live |
-| [Matching functions](./record-actions#matching-functions) | a recording that calls your own functions |
-| [Test functions](./test-functions#using-the-catalog) | which of your functions work on this page |
-| [Tested elements](./tested-elements) | which elements of this page your tests reach |
+| Tool | Key | For |
+|---|---|---|
+| [Pick an element](./pick-an-element) | `2` | a ranked locator for one element, re-checked against the page |
+| [Multi-pick](./pick-an-element#multi-pick) | `3` | the shared pattern of a list's rows or cards |
+| [Lint overlay](./lint-overlay) | `5` | the elements that would make bad locator targets |
+| [Assertions](./pick-an-element#assertion-suggester) | `4` | `expect(...)` lines for an element |
+| [Agent context](./pick-an-element#copy-context-for-agent) | `6` | one block about an element for a coding agent |
+| [Record actions](./record-actions) | `1` | a runnable spec from clicks and fills across pages |
+| [Report a bug](./report-a-bug) | `B` | a failing test and a report of a bug you reproduce |
+| [Replay a bug report](./replay-a-bug-report) | `R` | a bug report's steps played again in a tab, to see whether the bug shows there |
+| [Developer tools](./devtools) | | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
+| [Runs window](./runs-window) | `U` | pause, step and resume the tests your editor runs, and watch a headless one live |
+| [Matching functions](./record-actions#matching-functions) | | a recording that calls your own functions |
+| [Test functions](./test-functions#using-the-catalog) | `7` | which of your functions work on this page |
+| [Tested elements](./tested-elements) | `T` | which elements of this page your tests reach |
 
 ## Where it is
 
@@ -44,8 +45,8 @@ Chrome or Edge 118 or later (in Edge, click **Allow** on the *Allow extensions f
 **Get**), or from **[Firefox Add-ons ↗](https://addons.mozilla.org/firefox/addon/piwi-picker/)** for Firefox 140 or
 later.
 
-Every tool in the popup has a tile with a line under its name saying what it is for, and a key (`1` records, `2`
-picks, `B` reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The
+Every tool in the popup has a tile with a line under its name saying what it is for, and the key in the table above,
+pressed with the popup open. One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The
 tools that need no pick on the page are in the browser's DevTools: [Developer tools](./devtools).
 
 <figure>

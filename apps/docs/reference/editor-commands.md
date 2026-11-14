@@ -78,11 +78,11 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | **Piwi: Pause the run**, **Piwi: Resume the run**, **Piwi: Step to the next call**, **Piwi: Run to the cursor**, **Piwi: Finish the test**, **Piwi: End the test**, **Piwi: Stop the run** | [Pause and step from the editor](/features/editor-run-control) |
 | **Piwi: Go to the stopped line**, **Piwi: Show the paused page** | Open the line a test is stopped at, or an image of its page |
 | **Piwi: Turn hold failures on or off for the run** | Whether a failed test the pause bar does not show waits at its line, in this run |
-| **Piwi: Watch a worker's test**, **Piwi: Pause and watch a worker's test**, **Piwi: Open the trace so far** | [Watch a running test](/features/watch-running-test) |
+| **Piwi: Watch a worker's test**, **Piwi: Pause and watch a worker's test**, **Piwi: Open the trace so far** | [Watch a local test](/features/watch-running-test) |
 | **Piwi: Show the stopped test's browser** | Bring a headed run's browser window to the front |
 | **Piwi: Share the stopped test's browser with Playwright tools** | [Share with Playwright tools](/features/editor-run-control#share-with-playwright-tools) |
 | **Piwi: Open the page of a run of this window** | The page of a run this window started or follows, on the instance or the desktop app |
-| **Piwi: Open the branch's run in progress** | VS Code: open the run of the branch the instance is receiving: [Watch a run](/features/watch-a-run) |
+| **Piwi: Open the branch's run in progress** | VS Code: open the run of the branch the instance is receiving: [Follow a run](/features/watch-a-run) |
 
 ## Code at a stop
 
@@ -95,7 +95,7 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 
 | Command | What it does |
 |---|---|
-| **Piwi: Share the run live on the team instance**, **Piwi: Stop sharing the run live** | [Share a run live](/features/share-live) |
+| **Piwi: Share the run live on the team instance**, **Piwi: Stop sharing the run live** | [Share a local run live](/features/share-live) |
 | **Piwi: Share this window's runs live until I stop**, **Piwi: Stop sharing this window's runs live** | Every run of this window, from now on |
 | **Piwi: Shared live: open the run page, copy its link or stop sharing…** | VS Code: the menu of the status bar's live item |
 

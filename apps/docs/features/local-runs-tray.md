@@ -111,4 +111,4 @@ keeps the last 300 lines of each run's output through a reload.
 
 - [Desktop app runs](./desktop-runs): each worker, its stops, its page and the code a stop makes.
 - [Desktop app](./desktop): what it runs, and how it links a project to its folder.
-- [Share a run live](./share-live): let a teammate watch a run of the tray.
+- [Share a local run live](./share-live): let a teammate watch a run of the tray.

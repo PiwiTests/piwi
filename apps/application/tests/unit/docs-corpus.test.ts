@@ -68,6 +68,13 @@ describe('buildDocsCorpus', () => {
     for (const generated of Object.keys(GENERATED_DOCS_PAGES)) expect(paths).not.toContain(generated);
   });
 
+  test('puts each page in the section of the site that lists it', () => {
+    const groupOf = (path: string) => corpus.pages.find((p) => p.path === path)?.group;
+    expect(groupOf('guide/concepts')).toBe('reference');
+    expect(groupOf('guide/core-concepts')).toBe('guide');
+    expect(groupOf('features/command-line')).toBe('tools');
+  });
+
   test.each(corpus.pages.map((p) => [p.path, p] as const))('%s has a title and a summary', (_path, page) => {
     expect(page.title).not.toBe('');
     expect(page.summary.length).toBeGreaterThan(20);

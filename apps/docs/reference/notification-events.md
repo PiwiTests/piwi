@@ -194,6 +194,6 @@ A channel with no secret sends no header. Webhook secrets are encrypted at rest.
 ## Related
 
 - [Notifications & alerts](/features/notifications): channels, subscriptions, digests and SMTP
-- [Failure clusters & the inbox](/features/failure-clusters): what triggers `cluster.new`, `cluster.fixed` and `cluster.regressed`
+- [Failure clusters](/features/failure-clusters): what triggers `cluster.new`, `cluster.fixed` and `cluster.regressed`
 - [AI diagnosis](/features/ai-diagnosis): what triggers `diagnosis.completed`
 - [Quality reports](/features/quality-reports#report-schedules): the schedules that send `report.ready`

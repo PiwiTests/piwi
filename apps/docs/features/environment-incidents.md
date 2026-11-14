@@ -61,7 +61,7 @@ A [probe](./probes) or [Flake Lab](./flake-lab) run is never judged: it injects 
   flakiness, performance and new-cluster events. It goes to the project's subscribers, not to a subscription scoped to
   test owners. `run.finished` still fires. When one outage flags runs in several projects, a channel that hears from
   all of them receives one message.
-- **The failure inbox** on Home shows one row for the run instead of one row per new cluster it opened. Clusters that
+- **The [failure inbox](./failure-inbox)** on Home shows one row for the run instead of one row per new cluster it opened. Clusters that
   were already open before the incident keep their rows, and a cluster it opened gets its own row once a run that is
   no incident fails it again.
 - **No AI diagnosis, no pull-request comment and no issue tracker write** are produced for the run

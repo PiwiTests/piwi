@@ -16,7 +16,7 @@ path [opens in your IDE](./ide-integration).
 
 `/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average [pass rate](/guide/concepts#pass-rate) is a link, a **Project health** table with run-history bars and a tendency badge
 beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or keyboard
-([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)). **Starred projects** lead Project health and the
+([Failure inbox](./failure-inbox)). **Starred projects** lead Project health and the
 sidebar.
 
 <figure>
@@ -145,7 +145,7 @@ command palette or `g` then `s`: your **Account** and connected accounts ([OAuth
 **Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Source control**
-([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Integrations](/operate/integrations)),
+([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Jira Cloud](/operate/integrations), [Zephyr Scale Cloud](/operate/zephyr-scale)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
 ([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
@@ -172,7 +172,7 @@ restores the sample data. With no model,
 
 ## Related
 
-- [Core concepts](/guide/concepts): the words this map uses
+- [Core concepts](/guide/core-concepts): the words this map uses
 - [Your first failure, explained](/guide/first-failure): the page you open most, read top to bottom
 - [All features](/reference/features): every feature and where it lives
 - [Keyboard shortcuts](/reference/keyboard-shortcuts): the command palette and the go-to keys

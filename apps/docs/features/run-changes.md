@@ -66,7 +66,8 @@ Two ways to compare against something else:
 - **New failures** — passed in the baseline, failing here.
 - **Fixed** — failed in the baseline, passing here.
 - **Still failing** — failing in both.
-- **Newly flaky / passed on retry** — passed here after an earlier attempt failed.
+- **Newly flaky / passed on retry** — passed here after an earlier attempt failed. Of these, a test that passed at
+  its first attempt in the baseline is also [newly flaky](#what-newly-flaky-says-about-your-change).
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
@@ -77,6 +78,18 @@ Two ways to compare against something else:
 </figure>
 
 Comparing two runs is also how the [run comparison](./ui-overview#test-run-detail) works: select two runs on the project's Runs tab and the newer one opens on its Changes tab with the older as its baseline.
+
+### What newly flaky says about your change
+
+**Newly flaky** is a change between the two runs, as a new failure is: the test needed a retry here and passed at
+its first attempt in the baseline. It does not clear your change. A change can make a test flaky (a new race, a
+slower call, a shared state), and so can anything else that differs between the runs. Nor does it convict it: one
+first-attempt pass in the baseline is one sample, and a test that has been flaky for weeks passes first time often.
+
+The test's own history settles it. A [flaky rate](/guide/concepts#flaky-rate) near zero until this run points at
+the commits since the baseline; one that has been high for weeks points at a flake your run happened to meet, which
+[Flaky tests](./flaky-tests) ranks and quarantines. The [CI merge gate](./merge-gate) counts newly flaky tests
+apart from new regressions (`--max-new-flaky`), so a pipeline can hold a branch for either.
 
 ## Shuffled runs
 
@@ -96,5 +109,5 @@ not shuffled, or the other way round, the Changes tab lists the **Test order** u
 - [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
-- [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause
+- [Failure clusters](./failure-clusters) — the failures grouped by cause
 - [Timeline markers](./timeline-markers) — annotate the trend charts with real-world events

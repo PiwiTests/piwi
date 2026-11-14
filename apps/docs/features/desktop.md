@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs desktop />
 
-The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
+The desktop app runs the **entire dashboard on your machine**, with no Docker, `npx` or server to set up. It
 bundles the Docker image's server in a native window and adds what only a local app can. Its runs:
 [Local runs tray](./local-runs-tray) for each run, [Desktop app runs](./desktop-runs) for each worker.
 
@@ -37,7 +37,7 @@ What each installer needs:
 The installers, [Piwi Runner](./piwi-runner)'s too, are **unsigned**: on macOS, open the app
 once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** then **Run anyway** in SmartScreen.
 
-Where its data lives, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
+Its data, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
 The system tray menu holds **Open Piwi Desktop**, each test running from the app with **Stop** (the machine kept
 awake meanwhile), **Open data folder**, **Show logs**, **Run in background** (off, closing the window quits), **Start
@@ -142,7 +142,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-**Settings → MCP server** connects Claude Code, Cursor and the other clients it detects in one click:
+**Settings → MCP server** connects Claude Code, Cursor and other clients it detects in one click:
 [the desktop app's client setup](/features/mcp#in-the-desktop-app).
 
 ## Updates
@@ -153,7 +153,7 @@ signature-checked.
 
 ## Limits
 
-- **One machine, one user.** The app accepts results only from this machine; a team needs the
+- **One machine, one user.** It accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
 - **Local runs need the checkout**: a linked folder with Playwright installed, plus `git` and your package manager for
   reproduce, bisect (one repository) and the lab.
@@ -165,3 +165,4 @@ signature-checked.
 - [Reporter](/guide/reporter#finding-the-desktop-app-automatically)
 - [MCP server](/features/mcp)
 - [Desktop app runs](/features/desktop-runs)
+- [Write, run and fix a test](./write-run-fix)

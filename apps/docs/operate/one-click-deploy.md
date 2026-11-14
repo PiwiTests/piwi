@@ -31,7 +31,7 @@ point it isn't one click. [Deploy it](./deployment) to a machine with Docker ins
 
 ## Railway
 
-Railway publishes templates from its own dashboard rather than from a file in this repository, so the
+Railway publishes templates from its own console rather than from a file in this repository, so the
 template's exact contents live in
 [`deploy/railway/template.md`](https://github.com/PiwiTests/piwi/blob/main/deploy/railway/template.md)
 and the repo ships a [`railway.json`](https://github.com/PiwiTests/piwi/blob/main/railway.json) pinning

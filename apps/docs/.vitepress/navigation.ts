@@ -96,11 +96,12 @@ export function sidebarEntries(groups: SidebarGroup[]): SidebarLink[] {
  * One sidebar group per catalog group of the Features section, holding its
  * recipes and then the catalog entries whose page lives under /features/.
  * Several entries can point into the same page with different anchors; each
- * keeps its own item, and a whole-page entry appears once. The groups are
- * collapsed: VitePress opens the one that holds the current page.
+ * keeps its own item, and a whole-page entry appears once. An entry with a
+ * `parent` is nested under that entry. The groups are collapsed: VitePress
+ * opens the one that holds the current page.
  */
 export function featuresSidebar(): SidebarGroup[] {
-  return PIWI_FEATURE_GROUPS.filter((group) => group.section !== 'tools').map((group) => {
+  return PIWI_FEATURE_GROUPS.filter((group) => group.section === undefined).map((group) => {
     const pages = new Set<string>();
     const features: SidebarItem[] = [];
     for (const feature of group.features) {
@@ -109,7 +110,10 @@ export function featuresSidebar(): SidebarGroup[] {
         if (pages.has(feature.doc)) continue;
         pages.add(feature.doc);
       }
-      features.push({ text: feature.title, link: `/${feature.doc}` });
+      const entry: SidebarItem = { text: feature.title, link: `/${feature.doc}` };
+      const parent = feature.parent ? features.find((item) => item.text === feature.parent) : undefined;
+      if (parent) (parent.items ??= []).push(entry);
+      else features.push(entry);
     }
     return {
       text: group.title,
@@ -148,30 +152,44 @@ export function toolPages(): string[] {
 /**
  * The landing page's cards, in catalog order: one per group that takes a card,
  * linking to that group on the All features page with the count of its
- * features, and one for the Tools section, linking to its first page with the
- * count of every tool's features.
+ * features and of the `card: false` groups that follow it; one for the Tools
+ * section, linking to its first page with the count of every tool's features;
+ * and one for the Self-hosting section, linking to its first page with the
+ * count of its pages.
  */
 export function landingCards(): LandingCard[] {
   const tools = PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools');
-  return PIWI_FEATURE_GROUPS.flatMap((group): LandingCard[] => {
+  const cards: LandingCard[] = [];
+  let featureCard: { card: LandingCard; count: number } | undefined;
+  for (const group of PIWI_FEATURE_GROUPS) {
     if (group.section === 'tools') {
-      if (group !== tools[0]) return [];
+      featureCard = undefined;
+      if (group !== tools[0]) continue;
       const features = tools.reduce((count, tool) => count + tool.features.length, 0);
-      return [
-        { title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` },
-      ];
-    }
-    if (group.card === false) return [];
-    return [
-      {
+      cards.push({ title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` });
+    } else if (group.section === 'self-hosting') {
+      featureCard = undefined;
+      const pages = sidebarEntries(selfHostingSidebar);
+      cards.push({ title: group.title, details: group.intro, link: pages[0]!.link, linkText: `${pages.length} pages` });
+    } else if (group.card === false && featureCard) {
+      featureCard.count += group.features.length;
+      featureCard.card.linkText = `${featureCard.count} features`;
+    } else {
+      const card = {
         title: group.title,
         details: group.intro,
         link: `/reference/features#${headingAnchor(group.title)}`,
         linkText: `${group.features.length} features`,
-      },
-    ];
-  });
+      };
+      featureCard = { card, count: group.features.length };
+      cards.push(card);
+    }
+  }
+  return cards;
 }
+
+/** The glossary's page: under /guide/, listed in the Reference sidebar. */
+const GLOSSARY = '/guide/concepts';
 
 export const guideSidebar: SidebarGroup[] = [
   {
@@ -179,7 +197,7 @@ export const guideSidebar: SidebarGroup[] = [
     items: [
       { text: 'Getting started', link: '/guide/getting-started' },
       { text: 'Your first failure, explained', link: '/guide/first-failure' },
-      { text: 'Core concepts', link: '/guide/concepts' },
+      { text: 'Core concepts', link: '/guide/core-concepts' },
     ],
   },
   {
@@ -229,10 +247,13 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'API keys', link: '/operate/api-keys' },
       { text: 'Localization', link: '/operate/localization' },
       { text: 'Choose what you use', link: '/operate/capabilities' },
-      { text: 'Integrations', link: '/operate/integrations' },
+    ],
+  },
+  {
+    text: 'Connect',
+    items: [
+      { text: 'Jira Cloud', link: '/operate/integrations' },
       { text: 'Zephyr Scale Cloud', link: '/operate/zephyr-scale' },
-      { text: 'Configuration reference', link: '/reference/configuration' },
-      { text: 'Configuration generator', link: '/reference/configuration/generator' },
     ],
   },
   {
@@ -241,6 +262,11 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'Database', link: '/operate/database' },
       { text: 'Storage & retention', link: '/operate/storage' },
       { text: 'Backup & restore', link: '/operate/backup-restore' },
+    ],
+  },
+  {
+    text: 'Observe',
+    items: [
       { text: 'Metrics and rollup export', link: '/operate/metrics' },
       { text: 'Tracing with OpenTelemetry', link: '/operate/tracing' },
     ],
@@ -251,16 +277,24 @@ export const selfHostingSidebar: SidebarGroup[] = [
   },
 ];
 
+/**
+ * The groups are collapsed: VitePress opens the one that holds the current
+ * page. The glossary keeps its address under /guide/, where 50-odd pages link
+ * its anchors, and shows this sidebar.
+ */
 export const referenceSidebar: SidebarGroup[] = [
   {
     text: 'Product',
+    collapsed: true,
     items: [
       { text: 'All features', link: '/reference/features' },
+      { text: 'Glossary', link: GLOSSARY },
       { text: "What's new", link: '/reference/whats-new' },
     ],
   },
   {
     text: 'Configuration',
+    collapsed: true,
     items: [
       { text: 'Configuration reference', link: '/reference/configuration' },
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
@@ -270,6 +304,7 @@ export const referenceSidebar: SidebarGroup[] = [
   },
   {
     text: 'Reporter & CLI',
+    collapsed: true,
     items: [
       { text: 'Piwi CLI', link: '/reference/cli' },
       { text: 'Test metadata', link: '/reference/test-metadata' },
@@ -279,6 +314,7 @@ export const referenceSidebar: SidebarGroup[] = [
   },
   {
     text: 'Analysis rules',
+    collapsed: true,
     items: [
       { text: 'Clue rules', link: '/reference/clues' },
       { text: 'Locator stability rules', link: '/reference/locator-stability' },
@@ -287,6 +323,7 @@ export const referenceSidebar: SidebarGroup[] = [
   },
   {
     text: 'Dashboard',
+    collapsed: true,
     items: [
       { text: 'Test search', link: '/reference/test-search' },
       { text: 'Keyboard shortcuts', link: '/reference/keyboard-shortcuts' },
@@ -300,6 +337,7 @@ export const referenceSidebar: SidebarGroup[] = [
   },
   {
     text: 'Automation',
+    collapsed: true,
     items: [
       { text: 'MCP tools', link: '/reference/mcp-tools' },
       { text: 'Notification events & webhooks', link: '/reference/notification-events' },
@@ -319,11 +357,15 @@ const toolRoutes = toolPages()
   .join('|');
 
 export const nav: NavItem[] = [
-  { text: 'Guide', link: '/guide/getting-started', activeMatch: `^/(?!(${toolRoutes})$)guide/` },
+  {
+    text: 'Guide',
+    link: '/guide/getting-started',
+    activeMatch: `^/(?!(${toolRoutes}|${GLOSSARY.slice(1)})$)guide/`,
+  },
   { text: 'Features', link: '/features/ui-overview', activeMatch: `^/(?!(${toolRoutes})$)(features|recipes)/` },
   { text: 'Tools', link: toolPages()[0]!, activeMatch: `^/(${toolRoutes})$` },
   { text: 'Self-hosting', link: '/operate/deployment', activeMatch: '/operate/' },
-  { text: 'Reference', link: '/reference/features', activeMatch: '/reference/' },
+  { text: 'Reference', link: '/reference/features', activeMatch: `/reference/|^${GLOSSARY}$` },
   { text: 'Blog', link: '/blog/' },
   { text: 'Demo', link: 'https://piwitests.dev/demo/' },
 ];
@@ -341,6 +383,7 @@ export function sidebars(): Record<string, SidebarGroup[]> {
   const tools = toolsSidebar();
   return {
     ...Object.fromEntries(toolPages().map((page) => [page, tools])),
+    [GLOSSARY]: referenceSidebar,
     '/guide/': guideSidebar,
     '/features/': features,
     '/recipes/': features,

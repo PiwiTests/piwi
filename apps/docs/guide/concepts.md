@@ -1,28 +1,20 @@
 ---
-title: Core concepts
-description: "The vocabulary the docs and the dashboard share: project, run, test case, execution, failure cluster, baseline, analytics dashboard, the Test Map and its gaps."
+title: Glossary
+description: "Every word the Piwi docs and dashboard use for Playwright results: run, test case, execution, failure cluster, baseline, live runs, analytics, the Test Map and its gaps."
 lang: en-US
 ---
 
-# Core concepts
+# Glossary
 
-Piwi reuses Playwright's vocabulary where it can, but a dashboard that keeps history needs a few
-distinctions Playwright doesn't have to make — most importantly between *a test* and *one run of that
-test*. This page defines the words the rest of the documentation and the UI use.
+Every word the documentation and the dashboard use, each defined in a few lines with a link to the page that holds its
+rule. A word that names two things elsewhere keeps one meaning here, and [Words kept to one meaning](#words-kept-to-one-meaning)
+names the others. New to Piwi? [Core concepts](./core-concepts) reads the dozen words a first run meets, with the object
+model.
 
 ## The object model
 
-<figure>
-  <img src="/diagrams/data-model-grid.svg" alt="A project as a grid: test runs are columns, test cases are rows, and each cell holds that test case's executions in that run; one failure cluster spans failed executions of two test cases across two runs">
-  <figcaption>A project holds one suite's results. A failure cluster groups executions, not test cases: it can span several of each.</figcaption>
-</figure>
-
-Read it in two directions:
-
-- **Down** — "what happened in this run?" A run holds executions; each execution points at the test it
-  is an attempt of.
-- **Across** — "how has this test behaved?" A test case holds every execution of itself, in every run,
-  over time. That's the axis flakiness, pass rate, and duration trends are computed on.
+How projects, test runs, test cases, executions and failure clusters hold each other:
+[Core concepts](./core-concepts#the-object-model).
 
 ## Results
 
@@ -78,6 +70,13 @@ pull-request feedback and the AI diagnosis all read it, and so do the environmen
 failing execution. Which run it is, and what happens when none passed: [The baseline](/features/run-changes#the-baseline).
 The default and base branches it falls back to: [Branches](/features/branches).
 
+### New regression, newly flaky
+
+**What a test did differently from the [baseline](#baseline-last-green-run)**: a **new regression** fails here and
+passed there; a **newly flaky** test passed here only on a retry and passed at its first attempt there. Both name a
+change between two runs, not its cause: a newly flaky test can be your change or an old flake. How to tell:
+[What newly flaky says about your change](/features/run-changes#what-newly-flaky-says-about-your-change).
+
 ### Environment
 
 A free-text label on a run (`production`, `staging`, a preview URL, whatever you use), set with the reporter's
@@ -102,7 +101,7 @@ values and the fallback: [Test metadata](/reference/test-metadata#test-tags).
 
 ## Live runs
 
-The words every tool uses for a run while it goes ([Watch a run](/features/watch-a-run)).
+The words every tool uses for a run while it goes ([Follow a run](/features/watch-a-run)).
 
 ### Run number
 
@@ -151,8 +150,8 @@ the stop from an agent. How a stop is taken and given back:
 ### Watch, Share live
 
 **Watch** shows a worker's page live, in your editor, Piwi Picker or the desktop app
-([Watch a running test](/features/watch-running-test)). **Share live** lets a teammate watch a run on your machine
-from its page on the team instance ([Share a run live](/features/share-live)), where a CI run is watched in the
+([Watch a local test](/features/watch-running-test)). **Share live** lets a teammate watch a run on your machine
+from its page on the team instance ([Share a local run live](/features/share-live)), where a CI run is watched in the
 [live view](/features/live-view), every worker at once with [Watch all](/features/watch-all), and a running page read
 as a document with [Inspect](/features/live-inspect). What each sends and keeps is on those pages.
 
@@ -166,7 +165,7 @@ the same trace: [Desktop app runs](/features/desktop-runs#watch).
 ### Verification
 
 **A test run several times without retries and without the breakpoints, to see how often it passes** (**Verify ×3**
-in the editors). It says how many of its runs passed (`Passed 3 of 3`, `Failed 1 of 3`) and never holds a failure.
+in the editors). It says how many of its repetitions passed (`Passed 3 of 3`, `Failed 1 of 3`) and never holds a failure.
 How it counts and what it says: [When your run ends](/features/editor-runs#when-your-run-ends).
 
 ## Failures
@@ -398,20 +397,40 @@ With [authentication](/operate/authentication) on, every account holds an **inst
 on all of them. A **group** is a named set of users that receives project roles the way a user does. See
 [Access, roles and groups](/operate/project-access).
 
+## Words kept to one meaning
+
+Some words name two things across the docs, the dashboard and the tools. Each keeps the meaning in the middle column
+on these pages; the others take the name on the right, or are told apart by the place they are in.
+
+| Word | Means | The other senses |
+|---|---|---|
+| stop | A test standing at a call ([Stop](#stop)) | **Stop**, in bold, is a button's label: it ends a run, a recording or an answer |
+| share | **Share live**: a teammate watches a run on your machine | **Share with Playwright tools** binds a stopped test's browser for Playwright's tools; a [share link](/features/share-links) is a signed read-only link |
+| On your machine | A run on a developer's machine: the run page's card for a desktop run and the mark of a [requested run](#test-run) | none |
+| run | A [test run](#test-run) | A test's result in a run is a *run of a test* ([How a result counts](/reference/test-metadata#how-a-result-counts)); one of the times Flake Lab or a verification runs a test is a *repetition* |
+| environment | The label a run carries ([Environment](#environment)) | The app a run tests is the *environment under test* ([incident](#environment-incident)); the machine a run executed on is its [run environment](/features/run-environment); the flaky class `environment` means one browser, or one runner time zone or locale, fails |
+| wasted | [Wasted time](/features/slow-tests#wasted-time): waits plus failed attempts, as Analytics counts it | The flaky list's *wasted CI minutes* of one test are its retry passes times its average failed attempt |
+| coverage, reach | [Coverage](#coverage): the code a test ran; [reach](#reach): what a run observed a test touch | [Code reach](#code-reach) is coverage at file level; *Uncovered changes* and the **Coverage** tab keep their names |
+| diverged | The dashboard's verdict for a replay that could not play a step | Piwi Picker says *Could not reach the bug* ([Replay a bug report](/features/replay-a-bug-report)) |
+| picker | **Piwi Picker**, always with its name, is the browser extension | A tool that turns a click into locators is named by where it works: the dashboard's *snapshot picker* (**Pick from snapshot**, **Open in picker**), the trace viewer's *Pick locator*, the *failure-time picker* in a local run's browser |
+| dashboard | The web app a Piwi instance serves | A saved set of Analytics widgets is an [analytics dashboard](/features/dashboards); a hosting provider's web console is its *console* |
+| report | Always with its kind | *quality report*, *HTML report* of a run, *offline export*, *bug report*, Playwright's *blob report* |
+| test case | A test's identity across time ([Test case](#test-case)) | One attempt of it is an [execution](#execution) |
+| project | A Piwi [project](#project), named by the reporter's `projectName` | A *Playwright project* (a `projects` entry of the config, whose name the `browser` field records) is always called so; the reader's code is their *repository* |
+| integration | A *backend integration*: an instrumentation package in the app under test ([Backend instrumentation](./backend-logs)) | **Settings → Integrations** holds the *connections* to [Jira Cloud](/operate/integrations) and [Zephyr Scale Cloud](/operate/zephyr-scale); **Integrations** is also the group of a project's Settings that binds those connections and CI |
+| baseline | The run a run is compared with ([Baseline](#baseline-last-green-run)) | A visual snapshot, a pinned commit or a starting value is named by what it is |
+| exposure | How much a gap's node matters ([Exposure](#exposure)) | none |
+| finding | Always with its kind: a *resilience finding* (the app did not cope with a server probe), a *leak finding* | A [clue](/features/evidence#clues) is a rule-based finding about one failure |
+| verified | Always with its noun: *diagnosis verified*, *verified fixed*, a *verified* fix attempt, a [verification](#verification) | none |
+| class | Always with its kind: the flaky *root-cause class*, the [gap class](#gap-class) | none |
+| Performance, Timeline | A tab or a page, named by its place: **Project → Performance**, **Settings → Performance**, a run's **Timeline** tab | [Timeline markers](/features/timeline-markers) are the events drawn on the trend charts |
+
 ## Where each concept lives in the UI
 
-| Concept | URL | Docs |
-|---|---|---|
-| Project | `/projects/:id` | [UI overview](/features/ui-overview#project-detail) |
-| Test run | `/test-runs/:id` | [UI overview](/features/ui-overview#test-run-detail) |
-| Test case | `/test-cases/:id` | [Failure evidence](/features/evidence#the-test-case-page) |
-| Execution | `/test-run-cases/:id` | [Failure evidence](/features/evidence#one-execution-diagnosis-first) |
-| Failure cluster | `/failure-clusters/:id` | [Failure clusters & the inbox](/features/failure-clusters) |
-| Cross-project view | `/analytics` | [Analytics](/features/analytics) |
-| Quality report | *Quality report* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
-| Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |
+The page and URL of each object of the model: [Core concepts](./core-concepts#where-each-concept-lives-in-the-ui).
 
 ## Related
+- [Core concepts](./core-concepts) — the words a first run meets
 - [Getting started](./getting-started) — get results flowing in
 - [UI overview](/features/ui-overview) — a map of every page
 - [Reporter](./reporter) — how each of these objects gets populated

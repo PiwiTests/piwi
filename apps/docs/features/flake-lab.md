@@ -36,7 +36,7 @@ It runs, one after the other:
    same error as in CI. Suspects no experiment tested run first, most likely first; one that did not reproduce runs
    last, never dropped.
 
-Every run has retries off, on your current checkout. Before it starts, it prints an estimate from the test's
+Every repetition has retries off, on your current checkout. Before it starts, it prints an estimate from the test's
 median duration; `--budget` (15 minutes by default) stops it from starting another arm once spent.
 
 ```text
@@ -70,15 +70,15 @@ as a delay that trips a timeout the test never hit in CI, is shown apart and has
 
 | Verdict | When |
 |---|---|
-| **Reproduced** | at least half the arm's runs failed with a matching error, and a one-sided Fisher exact test against the control gives p < 0.05 |
-| **Amplified** | p < 0.05, but under half the runs failed |
+| **Reproduced** | at least half the arm's repetitions failed with a matching error, and a one-sided Fisher exact test against the control gives p < 0.05 |
+| **Amplified** | p < 0.05, but under half the repetitions failed |
 | **Not reproduced** | anything else |
 
 The command prints the commit it tested next to the commit of the test's latest failure, and warns when they
 differ: a condition that reproduces on today's code says little about last month's failure. The control catches a
 test that simply fails on this machine.
 
-**Not reproduced is not ruled out.** Ten clean runs only show the condition fails in under about 26% of runs (95%
+**Not reproduced is not ruled out.** Ten clean repetitions only show the condition fails in under about 26% of them (95%
 confidence): a one-in-twenty flake can still come from it, so the next experiment runs it after the untested ones.
 
 ## Verify a fix
@@ -89,14 +89,14 @@ After the fix, rerun the condition that reproduced it:
 npx @piwitests/reporter flake verify 1842
 ```
 
-It reruns the reproducing arm and its control for enough runs that a failure at the rate it reproduced would have
+It reruns the reproducing arm and its control for enough repetitions that a failure at the rate it reproduced would have
 shown with 95% confidence (`⌈ln 0.05 / ln(1 − rate)⌉`, at least 5), and stops at the first matching failure. With
 none, the fix is **verified**. The verify experiment appears on the Flakiness tab next to the one it verifies, and the
 test reads [verified fixed](./flaky-tests#verified-fixed): off the flaky ranking until it retry-passes again, and a
 quarantined test is proposed for release at once, until it fails again.
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it
-still fails, or too few runs passed to say) · `2` error.
+still fails, or too few repetitions passed to say) · `2` error.
 
 ## Where results show
 
@@ -137,7 +137,7 @@ suspect, all at once, or one), the runs and the budget. The experiment lands on 
 
 Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
 runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
-enough clean runs, which tells when a flake started.
+enough clean repetitions, which tells when a flake started.
 
 ## Run it in CI
 

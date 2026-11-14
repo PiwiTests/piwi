@@ -243,7 +243,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 13,
     intro:
       'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection, and `PIWI_ZEPHYR_API_TOKEN` one for Zephyr Scale Cloud; otherwise connections are managed from **Settings → Integrations**.',
-    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Integrations](/operate/integrations).',
+    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Jira Cloud](/operate/integrations).',
   },
   clustering: {
     title: 'Failure clustering',

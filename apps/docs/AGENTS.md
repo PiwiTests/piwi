@@ -95,11 +95,12 @@ The feature catalog (`apps/application/shared/piwi-features.ts`) is the only pla
 are rendered from it, so never restate its lists by hand:
 
 - the **Features sidebar**, by `featuresSidebar()` in `.vitepress/navigation.ts`: one group per catalog group, one
-  entry per catalog entry whose page is under `features/`;
+  entry per catalog entry whose page is under `features/`, an entry with a `parent` nested under that entry;
 - the **Tools sidebar**, by `toolsSidebar()`: one group per catalog group with `section: 'tools'`. A group whose first
   entry carries its title links its heading to that entry's page, and entries that share a `part` sit under its label;
 - the **landing page's cards**, set by `transformPageData` in `.vitepress/config.mts`: one per group, a group with
-  `card: false` counted on the card before it, and one card for all the tools;
+  `card: false` counted on the card before it, one card for all the tools, and the Self-hosting card counting the
+  pages of its sidebar;
 - the **All features** page, `reference/features.md`.
 
 **A tool's page keeps its URL** under `features/` (or `guide/`): `sidebars()` gives each one a key of its own, and the
@@ -114,7 +115,7 @@ which the drift test also reads.
 | Guide → Set up | `guide/` | "How do I connect my suite, my CI, and what a feature needs?" |
 | Guide → About Piwi | `guide/` | "What is this, and should I adopt it?" |
 | Features | `features/`, `recipes/` | "What does the dashboard do with my results?", grouped by catalog group |
-| Tools | `features/`, `guide/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents |
+| Tools | `features/`, `guide/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents, the command line |
 | Self-hosting | `operate/` | "I run the server." |
 | Reference | `reference/` | "What are all the values?" |
 
@@ -218,9 +219,12 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 
 ### Pages and sources with a special role
 
-- **`concepts.md` is the vocabulary source of truth** — project / test run / **test case** (a test's identity across
-  time) / **execution** (one attempt, one browser — the `test_runs_cases` row) / failure cluster / fingerprint /
-  baseline. Use those words consistently in docs *and* UI copy; link the anchor instead of redefining a term.
+- **`concepts.md` is the vocabulary source of truth**, the Glossary — project / test run / **test case** (a test's
+  identity across time) / **execution** (one attempt, one browser — the `test_runs_cases` row) / failure cluster /
+  fingerprint / baseline. Use those words consistently in docs *and* UI copy; link the anchor instead of redefining a
+  term. It keeps its URL under `guide/` (pages link its anchors) and shows in the Reference sidebar; `core-concepts.md`
+  in Get started defines the words a first run meets in a line each and links each glossary entry. A word that names
+  two things keeps one meaning there, listed under *Words kept to one meaning*.
 - **`ui-overview.md` is a map, not a manual** — one short paragraph per view plus a link to the page that explains the
   concept. Feature explanations belong on the feature page. It is the page most likely to accrete a manual, because a
   feature with no home lands here by default: if you catch yourself adding an H3, a screenshot or a table to it, the
@@ -242,7 +246,8 @@ descriptions and the word budgets; the prose bans (endpoints, MCP tool count, ch
 version" or "now supports", planned work); the hand-written reference pages and the _Live demo_ section of
 `features/ui-overview.md`; the recipes' links; the demo examples; the positioning line and the single-source snippets.
 `docs-page-meta.test.ts` checks that each page's description is at least 50 characters. `docs-claims.test.ts` checks
-counts, quoted editor commands, figures in recipes, the privacy page's destinations, the length of a `concepts.md`
+counts, quoted editor commands, Piwi Picker's labels quoted as Piwi Picker's **Label**, figures in recipes, the
+privacy page's destinations (every server file that sends a request names its row), the length of a `concepts.md`
 entry and the link from a page to the owner of a rule it names.
 
 The docs build itself fails only on a link to a missing page, so this test is what catches a heading that moved. It

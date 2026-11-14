@@ -1857,14 +1857,30 @@ async function prepareTeamSlackChannel({ base, request }) {
   });
 }
 
+/** A variable's value in `apps/application/.env`, the file `nuxt dev` reads, or undefined when the file sets none. */
+function appEnvFileValue(name) {
+  const file = join(APP_DIR, '.env');
+  if (!existsSync(file)) return undefined;
+  const line = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.*?)\\s*$`, 'm').exec(readFileSync(file, 'utf8'));
+  return line ? line[1].replace(/^(['"])(.*)\1$/, '$2') : undefined;
+}
+
 /**
- * The server the harness boots runs as a configured instance: a public address,
- * so no screen shows the missing-PIWI_SITE_URL warnings, and share links on, so
- * the pages show their Share button (the caller's own value wins for both), and
- * never the caller's own Jira: the scenes connect their own.
+ * The server the harness boots runs as a configured instance, on the local dev
+ * database: a public address, so no screen shows the missing-PIWI_SITE_URL
+ * warnings, share links on, so the pages show their Share button (the caller's
+ * own value wins for both), never the caller's own Jira (the scenes connect
+ * their own), and a secret key, so a scene can store a connection's
+ * credentials. The key is the one the dev server would use: the environment's,
+ * else the one `apps/application/.env` sets, so the secrets the dev database
+ * holds still open; else one fixed string, the same on every run.
  */
 const SCENE_SERVER_ENV = {
   PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
+  PIWI_SECRET_KEY:
+    process.env.PIWI_SECRET_KEY ||
+    appEnvFileValue('PIWI_SECRET_KEY') ||
+    createHash('sha256').update('piwi feature screenshots').digest('hex'),
   PIWI_SHARE_LINKS_ENABLED: process.env.PIWI_SHARE_LINKS_ENABLED ?? 'true',
   PIWI_JIRA_BASE_URL: '',
   PIWI_JIRA_EMAIL: '',
@@ -1889,6 +1905,9 @@ async function prepareJiraSceneConnection({ base, request }) {
       credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
     },
   });
+  if (!created.ok()) {
+    throw new Error(`the scene Jira connection was refused (${created.status()}): ${await created.text()}`);
+  }
   jiraSceneConnectionId = (await created.json()).connection.id;
 }
 
@@ -4455,7 +4474,6 @@ const SCENES = [
       'Settings → Integrations: the Jira connect form with a pasted board URL, scoped-token steps and a sign-in check',
     tags: ['docs'],
     out: 'docs',
-    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
     // The check endpoint would call the typed site, so the scene answers it with a
     // canned Cloud site and sign-in; no Atlassian host is contacted.
     route: '/settings/integrations',
@@ -4548,7 +4566,6 @@ const SCENES = [
     route: '/settings/integrations',
     viewport: { width: 1280, height: 1100 },
     colorScheme: 'light',
-    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
     async run({ page, shoot, settle }) {
       await page.route('**/api/integrations/connections/check', async (route) => {
         const body = route.request().postDataJSON();
@@ -4769,7 +4786,7 @@ const SCENES = [
     // answered as bound to CHK / Bug, with its sync policies, a default assignee and an owner route.
     prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 2300 },
+    viewport: { width: 1280, height: 2500 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
     async run({ page, goto, shoot, settle }) {

@@ -27,9 +27,9 @@ right there in the headings:
 </figure>
 
 If your test is under **Newly flaky / passed on retry**, its failure did not survive a retry: that points at
-flakiness, not a regression that breaks it every time. When it was stable in the baseline, a change can still have
-made it flaky; its history (next step) tells which. A long-standing flake belongs in
-[cutting flakiness](./flaky-cleanup).
+flakiness, not a regression that breaks it every time. It does not clear your change, which can have made the test
+flaky ([what newly flaky says](/features/run-changes#what-newly-flaky-says-about-your-change)): its history (next
+step) tells a new flake from an old one. A long-standing flake belongs in [cutting flakiness](./flaky-cleanup).
 
 ## 2. Check the test's own history
 
@@ -84,5 +84,5 @@ narrows it.
 
 ## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
-- [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
+- [Core concepts](/guide/core-concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

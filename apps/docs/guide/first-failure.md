@@ -92,6 +92,6 @@ This execution is one member of a **[failure cluster](/features/failure-clusters
 
 - [Failure evidence](/features/evidence): each evidence tab, attempts, the page diff and the trace views
 - [Clue rules](/reference/clues): every rule behind the **Most likely** line
-- [Failure clusters & the inbox](/features/failure-clusters): triaging failures as groups
+- [Failure clusters](/features/failure-clusters): triaging failures as groups
 - [Capture fixtures](./capture-fixtures): the one file that unlocks the richer evidence
-- [Core concepts](./concepts): run, execution, cluster, fingerprint, baseline
+- [Core concepts](./core-concepts): run, execution, cluster, fingerprint, baseline
