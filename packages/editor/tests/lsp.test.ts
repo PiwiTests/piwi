@@ -2382,7 +2382,7 @@ describe('failures follow the edits', () => {
       command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
     });
     // The healing replaces a line the buffer does not hold.
-    expect(actions.map((a) => a.title).filter((t) => t.startsWith('Heal'))).toEqual([]);
+    expect(actions.map((a) => a.title).filter((t) => t.startsWith('Piwi: heal with'))).toEqual([]);
     const pushed = await waitFor(() => failuresChanges.slice(seen).find((f) => f.items[0]?.state === 'edited'));
     expect(pushed.items[0]).toMatchObject({ uri: uri(page), line: 4, executionId: 900 });
 

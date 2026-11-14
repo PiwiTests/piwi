@@ -1422,14 +1422,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       // Every file as saved, a page object's stop included; the service says why it refuses.
       if (await vscode.workspace.saveAll(false)) await runTests(debug, true);
     }),
-    // Verify the test ×3: the failure's test by its location, three times (`WorkspaceFailure.verify`), its spec saved.
+    // Verify the test ×3: the failure's test by its location, three times (`WorkspaceFailure.verify`), every file saved.
     vscode.commands.registerCommand('piwi.verifyFailure', async (target: FailureNode) => {
       const verify = failureOf(target)?.verify;
       if (!verify) {
         void vscode.window.showInformationMessage('Piwi: this failure has no test to verify.');
         return;
       }
-      if (await saveSpec(verify.uri)) await runTests(verify);
+      if (await vscode.workspace.saveAll(false)) await runTests(verify);
     }),
     // Go to the test: the failure's `test(…)` line in its spec (`WorkspaceFailure.test`).
     vscode.commands.registerCommand('piwi.goToFailureTest', async (target: FailureNode) => {

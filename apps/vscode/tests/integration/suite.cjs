@@ -125,7 +125,7 @@ const tests = {
         failure.range,
         vscode.CodeActionKind.QuickFix.value,
       );
-      return found?.some((a) => a.title.startsWith('Heal')) ? found : null;
+      return found?.some((a) => a.title.startsWith('Piwi: heal with')) ? found : null;
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
     assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
@@ -136,7 +136,7 @@ const tests = {
     await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
-    const heal = actions.find((a) => a.title.startsWith('Heal'));
+    const heal = actions.find((a) => a.title.startsWith('Piwi: heal with'));
     assert.ok(await vscode.workspace.applyEdit(heal.edit));
     const document = await vscode.workspace.openTextDocument(pageObject);
     assert.equal(document.lineAt(4).text, "  row = () => this.page.getByRole('row', { name: /Mug/ });");

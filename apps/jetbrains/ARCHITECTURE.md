@@ -882,7 +882,7 @@ thread.
   until their line changes.
 - **Quick fixes.** Once the recording stopped, a warning on a step with other verified locators
   (`RecordingStep.locators`, kept with the warning in `RecordingWarningMark`) offers each one as a quick fix
-  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Use getByTestId('pay')** puts
+  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Piwi: use getByTestId('pay')** puts
   it in place of the written locator, found on the line exactly once, in one command, and the line it changes no longer
   shows the warning. None is offered while it records, since the next update writes the block again.
 - **The banner** over the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step

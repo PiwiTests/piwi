@@ -28,7 +28,7 @@ menu and failures tree built from registered actions, the tree's as new `Piwi.Fa
 and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Point's key, `Piwi.OpenRunPage`,
 `Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
-say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
+say Open the screenshot (HM11). M2 is built, with HM11's Verify ×3 and Jump to Source (Go to the test) on failure nodes,
 and the status popup takes one entry per run page (HM3); its three new groups (`Piwi.RunControl`, `Piwi.StatusActions`,
 `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and part of Q2: VS Code's outcome marks in the
 dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result icon and JetBrains' CI tab), and
@@ -1419,6 +1419,7 @@ such action.
 | Reproduce in the desktop app | `monitor` | `monitor` | `$(device-desktop)` | `Nodes.Desktop` |
 | Find the breaking commit | `git-branch` | – | `$(git-branch)` | `Vcs.Branch` |
 | Verify ×3 | – | – | `$(sync)` | `Actions.Rerun` |
+| Go to a failure's test | – | – | `$(go-to-file)` | `Nodes.Test` |
 | Run this spec | – | – | `$(run-all)` | `Actions.RunAll` |
 | Re-run the failing tests | – | – | `$(run-errors)` | `RunConfigurations.RerunFailedTests` |
 | Coverage | `scan-line` | – | `$(run-coverage)` | `General.RunWithCoverage` |
