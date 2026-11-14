@@ -12,8 +12,8 @@
     have used; this plugin brings that to WebStorm, IntelliJ IDEA Ultimate and Rider.</p>
 
     <p><b>You need a Piwi instance:</b> the <a href="https://piwitests.dev/features/desktop">desktop app</a>,
-    <code>npx @piwitests/server</code> or the Docker image. Recording needs none. Piwi reads Playwright Test suites in
-    JavaScript and TypeScript.</p>
+    <code>npx @piwitests/server</code> or the Docker image. Recording, running a test by its line, and pausing and
+    stepping through it need none. Piwi reads Playwright Test suites in JavaScript and TypeScript.</p>
 
     <p><b>What it shows</b></p>
     <ul>
