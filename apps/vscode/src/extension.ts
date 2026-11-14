@@ -2501,33 +2501,48 @@ async function signIn(base: string): Promise<string | null> {
   const page = vscode.Uri.parse(started.verificationUrl);
   await vscode.env.openExternal(page);
   const cancel = new AbortController();
-  const waiting = waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
-    if (cancel.signal.aborted) return null;
-    throw e;
+  // While the browser decides, a picker holds the code and the link to copy; it closes with the sign-in, and closing it
+  // first cancels the sign-in.
+  const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { act: () => Thenable<unknown> }>();
+  pick.title = `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`;
+  pick.placeholder = 'Waiting for the browser. Escape cancels the sign-in.';
+  pick.busy = true;
+  pick.ignoreFocusOut = true;
+  pick.items = [
+    {
+      label: '$(copy) Copy code',
+      description: started.userCode,
+      act: () => vscode.env.clipboard.writeText(started.userCode),
+    },
+    {
+      label: '$(link) Copy link',
+      description: started.verificationUrl,
+      act: () => vscode.env.clipboard.writeText(started.verificationUrl),
+    },
+    { label: '$(link-external) Open browser again', act: () => vscode.env.openExternal(page) },
+  ];
+  pick.onDidAccept(() => {
+    const chosen = pick.selectedItems[0];
+    pick.selectedItems = [];
+    if (chosen) void Promise.resolve(chosen.act()).catch(() => undefined);
   });
-  // The message stays with the code and the link to copy, shown again after each of its buttons, until the browser
-  // answers or the person cancels; its buttons do nothing once the sign-in ended.
   let ended = false;
-  void waiting.finally(() => (ended = true));
-  void (async () => {
-    while (!ended) {
-      const choice = await vscode.window.showInformationMessage(
-        `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
-        'Copy code',
-        'Copy link',
-        'Open browser again',
-        'Cancel',
-      );
-      if (ended) return;
-      if (choice === 'Copy code') await vscode.env.clipboard.writeText(started.userCode);
-      else if (choice === 'Copy link') await vscode.env.clipboard.writeText(started.verificationUrl);
-      else if (choice === 'Open browser again') await vscode.env.openExternal(page);
-      else if (choice === 'Cancel') return cancel.abort();
-      // Dismissed: the sign-in keeps waiting for the browser's answer, until it expires.
-      else return;
-    }
-  })();
-  const result = await waiting;
+  pick.onDidHide(() => {
+    if (!ended) cancel.abort();
+  });
+  pick.show();
+  let result: Awaited<ReturnType<typeof waitForSignIn>> | null;
+  try {
+    result = await waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
+      if (cancel.signal.aborted) return null;
+      throw e;
+    });
+  } finally {
+    ended = true;
+    pick.dispose();
+  }
+  // A sign-in closed while its last answer was on the way takes no key.
+  if (cancel.signal.aborted) return null;
   if (!result) return null;
   if (result.status === 'approved' && result.apiKey) return result.apiKey;
   void vscode.window.showInformationMessage(

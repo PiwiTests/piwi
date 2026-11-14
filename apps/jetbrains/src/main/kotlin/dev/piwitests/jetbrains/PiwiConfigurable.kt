@@ -202,7 +202,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                                 "the stopped page, and has Piwi write the code there",
                         )
                 }
-                for (id in AGENT_ACTIONS) row { actionButton(id) { if (isModified) apply() } }
+                for (id in AGENT_ACTIONS) row { actionButton(id) { isModified } }
             }
             onReset { show() }
         }
@@ -283,15 +283,14 @@ private val AGENT_ACTIONS = listOf(
 )
 
 /**
- * A button that runs the registered action `id`, with its text, from the settings page, once `first` ran: the page's
- * changes applied, which the action reads.
+ * A button that runs the registered action `id`, with its text, from the settings page. The action reads the saved
+ * settings: while the page holds changes not applied (`pending`), it says to apply them first and runs nothing.
  */
-private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String, first: () -> Unit) {
+private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String, pending: () -> Boolean) {
     val action = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return
     button(action.templatePresentation.text ?: id) { e ->
-        try {
-            first()
-        } catch (_: com.intellij.openapi.options.ConfigurationException) {
+        if (pending()) {
+            com.intellij.openapi.ui.Messages.showInfoMessage(e.source as java.awt.Component, Glue.APPLY_FIRST, "Piwi")
             return@button
         }
         com.intellij.openapi.actionSystem.ActionManager.getInstance()

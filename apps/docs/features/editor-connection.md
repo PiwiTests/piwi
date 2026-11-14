@@ -41,10 +41,11 @@ Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` nam
 ### Beside a shared instance
 
 When the environment, a `.env` or Connect names your team's instance, the desktop app sits beside it rather than
-replacing it. Run **Piwi: Connect…**: it lists the desktop app, the instance the workspace names, and **Another
-instance**, and marks the one in use. Choose **The Piwi desktop app**, and the editor reads the app first while it
-runs, then the shared instance again when the app quits. Choosing the shared instance in the same list switches back;
-its address, project and key stay saved throughout.
+replacing it. In VS Code, **Piwi: Connect…** lists the desktop app, the instance the workspace names, and **Another
+instance**, and marks the one in use; in a JetBrains IDE, Connect reads the project from **The Piwi desktop app,
+while it runs** or **An instance**. Choose the desktop app, and the editor reads it first while it runs, then the
+shared instance again when the app quits. Choosing the instance switches back; its address, project and key stay saved
+throughout.
 
 The choice is kept on your machine only (VS Code's workspace state, `.idea/workspace.xml` in a JetBrains IDE), never
 in a file the team shares. In a JetBrains IDE, **Settings → Tools → Piwi** shows it too, under **Read this project
@@ -71,7 +72,7 @@ Run **Piwi: Connect…** from the command palette, or click `Piwi: connect` in t
    instance without a login needs no key.
 3. Pick the project.
 
-In a JetBrains IDE, Connect is one dialog holding what **Settings → Tools → Piwi** shows
+In a JetBrains IDE, Connect is one dialog holding the Connection panel of **Settings → Tools → Piwi**
 ([JetBrains plugin](./jetbrains#install-and-start)).
 
 The browser sign-in opens the instance's page with a code: check that the editor shows the same code, then click
@@ -82,7 +83,7 @@ Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
 
 When the environment or a `.env` names another instance, Connect saves your choice and says which source comes first.
 In a JetBrains IDE, an instance on your machine is reached at `localhost`, `127.0.0.1` or `[::1]`, whichever it
-listens on: Connect tries all three and saves the one that answered.
+listens on: Test connection and the project list try all three and keep the one that answered.
 
 ## What is saved where
 

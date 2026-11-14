@@ -39,7 +39,7 @@ In a project opened in safe mode, Piwi runs nothing and says it waits for your t
 **Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then where the project reads from: the
 desktop app, with its projects, or an instance, with its address and **Test connection**, its key with **Sign in…**,
 **Paste key…** and **Remove**, and the project, picked from the instance's list. **Connect…**, under **Tools → Piwi**
-and in the tool window's gear menu, is the same panel as one dialog. Nothing is saved before **Apply** or **Connect**.
+and in the tool window's gear menu, is the same panel as one dialog. Nothing is saved before **Apply** or **Connect**, but **Disconnect**, which asks first.
 When the environment or the workspace `.env` names another instance, the page says so, and an empty **Server URL**
 shows its address. While the service cannot start, the page and the **Piwi** tool
 window offer **Node.js settings…**, and the service starts again once you close the settings.

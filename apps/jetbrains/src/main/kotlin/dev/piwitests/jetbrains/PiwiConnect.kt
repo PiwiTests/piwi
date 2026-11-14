@@ -140,8 +140,8 @@ object PiwiConnectFlow {
     }
 
     /**
-     * Use the desktop app, the offer's action: on the project linked there to this folder, else with the Connect dialog
-     * on the desktop app. The instance the project names stays saved, for when the app does not run.
+     * Use the desktop app, the offer's action: the Connect dialog with the desktop app chosen, its project to confirm or
+     * pick. The instance the project names stays saved, for when the app does not run.
      */
     fun useDesktop(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()

@@ -223,7 +223,10 @@ class PiwiConnectPanel(private val project: Project, parent: Disposable, private
         }
     }
 
-    /** The instance's projects, with the key Apply would save, in the project list; the typed name stays. */
+    /**
+     * The instance's projects, with the key Apply would save, in the project list; the typed name stays. On this machine,
+     * the loopback address that answered takes the field's place.
+     */
     private fun loadProjects() {
         val url = Glue.normalizeServerUrl(urlField.text) ?: return
         val change = key
@@ -234,9 +237,12 @@ class PiwiConnectPanel(private val project: Project, parent: Disposable, private
                 PiwiProjectService.KeyChange.Remove -> null
                 PiwiProjectService.KeyChange.Keep -> service.apiKey(url)
             }
-            val answer = runCatching { PiwiInstance.projects(url, key) }
+            // An instance on this machine answers on whichever loopback address it listens on: the one that answered.
+            val answered = if (Glue.isLoopback(url)) runCatching { PiwiInstance.reach(url).url }.getOrDefault(url) else url
+            val answer = runCatching { PiwiInstance.projects(answered, key) }
             later {
                 if (Glue.normalizeServerUrl(urlField.text) != url) return@later
+                if (answered != url && answer.isSuccess) urlField.text = answered
                 val typed = project()
                 answer.onSuccess { projects ->
                     projectCombo.removeAllItems()

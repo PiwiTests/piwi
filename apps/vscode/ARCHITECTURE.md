@@ -952,8 +952,8 @@ ring. The API `activate` returns gives what the view shows (`testExplorer`).
    `src/glue.ts`).
 2. Otherwise it asks for the instance's address, then asks the instance whether it needs a key.
 3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted. While the sign-in
-   waits, a message holds the code with **Copy code**, **Copy link**, **Open browser again** and **Cancel**, shown
-   again after each of its buttons until the browser answers.
+   waits, a picker holds the code with **Copy code**, **Copy link** and **Open browser again**; it closes with the
+   sign-in, and closing it first cancels the sign-in, whose answer is then dropped.
 4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
    `SecretStorage`.
 

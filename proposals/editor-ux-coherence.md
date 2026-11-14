@@ -158,7 +158,7 @@ page's Connection group, saved with Apply, and as Connect's one dialog in place 
 with its projects, or an instance with Test connection, its key with Sign in…, Paste key… and Remove, saved on Apply,
 and a project from the instance's list. The sign-in shows in the panel, its code and link with Copy code, Copy link
 and Open browser again, and VS Code's sign-in message gains the same buttons (ST16, left out of this document).
-LI13's states for waiting on trust and a Node.js start problem stay with the settings page's In use group. Record here is a code action where the
+LI13's states for waiting on trust and a Node.js start problem are dropped from M12: the settings page's In use group already says both, with Node.js settings…. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -1021,7 +1021,7 @@ in JetBrains). Built as step M11.
 
 The connection view model ([LI6](#li6)) comes first wherever settings are. In JetBrains, Connect becomes one panel, in
 the settings page and as one dialog: the desktop app with its projects, the URL with Test connection, the key with Sign
-in…, Paste key… and Remove, a project combo from the instance. The sign-in is a non-modal dialog with Copy code and Copy
+in…, Paste key… and Remove, a project combo from the instance. The sign-in shows in the panel with Copy code and Copy
 link (VS Code's gains Copy link); errors come from one table, and waiting for trust and a Node.js start problem become
 states with their fix. **Lives in** `PiwiConnect.kt`, `PiwiConfigurable.kt` and the service's words (FSL). **Replaces**
 up to five modal dialogs, a project typed by hand on the settings page, a page that reads None while connected.

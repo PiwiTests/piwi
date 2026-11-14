@@ -1077,8 +1077,7 @@ person's own option, from the settings page or an action, is handed and drawn ag
 (Settings Sync, Import Settings); a project whose service is not running is not started for it. In Rider, the project's files sit under
 `.idea/.idea.<Name>/.idea/`, as the settings page's comments say, and a project of one `.ipr` file keeps them in it and its `.iws` (`Glue.storeFiles`). Each group of the page opens with one comment
 saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
-(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The Agents (MCP) group holds the actions that copy the MCP servers'
-configurations and reset the runs' token as buttons, each running its registered action. The runs' MCP server's token is in the `PasswordSafe`.
+(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The Agents (MCP) group holds the actions that copy the MCP servers' configurations and reset the runs' token as buttons, each running its registered action on the saved settings: while the page holds changes not applied, it says to apply them first (`Glue.APPLY_FIRST`). The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).

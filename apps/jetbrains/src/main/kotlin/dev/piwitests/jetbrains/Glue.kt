@@ -1318,6 +1318,9 @@ object Glue {
     fun projectsStateText(url: String, count: Int): String =
         if (count == 0) "$url has no project yet: send a run with the Piwi reporter, then Refresh." else "$url lists $count ${if (count == 1) "project" else "projects"}."
 
+    /** What a settings page button that reads the saved settings says while the page holds changes not applied. */
+    const val APPLY_FIRST = "Apply the page's changes first: this reads the saved settings."
+
     /** The sign-in's words in the Connect panel. */
     const val SIGN_IN_WAITING = "Allow the request in your browser, which shows this code. No browser opened? Copy the link."
     const val SIGN_IN_CANCELLED = "Sign-in cancelled."
