@@ -26,11 +26,12 @@ sidebar.
 
 ## Analytics
 
-`/analytics`: trends across projects and over time, where Home shows what is happening now. The filters at the top
+`/analytics`: trends across projects and over time, where Home shows what is happening now. It opens your
+[default dashboard](./dashboards#your-default-dashboard), else the built-in *Overview*; `/analytics/d/:id` opens one
+[dashboard](./dashboards), which the header switcher picks, and `/analytics/dashboards` lists them all. The filters at the top
 scope every widget; the widgets are listed on [Analytics widgets](/reference/analytics-widgets), and the filters and
-period comparisons on [Analytics](./analytics). The page is the built-in *Overview* [dashboard](./dashboards), and the
-header switcher opens the others. [Timeline markers](./timeline-markers) overlay deploys and infrastructure changes on
-the trend charts.
+period comparisons on [Analytics](./analytics). [Timeline markers](./timeline-markers) overlay deploys and
+infrastructure changes on the trend charts.
 
 ## Quality reports
 
@@ -50,9 +51,10 @@ and quarantined tests, each a link. The **Filters** block under it (environment,
 header and every tab that reads run history; with no branch picked it reads the
 [default branch](./branches#the-default-branch), and a note counts the runs it hides,
 [your own](/guide/getting-started#_3-run-your-tests) aside, which the runs table lists all the same. Beside the
-[**Import**](/guide/importing-runs) button, **More actions** holds Edit,
-[Test functions](./test-functions), [Selections](./test-selection), [Locators](#locators), [Bug reports](./bug-reports),
-**Schedule a quality report…**, Delete and Refresh. The tabs:
+[**Quality report**](./quality-reports) and [**Import**](/guide/importing-runs) buttons, **More actions** holds Edit,
+[Test functions](./test-functions), [Selections](./test-selection), [Locators](#locators),
+[Bug reports](#bug-reports), **Schedule a quality report…**, Delete and Refresh. On a project's pages, the command
+palette lists its tabs and the pages of this menu. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 to a page; select two and **Compare** [what changed](./run-changes) between them, or select any
@@ -80,6 +82,12 @@ header and every tab that reads run history; with no branch picked it reads the
 
 `/projects/:id/locators`: check pasted locators against the ones the project's tests use, and browse every locator
 chain in the locator index, per branch. See [Who uses a locator](./locator-usage#the-locators-page).
+
+## Bug reports
+
+`/projects/:id/bug-reports`: the project's [bug reports](./bug-reports), newest first, by status.
+`/bug-reports/:id`: one report, with the tabs **Steps**, **Evidence**, **Reproductions** and **Spec**
+([The report's page](./bug-reports#the-report-s-page)).
 
 ## Test run detail
 
@@ -118,8 +126,9 @@ that threw, a spec that did not load) show under the facts line. The tabs:
 
 `/test-run-cases/:id`, the **execution page**: one attempt, read from its situation block
 ([Your first failure, explained](/guide/first-failure)) down through its evidence ([Failure evidence](./evidence)), and
-exportable as a file ([Offline export](./offline-export)). `/test-cases/:id`: the test's history
-([The test case page](./evidence#the-test-case-page)).
+exportable as a file ([Offline export](./offline-export)). `/test-cases/:id`: the test's history, in the tabs
+**Overview**, **Trend** and, for a flaky test,
+**Flakiness** ([The test case page](./evidence#the-test-case-page)).
 
 ## Failure cluster detail
 
@@ -128,12 +137,14 @@ the ways to fix it ([The cluster page](./failure-clusters#the-cluster-page)).
 
 ## Settings
 
-`/settings` (user menu, or `g` then `s`): your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
+`/settings`, from the user menu at the foot of the sidebar (**Settings**, or your name once signed in), the
+command palette or `g` then `s`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
 **Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)), **Groups**
 ([Groups](/operate/project-access#groups)), **Permissions** ([Permission grid](/operate/project-access#permission-grid)),
 **Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
-**Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
+**Auto-heal** ([Auto-heal PRs](./auto-heal)), **Source control**
+([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
 ([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
@@ -144,7 +155,8 @@ an environment variable is shown read-only with the variable's name ([Configurat
 The **Setup** section of Settings: **Connect a suite**, the
 [connect wizard](/guide/getting-started#_2-connect-your-suite); **Capabilities**, for administrators, which optional
 capabilities this instance uses ([Choose what you use](/operate/capabilities)); **MCP server**
-([MCP server](./mcp)); **API reference**, the instance's own OpenAPI reference; and **Companion tools**.
+([MCP server](./mcp)); **API reference**, the instance's own OpenAPI reference; and **Companion tools**, also in the user
+menu.
 
 ## Live demo
 
