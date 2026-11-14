@@ -49,7 +49,7 @@ Code, the Testing view's test run of your run writes in its output each test a w
 the line it stands at, and each stop answered.
 
 A run in progress that is not yours, a CI run or a teammate's, shows read-only:
-[A CI run of your branch](./watch-running-test#a-ci-run-of-your-branch).
+[A CI run of your branch](./editor-ci-runs).
 
 ## Where a test stopped
 

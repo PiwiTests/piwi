@@ -12,7 +12,7 @@ The Piwi item in the status bar of the [editor extensions](./editors) says how t
 how far a run in progress is, for the Playwright config of the file you are editing.
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
-local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
+local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./editor-ci-runs),
 is in progress, the item says where its test stands stopped or the call a paused one waits in, that it is shared live,
 and how far it is (`Piwi: held at its failure · checkout.page.ts:12 · run #124 · 4 of 9 · 1 failed`), in the same
 words in both editors, and returns to the latest run when it ends. A test that waits for you marks the item until you

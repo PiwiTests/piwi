@@ -792,6 +792,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'Read results',
       },
       {
+        title: 'CI runs in your editor',
+        summary:
+          "A CI run of your branch while it runs, read-only beside your own: its tests and progress, the line each running test is at, and its pages from the team instance's live view.",
+        needs: ['editor'],
+        where: "The CI Runs view of VS Code's Piwi panel; the CI run tab of the Piwi tool window in a JetBrains IDE",
+        doc: 'features/editor-ci-runs',
+        part: 'Read results',
+      },
+      {
         title: 'Open in editor',
         summary: 'Every source path in the dashboard jumps to that file and line in VS Code or JetBrains.',
         needs: [],
