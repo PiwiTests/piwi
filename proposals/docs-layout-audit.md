@@ -26,8 +26,12 @@ they now hold.
   Reference; Remote development is a catalog entry, under Editor extensions. The Reference sidebar, at 1,225 px, is
   the one sidebar taller than a screen.
 
-Step 3 and what was not done are under [Left for later](#left-for-later). What the pages say, as opposed to where
-they are, is audited in [`docs-content-audit.md`](docs-content-audit.md).
+- **From step 3**: the CI merge gate has its page, `features/merge-gate.md`, in Hand back a fix (L10), and Core
+  concepts is under half its length, each entry a definition that links its rule (L12), both built with
+  [`docs-content-audit.md`](docs-content-audit.md), which audits what the pages say as opposed to where they are.
+  The editor's status bar, a page `main` added meanwhile, sits under Editor extensions.
+
+What was not done is under [Left for later](#left-for-later).
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -350,9 +354,13 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 
 ## Left for later
 
-- **A CI merge gate page** (L10), and Core concepts as a short page plus a glossary (L12).
+- **Core concepts as a short page plus a glossary** (L12): the page is one, at 3,487 words, third in Get started.
 - **The Self-hosting items** (L13) and the file names that differ from their page's title (L14).
 - **The loop page's link on Desktop app**, and a place for the `piwi` CLI among the tools.
 - **Nesting inside a Features group**: Live view of a run over its three pages, Resource leaks over Leak history.
 - **The Reference sidebar**, a screen and a third tall since it has six groups.
 - **Decision 2**: whether writing and debugging tests is a fifth job in `ROADMAP.md` and What Piwi does.
+- **Two pages that need a page split off**, each with a catalog entry: the failure inbox out of Failure clusters,
+  and CI runs in your editor out of Watch a running test.
+- **The labels of L8** that nesting did not settle: the six of the Watch a run group, and Report a bug, Bug reports
+  and Replay a bug report under Bugs.

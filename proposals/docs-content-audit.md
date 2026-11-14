@@ -5,16 +5,28 @@ audits where it says it. Three questions: does the site describe the dashboard a
 two pages say different things, and is the same thing explained twice. It ends with what the app itself could change,
 seen while answering the first. State audited: `main` at v0.69.0 (`e3ddb84b`), 2026-11-14.
 
-**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit: step 1 of [the plan](#the-plan),
-the corrections. Every row of the S, T, C and D tables that is not marked **likely** or **unsure** is corrected in
-the page, the catalog or the registry it names, each checked in the code again before the edit, with C1.1 for its
-Runs window half; the rows marked likely or unsure are untouched. Where the correction found more than the row said:
-the default-branch chain has five steps (C3.2), the privacy page's sentence on what opens a socket names five more
-clients (D12), and the UI overview now claims "its main pages and tabs" (S12), still without the analytics dashboard
-routes, the bug report page and the test case's tabs. One destination is still missing from the privacy table: a
-project's OpenAPI document URL, which the server fetches when a project sets it. The two strings of the Capabilities
-page (item 2 of [What the app could change](#what-the-app-could-change)) and the palette's tabs (item 1) are fixed
-in a pull request of their own.
+**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit, with the palette's tabs and the
+Capabilities page's two strings (items 1 and 2 of [What the app could change](#what-the-app-could-change)) in a
+pull request of their own:
+
+- **Step 1 of [the plan](#the-plan), the corrections.** Every row of the S, T, C and D tables that is not marked
+  **likely** or **unsure** is corrected in the page, the catalog or the registry it names, each checked in the code
+  again before the edit.
+- **Step 2, one owner per rule.** The CI merge gate has a page, `features/merge-gate.md`. Watch a run owns when a
+  failing test is held and why a test stops; Watch a running test and Live view of a run what watching sends and
+  keeps; Failure clusters the fingerprint and the cluster states; Flaky tests the score, the ranking and
+  quarantine; Slow tests wasted time; What changed in a run the baseline; the test metadata reference how a result
+  counts and which runs send no feedback; the coverage cost reference every mode's cost; the Production checklist
+  the hardening list. Every other copy is a sentence and a link, and each recipe links the section it used to
+  restate. `concepts.md` holds definitions of at most 80 words and went from 7,474 words to 3,487, every heading kept.
+- **The rows the audit had left open**, settled in the code while their rule was consolidated: C1.1 (a headed run
+  holds a failure only while Hold failures is on), C1.4, C1.5, C1.6, C1.9, C1.11, C1.12, T7, T8, C2.3, C2.4, C2.5,
+  C2.7, C3.4, C3.8, C3.10, C3.13, C3.14, C3.15, C4.8, C4.11, C4.12, D10, D16, C5.7, C5.9, C5.13, C5.15, C5.16 and
+  C5.17. Their rows below keep the wording of the audit; the pages say what the code does.
+- **Step 4, the rules**: G2 to G8, in `docs-claims.test.ts` and `docs-drift.test.ts`, each seen to fail on a
+  deliberate error. G1 and step 3 come with the palette's pull request, which adds the list of places they read.
+
+What was not done is under [Left for later](#left-for-later).
 
 **Summary.** The pages are careful one by one and unreliable as a set. Five readers found 70 places where two
 passages disagree, about 60 where a page or the catalog disagrees with the app or its code, 58 explanations held in
@@ -458,3 +470,34 @@ contradictions are a second copy nobody looked for.
 **Not proposed.** A list of banned absolute words ("every", "only", "nothing else"): too many true uses. A review
 agent on every docs change: its cost is paid on every change, and G1 to G8 catch what it would. Generating the UI
 overview from the app: G1 holds its facts and leaves its prose.
+
+## Left for later
+
+- **Three rows are not settled**: C3.16 (whether "newly flaky" clears your change), D17 (whether a fine-grained
+  GitHub token needs one more permission for the commit status: GitHub's documentation decides, not this code) and
+  S16 (which dashboard Analytics opens on).
+- **The parts of the tools no page describes**, listed under [Docs against the tools' structure](#docs-against-the-tools-structure):
+  about twenty editor commands, the CI Runs view, five theme colors and one setting, Piwi Picker's popup keys, four
+  tray items of the desktop app.
+- **Two pages hold two subjects** and are at their word budget; each split needs a catalog entry: the failure inbox
+  out of Failure clusters, and CI runs in your editor out of Watch a running test.
+- **The UI overview** claims its main pages and tabs and still leaves out the analytics dashboard routes, the bug
+  report page and the test case's tabs.
+- **Words used two ways.** The consolidation unified the ones it rewrote ("live view" and Watch, the two trays, the
+  gate's name, failure cluster). The others in that table stand, and two need the app to move: the analytics
+  metrics and targets say "failure cause" (`shared/analytics/metrics.ts`, `targets.ts`, `insight-rules.ts`), and one
+  stability level is Watch in the dashboard and "could break" in Piwi Picker.
+- **What the app could change**, items 3 to 21, and two links: the Companion tools card links the gate at
+  `guide/ci#blocking-a-merge`, which works and is no longer its page, and Piwi Picker's popup links its docs through
+  the redirect table.
+- **Comments the code contradicts**: `packages/editor/src/protocol.ts:1763` on what a terminal run names; the Nitro
+  integration's "outside production" (`integrations/nitro/src/index.ts`, `manifest.ts`, `environment.ts`), where the
+  rule is an allow-list; the root guide's "on the first API call" for a database created at boot.
+- **What the rules do not see.** G2 reads a count only before one of nine nouns ("Piwi ships seven" passes). G3
+  checks editor commands, not Piwi Picker's labels, which nothing in the syntax tells from emphasis. G7 lets a number
+  open a heading or a list item. G8 knows the destinations a variable names and two listed by hand, not those set
+  in the dashboard, such as a webhook's address.
+- **`npm run knip` fails in a fresh session** until `npx nuxt prepare` has run in `apps/runner`.
+- **Not audited**: whether the screenshots and videos still match the UI, the in-app help text, the blog post, the
+  READMEs of the three backend integrations, and the prose of the generated reference pages beyond spot checks.
+- **No GitHub issue** was opened for a finding: most are decisions.
