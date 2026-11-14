@@ -130,6 +130,7 @@ export const PROJECT = {
   INVALID_KEY: 'invalid-key-test',
   JIRA_LIVE: 'jira-live-test',
   KEYBOARD_NAV: 'keyboard-nav-test',
+  KEYBOARD_NAV_HIDDEN_TAB: 'keyboard-nav-hidden-tab-test',
   LABEL_OVERRIDE: 'label-override-project',
   LATEST_EXECUTION_LINE: 'latest-execution-line-test',
   LATEST_RUN_TEST: 'latest-run-test',

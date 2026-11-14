@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
+import { PROJECT_TABS } from '#shared/app-places';
+import type { CapabilityId } from '#shared/capabilities';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
 import { starredFirst } from '~/utils/project-stars';
+import { projectTabHidden } from '~/utils/project-tabs';
 
 const route = useRoute();
 const toast = useToast();
@@ -118,6 +121,12 @@ const currentProjectId = computed(() => {
   const match = route.path.match(/^\/projects\/(\d+)/);
   return match?.[1] ? parseInt(match[1], 10) : null;
 });
+
+// What the current project hides: its own capability states once they have
+// arrived, the instance's until then.
+const routeProjectCapabilities = useRouteProjectCapabilities();
+const projectCapHidden = (projectId: number, id: CapabilityId) =>
+  routeProjectCapabilities.isHidden(projectId, id) ?? capHidden(id);
 
 // Generate project navigation items with children
 const ACTIVE_WINDOW_DAYS = 10;
@@ -368,31 +377,24 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     },
   ];
 
-  // On a project page, surface its tab panels in the palette — the fastest
-  // keyboard path to each. The project page tolerates an unknown ?tab= by
-  // falling back to Runs.
+  // On a project page, the palette lists the tabs the project page's strip
+  // shows, in its order: the fastest keyboard path to each.
   if (currentProjectId.value) {
     const pid = currentProjectId.value;
-    // Same order as the project page's tab strip.
-    const projectTabs: [value: string, label: string, icon: string][] = [
-      ['runs', 'Runs', 'i-lucide-play-circle'],
-      ['tests', 'Tests', 'i-lucide-flask-conical'],
-      ['failures', 'Failures', 'i-lucide-layers'],
-      ['performance', 'Performance', 'i-lucide-trending-up'],
-      ['settings', 'Settings', 'i-lucide-settings'],
-    ];
     staticGroups.unshift({
       id: 'project-tabs',
       label: 'This project',
-      items: projectTabs.map(([value, label, icon]) => ({
-        id: `project-tab-${value}`,
-        label,
-        icon,
-        to: `/projects/${pid}?tab=${value}`,
-        onSelect: () => {
-          open.value = false;
-        },
-      })),
+      items: PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, (id) => projectCapHidden(pid, id))).map(
+        (tab) => ({
+          id: `project-tab-${tab.value}`,
+          label: tab.label,
+          icon: tab.icon,
+          to: `/projects/${pid}?tab=${tab.value}`,
+          onSelect: () => {
+            open.value = false;
+          },
+        }),
+      ),
     });
   }
 
