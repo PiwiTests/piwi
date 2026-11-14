@@ -434,9 +434,14 @@ On a spec, `piwi/fileSummary` gives each test's line:
 - the line its call ends on (`endLine`, found with `callEndLine`), for the background the clients draw over a failing
   test;
 - what its gutter offers (`actions`, `testActions` in `src/analysis.ts`), in its groups, each named for the separator
-  before it (`section`): Run with Piwi and Verify ×3 with Piwi, which name
-  the client's own action at the test's line (`TestAction.kind`), the failure's trace and screenshot when it failed and
-  the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands.
+  before it (`section`): Run with Piwi and Verify ×3 with Piwi, which name the client's own action at the test's line
+  (`TestAction.kind`), and Debug with Piwi between them (`kind` `debug`, run once the files are saved): for a failed
+  test the dashboard's Debug in my editor run (`debugRunOf`: named by its describe blocks' titles and its own as the
+  spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
+  `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
+  the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`, `failureDebugRun`: the one test of its spec
+  titled as it failed), stopping at its own line, for **Debug this failure**.
 
 `piwi/testAt` answers, for a position of a spec:
 

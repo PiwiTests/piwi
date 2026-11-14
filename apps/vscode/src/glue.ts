@@ -1996,9 +1996,10 @@ export function failureMessage(failure: TestFailure | null): string {
 
 /**
  * The runs of a Testing view's request: one per Playwright config, its tests by id when Piwi knows them all, else
- * every one by its location; with `repeat`, by their locations, that many times.
+ * every one by its location; with `repeat`, by their locations, that many times; to debug them (Debug with Piwi),
+ * headed, holding their failures.
  */
-export function testRunsOf(tests: readonly TreeTest[], repeat?: number): RunTestsArgs[] {
+export function testRunsOf(tests: readonly TreeTest[], repeat?: number, debug = false): RunTestsArgs[] {
   const byRoot = new Map<string, TreeTest[]>();
   for (const t of tests) byRoot.set(t.root, [...(byRoot.get(t.root) ?? []), t]);
   return [...byRoot].map(([root, held]) => {
@@ -2010,6 +2011,7 @@ export function testRunsOf(tests: readonly TreeTest[], repeat?: number): RunTest
       testIds: byId ? [...new Set(ids as number[])] : [],
       ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
       ...(repeat ? { repeat } : {}),
+      ...(debug ? { headed: true, holdFailures: true } : {}),
     };
   });
 }
@@ -2101,10 +2103,18 @@ export function runStartOptions(choices: RunStartChoices): RunStartOptions {
   };
 }
 
-/** A run's arguments with the choices; a debug run (`debug`) starts as the service builds it, headed. */
+/**
+ * A run's arguments with the choices; a debug run (`debug`) starts as the service builds it, headed, and a run that
+ * names its own start (Debug with Piwi: `headed`, `holdFailures`) keeps it.
+ */
 export function withRunStart<T extends RunTestsArgs | RunSelectionParams>(args: T, choices: RunStartChoices): T {
   if ('debug' in args && args.debug) return args;
-  return { ...args, ...runStartOptions(choices) };
+  return {
+    ...args,
+    ...runStartOptions(choices),
+    ...(args.headed ? { headed: true } : {}),
+    ...(args.holdFailures !== undefined ? { holdFailures: args.holdFailures } : {}),
+  };
 }
 
 /** The choices in words, as **Piwi: Run options…** names them: `Run headed: on · Hold failures: Auto`. */

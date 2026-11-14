@@ -1132,6 +1132,18 @@ describe('the Piwi language server', () => {
           clusterTitle: null,
           owner: null,
           isNew: false,
+          // Debug this failure: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
+          debug: {
+            uri: uri('tests/rows.spec.ts'),
+            root: dir,
+            testIds: [],
+            debug: {
+              stop: { uri: uri('tests/pages/checkout.page.ts'), line: 4 },
+              title: 'removes a row',
+              project: null,
+              execution: 900,
+            },
+          },
           duration: 5012,
           hasScreenshot: true,
         },
@@ -1529,13 +1541,18 @@ describe('the Piwi language server', () => {
     const actions = spec.lines[0]!.actions!;
     expect(actions.map((a) => [a.group, a.title, a.kind])).toEqual([
       ['run', 'Run with Piwi', 'run'],
+      ['run', 'Debug with Piwi', 'debug'],
       ['run', 'Verify ×3 with Piwi', 'verify'],
       ['evidence', 'Open in dashboard', undefined],
       ['lab', 'Reproduce this flake', undefined],
       ['lab', 'Verify the flake fix', undefined],
     ]);
-    expect(actions.map((a) => a.section)).toEqual(['', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions.map((a) => a.section)).toEqual(['', '', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    // A test that passed debugs headed, holding its failures.
     expect(actions[1]!.command.arguments).toEqual([
+      { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true },
+    ]);
+    expect(actions[2]!.command.arguments).toEqual([
       { uri: uri('tests/checkout.spec.ts'), testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 },
     ]);
 
@@ -1626,6 +1643,19 @@ describe('the Piwi language server', () => {
     expect(spec.lines[0]!.actions!.map((a) => a.title)).toEqual(
       expect.arrayContaining(['Open in dashboard', 'Copy context for agent']),
     );
+    // A failed test debugs as the dashboard's Debug in my editor does: stopping once at the line it failed through.
+    expect(spec.lines[0]!.actions!.find((a) => a.kind === 'debug')!.command.arguments).toEqual([
+      {
+        uri: uri('tests/rows.spec.ts'),
+        testIds: [],
+        debug: {
+          stop: { uri: uri('tests/rows.spec.ts'), line: 6 },
+          title: 'removes a row',
+          project: null,
+          execution: 900,
+        },
+      },
+    ]);
     expect(spec.lines[0]!.actions!.find((a) => a.title === 'Copy context for agent')!.command).toEqual({
       title: 'Copy context for agent',
       command: 'piwi.copyAgentContext',

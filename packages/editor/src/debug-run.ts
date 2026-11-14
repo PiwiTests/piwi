@@ -18,6 +18,7 @@ import type {
   LocatorAtCaretResult,
   Notice,
   RunStop,
+  RunTestsArgs,
   SetRunBreakpointsParams,
 } from './protocol.js';
 import type { RunHeard, RunSessions } from './run-sessions.js';
@@ -281,4 +282,31 @@ export class DebugRuns {
     say(`Piwi's suggested locator: ${locator}${outlined ? ' (outlined on the page)' : ''}. ${answer.message}`);
     return outlined ? { locator, file: run.file, line: stop.line } : null;
   }
+}
+
+/**
+ * The run that debugs a test of a spec as the dashboard's Debug in my editor does (`RunTestsArgs.debug`), from the
+ * editor's own knowledge of it: named by its describe blocks' titles and its own as the spec spells them (`call`),
+ * stopping once at `stop`, on `project`. Null for a run `checkedDebugRun` refuses, for a test the spec's titles do not
+ * name alone (`debugTest` finds another, or none), and for a stop on the test's own `test(…)` line, where no step runs.
+ */
+export function debugRunOf(
+  spec: { uri: string; root?: string; text: string; name: string },
+  call: TestCall,
+  stop: EditorBreakpoint,
+  project: string | null,
+  execution: number,
+): RunTestsArgs | null {
+  if (stop.uri === spec.uri && stop.line === call.line) return null;
+  const title = [...call.suite, call.title].join(TITLE_SEPARATOR);
+  const checked = checkedDebugRun({ stop, title, project, execution });
+  if (typeof checked === 'string') return null;
+  const found = debugTest(spec.text, spec.name, checked.title);
+  if (typeof found === 'string' || found.line !== call.line) return null;
+  return {
+    uri: spec.uri,
+    ...(spec.root ? { root: spec.root } : {}),
+    testIds: [],
+    debug: { stop: checked.stop, title: checked.title, project: checked.project, execution: checked.execution },
+  };
 }

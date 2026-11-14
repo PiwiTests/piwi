@@ -108,7 +108,12 @@ test and the share (LR1). The waiting line marked in the code with End test rema
 the Flake Lab commands), which JetBrains' result icon opens on either click and VS Code from the Testing view's gutter,
 item and message menus, the line number's menu with the view off and the hover's **More…** (`piwi.testActions`) (TL2,
 TL6, TL7 in part: Record here and Debug with Piwi in the list, the IDE run icon (M9), the failure nodes' Verify ×3 and
-Jump to Source, and the quick fixes' titles remain). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+Jump to Source, and the quick fixes' titles remain). M8: Debug with Piwi in both editors, Piwi's run control rather than a debug
+session: in each test's action list, the dashboard's Debug in my editor run for a failed test (stopping once at its
+line, with no consent prompt) and a headed run holding its failures otherwise; VS Code's Debug profile in the Testing
+view; and **Debug this failure** on the failure nodes of both editors, from the run the service builds
+(`WorkspaceFailure.debug`) (TL17 in part: the IDE run icon waits on M9, and whether a plain Run still stops at
+breakpoints stays open). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
@@ -1377,6 +1382,7 @@ such action.
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
 | A test's actions | – | – | `$(list-selection)` | the result icon itself (its click) |
+| Debug a test or a failure | – | – | `$(debug-alt)` | `AllIcons.Actions.StartDebugger` |
 | Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |

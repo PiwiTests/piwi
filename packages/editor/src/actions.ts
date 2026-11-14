@@ -77,6 +77,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   },
   { title: 'Pair with Piwi Picker', vscode: 'piwi.pairPicker', jetbrains: ['Piwi.PairPicker'] },
   { title: 'Run this test', vscode: 'piwi.runTest', jetbrains: ['Piwi.Failure.RunTest'] },
+  { title: 'Debug this failure', vscode: 'piwi.debugFailure', jetbrains: ['Piwi.Failure.Debug'] },
   { title: 'Re-run the failing tests', vscode: 'piwi.rerunFailing', jetbrains: ['Piwi.RerunFailing'] },
   { title: 'Compare with…', vscode: 'piwi.compareWith', jetbrains: ['Piwi.CompareWith'] },
   { title: 'Copy context for agent', vscode: 'piwi.copyAgentContext', jetbrains: ['Piwi.Failure.CopyContext'] },

@@ -269,7 +269,9 @@ reference.
 
 **Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
-(`root`).
+(`root`). **Debug this failure** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
+service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
+debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`).
 
 **The rest of the view.**
 
@@ -883,8 +885,10 @@ changes. A read that made items anew publishes the results again. **A run in pro
 of its own (`liveRunName`), showing `liveTests` as they come. It ends once the run was read, and nothing is published
 again for it.
 
-**The run profiles**, **Run with Piwi** and **Verify ×3 with Piwi**, run the picked tests through `runTests`
-(`testRunsOf`: one run per config, by id when every test has one, else by location). The commands are queued in their
+**The run profiles**, **Run with Piwi**, **Debug with Piwi** (the Debug kind: headed, holding the failures, Piwi's
+run control rather than a debug session) and **Verify ×3 with Piwi**, run the picked tests through `runTests`
+(`testRunsOf`: one run per config, by id when every test has one, else by location). A run that names its own start
+keeps it (`withRunStart`). The commands are queued in their
 test run, which:
 
 - follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);

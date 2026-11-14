@@ -195,7 +195,7 @@ import { RunHub } from './run-hub.js';
 import { StopActions, checkoutCopyWhy, checkoutRecordWhy } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
 import { RunAgent, type AgentRunStart } from './run-agent.js';
-import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
+import { DebugRuns, checkedDebugRun, debugArgs, debugRunOf, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -1298,6 +1298,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * latest complete run, the runs laid over it and its baseline: one context's as the answer's, several under a node
    * each (`failuresAnswer`).
    */
+  /**
+   * Debug this failure (`WorkspaceFailure.debug`): the dashboard's Debug in my editor run of its test, the one test of
+   * its spec, as it stands, titled as it failed, stopping once at the line it failed through (`debugRunOf`); null when
+   * the spec holds no such test or several.
+   */
+  const failureDebugRun = (
+    context: PiwiContext,
+    spec: string,
+    f: BranchFailure,
+    stop: EditorBreakpoint,
+  ): RunTestsArgs | null => {
+    const file = path.join(context.root, spec);
+    const text = readText(file);
+    if (text === null) return null;
+    const titled = testCalls(text.split(/\r?\n/)).filter((c) => c.title === f.title);
+    if (titled.length !== 1) return null;
+    const uri = pathToFileURL(file).href;
+    return debugRunOf(
+      { uri, root: context.root, text, name: spec },
+      titled[0]!,
+      stop,
+      f.browserName ?? null,
+      f.executionId,
+    );
+  };
+
   const failuresResult = (pass: Placer): FailuresResult => {
     const views = contexts.flatMap((context): ContextFailures[] => {
       const client = context.client;
@@ -1305,9 +1331,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
         const at = pass.place(context, f);
         if (!at || at.state === 'gone') return [];
+        const spec = specOf(context, f);
+        const failingUri = pathToFileURL(at.file).href;
+        const debug = failureDebugRun(context, spec, f, { uri: failingUri, line: at.line - 1 });
         return [
           {
-            uri: pathToFileURL(at.file).href,
+            uri: failingUri,
             root: context.root,
             line: at.line - 1,
             title: f.title,
@@ -1319,7 +1348,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             source: failureSource(context, f.runId ?? context.failures?.run?.id),
             state: at.state === 'edited' ? 'edited' : 'failing',
             browserName: f.browserName ?? null,
-            file: specOf(context, f),
+            file: spec,
             status: f.status === 'timedOut' ? 'timedOut' : 'failed',
             testCaseId: f.testCaseId,
             clusterId: f.clusterId ?? null,
@@ -1328,6 +1357,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
+            ...(debug ? { debug } : {}),
           },
         ];
       });
@@ -3351,7 +3381,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
-          actions: testActions(params.uri, relative!, i, found.id, open, failed && failure ? failed : null, lab),
+          actions: testActions(
+            params.uri,
+            relative!,
+            i,
+            found.id,
+            open,
+            failed && failure ? failed : null,
+            lab,
+            failed && failure
+              ? debugRunOf(
+                  { uri: params.uri, text: lines.join('\n'), name: relative! },
+                  call,
+                  { uri: params.uri, line: failure.line },
+                  failed.browserName ?? null,
+                  failed.executionId,
+                )
+              : null,
+          ),
         });
         out.push(...lab);
         if (!failed || !failure) continue;

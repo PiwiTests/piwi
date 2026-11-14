@@ -127,6 +127,10 @@ export class TestExplorer implements vscode.Disposable {
     this.controller.createRunProfile('Run with Piwi', vscode.TestRunProfileKind.Run, (request, token) =>
       this.runProfile(request, token),
     );
+    // Debug with Piwi: headed, each failure held at its line, Piwi's run control rather than a debug session.
+    this.controller.createRunProfile('Debug with Piwi', vscode.TestRunProfileKind.Debug, (request, token) =>
+      this.runProfile(request, token, undefined, true),
+    );
     this.controller.createRunProfile(
       `Verify ×${VERIFY_REPEAT} with Piwi`,
       vscode.TestRunProfileKind.Run,
@@ -521,7 +525,12 @@ export class TestExplorer implements vscode.Disposable {
    * Run the tests a request names, one command per Playwright config, as every test run of the extension (the
    * breakpoints included): its test run shows them queued, then the run Piwi follows for each command.
    */
-  private async runProfile(request: vscode.TestRunRequest, token: vscode.CancellationToken, repeat?: number) {
+  private async runProfile(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    repeat?: number,
+    debug = false,
+  ) {
     const excluded = new Set(request.exclude ?? []);
     const picked = new Map<vscode.TestItem, TreeTest>();
     const visit = (item: vscode.TestItem) => {
@@ -542,7 +551,7 @@ export class TestExplorer implements vscode.Disposable {
     // Followed from the start: a command's run, or its end, may come while the next command starts.
     this.profiles.add(profile);
     token.onCancellationRequested(() => this.cancelProfile(profile));
-    for (const args of testRunsOf([...picked.values()], repeat)) {
+    for (const args of testRunsOf([...picked.values()], repeat, debug)) {
       if (token.isCancellationRequested) break;
       const part: ProfilePart = {
         root: args.root!,

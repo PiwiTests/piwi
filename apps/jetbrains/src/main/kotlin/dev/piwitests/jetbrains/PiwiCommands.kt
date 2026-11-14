@@ -53,6 +53,15 @@ object PiwiCommands {
         else -> gson.fromJson(gson.toJsonTree(value), T::class.java)
     }
 
+    /**
+     * Debug with Piwi from a test's actions: its run (the arguments of `piwi.runTests`) once every file is saved, the
+     * run reading them from disk, quietly: the service says itself why it refuses a debug run.
+     */
+    fun debug(project: Project, arguments: List<Any?>) {
+        FileDocumentManager.getInstance().saveAllDocuments()
+        arg<RunTestsArgs>(arguments.firstOrNull())?.let { runTests(project, it, quiet = true) }
+    }
+
     fun execute(project: Project, command: String?, arguments: List<Any?>) {
         when (command) {
             "piwi.openInDashboard" -> arg<String>(arguments.firstOrNull())?.let { BrowserUtil.browse(it) }

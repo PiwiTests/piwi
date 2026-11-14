@@ -68,12 +68,12 @@ export interface SummaryLine {
  * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
  * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
  * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
- * Verify ×3); every other action runs `command`.
+ * Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`.
  */
 export interface TestAction {
   group: 'run' | 'evidence' | 'agent' | 'lab';
   section: string;
-  kind?: 'run' | 'verify';
+  kind?: 'run' | 'verify' | 'debug';
   title: string;
   command: PiwiCommand;
 }
@@ -1241,6 +1241,14 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /**
+   * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
+   * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
+   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, and where the run would be refused: its
+   * spec holds no one test of its title, the title or project is not one Piwi takes, or it stops on the test's own
+   * `test(…)` line.
+   */
+  debug?: RunTestsArgs;
 }
 
 /** The latest complete run a context reads, as `piwi/failures` names it. */

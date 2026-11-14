@@ -153,6 +153,12 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 val entry = when {
                     action.kind == "run" -> run
                     action.kind == "verify" -> verify
+                    // Debug with Piwi reads the spec as saved.
+                    action.kind == "debug" -> action.command?.let { command ->
+                        object : DumbAwareAction(action.title, null, AllIcons.Actions.StartDebugger) {
+                            override fun actionPerformed(e: AnActionEvent) = PiwiCommands.debug(project, command.arguments.orEmpty())
+                        }
+                    }
                     // Open in dashboard is the registered action, opening the test's page.
                     url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
                         it.add(DASHBOARD_URL, url)

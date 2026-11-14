@@ -82,7 +82,15 @@ object Glue {
      * failures as `holdFailures` says ([holdFailuresOption]). A debug run (`debug`) starts as the service builds it.
      */
     fun withRunStart(args: RunTestsArgs, headed: Boolean, holdFailures: String): RunTestsArgs =
-        if (args.debug != null) args else args.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+        if (args.debug != null) {
+            args
+        } else {
+            // A run that names its own start (Debug with Piwi: headed, holding its failures) keeps it.
+            args.copy(
+                headed = args.headed.takeIf { it == true } ?: headed.takeIf { it },
+                holdFailures = args.holdFailures ?: holdFailuresOption(holdFailures),
+            )
+        }
 
     /** A saved selection's run, started as [withRunStart] starts a run of tests. */
     fun withRunStart(params: RunSelectionParams, headed: Boolean, holdFailures: String): RunSelectionParams =
