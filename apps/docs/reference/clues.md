@@ -7,9 +7,9 @@ lang: en-US
 # Clue rules
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence Piwi already stores for a failing
-execution; no model is involved. The **Most likely** line of the [situation block](/guide/first-failure#_2-most-likely-why)
-leads with a strong or medium story, else the cluster's completed AI diagnosis, else a weak story or the strongest
-clue, and the same clues are handed to the [AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. What a clue is on the page is described on
+execution; no model is involved. This page lists every rule, the stories that chain them, and how the
+[**Most likely**](#most-likely) line picks what it shows. The same clues are handed to the
+[AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. Where clues appear on the page:
 [Failure evidence](/features/evidence#clues).
 
 ## Rules
@@ -56,8 +56,25 @@ strength. The first combination that matches, in this order, wins:
 | Backend error | backend error attached, with a failed or slow request | *POST /api/orders failed on the server.* |
 | Timing | timeout budget and slow request | *The step used 92 % of the timeout waiting on /api/search.* |
 
-When no combination matches, the strongest clue stands alone. A cluster's completed AI diagnosis leads instead of a
-weak story or a lone clue, and the clues then read as *supported by N clues*.
+When no combination matches, there is no story, and the strongest clue stands alone.
+
+## Most likely
+
+The **Most likely** line of the [situation block](/guide/first-failure#_2-most-likely-why) shows one explanation,
+chosen by one rule on the execution page and the cluster page alike:
+
+1. a story graded strong or medium;
+2. else the cluster's completed [AI diagnosis](/features/ai-diagnosis), whoever wrote it;
+3. else a weak story;
+4. else the top clue, in its own words.
+
+With none of them, the line is absent. It carries the story's or the clue's strength (*Strong*, *Medium*, *Weak*), or
+the diagnosis's confidence (*Diagnosed, high confidence*), and how many clues agree: the story's members (*3 clues
+agree*), all the clues when the top clue leads and others exist, or, under a diagnosis, the clues supporting it
+(*supported by 2 clues*).
+A story or a clue marks the evidence its clues cite; a diagnosis cites sections, not rows. When the
+[Next](/features/fix-plans#the-next-step) step's change comes from a diagnosis that Most likely does not show, its line
+names that diagnosis and its summary.
 
 ## Related
 

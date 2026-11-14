@@ -13,8 +13,9 @@ you already have, in about a minute.
 
 ## 1. Open the run's Changes tab
 
-A run compares itself against **one baseline** — by default the last passing run in the same environment, on the same
-branch first ([the ladder](/features/run-changes#the-baseline)) — and sorts the failures for you. The distinction you want is right there in the headings:
+A run compares itself against **one baseline**, an earlier passing run picked by the
+[baseline rule](/guide/concepts#baseline-last-green-run), and sorts the failures for you. The distinction you want is
+right there in the headings:
 
 - **New failures** — this test was passing on the baseline and is failing now.
 - **Still failing** — it was already failing before your change.
@@ -25,12 +26,14 @@ branch first ([the ladder](/features/run-changes#the-baseline)) — and sorts th
   <figcaption>The Changes tab — read against one baseline, with new failures separated from tests that only passed on retry.</figcaption>
 </figure>
 
-If your test is under **Newly flaky / passed on retry**, stop here: it isn't your change. Jump to
-[cutting flakiness](./flaky-cleanup) when you have time to spend on it.
+If your test is under **Newly flaky / passed on retry**, its failure did not survive a retry: that points at
+flakiness, not a regression that breaks it every time. When it was stable in the baseline, a change can still have
+made it flaky; its history (next step) tells which. A long-standing flake belongs in
+[cutting flakiness](./flaky-cleanup).
 
 ## 2. Check the test's own history
 
-A single run can lie — a flaky test lands in "new regressions" whenever the baseline happened to be
+A single run can lie — a flaky test lands in **New failures** whenever the baseline happened to be
 green. Open the test case and read its **status history** and **stability trend**: pass rate, flaky
 rate, and duration bucketed over time.
 
@@ -66,7 +69,7 @@ Once you know it's a real regression, narrow the window:
 Not everyone wants to click through a dashboard mid-review.
 
 **Ask your coding agent.** The [MCP server](/features/mcp) is built into the running instance — nothing to
-install. `get_run_insights` returns the same regression / recovery / new-flaky split this page walks
+install. `get_run_insights` returns the same new failures / fixed / newly flaky split this page walks
 through, and `get_test_stability_trend` answers "is this getting flakier?" for one test.
 
 **Wire it into CI.** The [CI gate](/guide/ci#blocking-a-merge) already knows the difference: a test in

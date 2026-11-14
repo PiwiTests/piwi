@@ -48,15 +48,17 @@ Verdict: reproduced by delay GET /api/cart 1.8 s (3/4 against 0/10, p = 0.011)
 
 ## The conditions
 
-| Suspect | Condition | How the arm applies it |
+Each [suspect factor](./flaky-tests#suspects) becomes one condition:
+
+| Factor | Condition | How the arm applies it |
 |---|---|---|
-| A slow route | delay it to the failures' median duration | the fixtures hold each response until that long after the request started |
-| A failed route | fail it with the same status, or abort it | the fixtures answer with the status, or reset the connection |
+| Slow route | delay it to the failures' median duration | the fixtures hold each response until that long after the request started |
+| Failed route | fail it with the same status, or abort it | the fixtures answer with the status, or reset the connection |
 | Load | throttle the CPU ×4 | a DevTools session, so Chromium only |
-| A runner time zone or locale | run the browser in it | `timezoneId` or `locale` of each context the test opens |
-| Another test alongside | run both together | both tests on two workers; only rounds where they overlapped count |
-| The test just before | run that test first | both tests on one worker; only rounds where it ran just before count |
-| A browser | pin the Playwright project | `--project` |
+| Time zone, locale | run the browser in the runner's | `timezoneId` or `locale` of each context the test opens |
+| Alongside | run both tests together | both tests on two workers; only rounds where they overlapped count |
+| Before | run that test first | both tests on one worker; only rounds where it ran just before count |
+| Browser | pin the Playwright project | `--project` |
 
 `--suspect <n>` runs only suspect `n`'s arm. `--all` also runs every condition at once when none reproduces alone.
 
@@ -123,7 +125,7 @@ and every other comparison between runs.
   the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (also on a failure
   with an untested suspect) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you
   confirm it; **Share on …** records the results on the instance, as run from `desktop`.
-- **On a flaky failure's page**, the next step reproduces it under the top untested suspect, then verifies the fix.
+- **On a flaky failure's execution or cluster page**, the [next step](./fix-plans#the-next-step) reproduces it under the top untested suspect, then verifies the fix.
 - **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
 
 ## In the desktop app

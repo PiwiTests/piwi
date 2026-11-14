@@ -9,9 +9,9 @@ lang: en-US
 <Needs reporter />
 
 A single run tells you what failed; a few dozen tell you what's *unreliable*. This page covers what Piwi computes
-for one project from its history.
-
-For the same signals aggregated across every project, see [Analytics](./analytics).
+for one project from its history: the flaky score, its ranking and suspects, quarantine and the regression signals.
+Testing a suspect by experiment is on [Flake Lab](./flake-lab); the same signals across every project, on
+[Analytics](./analytics).
 
 ## Flaky test detection
 
@@ -20,7 +20,8 @@ A test is flaky when its result isn't deterministic. Piwi computes a **flakiness
 - **Retry passes** — failed, then passed on retry (each `--repeat-each` repetition on its own).
 - **Status alternation** — flips between pass and fail; other outcomes ignored.
 
-The **failure rate** is shown but not scored.
+The **failure rate** is shown but not scored. Only runs where the test passed or failed count, and a test is listed
+once it has 3 of them in the window, with a retry pass or two flips.
 
 <figure>
   <img src="/diagrams/flakiness-score.svg" alt="A test's last 10 runs with 2 retry passes and 4 flips give a score of 30; its impact is 0.7 times 3 wasted CI minutes plus 0.3 times a fixed weight of 30 times 2 retry passes, 20">
@@ -59,21 +60,23 @@ Filter the flaky table by category to triage a class of failures at once.
 A flaky test's **Flakiness** tab lists its **suspects**: what its failures share and its passes do not,
 over its last 30 days (at most 200 attempts, from the runs the flaky list reads).
 
-| Factor | Measured per attempt | Lab condition |
-|--------|----------------------|-----------------------------|
-| Slow route | a request's slowest duration, over the threshold that best separates failures from passes | delay it to the failures' median |
-| Failed route | a request answering 5xx, or with no response | fail it the same way, or abort it |
-| Load | other tests of the same shard running at once, over a threshold | CPU ×4 |
-| Time zone, locale | the runner's, when it varied | run the browser in it |
-| Alongside | another test overlapping it | run both together |
-| Before | the test just before on its worker | run that test first |
-| Browser | its Playwright project | pin the project |
+| Factor | Measured per attempt |
+|--------|----------------------|
+| Slow route | a request's slowest duration, over the threshold that best separates failures from passes |
+| Failed route | a request answering 5xx, or with no response |
+| Load | other tests of the same shard running at once, over a threshold |
+| Time zone, locale | the runner's, when it varied |
+| Alongside | another test overlapping it |
+| Before | the test just before on its worker |
+| Browser | its Playwright project |
+
+Each factor becomes a [lab condition](./flake-lab#the-conditions).
 
 Each shows its raw counts: `GET /api/cart slower (≥1.6 s)`, 7 of 8 failures, 3 of 44 passes. It needs 3
 failures and a lift of at least 2, `(fw+1)/(f+2) ÷ (pw+1)/(p+2)`; at most 5 are listed, ranked by lift ×
 those failures. A neighbor names the paths both tests write, marked approximate when the overlap crosses shards,
-whose clocks agree only roughly. First attempts, the UTC hour and other runs on the same environment are context,
-without a condition. Nothing is stored.
+whose clocks agree only roughly. First attempts, the UTC hour, other runs on the same environment, the runner image and
+the browser version are context, without a condition. Nothing is stored.
 
 The flaky list names each test's top suspect (a reproduced one first), the [Attempts](./evidence#attempts) tab links
 requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
@@ -94,7 +97,10 @@ reproduction, removes the mark; an `inconclusive` one changes nothing.
 
 ### Impact ranking
 
-Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries × average failed duration) and pipeline-block effect — so you fix the ones that hurt most first. A color-coded dot makes it scannable:
+The list is ranked by **impact**, `wasted CI minutes × 0.7 + retry passes × 30 × 0.3`, so the tests that cost the most
+come first. Here **wasted CI minutes** are the test's retry-pass runs times the average duration of its failed
+attempts in the window: what its retries cost, not the [wasted time](./slow-tests#wasted-time) of Analytics. Ties go
+to the higher score, then more retry passes, and the top 50 are listed. A dot colors the wasted minutes:
 
 - 🟢 green — under 5 wasted minutes
 - 🟡 amber — under 30 minutes
@@ -113,9 +119,9 @@ Detecting a flaky test doesn't stop it blocking merges. Quarantine does — with
 The usual approach is `--grep-invert @quarantine`: the test stops running, nothing ever proves it's fixed, and the
 list only grows.
 
-**A quarantined test in Piwi keeps running and reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
+**A quarantined test in Piwi keeps running and reporting.** It is excluded from the [gate](./merge-gate#what-it-leaves-out)'s
 `--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
-[commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
+[commit status](./pr-feedback#what-gets-posted). That makes the exit possible:
 
 - Each run started after the quarantine counts once toward a **streak**: a pass adds one, a failure or a pass on retry
   resets it, a skip does neither.
@@ -140,12 +146,12 @@ Manage it from the **Quarantine** view of the project's **Failures** tab, or ove
 
 A run's tests carry badges:
 
-- **New regression** (red) — failing here, passing in the baseline: the same Playwright project in the last complete
-  passing run
-- **Newly flaky** (fuchsia) — flaky here, passed with no failed attempt in the baseline
-- **Passed on retry** (fuchsia) — failed at least once in this run, then passed
+- **New regression** (red): failing here, passing in the [baseline](/guide/concepts#baseline-last-green-run), the same
+  Playwright project in the last complete passing run
+- **Newly flaky** (fuchsia): flaky here, passed with no failed attempt in the baseline
+- **Passed on retry** (fuchsia): failed at least once in this run, then passed
 
-Filters on the run's test-case list show only new regressions or new flaky tests.
+Filters on the run's test-case list show only the **New regression** or the **Newly flaky** tests.
 
 An [execution](./evidence#one-execution-diagnosis-first) shows them in its status chip and the line under its headline.
 
@@ -155,7 +161,7 @@ With **Group by: File** on the project's **Tests** tab, each spec file's header 
 
 ## Across every project
 
-Everything above is scoped to one project; [Analytics](./analytics) lifts the same signals across every project.
+[Analytics](./analytics) lifts these signals across every project.
 
 ## Try it in the demo
 
@@ -163,11 +169,7 @@ Everything above is scoped to one project; [Analytics](./analytics) lifts the sa
 
 ## Related
 - [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?
-- [Cut costly flakiness](/recipes/flaky-cleanup): fix the costliest flaky tests first
-- [What changed in a run](./run-changes) — the Changes tab: new failures, fixed tests, commits since a baseline
-- [Slow tests & wasted time](./slow-tests) — duration trends, slowest tests, and timeout opportunities
-- [Analytics](./analytics) — the same signals across every project
-- [UI overview](./ui-overview) — where each of these views lives in the dashboard
-- [Reporter](/guide/reporter) — how retries, traces, and run metadata get captured
-- [Capture fixtures](/guide/capture-fixtures) — the test-side setup behind network analysis and Web Vitals
+- [Cut costly flakiness](/recipes/flaky-cleanup): the costliest flaky tests first
+- [What changed in a run](./run-changes): the Changes tab against a baseline
+- [Slow tests & wasted time](./slow-tests): where the suite's time goes
 - [Failure clusters & the inbox](./failure-clusters): the failures grouped by cause

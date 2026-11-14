@@ -6,14 +6,10 @@ lang: en-US
 
 # Failure evidence
 
-Everything Piwi captured about a failing attempt lands on one screen.
-
-Two pages, told apart in [Core concepts](/guide/concepts#execution):
-
-| Page | Path | Answers |
-|---|---|---|
-| **Execution** | `/test-run-cases/:id` | "why did this attempt fail?": [the diagnosis view](#one-execution-diagnosis-first) |
-| **Test case** | `/test-cases/:id` | "how has this test behaved over time?": [its history](#the-test-case-page) |
+Everything Piwi captured about a failing attempt lands on one screen, the **execution page** (`/test-run-cases/:id`).
+This page covers its evidence: the card, clues, attempts, page diff and trace views. Its situation block is read on
+[Your first failure, explained](/guide/first-failure); the test's history, on the
+[test case page](#the-test-case-page) ([the two](/guide/concepts#execution)).
 
 ## One execution, diagnosis-first
 
@@ -26,8 +22,10 @@ cause, next step, cluster), described on [Your first failure, explained](/guide/
 </figure>
 
 Below the block, one **evidence card** holds tabs, a count on those that list items, empty ones dimmed. It opens on **Source** or
-**Performance** when a strong or medium leading clue cites it, else on **Timeline** when it can place two or more items,
-else on the cited tab, else on **Screen** when a screenshot or video exists, else on **Source**; never on **State**.
+**Performance** when a strong or medium leading clue cites it, else on **Timeline** when it can place two or more steps,
+requests or console entries, else on the tab such a clue cites, else on **Screen** when a screenshot or video exists,
+else on **Source**; a weak clue never picks it, and it never opens on **State**. A test that passed on retry opens on
+**Attempts**, another passing one on **Timeline**; a link can name the tab (`?evidence=source`).
 
 - **Timeline**: one time axis for the steps, console entries, requests, their backend logs and browser
   dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
@@ -54,17 +52,16 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   ([Test output](/reference/test-metadata#test-output)).
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
-of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
-**Attempts** and keeps its next step; any other passing execution shows identity and facts, with the evidence on
-**Timeline**. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
+of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error and keeps its
+next step; any other passing execution shows identity and facts. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
 Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence already captured, with no model
 involved. Each carries a **strength** (strong, medium or weak) and a **citation** that opens and marks the evidence it
-came from; the **Most likely** line marks the rows and tabs it cites. [Clue rules](/reference/clues) gives every rule,
-how **Most likely** picks among them and what the AI diagnosis receives.
+came from; the **Most likely** line marks the rows and tabs it cites. [Clue rules](/reference/clues) gives every rule
+and [how **Most likely** picks](/reference/clues#most-likely) among the clues, the stories and the diagnosis.
 
 ### Attempts
 
@@ -167,9 +164,9 @@ A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects
 
 ## Related
 
-- [Your first failure, explained](/guide/first-failure): the situation block at the top of a failing execution
-- [Fix a broken locator](/recipes/broken-locator): this page, used for one concrete job
+- [Your first failure, explained](/guide/first-failure): the situation block
+- [Fix a broken locator](/recipes/broken-locator): this page, for one job
 - [Clue rules](/reference/clues): every rule behind a clue
-- [Capture fixtures](/guide/capture-fixtures): the one file that produces the network, console, Web Vitals and locator evidence
-- [AI diagnosis](./ai-diagnosis): an explanation of the failure against your git diff
-- [Offline export](./offline-export): take the investigation out of the dashboard as one file
+- [Capture fixtures](/guide/capture-fixtures): the file behind the richer evidence
+- [AI diagnosis](./ai-diagnosis): the failure explained against your diff
+- [Offline export](./offline-export): the investigation as one file

@@ -41,20 +41,17 @@ or connection error. That's one cluster, one fix, and no test code involved.
 
 ## 3. Triage each cluster once
 
-A cluster page puts the whole investigation on one screen: the situation block across every test that
-shares the failure, with a [state line](/features/failure-clusters#the-state-line) and **Triage** beside it, which sets
-one status (open, resolved or ignored), a note and an assignee for the entire group, then the occurrence sparkline
-and what changed since the last passing run. The section the **Next** line points at follows as its own card, then the affected tests and their evidence. Forty tests, three
-decisions.
+A [cluster page](/features/failure-clusters#the-cluster-page) puts the whole investigation on one screen, and its
+**Triage**, beside the [state line](/features/failure-clusters#the-state-line), sets one status, note and assignee for
+the entire group. Forty tests, three decisions.
 
 Clusters stay open across runs, so the next red build attaches to the same row rather than starting the
 conversation over.
 
 ## 4. Confirm the fix actually landed
 
-When a later run executes every test a cluster covers and they all pass, Piwi records the fix. The run doesn't have
-to be a full one: re-running just the affected tests and seeing them all pass records the fix too. The three
-verdicts, *stopped failing*, *diagnosis verified* and *regressed*, are explained on [Did the fix
+When a later run executes every test a cluster covers and they all pass, Piwi records the fix; re-running just the
+affected tests is enough. What counts as a fix, and its verdicts: [Did the fix
 work?](/features/failure-clusters#did-the-fix-work).
 
 ## Optional: let a model do the first pass
@@ -64,9 +61,8 @@ actual git diff since the last green run, and any suggested patch is validated a
 before it's shown. It's off by default and works with a local model — the point is that clustering has
 already decided *what* is worth diagnosing, so the model runs a few times per run, not forty.
 
-Configuring an **embedding** role additionally merges clusters that are the same root cause phrased
-differently. Without one, clustering stays purely deterministic — still useful, just less aggressive
-about collapsing near-duplicates.
+Configuring an **embedding** role also [merges clusters](/features/ai-diagnosis#semantic-merging-optional) that are
+one root cause phrased differently. Without one, clustering stays deterministic.
 
 ## Other ways in
 

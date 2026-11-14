@@ -116,21 +116,15 @@ that threw, a spec that did not load) show under the facts line. The tabs:
 
 ## Test case detail
 
-Two pages: an **execution** (`/test-run-cases/:id`) answers *"why did this attempt fail?"*, and a **test case**
-(`/test-cases/:id`) answers *"how has this test behaved over time?"*. A failing execution opens on the situation block
-([Your first failure, explained](/guide/first-failure)), then the evidence card and the **More ways to fix** toolbox
-([Failure evidence](./evidence)). The test case page shows the test's history
-([The test case page](./evidence#the-test-case-page)). An execution exports as a file
-([Offline export](./offline-export)).
+`/test-run-cases/:id`, the **execution page**: one attempt, read from its situation block
+([Your first failure, explained](/guide/first-failure)) down through its evidence ([Failure evidence](./evidence)), and
+exportable as a file ([Offline export](./offline-export)). `/test-cases/:id`: the test's history
+([The test case page](./evidence#the-test-case-page)).
 
 ## Failure cluster detail
 
-`/failure-clusters/:id`: every test that failed for one cause. It opens on the same situation block, with the
-state line right above the next step, then the issue, the occurrence sparkline and what changed. Under it, the section
-the next step points at, such as the [AI diagnosis](./ai-diagnosis) or the [locator fix](./locator-healing), is a card
-of its own above the affected tests and their evidence
-([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
-other sections and the [fix plan](./fix-plans); the occurrence chart and the activity fold to one line each below it.
+`/failure-clusters/:id`: every test that failed for one cause, with its state, what changed, the affected tests and
+the ways to fix it ([The cluster page](./failure-clusters#the-cluster-page)).
 
 ## Settings
 
@@ -140,7 +134,7 @@ other sections and the [fix plan](./fix-plans); the occurrence chart and the act
 **Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
-**Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
+**Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
 ([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
 an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).

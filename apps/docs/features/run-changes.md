@@ -14,11 +14,11 @@ The **Changes** tab on a run compares it against **one baseline** and tells you 
 
 Every section reads the **same baseline**, so the "new failures" count is computed once and used throughout. The selector at the top says which run it is, which branch and environment that run is on, and **why it was chosen**.
 
-By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+By default the baseline is the last passing full run the [baseline rule](/guide/concepts#baseline-last-green-run) picks. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
 
 <figure>
   <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment; with no passing run, the same rungs for the last failed run">
-  <figcaption>Six rungs, tried in order: the first with an earlier passing run gives the baseline.</figcaption>
+  <figcaption>The baseline rule: six rungs tried in order, the first with an earlier passing run giving the baseline.</figcaption>
 </figure>
 
 ### When no earlier run passed

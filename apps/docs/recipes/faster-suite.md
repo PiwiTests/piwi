@@ -20,59 +20,44 @@ app faster; it tells you whether that is even the problem.
 
 ## 1. Split the bill before optimizing anything
 
-[Analytics](/features/analytics) has two widgets that belong side by side: **CI time** (total minutes your runs
-consumed) and **Wasted CI time** — the portion that produced no signal, defined as time inside wait
-steps plus time spent on attempts that ended failed or timed out.
+[Analytics](/features/analytics) has two widgets that belong side by side: **CI time**, the minutes your runs
+consumed, and **Wasted CI time**, the part that produced no signal ([what counts as wasted](/features/slow-tests#wasted-time)).
 
 If wasted time is a small slice, your suite is just big: look at [the application](#_5-ask-whether-the-app-is-slow-not-the-test) and
 [parallelism](#_6-spend-the-parallelism-you-already-have). If it is a large slice, start with [the waits](#_2-reclaim-the-waits-you-wrote),
 [the timeouts](#_3-tighten-the-timeouts-that-only-bill-you-on-failure) and [the flaky retries](#_4-stop-paying-for-flaky-retries).
 
-The widget also states how much is **reclaimable** by tightening timeouts and dropping stale
-`test.slow()` marks.
-
 ## 2. Reclaim the waits you wrote
 
-Piwi classifies wait steps as **wasted time** and totals them per execution and per run. By default
-only explicit sleeps count — `waitForTimeout` and friends — because framework-injected waits
-(load-state, wait-for-function) are usually unavoidable and would drown the signal.
-
-- The run's test list shows each test's fixed-wait time; so does an execution's **Details** popover.
-- A run's **Timeline** tab draws a per-worker timeline: turn on **Show waits** and the sleeps show as bars that
-  open the test.
-- Tune what counts in **Settings → Performance** (or lock it with
-  [`PIWI_WASTED_WAIT_PATTERNS`](/reference/configuration#wasted-time)). Classification happens *when a run is
-  viewed*, so widening the patterns re-classifies your whole history with no re-run.
+The sleeps somebody wrote are wasted time Piwi totals per execution and per run, and which waits count is yours
+to tune ([wasted time](/features/slow-tests#wasted-time)). Turn on **Show waits** on a run's **Timeline** tab and each
+sleep is a bar that opens its test.
 
 <figure>
   <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker, tests as bars with their setup and teardown hooks hatched at each end, the fixed-wait sleeps highlighted as wasted-wait spans, and the Show hooks and Show waits switches above">
   <figcaption>The Timeline tab: one lane per worker, hook time hatched at each end of a test, and the fixed-wait sleeps highlighted as their own span.</figcaption>
 </figure>
 
-Set the patterns to `*` once to see how much of the suite is waiting on something, then set them back.
+Count every wait once to see how much of the suite is waiting on something, then set the patterns back.
 
 ## 3. Tighten the timeouts that only bill you on failure
 
-An oversized per-test timeout is free while tests pass and brutal when they don't: a hung test burns
-its entire budget before anyone learns anything.
-
-The **Performance** tab's **Timeout opportunities** lists tests whose configured timeout dwarfs their
-[real duration](/features/slow-tests#timeout-opportunities), plus tests still carrying a `test.slow()` mark they have outgrown. Each row suggests
-a tighter value and the time reclaimable per failing run, ranked by impact.
+An oversized per-test timeout bills you only when the test fails. The **Performance** tab's
+[**Timeout opportunities**](/features/slow-tests#timeout-opportunities) lists the tests whose timeout dwarfs their real
+duration, and the outgrown `test.slow()` marks, each with a tighter value and the time it reclaims.
 
 <figure>
   <img src="/screenshots/performance-trends.png" alt="Project Performance tab showing the duration trend chart with total, average and percentile series and timeline markers, above the slowest-tests table">
   <figcaption>The Performance tab: average and percentile duration over time, then the ranked slowest tests.</figcaption>
 </figure>
 
-Read the [percentile line](/features/slow-tests#duration-trends), not the average: a handful of slow outliers move it and barely move the mean,
-and it's the outliers that decide how long a shard takes.
+Read the [percentile line](/features/slow-tests#duration-trends), not the average.
 
 ## 4. Stop paying for flaky retries
 
-A flaky test bills you twice, for the failed attempt and for the retry, on every run where it misbehaves.
-That is why Piwi ranks flaky tests by **wasted CI minutes** rather than by flakiness score: a test that flakes
-often but finishes in milliseconds costs little, and one that flakes weekly on a four-minute timeout hurts.
+A flaky test bills you twice, for the failed attempt and for the retry, on every run where it misbehaves. That is
+why Piwi ranks flaky tests by what their retries cost ([impact](/features/flaky-tests#impact-ranking)) rather than by
+flakiness score.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
 version: work down the impact order, fix the red dots, and

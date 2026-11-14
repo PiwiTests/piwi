@@ -24,7 +24,7 @@ When the provider exposes it, the reporter also captures the **pull-request numb
 
 ## The default branch
 
-Each project has a **Default branch** setting in the **Source control** section of its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider; when the provider cannot tell (no token, or no access to the repository), Piwi asks again ten minutes later. The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
+Each project has a **Default branch** setting in the **Source control** section of its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider; when the provider cannot tell (no token, or no access to the repository), Piwi asks again ten minutes later, and meanwhile falls back to the branch the reporter names, then the branch most of the project's runs are on, then `main` ([the chain](/guide/concepts#baseline-last-green-run)). The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
 
 ## Filtering by branch
 
@@ -50,14 +50,10 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 
 **Baselines are chosen within an environment and a branch.**
 
-<figure>
-  <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment">
-  <figcaption>The run a branch's run is compared with.</figcaption>
-</figure>
-
-- **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then the same branch, the base branch, any branch. Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).
+- **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](/guide/concepts#baseline-last-green-run), which prefers the run's own branch, then its base branch ([the figure](./run-changes#the-baseline)). Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).
 - **Choosing the base branch** — the Changes tab lets you take the baseline from any branch with an earlier full run, so a long-lived branch can be compared against `release/2` rather than `main`; the choice is in the URL (`?baseBranch=`) and on the API and MCP tool. See [What changed in a run](./run-changes#the-baseline).
-- **The visual-diff baseline** follows the same rule for one execution.
+- **The environment, visual and page diffs** of one execution prefer the same environment, then the same branch, then
+  the most recent pass: there is no base-branch rung ([the rule](/guide/concepts#baseline-last-green-run)).
 - **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` [CI gate](/guide/ci#blocking-a-merge) counts the same new failures. A failure whose test is already flaky on the default branch is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
 - **Performance alerts** — the `perf.regression` [notification](./notifications) measures a run against the previous runs on the same branch **in the same environment**.
 
@@ -71,7 +67,7 @@ Notification subscriptions can filter by branch and alert only on the default br
 
 ## Limits
 
-- **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it; until the project's default branch is known (set on its Settings tab, or resolved from the SCM provider), it reads the branch most of the project's runs are on, else `main`.
+- **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it, with the [fallbacks](#the-default-branch) while the default branch is unknown.
 - **Branches are a run dimension, not entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class.
 - **A run needs a resolvable branch.** A purely local run with no CI variables, a detached `HEAD`, and no `PIWI_BRANCH` records no branch at all, so it will not appear under any branch filter.
 

@@ -15,23 +15,21 @@ Rank by what it *costs* instead, fix three, and leave the rest running.
 
 ## 1. Work by impact, not by score
 
-The **Flaky** view of the project's **Failures** tab scores each test from two signals — retry passes
-and status alternation, [weighted](/features/flaky-tests#flaky-test-detection) — shows its overall failure rate alongside, and lists the tests
-by **impact**: wasted CI minutes (retry passes × average failed duration) plus a per-retry penalty.
+The **Flaky** view of the project's **Failures** tab gives each test a [flakiness score](/features/flaky-tests#flaky-test-detection),
+but lists the tests by **[impact](/features/flaky-tests#impact-ranking)**: what their retries cost in CI minutes.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="The Flaky view listing intermittent tests with wasted CI minutes, score, failure rate, top suspect, root cause, retry passes or flips and last flake, under root-cause filter chips and a runs-window selector">
   <figcaption>The Flaky view — ranked by impact, filterable by root cause, over a window of recent runs.</figcaption>
 </figure>
 
-Start at the top and work down. Each row carries a dot for wasted CI minutes — green, amber or red, at the
-[thresholds of the impact ranking](/features/flaky-tests#impact-ranking) — and in a suite carrying real flake debt a few red rows usually
-account for most of the total.
+Start at the top and work down. Each row's dot colors those minutes, and in a suite carrying real flake debt a few
+red rows usually account for most of the total.
 
 ## 2. Filter by root cause and fix a class at once
 
-Every flaky test carries one of six root-cause categories, `timing`, `network`, `assertion`, `environment`,
-`order` or `other`; [Flaky tests](/features/flaky-tests#root-cause-classification) explains the signals behind each.
+Every flaky test carries a [root-cause category](/features/flaky-tests#root-cause-classification) (`timing`,
+`network`, `assertion`, `environment`, `order` or `other`).
 
 Filtering by category is the trick that makes an afternoon enough, because a class usually shares one fix: eight
 `timing` flakes usually share one bad wait helper to replace with a real wait condition, a `network` class wants a
@@ -42,11 +40,10 @@ compatibility bug.
 
 Two filters change the answer, and both are worth setting deliberately:
 
-- **Runs window** — one of the [lookback windows](/features/flaky-tests#flaky-test-detection): recent behavior or a longer
-  baseline. A test fixed last week still looks awful over the longest.
-- **Environment** — pick an environment in the project's **Filters** block and the analysis reads only
-  its runs, so `staging` noise doesn't inflate a test that's stable in `production`. Set it via the
-  reporter's `environment` option or `PIWI_ENVIRONMENT`.
+- **Runs window**: one of the [lookback windows](/features/flaky-tests#flaky-test-detection), recent behavior or a
+  longer history. A test fixed last week still looks awful over the longest.
+- **Environment**: pick one in the project's **Filters** block and the analysis reads only its runs, so `staging`
+  noise doesn't inflate a test that's stable in `production`.
 
 ## 4. Quarantine the rest — with an exit
 
@@ -54,17 +51,10 @@ You will not fix them all today, and disabling them is how suites rot. The usual
 `--grep-invert @quarantine` approach stops the test running, so nothing ever proves it recovered and the
 list only grows.
 
-[Quarantine in Piwi](/features/flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting. It
-is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run's commit status, and nothing else:
-
-- Passing runs accumulate as a **streak**; a failure or a pass on retry resets it, a skip does neither.
-- After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
-- **Candidates** (**Proposed for quarantine** in the Flaky view) are the flaky tests over the [waste and score thresholds](/features/flaky-tests#quarantine-with-a-way-out), ranked by impact.
-- **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest
-  has been there.
-
-The gate reports how many failures quarantine excluded, and `--max-quarantined <n>` fails it
-when more than *n* tests are quarantined, so the list can't grow unbounded.
+[Quarantine in Piwi](/features/flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting while it
+stops blocking merges. Its passes build a streak that flags it **ready to release**, the Flaky view proposes the
+**candidates** worth quarantining, and the gate can cap how many tests are in, so the list can't grow unbounded.
+Promote the proposed candidates, and release the ready ones as they come.
 
 ## 5. Check the fix held
 
