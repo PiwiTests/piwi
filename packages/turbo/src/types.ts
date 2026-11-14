@@ -15,6 +15,4 @@ export interface TurboOptions {
   retryIntervals: number[] | undefined;
   /** Experimental: a failing web-first assertion ends once nothing can change the page before its timeout. */
   failFast: boolean;
-  /** Experimental: trace DOM snapshots visit only what changed since the previous snapshot. */
-  differentialSnapshots: boolean;
 }

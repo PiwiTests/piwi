@@ -85,7 +85,10 @@ describe('withOptimizations', () => {
 
 describe('presets', () => {
   test('safe keeps traces for failures and screenshots failed tests only', () => {
-    const result = withOptimizations<PlaywrightTestConfig>({ use: { screenshot: 'only-on-failure' } }, { preset: 'safe' });
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { use: { screenshot: 'only-on-failure' } },
+      { preset: 'safe' },
+    );
     expect(result.use).toMatchObject({ trace: 'retain-on-failure', screenshot: 'off', failureScreenshots: true });
     expect(result.use).not.toHaveProperty('contextOptions');
   });
@@ -103,7 +106,11 @@ describe('presets', () => {
 
   test('experimental adds both hooks', () => {
     const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'experimental' });
-    expect(result.use).toMatchObject({ fastScreenshots: true, retryIntervals: [10, 20, 40, 50], instantAnimations: true });
+    expect(result.use).toMatchObject({
+      fastScreenshots: true,
+      retryIntervals: [10, 20, 40, 50],
+      instantAnimations: true,
+    });
   });
 
   test('an option named next to the preset wins', () => {
@@ -134,7 +141,10 @@ describe('presets', () => {
 });
 
 test('light traces keep the trace mode and leave out snapshots and the screencast', () => {
-  const result = withOptimizations<PlaywrightTestConfig>({ use: { trace: 'on' } }, { trace: 'retain-on-failure', lightTraces: true });
+  const result = withOptimizations<PlaywrightTestConfig>(
+    { use: { trace: 'on' } },
+    { trace: 'retain-on-failure', lightTraces: true },
+  );
   expect(result.use?.trace).toEqual({
     mode: 'retain-on-failure',
     snapshots: { dom: true, aria: false, screen: false },
@@ -148,7 +158,10 @@ test('light traces keep the trace mode and leave out snapshots and the screencas
 });
 
 test('records video on the first retry only when the config retries', () => {
-  const retrying = withOptimizations<PlaywrightTestConfig>({ retries: 2, use: { video: 'retain-on-failure' } }, { preset: 'safe' });
+  const retrying = withOptimizations<PlaywrightTestConfig>(
+    { retries: 2, use: { video: 'retain-on-failure' } },
+    { preset: 'safe' },
+  );
   expect(retrying.use?.video).toBe('on-first-retry');
   const once = withOptimizations<PlaywrightTestConfig>({ use: { video: 'retain-on-failure' } }, { preset: 'safe' });
   expect(once.use?.video).toBe('retain-on-failure');

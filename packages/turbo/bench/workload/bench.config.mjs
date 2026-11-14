@@ -72,16 +72,6 @@ export default {
       env: { ...stock, BENCH_LIGHT_TRACES: 'actions' },
     },
     {
-      name: 'differential-snapshots',
-      description: 'Traces for every test, with the experimental differentialSnapshots hook.',
-      env: { ...stock, BENCH_DIFFERENTIAL_SNAPSHOTS: '1' },
-    },
-    {
-      name: 'light-traces+differential',
-      description: 'lightTraces (DOM snapshots only), with the experimental differentialSnapshots hook.',
-      env: { ...stock, BENCH_LIGHT_TRACES: '1', BENCH_DIFFERENTIAL_SNAPSHOTS: '1' },
-    },
-    {
       name: 'failure-screenshots',
       description: 'failureScreenshots: screenshots of failed tests only, in place of only-on-failure.',
       env: { ...stock, BENCH_FAILURE_SCREENSHOTS: '1' },
@@ -93,7 +83,11 @@ export default {
     },
     { name: 'preset-safe', description: "preset: 'safe'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'safe' } },
     { name: 'preset-fast', description: "preset: 'fast'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast' } },
-    { name: 'preset-experimental', description: "preset: 'experimental'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'experimental' } },
+    {
+      name: 'preset-experimental',
+      description: "preset: 'experimental'.",
+      env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'experimental' },
+    },
     {
       name: 'stock-red',
       description: 'stock, with six failing tests.',

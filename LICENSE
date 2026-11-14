@@ -13,9 +13,6 @@ This repository is licensed in two parts.
      examples/
 
    Each of these directories carries its own LICENSE file with the MIT terms.
-   packages/turbo also carries one file derived from Playwright,
-   src/vendor/differential-snapshots.ts, under the Apache License 2.0, with
-   Playwright's NOTICE (packages/turbo/LICENSE-APACHE, packages/turbo/NOTICE).
 
 2. The Functional Source License, Version 1.1, MIT Future License
    (FSL-1.1-MIT), reproduced below, covers everything else in this repository,

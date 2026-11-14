@@ -242,7 +242,9 @@ test.describe('fail fast', () => {
   });
 
   test('waits for a timer that is due before the timeout', async ({ page }) => {
-    await page.setContent(`<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">late</p>'), 1200)</script>`);
+    await page.setContent(
+      `<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">late</p>'), 1200)</script>`,
+    );
     await expect(page.locator('#late')).toBeVisible({ timeout: 5000 });
   });
 
@@ -278,44 +280,5 @@ test.describe('fail fast', () => {
     await page.setContent('<p>here</p>');
     await expect(page.locator('p')).toHaveText('here');
     await expect(page.locator('#missing')).not.toBeVisible();
-  });
-});
-
-test.describe('differential snapshots', () => {
-  test('take the same snapshots as a full walk', async ({ page }) => {
-    const { DIFFERENTIAL_STREAMER } = await import('../../src/vendor/differential-snapshots');
-    await page.setContent(`
-      <style>#scroller{height:60px;overflow:auto}</style>
-      <div id="scroller">${'<p>line</p>'.repeat(30)}</div>
-      <input id="name" value="first"><input id="agree" type="checkbox"><select id="pick"><option>a</option><option>b</option></select>
-      <ul id="list"><li>one</li><li>two</li></ul><div id="host"></div>`);
-    // The third argument makes the script compare every snapshot with a full walk and report differences.
-    await page.evaluate(`(${DIFFERENTIAL_STREAMER})("__turbo_check", true, true)`);
-    const capture = () =>
-      page.evaluate(() => {
-        const data = (window as unknown as Record<string, { captureSnapshot(): { checkError?: string } }>).__turbo_check.captureSnapshot();
-        return data?.checkError ?? null;
-      });
-    expect(await capture()).toBeNull();
-    const changes: Array<() => Promise<unknown>> = [
-      () => page.locator('#scroller').evaluate((el) => (el.scrollTop = 120)),
-      () => page.locator('#name').fill('second'),
-      () => page.locator('#agree').check(),
-      () => page.locator('#pick').selectOption('b'),
-      () => page.evaluate(() => document.querySelector('#list')!.insertAdjacentHTML('beforeend', '<li>three</li>')),
-      () => page.evaluate(() => document.querySelector('#list li')!.remove()),
-      () => page.evaluate(() => ((document.querySelector('#list li') as HTMLElement).textContent = 'changed')),
-      () =>
-        page.evaluate(() => {
-          const root = document.querySelector('#host')!.attachShadow({ mode: 'open' });
-          root.innerHTML = '<b>shadow</b>';
-        }),
-      () => page.evaluate(() => (document.querySelector('#host')!.shadowRoot!.querySelector('b')!.textContent = 'deep')),
-      () => page.evaluate(() => document.body.setAttribute('data-state', 'done')),
-    ];
-    for (const [index, change] of changes.entries()) {
-      await change();
-      expect(await capture(), `snapshot after change ${index + 1}`).toBeNull();
-    }
   });
 });

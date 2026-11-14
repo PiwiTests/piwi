@@ -9,7 +9,6 @@ type HookSettings = {
   fastScreenshots: boolean;
   retryIntervals: number[] | undefined;
   failFast: boolean;
-  differentialSnapshots: boolean;
 };
 
 function routeMatcher(rule: BlockRule): string | RegExp | ((url: URL) => boolean) {
@@ -54,17 +53,16 @@ export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
   fastScreenshots: [false, { option: true }],
   retryIntervals: [undefined, { option: true }],
   failFast: [false, { option: true }],
-  differentialSnapshots: [false, { option: true }],
 
   // Turns the hooks on for this test only. A worker runs one test at a time, so the setting covers every page of the
   // test, including the ones it opens itself, and no other test. Fast screenshots apply to Chromium only.
   _turboHooks: [
-    async ({ fastScreenshots, retryIntervals, failFast, differentialSnapshots, connectOptions, browserName }, use, testInfo) => {
+    async ({ fastScreenshots, retryIntervals, failFast, connectOptions, browserName }, use, testInfo) => {
       const intervals = validIntervals(retryIntervals);
       // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
       const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
       const fast = fastScreenshots && browserName === 'chromium' && !updating;
-      if (fast || intervals || failFast || differentialSnapshots) {
+      if (fast || intervals || failFast) {
         if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
           throw new Error(
             '@piwitests/turbo: the experimental hooks need a browser launched by the test worker, not a connected one',
@@ -75,14 +73,12 @@ export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
       state.fastScreenshots = fast;
       state.retryIntervals = intervals;
       state.failFast = failFast;
-      state.differentialSnapshots = differentialSnapshots;
       try {
-        await use({ fastScreenshots: fast, retryIntervals: intervals, failFast, differentialSnapshots });
+        await use({ fastScreenshots: fast, retryIntervals: intervals, failFast });
       } finally {
         state.fastScreenshots = false;
         state.retryIntervals = undefined;
         state.failFast = false;
-        state.differentialSnapshots = false;
       }
     },
     { auto: true },

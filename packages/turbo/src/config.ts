@@ -60,11 +60,6 @@ export interface Optimizations {
      * its own Node code while an assertion waits must leave it off.
      */
     failFast?: boolean;
-    /**
-     * Trace DOM snapshots visit only the nodes that changed since the previous snapshot, with the same result as a
-     * full walk. Uses a modified copy of Playwright's snapshot script, under Apache-2.0.
-     */
-    differentialSnapshots?: boolean;
   };
 }
 
@@ -156,6 +151,5 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.fastScreenshots) use.fastScreenshots = true;
   if (experimental.retryIntervals) use.retryIntervals = experimental.retryIntervals;
   if (experimental.failFast) use.failFast = true;
-  if (experimental.differentialSnapshots) use.differentialSnapshots = true;
   return result as T;
 }

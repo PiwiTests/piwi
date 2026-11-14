@@ -4,14 +4,10 @@
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
 //   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
-//   differential snapshots  injects a DOM snapshot script for traces that visits only what changed since the last
-//                     snapshot, in place of Playwright's full walk
 //
 // Both wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { DIFFERENTIAL_STREAMER } from './vendor/differential-snapshots';
 import { TESTED_VERSIONS } from './versions';
 
 const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
@@ -28,14 +24,13 @@ export const state = {
   fastScreenshots: false,
   retryIntervals: undefined as number[] | undefined,
   failFast: false,
-  differentialSnapshots: false,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
   pagesSeen: 0,
   /** The first internal that did not have the expected shape. */
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
-  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0, differentialStreamers: 0 },
+  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0 },
 };
 
 class IncompatibleError extends Error {
@@ -79,37 +74,6 @@ function loadCore(): { version: string; core: ServerPage } {
   return { version, core: fromPlaywright('playwright-core/lib/coreBundle') };
 }
 
-/** The sha256 of Playwright 1.64.1's own `frameSnapshotStreamer` source, the script differential snapshots replace. */
-const STOCK_STREAMER_SHA256 = '341336404a2ec1a962138741a5bf318f2efaf6375a3dfe7317acbd5acbf91fc6';
-const STREAMER_SOURCE = /^\((function frameSnapshotStreamer[\s\S]*)\)\(("__playwright_snapshot_streamer_[0-9a-f]+"), (true|false)\)$/;
-
-/** The snapshot script Playwright injects for traces, with the differential one in its place when enabled. */
-export function withDifferentialStreamer(source: unknown): unknown {
-  if (!state.differentialSnapshots || typeof source !== 'string') return source;
-  const match = STREAMER_SOURCE.exec(source);
-  if (!match) return source;
-  if (createHash('sha256').update(match[1]!).digest('hex') !== STOCK_STREAMER_SHA256) {
-    throw new IncompatibleError("Playwright's DOM snapshot script is not the one differential snapshots replace");
-  }
-  state.counters.differentialStreamers++;
-  return `(${DIFFERENTIAL_STREAMER})(${match[2]}, ${match[3]})`;
-}
-
-function hookSnapshots(core: ServerPage): void {
-  const proto = core.server?.BrowserContext?.prototype;
-  const { addInitScript, safeNonStallingEvaluateInAllFrames } = proto ?? {};
-  if (typeof addInitScript !== 'function' || typeof safeNonStallingEvaluateInAllFrames !== 'function') {
-    throw new IncompatibleError("Playwright's server BrowserContext has no addInitScript/safeNonStallingEvaluateInAllFrames");
-  }
-  // Playwright's snapshotter passes its script to both: once for the pages to come, once for the open frames.
-  proto.addInitScript = function (this: ServerPage, progress: unknown, source: unknown, ...rest: unknown[]) {
-    return addInitScript.call(this, progress, withDifferentialStreamer(source), ...rest);
-  };
-  proto.safeNonStallingEvaluateInAllFrames = function (this: ServerPage, expression: unknown, ...rest: unknown[]) {
-    return safeNonStallingEvaluateInAllFrames.call(this, withDifferentialStreamer(expression), ...rest);
-  };
-}
-
 /** Thrown inside the retry loop to end an assertion the page can no longer satisfy. */
 class FailFastError extends Error {
   constructor() {
@@ -128,7 +92,8 @@ async function pageIsIdle(frame: ServerPage, remaining: number): Promise<boolean
     const context = await each.context('main');
     const injected = await context.injectedScript();
     return await injected.evaluate(
-      (_: unknown, ms: number) => (globalThis as { __piwiTurboIdle?: (ms: number) => boolean }).__piwiTurboIdle?.(ms) === true,
+      (_: unknown, ms: number) =>
+        (globalThis as { __piwiTurboIdle?: (ms: number) => boolean }).__piwiTurboIdle?.(ms) === true,
       remaining,
     );
   });
@@ -142,7 +107,11 @@ async function pageIsIdle(frame: ServerPage, remaining: number): Promise<boolean
 
 function hookFailFast(proto: ServerPage): void {
   const { expect, _expectInternal: expectInternal, isNonRetriableError } = proto;
-  if (typeof expect !== 'function' || typeof expectInternal !== 'function' || typeof isNonRetriableError !== 'function') {
+  if (
+    typeof expect !== 'function' ||
+    typeof expectInternal !== 'function' ||
+    typeof isNonRetriableError !== 'function'
+  ) {
     throw new IncompatibleError("Playwright's frame has no expect/_expectInternal/isNonRetriableError");
   }
   const source = String(expect);
@@ -249,7 +218,6 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   const Page = core.server?.Page;
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
-  hookSnapshots(core);
   const reportAsNew = Page.prototype.reportAsNew;
   // Every new page passes through reportAsNew: the first one gives access to the classes to wrap.
   Page.prototype.reportAsNew = function (this: ServerPage, ...args: unknown[]) {
