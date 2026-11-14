@@ -94,7 +94,7 @@ counts:
 |---|---|
 | Runs and tests (pass rates, durations, wasted and CI minutes, regressions) | project, project tag, environment, branch, run kind; browser, test tag, owner, priority, feature, spec directory |
 | Failure clusters | project, project tag, error type, status, assignee |
-| Quarantined tests | project, project tag, owner, test tag |
+| [Quarantined tests](./flaky-tests#quarantine-with-a-way-out) | project, project tag, owner, test tag |
 
 With a breakdown, *Bars* and *Table* show one row per group for the period, *Line* one line per group
 (the first eight), *Heatmap* one row of buckets per group. Groups are sorted worst first; the top 5 to 25

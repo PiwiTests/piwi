@@ -67,7 +67,7 @@ Each queue has a live count and is shareable as `?queue=`:
   [issue tracking](./issue-tracking)).
 - **Regressions**: regressed on the default branch, failing there still.
 - **Fix didn't hold**: a fix landed, then regressed.
-- **Quarantine ready**: quarantined, and the tests stopped failing.
+- **Quarantine ready**: [quarantined](./flaky-tests#quarantine-with-a-way-out), and the tests stopped failing.
 - **Merge suggestions**: in a pending [merge suggestion](./ai-diagnosis#semantic-merging-optional).
 
 ### Triage from the row or the keyboard

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, posix, relative } from 'node:path';
 import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { MAX_CONTROLS_PER_PAGE } from '#shared/graph';
 import { exposureFactorsFor, type DetectedGap } from '#shared/handlers/scenario-gaps';
@@ -119,12 +119,6 @@ describe('counts in prose', () => {
       phrase: 'three views',
       list: 'COVERAGE_VIEWS (app/utils/coverage-tab.ts)',
       count: () => COVERAGE_VIEWS.length,
-    },
-    {
-      page: 'apps/docs/guide/concepts.md',
-      phrase: 'four factors',
-      list: 'the factors of exposureFactorsFor (shared/handlers/scenario-gaps.ts)',
-      count: exposureFactors,
     },
     {
       page: 'apps/docs/reference/gap-detectors.md',
@@ -323,5 +317,94 @@ describe('the privacy page lists every destination', () => {
       listed,
       `${calledBy} calls the host ${setBy} names, which the table "${HEADING}" of ${PAGE} does not list as "${destination}": add its row`,
     ).toContain(destination);
+  });
+});
+
+describe('a concepts entry is a definition', () => {
+  // `guide/concepts.md` names each word and says what it is; the rule behind the word (its thresholds, its order, its
+  // cases) is on the feature page the entry links. An entry is the prose under one `###` heading, counted as the word
+  // budgets count a page: split on white space after the inline code is taken out, a link counting as the words it wraps.
+  const PAGE = 'apps/docs/guide/concepts.md';
+  const MAX_WORDS = 80;
+
+  const entries = proseOf(PAGE)
+    .split(/^(?=#{1,3} )/m)
+    .filter((section) => section.startsWith('### '))
+    .map((section) => {
+      const [heading, ...body] = section.split('\n');
+      return { heading: heading!.slice(4).trim(), words: body.join(' ').trim().split(/\s+/).filter(Boolean).length };
+    });
+
+  test('the entries are read', () => {
+    expect(entries.map((entry) => entry.heading)).toContain('Error fingerprint & failure cluster');
+  });
+
+  test.each(entries)('$heading is at most 80 words', ({ heading, words }) => {
+    expect(
+      words,
+      `The entry "${heading}" of ${PAGE} is ${words} words, over ${MAX_WORDS}: keep the definition there and move the rule to the feature page the entry links`,
+    ).toBeLessThanOrEqual(MAX_WORDS);
+  });
+});
+
+describe('a shared rule has one owner', () => {
+  // A rule several features share is explained on one page, its owner. Any other hand-written page that names the
+  // rule states its effect in a sentence and links the owner page (any section of it), so a change to the rule is
+  // made in one place. A pattern names the rule in prose; the words inside code and an image's markup do not count.
+  const OWNERS: { rule: string; pattern: RegExp; owner: string }[] = [
+    { rule: 'the CI merge gate', pattern: /\b(?:merge|CI) gate\b/i, owner: 'features/merge-gate' },
+    { rule: 'Hold failures', pattern: /\bhold failures\b/i, owner: 'features/watch-a-run' },
+    { rule: 'quarantine', pattern: /\bquarantin(?:e|es|ed|ing)\b/i, owner: 'features/flaky-tests' },
+    { rule: 'the error fingerprint', pattern: /\berror fingerprint/i, owner: 'features/failure-clusters' },
+    { rule: 'brittle locators', pattern: /\bbrittle\b/i, owner: 'reference/locator-stability' },
+    { rule: 'wasted time', pattern: /\bwasted time\b/i, owner: 'features/slow-tests' },
+    // "Baseline" alone also names a pinned commit, a visual snapshot and a plain starting point: the run baseline is
+    // named by its rule or by the run it compares with.
+    {
+      rule: 'the baseline',
+      pattern: /\bbaseline (?:rule|ladder)\b|\b(?:against|since|from) (?:its |the )?last green run\b/i,
+      owner: 'features/run-changes',
+    },
+    { rule: 'the live view', pattern: /\blive view\b/i, owner: 'features/live-view' },
+    // The line's name, in bold as the page shows it: "most likely" in lower case is ordinary prose.
+    { rule: 'Most likely', pattern: /\*\*Most likely\*\*/, owner: 'reference/clues' },
+  ];
+
+  // An <img> or <video> tag, a Markdown image, and the figure tags around them: alt text is not prose a reader reads.
+  const IMAGE_MARKUP = /<(?:img|video|source)\b[^>]*>|!\[[^\]]*\]\([^)]*\)/g;
+  const LINK_TARGET = /\]\(([^)\s]+)\)|\bhref="([^"]+)"/g;
+
+  /** The page, without `apps/docs/` and `.md`, each link of a page points at: `features/merge-gate`. */
+  const linkedPages = (page: string) => {
+    const dir = posix.dirname(page.slice('apps/docs/'.length));
+    const markdown = read(page).replace(FRONT_MATTER, '').replace(FENCED_CODE, ' ');
+    return new Set(
+      [...markdown.matchAll(LINK_TARGET)]
+        .map((m) => (m[1] ?? m[2])!.split('#')[0]!)
+        .filter((target) => target && !/^[a-z]+:/i.test(target))
+        .map((target) =>
+          (target.startsWith('/') ? target.slice(1) : posix.join(dir, target)).replace(/\.(?:md|html)$/, ''),
+        ),
+    );
+  };
+
+  const cases = OWNERS.flatMap(({ rule, pattern, owner }) =>
+    handWrittenPages
+      .filter((page) => !page.startsWith('apps/docs/blog/') && page !== `apps/docs/${owner}.md`)
+      .filter((page) => pattern.test(proseOf(page).replace(IMAGE_MARKUP, ' ')))
+      .map((page) => ({ page, rule, owner })),
+  );
+
+  test('the rules are named and the links resolved', () => {
+    expect(OWNERS.every(({ owner }) => existsSync(join(repoRoot, `apps/docs/${owner}.md`)))).toBe(true);
+    expect(cases.map(({ page }) => page)).toContain('apps/docs/features/branches.md');
+    expect(linkedPages('apps/docs/features/branches.md')).toContain('features/run-changes');
+  });
+
+  test.each(cases)('$page links the owner of $rule', ({ page, rule, owner }) => {
+    expect(
+      linkedPages(page).has(owner),
+      `${page} names ${rule}, whose rule apps/docs/${owner}.md owns: state its effect in a sentence and link that page at the first mention`,
+    ).toBe(true);
   });
 });

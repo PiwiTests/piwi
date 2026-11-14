@@ -67,6 +67,18 @@ The backend names the checksum of the source each file was built from. When the 
 differs (the backend was built from another commit), the reporter keeps the file's path but drops its line numbers,
 which would point at the wrong lines, and marks the test incomplete; the run-level coverage drops them the same way.
 
+### Suspect lines
+
+A failure's **suspect lines** are the lines changed since its last passing run that the failing tests executed, read
+from their coverage, browser or server, and the diff of the source control range: each changed hunk they executed,
+ranked by how many passing tests of the same run executed it too (the Ochiai score of spectrum-based fault
+localization, 1 when only failing tests did). Line coverage names the executed lines, function coverage the changed
+lines inside a function that ran, and file coverage the whole hunk. When the host names the file's version at the
+head (GitHub, or a local clone in the desktop app), coverage of another version counts as file coverage. The failure
+pages' **What changed** line names the first, the cluster's diff marks them, the
+[AI diagnosis](./ai-diagnosis#scm-grounded-context) lists them and sends their files' patches first, and the
+[fix plan](./fix-plans) carries the top five.
+
 ## How it is collected
 
 Each response names its request's coverage in an `X-Piwi-Coverage` header. Once the test ends, outside its time, the

@@ -27,7 +27,7 @@ the page). A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. A run
 without [**Watch**](#watch-live) and no test stopped says how one stops: a breakpoint, a `page.pause()` or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
 The CI runs in progress of the projects your [connection](./extension-connection) maps show read-only, through that
-instance, with **Open** and their running tests, each with **Watch**
+instance, read again every 15 seconds while the window is open, with **Open** and their running tests, each with **Watch**
 ([A CI run of your branch](./watch-running-test#a-ci-run-of-your-branch)).
 
 ## The controls
@@ -48,11 +48,15 @@ locator.
 
 **Share live**, under the run's name, shares the run with your team: [Share a run live](./share-live).
 
+### Who drives a stop
+
 Each run names who else has it open (**Also open in the desktop app**, **An agent follows this run**), and each worker
 who watches its page (**Watched by you and Visual Studio Code**). One tool drives a stop at a time: an agent that
 paused it or acts on it, else the last whose person clicked, typed or picked there. While another tool drives it or an
-agent follows the run, **Take control** makes it yours: an agent's actions there are refused until you **Give back**. A
-stop an agent asked for reads **Paused by the agent**: [driving a stop](/guide/concepts#presence-driving-a-stop).
+agent follows the run, **Take control** makes it yours: an agent's actions there are refused, and the agent is told
+the stop was taken, until you **Give back**, stop watching the page or close the tool. A person's **Resume**, **Step**
+and **Finish** always answer the stop, and the stop a person's **Step** or run to the cursor comes to stays theirs. A stop an
+agent asked for reads **Paused by the agent**.
 
 ## Code from a stop
 

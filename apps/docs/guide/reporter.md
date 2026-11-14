@@ -227,7 +227,7 @@ is saved locally, owner-only, and sent to the same `serverUrl` on the project's 
 attachments; it never fails the Playwright run. A stream that cannot start while the dashboard is down or busy retries
 for the run's life, its events kept within
 [`maxStreamBufferBytes`](/reference/reporter-options#maxstreambufferbytes); one starting late says how late. Live events the
-dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live view so the later
+dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live stream so the later
 ones flow; if test results are among them, the run is sent again as a batch at its end.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so an
 unresponsive dashboard cannot hold the CI job.

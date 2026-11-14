@@ -44,7 +44,7 @@ The pause bar's buttons:
 </figure>
 
 The page under the bar stays live: scroll it, open the browser's developer tools, or click through it before you
-resume. The test timeout stops while the test is paused; [a stop](/guide/concepts#stop) says which waits keep their
+resume. The test timeout stops while the test is paused; [Time paused at a stop](./slow-tests#time-paused-at-a-stop) says which waits keep their
 deadline, and how the dashboard counts the time paused.
 
 ## Where the pick lands

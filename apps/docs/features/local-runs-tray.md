@@ -32,7 +32,7 @@ run. A failed one leads to its failure: **Open the failure**, on the run and in 
 page of its first failed test, the one its process named first; the run's page when the run names none. A run of
 several Playwright projects reports one run for each: the failure is the first one of the first project that failed,
 in that project's run. **Run again**
-starts an ended run as it ran, with its options and its **Hold failures**.
+starts an ended run as it ran, with its options and its [**Hold failures**](./watch-a-run#hold-failures).
 
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
 ([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait,

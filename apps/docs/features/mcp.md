@@ -21,7 +21,7 @@ tool on its whole description and its parameters. Two answer questions about Piw
 `describe_piwi` reads the documentation bundled with the server, and `get_release_notes` the changelog up to the
 running version. Three read the [coverage](/features/coverage-insights) tests record: `get_coverage` (a file's lines
 and the tests behind them, or which target lines a test ran), `compare_coverage` (a failure against its last pass, or a
-test's runs against each other) and `get_coverage_loss` (what quarantining or deleting tests leaves uncovered).
+test's runs against each other) and `get_coverage_loss` (what [quarantining](./flaky-tests#quarantine-with-a-way-out) or deleting tests leaves uncovered).
 `get_impacted_tests` takes your working diff and returns the tests it impacts, narrowed to the tests that ran the
 changed lines where coverage was recorded ([line level](/features/change-impact#line-level)), with a command to run
 them. They return compact JSON, list tools page with `{ items, nextCursor }` (`get_project_test_catalog`

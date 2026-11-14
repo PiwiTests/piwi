@@ -54,6 +54,18 @@ failed attempts over time and per project, beside **CI time**, the minutes the r
 The flaky list's **wasted CI minutes** are a narrower number, a test's retries times its average failed attempt:
 see [Impact ranking](./flaky-tests#impact-ranking).
 
+## Time paused at a stop
+
+When a test stands [stopped](./watch-a-run#where-a-test-stopped) at a breakpoint, a Pause or a held failure, its
+duration leaves the time paused out, while every step keeps its clock time: the timelines draw each stop as a
+**Paused** band, and the step statistics (the slowest step, wasted time) leave it out.
+
+The test timeout stops while a test is paused at a breakpoint, and so does the paused call's own budget
+(`actionTimeout`, or `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its
+own deadline: `expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused
+call can run out while you look and fail the test. The pause bar then goes away, before Playwright's failure
+screenshot and the `afterEach` hooks.
+
 ## Network and Web Vitals
 
 - **Slow endpoints** — slow API calls grouped by method and normalized route (e.g. `/users/:id`), for a run picked from the tab.

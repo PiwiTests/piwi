@@ -21,7 +21,7 @@ apart.
 |---|---|---|
 | **Viewer** | stakeholder | Reads everything in the project. |
 | **Contributor** | product owner, manager | Files issues, pins links, edits bug reports, schedules reports, adds markers. |
-| **Maintainer** | QA engineer, developer | Triages failures, quarantines tests, runs AI diagnosis, uploads runs, creates share links. |
+| **Maintainer** | QA engineer, developer | Triages failures, [quarantines tests](/features/flaky-tests#quarantine-with-a-way-out), runs AI diagnosis, uploads runs, creates share links. |
 | **Project admin** | QA lead, tech lead | Edits the project settings and members, deletes runs. |
 | **Uploader** | CI account | For CI: reads the project and uploads runs, nothing else. |
 

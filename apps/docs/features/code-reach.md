@@ -116,7 +116,8 @@ coverage, the executable lines it did not.
 A file's **tests** link, on an execution, a cluster's suspect lines or the [Test Map](./scenario-gaps), opens its
 coverage page: its source at the version most tests ran, each line with how many tests ran it, the executable lines
 none runs marked. Select a line or a range for its tests and their latest outcome; on a line no test runs, the nearest
-test to copy.
+test to copy. The page also lists the file's nodes in the [Test Map](./scenario-gaps) with their open gaps, and opens
+the Map view on one.
 
 <figure>
   <img src="/screenshots/coverage-file.png" alt="A file's coverage page">

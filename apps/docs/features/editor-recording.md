@@ -51,7 +51,7 @@ recording.
   address. Each is written as an `await expect(…)` where you added it.
 - **Typing in the block** pauses the recording. **Resume** writes the block again from the recorded steps, over your
   edits; **Keep my edits** stops the recording and keeps the code as you changed it.
-- **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay
+- **Warnings** (a [brittle locator](/reference/locator-stability), a password read from the environment, a file to upload) are on their lines. They stay
   after the recording, each until its line is edited.
 
 What the code holds, from locators to imports, and the options in the Playwright config that shape it:

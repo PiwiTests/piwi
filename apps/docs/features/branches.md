@@ -24,7 +24,7 @@ When the provider exposes it, the reporter also captures the **pull-request numb
 
 ## The default branch
 
-Each project has a **Default branch** setting in the **Source control** section of its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider; when the provider cannot tell (no token, or no access to the repository), Piwi asks again ten minutes later, and meanwhile falls back to the branch the reporter names, then the branch most of the project's runs are on, then `main` ([the chain](/guide/concepts#baseline-last-green-run)). The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
+Each project has a **Default branch** setting in the **Source control** section of its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider; when the provider cannot tell (no token, or no access to the repository), Piwi asks again ten minutes later, and meanwhile falls back to the branch the reporter names, then the branch most of the project's runs are on, then `main`. The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
 
 ## Filtering by branch
 
@@ -50,10 +50,10 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 
 **Baselines are chosen within an environment and a branch.**
 
-- **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](/guide/concepts#baseline-last-green-run), which prefers the run's own branch, then its base branch ([the figure](./run-changes#the-baseline)). Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).
+- **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](./run-changes#the-baseline), which prefers the run's own branch, then its base branch ([the figure](./run-changes#the-baseline)). Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).
 - **Choosing the base branch** — the Changes tab lets you take the baseline from any branch with an earlier full run, so a long-lived branch can be compared against `release/2` rather than `main`; the choice is in the URL (`?baseBranch=`) and on the API and MCP tool. See [What changed in a run](./run-changes#the-baseline).
 - **The environment, visual and page diffs** of one execution prefer the same environment, then the same branch, then
-  the most recent pass: there is no base-branch rung ([the rule](/guide/concepts#baseline-last-green-run)).
+  the most recent pass: there is no base-branch rung ([the rule](./run-changes#one-execution-s-baseline)).
 - **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` rule of the [CI merge gate](/features/merge-gate) counts the same new failures. A failure whose test is already flaky on the default branch is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
 - **Performance alerts** — the `perf.regression` [notification](./notifications) measures a run against the previous runs on the same branch **in the same environment**.
 

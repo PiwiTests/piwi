@@ -18,8 +18,8 @@ them into your test project.
 | Skill | What it does |
 |------|--------------|
 | `setup-piwi` | Wire a Playwright project up to a dashboard: the same work `npx @piwitests/reporter init` does, driven by an agent. |
-| `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence: error, steps, console, network, and the diff since the last green run. |
-| `apply-locator-healing` | Replace a brittle locator with Piwi's ranked [healed locator](/features/locator-healing) at its call site, then re-run to confirm. |
+| `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence: error, steps, console, network, and the diff since the [last green run](/features/run-changes#the-baseline). |
+| `apply-locator-healing` | Replace a [brittle locator](/reference/locator-stability) with Piwi's ranked [healed locator](/features/locator-healing) at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Reproduce the highest-impact [flaky tests](/features/flaky-tests) with the [Flake Lab](/features/flake-lab), fix what the reproducing condition points at (never by adding retries), then prove it with `piwi flake verify`. |
 | `run-the-right-tests` | After a UI change, fix the locators it breaks with [preflight](/features/preflight); run the tests a change [impacts](/features/change-impact), down to those that ran the changed lines; or pick and run the right [selection](/features/test-selection) for the task (smoke, recently broken, a time budget) instead of the whole suite. |
 | `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and add it in the same change. |

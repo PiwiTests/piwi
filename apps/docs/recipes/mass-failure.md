@@ -57,7 +57,7 @@ work?](/features/failure-clusters#did-the-fix-work).
 ## Optional: let a model do the first pass
 
 With [AI diagnosis](/features/ai-diagnosis) configured, each cluster gets an explanation read against your
-actual git diff since the last green run, and any suggested patch is validated against your source
+actual git diff since the [last green run](/features/run-changes#the-baseline), and any suggested patch is validated against your source
 before it's shown. It's off by default and works with a local model — the point is that clustering has
 already decided *what* is worth diagnosing, so the model runs a few times per run, not forty.
 

@@ -41,7 +41,7 @@ The plan pairs each passing test with a route it reaches: pairs never probed com
 changed since its last probe, and each test gets one fault per run, up to a budget (50 pairs by default,
 `--budget` to change it). The plan rotates through `status-500`, `empty-body` and `drop-field`, the faults that break
 what a test checks: `slow` reads a test's timeout rather than its assertions, and `stale-value` needs an earlier
-response. Quarantined tests and tests whose last run failed are left out. A fault that did not change the response
+response. [Quarantined tests](./flaky-tests#quarantine-with-a-way-out) and tests whose last run failed are left out. A fault that did not change the response
 (a body with no field to drop), a test skipped and a run interrupted record the pair as *inconclusive*, and a pair no
 probe has decided returns to the plan a week after its last probe.
 

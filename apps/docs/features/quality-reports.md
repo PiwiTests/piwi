@@ -23,7 +23,7 @@ exported and scheduled; four built-in ones are written for reports:
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
   six headline numbers, the [pass rate](/guide/concepts#pass-rate) over time with the comparison period and your
   [timeline markers](./timeline-markers), what changed, what is being done (failure clusters fixed, assigned or
-  ticketed, tests released from quarantine) and the risks (metrics moving the wrong way, projects
+  ticketed, tests released from [quarantine](./flaky-tests#quarantine-with-a-way-out)) and the risks (metrics moving the wrong way, projects
   failing run after run, the oldest open failure clusters).
 - **Engineering**, for the team that owns the suite: the executive report, then the flakiest tests,
   the failure clusters, wasted CI time, regressions, CI time, the [combined coverage](./combined-coverage) trend

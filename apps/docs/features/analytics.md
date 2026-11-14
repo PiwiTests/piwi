@@ -90,7 +90,7 @@ view, save an [analytics dashboard](./dashboards).
 
 ### Where the numbers come from
 
-The [pass rates](/guide/concepts#pass-rate), run counts, durations, CI time, wasted time and regression counts are read from
+The [pass rates](/guide/concepts#pass-rate), run counts, durations, CI time, [wasted time](./slow-tests#wasted-time) and regression counts are read from
 **daily rollups**, one precomputed row per project, UTC day, environment, branch and run kind, kept at
 ingest and checked nightly against the stored runs. When [retention](/operate/storage#data-retention)
 deletes old runs, their numbers stay in the rollups, so a one-year pass-rate line survives a 30-day
@@ -112,7 +112,7 @@ the period, one line per kind:
 - **Locator heals**: call sites whose code now uses the recommended locator, whoever changed it, and the
   [auto-heal](./auto-heal) pull requests merged or closed.
 - **AI diagnoses**: those written, rated helpful, and confirmed by a fix that changed the files they named.
-- **CI gate**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
+- **[CI gate](./merge-gate)**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
   failure that came back.
 - **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
 - **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.

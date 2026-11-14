@@ -70,7 +70,7 @@ names it too, and says what is sent to it.
 Asked to do something ("resolve this cluster"), the assistant answers with a card per change, with **Apply** and
 **Dismiss**. Nothing runs until you click **Apply**: the dashboard sends its own button's request, with your session,
 and reloads the page. The card keeps what became of it, or why it was refused. A card can resolve, ignore or
-reopen a failure cluster, quarantine or release a test, start a diagnosis, keep a run or decline a capability, and
+reopen a failure cluster, [quarantine](./flaky-tests#quarantine-with-a-way-out) or release a test, start a diagnosis, keep a run or decline a capability, and
 shows only when you hold the permission it needs; to act on several tests, it first lets you tick them.
 
 <figure>

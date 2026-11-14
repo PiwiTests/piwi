@@ -72,7 +72,7 @@ assertion, as a comment. Marked `test.fail()`, it passes while the bug exists an
 fixed, Playwright reports the expected failure as a failure: remove `test.fail()` and the test guards the fix.
 
 The **Spec** tab adds what Piwi knows about your project: calls to your [test functions](./test-functions) where the
-steps match one, and for each element the locator your tests already use when it is not brittle, which is why its
+steps match one, and for each element the locator your tests already use when it is not [brittle](/reference/locator-stability), which is why its
 `getByLabel('Coupon')` below reads `getByRole('textbox', { name: 'Coupon' })` in the copy Piwi Picker makes alone. Two
 versions:
 

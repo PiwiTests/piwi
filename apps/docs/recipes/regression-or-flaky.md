@@ -14,7 +14,7 @@ you already have, in about a minute.
 ## 1. Open the run's Changes tab
 
 A run compares itself against **one baseline**, an earlier passing run picked by the
-[baseline rule](/guide/concepts#baseline-last-green-run), and sorts the failures for you. The distinction you want is
+[baseline rule](/features/run-changes#the-baseline), and sorts the failures for you. The distinction you want is
 right there in the headings:
 
 - **New failures** — this test was passing on the baseline and is failing now.

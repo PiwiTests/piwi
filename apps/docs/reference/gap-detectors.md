@@ -41,7 +41,7 @@ without it.
 | **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
 | **Code nobody executes**<br>`code-not-executed` | blind-spot | the functions of a file no suite ran in the default branch's newest [combined coverage](/features/combined-coverage), or a file recorded by line none of whose lines ran; the 30 files with the most, one gap each | a coverage report or run coverage | 0.4 plus 0.3 times the share of its functions not run; 0.6 for a whole file | `Functions at lines 12–20, 22–30 · no suite ran them at 9a8b7c6` |
-| **Single covering function**<br>`single-covering-function` | fragile | the functions of a file exactly one test runs in the tests' latest coverage on the default branch, quarantined tests left out, or that only quarantined tests run; the 30 files with the most, one gap each | per-test [code reach](/features/code-reach) | 0.5 | `Only checkout pays runs the functions at lines 7–9` |
+| **Single covering function**<br>`single-covering-function` | fragile | the functions of a file exactly one test runs in the tests' latest coverage on the default branch, [quarantined tests](/features/flaky-tests#quarantine-with-a-way-out) left out, or that only quarantined tests run; the 30 files with the most, one gap each | per-test [code reach](/features/code-reach) | 0.5 | `Only checkout pays runs the functions at lines 7–9` |
 | **Error path never executed**<br>`error-path-not-executed` | blind-spot | a `catch` block, a `throw`, or a statement answering with an error status (`TypedResults.NotFound()`, `res.status(409)`) that no suite ran, inside a function that ran (inside a file that ran, when the coverage records it by line): the code-level form of *Success only*. The 30 files that ran with the most lines not run, read at the commit's version | a coverage report or run coverage, and the [source control](/guide/source-control) connection to read the files | 0.7 | `Line 59 · return TypedResults.NotFound(); · its function ran, this never did` |
 | **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has decided | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled**<br>`not-handled` | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | 1 unhandled, 0.5 degraded | `A server probe made POST /api/orders fail; the application did not handle it` |
@@ -115,7 +115,7 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
 files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
 handler files behind it, and a gap on a file's code from that file, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
-its last green run, so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
+its [last green run](/features/run-changes#the-baseline), so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
 files in the diff that ended on a fixing commit, which holds every change since the last green run. Age needs each
 file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
@@ -178,12 +178,17 @@ The graph stays proportional to the application's surface, not its data volume:
 - **A page load reaches its route.** A page load (`page.goto`, a link followed) reaches the route of its URL, so a
   route a backend serves by navigation is reached. *Success only* counts only the calls a page makes, a form's POST
   included, so a page never reads as a route without its error path.
-- **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
-  production. Numbers, UUIDs, JWTs, ULIDs and long tokens become placeholders; other ids (a Mongo ObjectId, a cuid, a
-  slug) stay in the key, one node per value. A single-page app routed by the URL hash (`/#/settings`) is one page, `/`.
+- **Pages are path patterns.** A page's [page key](/guide/concepts#page-key) is its URL reduced to its path:
+  `/orders/123` and `/orders/456` are one node, as is the same path from staging and production. Numbers, UUIDs,
+  ULIDs, JWTs and long tokens become `:id`, `:uuid`, `:ulid`, `:jwt` and `:token`, and the host, query and hash are
+  dropped; other ids (a Mongo ObjectId, a cuid, a slug) stay in the key, one node per value. A single-page app routed
+  by the URL hash (`/#/settings`) is one page, `/`. The page each locator was used on and Piwi Picker's **This page**
+  use the same key, where a page of another site keeps its origin in front of the path.
 - **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.
 - **Controls and links are templated.** Dates, ids and numbers in an accessible name become placeholders, and each
-  page keeps at most 200 controls and 200 links.
+  page keeps at most 200 controls and 200 links. The page inventory reads a page as its URL changes, once per page
+  per worker, so a control that renders later, or only in a dialog, is not in it; it records names and links, never
+  a field value.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged
   with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the
   pull request closes, or after 30 days unseen. Detectors read the canonical graph and the default branch's runs;

@@ -104,7 +104,8 @@ A [verification](/guide/concepts#verification), **Verify ×3**, runs the test th
 breakpoints (`--repeat-each=3 --retries=0`), each run a result on the instance, and holds no failure. Its notification
 says how many passed, whatever the setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3` with **Open the
 failures** and **Open in dashboard**, counted from the results the run streams (`Failed at least 1 of 3` when some
-were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times).
+were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times). It is listed, paused and
+stopped as the editor's other runs, as are a fix plan's verification and a Flake Lab line.
 
 ## A test that waits for you
 

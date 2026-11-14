@@ -58,7 +58,7 @@ resume it. Once the run reported to the
 instance, its card names it, **Run #78 · Open**, which opens its page there, and keeps it after the run ended. A run
 that goes on while the window reloads shows again, with **Stop**.
 **Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
-writes no file. A requested run cannot be [shared live](./share-live): the instance gives it no live view key, since it
+writes no file. A requested run cannot be [shared live](./share-live): the instance gives it no [live view](./live-view) key, since it
 [shows to you alone](./run-on-my-machine#a-requested-run-is-yours-alone). **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.
 
 Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an

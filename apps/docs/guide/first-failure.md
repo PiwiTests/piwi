@@ -15,7 +15,7 @@ Open the failing test from the run page (click its row) to reach its **execution
   <figcaption>The situation block: what broke, since when, why, what to do next, and the cluster it belongs to.</figcaption>
 </figure>
 
-The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`tests/checkout/checkout.spec.ts:9 › Checkout › should complete checkout with credit card`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
+The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`tests/checkout/checkout.spec.ts:9 › Checkout › should complete checkout with credit card`), marks such as `@fixme` or `@slow`, and whether it is [quarantined](/features/flaky-tests#quarantine-with-a-way-out). The lines below it are the rest of this page, in order.
 
 ## 1. The headline: what broke
 
@@ -65,7 +65,7 @@ The block closes on a **facts** line, one size smaller: the failing file and lin
 
 One **evidence card** with tabs holds everything captured, opening on the tab that best shows the failure
 ([which one](/features/evidence#one-execution-diagnosis-first)); a click on any citation switches tabs for you. The one
-to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
+to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the [last green run](/features/run-changes#one-execution-s-baseline), and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
 
 ::: tip Most of this needs one file
 The error, trace, headline and clustering work with the reporter alone, and an uploaded trace recovers the console, network and failure-time snapshot. Web Vitals, page state and locator healing come from the [capture fixtures](./capture-fixtures), one file in your test setup. A tab that needs them and never received any data is left out, and until you decide on the fixtures one footer line names what they would add.

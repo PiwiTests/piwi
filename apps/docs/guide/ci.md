@@ -149,7 +149,7 @@ the shards of a leg share them, and merge into one run. Two matrix jobs of one w
 `projectName` also need `github.job` in the label, since each numbers its jobs from 0.
 
 Jobs left sharing a label cancel each other's live runs: the reporter of a cancelled run stops streaming and sends its
-results in one batch at the end of its job, so each job still ends in one complete run, without its live view.
+results in one batch at the end of its job, so each job still ends in one complete run, without its live progress.
 
 ## Watching a run while CI is still going
 

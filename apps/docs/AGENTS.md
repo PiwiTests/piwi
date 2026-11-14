@@ -146,6 +146,8 @@ which the drift test also reads.
   such check: the detector ids are not kept in one list.
 - **A recipe** goes in `recipes/` and into `RECIPES_BY_GROUP` in `.vitepress/navigation.ts`, at the top of the catalog
   group it serves.
+- **A rule several features share has one owning page**, listed in the owner table of `docs-claims.test.ts`; every
+  other page states its effect in a sentence and links it.
 - **A page that moves** keeps its old URL working with a row in `public/404.html`; GitHub Pages has no server-side
   redirects.
 
@@ -181,7 +183,8 @@ flags, events): link the reference page instead of copying it.
 - One footer heading, `## Related`.
 - An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
   its native size on a click. The drift test refuses a Markdown image and a `doc-screenshot` wrapper.
-- A new term goes into `concepts.md` in the change that introduces it.
+- A new term goes into `concepts.md` in the change that introduces it: its definition only, in at most 80 words,
+  with the rule on the feature page it links.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet
   wired", "coming soon" or "unreleased".

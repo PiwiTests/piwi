@@ -47,7 +47,7 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   ([Locator usage](./locator-usage#the-locators-tab)).
 - **Network**: the requests, API calls through Playwright's `request` fixture included, with inline
   [backend logs](/guide/backend-logs); one with no response shows the browser's error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
-  **State**: the app state at test end and the [environment diff](./run-environment) against the last green run. **Performance**:
+  **State**: the app state at test end and the [environment diff](./run-environment) against the [last green run](./run-changes#one-execution-s-baseline). **Performance**:
   performance hints and Web Vitals. **Output**: what the test wrote to stdout and stderr
   ([Test output](/reference/test-metadata#test-output)).
 

@@ -10,7 +10,7 @@ lang: en-US
 
 When a locator breaks on your default branch and Piwi has high-confidence evidence for the replacement, it can open the
 fix pull request itself: a branch, a one-line locator edit per broken call site, and a body that shows the change, the
-score, where the replacement came from, and the command that verifies it. The CI gate runs on the PR like any other,
+score, where the replacement came from, and the command that verifies it. The [CI gate](./merge-gate) runs on the PR like any other,
 and [fix verification](./failure-clusters#did-the-fix-work) records the cluster as fixed once the tests pass.
 
 It is **off by default**, and even once on it acts only on projects you list. Writing to your repository is the

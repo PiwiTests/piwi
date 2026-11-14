@@ -88,7 +88,7 @@ row. The triage actions need the Maintainer role or above on the project.
 | `o` | Open the cluster |
 | `r` | Resolve |
 | `i` | Ignore |
-| `q` | Quarantine the cluster's tests |
+| `q` | [Quarantine](/features/flaky-tests#quarantine-with-a-way-out) the cluster's tests |
 | `a` | Assign |
 | `s` | Snooze |
 | `l` | Link a known issue |

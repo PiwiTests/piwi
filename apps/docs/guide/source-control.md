@@ -14,7 +14,7 @@ failure, or writes back to a pull request, goes through it.
 
 | Feature | What it does with the repository | Access |
 |---|---|---|
-| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the last green run, and the full source of the most suspect files | read |
+| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the [last green run](/features/run-changes#the-baseline), and the full source of the most suspect files | read |
 | The failure cluster's **What changed** panel | Lists commits, shows their diffs, and lets you pin a baseline commit | read |
 | [Uncovered changes](/features/uncovered-changes) | Diffs the run's commit against the pull request's base, or the last passing run, and flags changed files no test reached | read |
 | [Did the fix work?](/features/failure-clusters#did-the-fix-work) | Checks whether the commits after a fix touched the failing files | read |

@@ -14,12 +14,35 @@ The **Changes** tab on a run compares it against **one baseline** and tells you 
 
 Every section reads the **same baseline**, so the "new failures" count is computed once and used throughout. The selector at the top says which run it is, which branch and environment that run is on, and **why it was chosen**.
 
-By default the baseline is the last passing full run the [baseline rule](/guide/concepts#baseline-last-green-run) picks. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+By default the baseline is the **last passing full run**, chosen by environment first, then branch. The ladder is
+walked within the run's environment label first, then again without it. On each pass it takes the most recent passing
+run on the **same branch**, else on the **base branch** the run's branch forked from (the pull request's target branch
+when the reporter captured one, else the project's [default branch](./branches#the-default-branch)), else on **any
+branch**. So a `staging` run on `feature/x` compares with the last passing `staging` run on `feature/x`, then the last
+passing `staging` run on `main`, then any passing `staging` run, and only then with a run from another environment. A
+run whose branch is unknown has only the any-branch rung; a run with no environment label walks the branch ladder once.
+A lab run (a probe or a Flake Lab experiment) is never a baseline. The line under the selector spells out the rung that
+applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in
+staging."_
 
 <figure>
   <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment; with no passing run, the same rungs for the last failed run">
   <figcaption>The baseline rule: six rungs tried in order, the first with an earlier passing run giving the baseline.</figcaption>
 </figure>
+
+The same baseline is what the run insights, the stored [regression signals](./flaky-tests#regression-signals), the
+[CI merge gate](./merge-gate), [pull-request feedback](./pr-feedback), the bisect window and the git diff behind an
+[AI diagnosis](./ai-diagnosis#scm-grounded-context) compare against. The regression signals compare the last attempt
+of each test (of each repetition, with `--repeat-each`) with its outcome in the baseline in the same Playwright
+project, and are never set on an earlier attempt of a retried test.
+
+### One execution's baseline
+
+The environment, visual and page diffs of one failing execution compare it with the same test's last passing
+execution on the same browser, in a shorter order: the same environment, then the same branch, then the most recent,
+with no base-branch rung. When no passing run from the same environment exists, the card says which environment the
+baseline came from (_"compared with a production run; no passing development run of this test exists"_) and leaves
+the environment label out of the diff.
 
 ### When no earlier run passed
 
