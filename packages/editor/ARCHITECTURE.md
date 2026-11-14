@@ -556,6 +556,14 @@ keeps that command (`RefWatch.carried`), the run's counts, and:
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
 
+Both clients' status items show one line of the runs the editor follows, composed here (`runLine` in
+`src/run-line.ts`, `piwi/runLineChanged`, sent after a session's change is heard and when the window's share changes,
+only when it differs): where a test stands stopped (`held at its failure · checkout.page.ts:12`, `2 tests stopped`), or
+the call a pausing test waits in, then the share and its views, then how far the runs are (`run #78 · 3 of 9 · 1
+failed`, `countWords`), with the state the client draws a glyph for, the stops that wait for the person
+(`RunLine.calls`), which the item marks until they are answered, and when a pausing test began waiting
+(`RunLine.since`), which the clients count.
+
 A stop calls for the person's attention (`RunStop.calls`, `RunSessions.view`) when it is a test held at its failure
 or stopped at `page.pause()` in a run launched here: never a desktop app's job in its own checkout (its window calls),
 a stop an agent asked for or drives, or a failure held because an agent turned Hold failures on. Each client calls

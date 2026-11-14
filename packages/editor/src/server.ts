@@ -21,6 +21,7 @@
  *   stands (`coverage.ts`), as marks the editors draw, a line above each
  *   function that ran, and the tests behind a line on hover.
  */
+import { runLine } from './run-line.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -270,6 +271,8 @@ import {
   HOLD_RUN_REQUEST,
   STOP_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
+  RUN_LINE_NOTIFICATION,
+  type RunLineParams,
   SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   LOCATOR_AT_CARET_REQUEST,
@@ -2049,6 +2052,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const disk = diskFile(file);
       return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
     });
+  /** The run line the client holds (`piwi/runLineChanged`), as last sent. */
+  let lineSent = JSON.stringify(null);
+  /** Send the run line once it changed, after the change the session brings is heard. */
+  const lineChanged = () =>
+    queueMicrotask(() => {
+      const line = runLine(runSessions.current(), runSessions.sharingWindow);
+      const json = JSON.stringify(line);
+      if (json === lineSent) return;
+      lineSent = json;
+      void connection.sendNotification(RUN_LINE_NOTIFICATION, { line } satisfies RunLineParams);
+    });
   /** The runs the service built, as their workers tell them on the run channel. */
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
@@ -2062,6 +2076,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
+      lineChanged();
     },
     presenceChanged: (session) => runHub?.push(session),
     // The client, or a Piwi Picker subscribed to the hub.
@@ -2079,6 +2094,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     shareWindowChanged: (on) => {
       void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
       runHub?.shareWindowChanged(on);
+      lineChanged();
     },
     notice: (root, severity, message, key) => sendNotice({ root, severity, message, key }),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).

@@ -1087,6 +1087,21 @@ data class RunLive(
  */
 data class ShareRunParams(val ref: String?, val on: Boolean, val scope: String? = null)
 
+/**
+ * `piwi/runLineChanged`: the line the status bar item shows of the runs the IDE follows, null once none is left: its
+ * words (`Piwi: held at its failure · checkout.page.ts:12 · run #78 · 3 of 9 · 1 failed`), the state its icon shows
+ * (`held`, `stopped`, `pausing`, `live`, `running`, `passed`, `failed`, `interrupted`), how many stops wait for the
+ * person (`calls`), and, while a pausing test waits in a call, when it began (`since`).
+ */
+data class RunLineParams(val line: RunLine? = null)
+
+data class RunLine(
+    val text: String = "",
+    val state: String = "running",
+    val calls: Int = 0,
+    val since: String? = null,
+)
+
 /** `piwi/shareWindowChanged`: whether this project's runs are shared live. */
 data class ShareWindowParams(val on: Boolean = false)
 

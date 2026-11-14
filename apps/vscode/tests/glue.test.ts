@@ -10,7 +10,6 @@ import type {
   FileEdit,
   LiveRun,
   RunEnded,
-  RunSession,
   RunStatusResult,
   SpecTest,
   StatusResult,
@@ -27,8 +26,8 @@ import {
   isFlakyGroup,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
-  heldStops,
-  heldText,
+  RUN_LINE_GLYPHS,
+  runLineText,
   NOT_CONNECTED,
   notConnectedNotice,
   DOCUMENT_PATTERN,
@@ -158,6 +157,10 @@ describe('statusMenu', () => {
       stoppable: false,
       page: false,
       watchable: false,
+      endable: false,
+      shared: false,
+      shareable: false,
+      code: false,
     },
     failing: false,
     flakyRoot: null,
@@ -207,15 +210,25 @@ describe('statusMenu', () => {
       stoppable: true,
       page: true,
       watchable: true,
+      endable: true,
+      shared: false,
+      shareable: true,
+      code: true,
     };
+    // Go to the stopped line first: the state's action, which Enter takes.
     expect(commands(statusMenu({ ...idle, run, failing: true, flakyRoot: '/ws/app' }))).toEqual([
+      'piwi.showStop',
       'piwi.refreshRun',
       '— Run control',
       'piwi.resumeRun',
       'piwi.stepRun',
+      'piwi.finishRun',
+      'piwi.endTest',
       'piwi.showPausedPage',
+      'piwi.codeAtStop',
       'piwi.watchWorker',
       'piwi.openRunPage',
+      'piwi.shareRunLive',
       'piwi.stopRun',
       '— Dashboard',
       'piwi.rerunFailing',
@@ -231,7 +244,13 @@ describe('statusMenu', () => {
     const held = commands(statusMenu({ ...idle, run: { ...run, failed: true, stoppable: false } }));
     expect(held).toContain('piwi.resumeRun');
     expect(held).not.toContain('piwi.stepRun');
+    expect(held).not.toContain('piwi.finishRun');
     expect(held).not.toContain('piwi.stopRun');
+    // A shared run opens its Live menu in place of Share live, and the window's share has it with no run live.
+    const shared = commands(statusMenu({ ...idle, run: { ...run, shared: true } }));
+    expect(shared).toContain('piwi.liveMenu');
+    expect(shared).not.toContain('piwi.shareRunLive');
+    expect(commands(statusMenu({ ...idle, run: { ...idle.run, shared: true } }))).toContain('piwi.liveMenu');
   });
 
   test('opens the flaky tests of the item’s config, and the latest run only while its page is known', () => {
@@ -2541,47 +2560,29 @@ describe('how every run of the window starts', () => {
   });
 });
 
-describe('the status item while a run holds a stop', () => {
-  const stopped = (reason: 'breakpoint' | 'failure'): RunSession => ({
-    ref: 'ed-1',
-    root: '/w',
-    ended: false,
-    workers: [
-      {
-        worker: 0,
-        parallelIndex: 0,
-        state: 'stopped',
-        test: null,
-        takes: [],
-        watchable: false,
-        layers: false,
-        showsWindow: false,
-        pausing: false,
-        waiting: null,
-        stop: {
-          reason,
-          title: 'Click',
-          uri: 'file:///w/a.spec.ts',
-          line: 3,
-          character: 2,
-          locator: null,
-          bar: true,
-          since: '2026-10-25T10:00:00.000Z',
-        },
-      },
-    ],
+describe('the status item while runs are followed', () => {
+  test('shows the service’s line after its state’s glyph, and how long a pausing test has waited in its call', () => {
+    expect(runLineText({ text: 'Piwi: held at its failure · a.spec.ts:4', state: 'held', calls: 1 }, 0)).toBe(
+      '$(error) Piwi: held at its failure · a.spec.ts:4',
+    );
+    expect(runLineText({ text: 'Piwi: run #124 · 4 of 9 · 1 failed', state: 'running', calls: 0 }, 0)).toBe(
+      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+    );
+    const pausing = {
+      text: 'Piwi: pausing… · waits in waitForResponse',
+      state: 'pausing' as const,
+      calls: 0,
+      since: '2026-10-25T10:00:00.000Z',
+    };
+    expect(runLineText(pausing, Date.parse('2026-10-25T10:00:12.900Z'))).toBe(
+      '$(debug-pause) Piwi: pausing… · waits in waitForResponse · 12 s',
+    );
   });
 
-  test('stops spinning: the pause icon at a stop, the error icon while every stop held is a failure', () => {
-    const live = '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours';
-    expect(heldStops([])).toBeNull();
-    expect(heldStops([stopped('breakpoint')])).toBe('stop');
-    expect(heldStops([stopped('failure')])).toBe('failure');
-    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
-    expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4 of 9 · 1 failed · yours');
-    expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4 of 9 · 1 failed · yours');
-    expect(heldText(live, null)).toBe(live);
-    expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
+  test('draws a failure with the error glyph and a stop or a Pause on its way with the pause glyph', () => {
+    expect(RUN_LINE_GLYPHS.held).toBe(RUN_LINE_GLYPHS.failed);
+    expect(RUN_LINE_GLYPHS.pausing).toBe(RUN_LINE_GLYPHS.stopped);
+    expect(new Set(Object.values(RUN_LINE_GLYPHS)).size).toBe(6);
   });
 });
 

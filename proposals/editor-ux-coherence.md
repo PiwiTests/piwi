@@ -70,7 +70,7 @@ run notifications setting leaves out (`piwi.runNotificationsScope` and its JetBr
 and IDE runner's runs wait on the study's P7), and a test held at its failure or at `page.pause()` while the editor is
 in the background calls once, VS Code with a notification offering Resume and Go to the stopped line, JetBrains with
 `AppIcon.requestAttention`, raising the IDE from another application while 'Focus application on breakpoint' is on,
-as the service marks the stop (`RunStop.calls`) (HM17 in part: the status item's badge goes with M13's line). M4 in
+as the service marks the stop (`RunStop.calls`), the status item marked until it is answered (HM17). M4 in
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye
@@ -95,11 +95,15 @@ Playwright projects (HM1); both editors' status items turn red only for a test t
 baseline does not fail (`RunStatus.alarm`, decided by the service), as `piwi.statusBarAlert` and its JetBrains twin
 choose (`new`, `any`, `never`), never for a run in progress (HM2). VS Code's count item is folded into the Piwi item,
 which counts the window's runs from their processes as JetBrains' single item does, with Watch a worker's test in the
-status menu (LR1 in part: the stop and share items remain), and both word a run's count alike, `run #78 · 3 of 9 · 1
+status menu, and both word a run's count alike, `run #78 · 3 of 9 · 1
 failed · 1 flaky` (`countWords`, `Glue.countWords`, client copies under the same tests), the pass or error glyph once
 it ended (LR18). A run's status reads in the dashboard's words from the service (`RunStatus.run.statusText`), and a
-recording as `recording` or `recording paused`, with the recording glyph in JetBrains too (HM4 in part: the service's
-one line, LR2, remains). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+recording as `recording` or `recording paused`, with the recording glyph in JetBrains too (HM4). The service composes
+the runs' one line for both status items (`piwi/runLineChanged`: the stop, or the call a pausing test waits in and for
+how long, the share, the count), its state's glyph, and marks the item while a stop waits for the person (VS Code's
+warning background, a dot on JetBrains' icon) until it is answered (LR2, HM17); VS Code's stop and share items fold
+into the Piwi item, whose menu leads with Go to the stopped line (`piwi.showStop`) and holds the controls, End the
+test and the share (LR1). The waiting line marked in the code with End test remains (LR18 in part). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which

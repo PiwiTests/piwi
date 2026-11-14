@@ -2166,6 +2166,34 @@ export interface ShareRunParams {
 
 export const SHARE_RUN_REQUEST = 'piwi/shareRun';
 
+/**
+ * `piwi/runLineChanged` (notification, server to client): the line both clients' status items show of the runs the
+ * editor follows (`runLine` in `src/run-line.ts`), null once none is left: where a test stands stopped, or the call a
+ * pausing test waits in, the share and how far the runs are, `Piwi: held at its failure · checkout.page.ts:12 · run
+ * #78 · 3 of 9 · 1 failed`. `state` chooses the item's glyph (a held failure's and failed runs' alike, a stop's and a Pause's alike); `calls` counts the stops that wait for the
+ * person (`RunStop.calls`), which the item marks until they are answered; `since`, while a pausing test waits in a
+ * call, is when it began, which the clients count after the call (`waits in waitForResponse · 12 s`). Sent only when
+ * it changed.
+ */
+export interface RunLineParams {
+  line: RunLine | null;
+}
+
+export interface RunLine {
+  text: string;
+  state: RunLineState;
+  calls: number;
+  since?: string;
+}
+
+/**
+ * The glyph a run line takes: a stop (`held`, every stop a held failure), a Pause on its way, a share, then how the
+ * runs go or ended (`interrupted`: stopped short, or not every one passed).
+ */
+export type RunLineState = 'held' | 'stopped' | 'pausing' | 'live' | 'running' | 'passed' | 'failed' | 'interrupted';
+
+export const RUN_LINE_NOTIFICATION = 'piwi/runLineChanged';
+
 /** `piwi/shareWindowChanged` (notification, server to client): whether this window's runs are shared live. */
 export interface ShareWindowParams {
   on: boolean;

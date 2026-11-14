@@ -339,13 +339,15 @@ platform's text presentations take no color. It shows:
 - an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
   instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared, the recording
   glyph (`PiwiIcons.recording`, red, or the gray ring while paused) while a recording runs, `AnimatedIcon.Default` for
-  a recording opening the browser or stopping, a run in progress or a read, and the failed or passed icon once the
-  runs the item counts from their processes ended (`Glue.runProgressIcon`);
+  a recording opening the browser or stopping, a run in progress or a read, and for the runs' line one icon per state
+  (`lineIcon`: the failed icon at a held failure and once the runs failed, the pause's at a stop or a Pause on its way,
+  the passed icon), marked with a dot (`ExecutionUtil.getIndicator`) while a stop waits for the person
+  (`RunLine.calls`);
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the service's alarm
   (`RunStatus.alarm`, `StatusView.error`), as `PiwiLocalSettings.statusBarAlert` chooses it on Settings → Tools →
   Piwi, sent in the credentials: `new`, the default, only for a test a run this project started failed that the
-  baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a recording, a stop, a share or
-  a run in progress; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
+  baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a
+  recording or the runs' line; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config
 folder holding it, else the first connected one; `PiwiStatusBarWidget.shownFile`), and is drawn again on
@@ -367,11 +369,11 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's controls
-  ([Run control](#run-control)). The item reads `Piwi: stopped at a breakpoint · checkout.page.ts:12` (`Glue.stopWhy`)
-  while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
-  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
-  the desktop app as the instance too, an agent's run ending with its label (`RunSession.label`), as its Run tab
-  does (`Glue.labeledRunName`). Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 ·
+  ([Run control](#run-control)). The item reads the service's line of the runs (`piwi/runLineChanged`,
+  `PiwiRunSessions.line`, `Glue.runLineText`): `Piwi: stopped at a breakpoint · checkout.page.ts:12 · run #78 · 3 of 9
+  · 1 failed`, the call a pausing test waits in and how long it has (drawn each second, an `Alarm`), the share, and the
+  progress the runs' own processes tell the service (`RunSession.progress`), with no instance and with the desktop app
+  as the instance too, an agent's run ending with its label (`RunSession.label`), the line VS Code's item shows. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 ·
   cart › adds a mug · stopped`);
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
@@ -575,9 +577,8 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
 `Piwi.StopRun`.
 
 - They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists; the
-  item reads `Piwi: stopped at a breakpoint · checkout.page.ts:12` while one is stopped, its reason's words
-  (`Glue.runControlStatus`), with the pause's icon, or the error's while every stop held is a failure
-  (`Glue.heldFailuresOnly`).
+  item reads the service's line, `Piwi: stopped at a breakpoint · checkout.page.ts:12` while one is stopped, with the
+  pause's icon, or the error's while every stop held is a failure (`RunLine.state`).
 - They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
   stop of that slot opens, they act on a stop of the answered slot or on none, whatever the caret or another worker's
   new stop say, so a key pressed again answers no other worker. Otherwise they act on the stop at the caret's line, else
@@ -1093,8 +1094,8 @@ fits, else the one chosen (`Glue.liveTarget`). The first share in the project si
 to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`), a run its workers have not said anything of yet
 included; a run known not to be shareable is asked without it, and the service says why. Shared, the notification
 offers **Copy the run page's link** and **Stop sharing…**, as does **Stop sharing the run live**
-(`StopSharingRunAction`, while one is shared). The status bar item counts the views open of every shared run
-(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`), and its menu holds
+(`StopSharingRunAction`, while one is shared). The status bar item's line counts the views open of every shared run
+(`RunLine`), its tooltip where (`Glue.sharedLiveText`), and its menu holds
 the share's entries (`Glue.liveMenu`: **Open the run page**, **Copy the run page's link**, **Stop sharing the run…**
 for each shared run, named when several are, and **Stop sharing this project's runs…** while they are shared), first
 while the item shows the share, else after the run's controls. Every way to stop a share, the run's or the project's,

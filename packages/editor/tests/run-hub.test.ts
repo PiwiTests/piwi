@@ -1162,6 +1162,44 @@ describe('a failure held at its line', () => {
   });
 });
 
+describe('the run line both status items show', () => {
+  test('names a held failure that calls, sends each change once, and none once the run is gone', async () => {
+    // A service of its own: no other test's run is left in its line.
+    const own = await service(dir, false);
+    const { ref, channel } = await own.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    const from = own.lines.length;
+    try {
+      worker.begin();
+      worker.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'failure',
+        title: 'Failed: Error: expect(locator).toBeVisible() failed',
+        place: { file: 'tests/cart.spec.ts', line: 3, column: 3 },
+        locator: null,
+        bar: true,
+      });
+      const held = await waitFor(() => own.lines.slice(from).find((l) => l?.state === 'held'));
+      expect(held).toEqual({ text: 'Piwi: held at its failure · cart.spec.ts:3', state: 'held', calls: 1 });
+      worker.send({ type: 'running', stop: 1 });
+      await waitFor(() =>
+        own.lines.length > from && own.lines[own.lines.length - 1]?.state !== 'held' ? true : undefined,
+      );
+    } finally {
+      worker.socket.destroy();
+    }
+    try {
+      await waitFor(() => (own.lines[own.lines.length - 1] === null ? true : undefined), 10_000);
+      // Each line sent differs from the one before it.
+      const sent = own.lines.slice(from).map((l) => JSON.stringify(l));
+      expect(sent.every((l, i) => i === 0 || l !== sent[i - 1])).toBe(true);
+    } finally {
+      own.stop();
+    }
+  }, 30_000);
+});
+
 /**
  * A hub message as Piwi Picker reads it, `unreadable` when it reads less than the hub sent: the message, or one of a
  * session's workers or its `live`, which the reader leaves out, or a worker state it reads as `other`.
