@@ -53,8 +53,10 @@ editor service and starts it again through Restart the editor service (HM19 in p
 one table in the editor service (`connect-failures.json`), which VS Code reads and `GlueTest` holds the JetBrains
 plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said
 (NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20: VS
-Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
-`SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). Q2: a fixture check
+Code's Testing view tags each test with its quarantine, Playwright tags and owner, from the catalog through `SpecTest`,
+and publishes each result with its own duration, a failure's or its latest run's (TL20); its items carry no
+description, which the view would read out in place of the test's title (#1367). VS Code's failing, recording and
+stopped lines mark the scrollbar in opaque colors of their own, as JetBrains' error stripes do (#1387). Q2: a fixture check
 in each editor fails when a flaky test loses its flaky mark, VS Code's nightly suite reading its Testing item and its
 line's mark, `PiwiPluginTest` the bundled service's answer for its line and the result icon that answer draws (TL13).
 Q13 in part: VS Code's run verdict ends with **Settings**, which opens `piwi.runNotifications`; a service notice that

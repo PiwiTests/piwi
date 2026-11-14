@@ -265,7 +265,7 @@ export function registerRunControl(
   const executionPoint = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.executionPointBackground'),
-    overviewRulerColor: new vscode.ThemeColor('piwi.executionPointBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.executionPointOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Full,
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'execution-point.svg'),
     gutterIconSize: 'contain',
@@ -283,7 +283,7 @@ export function registerRunControl(
   const failurePoint = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failurePointBackground'),
-    overviewRulerColor: new vscode.ThemeColor('piwi.failurePointBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failurePointOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Full,
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'failure-point.svg'),
     gutterIconSize: 'contain',

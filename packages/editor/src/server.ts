@@ -3547,7 +3547,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           tags: playwrightTags(found?.tags),
           owner: found?.owner?.trim() || null,
           quarantined: found ? context.quarantined.has(found.id) : false,
-          durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
           resultDurationMs: duration,
         }),
       );

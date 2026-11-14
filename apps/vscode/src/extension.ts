@@ -516,7 +516,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const failingBackground = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failingTestBackground'),
-    overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingTestOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone,
@@ -532,7 +532,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const failingLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
-    overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingLineOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());

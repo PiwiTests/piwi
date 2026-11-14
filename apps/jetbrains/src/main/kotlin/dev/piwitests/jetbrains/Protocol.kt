@@ -97,7 +97,6 @@ data class SpecTest(
     val tags: List<String>? = null,
     val owner: String? = null,
     val quarantined: Boolean = false,
-    val durationMs: Long? = null,
     /** The duration of the result `status` stands for, in ms (`SpecTest.resultDurationMs`). */
     val resultDurationMs: Long? = null,
 )

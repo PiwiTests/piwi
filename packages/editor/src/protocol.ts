@@ -202,11 +202,6 @@ export interface SpecTest {
   /** Whether the project quarantines it. */
   quarantined: boolean;
   /**
-   * Its average duration over the runs the instance keeps, in ms; null for a test Piwi does not know or never saw
-   * end.
-   */
-  durationMs: number | null;
-  /**
    * The duration of the result `status` stands for, in ms: a failure's own, else the longest final attempt of the
    * catalog's latest run; null for a test the run in progress runs, one a later run fixed, one Piwi does not know, and
    * from an instance that does not say it.

@@ -1734,11 +1734,10 @@ describe('the test tree', () => {
                   status: 'passed',
                   failure: null,
                   url: `${url}/test-cases/1`,
-                  // The catalog's tags, owner, average and latest durations, and the project's quarantine.
+                  // The catalog's tags, owner and latest duration, and the project's quarantine.
                   tags: ['@smoke', '@checkout'],
                   owner: 'ada',
                   quarantined: true,
-                  durationMs: 1234,
                   resultDurationMs: 988,
                 },
               ],
@@ -1804,7 +1803,6 @@ describe('the test tree', () => {
             tags: [],
             owner: null,
             quarantined: false,
-            durationMs: null,
             resultDurationMs: null,
           },
         ],

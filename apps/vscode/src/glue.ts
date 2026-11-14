@@ -48,7 +48,7 @@ import type {
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
-import { countWords, laneDuration } from './run-control';
+import { countWords } from './run-control';
 
 /** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
@@ -1874,26 +1874,19 @@ export const FLAKY_TAG = 'flaky';
 export const QUARANTINED_TAG = 'quarantined';
 
 /**
- * What the Testing view adds to a test's item, which its gutter and its results do not say, beside the title
- * (`flaky · quarantined · ~1.2 s`) and as tags its filter finds (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`):
- * flaky, for a test the view shows as passed (`testOutcome`), quarantined, its average duration, its Playwright tags,
- * which start with `@` as no tag of Piwi's does, and its owner.
+ * The tags the Testing view's filter finds a test by (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`): flaky, for a
+ * test the view shows as passed (`testOutcome`), quarantined, its Playwright tags, which start with `@` as no tag of
+ * Piwi's does, and its owner. The item has no description: the view names an item by its description when it has one,
+ * so a screen reader would hear it in place of the test's title.
  */
-export function testItemExtras(test: TreeTest | null): { description: string | undefined; tags: string[] } {
-  if (!test) return { description: undefined, tags: [] };
-  const flaky = test.status === 'flaky';
-  const words = [
-    flaky ? 'flaky' : null,
-    test.quarantined ? 'quarantined' : null,
-    test.durationMs !== null ? `~${laneDuration(test.durationMs)}` : null,
-  ].filter((word): word is string => !!word);
-  const tags = [
-    ...(flaky ? [FLAKY_TAG] : []),
+export function testItemTags(test: TreeTest | null): string[] {
+  if (!test) return [];
+  return [
+    ...(test.status === 'flaky' ? [FLAKY_TAG] : []),
     ...(test.quarantined ? [QUARANTINED_TAG] : []),
     ...test.tags.filter((tag) => tag.startsWith('@')),
     ...(test.owner ? [`owner:${test.owner.replace(/\s+/g, '-')}`] : []),
   ];
-  return { description: words.length ? words.join(' · ') : undefined, tags };
 }
 
 /**

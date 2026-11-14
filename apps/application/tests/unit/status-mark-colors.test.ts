@@ -164,6 +164,26 @@ describe('the outcome marks', () => {
     for (const [id, defaults] of Object.entries(tinted)) {
       expect(colors.find((c) => c.id === id)?.defaults, id).toEqual(defaults);
     }
+    // VS Code's scrollbar marks, as the JetBrains schemes' error stripes: the failing test's fill at half, the failing
+    // line, the held failure and the recording at full.
+    const everywhere = (color: string) => ({
+      dark: color,
+      light: color,
+      highContrast: color,
+      highContrastLight: color,
+    });
+    const ruler: Record<string, Record<string, string>> = {
+      'piwi.failingTestOverviewRuler': everywhere(`${STATUS_COLORS.failed.fill}80`),
+      'piwi.failingLineOverviewRuler': everywhere(STATUS_COLORS.failed.fill),
+      'piwi.failurePointOverviewRuler': everywhere(STATUS_COLORS.failed.fill),
+      'piwi.recordingBlockOverviewRuler': everywhere(STATUS_COLORS.running.fill),
+    };
+    for (const [id, defaults] of Object.entries(ruler)) {
+      expect(colors.find((c) => c.id === id)?.defaults, id).toEqual(defaults);
+    }
+    // Each scrollbar mark is its own color, never a line's faint tint.
+    const source = ['extension.ts', 'recording.ts', 'run-view.ts'].map((f) => read(`apps/vscode/src/${f}`)).join('');
+    expect(source).not.toMatch(/overviewRulerColor: new vscode\.ThemeColor\('piwi\.\w+Background'\)/);
     // A held failure's arrow in VS Code's gutter: the failed fill, outlined in its print color.
     expect(disc(read('apps/vscode/media/failure-point.svg'))).toBe(STATUS_COLORS.failed.fill);
     expect(read('apps/vscode/media/failure-point.svg')).toContain(`stroke="${STATUS_COLORS.failed.print}"`);

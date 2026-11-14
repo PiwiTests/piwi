@@ -87,7 +87,7 @@ import {
   liveRunName,
   resultsKey,
   resultsRunName,
-  testItemExtras,
+  testItemTags,
   failuresViewDescription,
   testOutcome,
   testRunsOf,
@@ -2163,7 +2163,6 @@ describe('the Testing view', () => {
     tags: [],
     owner: null,
     quarantined: false,
-    durationMs: null,
     resultDurationMs: null,
     ...over,
   });
@@ -2267,22 +2266,18 @@ describe('the Testing view', () => {
       tags: [],
       owner: null,
       quarantined: false,
-      durationMs: null,
       resultDurationMs: null,
       root: '/w',
       uri: 'file:///w/checkout.spec.ts',
     });
-    expect(testItemExtras(test('flaky'))).toEqual({ description: 'flaky', tags: ['flaky'] });
+    expect(testItemTags(test('flaky'))).toEqual(['flaky']);
     for (const status of ['passed', 'failed', 'skipped', 'running', 'unknown', null] as const) {
-      expect(testItemExtras(test(status)), String(status)).toEqual({ description: undefined, tags: [] });
+      expect(testItemTags(test(status)), String(status)).toEqual([]);
     }
-    expect(testItemExtras(null)).toEqual({ description: undefined, tags: [] });
-    // Its quarantine, duration, Playwright tags and owner, as the catalog gives them.
-    const known = { ...test('flaky'), tags: ['@smoke'], owner: 'Ada L', quarantined: true, durationMs: 1234 };
-    expect(testItemExtras(known)).toEqual({
-      description: 'flaky · quarantined · ~1.2 s',
-      tags: ['flaky', 'quarantined', '@smoke', 'owner:Ada-L'],
-    });
+    expect(testItemTags(null)).toEqual([]);
+    // Its quarantine, Playwright tags and owner, as the catalog gives them.
+    const known = { ...test('flaky'), tags: ['@smoke'], owner: 'Ada L', quarantined: true };
+    expect(testItemTags(known)).toEqual(['flaky', 'quarantined', '@smoke', 'owner:Ada-L']);
   });
 
   test('shows a flaky test as passed, a failure with why and where, and nothing without a result', () => {

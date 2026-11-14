@@ -80,7 +80,8 @@ files (`summaryOf`), and draws it in two places:
   (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
   `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
   failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
-  service's summary says so.
+  service's summary says so. Each tint has a scrollbar mark of its own, opaque as the JetBrains schemes' error stripes
+  (`piwi.*OverviewRuler`), and so do a recording's block, the execution point and a held failure.
 - Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
@@ -899,10 +900,10 @@ The run is the one a profile run's command started, by its ref, or the editor's 
 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
-has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
-carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
-(`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
-its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. A result is published with its own
+has no flaky result (`testOutcome` shows one as passed), so a flaky test's item carries the `flaky` tag
+(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with *flaky* (`flakyMark`). Every known test's
+item also carries its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. An item has no
+description: the view names an item by its description when it has one, in place of its title. A result is published with its own
 duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none
 for a run in progress. With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed
 ring. The API `activate` returns gives what the view shows (`testExplorer`).
