@@ -46,7 +46,7 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
   `PW_TEST_REPORTER`, as a JetBrains IDE's Playwright runner does), is attended: it stops at the breakpoints.
 - **A run whose output goes to a file or a pipe**, as an agent's, follows unattended: it is listed and **Pause** stops
   it, but no breakpoint does and no failure waits. `PIWI_EDITOR=on` attends it. It says so as it starts
-  ([the terminal's lines](./watch-a-run#the-terminal-s-lines)).
+  ([the terminal's lines](#the-terminal-s-lines)).
 - **Never** under CI, with Playwright's own debugger (`--debug`, `PWDEBUG=1`) or UI mode, when the run names its own
   `PIWI_RUN_CHANNEL`, or when the desktop app or another launcher started it.
 - **`PIWI_EDITOR=off`** runs it alone.
@@ -63,28 +63,33 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
 - **Its stops on the desktop app's page of the run**, for a run that reports to [the app](./desktop): which tests wait
   for the editor (**In Visual Studio Code**), each place opening in the IDE.
 - **Failures.** A failure goes on, as without Piwi, until you turn the run's
-  [**Hold failures**](/guide/concepts#hold-failures) on, in the editor or the Runs window: nobody may be there to answer
-  it otherwise.
+  [**Hold failures**](./watch-a-run#hold-failures) on, in the editor or the Runs window.
 
 When the editor closes, or its service stops, the connection closes, and a stop with no pause bar goes on. The token
 of the editor's connection reaches the run's workers alone, out of the tests' environment while they run, as for a run
 the editor starts.
 
+## The terminal's lines
+
+A run prints one line for its page, `[Piwi Dashboard] View live progress: …`, and one when it follows an editor or the
+desktop app. A run whose output goes to a file or a pipe follows it unattended and says so:
+
+```text
+[Piwi Dashboard] Following this run in Visual Studio Code (pid 41230), unattended: its output goes to no terminal, so no failure waits and only a Pause stops it. PIWI_EDITOR=on attends it, PIWI_EDITOR=off runs it alone.
+```
+
+The other lines of a run's start (its project and Playwright version, its shard, the stream opening on time) are
+printed with `PIWI_VERBOSE=true` alone. A stream that opens late, a failure link and a warning are always printed.
+
+In a terminal outside CI, the run's page is a link. Windows Terminal and ConEmu show how far the run is in the tab and
+the taskbar, and Ghostty 1.2 or later atop the terminal, red once a test failed. `PIWI_TERMINAL_PROGRESS=off` turns
+both off, and `PIWI_TERMINAL_PROGRESS=on` sends the progress to any terminal: one that reads it as a notification
+shows one at each step.
+
 ## A reproduction from the desktop app
 
-A job [the desktop app](./desktop) runs in a throwaway worktree of a commit (**Reproduce here**, a bisect step, a
-[Flake Lab](./flake-lab) run) follows the editor window whose workspace holds the project's linked folder, by the same
-rules, else the app as before. It follows only an editor extension that knows these reproductions (an older one
-leaves it to the app), and a bisect step or a Flake Lab run, which nobody attends, only one that knows such runs too.
-
-- **Its stops show in the editor** at the failing line of the worktree's file, outside the workspace, marked
-  **the desktop app's reproduction at commit abc1234, in a throwaway checkout**. A reproduction holds its failures from
-  its start, as in the app.
-- **Its code is to copy.** Assert, Assert a region and Mock a request offer the code with **Copy the code** and write
-  nothing: "This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file."
-  Record here is refused there, and a pick goes to the app's window, to copy.
-- **The app keeps it.** Its Local runs tray says where its tests wait (**In Visual Studio Code**), read only, stops it,
-  and shows its verdict when it ends; the editor offers no Stop.
+A job the desktop app runs in a throwaway worktree of a commit follows your editor window as a terminal run does,
+by the rules above: [A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor).
 
 ## Limits
 

@@ -6,6 +6,8 @@ lang: en-US
 
 # Editor extensions
 
+<Needs editor />
+
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
 (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
 are editing. Both run the same editor service; the [JetBrains plugin](./jetbrains) page lists what the plugin needs
@@ -127,7 +129,7 @@ A JetBrains IDE says caret, under **Tools → Piwi**, and has no **Get started**
 | Piwi: Restart the editor service, Open the log | Start the editor service again; show its log of starts, stops, errors and failed requests, where VS Code's `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
-Three commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
+These commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
 these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
 tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; `Cmd` for `Ctrl` on macOS.
 **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
@@ -140,7 +142,7 @@ the lines above the code with Code Vision, and its actions under **Tools → Piw
 
 ## Related
 
-- [Failures in the editor](./editor-failures): the CI failures at their lines, the quick fixes and the failures view.
-- [Runs from the editor](./editor-runs): run tests, and follow the run in [the status bar](./editor-status-bar).
-- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them in a browser.
-- [Editor connection](./editor-connection): the instance the editor reads, and its key.
+- [Failures in the editor](./editor-failures): the CI failures, their quick fixes and the failures view.
+- [Runs from the editor](./editor-runs): run tests, and follow them in [the status bar](./editor-status-bar).
+- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them.
+- [Write, run and fix a test](./write-run-fix): the loop across tools.

@@ -11,19 +11,19 @@ lang: en-US
 [Piwi Picker](./extension) works on its own. Connected to your Piwi instance, it also matches a recording against
 your project's [test functions](./test-functions) and shows [Tested elements](./tested-elements). Connecting takes
 one click, and the URL patterns that say which project a page belongs to live on the instance, so a team sets them
-once.
+once. Pairing with the desktop app, and what each connection sends, are here too.
 
 ## Connect in one step
 
-1. Open Piwi Picker's settings (the gear button in its popup) and type your instance's address.
+1. In Piwi Picker's settings (the gear button in its popup), type your instance's address.
 2. Click **Connect**. The browser asks to let Piwi Picker reach that one address; allow it.
 3. A tab opens on your instance. Sign in if asked, with a password or your usual sign-in provider: you come back to
    the same page. It names the connecting browser ("Piwi Picker in Chrome on Windows") and shows a code.
 4. Check that the settings page shows the same code, tick **My Piwi Picker shows this same code**, then click
    **Allow**. The link carries the code, so anyone could send you one: if you did not just click **Connect**, deny.
 
-The tab closes, the settings say **Connected as** your name, and the instance's URL patterns appear under **From
-your Piwi instance**.
+The tab closes, the settings say **Connected as** your name, and the instance's URL patterns show under **From your
+Piwi instance**.
 
 Allowing creates an API key for your account, named after the browser, with your instance role and project roles. It is
 listed under **Settings → Account → [Connected apps](/features/run-on-my-machine#connected-apps)**, where you revoke
@@ -34,10 +34,10 @@ own a key, and none is needed.
 
 ### Is the connection working?
 
-Piwi Picker keeps how its last request to your instance went. The popup says it under **Active project**
-("Connected to piwi.example.com, checked 5 minutes ago"), or since when nothing answers, the key is refused or the
-instance answers with errors, with a link to the settings, which show the same beside the address. A revoked key
-thus shows in the popup at the next request, before a tool fails: click **Connect** again.
+The popup says how the last request to your instance went, under **Active project** ("Connected to
+piwi.example.com, checked 5 minutes ago"), or since when nothing answers, the key is refused or the instance answers
+with errors, with a link to the settings, which show the same beside the address. A revoked key thus shows at the
+next request, before a tool fails: click **Connect** again.
 
 ### Use an API key instead
 
@@ -46,18 +46,23 @@ click **Save and test**. An instance older than the one-step connection needs th
 
 ### The desktop app as your instance
 
-The [desktop app](./desktop) runs a Piwi instance on your computer that answers only requests carrying its access
-token. Once the app is [paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) and no instance is
-connected, **Use the desktop app as your instance** fills in the app's address and token as the API key, checks them
-and connects. If the app refuses the token (installed again since the pairing), paste the one from its **Connect
-Piwi Picker**, or pair again.
+Once the [desktop app](./desktop) is [paired](#pair-with-the-desktop-app) and no instance is connected, **Use the
+desktop app as your instance** fills in the app's address and token as the API key, checks them and connects: the
+app's instance answers only requests carrying that token. If the app, installed again, refuses it, paste the one from
+its **Pair with Piwi Picker** card, or pair again. Typed by hand, the address must use
+`127.0.0.1`, since `localhost` may reach another program.
 
-The token goes out only after the program at that address proves it holds it, before every request, as for **Run
-with Playwright**: another program on the app's port receives nothing, after **Unpair** too. Typed under **Use an API
-key instead**, the address must use `127.0.0.1`, since `localhost` may reach another program.
+## Pair with the desktop app
 
-While an instance is connected and no app is paired, the settings point to the pairing. The shared address stays
-granted: **Disconnect** leaves it to the app, and **Unpair** to the instance or the editor.
+Pairing lets Piwi Picker [run a report with Playwright](./replay-a-bug-report#running-it-with-playwright) in the app,
+follow its runs in the [Runs window](./runs-window) and use it as its instance. Under **Desktop app** in the settings,
+click **Pair**, then **Allow** in the app's window, which shows the same code. **Pair by hand** takes the address and
+token shown in the app's **Settings → Desktop app**, under **Pair with Piwi Picker** (`http://127.0.0.1:3000` by
+default). While an instance is connected and no app is paired, the settings point here.
+
+The token goes out only after the program at that address proves it holds it, before every request: another program
+on the app's port receives nothing, after **Unpair** too. **Disconnect** leaves the shared address granted to the app,
+and **Unpair** to the instance or the editor.
 
 ## URL patterns
 
@@ -79,19 +84,18 @@ Each project keeps its own list in the **Browser extension** section of its **Se
   path; the site's root becomes `/app`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
   tests), and a page outside the path prefix is left as it is.
 
-The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, and for a run that
-recorded none, the full addresses its tests opened with `page.goto` and the pages it loaded (its `document` network
-requests), then the pages of the [Test Map](./scenario-gaps) and the absolute pages its locators ran on. A run merged
-from blob reports (`npx playwright merge-reports`, or a blob report imported in the dashboard) never records the
-`baseURL`, which Playwright leaves out of them; its tests' `page.goto('/cart')` names no site either, so its sites come
-from the page loads: the network requests the [capture fixtures](/guide/capture-fixtures) record for every test, or
-those read from the trace of a failed test. A site a run visited comes with the environment the run was reported with
-(the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the suggestions are grouped by it.
-The newest few runs of every environment are read, so a nightly production suite is suggested beside a staging one that
-runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every suggestion of that
-environment; **Save patterns** stores them. When there is nothing to suggest, the editor says why: every site already
+The editor suggests one pattern per site your suite already visited, grouped by the environment each run was
+reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), from the newest few runs
+of every environment, so a nightly production suite shows beside a staging one. A run's site
+is its `baseURL`; for a run with none, the full addresses its tests opened with `page.goto` and the pages it loaded
+(its `document` requests), then the [Test Map](./scenario-gaps)'s pages and the absolute pages its locators ran on. A
+run merged from blob reports (`npx playwright merge-reports`, or a blob report imported in the dashboard) has no
+`baseURL`, which Playwright leaves out of them, so its sites come from the page loads the
+[capture fixtures](/guide/capture-fixtures) record for every test, or the trace of a failed test. **Add** puts a
+suggestion in the list with its environment, **Add all** every suggestion of that environment; **Save patterns** stores
+them. When there is nothing to suggest, the editor says why: every site already
 has a pattern, or no recent run recorded a `baseURL`, opened a full address or kept the network requests of a page it
-loaded. Editing the list takes the Project admin role on the project, like the rest of the project's settings.
+loaded. Editing the list takes the Project admin role.
 
 ### Which project applies
 
@@ -103,25 +107,25 @@ keeps a copy, so a page's project is known with the instance out of reach. For a
 2. the patterns under **This browser only**, the first that matches;
 3. the instance's patterns, by project, in each project's order, the first that matches.
 
-A pattern kept in the browser is therefore an override for that browser alone. The settings page marks each pattern
-with where it comes from. **Disconnect** sets the patterns of this browser aside: connecting to the same instance
+A pattern kept in the browser is an override for that browser alone, and the settings mark where each comes from. **Disconnect** sets the patterns of this browser aside: connecting to the same instance
 again brings them back, and connecting to another drops them, since they name the first one's projects. A connection
-that is not completed, because you disconnect or cancel along the way, leaves them aside for the next one.
+left unfinished leaves them aside for the next one.
 
 ### Add a site
 
-When the current tab matches no pattern, the popup says so and offers **Add this site**. It opens the settings with
+When the tab matches no pattern, the popup offers **Add this site**, which opens the settings with
 `https://<site>/**` filled in: choose a project and click **Add to Piwi**, or **Keep in this browser only**. Adding to
 the instance takes a role that edits the project; without one, the settings say so and keep the second choice.
 
 ## What is sent
 
-Connecting sends the browser's and the operating system's names, nothing else about the machine. Afterwards the
-extension downloads the URL patterns, each mapped project's function catalog and its locator index; adding a site
-sends that one pattern. A recording is never sent to the instance: **Send to editor** sends it only to an editor paired
-on the same computer. A bug report is sent only from **Send to Piwi…**, after a preview of exactly what goes (see
-[Bug reports](./bug-reports)). Only the settings page and the extension's background worker talk to the instance or
-the editor, never a script running in a page.
+Connecting, and pairing with the desktop app, send the browser's and operating system's names, nothing else about
+the machine. It then downloads the projects, the URL patterns, each mapped project's function catalog,
+locator index and bug reports, and the runs in progress. It sends the instance nothing else but these, each on your
+click: a site's pattern (**Add this site**), a bug report after the **Send to Piwi…** preview
+([Bug reports](./bug-reports#sending-a-report)), and a replay's answer (**Share result…**). A recording goes only to a
+paired editor (**Send to editor**), and steps only to the paired desktop app (**Run with Playwright…**). Only the settings
+page and the background worker make requests, never a page's script.
 
 While connected, Piwi Picker also marks your instance's pages in this browser: a script sets `data-piwi-picker`, with
 the extension's version, on each page. The dashboard then stops suggesting Piwi Picker, as it does once you click
@@ -130,6 +134,6 @@ the extension's version, on each page. The dashboard then stops suggesting Piwi 
 ## Related
 
 - [Browser extension](./extension): everything Piwi Picker does, with or without a connection
-- [API keys](/operate/api-keys): create, list and revoke keys, those Piwi Picker created included
+- [API keys](/operate/api-keys): create, list and revoke keys; Piwi Picker's is under Connected apps
 - [Tested elements](./tested-elements): what a connection shows on the page
 - [Access, roles and groups](/operate/project-access): which projects, and so which patterns, a user sees

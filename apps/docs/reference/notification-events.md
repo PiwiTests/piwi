@@ -8,7 +8,10 @@ lang: en-US
 
 A [subscription](/features/notifications#subscriptions) picks one or more of these events. This page lists when each
 one fires and what a webhook channel receives; channels, subscriptions and delivery are on
-[Notifications & alerts](/features/notifications).
+[Notifications & alerts](/features/notifications). Some runs fire none of them: a run from an editor, a Flake Lab or
+probe run, a partial run from a developer's machine, and the others
+[that send nothing](/reference/test-metadata#run-origin). A run flagged as an environment incident fires
+`environment.incident` in place of the events its row names.
 
 ## Events
 
@@ -111,8 +114,8 @@ failing line marked `>`.
 `origin` is what launched the run: `ci`, `local`, `desktop`, … ([run origin](/reference/test-metadata#run-origin)).
 
 `history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
-that would send notifications themselves (no lab run, no run from an editor, no bisect step or reproduction, no
-partial run from a developer's machine or the desktop app, no environment incident). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
+that would send notifications themselves ([which runs send none](/reference/test-metadata#run-origin), an
+environment incident included). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
 `skipped`, `didnotrun` for a test that did not run, `interrupted` for one the run's interruption cut short, in no
 outcome, or `null` when the run did not report it). `commit`
 comes from the run's Git metadata, linked when the project's repository host is known, and `ciUrl` from its CI

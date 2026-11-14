@@ -7,14 +7,21 @@ lang: en-US
 # Locator stability rules
 
 A **brittle locator** breaks on a change unrelated to what its test checks: a restyle, a wrapper added around an
-element, an item added to a list, a copy edit, other data. Piwi judges every locator of the
-[locator index](/features/locator-usage) with the rules below, from the locator's text alone, and gives it one of three
-levels:
+element, an item added to a list, a copy edit, other data. `locator('.btn-primary').nth(1)` breaks when the button is
+restyled or another button appears before it. This page holds the rules Piwi judges a locator by, the levels they
+give, and how a replacement for a brittle one is chosen; the pages that show a level link here.
+
+## Levels
+
+Piwi judges every locator of the [locator index](/features/locator-usage), and every locator
+[Piwi Picker](/features/pick-an-element) offers, with the rules below, from the locator's text alone, and gives it one
+of three levels:
 
 - **Brittle**: at least one rule gives it that level. The [Tested elements](/features/tested-elements#brittle-locators)
-  overlay lists it under **At risk**, and offers a replacement.
-- **Watch**: a rule has something to say, but the locator does not break on its own. Shown on the element's card and
-  on the Locators page, never listed.
+  overlay lists it under **At risk**, and offers a replacement; the Locators page says why.
+- **Watch**, which Piwi Picker writes **could break** (in its pick results, the DevTools sidebar and the Tested
+  elements cards): a rule has something to say, but the locator does not break on its own. Shown on the element's card
+  and on the Locators page, never listed under **At risk**.
 - **Stable**: no rule has anything to say.
 
 A locator takes the level of its worst part: a stable container cannot save a brittle target, and a brittle container
@@ -40,18 +47,17 @@ a short text. A locator matching several elements is not a stability problem: th
 
 ## Replacements
 
-On a live page, the overlay offers a replacement for a brittle locator that finds exactly one element. It ranks the
-locators for that element the way the [Piwi Picker extension](/features/extension) does, keeps those these rules call
-stable and that find only that element on the page, and picks one the way
-[locator healing](/features/locator-healing) does: the locator's own method, then its family (role, text, label, test
-id, CSS), when that is stable enough; otherwise the most stable one. When no stable locator finds only that element,
-the overlay says to give it a test id.
-
-A candidate that finds the element among others is narrowed before the choice, as the extension narrows it: made
-exact, filtered by the element's text, or scoped to a parent. An element of a list, a grid or a table is scoped to its
-row or card, filtered by a text that row or card shows and the others do not:
-`getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })` rather than
-`getByRole('button', { name: 'Add to cart' }).nth(1)`.
+On a live page, the [Tested elements](/features/tested-elements#brittle-locators) overlay offers a replacement for a
+brittle locator that finds exactly one element of the top-level document. It ranks the locators for that element the
+way [Pick an element](/features/pick-an-element) does, a candidate that finds the element among others
+[narrowed](/features/pick-an-element#narrowing-a-locator-that-finds-several) first (an element of a list, a grid or a
+table gets `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`
+rather than `getByRole('button', { name: 'Add to cart' }).nth(1)`). It keeps those these rules call stable and that
+find only that element on the page, and picks one as
+[locator healing picks its recommended fix](/features/locator-healing#the-recommended-fix): the brittle locator's own
+method, then its family, when one of those is stable enough; otherwise the most stable one, which the row then also
+shows as **Most stable** when it differs. When no stable locator finds only that element, the overlay says to give it
+a test id.
 
 A replacement is checked against the page as it is now. A test that uses the locator in another state of the page
 may need a different one.

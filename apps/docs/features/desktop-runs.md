@@ -8,11 +8,12 @@ lang: en-US
 
 <Needs desktop fixtures />
 
-Every Playwright run the [desktop app](./desktop) starts names the app as its hub: a **Re-run** of tests, a reproduction, a
-bisect step, a [Flake Lab](./flake-lab) run and a bug report's run. Its **Local runs** tray shows each worker of the
-run beside its output, and steers the test as the editor does: [Pause and step from the editor](./editor-run-control).
+This page is about each worker of a run the [desktop app](./desktop) starts: its stops, its page and the code a stop
+makes. Every Playwright run the app starts names the app as its hub: a **Re-run** of tests, a reproduction, a bisect
+step, a [Flake Lab](./flake-lab) run and a bug report's run. Its **Local runs** tray shows each worker of the run
+beside its output, and steers the test as the editor does: [Pause and step from the editor](./editor-run-control).
 Nothing leaves your machine unless you [share a run live](#share-live). The tray's runs themselves, their progress,
-their output and a reload: [Local runs tray](./local-runs-tray).
+**Stop**, **Run again**, their output and a reload: [Local runs tray](./local-runs-tray).
 
 ## Each worker
 
@@ -24,39 +25,30 @@ At a stop, the tray says why the test stopped, the call about to run (**Next**) 
 with an image of the page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish**
 runs it to its end without stopping again, and [**End the test**](./end-the-test) skips the rest.
 
-A run of several workers shows one at a time, behind a tab each (**worker 2**) marked with its state. A new stop takes
-the tab from a worker that runs unwatched, and **Resume** or **End the test** there moves it to the next stopped test.
-**Pause all** and **Resume all** steer every worker at once.
+A run of several workers shows one at a time, behind a tab each (**worker 2**), with **Pause all** and **Resume all**,
+as in the [Runs window](./runs-window#the-controls).
 
-**Hold failures**, on each running run, holds a failing test at its line: **Failed at**, its error under
-it, and **Resume** to let it end as it failed. It is on from the start for **Reproduce**, which runs to show you the
-failure, and a run started with it on; **Run again** keeps it. It is [the run's own](/guide/concepts#hold-failures),
-off again as the app's last window closes. A run [nobody attends](/guide/concepts#hold-failures) never holds one, and
-its switch says why.
+[**Hold failures**](./watch-a-run#hold-failures), a switch on each running run, holds a failing test at its line:
+**Failed at**, its error under it, and **Resume** to let it end as it failed. It is on from the start for
+**Reproduce**, which runs to show you the failure, and for a run started with it on; **Run again** keeps it. The
+switch turns off as the app's last window closes, unless another tool set it since.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live with Interact on, with Resume, Step, Finish, Assert a region and Mock a request">
   <figcaption>A run the desktop app started, stopped at a <code>page.pause()</code> and watched live.</figcaption>
 </figure>
 
-The tray opens at each stop, where a headless test waits for you. With the window in the background, the system tells
-you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every page, again
-as soon as it reloads while a run of the app goes on. On a page without the tray (an analytics dashboard in TV mode,
-an error page), the system tells you of every stop, whatever the window shows, and no failure is held; a
-`page.pause()`, a step or a breakpoint waits until the tray shows it again, or [Piwi Picker's Runs
-window](./runs-window) or [an agent](#for-agents) answers it. With no run of the app going on, the window stops
-listening, and a stop goes on at once.
+The tray opens at each stop, and tells you of one in the background:
+[stops while you look elsewhere](./local-runs-tray#stops-while-you-look-elsewhere).
 
 ## Watch
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off. Between two images, and with an older reporter: [Watch a running
-test](./watch-running-test).
+stop, until you turn it off ([Watch a running test](./watch-running-test)).
 
 At a stop of a worker nobody watches, **Watch** shows the stopped page as it paints, in place of its image, and stays
-on for the worker's next stops until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends
-your clicks, the wheel and your keys on the view to the page; `Tab` leaves the view unless a click into it took the
-keyboard. Nothing keeps the [frames](/guide/concepts#watch-share-live).
+on for the worker's next stops until you turn it off. [**Interact**](./watch-running-test#interact), beside it, plays
+your input on the page; `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the [frames](./watch-running-test#what-is-sent-and-kept).
 
 **Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
 the test as **Pause** does and watches its worker: the tray opens at the stop, the page live, and the row says where
@@ -65,36 +57,24 @@ it stopped, with **Show its page** to open the tray on it again.
 **Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
 the pointer: its locator shows under the test, with **Copy**.
 
-Under a watched page, from a reporter newer than 0.68.0, the tray shows what pixels cannot, as the editor does
-([beside the image](./watch-running-test#beside-the-image)): **Why it waits**, **Events**, **Text** (**Show the page's
-text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click enlarges
-an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens Playwright's
-trace viewer on the running test's trace up to now, on your machine, with a reporter newer than 0.68.0: [Watch a
-running test](./watch-running-test#open-the-trace-so-far).
+Under a watched page, the tray shows what pixels cannot ([beside the image](./watch-running-test#beside-the-image)),
+and **Open the trace so far**, in its head, opens Playwright's trace viewer on the running test's trace up to now
+([Open the trace so far](./watch-running-test#open-the-trace-so-far)).
 
 **Inspect**, beside it, shows that test's page at each call as [on the run page](./live-inspect), with the locator
-picker, read from the test's own trace on your machine while open and the window shows, and let go as the test ends
-([what it reads](/guide/concepts#trace-so-far)).
+picker. The app's server reads the trace file **Open the trace so far** checks, while the tray shows the lane and the
+window is not hidden; the window hears each page's call and reads the page rendered, never the file's path. Each page
+is cleaned as a worker cleans it for the run page, the values any frame's secret fields held hidden in every page,
+iframes included, and stays in memory until the test ends. As Inspect opens, it reads a page's snapshots since its
+navigation, 8,192 or 16 MB at most; every lane's pages, with the snapshots read to build them, share 256 MB, past
+which it keeps no more. A page with a frame it cannot read whole shows again from its next navigation, and the reading
+stops when the trace folder, a folder above it or its `resources` folder becomes a link or no longer a folder: Inspect
+says why each time.
 
 ## Code to copy
 
-The app holds no editor, so the code a stop makes comes to the tray, under **Code from the runs**, rather than into
-your file:
-
-- **Assert a region** picks a region of the page, once you watch a headless stop live: its ARIA snapshot becomes a
-  `toMatchAriaSnapshot` check.
-- **Mock a request** lists the page's fetch and XHR responses, credentials hidden: the one you choose becomes a
-  `page.route`, with what to review in it.
-- **A locator picked**, on the image or with the pause bar's **Pick a locator**, shows with the line it was picked
-  for.
-
-Each code shows the line it goes above and, apart, its import lines, each with **Copy**, made from the file as it is
-on disk in the folder linked to the project.
-
-<figure>
-  <img src="/screenshots/desktop-run-live-code.png" alt="Code from the runs in the desktop app's tray: a mocked request, the page.route call to write above tests/checkout.spec.ts:18, with Copy">
-  <figcaption>A mocked request, as code to copy above the stopped line.</figcaption>
-</figure>
+The app holds no editor, so the code a stop makes (**Assert a region**, **Mock a request**, a picked locator) comes to
+the tray, to copy: [Code from the runs](./local-runs-tray#code-from-the-runs).
 
 ## Share live
 
@@ -104,31 +84,48 @@ teammate to watch: who sees what, and why a run cannot be. **Stop sharing…** a
 ## For agents
 
 The app's [MCP server](./mcp) (its **MCP server** page connects your coding agent) serves these runs with
-the tools of [Run control for agents](./agent-run-control). An agent follows a run, pauses or steps it, and reads
-and acts on the stopped page as you can and no further: [what keeps it safe](./agent-run-control#what-keeps-it-safe).
-Its `run_start` has the window start a spec of a linked folder as a run of the tray, titled with the agent's name,
-while a window is open ([in the desktop app](./agent-run-control#in-the-desktop-app)).
+the tools of [Run control for agents](./agent-run-control): an agent follows a run, pauses or steps it, and reads and
+acts on the stopped page as you can and [no further](./agent-run-control#what-keeps-it-safe).
+Its `run_start` starts a run of the tray, titled with the agent's name
+([in the desktop app](./agent-run-control#in-the-desktop-app)).
 
 The tray shows what it does: a stop it asked for says so (**Paused by the agent**), as does its first action at a
 stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under
-**Code from the runs**, to copy, and back to the agent in its answer: no file is written. A run nobody attends is not
-served, so an agent sees no Flake Lab run, bisect or lab job.
+**Code from the runs**, to copy, and back to the agent in its answer. An agent sees no Flake Lab run, bisect or lab
+job: nobody attends them.
 
 The tray names who else is there: the tools that have a run open (**Also open in Piwi Picker · An agent follows this
 run**), who watches a worker's page, and who [drives a stop](/guide/concepts#presence-driving-a-stop): **Take control**
 from an agent, and **Give back**.
 
 An agent pauses, steps or runs to a line only while the app's window is open, in the tray included: a headless stop
-goes on with no window to show it. A stop it asked for goes on two minutes after its last call, so a run never waits
-for an agent that left.
+goes on with no window to show it. A stop it asked for goes on two minutes after its last call.
+
+## A reproduction in your editor
+
+A job the app runs in a throwaway worktree of a commit (**Reproduce here**, a bisect step, a [Flake Lab](./flake-lab)
+run) follows the editor window whose workspace holds the project's linked folder, by the rules a
+[terminal run follows](./terminal-runs#which-editor-or-the-desktop-app), else the app. It follows only an editor
+extension that knows these reproductions (an older one leaves it to the app), and a bisect step or a Flake Lab run,
+which nobody attends, only one that knows such runs too.
+
+- **Its stops show in the editor** at the failing line of the worktree's file, outside the workspace, marked
+  **the desktop app's reproduction at commit abc1234, in a throwaway checkout**. A reproduction holds its failures from
+  its start, as in the app.
+- **Its code is to copy.** Assert, Assert a region and Mock a request offer the code with **Copy the code** and write
+  nothing: "This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file."
+  Record here is refused there, and a pick goes to the app's window, to copy.
+- **The app keeps it.** Its Local runs tray says where its tests wait (**In Visual Studio Code**), read only, stops it,
+  and shows its verdict when it ends; the editor offers no Stop.
 
 ## Limits
 
-- **No recording.** **Record here**, and **Pick** and **Assert** in the test's window, end in an editor: run the test
+- **No recording.** **Record here**, and a stopped test's **Pick** and **Assert** buttons, which act in the test's
+  window, end in an editor: run the test
   from VS Code or a JetBrains IDE to use them.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
   stops make no code here. With an editor open on the linked folder, the job runs on that editor instead, which offers
-  its code to copy ([A reproduction from the desktop app](./terminal-runs#a-reproduction-from-the-desktop-app)).
+  its code to copy ([A reproduction in your editor](#a-reproduction-in-your-editor)).
 - **A file changed since the run started** makes no code: run the test again.
 - **Run to cursor** stays in the editor, which has the file.
 

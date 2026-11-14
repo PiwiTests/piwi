@@ -99,6 +99,24 @@ What each origin feeds:
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
+A finished run posts no [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI
+diagnosis or auto-heal, makes no [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write)
+and fires no [notification](/features/notifications#events), an environment incident's own event aside, when it is:
+
+- a Flake Lab or [probe](/features/probes#what-a-probe-run-never-counts) run, a bisect step or a reproduction;
+- a run a person requested from the dashboard (`request`), which only its requester sees;
+- a run from an editor (`editor`), complete or not;
+- a `local` or `desktop` run of part of the suite;
+- a run flagged as an [environment incident](/features/environment-incidents), which sends one
+  [`environment.incident`](/reference/notification-events) event in place of its failure, flakiness, performance and
+  new-cluster events (`run.finished` still fires) and gets the verdict *inconclusive* from the
+  [CI merge gate](/features/merge-gate#what-it-leaves-out);
+- an imported report, which runs none of a finished run's side effects.
+
+A complete `local` or `desktop` run, a `preflight` run and a `piwi bug` run send them like a CI run, except
+[`test.stuck`](/features/stuck-tests#the-notification), which no run started on a developer's machine sends.
+[Results in Zephyr Scale](/features/test-management#when-a-run-is-sent) take a narrower set: complete CI runs only.
+
 ### Playwright configuration
 
 The reporter also records browser project configs, worker count, the global timeout, and parallel settings. A sharded
@@ -114,7 +132,7 @@ In the dashboard UI, every row of a run's Tests tab shows the browser icon (from
 
 The reporter traverses the test's parent chain (`test.parent`) to build a `suitePath` array — the list of describe-block names from the root to the test's immediate parent. Each level's `suiteConfig` (mode: `parallel` | `serial` | `default`, plus any suite-level `annotations`) is captured alongside the path. This data is sent in both streaming and batch submission payloads and stored in the `test_suites` and `test_cases` tables.
 
-In the dashboard UI, the test run detail page offers a **Tree** view that groups test cases by their suite hierarchy, with expandable/collapsible describe nodes showing mode badges and annotation counts.
+In the dashboard UI, **Group by: File + Describe** on a run's Tests tab groups the tests under their file and describe blocks, each of which collapses.
 
 ### Test annotations (Playwright marks)
 
@@ -137,7 +155,7 @@ it was written — filter for `smoke` or `@smoke` and you get the same rows. Rem
 next run that reports the test.
 
 Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
-leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+leaderboard, and the `--require-tag` rule of the [CI merge gate](/features/merge-gate#what-fails-it).
 
 #### Tag limit
 
@@ -241,6 +259,13 @@ that owns it. Unknown `piwi:` fields and unparseable values are ignored — a ty
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the
 reporter.
 
+**A test that declares no `piwi:owner` takes its owner from the repository's `CODEOWNERS`**, matched against its spec
+file, so ownership works with no test edits; a `piwi:owner` annotation wins wherever a team wants to be explicit. That
+derived owner is used in pull-request comments, on the flaky leaderboard, and by the `owners`
+[notification filter](/features/notifications#subscriptions), which routes a run only to the team whose tests broke. A
+public repository's `CODEOWNERS` is read without a token; a private one needs an [SCM token](/guide/source-control),
+and without it ownership comes from the annotations alone.
+
 ### Issues the tests declare
 
 A `piwi:issue` annotation names the issue a test's failures are tracked in, by its URL or its key:
@@ -300,7 +325,8 @@ test counts by its last attempt, so one whose retry passed names nothing:
 
 ### External test IDs
 
-Piwi recognizes a test by its file, its describe blocks and its title. Renaming a test, or moving it to another file or
+Piwi recognizes a test by its file (its path relative to the folder holding your Playwright config, whatever directory
+Playwright runs from), its describe blocks and its title. Renaming a test, or moving it to another file or
 describe block, would otherwise start a new test with no history: no flakiness stats, failure clusters, quarantine or
 trends. When your tests already have an ID in a test management tool, give it to Piwi: a test with an **external ID**
 is matched on that ID first, and a renamed or moved test keeps its history, under its new title and place.
@@ -388,6 +414,46 @@ Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can s
 - `interrupted` — the run was otherwise cut short (a worker crash or a cancellation).
 
 The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
+
+### How a result counts
+
+The reporter sends every attempt, and the dashboard reads them by one set of rules:
+
+- **An execution is one attempt** of one test, in one run, on one Playwright project. A retry is an execution of its
+  own, and so is each `--repeat-each` repetition, which Playwright runs as a test of its own, with its own retries:
+  `--repeat-each=3` contributes three executions of the test, more with retries. The run counts each repetition once,
+  as Playwright's summary does, and a test failed in a run when one of its repetitions failed, whatever the others did.
+- **The last attempt decides.** A test is **flaky** in a run when its last attempt passed after an earlier attempt
+  failed or timed out; a retry alone does not make it flaky. When one test of a `describe.serial` group fails,
+  Playwright retries the whole group: the tests that passed before and a `test.fail()` test that failed as expected
+  pass again, and a test that did not run behind the failure passes, none of them flaky. A test that passed, then
+  failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
+- **One reading everywhere.** The run page and the run list, a test's history, status and Trend tab, the catalog, the
+  analytics, the notifications, the exports and the MCP tools read a result the same way. The dashboard stores the
+  verdict with each result's last attempt as it ingests it, and gives the results and the flaky counts of runs stored
+  by an earlier version theirs when it upgrades.
+- **A run of a test**, on a test's own pages (its page and Trend tab, the project's Tests tab, selections and spec
+  health), is one result per run, Playwright project and `--repeat-each` repetition: its final attempt. A retry is
+  never a run of its own, and a test that failed, then passed on its retry, is one flaky run.
+- **Interrupted**: a test the run's interruption (Ctrl+C, a crashed worker) cut short counts in no outcome: neither
+  passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the notifications draw
+  it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.
+- **Pass rate**: the passed results over the results that passed or failed. A timed-out result counts as failed, a
+  flaky one as passed; a skipped, did-not-run or interrupted result is in neither term, so a suite that skips tests by
+  design, or a run stopped halfway, is rated on the tests that ran to an outcome. With no passed or failed result
+  there is no pass rate: the dashboard shows a dash, never 0% or 100%. Every pass rate follows this rule: a run's, a
+  project's, Home's, a test's, the [test pass rate metric](/reference/metrics) of Analytics and the
+  quality reports, and a share link's README badge.
+- **Flaky rate**: a test's flaky runs over its runs that passed or failed, the results the pass rate divides by. With
+  no passed or failed run there is no flaky rate, and the dashboard shows a dash. A file's or a spec directory's flaky
+  rate divides its tests' runs the same way: the Trend tab of a test, the file headers of the project's Tests tab and
+  the Spec health widget follow this rule. Other numbers about flakiness divide differently and are not a flaky rate:
+  the [flakiness score](/features/flaky-tests#flaky-test-detection), a run's share of flaky tests (the
+  `flakiness.spike` [notification](/reference/notification-events)), and Flake Lab's **flaky N%**, the share of the
+  test's recent runs that passed or failed (those the flaky ranking reads) in which it failed or passed on a retry.
+- **A run that ran to its end** passed, failed or hit Playwright's global timeout. A project's health (Home's
+  Project health table and stat strip, the project header) reads only such runs: a run still in progress,
+  interrupted or cancelled shows in every list and in the trend bars with its status, and in none of those figures.
 
 ### Test errors
 

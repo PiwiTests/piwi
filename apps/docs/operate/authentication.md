@@ -6,7 +6,7 @@ lang: en-US
 
 # Authentication
 
-Sign-in, with role-based access control, is **disabled by default**: every endpoint then behaves as a single administrator. Turn it on before anyone else can reach the instance; the [production checklist](./production-checklist) lists the rest of what to set.
+This page covers sign-in, instance roles, OAuth and user accounts; project roles are on [Access, roles and groups](./project-access), keys on [API keys](./api-keys). Sign-in is **off by default**: every request then acts as one administrator. Turn it on before anyone else can reach the instance; the [production checklist](./production-checklist) lists the rest.
 
 ## Roles
 
@@ -14,10 +14,10 @@ Every account holds one **instance role**:
 
 | Instance role | What it can do |
 |------|-------------|
-| **Administrator** | Everything, on every project: users, groups, instance settings, AI providers, Jira connections, storage, tags, creating and deleting projects. Never restricted by project roles. |
+| **Administrator** | Everything, on every project: users, groups, instance settings, AI providers, Jira connections, storage, tags, creating and deleting projects (a first upload [can create one too](./project-access#all-projects-or-one-project)). Never restricted by project roles. |
 | **Member** | Signs in and manages their own profile, API keys, dashboards, notification channels and subscriptions. Everything else comes from their project roles. |
 
-What a Member can do inside a project comes from the **project roles** granted to them or to their groups: see [Access, roles and groups](./project-access). The Administrator role is granted to a user, never to a group.
+A Member's rights inside a project come from the **project roles** granted to them or their groups ([Access, roles and groups](./project-access)). The Administrator role is granted to a user, never to a group.
 
 ## Enabling authentication
 
@@ -58,14 +58,13 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 :::
 
 The endpoint is rate-limited per client address. On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to
-a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot create the
-administrator first. The [one-click deploy templates](./one-click-deploy) generate it.
+a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot become the
+administrator first. The Railway, Render and Coolify [one-click deploy templates](./one-click-deploy) generate it.
 
 ## Logging in
 
 Sign in at `/login` with your username or your email address (letter case ignored, verified or not). A username wins
-over another account's email: if a provider-created account, whose username is its address, changes its email and
-another account takes the old address, that account signs in with its username.
+over another account's email, such as the old address a provider-created account kept as its username.
 
 A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
 
@@ -94,13 +93,13 @@ Users can also sign in with Google or GitHub; there is no other provider, nor ge
    PIWI_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
    ```
 
-3. **Restart the server.** The login page shows a **Sign in with …** button, above the password form, for each provider whose `CLIENT_ID` and `CLIENT_SECRET` are both set.
+3. **Restart the server.** The login page shows a **Sign in with …** button for each provider whose `CLIENT_ID` and `CLIENT_SECRET` are both set.
 
 > **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`): the OAuth `redirect_uri` is built from it, else from the request's host, which a proxy may rewrite.
 
 ### Restricting who can sign in (allowlists)
 
-By default any account at a configured provider can sign in. To restrict access:
+By default any account at a configured provider can sign in. To restrict it:
 
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must belong to at least one; it requests the `read:org` scope to check membership, private included.
@@ -111,23 +110,23 @@ A rejected sign-in returns to the login page, saying why.
 
 A first provider sign-in links an existing account or creates one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
-- If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an address someone typed into their own profile from capturing another person's sign-in.
+- If a user with the same **verified** email exists (and isn't linked to a *different* provider), that account is linked. Linking needs proof on both sides: the provider asserts the email is verified, **and** the local account verified it too (a verification link, an accepted invite, or an earlier provider sign-in), so an address someone typed into their own profile cannot capture another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused, saying why. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
-- If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
+- If the matching account is **linked to a different provider**, the sign-in is refused: one provider per account.
 - Otherwise, a new user is created as a **Member** with no project role and no password, so it always signs in through its provider and sees nothing until it is [granted a role](./project-access#default-is-no-access). An email the provider has not verified never links an account, so GitHub accounts with no verified primary email always get a new account.
 
-The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account already uses that address. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets a number appended (`octocat-2`).
+The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account uses it. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets a number appended (`octocat-2`).
 
-Each later sign-in updates the account's name, avatar and email from the provider. The email stays when the provider sends none, or one another account uses.
+Each later sign-in updates the name, avatar and email from the provider, keeping the email when the provider sends none or one another account uses.
 
-Piwi keeps no provider token: the access token serves the sign-in only, then is discarded. OAuth is not available in demo mode.
+Piwi keeps no provider token: the access token serves the sign-in, then is discarded. The demo has no OAuth.
 
 ### Connecting / disconnecting a provider
 
 Signed-in users link a provider from **Settings → Account → Connected accounts**:
 
-- **Connect** attaches the provider identity to the current account instead of creating one. A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
-- **Disconnect** removes the link, only when the account has a password, so a provider-only user can't lock themselves out.
+- **Connect** attaches the provider identity to the current account; one already linked to another account is refused. An account without an email address takes the provider's, unless another account uses it.
+- **Disconnect** removes the link, only when the account has a password, so a provider-only user cannot lock themselves out.
 
 ## User management
 
@@ -136,24 +135,22 @@ username, an instance role, an optional display name and email, and a password. 
 button mails the user a link to set their own. Each row shows the user's instance role and
 [groups](./project-access#groups).
 
-**Settings → Account** takes a profile picture: PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels. It replaces
-the provider's; administrators can remove it. Only its owner sees it; others see the account's initials.
+**Settings → Account** takes a profile picture (PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels) that
+replaces the provider's and that administrators can remove. Only its owner sees it; others see the initials.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
 finds such duplicates stops until an administrator fixes them: see
 [What happens when a new version starts](./upgrading#what-happens-when-a-new-version-starts).
 
-A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account still
-holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the
-links already sent are refused: resend to the new address.
+A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account holds
+the address it was sent to; once the address changes, whoever changed it, resend to the new one.
 
 ### Email and account recovery
 
-Invitations, address verification and **Forgot password?** send email, so they need
-[SMTP](/features/notifications#smtp-configuration). Without it, invites and verification links are refused, and
-**Forgot password?** says a link was sent but sends nothing. Invite and reset emails name the sign-in
-username.
+Invitations, address verification and **Forgot password?** need [SMTP](/features/notifications#smtp-configuration).
+Without it, invites and verification links are refused, and **Forgot password?** says a link was sent but sends
+nothing. Invite and reset emails name the sign-in username.
 
 No administrator can set another account's password: a locked-out account recovers through **Forgot password?**, which
 needs SMTP and an email address on the account. Give every administrator an email address, or keep two, so one can
@@ -161,7 +158,7 @@ set the other's address to one that receives mail.
 
 ### Changing a role
 
-Each row's **Role** column sets the instance role, **Administrator** or **Member**, at once, revoking the user's sessions. It is the only way to make an account an administrator, [OAuth](#oauth-google-github) ones included. The **last remaining administrator cannot be demoted**.
+Each row's **Role** column sets the instance role, **Administrator** or **Member**, at once, revoking the user's sessions: the only way to make an account, [OAuth](#oauth-google-github) ones included, an administrator. The **last remaining administrator cannot be demoted**.
 
 ## Disabling authentication
 
@@ -169,10 +166,14 @@ Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server.
 
 With authentication off, the dashboard answers only requests whose `Host` header names an IP address, `localhost`, a
 name under `.localhost`, the host of [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS`
-lists (a container's name such as `piwi`, `host.docker.internal`, or `.example.lan` for a whole domain); any other gets
-a `403`. Over plain HTTP, a write must also come from the requested host, `PIWI_SITE_URL`'s or a listed one. The entry
-`*` of `PIWI_ALLOWED_HOSTS` turns the first check off, and with it the protection against DNS rebinding. Behind a
-[reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL` and forward the browser's `Host` header.
+lists (the service name a container or pod calls it by, such as `piwi`, `host.docker.internal`, or `.example.lan` for a whole domain); any other gets
+a `403` that lists those addresses. A request with no `Host` comes from no browser and is answered. Over plain HTTP, a
+write must also come from the requested host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS`
+turns the first check off, and with it the protection against DNS rebinding.
+
+Behind a [reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL` and have the proxy
+forward the browser's `Host` header (Apache: `ProxyPreserveHost On`): the check reads `Host` alone, never
+`X-Forwarded-Host`, so a proxy that sends its own local address instead lets every request through.
 
 ## Related
 

@@ -12,7 +12,7 @@ The [Piwi Picker extension](./extension) answers one question beside the browser
 on this page, and how does the test get there? Its developer tools live here rather than in the toolbar popup, which
 keeps the tools that act on the page. In Chrome and Edge, the
 [request conditions](./mock-requests#slow-down-or-fail-a-request) and a viewport set in the tab itself go through the
-browser's debugging protocol, and Chrome shows its debugging bar while one is on.
+browser's debugging protocol, under Chrome's [debugging bar](./extension#the-debugging-bar).
 
 ## The Elements sidebar
 
@@ -32,9 +32,7 @@ getByText('🛒 2')                                 ✓ unique · stable
 </figure>
 
 A locator that finds the node among others says how many it finds. Under each one, **Locator**, **Action** and
-**Assertion** copy it as `page.…`, as the action the element calls for (`fill`, `check`, `selectOption` or `click`)
-or as its first assertion (`toHaveValue`, `toHaveText`…, `toHaveCount` for a locator finding several), as in
-[Pick an element](./pick-an-element); each button names what it writes. **Add to session** puts it
+**Assertion** copy it [as Pick an element does](./pick-an-element#copy-as-a-locator-an-action-or-an-assertion). **Add to session** puts it
 in the session under a name (the panel's Session tab, below). With an editor
 [paired](./editor-recording#send-from-piwi-picker), **Send to editor** under the top locator inserts it at the
 editor's cursor, in the copy form you chose last. The pane ranks again when the selection changes and after
@@ -44,11 +42,13 @@ the page navigates; **Refresh** ranks the same node on the page as it is now. De
 The first time on a site, the pane asks for access to it with **Allow on this site**, as recording does. It is not
 needed on a tab where you have just used the toolbar popup.
 
-Elements inside an iframe are not ranked: their locator would need the frame's prefix. Use Pick an element there.
+Elements inside an iframe are not ranked: their locator would need the frame's prefix, and
+[Pick an element](./extension#limits) sees the top-level document only too. The **Locators** console below finds
+elements in same-origin frames.
 
 ## The Piwi panel
 
-DevTools also gets a **Piwi** panel of its own, with five tabs. It shows what runs on the page and stays up while the
+DevTools also gets a **Piwi** panel of its own, with the tabs below. It shows what runs on the page and stays up while the
 page navigates; the recording and replay panels on the page stay too, for when DevTools is closed.
 
 - **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop
@@ -63,9 +63,9 @@ page navigates; the recording and replay panels on the page stay too, for when D
   `filter()`, `and()`/`or()`, `.nth()` and same-origin frames. Hovering one outlines it on the page, and **Reveal**
   selects it in the Elements panel. **Enter** tries the locator at once and keeps it in a history that the up and down
   arrows go through, as in a shell; the history lasts until the browser closes, so the panel opened again shows the
-  last locator. Under the field, **Copy as** writes the locator as a locator, an action or an assertion, as the
-  Elements sidebar does: the action and the assertion are the first match's, and a locator finding several elements
-  asserts `toHaveCount`. **Add to session** names it for the Session tab. With an editor paired,
+  last locator. Under the field, **Copy as** writes it
+  [as a locator, an action or an assertion](./pick-an-element#copy-as-a-locator-an-action-or-an-assertion), for the
+  first match. **Add to session** names it for the Session tab. With an editor paired,
   [**Send to editor**](./editor-recording#send-from-piwi-picker) inserts it at the editor's cursor in the copy form
   chosen last. A `page.` typed in front is left out of what is copied or sent.
 - **Session** lists the elements named with **Add to session**, and copies them as a page object, a Markdown table or
@@ -117,7 +117,7 @@ The labels follow scrolling and come back after the page changes. Labels of elem
 another: each sits above its element, or a row or a few lower or higher when that place is taken. Where elements crowd
 too closely for that, the labels left over are not drawn and the panel says how many. The panel in the corner counts
 each kind, and **Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
-**Esc** or `V` again to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
+**Esc** to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
 add.
 
 ## Related

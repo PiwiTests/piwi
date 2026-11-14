@@ -1,14 +1,15 @@
 /**
- * The product feature catalog — one entry per user-facing feature, grouped by
- * the four jobs Piwi serves (keep the history, explain the failures, hand back
- * a fix, find what the tests miss), then the routes that carry them to people
- * (trends and reports, other tools) and the operator surface.
+ * The product feature catalog — one entry per user-facing feature. The groups
+ * are the four jobs Piwi serves (keep the history, explain the failures, hand
+ * back a fix, find what the tests miss), each followed by the narrower groups
+ * that hang off it, then trends and reports, the tools a reader installs
+ * (`section: 'tools'`) and the operator surface.
  *
- * It is the one grouping of the product. The docs render three things from it:
+ * It is the one grouping of the product. The docs render four things from it:
  * the All features page (`apps/docs/reference/features.md`, built at
- * `docs:gen`), the Features sidebar (`apps/docs/.vitepress/navigation.ts`) and the
- * landing page's cards. An entry's `title` is also its page's H1 and sidebar
- * label, so a feature has one name everywhere.
+ * `docs:gen`), the Features and Tools sidebars (`apps/docs/.vitepress/navigation.ts`)
+ * and the landing page's cards. An entry's `title` is also its page's H1 and
+ * sidebar label, so a feature has one name everywhere.
  *
  * Kept dependency-free in `shared/` so the docs generator can import it with no
  * app/runtime deps, exactly like `piwi-env-vars.ts`. `docs-drift.test.ts`
@@ -28,6 +29,7 @@ export type FeatureNeed =
   | 'backend' // a backend instrumentation package in the app under test
   | 'desktop' // the desktop app
   | 'extension' // the browser extension
+  | 'editor' // the VS Code extension or the JetBrains plugin
   | 'admin'; // an administrator (or auth disabled)
 
 /** Human labels for the need chips, used by the All features generator. */
@@ -38,6 +40,7 @@ export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
   backend: 'a backend integration',
   desktop: 'the desktop app',
   extension: 'the browser extension',
+  editor: 'the editor extension',
   admin: 'an administrator',
 };
 
@@ -52,6 +55,7 @@ export const FEATURE_NEED_DOCS: Record<FeatureNeed, string> = {
   backend: 'guide/backend-logs',
   desktop: 'features/desktop',
   extension: 'features/extension',
+  editor: 'features/editors',
   admin: 'operate/authentication#roles',
 };
 
@@ -66,15 +70,32 @@ export interface PiwiFeature {
   where: string;
   /** Docs page (+ optional `#anchor`), resolved by `docs-drift.test.ts`. */
   doc: string;
+  /** In a tool group, the labeled part of the sidebar it sits under ("Set up"); entries that share one are consecutive. */
+  part?: string;
 }
 
 export interface FeatureGroup {
-  /** The job, or the delivery route, this group of features serves. */
+  /** The job, the delivery route or the tool this group of features serves. */
   title: string;
-  /** One line describing it; the landing page shows it on the group's card. */
+  /**
+   * `'tools'` for a tool the reader installs: the group goes in the Tools
+   * sidebar, and its first entry, when it carries the group's title, is the
+   * tool's own page. Absent for a group of the Features sidebar.
+   */
+  section?: 'tools';
+  /** `false` for a group with no card of its own on the landing page. */
+  card?: false;
+  /** One line describing it, shown under its heading on the All features page and on its landing card. */
   intro: string;
   features: PiwiFeature[];
 }
+
+/** The Tools section of the docs: its name in the navigation and the line of its landing card. */
+export const TOOLS_SECTION = {
+  title: 'Tools',
+  intro:
+    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, and the MCP server and skills for coding agents.',
+};
 
 export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
   {
@@ -101,7 +122,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Branches',
         summary: 'Branch as a first-class dimension: filter by it, and compare against a baseline computed per branch.',
         needs: [],
-        where: 'Project → filter bar',
+        where: 'Project → Filters',
         doc: 'features/branches',
       },
       {
@@ -158,6 +179,78 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-video',
       },
       {
+        title: 'Failure clusters & the inbox',
+        summary:
+          'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
+        needs: [],
+        where: 'Test run → Tests → Group by: Cluster; Project → Failures → Clusters; Home',
+        doc: 'features/failure-clusters',
+      },
+      {
+        title: 'Environment incidents',
+        summary:
+          'A run that failed because the app under test was down, recognized and kept out of flaky scores, baselines, fix verification and the gate.',
+        needs: [],
+        where: 'Test run header; Home inbox; Project → Runs chart → Markers',
+        doc: 'features/environment-incidents',
+      },
+      {
+        title: 'Run environment',
+        summary:
+          'Where each run executed (runner, browsers, servers under test) and what changed between runs, shards, or a failure and its last pass.',
+        needs: [],
+        where: 'Test run header → Environment; Test run → Changes; Test → State',
+        doc: 'features/run-environment',
+      },
+      {
+        title: 'Flaky tests & quarantine',
+        summary:
+          'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',
+        needs: [],
+        where: 'Project → Failures → Flaky',
+        doc: 'features/flaky-tests',
+      },
+      {
+        title: 'Flake Lab',
+        summary:
+          'Make a flaky test fail on demand: `piwi flake` replays each suspect as a condition next to a control, and `piwi flake verify` proves the fix under the same condition.',
+        needs: ['fixtures'],
+        where: 'Project → Flake Lab; Test case → Flakiness; reporter (`piwi flake`)',
+        doc: 'features/flake-lab',
+      },
+      {
+        title: 'AI diagnosis',
+        summary:
+          'An LLM explains a cluster against your actual diff, with a suggested patch validated against your source first.',
+        needs: ['llm'],
+        where: 'Cluster → Diagnosis',
+        doc: 'features/ai-diagnosis',
+      },
+      {
+        title: 'Assistant',
+        summary:
+          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; a change it proposes runs only when you click Apply.',
+        needs: ['llm'],
+        where: 'Sidebar → Ask Piwi; Ctrl+I; command palette',
+        doc: 'features/assistant',
+      },
+      {
+        title: 'Backend logs',
+        summary:
+          'Server-side warnings, errors and spans captured per test and shown next to the request that triggered them.',
+        needs: ['backend'],
+        where: 'Execution → network',
+        doc: 'guide/backend-logs',
+      },
+    ],
+  },
+  {
+    title: 'Watch a run',
+    card: false,
+    intro:
+      'Follow a run while it goes: how far it is, in the same words in every tool, the page each worker is on, and the test that has run far longer than its passing runs took.',
+    features: [
+      {
         title: 'Watch a run',
         summary:
           'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
@@ -213,46 +306,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'Test run → Tests; Notifications → test.stuck',
         doc: 'features/stuck-tests',
       },
-      {
-        title: 'Failure clusters & the inbox',
-        summary:
-          'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
-        needs: [],
-        where: 'Test run → Failures; Home',
-        doc: 'features/failure-clusters',
-      },
-      {
-        title: 'Environment incidents',
-        summary:
-          'A run that failed because the app under test was down, recognized and kept out of flaky scores, baselines, fix verification and the gate.',
-        needs: [],
-        where: 'Test run header; Home inbox; Project → Timeline',
-        doc: 'features/environment-incidents',
-      },
-      {
-        title: 'Run environment',
-        summary:
-          'Where each run executed (runner, browsers, servers under test) and what changed between runs, shards, or a failure and its last pass.',
-        needs: [],
-        where: 'Test run → Environment, Changes; Test → State',
-        doc: 'features/run-environment',
-      },
-      {
-        title: 'Flaky tests & quarantine',
-        summary:
-          'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',
-        needs: [],
-        where: 'Project → Failures → Flaky',
-        doc: 'features/flaky-tests',
-      },
-      {
-        title: 'Flake Lab',
-        summary:
-          'Make a flaky test fail on demand: `piwi flake` replays each suspect as a condition next to a control, and `piwi flake verify` proves the fix under the same condition.',
-        needs: ['fixtures'],
-        where: 'Project → Flake Lab; Test case → Flakiness; reporter (`piwi flake`)',
-        doc: 'features/flake-lab',
-      },
+    ],
+  },
+  {
+    title: 'Time and resources',
+    card: false,
+    intro:
+      'Where the time of the suite goes and what a run costs the machine: slow tests and fixed waits, browsers and pages left open, CPU, memory and disk.',
+    features: [
       {
         title: 'Slow tests & wasted time',
         summary:
@@ -285,30 +346,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'Run → Resources; reporter output; GitHub job summary',
         doc: 'features/cpu-memory-disk',
       },
-      {
-        title: 'AI diagnosis',
-        summary:
-          'An LLM explains a cluster against your actual diff, with a suggested patch validated against your source first.',
-        needs: ['llm'],
-        where: 'Cluster → Diagnosis',
-        doc: 'features/ai-diagnosis',
-      },
-      {
-        title: 'Assistant',
-        summary:
-          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; a change it proposes runs only when you click Apply.',
-        needs: ['llm'],
-        where: 'Sidebar → Ask Piwi; Ctrl+I; command palette',
-        doc: 'features/assistant',
-      },
-      {
-        title: 'Backend logs',
-        summary:
-          'Server-side warnings, errors and spans captured per test and shown next to the request that triggered them.',
-        needs: ['backend'],
-        where: 'Execution → network',
-        doc: 'guide/backend-logs',
-      },
     ],
   },
   {
@@ -329,7 +366,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Before changing an element, the tests whose steps reach it and the lines they reach it from, or check pasted locators against every run.',
         needs: [],
-        where: 'Execution → Locators; Project → Locators',
+        where: 'Execution → Locators; Project → More actions → Locators',
         doc: 'features/locator-usage',
       },
       {
@@ -356,38 +393,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/auto-heal',
       },
       {
-        title: 'Issue tracking (Jira)',
-        summary:
-          'A Jira issue filed from a failure with the fix plan as its body, linked back as the known issue and kept in sync with the cluster.',
-        needs: ['admin'],
-        where: 'Cluster, execution or inbox row → Create issue',
-        doc: 'features/issue-tracking',
-      },
-      {
-        title: 'Issues about a run or a test',
-        summary:
-          'A Jira issue about a whole run, or about one test with no failure cluster, with your comment first and each submission filed once.',
-        needs: ['admin'],
-        where: 'Run header, or an execution’s More actions → Create issue',
-        doc: 'features/run-issues',
-      },
-      {
-        title: 'Results in Zephyr Scale',
-        summary:
-          'A finished CI run of the whole suite written to Zephyr Scale Cloud as one test run, one result per test case key, with a dry run first and a link back to the run.',
-        needs: ['admin'],
-        where: 'Project → Settings → Test management; run page',
-        doc: 'features/test-management',
-      },
-      {
-        title: 'Issue automation',
-        summary:
-          'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',
-        needs: ['admin'],
-        where: 'Project → Settings → Issue tracker',
-        doc: 'features/issue-automation',
-      },
-      {
         title: 'Pull-request feedback',
         summary:
           'A summary of the failures on the branch posted to the PR, and a commit status for the run and the gate.',
@@ -406,17 +411,65 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'CI merge gate',
         summary:
-          'A `piwi gate` command that blocks a merge on new failures or flakiness, with the run URL in the CI log.',
+          'A `piwi gate` step that fails a CI job on the dashboard’s analysis of a run: new regressions, required tags or selections, flakiness, new clusters, leaks or quarantine debt, inconclusive on an environment incident, with an optional commit status of its own.',
         needs: [],
-        where: 'CI (`piwi gate`)',
-        doc: 'reference/cli',
+        where: 'CI (`piwi gate`); Project → Settings → Source control (Gate status)',
+        doc: 'features/merge-gate',
       },
+    ],
+  },
+  {
+    title: 'Issue trackers',
+    card: false,
+    intro:
+      'A failure filed where your team tracks its work: a Jira issue from a cluster, a run or a test, kept current as the failure evolves, and the results of a run sent to Zephyr Scale.',
+    features: [
+      {
+        title: 'Issue tracking (Jira)',
+        summary:
+          'A Jira issue filed from a failure with the fix plan as its body, linked back as the known issue and kept in sync with the cluster.',
+        needs: ['admin'],
+        where: 'Cluster, execution or inbox row → Create issue',
+        doc: 'features/issue-tracking',
+      },
+      {
+        title: 'Issues about a run or a test',
+        summary:
+          'A Jira issue about a whole run, or about one test with no failure cluster, with your comment first and each submission filed once.',
+        needs: ['admin'],
+        where: 'Run header, or an execution’s More actions → Create issue',
+        doc: 'features/run-issues',
+      },
+      {
+        title: 'Issue automation',
+        summary:
+          'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',
+        needs: ['admin'],
+        where: 'Project → Settings → Issue tracker',
+        doc: 'features/issue-automation',
+      },
+      {
+        title: 'Results in Zephyr Scale',
+        summary:
+          'A finished CI run of the whole suite written to Zephyr Scale Cloud as one test run, one result per test case key, with a dry run first and a link back to the run.',
+        needs: ['admin'],
+        where: 'Project → Settings → Test management; run page',
+        doc: 'features/test-management',
+      },
+    ],
+  },
+  {
+    title: 'Run the right tests',
+    card: false,
+    intro:
+      'Run the tests a change needs instead of the whole suite: saved selections, the tests a diff affects, and the tests whose code has not changed since they passed.',
+    features: [
       {
         title: 'Test selections',
         summary:
           'Run only the tests that matter — changed files, a subset, balanced shards — from the CLI or the dashboard.',
         needs: [],
-        where: 'Project → Selections; CLI',
+        where: 'Project → More actions → Selections; CLI',
         doc: 'features/test-selection',
       },
       {
@@ -432,15 +485,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',
         needs: ['fixtures'],
-        where: 'Project → Selections; MCP get_reuse_forecast',
+        where: 'Project → More actions → Selections; MCP get_reuse_forecast',
         doc: 'features/reuse-forecast',
-      },
-      {
-        title: 'AI steps',
-        summary: 'Author and replay natural-language test steps an LLM turns into Playwright actions.',
-        needs: ['llm'],
-        where: 'Reporter config',
-        doc: 'features/ai-steps',
       },
     ],
   },
@@ -454,7 +500,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Routes and pages your runs reach but no test checks, ranked by exposure, each with a skeleton to start from.',
         needs: ['fixtures'],
-        where: 'Project → Gaps',
+        where: 'Project → Coverage → Gaps',
         doc: 'features/scenario-gaps',
       },
       {
@@ -494,15 +540,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The coverage reports of your unit tests (Vitest, coverlet, Microsoft code coverage), uploaded per commit and suite, next to the coverage the Playwright suite records.',
         needs: [],
-        where: 'CLI (`piwi coverage upload`); API and MCP tools',
+        where: 'CLI (`piwi coverage upload`); Project → Coverage → Code; API and MCP tools',
         doc: 'features/combined-coverage',
       },
       {
         title: 'Coverage insights',
         summary:
           'From the coverage tests record: the code a failure ran that its last pass did not, a path that depends on which tests ran first, the code only some tests run before you quarantine them, and whether a new test reaches its target lines.',
-        needs: ['fixtures', 'backend'],
-        where: 'API and MCP tools; the AI diagnosis',
+        needs: ['fixtures'],
+        where: 'Execution → Source; Test case → Path variation; API and MCP tools; the AI diagnosis',
         doc: 'features/coverage-insights',
       },
       {
@@ -510,7 +556,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Whether a passing test would notice a fault behind a request: client probes run through the capture fixtures; server probes inject the fault inside the server, needing a backend package.',
         needs: ['fixtures'],
-        where: 'Project → Gaps; reporter (`piwi probe`)',
+        where: 'Project → Coverage → Gaps; reporter (`piwi probe`)',
         doc: 'features/probes',
       },
     ],
@@ -561,7 +607,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     ],
   },
   {
-    title: 'Write and debug tests',
+    title: 'Write, run and fix a test',
+    section: 'tools',
     intro:
       'Record a test from the editor or the browser, run it, stop it at a breakpoint and write the fix where it stopped: the loop from a new spec to a passing one.',
     features: [
@@ -574,80 +621,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/write-run-fix',
       },
       {
-        title: 'Record tests from the editor',
-        summary:
-          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
-        needs: [],
-        where: 'Piwi: Record here…; Tools → Piwi → Record here… in a JetBrains IDE',
-        doc: 'features/editor-recording',
-      },
-      {
-        title: 'Recorded code',
-        summary:
-          "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
-        needs: [],
-        where: "playwright.config.ts → '@piwi' → codegen",
-        doc: 'features/recorded-code',
-      },
-      {
-        title: 'Runs from the editor',
-        summary:
-          "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
-        needs: [],
-        where: 'Piwi: Run the tests that reach this file, Piwi: Run a saved selection…; the status bar',
-        doc: 'features/editor-runs',
-      },
-      {
-        title: "The editor's status bar",
-        summary:
-          "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",
-        needs: [],
-        where: 'The status bar of VS Code or a JetBrains IDE; piwi.statusBarAlert',
-        doc: 'features/editor-status-bar',
-      },
-      {
-        title: 'Runs started outside Piwi',
-        summary:
-          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
-        needs: ['fixtures'],
-        where:
-          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
-        doc: 'features/terminal-runs',
-      },
-      {
-        title: 'Runs window',
-        summary:
-          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
-        needs: ['fixtures', 'extension'],
-        where: 'Browser extension → More tools → Runs',
-        doc: 'features/runs-window',
-      },
-      {
-        title: 'Piwi Picker and your editor',
-        summary:
-          'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
-        needs: ['extension'],
-        where: 'Browser extension → Settings → Send to editor',
-        doc: 'features/editor-pairing',
-      },
-      {
-        title: 'Breakpoints in the browser',
-        summary:
-          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
-        needs: ['fixtures'],
-        where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
-        doc: 'features/editor-breakpoints',
-      },
-      {
-        title: 'Pause and step from the editor',
-        summary:
-          'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
-        needs: ['fixtures'],
-        where:
-          'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
-        doc: 'features/editor-run-control',
-      },
-      {
         title: 'Watch a running test',
         summary:
           "The page of a test running on your machine, up to ten images a second, through its next tests and stops: from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app, with Pause and watch to stop it there.",
@@ -655,15 +628,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where:
           "Piwi: Watch a worker's test; Tools → Piwi → Watch a worker's test in a JetBrains IDE; Watch on a worker of the Runs window or the desktop app",
         doc: 'features/watch-running-test',
-      },
-      {
-        title: 'Code from a pause',
-        summary:
-          "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
-        needs: ['fixtures'],
-        where:
-          "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
-        doc: 'features/editor-stop-code',
       },
       {
         title: 'End the test',
@@ -675,43 +639,295 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/end-the-test',
       },
       {
-        title: 'Debug in my editor',
-        summary:
-          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
-        needs: ['fixtures'],
-        where: "Execution → Source, beside the failing line's frame",
-        doc: 'features/debug-in-editor',
-      },
-      {
-        title: 'Run control for agents',
-        summary:
-          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
-        needs: ['fixtures'],
-        where:
-          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
-        doc: 'features/agent-run-control',
+        title: 'AI steps',
+        summary: 'Author and replay natural-language test steps an LLM turns into Playwright actions.',
+        needs: ['llm'],
+        where: 'Reporter config',
+        doc: 'features/ai-steps',
       },
     ],
   },
   {
-    title: 'Use it from elsewhere',
-    intro: 'Reach your results and act on them from wherever you already work.',
+    title: 'Editor extensions',
+    section: 'tools',
+    intro:
+      'Piwi in VS Code and the JetBrains IDEs: record a test at the cursor, run it and stop it at a breakpoint, and read the latest CI failures at the lines that failed.',
     features: [
       {
-        title: 'MCP server',
+        title: 'Editor extensions',
         summary:
-          'A Model Context Protocol server that gives coding agents read access to your runs, failures and diagnoses.',
-        needs: [],
-        where: 'Settings → MCP server',
-        doc: 'features/mcp',
+          'In VS Code and the JetBrains IDEs: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
+        needs: ['editor'],
+        where: 'VS Code extension, JetBrains plugin',
+        doc: 'features/editors',
       },
       {
-        title: 'Agent skills',
-        summary: 'Installable skills that teach a coding agent the Piwi failure-fixing workflow end to end.',
-        needs: [],
-        where: 'reporter CLI (`piwi skills`)',
-        doc: 'features/agent-skills',
+        title: 'Editor connection',
+        summary:
+          'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',
+        needs: ['editor'],
+        where: 'Piwi: Connect…; Settings → Tools → Piwi in a JetBrains IDE',
+        doc: 'features/editor-connection',
+        part: 'Set up',
       },
+      {
+        title: 'JetBrains plugin',
+        summary:
+          'The editor extensions in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API: what the plugin needs, the failures in its tool window, Code Vision above the code, and its actions under Tools → Piwi.',
+        needs: ['editor'],
+        where: 'JetBrains IDEs: Tools → Piwi, the Piwi tool window',
+        doc: 'features/jetbrains',
+        part: 'Set up',
+      },
+      {
+        title: 'Remote development',
+        summary:
+          'The editor extensions in a remote VS Code window (Remote SSH, WSL, Dev Containers, Codespaces) or on a JetBrains Gateway backend, with their runs reached from Piwi Picker through a forwarded port.',
+        needs: ['editor'],
+        where: 'A remote VS Code window; a JetBrains Gateway backend',
+        doc: 'guide/remote-development',
+        part: 'Set up',
+      },
+      {
+        title: 'Record tests from the editor',
+        summary:
+          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
+        needs: ['editor'],
+        where: 'Piwi: Record here…; Tools → Piwi → Record here… in a JetBrains IDE',
+        doc: 'features/editor-recording',
+        part: 'Write',
+      },
+      {
+        title: 'Recorded code',
+        summary:
+          "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
+        needs: ['editor'],
+        where: "playwright.config.ts → '@piwi' → codegen",
+        doc: 'features/recorded-code',
+        part: 'Write',
+      },
+      {
+        title: 'Runs from the editor',
+        summary:
+          "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
+        needs: ['editor'],
+        where: 'Piwi: Run the tests that reach this file, Piwi: Run a saved selection…; the status bar',
+        doc: 'features/editor-runs',
+        part: 'Run and debug',
+      },
+      {
+        title: "The editor's status bar",
+        summary:
+          "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",
+        needs: ['editor'],
+        where: 'The status bar of VS Code or a JetBrains IDE; piwi.statusBarAlert',
+        doc: 'features/editor-status-bar',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Runs started outside Piwi',
+        summary:
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+        needs: ['fixtures'],
+        where:
+          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
+        doc: 'features/terminal-runs',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Breakpoints in the browser',
+        summary:
+          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
+        needs: ['fixtures', 'editor'],
+        where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-breakpoints',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Pause and step from the editor',
+        summary:
+          'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
+        needs: ['fixtures', 'editor'],
+        where:
+          'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
+        doc: 'features/editor-run-control',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Code from a pause',
+        summary:
+          "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
+        needs: ['fixtures', 'editor'],
+        where:
+          "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-stop-code',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Debug in my editor',
+        summary:
+          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
+        needs: ['fixtures', 'editor'],
+        where: "Execution → Source, beside the failing line's frame",
+        doc: 'features/debug-in-editor',
+        part: 'Run and debug',
+      },
+      {
+        title: 'Failures in the editor',
+        summary:
+          "The latest CI run's failures at the lines that failed, with the heal and the fix plan as quick fixes, your local runs laid over them, each failing line followed through your edits, and the failures view as a tree.",
+        needs: ['editor'],
+        where: 'The Problems panel; the Failures view in VS Code, the Piwi tool window in a JetBrains IDE',
+        doc: 'features/editor-failures',
+        part: 'Read results',
+      },
+      {
+        title: 'Coverage in the editor',
+        summary:
+          'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
+        needs: ['fixtures', 'backend', 'editor'],
+        where:
+          'Application files in the editor; Piwi: Show or hide the coverage marks in VS Code, Tools → Piwi → Show coverage marks in a JetBrains IDE',
+        doc: 'features/editor-coverage',
+        part: 'Read results',
+      },
+      {
+        title: 'Open in editor',
+        summary: 'Every source path in the dashboard jumps to that file and line in VS Code or JetBrains.',
+        needs: [],
+        where: 'any source path',
+        doc: 'features/ide-integration',
+        part: 'Read results',
+      },
+    ],
+  },
+  {
+    title: 'Browser extension',
+    section: 'tools',
+    intro:
+      'Piwi Picker, in Chrome, Edge and Firefox: pick and lint locators on the live page, record a flow as a spec, and turn a bug you reproduce into a failing test. It works with no instance.',
+    features: [
+      {
+        title: 'Browser extension',
+        summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
+        needs: ['extension'],
+        where: 'Browser extension',
+        doc: 'features/extension',
+      },
+      {
+        title: 'Extension connection',
+        summary:
+          'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
+        needs: ['extension'],
+        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
+        doc: 'features/extension-connection',
+        part: 'Set up',
+      },
+      {
+        title: 'Piwi Picker and your editor',
+        summary:
+          'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
+        needs: ['extension', 'editor'],
+        where: 'Browser extension → Settings → Send to editor',
+        doc: 'features/editor-pairing',
+        part: 'Set up',
+      },
+      {
+        title: 'Pick an element',
+        summary:
+          'The ranked Playwright locators of one element of the live page, each checked against it, with the action, the assertion and a block of context for a coding agent.',
+        needs: ['extension'],
+        where: 'Browser extension → Pick an element',
+        doc: 'features/pick-an-element',
+        part: 'On the page',
+      },
+      {
+        title: 'Record actions',
+        summary:
+          'Clicks and fills across a site recorded into a runnable Playwright spec, paused, titled and replayed before you export it.',
+        needs: ['extension'],
+        where: 'Browser extension → Record actions',
+        doc: 'features/record-actions',
+        part: 'On the page',
+      },
+      {
+        title: 'Lint overlay',
+        summary: 'The buttons, links and fields of a page no stable locator finds alone, each with the test id to add.',
+        needs: ['extension'],
+        where: 'Browser extension → More tools → Lint overlay',
+        doc: 'features/lint-overlay',
+        part: 'On the page',
+      },
+      {
+        title: 'Tested elements',
+        summary:
+          'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
+        needs: ['extension'],
+        where: 'Browser extension → Tested elements',
+        doc: 'features/tested-elements',
+        part: 'On the page',
+      },
+      {
+        title: 'Developer tools',
+        summary:
+          "Beside the browser's DevTools: the ranked, verified locators of the element selected in the Elements panel.",
+        needs: ['extension'],
+        where: 'DevTools → Elements → Piwi',
+        doc: 'features/devtools',
+        part: 'DevTools',
+      },
+      {
+        title: 'Mock and slow down requests',
+        summary:
+          'A request the page made written as a page.route mock for a test, or slowed down or failed in your own tab, from DevTools.',
+        needs: ['extension'],
+        where: 'DevTools → Piwi → Network',
+        doc: 'features/mock-requests',
+        part: 'DevTools',
+      },
+      {
+        title: 'Report a bug',
+        summary:
+          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
+        needs: ['extension'],
+        where: 'Browser extension → Report a bug',
+        doc: 'features/report-a-bug',
+        part: 'Bugs',
+      },
+      {
+        title: 'Replay a bug report',
+        summary:
+          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
+        needs: ['extension'],
+        where: 'Browser extension → Replay a bug report',
+        doc: 'features/replay-a-bug-report',
+        part: 'Bugs',
+      },
+      {
+        title: 'Bug reports',
+        summary:
+          'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
+        needs: ['extension'],
+        where: 'Project → More actions → Bug reports',
+        doc: 'features/bug-reports',
+        part: 'Bugs',
+      },
+      {
+        title: 'Runs window',
+        summary:
+          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
+        needs: ['fixtures', 'extension'],
+        where: 'Browser extension → More tools → Runs',
+        doc: 'features/runs-window',
+      },
+    ],
+  },
+  {
+    title: 'Desktop app',
+    section: 'tools',
+    intro:
+      'The dashboard as a local app, with no Docker and no Node: it receives your local runs, runs tests from its window, and takes the runs a team instance asks of your machine.',
+    features: [
       {
         title: 'Desktop app',
         summary: 'A local instance in a desktop shell — run tests, reproduce and bisect, with one-click MCP wiring.',
@@ -751,146 +967,44 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where: 'Piwi Runner',
         doc: 'features/piwi-runner',
       },
+    ],
+  },
+  {
+    title: 'Coding agents',
+    section: 'tools',
+    intro:
+      'Your test history as tools a coding agent calls, the workflows that tell it what to do with them, and the runs on your machine for it to follow and steer.',
+    features: [
       {
-        title: 'Browser extension',
-        summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
-        needs: ['extension'],
-        where: 'Browser extension',
-        doc: 'features/extension',
-      },
-      {
-        title: 'Pick an element',
+        title: 'MCP server',
         summary:
-          'The ranked Playwright locators of one element of the live page, each checked against it, with the action, the assertion and a block of context for a coding agent.',
-        needs: ['extension'],
-        where: 'Browser extension → Pick an element',
-        doc: 'features/pick-an-element',
+          'A Model Context Protocol server that gives coding agents tools over your runs, failures and diagnoses, mostly read-only.',
+        needs: [],
+        where: 'Settings → MCP server',
+        doc: 'features/mcp',
       },
       {
-        title: 'Record actions',
+        title: 'Agent skills',
+        summary: 'Installable skills that teach a coding agent the Piwi failure-fixing workflow end to end.',
+        needs: [],
+        where: 'reporter CLI (`piwi skills`)',
+        doc: 'features/agent-skills',
+      },
+      {
+        title: 'Run control for agents',
         summary:
-          'Clicks and fills across a site recorded into a runnable Playwright spec, paused, titled and replayed before you export it.',
-        needs: ['extension'],
-        where: 'Browser extension → Record actions',
-        doc: 'features/record-actions',
-      },
-      {
-        title: 'Lint overlay',
-        summary: 'The buttons, links and fields of a page no stable locator finds alone, each with the test id to add.',
-        needs: ['extension'],
-        where: 'Browser extension → More tools → Lint overlay',
-        doc: 'features/lint-overlay',
-      },
-      {
-        title: 'Extension connection',
-        summary:
-          'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
-        needs: ['extension'],
-        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
-        doc: 'features/extension-connection',
-      },
-      {
-        title: 'Tested elements',
-        summary:
-          'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
-        needs: ['extension'],
-        where: 'Browser extension → Tested elements',
-        doc: 'features/tested-elements',
-      },
-      {
-        title: 'Report a bug',
-        summary:
-          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
-        needs: ['extension'],
-        where: 'Browser extension → Report a bug',
-        doc: 'features/report-a-bug',
-      },
-      {
-        title: 'Replay a bug report',
-        summary:
-          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
-        needs: ['extension'],
-        where: 'Browser extension → Replay a bug report',
-        doc: 'features/replay-a-bug-report',
-      },
-      {
-        title: 'Bug reports',
-        summary:
-          'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
-        needs: ['extension'],
-        where: 'Project → More → Bug reports',
-        doc: 'features/bug-reports',
-      },
-      {
-        title: 'Developer tools',
-        summary:
-          "Beside the browser's DevTools: the ranked, verified locators of the element selected in the Elements panel.",
-        needs: ['extension'],
-        where: 'DevTools → Elements → Piwi',
-        doc: 'features/devtools',
-      },
-      {
-        title: 'Mock and slow down requests',
-        summary:
-          'A request the page made written as a page.route mock for a test, or slowed down or failed in your own tab, from DevTools.',
-        needs: ['extension'],
-        where: 'DevTools → Piwi → Network',
-        doc: 'features/mock-requests',
+          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
+        needs: ['fixtures'],
+        where:
+          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
+        doc: 'features/agent-run-control',
       },
       {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],
-        where: 'Project → Test functions',
+        where: 'Project → More actions → Test functions',
         doc: 'features/test-functions',
-      },
-      {
-        title: 'Open in editor',
-        summary: 'Every source path in the dashboard jumps to that file and line in VS Code or JetBrains.',
-        needs: [],
-        where: 'any source path',
-        doc: 'features/ide-integration',
-      },
-      {
-        title: 'Editor extensions',
-        summary:
-          'In VS Code and the JetBrains IDEs: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
-        needs: [],
-        where: 'VS Code extension, JetBrains plugin',
-        doc: 'features/editors',
-      },
-      {
-        title: 'JetBrains plugin',
-        summary:
-          'The editor extensions in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API: what the plugin needs, the failures in its tool window, Code Vision above the code, and its actions under Tools → Piwi.',
-        needs: [],
-        where: 'JetBrains IDEs: Tools → Piwi, the Piwi tool window',
-        doc: 'features/jetbrains',
-      },
-      {
-        title: 'Failures in the editor',
-        summary:
-          "The latest CI run's failures at the lines that failed, with the heal and the fix plan as quick fixes, your local runs laid over them, each failing line followed through your edits, and the failures view as a tree.",
-        needs: [],
-        where: 'The Problems panel; the Failures view in VS Code, the Piwi tool window in a JetBrains IDE',
-        doc: 'features/editor-failures',
-      },
-      {
-        title: 'Coverage in the editor',
-        summary:
-          'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
-        needs: ['fixtures', 'backend'],
-        where:
-          'Application files in the editor; Piwi: Show or hide the coverage marks, in VS Code and under Tools → Piwi',
-        doc: 'features/editor-coverage',
-      },
-      {
-        title: 'Editor connection',
-        summary:
-          'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',
-        needs: [],
-        where: 'Piwi: Connect…; Settings → Tools → Piwi in a JetBrains IDE',
-        doc: 'features/editor-connection',
       },
     ],
   },

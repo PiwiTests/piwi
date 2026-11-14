@@ -6,16 +6,16 @@ lang: en-US
 
 # Production checklist
 
-A fresh Piwi instance starts as an **open dashboard with authentication off** — right for localhost, wrong for a network. This is the one page that lists what to set before anyone else can reach it. Work down it before you put an instance on a shared address; the detail links go to the pages that explain each step.
+A fresh Piwi instance starts as an **open dashboard with authentication off** — right for localhost, wrong for a network. This is the one page that lists what to set before anyone else can reach it; [Authentication](./authentication) covers what turning sign-in on needs. Work down it before you put an instance on a shared address; the detail links go to the pages that explain each step.
 
 ## Before you expose it
 
 1. **Turn authentication on.** Set `PIWI_AUTH_ENABLED=true` and a strong `PIWI_AUTH_SECRET` (session-cookie signing key). The server refuses to start with auth enabled and no secret, or one shorter than 32 characters, so this can't half-apply. Set `PIWI_SETUP_TOKEN` to a random value too: the first-administrator form asks for it, so whoever reaches the URL before you cannot make themselves administrator. Then create that account before you share the URL. See [Authentication](./authentication#initial-setup).
-2. **Set the encryption key.** Set `PIWI_SECRET_KEY` so the credentials you store in the dashboard — AI API keys, SCM tokens, webhook secrets — are encrypted with **your** key. Unset, the dashboard refuses to save them. Generate either secret with:
+2. **Set the encryption key.** Set `PIWI_SECRET_KEY` so the credentials you store in the dashboard ([which ones](/guide/privacy#secrets-at-rest)) are encrypted with **your** key. Unset, the dashboard refuses to save them. Generate either secret with:
 
    <<< @/snippets/secret.sh{bash}
 
-3. **Terminate TLS.** Always put the dashboard behind an HTTPS reverse proxy. Mind the two things a proxy gets wrong by default: **upload size** (trace and report uploads reach hundreds of MB) and **SSE buffering** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered). With authentication on, browser sign-in needs HTTPS in any case: the session cookie is `Secure`, so over plain `http://` it only works on `localhost`. See [Deployment → Reverse proxy (HTTPS)](./deployment#reverse-proxy-https).
+3. **Terminate TLS.** Put the dashboard behind an HTTPS reverse proxy: browser sign-in needs HTTPS, and a proxy's defaults get the **upload size** and **event-stream buffering** wrong. See [Deployment → Reverse proxy (HTTPS)](./deployment#reverse-proxy-https).
 4. **Tell Piwi its address and that it is behind a proxy.** Set `PIWI_SITE_URL` to the public HTTPS address: the links in emails, notifications and pull-request comments, and the OAuth callbacks, are built from it. Unset, emails and notifications link to `http://localhost:3000`, no pull-request comment is posted, and OAuth callbacks follow the request's host. Set `PIWI_TRUST_PROXY=true` so the per-client rate limits on the auth endpoints key on the real client address from `X-Forwarded-For` instead of pooling every request into the proxy's one address; while it is unset, the server logs a warning the first time a request carries that header. Leave it off when clients connect directly — see the [configuration reference](/reference/configuration#authentication).
 5. **Persist and back up the data.** Mount `/app/.data` (or your configured database and storage paths) on a persistent volume, and set up a backup before you accumulate history you care about. See [Backup & restore](./backup-restore).
 6. **Pin a version.** Running `latest` lets an unattended `docker pull` move you across a breaking change. Pin an exact tag and bump it deliberately — migrations are forward-only, so the rollback path is *restore a backup*, not "pull the old tag." See [Upgrading](./upgrading).
@@ -28,21 +28,21 @@ The defaults are conservative, so the checklist above is short. Without any extr
 
 - The container runs as a **non-root** user (`nodejs`, UID 1001).
 - Passwords are hashed with **scrypt** and per-password salts, two at a time (up to 32 more wait, and one client address holds at most 4 of those places, an IPv6 address counted by its /64 network; past either limit the server answers `503` with `Retry-After` at once, and the refused request counts toward no rate limit). A stored hash that declares a higher scrypt cost than Piwi writes is refused as a wrong password is, and the server logs the account's id. Login, initial-setup and password-reset endpoints are **rate-limited** per client address, returning `429` with `Retry-After`. Failed logins are also limited per account in 15 minutes, its username and its email counted together: 5 from one address and 50 from all addresses together, so wrong passwords sent from other addresses do not stop the owner signing in until they pass 50. A password change allows 5 wrong current passwords per account and 20 per address in 15 minutes.
-- **API keys** are stored only as SHA-256 hashes and shown once, at creation — a leaked database yields no usable key.
 - No other site can frame the dashboard: every response carries `X-Frame-Options: SAMEORIGIN` and
   `frame-ancestors 'self'`. Status badges and report charts are images, so a README or a wiki still shows them.
-- Secrets supplied by **environment variable** are never written to the database and never returned by the API; the settings UI shows them read-only with a lock badge.
-- Stored credentials are encrypted with **AES-256-GCM** once `PIWI_SECRET_KEY` is set.
+- Stored credentials are encrypted with **AES-256-GCM**, API keys kept only as hashes, and secrets set by environment variable never written to the database: [Secrets at rest](/guide/privacy#secrets-at-rest).
 - Database **migrations are forward-only** and run on startup, before any request reaches the database; if one fails, every database call fails and `/api/health` returns `503` rather than serving a half-migrated schema.
 
 ## Optional, and worth a thought
 
-- **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution or cluster without signing in — see [Share links](/features/share-links).
+- **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution, cluster, report snapshot or dashboard it opens without signing in — see [Share links](/features/share-links).
 - **Retention.** Automatic pruning is opt-in; set `PIWI_RETENTION_DAYS` to cap how much run history you keep. See [Storage → Data retention](./storage#data-retention).
+- **Observability.** Both are off by default. `PIWI_METRICS_ENABLED=true` serves the metric catalog to a Prometheus you run, and naming an OpenTelemetry collector sends it a trace of each request with the SQL statements it ran, their parameters as placeholders. See [Metrics and rollup export](./metrics) and [Tracing with OpenTelemetry](./tracing).
 
 ## Related
 
-- [Authentication](./authentication) — roles, sign-in and OAuth
+- [Authentication](./authentication) — sign-in, instance roles and OAuth
+- [Access, roles and groups](./project-access) — the project roles each account holds
 - [API keys](./api-keys) — how CI and scripts sign in once authentication is on
 - [Deployment](./deployment) — the reverse proxy and the full install
 - [Backup & restore](./backup-restore) — what to copy, and how to restore it

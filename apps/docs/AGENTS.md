@@ -91,13 +91,19 @@ What that means for a page:
 
 ### One grouping: the feature catalog
 
-The feature catalog (`apps/application/shared/piwi-features.ts`) is the only place features are grouped. Three things
+The feature catalog (`apps/application/shared/piwi-features.ts`) is the only place features are grouped. Four things
 are rendered from it, so never restate its lists by hand:
 
 - the **Features sidebar**, by `featuresSidebar()` in `.vitepress/navigation.ts`: one group per catalog group, one
   entry per catalog entry whose page is under `features/`;
-- the **landing page's cards**, one per catalog group, set by `transformPageData` in `.vitepress/config.mts`;
+- the **Tools sidebar**, by `toolsSidebar()`: one group per catalog group with `section: 'tools'`. A group whose first
+  entry carries its title links its heading to that entry's page, and entries that share a `part` sit under its label;
+- the **landing page's cards**, set by `transformPageData` in `.vitepress/config.mts`: one per group, a group with
+  `card: false` counted on the card before it, and one card for all the tools;
 - the **All features** page, `reference/features.md`.
+
+**A tool's page keeps its URL** under `features/` (or `guide/`): `sidebars()` gives each one a key of its own, and the
+top navigation's `activeMatch` patterns are built from the same list.
 
 The top navigation and the Guide, Self-hosting and Reference sidebars are plain data in `.vitepress/navigation.ts`,
 which the drift test also reads.
@@ -107,14 +113,16 @@ which the drift test also reads.
 | Guide → Get started | `guide/` | "How do I get a first run in, and what do these words mean?" |
 | Guide → Set up | `guide/` | "How do I connect my suite, my CI, and what a feature needs?" |
 | Guide → About Piwi | `guide/` | "What is this, and should I adopt it?" |
-| Features | `features/`, `recipes/` | "What does this feature do, and how do I use it?", grouped by catalog group |
+| Features | `features/`, `recipes/` | "What does the dashboard do with my results?", grouped by catalog group |
+| Tools | `features/`, `guide/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents |
 | Self-hosting | `operate/` | "I run the server." |
 | Reference | `reference/` | "What are all the values?" |
 
 ### Where a new page goes
 
-- **A new feature** adds a catalog entry and one page under `features/`. The entry's `title` is the page's H1 and its
-  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
+- **A new feature** adds a catalog entry and one page under `features/`: in a tool's group when the reader uses it
+  from an editor extension, Piwi Picker, the desktop app or an agent, else in a Features group. The entry's `title` is
+  the page's H1 and its sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
   feature groups an entry's `doc` is a whole page, never a `#section`; only the Self-hosting group may point into a
   section of an operator page. A page stays single-purpose: if it needs two sentences to say what it is for, it is two
   pages (`storage` + `database` was one).
@@ -138,6 +146,8 @@ which the drift test also reads.
   such check: the detector ids are not kept in one list.
 - **A recipe** goes in `recipes/` and into `RECIPES_BY_GROUP` in `.vitepress/navigation.ts`, at the top of the catalog
   group it serves.
+- **A rule several features share has one owning page**, listed in the owner table of `docs-claims.test.ts`; every
+  other page states its effect in a sentence and links it.
 - **A page that moves** keeps its old URL working with a row in `public/404.html`; GitHub Pages has no server-side
   redirects.
 
@@ -173,7 +183,8 @@ flags, events): link the reference page instead of copying it.
 - One footer heading, `## Related`.
 - An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
   its native size on a click. The drift test refuses a Markdown image and a `doc-screenshot` wrapper.
-- A new term goes into `concepts.md` in the change that introduces it.
+- A new term goes into `concepts.md` in the change that introduces it: its definition only, in at most 80 words,
+  with the rule on the feature page it links.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet
   wired", "coming soon" or "unreleased".
@@ -230,7 +241,9 @@ every docs link the code builds, every link between pages and every `https://piw
 descriptions and the word budgets; the prose bans (endpoints, MCP tool count, changelog wording such as "since
 version" or "now supports", planned work); the hand-written reference pages and the _Live demo_ section of
 `features/ui-overview.md`; the recipes' links; the demo examples; the positioning line and the single-source snippets.
-`docs-page-meta.test.ts` checks that each page's description is at least 50 characters.
+`docs-page-meta.test.ts` checks that each page's description is at least 50 characters. `docs-claims.test.ts` checks
+counts, quoted editor commands, figures in recipes, the privacy page's destinations, the length of a `concepts.md`
+entry and the link from a page to the owner of a rule it names.
 
 The docs build itself fails only on a link to a missing page, so this test is what catches a heading that moved. It
 computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`); when you move a section, keep

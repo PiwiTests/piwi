@@ -9,7 +9,8 @@ lang: en-US
 The unit tests of the front end and the back end run your code too. `piwi coverage upload` sends their coverage
 reports to the dashboard, keyed by the commit they ran on and a suite name you choose (`unit-front`, `unit-back`), to
 sit beside the coverage Piwi records from [code reach](./code-reach) and [server coverage](./server-coverage) for the
-same commit.
+same commit. This page covers the uploads, a commit's combined ratio and the Coverage tab's **Code** view; its
+other views are [Scenario gaps](./scenario-gaps).
 
 ## Upload a report
 
@@ -137,8 +138,8 @@ folder and file with its bar and its open [scenario gaps](./scenario-gaps), sort
 files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
 the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps), each with its
-**Accept**, **Snooze**, **Covered by** and **Dismiss**. The functions no suite ran, the error paths no suite ran in code that ran, and the
-functions only one test runs are gaps of their own ([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
+**Accept**, **Snooze**, **Covered by** and **Dismiss**. Code no suite runs, or only one test runs, raises gaps of its own
+([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
 default branch when they pick none or several.
 
 <figure>
@@ -148,9 +149,8 @@ default branch when they pick none or several.
 
 ## In pull requests
 
-The [Uncovered changes](./uncovered-changes) section of the pull-request comment counts the change's patch coverage
-and names the changed lines no suite ran, over the same scope. `piwi gate --min-patch-coverage <percent>` warns under
-a minimum, and never fails the build.
+The pull-request comment's [Uncovered changes](./uncovered-changes#on-the-pull-request) section counts the change's
+patch coverage over the same scope, and the [CI merge gate](./merge-gate#what-only-warns) can warn under a minimum.
 
 ## Over time
 

@@ -10,15 +10,17 @@ lang: en-US
 
 The test catalog lists the tests you have. **Scenario gaps** describe the ones you don't: the route no test requests,
 the page nothing visits, the test that is the only thing standing between a page and no test at all. Each gap is a
-suggestion with its evidence and a next step, never a verdict.
+suggestion with its evidence and a next step, never a verdict. This page covers the Test Map, its gaps and the Coverage tab's
+**Gaps** and **Map** views; the **Code** view is [Combined coverage](/features/combined-coverage).
 
 Gaps come from the **[Test Map](/guide/concepts#test-map)**: one graph per project of what the application exposes
 (routes, pages, controls, links, and the handlers and dependencies behind them) and which tests
 [reach](/guide/concepts#reach) each of them. It is built from what the reporter and the [capture fixtures](/guide/capture-fixtures) already record: the requests
 and page visits of every run.
 
-> **Observed reach, not coverage.** A gap says a test *observably reached* something, or that nothing did, measured
-> from real runs, never from instrumented code coverage. "No edge" means "no evidence", not "proof of absence".
+> **Observed reach first.** A gap on a route, a page or a control says a test *observably reached* it, or that
+> nothing did, measured from real runs. The detectors of code, such as *Code nobody executes*, read the coverage the
+> runs or uploaded reports record. "No edge" means "no evidence", not "proof of absence".
 
 <figure>
   <img src="/diagrams/test-map-graph.svg" alt="Tests reach pages and routes; routes lead to handlers and dependencies; nodes colored by gap class">
@@ -34,18 +36,18 @@ with its evidence. Each gap names its detector and its **[class](/guide/concepts
 
 | Class | Meaning | Example |
 |---|---|---|
-| **blind-spot** | nothing reaches it | `Observed 412 times over the last 30 runs, always 200` |
+| **blind-spot** | nothing reaches it: a node, or a path inside reached code such as an error status | `Observed 412 times over the last 30 runs, always 200` |
 | **false-comfort** | the tests pass without checking it: a [probe](/features/probes) broke it, or the app logged an error, and they still passed | `Tests pass when POST /api/orders breaks` |
 | **fragile** | what reaches it could stop at any time | `Only checkout › coupon reaches this` |
 
 [Server probes](/features/probes#server-probes) add **findings** in two more classes, **unhandled** and **degraded**:
 the application itself did not cope with the fault, whatever the tests saw.
 
-Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code behind a node changes,
-whether it was part of an earlier escaped failure and the priority of the tests that reach it, and, for a changed file,
+Gaps are ranked by a score, the detector's confidence times **[exposure](/guide/concepts#exposure)**: how often the
+code behind a node changes, whether it was in an earlier escaped failure and the priority of the tests reaching it, and, for a changed file,
 how long it has been changing. The score and its factors show on every gap, and
 [which gaps get which factors](/reference/gap-detectors#exposure) varies. Counts are per class, never a coverage percentage: a percentage over an observed
-surface looks complete exactly when that surface is sparse.
+surface looks complete when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
 open [bug reports](/features/bug-reports), and code no suite runs, error paths no suite runs, or code only one test runs.
@@ -96,12 +98,9 @@ Every gap takes the same four verbs as an inbox item:
 - **Covered by** names the test written for it and closes the gap. A gap closed this way stays closed when its
   detector raises it again, and the covering test is recorded as reaching the node.
 
-Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
-the detector no longer finds it, for example once its node gains a trusted test. A closed gap is not always a test
-written: an uncovered change also closes when its file is deleted or nothing observes it any more. A gap on new
-surface stays open until a test reaches it ([detectors](/reference/gap-detectors#detectors)). A closed gap that comes
-back reopens, unless it was closed with **Covered by**. Home lists the gaps still accepted a
-week after their acceptance: the tests not yet written.
+Gaps persist, so triage survives recomputation, and a gap **closes itself** when its detector no longer finds it,
+which is not always a test written ([when a gap closes](/reference/gap-detectors#when-a-gap-closes)). Home lists the
+gaps still accepted a week after their acceptance: the tests not yet written.
 
 <figure>
   <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">
@@ -135,7 +134,7 @@ Beyond what tests observe, the map can hold what the application *declares* it e
 reaches is named a **declared, never hit** blind spot instead of staying invisible. Three sources feed it:
 
 - **The instrumentation's route manifest.** The [backend instrumentation](/guide/backend-logs#route-manifest) serves
-  the application's routes at `/__piwi/manifest` outside production, and the reporter uploads it with the run.
+  the application's routes at `/__piwi/manifest` in development and test, and the reporter uploads it with the run.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
 - **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi reads the document
@@ -152,8 +151,8 @@ Under the gap list, **map health** counts each input against what it could hold 
 an input that is short shows the step that fills it, so a quiet tab is not mistaken for a covered application.
 
 <figure>
-  <img src="/screenshots/scenario-gaps-map-health.png" alt="Map health: seven inputs of a Test Map, probes short at 7 of 16 routes">
-  <figcaption>Six inputs complete; probes reach 7 of 16 routes, with the step that adds the rest.</figcaption>
+  <img src="/screenshots/scenario-gaps-map-health.png" alt="Map health: seven inputs of a Test Map, probes short of half the routes">
+  <figcaption>Six inputs complete; probes reach under half the routes, with the step that adds the rest.</figcaption>
 </figure>
 
 ## What this is not

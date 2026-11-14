@@ -6,6 +6,8 @@ lang: en-US
 
 # The editor's status bar
 
+<Needs editor />
+
 The Piwi item in the status bar of the [editor extensions](./editors) says how the latest run of your branch went, or
 how far a run in progress is, for the Playwright config of the file you are editing.
 
@@ -14,7 +16,10 @@ local runs fixed (`2 failing · 1 fixed locally`). While a run started from this
 is in progress, the item says where its test stands stopped or the call a paused one waits in, that it is shared live,
 and how far it is (`Piwi: held at its failure · checkout.page.ts:12 · run #124 · 4 of 9 · 1 failed`), in the same
 words in both editors, and returns to the latest run when it ends. A test that waits for you marks the item until you
-answer it: its background turns yellow in VS Code, and its icon takes a dot in a JetBrains IDE.
+answer it: its background turns yellow in VS Code, and its icon takes a dot in a JetBrains IDE. A run you started keeps the item whichever Playwright config the active file belongs to, and VS Code's Testing
+view shows a run that is not yours with its tests' results as they end, never as your tests running. The editor follows
+the two newest CI runs of the branch, through the connection to the instance it already holds, and while it follows
+one, the run's reporter streams the call each test is at.
 
 With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder
 that holds it, and follows you from file to file; outside every config folder, it shows the first connected config.

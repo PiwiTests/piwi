@@ -9,7 +9,10 @@ lang: en-US
 <Needs reporter />
 
 The **Analytics** page (`/analytics`) steps back from single runs and tests: it aggregates every
-project over a period you choose, to show where the suite as a whole is drifting.
+project over a period you choose, to show where the suite as a whole is drifting. This page covers what
+every analytics view shares: the scope, where the numbers come from, drilling down, chart export and
+targets. Arranging widgets into an analytics dashboard of your own is on [Dashboards](./dashboards), and
+sending one as a document on [Quality reports](./quality-reports).
 
 ## Scope
 
@@ -87,7 +90,7 @@ view, save an [analytics dashboard](./dashboards).
 
 ### Where the numbers come from
 
-The [pass rates](/guide/concepts#pass-rate), run counts, durations, CI time, wasted time and regression counts are read from
+The [pass rates](/guide/concepts#pass-rate), run counts, durations, CI time, [wasted time](./slow-tests#wasted-time) and regression counts are read from
 **daily rollups**, one precomputed row per project, UTC day, environment, branch and run kind, kept at
 ingest and checked nightly against the stored runs. When [retention](/operate/storage#data-retention)
 deletes old runs, their numbers stay in the rollups, so a one-year pass-rate line survives a 30-day
@@ -97,7 +100,7 @@ The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper
 
 ## Widgets and metrics
 
-The page is the built-in **Overview** dashboard, in four bands. [Analytics widgets](/reference/analytics-widgets)
+The page is the built-in **Overview** [analytics dashboard](./dashboards), in four bands. [Analytics widgets](/reference/analytics-widgets)
 lists every widget an [analytics dashboard](./dashboards) can place, and [Metrics](/reference/metrics) defines every
 number they show, with its unit and which direction is better.
 
@@ -109,7 +112,7 @@ the period, one line per kind:
 - **Locator heals**: call sites whose code now uses the recommended locator, whoever changed it, and the
   [auto-heal](./auto-heal) pull requests merged or closed.
 - **AI diagnoses**: those written, rated helpful, and confirmed by a fix that changed the files they named.
-- **CI gate**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
+- **[CI gate](./merge-gate)**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
   failure that came back.
 - **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
 - **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.
@@ -136,7 +139,7 @@ Every chart carries a menu in its header. **Copy as PNG** puts the chart, with i
 as an image, ready to paste into a slide; a browser that cannot copy images downloads the PNG instead.
 **Download Excel** saves the numbers behind the chart as an .xlsx workbook, one row per bucket or group:
 numbers and dates are real cells, and a test title is never run as a formula. To send a whole
-dashboard, export it as a [quality report](./quality-reports) instead.
+analytics dashboard, export it as a [quality report](./quality-reports) instead.
 
 <figure>
   <img src="/screenshots/chart-export-menu.png" alt="A chart's export menu open on the Analytics page: copy the chart as an image, or download its data as Excel">
@@ -146,8 +149,8 @@ dashboard, export it as a [quality report](./quality-reports) instead.
 ## Targets
 
 A project can carry **targets**, set in the **Targets** section of its **Settings** tab: a test pass rate to reach, and
-limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix.
-Each one is optional. Over the period a dashboard shows, a target is **met** or **missed**:
+limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cluster and the median time to fix.
+Each one is optional. Over the period an analytics dashboard shows, a target is **met** or **missed**:
 
 - the headline tiles mark each number that has a target, met or missed, with one project in scope;
 - the portfolio's **Targets** column counts the targets each project meets;
@@ -160,9 +163,8 @@ against about four weeks of it.
 ## Marking what you changed
 
 [Timeline markers](./timeline-markers) record a deploy, a CI-runner migration or a dependency bump
-against a project, drawn as a vertical line across the trend charts. On the analytics page, with one project in scope every marker
-is drawn; across projects only `release`, `infra` and `incident` markers are, labeled with their project — so "the slowdown started the day we switched runners"
-becomes something you can see rather than remember.
+against a project, drawn as a vertical line across the trend charts; which markers a chart draws across
+projects is under [Where markers show up](./timeline-markers#where-markers-show-up).
 
 ## Related
 

@@ -6,7 +6,7 @@ lang: en-US
 
 # Coverage in the editor
 
-<Needs reporter fixtures backend />
+<Needs reporter fixtures backend editor />
 
 With [coverage](/guide/concepts#coverage) recorded, the [editor extensions](./editors) mark the lines of an
 application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and in
@@ -113,7 +113,7 @@ options.
 
 ## Show or hide the marks
 
-**Piwi: Show or hide the coverage marks**, under **Tools → Piwi** in a JetBrains IDE.
+**Piwi: Show or hide the coverage marks** in VS Code, **Show coverage marks** under **Tools → Piwi** in a JetBrains IDE.
 
 The command shows up once a file showed marks. The marks are shown by default; the choice is kept for the workspace in
 VS Code and in `.idea/workspace.xml` in a JetBrains IDE, on your machine only. The lenses and the hover stay.

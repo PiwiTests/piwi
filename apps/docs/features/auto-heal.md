@@ -10,7 +10,7 @@ lang: en-US
 
 When a locator breaks on your default branch and Piwi has high-confidence evidence for the replacement, it can open the
 fix pull request itself: a branch, a one-line locator edit per broken call site, and a body that shows the change, the
-score, where the replacement came from, and the command that verifies it. The CI gate runs on the PR like any other,
+score, where the replacement came from, and the command that verifies it. The [CI gate](./merge-gate) runs on the PR like any other,
 and [fix verification](./failure-clusters#did-the-fix-work) records the cluster as fixed once the tests pass.
 
 It is **off by default**, and even once on it acts only on projects you list. Writing to your repository is the
@@ -24,7 +24,7 @@ strongest thing the dashboard does, so the posture is conservative by design.
   run's own diff renaming the string the locator finds its element by. No AI-generated code is ever in the write path.
 - Each edit must come from a stored snapshot (`prior-run`, `fingerprint`, or `cross-test`) or a
   [diff rename](./locator-healing#what-it-does) (`diff-rename`, scored 95) and score at or above the configured
-  minimum — or be a locator **you confirmed** in the picker. A snapshot whose element name is gone from the failing
+  minimum — or be a locator **you confirmed** with one of the [pickers](./locator-healing#use-it). A snapshot whose element name is gone from the failing
   page is skipped unless you confirmed the pick.
 - Before committing, Piwi re-reads each file at the branch head and only writes lines it can still match exactly. A
   line that has drifted is dropped, not guessed.
@@ -40,8 +40,8 @@ strongest thing the dashboard does, so the posture is conservative by design.
 ## After the PR opens
 
 - **Closed without merging** — Piwi takes that as a no. An edit the closed PR carried (the same file, failing locator
-  and replacement) is not proposed again, unless someone picks that replacement in the
-  [locator picker](./locator-healing#use-it) after the PR was closed.
+  and replacement) is not proposed again, unless someone picks that replacement with a
+  [picker of the Locator fix panel](./locator-healing#use-it) after the PR was closed.
 - **A run on the heal branch** — CI runs reported from the PR's branch are linked to the heal action. The first one
   in which every healed test passes is recorded as verified on the branch, and Piwi comments on the PR once to say so.
   It never marks a draft ready for review: that stays your call.

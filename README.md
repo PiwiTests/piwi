@@ -96,7 +96,7 @@ docker run -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-ser
 It answers at `http://localhost:3000`, on this machine only: with authentication off, anyone who
 reaches the port is an administrator, so publish it on every interface (`-p 3000:3000`) only once
 [authentication](https://piwitests.dev/operate/authentication) is on. The SQLite database and the
-`.data/` storage are created on the first request. On a Linux host, the `chown` matters: without it,
+`.data/` storage are created when the server starts. On a Linux host, the `chown` matters: without it,
 Docker creates `.data` owned by `root` and the container cannot write to it
 ([details](https://piwitests.dev/operate/deployment#permission-issues-with-volumes)).
 
@@ -107,10 +107,11 @@ Not a Docker person? Four other ways in:
 | **[Live demo](https://piwitests.dev/demo/)** | You want to look around first | Nothing: seeded data, entirely in your browser |
 | **[Desktop app](https://piwitests.dev/features/desktop)** | You run Playwright locally and want no server at all | An installer; no Docker, no Node |
 | **`npx @piwitests/server`** | You have Node.js 22+ and would rather skip Docker | One command, `.data/` in the current directory |
-| **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus what the host charges |
+| **[One-click deploy](https://piwitests.dev/operate/one-click-deploy)** | You want a shared instance and no server to run it on | An account on the host, and what it charges |
 
-The desktop installers are not yet code-signed, so the first launch needs a click-through; they exist
-for Windows x64, Apple-silicon macOS and Linux x86-64. The one-click templates ([`render.yaml`](./render.yaml),
+The desktop installers are not code-signed, so the first launch needs a click-through; they exist
+for Windows x64, Apple-silicon macOS and Linux x86-64. [Getting started](https://piwitests.dev/guide/getting-started#_1-run-the-dashboard)
+compares these ways in full. The one-click templates ([`render.yaml`](./render.yaml),
 [`fly.toml`](./fly.toml), [`deploy/`](./deploy)) are generated from the same variable registry as the
 configuration reference, so they cannot drift from what the app reads; per-provider limits are in the
 [deployment guide](https://piwitests.dev/operate/deployment#one-click-deploy).
@@ -124,22 +125,17 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 `init` installs the reporter, wraps your `playwright.config`, adds the capture fixtures and records the
 connection in `.env.example`. Every step is safe to re-run, and a config shape it will not rewrite is
 reported as a manual step with the exact change to make
-([details](https://piwitests.dev/guide/getting-started#fast-path-one-command)). By hand, it is one
-reporter entry and one fixtures file:
+([details](https://piwitests.dev/guide/getting-started#fast-path-one-command)). By hand, it is
+`wrapConfig` around your config and one fixtures file:
 
 ```typescript
 // playwright.config.ts
 import { defineConfig } from '@playwright/test'
+import { wrapConfig } from '@piwitests/reporter'
 
-export default defineConfig({
-  reporter: [
-    ['list'],
-    ['@piwitests/reporter', {
-      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
-      projectName: 'my-project',
-    }],
-  ],
-  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+export default wrapConfig(defineConfig({ testDir: './tests' }), {
+  serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
+  projectName: 'my-project',
 })
 ```
 
@@ -154,33 +150,40 @@ export { expect }
 
 Import `test` from that file instead of `@playwright/test`, and the deeper features light up: locator
 healing, slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots
-([capture fixtures](https://piwitests.dev/guide/capture-fixtures)). A runnable project lives in
+([capture fixtures](https://piwitests.dev/guide/capture-fixtures)). `wrapConfig` adds the reporter, registers
+the run before your global setup and turns on failure screenshots and traces; a config it cannot wrap takes
+the bare reporter entry instead, which gives those up unless you set them by hand
+([Reporter](https://piwitests.dev/guide/reporter#basic-configuration)). A runnable project lives in
 [`examples/sample-app`](./examples/sample-app).
 
 **3. Run your tests.** `npx playwright test`: the run streams into the dashboard while it executes,
-the project is created on first submission, and the reporter prints a `View run:` link at the end. In
-CI, set `PIWI_DASHBOARD_URL` (and `PIWI_API_KEY` once authentication is on): branch, commit, CI metadata
+the project is created on first submission (with authentication on, from an account that can upload on
+all projects), and the reporter prints a `View run:` link at the end. In CI, set `PIWI_DASHBOARD_URL`
+(and `PIWI_API_KEY` once authentication is on, an [API key](https://piwitests.dev/operate/api-keys#using-the-api-key-in-the-reporter)
+for a [CI account](https://piwitests.dev/operate/project-access#ci-accounts)): branch, commit, CI metadata
 and `--shard` merging are detected automatically ([CI & sharding](https://piwitests.dev/guide/ci)).
 
 Piwi is one Node process: about 300 MB of RAM idle, 1 vCPU, `linux/amd64` or `linux/arm64`. Disk is the
 variable, as traces and reports dominate: budget 50 to 200 MB per run and set a retention window. Your
-test project only needs a Node version Playwright supports; Node 22 is the *dashboard's* requirement.
+test project needs Node.js 20 or later for the reporter; Node 22 is the *dashboard's* requirement.
 
 ## Before you expose it
 
 The command above gives you an open dashboard with authentication off, which is fine on localhost and
-not fine on a network. Three things to set before anyone else can reach it:
+not fine on a network. The first steps of the
+[production checklist](https://piwitests.dev/operate/production-checklist#before-you-expose-it), before
+anyone else can reach it:
 
-- `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET`, which turn on accounts and roles
-  ([authentication](https://piwitests.dev/operate/authentication));
-- `PIWI_SECRET_KEY`, the key stored credentials (AI keys, SCM tokens) are encrypted with: without it,
-  the dashboard refuses to save them;
-- HTTPS, through a reverse proxy ([deployment guide](https://piwitests.dev/operate/deployment#reverse-proxy-https)).
+1. **Authentication**: `PIWI_AUTH_ENABLED=true`, `PIWI_AUTH_SECRET` (it signs the session cookies) and
+   `PIWI_SETUP_TOKEN`, which the form that creates the first administrator asks for
+   ([authentication](https://piwitests.dev/operate/authentication#initial-setup)).
+2. **The encryption key**: `PIWI_SECRET_KEY` encrypts the credentials stored in the database, such as AI
+   keys and SCM tokens; without it, the dashboard refuses to save them.
+3. **HTTPS**, through a reverse proxy ([deployment guide](https://piwitests.dev/operate/deployment#reverse-proxy-https)).
 
-Generate a value for either secret with
-`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. The full list, with
-the trust-proxy flag, backups and version pinning, is the
-[production checklist](https://piwitests.dev/operate/production-checklist). Found a vulnerability?
+Generate a value for each secret with
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. The checklist goes on
+with the public address and proxy trust, backups and a pinned version. Found a vulnerability?
 Please report it privately through the [security policy](./SECURITY.md).
 
 ## Where this fits

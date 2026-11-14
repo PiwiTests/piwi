@@ -8,13 +8,19 @@ lang: en-US
 
 <Needs reporter />
 
-A **fix plan** gathers everything Piwi knows about a failure cluster into one answer to "what do I do about this?" — the [AI diagnosis](./ai-diagnosis) and its validated patch, the ranked [locator replacement](./ai-diagnosis#locator-healing) with the exact file and line to edit, the failing tests, the owning team, and the command that verifies the work. None of it needs a model of its own: a cluster with no AI diagnosis still returns its failing tests, its locator suggestions and its verification command, so the plan is useful with no AI provider configured at all.
+This page covers what to do about a failure: the **Next** line that picks one action, the **More ways to fix**
+toolbox, the fix plan, reproducing and bisecting, and the failures fixed before. A **fix plan** gathers everything
+Piwi knows about a failure cluster into one answer to "what do I do about this?": the [AI diagnosis](./ai-diagnosis)
+and its validated patch, the ranked [locator replacement](./locator-healing) with the exact file and line to edit,
+the failing tests, the owning team, and the command that verifies the work. None of it needs a model: with no AI
+provider, a cluster still returns its failing tests, its locator suggestions and its verification command.
 
 ## Where to get it
 
 The same plan is reachable three ways:
 
-- **On the cluster page** — the recommended action leads as the **Next** line, and the section it points at sits right under the situation block as its own card, above the **Affected tests** selector and the evidence; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
+- **On the cluster and execution pages**: the [**Next**](#the-next-step) line, and the
+  [**More ways to fix**](#more-ways-to-fix) toolbox, with a **Copy as Markdown** action for a ticket.
 - **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/settings/api)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
@@ -22,7 +28,9 @@ The plan also names one Playwright command for the affected tests, by file and t
 
 ## The next step
 
-The cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **open the run** when the run stopped before the test, **mark resolved** a verified-but-open cluster (unless the diagnosis verified the fix and its patch still applies at the fix's commit: the patch comes first, with *Mark resolved* in its menu) or one whose ticket is Done and that stopped failing, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when its patch is stale, unchecked or missing), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation (with [`run:control`](/operate/project-access#what-each-role-can-do)), **diagnose with AI**, else **reproduce locally**. A step that copies a change says where it comes from: the AI diagnosis with its confidence (and its summary when **Most likely** shows another explanation), or locator healing and what it captured the locator from. For a code change the line shows the change itself, up to six lines of the patch or the failing and the recommended locator, with how many lines it leaves out. **Copy apply command** copies `git apply` with the whole patch inline, to run at the repository root (bash, zsh, Git Bash) (**Download .patch** is the portable route), **Copy locator** copies the recommended locator (the primary without a line to rewrite), and **Full patch** opens the whole patch in the Diagnosis section below. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
+The cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **open the run** when the run stopped before the test, **mark resolved** a verified-but-open cluster (unless the diagnosis verified the fix and its patch still applies at the fix's commit: the patch comes first, with *Mark resolved* in its menu) or one whose ticket is Done and that stopped failing, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when its patch is stale, unchecked or missing), **see what changed** when a fix regressed, **verify the flake fix** under the condition a
+[Flake Lab](./flake-lab) experiment reproduced, **reproduce the flake** under its top untested suspect, **compare
+attempts** on a retry pass or a newly flaky test, **re-run in CI** for a crash or failed navigation (with [`run:control`](/operate/project-access#what-each-role-can-do)), **diagnose with AI**, else **reproduce locally**. A step that copies a change says where it comes from: the AI diagnosis with its confidence (and its summary when [**Most likely**](/reference/clues#most-likely) shows another explanation), or locator healing and what it captured the locator from. For a code change the line shows the change itself, up to six lines of the patch or the failing and the recommended locator, with how many lines it leaves out. **Copy apply command** copies `git apply` with the whole patch inline, to run at the repository root (bash, zsh, Git Bash) (**Download .patch** is the portable route), **Copy locator** copies the recommended locator (the primary without a line to rewrite), and **Full patch** opens the whole patch in the Diagnosis section below. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
 
 <figure>
   <img src="/screenshots/next-step-change.png" alt="The Next line of a failure cluster: Replace the locator, the edit it copies as a diff under its call site, where the edit comes from, and the Copy apply command button">
@@ -31,7 +39,11 @@ The cluster and the [execution](./evidence#one-execution-diagnosis-first) page l
 
 ## More ways to fix
 
-Both pages carry one **More ways to fix** toolbox, below the evidence and above the history. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default. The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its own card under the situation block, with the rest folded below the evidence. You unfold the rest as needed.
+Both pages carry one **More ways to fix** toolbox, below the evidence and above the history: the diagnosis and its
+patch, the locator fix, verify (re-run in CI or locally), reproduce and bisect, fixed before, the tests it blocked and
+the fix plan. Each section is folded to one line (a label and a one-line summary), so no code block opens by default.
+The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its
+own card above the evidence ([the cluster page](./failure-clusters#the-cluster-page)).
 
 ## Reproduce and bisect
 
@@ -71,7 +83,7 @@ In the [desktop app](/features/desktop#reproducing-a-failure-and-finding-the-bre
 
 An open cluster often isn't new — the same failure, or one close to it, was fixed weeks ago. The fix plan looks back over the project's **resolved** clusters (resolved, or with a verified fix that held) and, when one resembles the open cluster closely enough, shows it in the **Fixed before** section of the toolbox — on both pages, and in the `?format=markdown` export and the `get_fix_plan` MCP tool.
 
-A match is scored deterministically first — the same fingerprint family (error kind, masked message, masked locator), the same failing locator, the same spec file or test — and then, when an [embedding model](/guide/ai-provider#model-roles) is configured, by semantic similarity of the stored cluster vectors. The top three matches are shown, each with **when** it was resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the triage note, the earlier diagnosis and its thumbs feedback (a diagnosis rated unhelpful shows only the thumbs-down, never its text), and one short reason it matched ("same error and locator", "same spec, similar message (0.91)"); the Markdown export and the MCP tool also name its owner. Nothing matches → the section renders nothing, no empty-state noise.
+A match is scored deterministically (the same fingerprint family: error kind, masked message, masked locator; the same failing locator; the same spec file or test), and, when an [embedding model](/guide/ai-provider#model-roles) stored vectors for both clusters with the same model, by their similarity too; no model is called. The top three matches are shown, each with **when** it was resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the triage note, the earlier diagnosis and its thumbs feedback (a diagnosis rated unhelpful shows only the thumbs-down, never its text), and one short reason it matched ("same error and locator", "same spec, similar message (0.91)"); the Markdown export and the MCP tool also name its owner. Nothing matches → the section renders nothing, no empty-state noise.
 
 **Apply the same triage** adds the earlier cluster's triage note below the open one's, prefixed `Same as cluster #N:` so the history reads as an intentional reuse; the lines already in the note stay, those Piwi added since the page loaded included. It never changes the open cluster's status — a new cluster is never marked resolved just because an old one was. The same top match is fed to the AI diagnosis as a *Previously fixed similar failure* clue, so the model can reuse a known fix rather than re-derive it.
 

@@ -6,9 +6,9 @@ lang: en-US
 
 # Code from a pause
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
-When a test stops in a run the [editor extensions](./editors) started, at a breakpoint, after **Pause** or **Step**,
+When a test stops in a run the [editor extensions](./editors) started, or [one that follows them](./terminal-runs), at a breakpoint, after **Pause** or **Step**,
 or at a failure, the editor offers code written from the page as it stands: an assertion of what you see, a mock of a
 request the page made, a better locator, the missing steps. The work on the page happens in the test's own browser;
 the editor service writes the code, and the editor puts it above the stopped line. The controls that move the test
@@ -24,12 +24,15 @@ are on [Pause and step from the editor](./editor-run-control).
 | **Assert a region** | `await expect(…).toMatchAriaSnapshot(…)` with the ARIA snapshot of the region you pick | The test's window |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
-The first four need the pause bar, so a headed browser: choose **Run headed**
-([How a run starts](./editor-runs#how-a-run-starts)). **Mock a request** works headless too.
+From the editor, the first four need the pause bar, so a headed browser: choose **Run headed**
+([How a run starts](./editor-runs#how-a-run-starts)). At a headless stop, Piwi Picker's
+[Runs window](./runs-window#code-from-a-stop) runs them through the page it watches. **Mock a request** works
+headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
   in the palette while a stop offers them (**Piwi: Assert at the stop**, **Piwi: Mock a request at the
-  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**. - **In a JetBrains IDE**,
+  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
+- **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
   bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**).
 
@@ -104,31 +107,24 @@ counted, and a line without a locator says nothing.
 
 ## A failure
 
-In a run Piwi started, a failing test holds its page once the test function, its hooks and its fixtures are done,
-instead of closing it, when someone can see it: in a headed browser, where the pause bar shows the failure (a run
-started with **Run headed**, or for a spec with `page.pause()`, is headed; with breakpoints or a `page.pause()`, its
-[**Hold failures**](/guide/concepts#hold-failures) is on from its start, unless
-[your run options](./editor-runs#how-a-run-starts) choose otherwise), or while you turn the run's Hold failures on,
-from the editor (**Piwi: Turn hold failures on or off for the run**, **Tools → Piwi → Turn hold failures on** or **off**)
-or Piwi Picker's [Runs window](./runs-window). The editor shows it as a stop of its own, at the
-line where the error entered the test's code, or at the call a test timeout cut short:
+When its run [holds a failing test](./watch-a-run#hold-failures) (with breakpoints or a `page.pause()`, from its
+start unless [your run options](./editor-runs#how-a-run-starts) choose otherwise, or once you turn it on with **Piwi:
+Turn hold failures on or off for the run**, **Tools → Piwi → Turn hold failures on** or **off**, or Piwi Picker's
+[Runs window](./runs-window)), the editor shows the failure as a stop of its own, at the line where the error entered
+the test's code, or at the call a test timeout cut short:
 
 `Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
 
 Its line is marked in red. **Resume** lets the test end as it failed (**Step** and **Finish** do the same, so the status
 menu offers Resume alone); **Pick** replaces the failing locator, **Record** writes the steps that were missing
-above the failing line, and the code actions work as at any stop. Every attempt that fails is held, never an expected
-failure. A headless failure in any other run, such as a plain **Run**, goes on at once, and the editor shows nothing of
-it.
-
-The run reports the failure as it happened. Piwi's evidence of it is the page at the failure: the requests, console
-entries and dialogs of the hold are not recorded. Playwright's own trace and video go on through it.
+above the failing line, and the code actions work as at any stop. A failure its run does not hold goes on at once,
+and the editor shows nothing of it.
 
 ## Limits
 
-- **Runs Piwi started only**, with a reporter that takes the actions; an editor extension older than the reporter
-  holds no failure.
-- **A desktop reproduction's** code is [to copy](./terminal-runs#a-reproduction-from-the-desktop-app).
+- **Runs Piwi started, and those [that follow your editor](./terminal-runs)**, with a reporter that takes the actions;
+  an editor extension older than the reporter holds no failure.
+- **A desktop reproduction's** code is [to copy](./desktop-runs#a-reproduction-in-your-editor).
 - **Assert offers what a recording's check panel offers**: a value, a text, a name, visible or hidden, enabled or
   disabled, with no `toBeChecked` or `toHaveCount` choice.
 - **Assert a region** leaves out the value of a password, one-time code or card field, in a shadow root too, and a link

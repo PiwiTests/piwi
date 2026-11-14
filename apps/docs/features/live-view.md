@@ -9,20 +9,16 @@ lang: en-US
 <Needs reporter fixtures />
 
 In a project that turns the live view on, a running test of a CI run, or of a run a developer
-[shares from their machine](./share-live), gets **Watch** on its run page: it opens the page that
-worker is on, a few images a second, each with the call it was taken at. It is for a CI run that seems stuck, or a
-teammate's paused test, without waiting for the trace. Nothing you do in the view reaches the test.
+[shares from their machine](./share-live), gets **Watch** on its run page on the team instance: the page that worker
+is on, a few images a second, each with the call it was taken at, for a CI run that seems stuck or a teammate's
+paused test. Nothing you do in the view reaches the test.
 
 ## Where to watch a run
 
-| The run | Where its test's page shows |
-|---|---|
-| A CI run, or a run shared from a developer's machine | Its page on the team instance: **Watch** |
-| A run you start from VS Code, a JetBrains IDE or a terminal | Its browser when headed; Piwi Picker's [Runs window](./runs-window#watch-live) and the editor's [worker view](./watch-running-test), running or stopped |
-| A run the desktop app starts | Its [Local runs](./desktop-runs#watch) tray and the Runs window, running or stopped |
-
-A stop is a breakpoint, a `page.pause()` or **Pause**. A run that reports to the desktop app gets no live view key, so
-no team **Watch**.
+A CI run, or a shared run, is watched here. A run you start yourself shows in its browser when headed, and in your
+editor, Piwi Picker's Runs window and the desktop app's tray, running or stopped:
+[Watch a running test](./watch-running-test). A run that reports to the desktop app gets no live view key, so no team
+**Watch**.
 
 ## Turn it on
 
@@ -77,12 +73,13 @@ worker restarts; untick **Follow the worker's next test** to end it with its tes
 lane's worker left, as the live view turns off, or as you close it. A view that cannot open says why.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a run on your machine does, and its row then says where,
-shared or not ([its stops](./share-live#stops-shared-or-not)).
+shared or not ([where a test stopped](./watch-a-run#where-a-test-stopped)).
 
 ## What is sent, to whom, and what is kept
 
 - **No image from a run on your machine until you share it.** Its workers open no connection; its
-  [stops](./share-live#stops-shared-or-not) show as text.
+  [stops](./watch-a-run#where-a-test-stopped) show as text. Shared, its worker sends the team the images of the one
+  view its own tools watch.
 - **Nothing while nobody watches.** Each worker of a CI or shared run keeps one connection to the dashboard and says
   only when its test stops and goes on. No image is taken.
 - **While someone watches a worker**, that worker sends JPEG images of its test's page at quality 50, at the size the
@@ -93,7 +90,9 @@ shared or not ([its stops](./share-live#stops-shared-or-not)).
   goes on with an image a second. A view also gets the call's log. Nothing of the view is a step of the test or an
   action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
-  [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.
+  [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it. A CI
+  lane watched [in your editor](./watch-running-test#a-ci-run-of-your-branch) comes from here, read with the editor's
+  key, and counts among the run's watches for the key's owner, as a dashboard tab does; the editor keeps none.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: never written
   to the database, the logs or an export. A viewer that reads slowly gets the latest image alone. The run's trace stays
   the record.
@@ -113,7 +112,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
   [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
-  that person's oldest. Its workers send 4 MB of images and pages a second at most together.
+  that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
   ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
   run's setup, its CI workers and the people watching are separate clients.

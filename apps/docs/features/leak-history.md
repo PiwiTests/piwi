@@ -28,10 +28,9 @@ the base branch (the pull request's target, else the default branch), or since w
 
 Three places read it:
 
-- [`piwi gate`](/guide/ci#blocking-a-merge): `--max-leaks <n>` fails when the run left more than `n`
+- The [CI merge gate](/features/merge-gate#what-fails-it): `--max-leaks <n>` fails when the run left more than `n`
   objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
-  A run that sent no resource report fails either rule rather than passing on silence, and so does a run of a project
-  that declined the **Resources** capability, whose leaks are not measured. Neither counts a lingering object.
+  Neither counts a lingering object, and a run whose leaks are not measured fails both.
 - The [pull-request comment](./pr-feedback) lists each leak, server and process the branch introduces under **Left
   open by this change** (the gate's leak rules count no server nor process), and each open one of the default branch
   that a full run of the pull request no longer shows under **Closed by this change**.
@@ -45,4 +44,4 @@ npx @piwitests/reporter gate --max-new-leaks 0
 
 - [Resource leaks](./resource-leaks): what a run reports, and how to fix each finding
 - [Pull-request feedback](./pr-feedback): the comment that lists the leaks a branch adds
-- [CI & sharding](/guide/ci#blocking-a-merge): the gate's other policies
+- [CI merge gate](/features/merge-gate): the gate's other rules

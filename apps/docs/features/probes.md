@@ -41,7 +41,7 @@ The plan pairs each passing test with a route it reaches: pairs never probed com
 changed since its last probe, and each test gets one fault per run, up to a budget (50 pairs by default,
 `--budget` to change it). The plan rotates through `status-500`, `empty-body` and `drop-field`, the faults that break
 what a test checks: `slow` reads a test's timeout rather than its assertions, and `stale-value` needs an earlier
-response. Quarantined tests and tests whose last run failed are left out. A fault that did not change the response
+response. [Quarantined tests](./flaky-tests#quarantine-with-a-way-out) and tests whose last run failed are left out. A fault that did not change the response
 (a body with no field to drop), a test skipped and a run interrupted record the pair as *inconclusive*, and a pair no
 probe has decided returns to the plan a week after its last probe.
 
@@ -51,12 +51,18 @@ change to the route's handler alone.
 
 A probe run is stamped as one, with retries off and no failure limit, whatever the config and its projects set.
 Every project of the config runs each planned test; pass Playwright's own flags after `--` to narrow it
-(`-- --project=chromium`). It never counts as a real run: no failure clusters, no regression
-signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
-compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the
-`failed` selection either, and leaves a test's tags, owner, locks and locator snapshots as they are.
-A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
+(`-- --project=chromium`). A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
 [CLI reference](/reference/cli#probe) lists every flag.
+
+### What a probe run never counts
+
+A probe run injects its failures on purpose, so it never counts as a real run: no failure clusters, no regression
+signals, no notification ([`run.interrupted`](/reference/notification-events) included), no pull-request feedback, no
+issue tracker write ([which runs send nothing](/reference/test-metadata#run-origin)), no metric or analytics, no
+quarantine streak, no branch status, never the baseline another run is compared with, never an
+[environment incident](/features/environment-incidents), and nothing in the Test Map but the probe outcomes. It never
+moves a pass rate, a duration or the `failed` selection either, and leaves a test's tags, owner, locks and locator
+snapshots as they are.
 
 ## What an outcome records
 
@@ -72,7 +78,7 @@ A probe (status-500) on POST /api/orders did not make checkout › pay fail. Ass
 ```
 
 The next step is an assertion on what the request is for: the order appears, the total changes, the error shows.
-Once a probe on that route is noticed, the gap closes itself.
+Once a probe on that route is noticed, the gap [closes itself](/reference/gap-detectors#when-a-gap-closes).
 
 ## Server probes
 
@@ -97,7 +103,7 @@ has decided yet.
 It needs:
 
 - the Nitro plugin or the ASP.NET Core package in the application under test, with `PIWI_PROBE_SECRET` set and
-  `PIWI_SERVER_PROBES=true`. Both apply faults only outside production. The ASP.NET Core package applies throw,
+  `PIWI_SERVER_PROBES=true`. Both apply faults only in development and test environments by default. The ASP.NET Core package applies throw,
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
 - **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,

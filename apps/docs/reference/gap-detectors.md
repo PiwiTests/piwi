@@ -14,8 +14,8 @@ reproduction, nor a run flagged as an environment incident. *Changed, unreached*
 
 ## Detectors
 
-The Test Map is recomputed after every run of the default branch, nightly, and on demand (**Recompute** on the Gaps
-tab), always for the default branch whatever branch ran last. Every detector reads the runs the
+The Test Map is recomputed after every run of the default branch, nightly, and on demand (**Recompute** in the Coverage
+tab's Gaps view), always for the default branch whatever branch ran last. Every detector reads the runs the
 [capture fixtures](/guide/capture-fixtures) record; **Needs** names what else it reads, and a detector stays silent
 without it.
 
@@ -28,10 +28,10 @@ without it.
 | **Reachable, unvisited**<br>`reachable-unvisited` | blind-spot | a page other pages link to that no test navigates to | the page inventory | 0.4 plus 0.1 per linking page, at most 0.8 | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Fixed without a regression test**<br>`fixed-without-test` | blind-spot | a [bug report](/features/bug-reports) closed in the last 180 days while no test names it | Piwi Picker sending reports | 0.7 | `Bug report #2 was fixed without a regression test: Gift card balance shown twice` |
-| **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
-| **New error path**<br>`new-error-path` | blind-spot | at pull-request time, an error status (400 to 599) the change makes a route's handler answer with or throw, which no run of the route answered with, this one included | an SCM token and a pull request | 0.55 | `Adds 422 to POST /api/orders · never observed` |
-| **New control**<br>`new-control` | blind-spot | at pull-request time, a button, field, select or switch the change adds to a page file, on a page a test reaches, named by its static label, placeholder, name or text | an SCM token and a pull request | 0.5 | `Adds button "Apply promo" on /checkout` |
-| **Intent without a test**<br>`intent-without-test` | blind-spot | at pull-request time, a pull request whose title's words (half of them at least) no test's title, describe path, tags or feature holds | an SCM token and a pull request | 0.4 | `feat: apply a promo discount · no test title, tag or feature matches` |
+| **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | the [source control](/guide/source-control) diff: a token for a private repository | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
+| **New error path**<br>`new-error-path` | blind-spot | at pull-request time, an error status (400 to 599) the change makes a route's handler answer with or throw, which no run of the route answered with, this one included | the source control diff (a token for a private repository) and a pull request | 0.55 | `Adds 422 to POST /api/orders · never observed` |
+| **New control**<br>`new-control` | blind-spot | at pull-request time, a button, field, select or switch the change adds to a page file, on a page a test reaches, named by its static label, placeholder, name or text | the source control diff (a token for a private repository) and a pull request | 0.5 | `Adds button "Apply promo" on /checkout` |
+| **Intent without a test**<br>`intent-without-test` | blind-spot | at pull-request time, a pull request whose title's words (half of them at least) no test's title, describe path, tags or feature holds | the source control diff (a token for a private repository) and a pull request | 0.4 | `feat: apply a promo discount · no test title, tag or feature matches` |
 | **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
 | **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node went unseen through the default branch's last 30 complete runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
@@ -41,7 +41,7 @@ without it.
 | **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
 | **Code nobody executes**<br>`code-not-executed` | blind-spot | the functions of a file no suite ran in the default branch's newest [combined coverage](/features/combined-coverage), or a file recorded by line none of whose lines ran; the 30 files with the most, one gap each | a coverage report or run coverage | 0.4 plus 0.3 times the share of its functions not run; 0.6 for a whole file | `Functions at lines 12–20, 22–30 · no suite ran them at 9a8b7c6` |
-| **Single covering function**<br>`single-covering-function` | fragile | the functions of a file exactly one test runs in the tests' latest coverage on the default branch, quarantined tests left out, or that only quarantined tests run; the 30 files with the most, one gap each | per-test [code reach](/features/code-reach) | 0.5 | `Only checkout pays runs the functions at lines 7–9` |
+| **Single covering function**<br>`single-covering-function` | fragile | the functions of a file exactly one test runs in the tests' latest coverage on the default branch, [quarantined tests](/features/flaky-tests#quarantine-with-a-way-out) left out, or that only quarantined tests run; the 30 files with the most, one gap each | per-test [code reach](/features/code-reach) | 0.5 | `Only checkout pays runs the functions at lines 7–9` |
 | **Error path never executed**<br>`error-path-not-executed` | blind-spot | a `catch` block, a `throw`, or a statement answering with an error status (`TypedResults.NotFound()`, `res.status(409)`) that no suite ran, inside a function that ran (inside a file that ran, when the coverage records it by line): the code-level form of *Success only*. The 30 files that ran with the most lines not run, read at the commit's version | a coverage report or run coverage, and the [source control](/guide/source-control) connection to read the files | 0.7 | `Line 59 · return TypedResults.NotFound(); · its function ran, this never did` |
 | **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has decided | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled**<br>`not-handled` | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | 1 unhandled, 0.5 degraded | `A server probe made POST /api/orders fail; the application did not handle it` |
@@ -63,13 +63,10 @@ its URL pattern matches. A method whose every target comes from a parameter gets
 
 A trusted test is judged on the default branch's last 30 runs: it did not pass only after a retry in any of them, did
 not flip between failing and passing three times across them, did not fail each of its last three, is not quarantined, and was neither skipped nor left unrun in the newest it ran in.
-A test with no run among them stays trusted. *Surface drift* raises a node in the run it first appears in; the gap
-then stays open until any test reaches the node or the node leaves the graph, unless you dismiss it or close it with
-*Covered by* first. A node only untrusted tests reach is then a *Single covering test* gap. *Changed, unreached* is
-covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
-file, or a later diff no longer counts the file; an accepted gap closes only once a test reaches the file. A file no
-later diff reads, such as the old path of a rename or a file of an abandoned pull request, keeps its gap until a test
-reaches it or it is triaged. A finding never closes itself; triage it.
+A test with no run among them stays trusted. *Surface drift* raises a node in the run it first appears in; a node
+only untrusted tests reach is then a *Single covering test* gap. *Changed, unreached* is covered on
+[Uncovered changes in pull requests](/features/uncovered-changes). When each gap closes:
+[When a gap closes](#when-a-gap-closes).
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
@@ -81,6 +78,27 @@ name. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control 
 locator reaches some control on the project. A test that clicks or fills an element no node matches, through a test
 id or a CSS selector, might have used any control on that page, so *Control nobody exercises*, *Single covering
 test* and *Surface drift* raise none of those controls.
+
+## When a gap closes
+
+Gaps persist across recomputes, so triage survives them. A gap **closes itself** when its detector no longer raises
+it, for example once its node gains a trusted test, and a closed gap the detector raises again reopens. Beyond that
+rule:
+
+- **Covered by** closes a gap and records the covering test as reaching the node; such a gap stays closed when its
+  detector raises it again. A dismissed gap keeps its verdict.
+- **Surface drift** stays open until any test reaches the node or the node leaves the graph, unless you dismiss it or
+  close it with *Covered by* first.
+- **Changed, unreached** closes when a later diff no longer counts its file as uncovered, or when the next recompute
+  finds the file reached, out of the coverage scope, deleted or no longer observable. An accepted one closes only once
+  a test reaches the file. A file no later diff reads, such as the old path of a rename or a file of an abandoned pull
+  request, keeps its gap until a test reaches it or it is triaged.
+- **The pull-request detectors** (*New error path*, *New control*, *Intent without a test*) close when a later run of
+  the pull request no longer raises them.
+- **Not noticed** closes once a probe of its route is noticed.
+- **A finding** (*Not handled*) never closes itself: triage it.
+
+A closed gap keeps why it closed: [Close reasons and acted on](#close-reasons-and-acted-on).
 
 ## Exposure
 
@@ -97,7 +115,7 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
 files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
 handler files behind it, and a gap on a file's code from that file, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
-its last green run, so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
+its [last green run](/features/run-changes#the-baseline), so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
 files in the diff that ended on a fixing commit, which holds every change since the last green run. Age needs each
 file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
@@ -160,12 +178,17 @@ The graph stays proportional to the application's surface, not its data volume:
 - **A page load reaches its route.** A page load (`page.goto`, a link followed) reaches the route of its URL, so a
   route a backend serves by navigation is reached. *Success only* counts only the calls a page makes, a form's POST
   included, so a page never reads as a route without its error path.
-- **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
-  production. Numbers, UUIDs, JWTs, ULIDs and long tokens become placeholders; other ids (a Mongo ObjectId, a cuid, a
-  slug) stay in the key, one node per value. A single-page app routed by the URL hash (`/#/settings`) is one page, `/`.
+- **Pages are path patterns.** A page's [page key](/guide/concepts#page-key) is its URL reduced to its path:
+  `/orders/123` and `/orders/456` are one node, as is the same path from staging and production. Numbers, UUIDs,
+  ULIDs, JWTs and long tokens become `:id`, `:uuid`, `:ulid`, `:jwt` and `:token`, and the host, query and hash are
+  dropped; other ids (a Mongo ObjectId, a cuid, a slug) stay in the key, one node per value. A single-page app routed
+  by the URL hash (`/#/settings`) is one page, `/`. The page each locator was used on and Piwi Picker's **This page**
+  use the same key, where a page of another site keeps its origin in front of the path.
 - **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.
 - **Controls and links are templated.** Dates, ids and numbers in an accessible name become placeholders, and each
-  page keeps at most 200 controls and 200 links.
+  page keeps at most 200 controls and 200 links. The page inventory reads a page as its URL changes, once per page
+  per worker, so a control that renders later, or only in a dialog, is not in it; it records names and links, never
+  a field value.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged
   with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the
   pull request closes, or after 30 days unseen. Detectors read the canonical graph and the default branch's runs;

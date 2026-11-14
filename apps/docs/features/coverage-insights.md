@@ -6,7 +6,7 @@ lang: en-US
 
 # Coverage insights
 
-<Needs reporter fixtures backend />
+<Needs reporter fixtures />
 
 Once tests record [coverage](/guide/concepts#coverage), Piwi compares it in four ways: a failing execution against
 the test's last passing one, a test's recent runs against each other, a set of tests against every other test, and a
@@ -15,8 +15,8 @@ agents and, for a failure, the AI diagnosis.
 
 ## Turn it on
 
-The insights read the coverage your runs already record: set up [server coverage](./server-coverage) with
-`coverage: { server: 'lines' }` in the reporter options, or `PIWI_COVERAGE_SERVER=lines`. Line answers need the
+The insights read the coverage your runs already record, from the browser ([code reach](./code-reach)), the
+backend ([server coverage](./server-coverage), `coverage: { server: 'lines' }`), or both: either side is enough. Line answers need the
 `lines` granularity (`coverage.browser: 'lines'` in the browser); `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
 answers, and `files` gives file answers. A run without coverage changes nothing, so a nightly job with coverage on is
 enough for the comparisons across runs.

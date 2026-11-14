@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, rerun, probe, flake, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, plan, rerun, probe, flake, ai, codegen, preflight, bug and mcp."
 lang: en-US
 ---
 
@@ -35,6 +35,7 @@ npx @piwitests/reporter <command> [options]
 | [`codegen`](#codegen) | Turn a steps file (a Piwi Picker recording) into a Playwright spec |
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
+| [`mcp`](#mcp) | Serve the run tools of this machine's editors and desktop app to a coding agent, over stdio |
 
 The commands that talk to a dashboard, all but `ai resolve`, find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). `bug`, `codegen` and `preflight` read the `.env` of the Playwright config's folder (the nearest one within the repository), the working directory and the repository root, in that order: the URL comes from the first of them that names one, with that file's API key or none, and the project from the first that sets one. A key in a `.env` that names no URL is never sent to another file's URL. The other commands read the working directory's `.env`. An empty variable counts as unset. `PIWI_DESKTOP_APP` places the desktop app with the reporter's three modes: `off` never uses it, `prefer` uses it before the environment and the `.env` outside CI (a `--server-url` flag still wins), and `fallback`, the default, uses it only when no flag, variable or `.env` names a URL or an API key. The command line reads the mode from `PIWI_DESKTOP_APP` only, not from the `desktopApp` option of the Playwright config that `init --desktop-app` writes: set `PIWI_DESKTOP_APP=prefer` in the environment to get the same behavior from the commands. `ai resolve` reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` from the environment only.
 
@@ -99,13 +100,13 @@ The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing
 
 ## `gate`
 
-Fail a CI job on the dashboard's analysis of a run — the [merge gate](/guide/ci#blocking-a-merge). Point it at a run, give it at least one policy rule, and it exits non-zero when the rule is violated. The run defaults to `./piwi-run.json` (the reporter's [output file](/guide/ci#getting-the-run-url-back-out-of-ci)) when present.
+Fail a CI job on the dashboard's analysis of a run: the [CI merge gate](/features/merge-gate), which says what each rule counts, what it leaves out and how its verdict reaches the pull request. Point it at a run, give it at least one policy rule, and it exits non-zero when the rule is violated. The run defaults to `./piwi-run.json` (the reporter's [output file](/guide/ci#getting-the-run-url-back-out-of-ci)) when present.
 
 ```bash
 npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 ```
 
-**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
+**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate: bad arguments, an unreachable dashboard, or a run still running or in its global setup, or one the key cannot see · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
 
 | Flag | Description |
 |---|---|
@@ -130,13 +131,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
 
-The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule is required.
-
-- **A quarantined test does not count** toward the failure rules ([CI & sharding](/guide/ci#blocking-a-merge)).
-- **A test that passed on retry satisfies `--require-tag`.**
-- **A required tag that matches no test is a violation**, so a typo cannot pass.
-- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
-  are counted; a read-only key gets the verdict only.
+The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule or warn-only flag is required. How each rule counts (retries, quarantined tests, a tag no test carries, a run with no resource report) is on the [CI merge gate](/features/merge-gate#what-fails-it) page, and so is the [JSON result](/features/merge-gate#the-verdict). The CI key's evaluations are stored, so [merges overriding a failed gate](/features/merge-gate#on-the-pull-request) are counted; a read-only key gets the verdict only.
 
 ## `report`
 
@@ -225,8 +220,8 @@ Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwr
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
 | `--format <fmt>` | `args` (`file:line`, default) · `grep` · `files`. For the full resolution use `--json`; `run` rejects `--format json` |
 | `--budget <duration>` | Cap total time, e.g. `5m`, `90s`, `300000` (ms) |
-| `--shard <i/n>` | Keep only shard *i* of *n*, balanced by test duration and lock-aware (a lock's holders stay in one shard). `run` reports the shard to the dashboard (`PIWI_SHARD`), so the shards merge into one run |
-| `--fail-fast` | Order the least-reliable tests first |
+| `--shard <i/n>` | Keep only shard *i* of *n* (up to 1,000 shards), balanced by summed test duration and lock-aware: every holder of a [lock](/reference/test-metadata#test-locks) stays in one shard, which Playwright's own `--shard` would split, so a resolution whose tests share a lock carries a `split-lock` warning. `run` reports the shard to the dashboard (`PIWI_SHARD`), so the shards merge into one run |
+| `--fail-fast` | Order the least-reliable tests first. It reorders and never drops, so a `--require-selection` gate still sees the whole set |
 | `--base <ref>` | For `impact`: the ref to diff the working tree against |
 | `--strict` | Fail (exit 2) instead of falling back when unreachable |
 | `--pkg-runner <cmd>` | Package runner for the printed command (default `npx`) |
@@ -253,9 +248,10 @@ When `run` spawns Playwright and the target config has **no Piwi reporter**, it 
 
 **Experimental.** Plan a run that skips each test whose code has not changed since it last passed, and print the
 plan's id. Needs the pass reuse capability, which an administrator turns on in Settings. `<key>` is a saved or built-in
-selection, or `full` for the whole suite. The dashboard names the commits of each test's newest reusable pass; `plan`
-diffs the working tree against each one, fetching a commit a shallow clone lacks, and the dashboard keeps a test only
-when the change reaches its code. How a test is decided: [Reuse forecast](/features/reuse-forecast#skipping-reusable-tests).
+selection, or `full` for the whole suite. The dashboard names the commits of each test's newest reusable pass, `plan`
+diffs the working tree against each one, and the dashboard keeps a test only when the change reaches its code. How a
+test is decided, how long a plan lasts and which jobs may use it:
+[Reuse forecast](/features/reuse-forecast#skipping-reusable-tests).
 
 ```bash
 npx @piwitests/reporter plan full
@@ -264,11 +260,8 @@ npx @piwitests/reporter run --plan 42 --shard 2/4
 
 In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --plan` runs the plan's selection with
 Playwright's `--test-list-invert` naming the reused tests, so a test the dashboard has not seen yet runs, and each
-shard passes Playwright's own `--shard`. A test is skipped only in the Playwright projects its reused pass ran it in.
-A plan is kept for 24 hours. A job other than the one that made the plan uses it only when both checkouts are clean
-at the same commit. When a shard cannot use the plan (the dashboard is unreachable, the plan expired, the checkout
-differs), it runs the whole suite, not a shard of it, or exits `2` under `--strict`. `plan` diffs untracked files
-too.
+shard passes Playwright's own `--shard`. A shard that cannot use the plan runs the whole suite, or exits `2` under
+`--strict`.
 
 | Flag | Description |
 |---|---|
@@ -304,7 +297,7 @@ variable, and running everything would hide it.
 
 ## `probe`
 
-Run the dashboard's [probe plan](/features/probes) and record what the suite noticed. `probe` fetches the (test, route, fault) pairs the dashboard wants checked, runs `playwright test` with the [capture fixtures](/guide/capture-fixtures) in probe mode — each fault injected at the network boundary, one per test — and posts the outcomes back. The run is stamped as a probe run, so the dashboard never counts it as a real run (no clusters, regression signals, notifications or PR feedback), and retries are forced off.
+Run the dashboard's [probe plan](/features/probes) and record what the suite noticed. `probe` fetches the (test, route, fault) pairs the dashboard wants checked, runs `playwright test` with the [capture fixtures](/guide/capture-fixtures) in probe mode — each fault injected at the network boundary, one per test — and posts the outcomes back. The run is stamped as a probe run, which the dashboard [never counts as a real run](/features/probes#what-a-probe-run-never-counts), and retries are forced off.
 
 ```bash
 npx @piwitests/reporter probe --project my-app

@@ -514,7 +514,7 @@ const flaky: LiveQuestion[] = [
     topic: 'flaky',
     question: 'Will a quarantined test still fail my CI gate?',
     tools: DOCS_TOOLS,
-    facts: [docs('guide/ci', '--max-quarantined'), docs('guide/ci', /does not count|excluded/i)],
+    facts: [docs('features/merge-gate', '--max-quarantined'), docs('features/merge-gate', /does not count|excluded/i)],
   },
   {
     id: 'flake-lab-what',

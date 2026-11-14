@@ -6,7 +6,7 @@ lang: en-US
 
 # Choose what you use
 
-**Settings → Capabilities** (`/settings/capabilities`, administrators only) is where an instance says what else it does once results arrive. It opens on one coarse question, *What do you want Piwi for?*, with **See why tests fail** always on and three opt-out groups: **Triage as a team** (notifications, quarantine, pull-request feedback, issue tracking), **Fix faster** (locator healing, auto-heal), and **Let agents in** (AI diagnosis, the assistant). Below it, a ladder lists every optional capability grouped by state: **Active** (evidence has arrived), **Available** (configured but not used yet), **Not set up**, and a folded **Declined** group.
+**Settings → Capabilities** (`/settings/capabilities`, administrators only) is where an instance says what else it does once results arrive. It opens on one coarse question, *What do you want Piwi for?*, with **See why tests fail** always on and three opt-out groups: **Triage as a team** (notifications, [quarantine](/features/flaky-tests#quarantine-with-a-way-out), pull-request feedback, issue tracking), **Fix faster** (locator healing, auto-heal), and **Let agents in** (AI diagnosis, the assistant). Below it, a ladder lists every optional capability grouped by state: **Active** (evidence has arrived), **Available** (configured but not used yet), **Not set up**, and a folded **Declined** group. The page ends with **Off until turned on**: [Run on my machine](/features/run-on-my-machine) and [Pass reuse](/features/reuse-forecast) stay off until an administrator turns them on.
 
 ## Declining a capability
 

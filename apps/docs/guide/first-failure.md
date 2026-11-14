@@ -15,7 +15,7 @@ Open the failing test from the run page (click its row) to reach its **execution
   <figcaption>The situation block: what broke, since when, why, what to do next, and the cluster it belongs to.</figcaption>
 </figure>
 
-The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`tests/checkout/checkout.spec.ts:9 › Checkout › should complete checkout with credit card`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
+The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`tests/checkout/checkout.spec.ts:9 › Checkout › should complete checkout with credit card`), marks such as `@fixme` or `@slow`, and whether it is [quarantined](/features/flaky-tests#quarantine-with-a-way-out). The lines below it are the rest of this page, in order.
 
 ## 1. The headline: what broke
 
@@ -37,13 +37,21 @@ Under the headline, the **Most likely** line gives one explanation. It is built 
 
 > *The button "Pay" stayed disabled because POST /api/checkout/quote was still in flight (28.4 s); the console said so 7.8 s before the click gave up.*
 
-A strong or medium story leads; otherwise the cluster's completed [AI diagnosis](/features/ai-diagnosis) does, else a weak story, else the strongest clue. The [cluster page](/features/failure-clusters) follows the same rule. The line carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires and no diagnosis completed, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
+A strong or medium story leads; otherwise the cluster's [AI diagnosis](/features/ai-diagnosis) may, by one rule on
+this page and the cluster page ([which one leads](/reference/clues#most-likely)). The line carries a strength
+(*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; **All clues** lists every
+clue, each with a **citation**: click it and the page jumps to the proof. With no clue and no diagnosis, the line is
+absent.
 
 A test that did not run gets its reason here instead: the test that blocked it, or where the run stopped (*The run reached its maximum number of failures (3 failed) and stopped before this test started*), with a meta line when Playwright reported it.
 
 ## 3. Next: what to do
 
-The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch, replace the [broken locator](/features/locator-healing), reproduce it locally, re-run in CI, or mark the cluster resolved; for a test that did not run, open the failure that blocked it or the run. When the step's change comes from somewhere, the line under it says where: the cluster's AI diagnosis with its confidence (and its summary, when Most likely shows another explanation), or locator healing and what it captured the locator from. A code change shows on the line itself, up to six lines of the patch or the failing and the recommended locator, and the button says what it copies: **Copy apply command** (`git apply` with the patch inline) or **Copy locator**. Where the work is a code change, the step's **···** menu copies the exact command to re-run this test (**Copy retry command**). The full policy is on the [fix-plans page](/features/fix-plans#the-next-step).
+The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch,
+replace the [broken locator](/features/locator-healing), reproduce it, re-run in CI, mark the cluster resolved, or,
+for a test that did not run, open what blocked it. A code change shows on the line itself, with where it comes from
+and a button that copies it (**Copy apply command** or **Copy locator**); the **···** menu copies the command that
+re-runs this test. How the step is chosen and every action it offers: [The next step](/features/fix-plans#the-next-step).
 
 ## 4. The cluster: who else, and the ticket
 
@@ -55,7 +63,9 @@ The block closes on a **facts** line, one size smaller: the failing file and lin
 
 ## 5. The evidence: see it
 
-One **evidence card** with tabs (**Timeline, Screen, Source, Locators, Network, Console, State, Performance**, plus **Attempts** when the test retried) holds everything captured. It opens on the tab a strong or medium clue cites when that is **Source** or **Performance**, else on **Timeline** when it can place two or more steps, requests or console entries, else on the cited tab; a click on any citation switches tabs for you, and a test that passed on retry opens on **Attempts**. The one to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
+One **evidence card** with tabs holds everything captured, opening on the tab that best shows the failure
+([which one](/features/evidence#one-execution-diagnosis-first)); a click on any citation switches tabs for you. The one
+to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the [last green run](/features/run-changes#one-execution-s-baseline), and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
 
 ::: tip Most of this needs one file
 The error, trace, headline and clustering work with the reporter alone, and an uploaded trace recovers the console, network and failure-time snapshot. Web Vitals, page state and locator healing come from the [capture fixtures](./capture-fixtures), one file in your test setup. A tab that needs them and never received any data is left out, and until you decide on the fixtures one footer line names what they would add.
@@ -63,11 +73,10 @@ The error, trace, headline and clustering work with the reporter alone, and an u
 
 ## 6. More ways to fix
 
-Below the evidence, **More ways to fix** is the folded toolbox holding every *other* way to fix, verify or reproduce, each section collapsed to one line. The section the **Next** step points at is already open:
-
-- a **[replacement locator](/features/locator-healing)** when a locator broke, ranked by stability and in your suite's own style;
-- the **[AI diagnosis](/features/ai-diagnosis)** and its validated patch, when you've configured a model (optional, and grounded in your real diff);
-- **verify** (re-run in CI or locally), **reproduce and bisect**, whether this failure was **fixed before**, the tests it **blocked**, and a link to the cluster's **[fix plan](/features/fix-plans)**.
+Below the evidence, **[More ways to fix](/features/fix-plans#more-ways-to-fix)** is the folded toolbox of every
+*other* way to fix, verify or reproduce, with the section **Next** points at already open: a
+[replacement locator](/features/locator-healing), the [AI diagnosis](/features/ai-diagnosis) and its validated patch,
+verify, reproduce and bisect, fixed before, the tests it blocked.
 
 Below the toolbox, a **history** strip shows this test's recent executions and how long it has been failing.
 

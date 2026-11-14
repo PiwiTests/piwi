@@ -6,10 +6,12 @@ lang: en-US
 
 # Import past runs
 
+<Needs admin />
+
 Piwi's analysis gets better the more history it has: flaky detection needs repeated executions, failure clusters need
 several failures to group, and trend charts need runs to plot. A team adopting Piwi starts with none of that.
 
-If you already run Playwright in CI, you can backfill it. Piwi imports two of Playwright's own artifacts:
+If you already run Playwright in CI, backfill it. Piwi imports two Playwright artifacts:
 
 - **Blob reports** — a complete, replayable record of a run (results, steps, errors, traces, screenshots and videos).
   This is the richer source; prefer it when you have it.

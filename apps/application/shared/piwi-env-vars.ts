@@ -126,6 +126,13 @@ export interface PiwiEnvVarMeta {
   docs?: string;
   /** Behavioral fine print appended to the description in the reference table. */
   notes?: string;
+  /**
+   * Where this variable points the server, as the table "What leaves your server" of the docs' privacy page names
+   * it. Set on a variable whose value names a host the server connects to (a URL, an endpoint, a host list) or
+   * selects one (a provider, a region, an OAuth client); `tests/unit/docs-claims.test.ts` fails on a destination
+   * the table lacks.
+   */
+  destination?: string;
 }
 
 export interface PiwiEnvVarCategoryMeta {
@@ -179,7 +186,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 6,
     intro:
       'Controls which Playwright wait steps are counted as "wasted time" on the run timeline and in per-test/run totals. Classification happens when a run is viewed, so changing it re-classifies historical runs immediately.',
-    note: 'When unset, configure the patterns from **Settings → Wasted time** (administrator only). The default counts only explicit `waitForTimeout` sleeps, since framework-injected waits (load-state, wait-for-function) are usually unavoidable.',
+    note: 'When unset, configure the patterns from **Settings → Performance** (administrator only). The default counts only explicit `waitForTimeout` sleeps, since framework-injected waits (load-state, wait-for-function) are usually unavoidable.',
   },
   ai: {
     title: 'AI diagnosis',
@@ -348,6 +355,7 @@ export const PIWI_ENV_VARS = {
     description:
       'PostgreSQL connection string. When set, PostgreSQL is used instead of SQLite and migrations run automatically on startup.',
     category: 'database',
+    destination: 'Your PostgreSQL server',
     secret: true,
     example: 'postgres://piwi:piwi@db:5432/piwi',
     docs: 'operate/database#postgresql',
@@ -433,6 +441,7 @@ export const PIWI_ENV_VARS = {
   PIWI_S3_REGION: {
     description: 'S3 bucket region (when PIWI_STORAGE_TYPE is "s3").',
     category: 'storage',
+    destination: 'Your S3 endpoint',
     example: 'us-east-1',
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
     requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
@@ -452,6 +461,7 @@ export const PIWI_ENV_VARS = {
   PIWI_S3_ENDPOINT: {
     description: 'Custom endpoint for S3-compatible services (MinIO, R2, Spaces).',
     category: 'storage',
+    destination: 'Your S3 endpoint',
     type: 'url',
     example: 'https://minio.example.com',
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
@@ -500,7 +510,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
-      'Set to "true" to allow minting read-only public share links for executions and failure clusters. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
+      'Set to "true" to allow minting read-only public share links for executions, failure clusters, report snapshots and saved dashboards. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
     category: 'auth',
     type: 'boolean',
     default: 'false',
@@ -531,6 +541,7 @@ export const PIWI_ENV_VARS = {
   PIWI_OAUTH_GOOGLE_CLIENT_ID: {
     description: 'Google OAuth client id (optional single sign-on).',
     category: 'oauth',
+    destination: 'Google / GitHub',
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_OAUTH_GOOGLE_CLIENT_SECRET: '*' },
     docs: 'operate/authentication#oauth-google-github',
@@ -545,6 +556,7 @@ export const PIWI_ENV_VARS = {
   PIWI_OAUTH_GITHUB_CLIENT_ID: {
     description: 'GitHub OAuth client id (optional single sign-on).',
     category: 'oauth',
+    destination: 'Google / GitHub',
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_OAUTH_GITHUB_CLIENT_SECRET: '*' },
     docs: 'operate/authentication#oauth-google-github',
@@ -576,6 +588,7 @@ export const PIWI_ENV_VARS = {
     description:
       'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), "codex-cli" (the local Codex CLI), "deepseek-cli" (official DeepSeek Harness), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'enum',
     enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
   },
@@ -600,6 +613,7 @@ export const PIWI_ENV_VARS = {
     description:
       'Base URL of the provider API. Required for "openai" — OpenAI itself (https://api.openai.com/v1) as well as compatible servers (e.g. http://localhost:11434/v1); optional for "anthropic" (a gateway or proxy).',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'url',
     example: 'http://localhost:11434/v1',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
@@ -645,6 +659,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_RESEARCH_PROVIDER: {
     description: 'Provider for the optional research (pre-analysis) stage. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'enum',
     enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
@@ -657,6 +672,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_RESEARCH_BASE_URL: {
     description: 'Base URL for the research-stage provider. Falls back to PIWI_AI_BASE_URL.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'url',
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
@@ -682,6 +698,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_EMBEDDING_PROVIDER: {
     description: 'Provider for embeddings (semantic failure clustering). Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'enum',
     enum: ['openai'],
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
@@ -698,6 +715,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_EMBEDDING_BASE_URL: {
     description: 'Base URL for the embedding provider. Falls back to PIWI_AI_BASE_URL.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'url',
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
   },
@@ -712,6 +730,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_ASSISTANT_PROVIDER: {
     description: 'Provider for the assistant. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'enum',
     enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
     since: '0.59.0',
@@ -727,6 +746,7 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_ASSISTANT_BASE_URL: {
     description: 'Base URL for the assistant provider. Falls back to PIWI_AI_BASE_URL.',
     category: 'ai',
+    destination: 'Your AI provider',
     type: 'url',
     since: '0.59.0',
     relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
@@ -1274,6 +1294,7 @@ export const PIWI_ENV_VARS = {
   PIWI_SMTP_HOST: {
     description: 'SMTP server hostname for outbound email.',
     category: 'smtp',
+    destination: 'Your SMTP server',
     example: 'smtp.example.com',
   },
   PIWI_SMTP_PORT: {
@@ -1322,6 +1343,7 @@ export const PIWI_ENV_VARS = {
     description:
       'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
     category: 'integrations',
+    destination: 'Your git host',
     type: 'list',
     example: 'gitlab.example.com',
     since: '0.43.0',
@@ -1331,6 +1353,7 @@ export const PIWI_ENV_VARS = {
     description:
       "Base URL of the instance's CI server (e.g. https://jenkins.example.com/), where a project's CI re-run goes when it dispatches through a CI server and sets no base URL of its own. The instance token is sent only to URLs under it, so a path confines it (https://jenkins.example.com/job/qa/ sends it only to the jobs of the qa folder). It goes only with a preset's request, never a Custom one.",
     category: 'integrations',
+    destination: 'Your CI server',
     type: 'url',
     example: 'https://jenkins.example.com/',
     since: '0.67.0',
@@ -1356,6 +1379,7 @@ export const PIWI_ENV_VARS = {
     description:
       'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
     category: 'integrations',
+    destination: 'Your CI server',
     type: 'list',
     example: 'jenkins.internal:8080',
     since: '0.67.0',
@@ -1374,6 +1398,7 @@ export const PIWI_ENV_VARS = {
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',
+    destination: 'Your issue tracker (Jira)',
     type: 'url',
     example: 'https://your-team.atlassian.net',
     since: '0.29.0',
@@ -1406,6 +1431,7 @@ export const PIWI_ENV_VARS = {
   PIWI_ZEPHYR_REGION: {
     description: 'Region of the Zephyr Scale Cloud host the token belongs to: "us", "eu", "au" or "de".',
     category: 'integrations',
+    destination: 'Zephyr Scale Cloud',
     type: 'enum',
     enum: ['us', 'eu', 'au', 'de'],
     default: 'us',

@@ -17,7 +17,7 @@ Everything in the product is in service of **four jobs, in this order**. It's al
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, and the command that verifies the work. The point is to leave with something to *do*, not just something to read.
 4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from. See [scenario gaps & the Test Map](/features/scenario-gaps).
 
-Everything else — analytics, quality reports, notifications, the CI gate, PR feedback, the MCP server, the desktop app — is a delivery route for those four. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the [CI gate](/features/merge-gate), PR feedback, the MCP server, the desktop app — is a delivery route for those four. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
 
 ## The loop it serves
 

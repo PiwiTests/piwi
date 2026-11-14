@@ -6,9 +6,10 @@ lang: en-US
 
 # Runs from the editor
 
-The [editor extensions](./editors) run your tests where you edit them, then show what the run changed: its progress
-in the status bar while it executes, and its results over the latest CI run's [failures](./editor-failures) within a
-second of its end.
+<Needs editor />
+
+The [editor extensions](./editors) run your tests where you edit them, then show a run's progress in the status bar
+and its results over the latest CI run's [failures](./editor-failures).
 
 ## Run tests
 
@@ -17,29 +18,28 @@ second of its end.
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
-  on a spec, and under VS Code's editor title Run button (the caret in a JetBrains IDE). Both save the spec first. **Run** in VS Code's test hover runs it, as
-  [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know yet, such as one you just
-  [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
-  (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance.
+  on a spec and under VS Code's editor title Run button (the caret in a JetBrains IDE), saving the spec first. **Run** in VS Code's test hover runs it, as
+  [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know, such as one just
+  [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call,
+  with or without an instance.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the test at the caret ×3**) runs that test three times as a
-  [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
+  [verification](#when-your-run-ends).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's and the file tree's **Piwi** submenu.
 - **Piwi: Run a saved selection…** runs a [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
-folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** starts it again), in the Run tool
-window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwright runner (test tree, Debug, **Rerun
+folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** restarts it), in the Run tool
+window in a JetBrains IDE (**Rerun** restarts it), or in the IDE's Playwright runner (test tree, Debug, **Rerun
 Failed Tests**), a choice of **Settings → Tools → Piwi** that keeps every control of a Piwi run, through the runner's
 Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
-([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it:
-[Breakpoints in the browser](./editor-breakpoints); the editor pauses,
-steps and resumes it too: [Pause and step from the editor](./editor-run-control).
+([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints and the editor pause it:
+[Pause and step from the editor](./editor-run-control).
 
 ## How a run starts
 
-Two choices apply to every test run you start: **Run headed** (`--headed`, a verification included) and
-[**Hold failures**](/guide/concepts#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
+Two choices apply to every run you start: **Run headed** (`--headed`, a verification included) and
+[**Hold failures**](./watch-a-run#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
 decide: on with your breakpoints or a `page.pause()`, headed for the latter. In VS Code,
 **Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
 in a JetBrains IDE, **Tools → Piwi → Run headed** and **Hold failures from each run's start…**. A
@@ -48,7 +48,7 @@ in a JetBrains IDE, **Tools → Piwi → Run headed** and **Hold failures from e
 ## The Testing view (VS Code)
 
 VS Code's Testing view lists Piwi's tests: the specs your instance knows, as they stand in the editor, under their
-folders and `test.describe` blocks, each test with its latest result and its duration, and why and where a failure
+folders and `test.describe` blocks, each test with its latest result and duration, and why and where a failure
 failed (**Peek Error**). The results are published as a test run (`Piwi: run #120 on main`) whenever the runs it shows
 change, and a run in progress is one of its own, each test shown as it begins and ends. Its gutter shows each result in
 place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result, so a flaky test shows as passed, and
@@ -72,8 +72,7 @@ Playwright config with your breakpoints, **Debug with Piwi** runs them headed, h
 **Verify ×3 with Piwi** runs them three times. From a failed test's actions, **Debug with Piwi** runs it as
 [Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
 they begin, offline too. A test the run gave Piwi no
-result for, such as one the instance does not know yet, passes when the command exited with 0 and is an error
-otherwise. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins
+result for, such as one the instance does not know, passes when the command exited with 0, else is an error. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins
 the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests
@@ -84,16 +83,17 @@ of one config from its node in the [failures view](./editor-failures#the-failure
 
 ## After a run
 
-The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again, and every five minutes with the stream, every minute without. A checkout
-or a commit is noticed within seconds: the editor reads the branch's latest run again, and compares your application
+Within a second of a run of the project ending, the editor reads the branch's latest run and its failures again,
+told by the instance's event stream; else every five minutes with the stream, every minute without. A checkout
+or a commit is noticed within seconds: the editor reads that run again and compares your application
 files with the new `HEAD`.
 
 A run started from the editor is its own wherever it runs: the status bar follows it, the gutter shows each test as
-running, then its result, and its failures read *your run #124* once it ends. When the command ends and no run on the
-instance carries its ref, the editor says so: `The run ended (exit code 1) but did not reach
-https://piwi.example.com: is the Piwi reporter in the Playwright config?` The editor learns the command's end and its
-exit code from the process it started, in every shell, a rerun included.
+running, then its result, and its failures read *your run #124* once it ends. The editor learns the command's end and
+exit code from the process it started, in every shell, a rerun included. When no run on the instance carries its ref,
+it says why: its reporter sent nothing (its lines in the output name the server address, the key, or a refusal), or
+the config has no Piwi reporter: `The run ended (exit code 1) but did not
+reach https://piwi.example.com: is the Piwi reporter in the Playwright config?`
 
 ## When your run ends
 
@@ -107,8 +107,12 @@ A CI run of your checked-out branch says the same once it ends, against the run 
 `Piwi: CI run #130 on feature-x · 2 fixed · 1 new failure (cart.spec.ts › adds)`. The `piwi.runNotificationsScope`
 setting, **The runs it says it for** in JetBrains, keeps it to the runs you started.
 
-A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
-setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
+A [verification](/guide/concepts#verification), **Verify ×3**, runs the test three times without retries or
+breakpoints (`--repeat-each=3 --retries=0`), each run a result on the instance, and holds no failure. Its notification
+says how many passed, whatever the setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3` with **Open the
+failures** and **Open in dashboard**, counted from the results the run streams (`Failed at least 1 of 3` when some
+were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times). Like a fix plan's verification and a
+Flake Lab line, it is listed, paused and stopped as any run.
 
 ## A test that waits for you
 
@@ -123,6 +127,4 @@ one an agent drives or a desktop app's job, which calls from its own window.
 
 - [The editor's status bar](./editor-status-bar): the latest run, the run in progress, and when the item turns red.
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
-- [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
-- [Test selection](/features/test-selection): the selections **Run a saved selection…** runs.

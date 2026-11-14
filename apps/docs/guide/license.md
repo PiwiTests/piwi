@@ -6,7 +6,8 @@ lang: en-US
 
 # License
 
-Piwi is fair source. The dashboard, the server, the desktop app and the browser extension are published under the
+Piwi is fair source. The dashboard, the server, the desktop app, Piwi Runner, the browser extension and the editor extensions are published
+under the
 [Functional Source License, Version 1.1, MIT Future License](https://github.com/PiwiTests/piwi/blob/main/LICENSE)
 (FSL-1.1-MIT). The parts that run inside your own projects are MIT.
 
@@ -38,7 +39,7 @@ years are up.
 
 | Part | License |
 |---|---|
-| Dashboard, server (`@piwitests/server` and the Docker image), desktop app, browser extension | FSL-1.1-MIT |
+| Dashboard, server (`@piwitests/server` and the Docker image), desktop app, Piwi Runner, browser extension, editor extensions (VS Code, JetBrains) | FSL-1.1-MIT |
 | Playwright reporter (`@piwitests/reporter`) | MIT |
 | Backend-log integrations (Nitro, ASP.NET Core, Serilog) | MIT |
 | Examples | MIT |

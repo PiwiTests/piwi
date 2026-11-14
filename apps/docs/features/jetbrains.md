@@ -6,6 +6,8 @@ lang: en-US
 
 # JetBrains plugin
 
+<Needs editor />
+
 The Piwi plugin brings the [editor extensions](./editors) to the JetBrains IDEs with the LSP API: WebStorm, IntelliJ
 IDEA Ultimate, Rider and the others, from 2024.1. It runs the same editor service as the VS Code extension, so the
 editor pages describe it too, with the JetBrains names of each action. This page lists what the plugin needs, and
@@ -24,7 +26,7 @@ Android Studio lack the LSP API the plugin needs.
 
 The plugin starts the editor service with the project's Node.js interpreter, 20 or later (**Settings → Languages &
 Frameworks → Node.js**, which the status bar opens when it is missing or older), once it finds a Playwright config
-within four folders of the project's (in Rider, the solution's) or of its Git root, and looks again on **Tools → Piwi →
+within four folders of the project's (in Rider, the solution's) or of its Git root and you open a file, and looks again on **Tools → Piwi →
 Reload Piwi**. It reads the connection the reporter already uses; otherwise, **Settings → Tools → Piwi** signs you in
 with the browser: [Editor connection](./editor-connection).
 
@@ -68,11 +70,10 @@ line** on the debugger's Show Execution Point key:
   can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
   **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, a failure's trace
   and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
-- **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
-  icon for its state, and the error color for a new failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
+- **[The status bar](./editor-status-bar)** item has an icon for the run's state, and the error color for a new
+  failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
-  way. A click opens a menu of the actions, led by what the item calls for:
-  [the status bar](./editor-status-bar). While a run is [shared live](./share-live), the menu opens its page,
+  way. While a run is [shared live](./share-live), its menu opens the run's page,
   copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each

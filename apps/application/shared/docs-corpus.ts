@@ -11,7 +11,7 @@
  * same address as on the site.
  */
 import { DOCS_BASE_URL } from '#shared/docs';
-import { FEATURE_NEED_LABELS, type FeatureNeed } from '#shared/piwi-features';
+import { FEATURE_NEED_LABELS, PIWI_FEATURE_GROUPS, TOOLS_SECTION, type FeatureNeed } from '#shared/piwi-features';
 import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { demoExamplesFor } from '#shared/demo/demo-examples.mjs';
 import { downloadsMarkdown } from '#shared/app-downloads.mjs';
@@ -23,7 +23,12 @@ export const DOCS_GROUPS = [
     title: 'Guide',
     intro: 'Getting a first run in; setting up the reporter, fixtures, CI, source control and AI; and what Piwi is.',
   },
-  { id: 'features', title: 'Features', intro: 'Every feature, one page each, in the groups of the feature catalog.' },
+  {
+    id: 'features',
+    title: 'Features',
+    intro: 'What the dashboard does with results, one page per feature, in the groups of the feature catalog.',
+  },
+  { id: 'tools', title: TOOLS_SECTION.title, intro: TOOLS_SECTION.intro },
   { id: 'recipes', title: 'Recipes', intro: 'One question each, answered across several features.' },
   {
     id: 'operate',
@@ -294,7 +299,15 @@ function parseSections(lines: string[]): { title: string | null; sections: DocsS
   return { title, sections };
 }
 
+/** The pages of the catalog's tool groups: they keep a path under features/ or guide/ and belong to Tools. */
+const TOOL_PAGES = new Set(
+  PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools').flatMap((group) =>
+    group.features.map((feature) => feature.doc.split('#')[0]!),
+  ),
+);
+
 function groupOf(path: string): DocsGroupId {
+  if (TOOL_PAGES.has(path)) return 'tools';
   const prefix = path.split('/')[0];
   return DOCS_GROUPS.find((g) => g.id === prefix)?.id ?? 'home';
 }

@@ -7,8 +7,8 @@ lang: en-US
 # One-click deploy
 
 If you don't have a server to run Docker on, these templates stand up an instance on a hosting provider
-instead. They all provision the same thing: **one container, one persistent volume mounted at
-`/app/.data`, and authentication on**. Railway, Render and Coolify also generate `PIWI_SECRET_KEY`,
+instead. They provision the same thing: **one container, one persistent volume mounted at
+`/app/.data`, and authentication on**; on Koyeb you attach the volume yourself. Railway, Render and Coolify also generate `PIWI_SECRET_KEY`,
 `PIWI_AUTH_SECRET` and `PIWI_SETUP_TOKEN`; on Fly.io and Koyeb you set them yourself. Beyond that, the difference is the provider's
 own volume and pricing model.
 

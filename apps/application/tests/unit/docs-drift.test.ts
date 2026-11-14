@@ -14,7 +14,16 @@ import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
 import { TEST_SEARCH_FIELD_DEFS } from '#shared/test-search';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
-import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
+import {
+  featuresSidebar,
+  guideSidebar,
+  headingAnchor,
+  referenceSidebar,
+  selfHostingSidebar,
+  sidebarEntries,
+  sidebars,
+  toolPages,
+} from '../../../docs/.vitepress/navigation';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { buildDocsCorpus } from '#shared/docs-corpus';
 import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
@@ -574,9 +583,10 @@ describe('word budget per page type', () => {
 });
 
 describe('docs site structure', () => {
-  // The feature catalog is the site's one grouping: the Features sidebar, the
-  // landing cards and the All features page are all rendered from it, so a
-  // feature page it does not list is a page no reader can find by browsing.
+  // The feature catalog is the site's one grouping: the Features and Tools
+  // sidebars, the landing cards and the All features page are all rendered from
+  // it, so a feature page it does not list is a page no reader can find by
+  // browsing.
   const catalogPages = new Set(
     PIWI_FEATURE_GROUPS.flatMap((group) => group.features.map((feature) => feature.doc.split('#')[0])),
   );
@@ -602,6 +612,59 @@ describe('docs site structure', () => {
     ).not.toContain('#');
   });
 
+  // A tool's page keeps its URL under /features/ or /guide/, and VitePress
+  // picks a sidebar by the first key the page's path starts with: a page of
+  // another sidebar whose path starts with a tool page's would show the Tools
+  // sidebar.
+  const otherSidebarPages = [featuresSidebar(), guideSidebar, selfHostingSidebar, referenceSidebar]
+    .flatMap(sidebarEntries)
+    .map((entry) => entry.link)
+    .filter((link) => link.startsWith('/'));
+
+  // The Guide and Features items of the top navigation leave the tool pages out of their match; the other items do
+  // not, so a tool's page lives under one of those two folders.
+  test.each(toolPages())('the tool page %s is under /features/ or /guide/', (toolPage) => {
+    expect(
+      toolPage,
+      `move the page under features/, or give its catalog entry to a group of the Features section`,
+    ).toMatch(/^\/(features|guide)\//);
+  });
+
+  test.each(toolPages())('no page outside the Tools sidebar has a path starting with %s', (toolPage) => {
+    expect(
+      otherSidebarPages.filter((page) => page.startsWith(toolPage)),
+      `rename the page, or move it to the catalog group of the tool`,
+    ).toEqual([]);
+  });
+
+  // The entries of a tool group that share a part sit under one label, so they
+  // follow each other in the catalog.
+  const toolGroups = PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools');
+
+  test.each(toolGroups.map((group) => [group.title, group] as const))(
+    'the parts of %s are each one run of entries',
+    (_title, group) => {
+      const parts = group.features.map((feature) => feature.part).filter((part, i, all) => part !== all[i - 1]);
+      const labels = parts.filter((part) => part !== undefined);
+      expect(labels, `put the entries of a part next to each other`).toEqual([...new Set(labels)]);
+    },
+  );
+
+  // A page's <Needs> chips say what its catalog entry says the feature needs,
+  // so the page and the All features table never disagree. The reporter is the
+  // baseline every feature builds on: its chip is the page's own choice.
+  test.each(featureEntries)('the chips of %s are its needs in the catalog', (entry, doc) => {
+    if (doc.includes('#')) return;
+    const needs = PIWI_FEATURE_GROUPS.flatMap((group) => group.features).find((feature) => feature.doc === doc)!.needs;
+    const chips = [...read(`apps/docs/${doc}.md`).matchAll(/<Needs([^>]*)\/>/g)].flatMap((chip) =>
+      chip[1]!.split(/\s+/).filter((prop) => prop && prop !== 'reporter'),
+    );
+    expect(
+      chips.sort(),
+      `apps/docs/${doc}.md: make its <Needs … /> chips and the needs of "${entry}" in shared/piwi-features.ts agree`,
+    ).toEqual([...needs].sort());
+  });
+
   // The description is the page's search snippet and its social-card text.
   // The home page uses the site description in config.mts instead.
   test.each(docsPages)('%s has a description', (page) => {
@@ -618,17 +681,16 @@ describe('docs site structure', () => {
         .replace(/^---\n[\s\S]*?\n---\n/, '')
         .replace(/```[\s\S]*?```/g, ''),
     )?.[1];
-  const sidebarEntries = [
+  const sidebarLinks = [
     ...new Map(
       Object.values(sidebars())
-        .flat()
-        .flatMap((group) => group.items)
+        .flatMap(sidebarEntries)
         .filter((item) => item.link.startsWith('/'))
         .map((item) => [`${item.link} ${item.text}`, [item.link, item.text] as const]),
     ).values(),
   ];
 
-  test.each(sidebarEntries)('sidebar entry %s resolves to a page titled "%s"', (link, text) => {
+  test.each(sidebarLinks)('sidebar entry %s resolves to a page titled "%s"', (link, text) => {
     const [route, anchor] = link.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '/index');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);

@@ -13,9 +13,8 @@ their groups. A key for a Member with the Uploader role on one project can read 
 nothing else. The key a connected run target receives (the desktop app) is the one exception: it holds
 `run:receive` alone, and serves only that app's routes.
 
-For CI, create a dedicated account: a **Member** with the **Uploader** role on the projects CI reports to (on All
-projects if CI should create projects from a new project name), and a key for it. A leaked CI key then cannot triage,
-delete or change anything.
+For CI, give the key to a dedicated account that can only upload: [CI accounts](./project-access#ci-accounts) says
+which role and where.
 
 With authentication on, every endpoint needs a session cookie or an API key whose owner holds the permission the
 endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/settings/api)). The exceptions are the
@@ -72,10 +71,12 @@ Click the trash icon next to the key, in the same place you created it. The key 
 
 ## Using the API key in the reporter
 
-The reporter reads the key from `PIWI_API_KEY`, in the environment or in the `.env` beside the Playwright config
-(`init --api-key` writes it there, unless git tracks that file or cannot say whether it does, or the file is a link),
-so the config needs no change: store the key as a CI secret under that name. To read it from another variable, pass it
-in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
+The reporter needs a credential only once authentication is on, and sends its key as an `Authorization: Bearer`
+header. **Settings → Connect a suite** creates a key in place. The reporter reads it from `PIWI_API_KEY`, in the
+environment or in the `.env` beside the Playwright config (`init --api-key` writes it there, unless git tracks that
+file or cannot say whether it does, or the file is a link), so the config needs no change: store the key as a CI
+secret under that name, and locally in that `.env`. To read it from another variable, pass it as the `apiKey` option,
+in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options or the reporter entry:
 
 ```typescript
 // playwright.config.ts
@@ -117,15 +118,18 @@ Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-
 
 ## Using the reporter with a username and password
 
-As an alternative to API keys, give the reporter the credentials of a dedicated Member with the **Uploader** role,
+As an alternative to API keys, give the reporter the credentials of a dedicated [CI account](./project-access#ci-accounts),
 created in **Settings → Users**: set `PIWI_USERNAME` (its username or email address) and `PIWI_PASSWORD` as secrets in
-your CI provider (or the `username` and `password` options). The reporter signs in before each upload and uses the
-resulting session for the requests that follow. API keys are still preferred for CI: they need no sign-in round-trip,
-and each one can be revoked on its own.
+your CI provider (or the `username` and `password` options). An API key wins when both are set.
+
+The reporter signs in once per run, when it opens the run's stream (at the end of the run with `streaming: false`), and
+uses the session for every request of the run; the global setup step signs in once more, in its own process, when it
+registers the run. A sign-in that fails while the dashboard is down is tried again with the stream. API keys are still
+preferred for CI: they need no sign-in round-trip, and each one can be revoked on its own.
 
 ## Related
 
-- [Authentication](./authentication): turning sign-in on, roles and user management
+- [Authentication](./authentication): turning sign-in on, instance roles and user management
 - [Access, roles and groups](./project-access): the project roles a key's owner can hold
 - [Reporter](/guide/reporter): every reporter option
 - [Metrics and rollup export](./metrics): scraping with an API key

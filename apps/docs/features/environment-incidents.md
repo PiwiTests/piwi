@@ -1,6 +1,6 @@
 ---
 title: Environment incidents
-description: "How Piwi recognizes a run that failed because the app under test was down, and keeps it out of flaky scores, baselines, fix verification and the CI gate."
+description: "How Piwi recognizes a run that failed because the app under test was down, and keeps it out of flaky scores, baselines, fix verification and the CI merge gate."
 lang: en-US
 ---
 
@@ -64,26 +64,24 @@ A [probe](./probes) or [Flake Lab](./flake-lab) run is never judged: it injects 
 - **The failure inbox** on Home shows one row for the run instead of one row per new cluster it opened. Clusters that
   were already open before the incident keep their rows, and a cluster it opened gets its own row once a run that is
   no incident fails it again.
-- **No AI diagnosis and no pull-request comment** are produced for the run.
+- **No AI diagnosis, no pull-request comment and no issue tracker write** are produced for the run
+  ([which runs send nothing](/reference/test-metadata#run-origin)).
 
 The run's history stays: its executions, evidence and clusters are kept like any other run's, and analytics still
 count it as a failed run.
 
 ## The CI gate
 
-[`piwi gate`](/reference/cli#gate) gives a flagged run the verdict **inconclusive**, distinct from a pass and a fail,
-whatever the policy says. It exits with code `3`, so a pipeline can tell "the environment was down, re-run" from "the
-change broke something" (`1`):
+The [CI merge gate](/features/merge-gate#what-it-leaves-out) gives a flagged run the verdict **inconclusive**,
+whatever the policy says, and exits with code `3`, so a pipeline can tell "the environment was down, re-run" from
+"the change broke something" (`1`):
 
 ```text
 ? Piwi gate inconclusive — checkout run #930
-  41 tests, 41 failed, 0 new, 0 newly flaky, 0 flaky
+  44 tests, 41 failed, 0 new, 0 newly flaky, 0 flaky
   ? The run is an environment incident: 41 of 44 tests failed, 39 of them navigating or connecting to staging.example.test (connection refused).
   Re-run once the environment is back, or clear the flag on the run page if it is wrong.
 ```
-
-The gate's JSON result carries `verdict: "inconclusive"`, `passed: false` and the incident under `facts.incident`, so
-a client that reads only `passed` still blocks the merge.
 
 ## Stopping a run before it starts
 
@@ -134,7 +132,7 @@ The [live demo](https://piwitests.dev/demo/) holds an incident run, and its run 
 
 - [Flaky tests & quarantine](./flaky-tests): the scores an incident leaves alone
 - [Notification events & webhooks](/reference/notification-events): `environment.incident` and its payload
-- [Piwi CLI](/reference/cli#gate): the gate's exit codes
+- [CI merge gate](/features/merge-gate): the inconclusive verdict
 - [Reporter options](/reference/reporter-options#app-under-test): `checkBaseUrl`
 - [Timeline markers](./timeline-markers): the `incident` category
 - [Concepts](/guide/concepts#environment-incident): the term

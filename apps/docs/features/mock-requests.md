@@ -53,10 +53,10 @@ banner on the page says which conditions are on, with **Turn off**; other tabs a
 
 In Chrome and Edge, a condition reaches any request, documents, scripts and images included (tick **Every kind** to
 list them), and the toolbar's **Network** and **CPU** throttle the whole page as DevTools does: fast or slow 3G,
-offline, or a CPU 4, 6 or 20 times slower. They go through the debugging protocol: Chrome shows its debugging bar until
-you turn them all off, and **Cancel** on it ends the throttling, leaving the requests' conditions to the page's `fetch`
-and XHR calls. Firefox has only those: documents, scripts, images and a service worker's requests go past, and a page
-that replaces `fetch` itself may behave differently.
+offline, or a CPU 4, 6 or 20 times slower. They go through the [debugging protocol](./extension#the-debugging-bar):
+Chrome shows its debugging bar until you turn them all off, and **Cancel** on it ends the throttling, leaving the
+requests' conditions to the page's `fetch` and XHR calls. Firefox has only those: documents, scripts, images and a
+service worker's requests go past, and a page that replaces `fetch` itself may behave differently.
 
 A replay started while a condition is on runs under it, and its panel says which conditions were on, beside the
 verdict.

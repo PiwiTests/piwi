@@ -6,6 +6,8 @@ lang: en-US
 
 # Editor connection
 
+<Needs editor />
+
 The [editor extensions](./editors) read everything from your Piwi instance. They find it in this order, and the first
 that names an instance wins:
 
@@ -33,8 +35,8 @@ The editor sends the app's token only to a server that proves it holds that toke
 carries the token, the editor asks the address in `desktop.json` for the app's proof. A server that gives none, or the
 wrong one, gets no token, and the editor says the app's token was not sent. An app that does not answer is asked
 again on the next request, and so is an app after a request with the token failed to connect or was refused, or after
-the app restarts (a new process in `desktop.json`). The MCP server entries the editor offers for AI assistants (**Copy MCP Server
-Configuration** and the VS Code agent's server list) include the app's token only after the same proof; the
+the app restarts (a new process in `desktop.json`). The MCP server entries the editor offers for AI assistants (**Copy the MCP server
+configuration…** and the VS Code agent's server list) include the app's token only after the same proof; the
 assistant that receives the entry sends the token to the address itself.
 
 The app is looked for on the machine the extension runs on: in a remote window of VS Code (Remote SSH, WSL, Dev
@@ -63,7 +65,7 @@ what the editor reads from it: the instance answers each read once.
 
 ## Connect
 
-Run **Piwi: Connect…** from the command palette, or click **Piwi: connect** in the status bar. In a JetBrains IDE it is
+Run **Piwi: Connect…** from the command palette, or click `Piwi: connect` in the status bar. In a JetBrains IDE it is
 the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's gear menu, and under
 **Tools → Piwi**.
 
@@ -119,23 +121,22 @@ authority goes in `NODE_EXTRA_CA_CERTS` in the environment the IDE was started w
 
 ## An unreachable instance
 
-When the instance does not answer, or answers with an error, the status bar reads **Piwi: unreachable** instead of
-**Piwi: connect**: the connection is kept, and the editor reads the instance again on its own, 15 seconds later, then
+When the instance does not answer, or answers with an error, the status bar reads `Piwi: unreachable` instead of
+`Piwi: connect`: the connection is kept, and the editor reads the instance again on its own, 15 seconds later, then
 twice as long each time, up to every five minutes. A click on the item, or **Reload Piwi**, reads it at once. A key the
-instance refuses still reads **Piwi: connect**, since only signing in again helps.
+instance refuses still reads `Piwi: connect`, since only signing in again helps.
 
 When the desktop app answers but cannot prove it holds its token, which happens with a desktop app older than the
-editor or with another program on its port, the item reads **Piwi: restart the desktop app**: the editor does not
+editor or with another program on its port, the item reads `Piwi: restart the desktop app`: the editor does not
 send the app's token there. Restart or update the desktop app; the editor reads it again as soon as the app starts.
 
 The **Piwi** failures view says the same in both editors, naming the instance and why it does not answer, with
-**Retry**. When the editor service itself stops, VS Code's status bar reads **Piwi: not running** and its view offers
+**Retry**. When the editor service itself stops, VS Code's status bar reads `Piwi: not running` and its view offers
 **Piwi: Restart the editor service**, as does a **Reload Piwi** it did not answer.
 
 **Piwi: Open settings** in VS Code opens the extension's settings.
 
 ## Related
 
-- [Editor extensions](./editors): what the extensions show once connected
 - [API keys](/operate/api-keys): the key the editor signs in with, and how to revoke it
 - [Desktop app](/features/desktop): the local instance the editor finds by itself

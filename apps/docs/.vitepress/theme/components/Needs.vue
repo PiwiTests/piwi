@@ -23,6 +23,7 @@ const props = defineProps<{
   backend?: boolean
   desktop?: boolean
   extension?: boolean
+  editor?: boolean
   admin?: boolean
 }>()
 
@@ -30,15 +31,16 @@ const props = defineProps<{
 const CHIPS: { key: keyof typeof props; label: string; doc: string }[] = [
   { key: 'reporter', label: 'Reporter', doc: 'guide/reporter' },
   ...(
-    [
-      ['fixtures', 'Capture fixtures'],
-      ['llm', 'AI key'],
-      ['scm', 'SCM token'],
-      ['backend', 'Backend integration'],
-      ['desktop', 'Desktop app'],
-      ['extension', 'Browser extension'],
-      ['admin', 'Administrator'],
-    ] as [FeatureNeed, string][]
+    Object.entries({
+      fixtures: 'Capture fixtures',
+      llm: 'AI key',
+      scm: 'SCM token',
+      backend: 'Backend integration',
+      desktop: 'Desktop app',
+      extension: 'Browser extension',
+      editor: 'Editor extension',
+      admin: 'Administrator',
+    } satisfies Record<FeatureNeed, string>) as [FeatureNeed, string][]
   ).map(([key, label]) => ({ key, label, doc: FEATURE_NEED_DOCS[key] })),
 ]
 

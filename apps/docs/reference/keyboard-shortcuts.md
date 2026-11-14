@@ -88,7 +88,7 @@ row. The triage actions need the Maintainer role or above on the project.
 | `o` | Open the cluster |
 | `r` | Resolve |
 | `i` | Ignore |
-| `q` | Quarantine the cluster's tests |
+| `q` | [Quarantine](/features/flaky-tests#quarantine-with-a-way-out) the cluster's tests |
 | `a` | Assign |
 | `s` | Snooze |
 | `l` | Link a known issue |
@@ -114,12 +114,14 @@ On a run's and a project's **Tests** tab ([test search](/reference/test-search))
 
 ## Element picker
 
-When you [pick a replacement locator](/features/locator-healing) on a captured page:
+In the pickers that pick a replacement locator for [locator healing](/features/locator-healing#use-it): the
+dashboard's **Pick from snapshot** and the failure-time picker of a local run:
 
 | Keys | Action |
 |---|---|
 | `↑` | Select the parent of the highlighted element |
 | `↓` | Go back down to the child |
+| `Enter` | Pick the highlighted element, else the focused one |
 | `Esc` | Skip picking, without choosing an element |
 
 ## Permission grid

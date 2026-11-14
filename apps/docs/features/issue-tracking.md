@@ -68,9 +68,8 @@ as tracked, yet Piwi never writes to it and its status never resolves or reopens
 
 ## Keep the ticket honest
 
-A background sync
-([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
-its status, title and assignee (open clusters every sweep, resolved ones daily). Per-project **policies**, all **off by
+A background [status sync](/operate/integrations#status-sync) reads each tracked issue back and caches its status,
+title and assignee. Per-project **policies**, all **off by
 default**, each a durable deduped outbox action, write back as the cluster evolves:
 
 | When Piwi observes | What Piwi does |
@@ -91,7 +90,7 @@ inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
 
 ## The project binding
 
-A Project admin or an administrator binds the project under **Project → Settings → Issue tracker**: the connection, Jira project and issue
+A Project admin [binds the project](/operate/integrations#who-can-do-what) under **Project → Settings → Issue tracker**: the connection, Jira project and issue
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route.
@@ -139,8 +138,8 @@ explains.
 - A [project binding](#the-project-binding) naming the connection: a project's issues are filed, read and written
   back through that one connection, never through another.
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
-- The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
-  who reads the project sees the key and status.
+- The **Contributor** role or above to create or link an issue ([who can do what](/operate/integrations#who-can-do-what));
+  anyone who reads the project sees the key and status.
 
 ## Enable it
 

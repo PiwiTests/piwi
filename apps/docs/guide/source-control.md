@@ -14,13 +14,13 @@ failure, or writes back to a pull request, goes through it.
 
 | Feature | What it does with the repository | Access |
 |---|---|---|
-| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the last green run, and the full source of the most suspect files | read |
+| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the [last green run](/features/run-changes#the-baseline), and the full source of the most suspect files | read |
 | The failure cluster's **What changed** panel | Lists commits, shows their diffs, and lets you pin a baseline commit | read |
 | [Uncovered changes](/features/uncovered-changes) | Diffs the run's commit against the pull request's base, or the last passing run, and flags changed files no test reached | read |
 | [Did the fix work?](/features/failure-clusters#did-the-fix-work) | Checks whether the commits after a fix touched the failing files | read |
 | [Notifications](/features/notifications) | Names the author of the fixing commit on `cluster.fixed` and `cluster.regressed` | read |
 | Ownership and the default branch | Reads `CODEOWNERS` for test owners, and the repository's default branch when the project sets none | read |
-| [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status | write |
+| [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status, and the [CI merge gate](/features/merge-gate#on-the-pull-request)'s status when it is on | write |
 | [Re-run in CI](/features/ci-rerun) | Dispatches a workflow or pipeline (a CI server takes its own token) | write |
 | [Auto-heal PRs](/features/auto-heal) | Opens a pull request with a locator fix | write |
 
@@ -92,7 +92,7 @@ section is absent, it says why.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run before it where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on
-  GitHub and GitLab only.
+  GitHub, GitLab and Bitbucket Cloud only.
 
 ## Related
 

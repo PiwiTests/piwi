@@ -42,9 +42,8 @@ A test reaches a file when it:
 - executed one of the file's functions, with [code reach](/features/code-reach) on.
 
 Piwi can observe a file when one of these could happen to it, or when the head commit's coverage counts its changed
-lines. A skipped test reaches nothing. A *changed, unreached* gap closes when a later diff no longer counts its file
-as uncovered, or when the Test Map's next recompute finds it reached or out of scope; an accepted one closes only once
-a test reaches the file.
+lines. A skipped test reaches nothing. A *changed, unreached* gap closes once its file no longer counts as uncovered
+([when a gap closes](/reference/gap-detectors#when-a-gap-closes)).
 
 Before the pull request, the [editor extensions](./editor-coverage#uncovered-changes) mark the lines of an uncovered
 change of a page or a server route in the file itself, by a rule of their own: no coverage scope, no window of runs,
@@ -84,10 +83,13 @@ visiting a file is not a test running the change.
 
 The section ends with what it did not count: *Not counted: 2 files Piwi cannot observe, 1 file outside the coverage
 scope.*
+With **Only comment on failures** on, a run with no failure still gets the comment when its change left a file no
+test reached.
 
 Three more detectors read the whole pull request at each run: an error status a route's handler gains that no run
 answered with, a control a page gains, and a title no test's words match ([the detectors](/reference/gap-detectors#detectors)).
-Their gaps carry the pull request's number, close when a later run no longer raises them, and the section counts them
+Their gaps carry the pull request's number, close when a later run no longer raises them
+([when a gap closes](/reference/gap-detectors#when-a-gap-closes)), and the section counts them
 with a link to the pull request's gaps, where the change-coverage status leads too.
 
 <figure>
@@ -116,15 +118,10 @@ takes it from there. The REST endpoint is in the [API docs](https://piwitests.de
 
 ## The gate flags
 
-Two flags of [`piwi gate`](/guide/ci#blocking-a-merge) read the same rule, one per form:
-
-- `--max-uncovered-changes <n>` warns when more than `n` changed files are uncovered changes (the file form);
-- `--min-patch-coverage <percent>` warns when fewer of the changed lines ran, or when the head commit's coverage names
-  none of them (the line form). Run it after the unit-test jobs uploaded their reports.
-
-Both are **warn-only**: they never change the verdict or the exit code, because the numbers inform rather than prove.
-The first names up to five of the files, and a stored evaluation keeps its warnings.
-Either warns too when the run has no source control diff to count. Without them, the gate ignores uncovered changes.
+Two warn-only flags of the [CI merge gate](/features/merge-gate#what-only-warns) read the same rule, one per form:
+`--max-uncovered-changes` the files, `--min-patch-coverage` the changed lines. They never change the verdict, because
+the numbers inform rather than prove, and a stored evaluation keeps their warnings. Run the second after the unit-test
+jobs uploaded their reports.
 
 ## Limits
 
@@ -140,4 +137,4 @@ Either warns too when the run has no source control diff to count. Without them,
 - [Combined coverage](/features/combined-coverage): the coverage the changed lines are counted on
 - [Pull-request feedback](/features/pr-feedback): the comment this section joins
 - [Source control](/guide/source-control): the token that provides the diff
-- [Piwi CLI: gate](/reference/cli#gate): every gate flag
+- [CI merge gate](/features/merge-gate): the warn-only flags beside the gate's rules

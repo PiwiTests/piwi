@@ -6,6 +6,8 @@ lang: en-US
 
 # Failures in the editor
 
+<Needs editor />
+
 The [editor extensions](./editors) show the failures of the latest CI run at the lines that failed, lay your local runs
 over them, and follow each failing line through your edits until a run covers its test again.
 
@@ -85,7 +87,7 @@ the progress of your run, `running 4 of 9`. Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
+  **Group the failures by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
@@ -107,7 +109,8 @@ failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, *
 **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
-run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
+latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected
+failure or run),
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
 menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
 title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP
@@ -121,7 +124,6 @@ its own); a desktop app to restart or update; an instance still being read; or n
 
 ## Related
 
-- [Editor extensions](./editors): what else the editor shows from your suite.
 - [The editor's status bar](./editor-status-bar#compare-with-another-run): choose the run the failures are read against.
 - [Runs from the editor](./editor-runs): run the failing tests again, and follow the run in the status bar.
 - [Locator healing](/features/locator-healing): where the heal quick fix comes from.

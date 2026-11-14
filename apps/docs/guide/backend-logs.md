@@ -6,9 +6,11 @@ lang: en-US
 
 # Backend instrumentation
 
+<Needs reporter backend />
+
 A small package in your backend attaches to each HTTP response what the server did for that request, and the
 [capture fixtures](./capture-fixtures) read it from the response while your tests run. Nothing leaves your backend
-except in those response headers, or from the coverage endpoints of a coverage build, and only outside production.
+except in those response headers, or from the coverage endpoints of a coverage build, and only in development and test environments by default.
 
 | Use | What you get | ASP.NET Core | Nitro / Nuxt |
 |---|---|:---:|:---:|
@@ -100,7 +102,7 @@ Create a file in your project's server plugins directory:
 export { default } from '@piwitests/instrumentation-nitro'
 ```
 
-Nitro loads the plugin itself. It captures `consola` Warning/Error entries (not bare `console.*` calls) and unhandled H3 errors, a server-side render's own `$fetch` calls included, and writes the header as each response, error responses too, goes out. Capture is on outside production; override either way with `PIWI_TEST_LOGS_DISABLED` (`true` = always off, `false` = on even in production).
+Nitro loads the plugin itself. It captures `consola` Warning/Error entries (not bare `console.*` calls) and unhandled H3 errors, a server-side render's own `$fetch` calls included, and writes the header as each response, error responses too, goes out. Capture is on when `NODE_ENV` is `development` or `test`; override either way with `PIWI_TEST_LOGS_DISABLED` (`true` = always off, `false` = on even in production).
 
 **Requirements:** Nuxt 3+ / Nitro 2+ (peer deps `nitropack ≥2`, `h3 ≥1`, `consola ≥3` — all included in any Nuxt project).
 
@@ -144,7 +146,7 @@ uses the handler and dependencies they name. The reporter reads them while `capt
 
 ## Route manifest
 
-Both packages serve `/__piwi/manifest` outside production: the routes the server has, as JSON. The
+Both packages serve `/__piwi/manifest` where capture is on: the routes the server has, as JSON. The
 reporter fetches it from each `baseURL` and each other origin whose responses carry an instrumentation header, and
 uploads it with the run, so a route or page nothing reaches becomes a
 [declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can commit a
@@ -172,8 +174,8 @@ environment variable, path or connection string. Never enable it on a public pro
 
 **Experimental.** Both packages accept a signed fault instruction on one request (`X-Piwi-Probe`, HMAC-signed with
 `PIWI_PROBE_SECRET`) and apply it inside the server, so a probe run can check whether a passing test notices the
-server's real error path. Faults are applied only with `PIWI_SERVER_PROBES=true` on the backend, only outside
-production, and only for projects that turn server probes on. See
+server's real error path. Faults are applied only with `PIWI_SERVER_PROBES=true` on the backend, only where
+capture is on, and only for projects that turn server probes on. See
 [Server probes](/features/probes#server-probes) for what they report and when to turn them on.
 
 ## Building your own integration

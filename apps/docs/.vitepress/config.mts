@@ -38,8 +38,8 @@ export default defineConfig({
     hostname: siteUrl,
   },
   transformPageData(pageData, { siteConfig }) {
-    // The landing page's cards are the catalog groups, one card each, so the
-    // landing page, the sidebar and the All features page share one grouping.
+    // The landing page's cards come from the catalog's groups, so the landing
+    // page, the sidebars and the All features page share one grouping.
     if (pageData.relativePath === 'index.md') pageData.frontmatter.features = landingCards()
     const { description, head } = pageMeta(pageData, siteConfig, siteUrl)
     pageData.frontmatter.head = [...(pageData.frontmatter.head ?? []), ...head]

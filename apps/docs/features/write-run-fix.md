@@ -27,7 +27,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 |---|---|---|---|
 | Write the test | **Record a new test file…**, or **Record here…** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
 | Run it | **Run with Piwi** from the gutter, the Testing view or the test at the cursor; **Verify ×3** | the desktop app's **Re-run** of tests | [Runs from the editor](./editor-runs), [Desktop app runs](./desktop-runs) |
-| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Live view of a run](./live-view), [Runs window](./runs-window) |
+| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Watch a run](./watch-a-run), [Watch a running test](./watch-running-test) |
 | Stop it | a breakpoint, **Pause**, **Step**, **Run to cursor** | the pause bar in the test's page | [Breakpoints in the browser](./editor-breakpoints), [Pause and step from the editor](./editor-run-control) |
 | Fix it at the stop | **Pick a locator**, **Record here**, **Assert**, **Mock a request** | **Pick a locator** and **Record here** from the pause bar; all four from the Runs window | [Code from a pause](./editor-stop-code) |
 | Debug a failure | **Debug in my editor**, from the failure's page | the failure page's Locator fix | [Debug in my editor](./debug-in-editor), [Locator healing](./locator-healing) |
@@ -49,15 +49,15 @@ terminal is followed too, when the editor is open: [Runs started outside Piwi](.
 ## Stop it and write the fix there
 
 Set a breakpoint on the line you are working on and run the test. It stops before that line's call, in a headed
-browser with Piwi's pause bar, or, headless, with the page shown in the editor. **Pick a locator**, **Record here**,
-**Assert** and **Mock a request** write their code where the stopped statement stands now, after the edits you made
+browser with Piwi's pause bar, or, headless, with the page shown in the editor. **Pick a locator**, **Record here** and
+**Assert** (in the headed browser) and **Mock a request** write their code where the stopped statement stands now, after the edits you made
 since the run started ([Code from a pause](./editor-stop-code)); **End the test** skips the rest of it
 ([End the test](./end-the-test)).
 
 ## When it fails
 
-In a run Piwi started, a failing test holds its page where someone can see it (a headed browser, or while the Runs
-window is open), and the editor shows the failure as a stop, with the same actions. Otherwise its page on the
+While its run's [Hold failures](./watch-a-run#hold-failures) is on (from the start of a run with breakpoints), a
+failing test holds its page and the editor shows the failure as a stop, with the same actions. Otherwise its page on the
 instance explains it: the clues rank the likely cause, and the Locator fix panel offers the replacement locator.
 **Debug in my editor** on that page runs the failing test again from the editor and stops at the line it failed on.
 

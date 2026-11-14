@@ -19,8 +19,8 @@ CI run or a run [shared from a developer's machine](./share-live).
 - **The page**, as the worker's test sees it: one image a second, 320 pixels wide, the latest alone. A still page sends
   none until it changes.
 - **The worker**, by its lane (`Worker 2`, as the rows and the Timeline name it), the test it runs and its step.
-- **What its test needs attention for**: where it stands stopped (`Stopped at a breakpoint`), or **Stuck?** once the
-  dashboard marks it ([Stuck tests](./stuck-tests)).
+- **What its test needs attention for**: where it stands [stopped](./watch-a-run#where-a-test-stopped)
+  (`Stopped at a breakpoint`), or **Stuck?** once the dashboard marks it ([Stuck tests](./stuck-tests)).
 
 The tile of the worker shown in full is outlined. A worker that leaves the run's live view leaves the grid; the one
 Playwright starts in its lane after a failure takes its place.
@@ -28,7 +28,7 @@ Playwright starts in its lane after a failure takes its place.
 ## Follow what needs attention
 
 In the full view, **Follow what needs attention** moves the view on its own to a worker whose test failed, was marked
-**Stuck?**, or stopped (a breakpoint, a `page.pause()` or **Pause**), and says why it moved:
+**Stuck?**, or [stopped](./watch-a-run#where-a-test-stopped), and says why it moved:
 `Moved to worker 3: “pays with a saved card” failed.` It follows these rules:
 
 - It goes where the newest of them happened, in another worker of the run's live view.

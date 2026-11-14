@@ -25,7 +25,7 @@ docker run -d --name piwi -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data phen
 docker run -d --name piwi -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
 ```
 
-Open `http://localhost:3000`. The SQLite database and the file storage are created inside `.data/` on the first request; nothing to configure.
+Open `http://localhost:3000`. The SQLite database and the file storage are created inside `.data/` when the server starts; nothing to configure.
 
 > **Reachable from this machine only.** With authentication off, the default, anyone who reaches the port is an administrator. Publish it on every interface (`-p 3000:3000`) only once [authentication](https://piwitests.dev/operate/authentication) is on.
 
@@ -87,15 +87,13 @@ The same multi-arch image is mirrored to the GitHub Container Registry as `ghcr.
 
 ## Before you expose it
 
-The command above gives you an open dashboard with authentication off, which is fine on localhost and not fine on a network. Three things to set before anyone else can reach it:
+The command above gives you an open dashboard with authentication off, which is fine on localhost and not fine on a network. The first steps of the [production checklist](https://piwitests.dev/operate/production-checklist#before-you-expose-it), before anyone else can reach it:
 
-| Variable | Why |
-|---|---|
-| `PIWI_AUTH_ENABLED=true` | Turns on accounts and roles ([authentication](https://piwitests.dev/operate/authentication)) |
-| `PIWI_AUTH_SECRET` | Signs the session cookies; required once authentication is on |
-| `PIWI_SECRET_KEY` | Encrypts the credentials stored in the database (AI keys, SCM tokens). Unset, the dashboard refuses to save them: set it in every deployment |
+1. **Authentication**: `PIWI_AUTH_ENABLED=true`, `PIWI_AUTH_SECRET` (it signs the session cookies) and `PIWI_SETUP_TOKEN`, which the form that creates the first administrator asks for ([authentication](https://piwitests.dev/operate/authentication#initial-setup)).
+2. **The encryption key**: `PIWI_SECRET_KEY` encrypts the credentials stored in the database, such as AI keys and SCM tokens; without it, the dashboard refuses to save them.
+3. **HTTPS**, through a [reverse proxy](https://piwitests.dev/operate/deployment#reverse-proxy-https).
 
-Generate a value for either secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Put HTTPS in front with a [reverse proxy](https://piwitests.dev/operate/deployment#reverse-proxy-https). The full list, with the trust-proxy flag, backups and version pinning, is the [production checklist](https://piwitests.dev/operate/production-checklist).
+Generate a value for each secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. The checklist goes on with the public address and proxy trust, backups and a pinned version.
 
 ---
 
@@ -103,7 +101,7 @@ Generate a value for either secret with `node -e "console.log(require('node:cryp
 
 Piwi runs with **zero configuration**: set a variable only to change a default. The full list, with each default and whether the Settings UI can override it, is the [configuration reference](https://piwitests.dev/reference/configuration); the [configuration generator](https://piwitests.dev/reference/configuration/generator) builds a ready-to-paste `.env`, Compose, Kubernetes or systemd block in your browser.
 
-Beyond the three above: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables move the reports and traces to any S3-compatible service ([storage](https://piwitests.dev/operate/storage)), and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs. Backups are in [Backup & restore](https://piwitests.dev/operate/backup-restore).
+Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables move the reports and traces to any S3-compatible service ([storage](https://piwitests.dev/operate/storage)), and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs. Backups are in [Backup & restore](https://piwitests.dev/operate/backup-restore).
 
 ---
 

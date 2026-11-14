@@ -70,7 +70,7 @@ names it too, and says what is sent to it.
 Asked to do something ("resolve this cluster"), the assistant answers with a card per change, with **Apply** and
 **Dismiss**. Nothing runs until you click **Apply**: the dashboard sends its own button's request, with your session,
 and reloads the page. The card keeps what became of it, or why it was refused. A card can resolve, ignore or
-reopen a failure cluster, quarantine or release a test, start a diagnosis, keep a run or decline a capability, and
+reopen a failure cluster, [quarantine](./flaky-tests#quarantine-with-a-way-out) or release a test, start a diagnosis, keep a run or decline a capability, and
 shows only when you hold the permission it needs; to act on several tests, it first lets you tick them.
 
 <figure>
@@ -98,7 +98,7 @@ which are set, and its value, go only to those who can open its page, a secret o
 
 ## The model
 
-The assistant answers with the model of **Features → Assistant** in Settings → AI ([model roles](/guide/ai-provider#model-roles)).
+The assistant uses the model of **Features → Assistant model** in Settings → AI ([model roles](/guide/ai-provider#model-roles)).
 Left unset, it uses the diagnosis model, so an instance with AI configured needs no further setup; set it to a faster,
 cheaper model while diagnosis keeps the strong one.
 The response language and the global and project instructions apply as they do to [AI diagnosis](./ai-diagnosis).
