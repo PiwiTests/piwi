@@ -27,7 +27,7 @@ const props = defineProps<{
 
 const player = useReelPlayer(toRef(props, 'reel'), toRef(props, 'startIndex'));
 const { current, ticked, failed, playing } = player;
-/** The test the playhead is on, so a caller that shows this reel elsewhere (the maximised Video tab) can start there. */
+/** The test the playhead is on, so a caller that shows this reel elsewhere (the maximized Video tab) can start there. */
 const emit = defineEmits<{ current: [index: number | null] }>();
 watch(current, (index) => emit('current', index));
 

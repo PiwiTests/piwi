@@ -32,9 +32,9 @@ matched words marked, and the line above it says how many match. Searching only 
 ticks and the marks stay as they were, and a click on a test still jumps there. The search stays when you pick
 another worker or group by file. The **x** in the box clears it.
 
-## Maximise the video
+## Maximize the video
 
-**Maximise**, beside the Worker and File switch, opens the same video review window the Evidence uses, with the switch,
+**Maximize**, beside the Worker and File switch, opens the same video review window the Evidence uses, with the switch,
 the worker picker, the search and the checklist. They are the tab's own: what you pick there is still picked when you
 close the window with **Esc** or the close button. Only one video plays, and each side starts on the test the other
 was on. On a narrow screen the window fills it.

@@ -53,17 +53,20 @@ const laneModel = computed({
 watch(group, () => (chosenKey.value = null));
 
 /**
- * Maximise shows the same reel in the video review dialog. Only one reel is mounted, so one `<video>` plays: the inline
+ * Maximize shows the same reel in the video review dialog. Only one reel is mounted, so one `<video>` plays: the inline
  * one while the dialog is closed, the dialog's while it is open. Each starts at the test the other was on.
  */
-const maximised = ref(false);
+const maximized = ref(false);
 const reelKey = computed(() => (reel.value ? `${group.value}:${reel.value.key}` : null));
 /** The test the mounted reel is on, with the reel it belongs to: an index means nothing on another worker's reel. */
 const reelAt = ref<{ key: string; index: number } | null>(null);
-const startIndex = computed(() => (reelAt.value?.key === reelKey.value ? reelAt.value!.index : null));
 function onCurrent(index: number | null) {
   if (index != null && reelKey.value) reelAt.value = { key: reelKey.value, index };
 }
+/** Where the reels start, and start over: the test the playhead was on when the dialog opened or closed, none before. */
+const startAt = ref<{ key: string; index: number } | null>(null);
+watch(maximized, () => (startAt.value = reelAt.value));
+const startIndex = computed(() => (startAt.value?.key === reelKey.value ? startAt.value!.index : undefined));
 </script>
 
 <template>
@@ -103,10 +106,10 @@ function onCurrent(index: number | null) {
           variant="outline"
           size="sm"
           class="sm:ms-auto"
-          aria-label="Maximise video"
-          @click="maximised = true"
+          aria-label="Maximize video"
+          @click="maximized = true"
         >
-          <span class="max-sm:sr-only">Maximise</span>
+          <span class="max-sm:sr-only">Maximize</span>
         </UButton>
       </div>
       <p v-if="data?.truncated" class="shrink-0 text-xs text-muted">
@@ -114,7 +117,7 @@ function onCurrent(index: number | null) {
         first {{ LISTED_LIMIT.toLocaleString() }} without are shown.
       </p>
       <RunVideoReel
-        v-if="!maximised"
+        v-if="!maximized"
         :key="reelKey!"
         v-model:search="search"
         :reel="reel"
@@ -123,7 +126,7 @@ function onCurrent(index: number | null) {
         searchable
         @current="onCurrent"
       />
-      <VideoReviewModal v-model:open="maximised" :description="`Run #${runId}`">
+      <VideoReviewModal v-model:open="maximized" :description="`Run #${runId}`">
         <template #actions>
           <SegmentedSwitch v-model="group" :items="groupItems" aria-label="Group by" />
           <USelect
@@ -137,7 +140,7 @@ function onCurrent(index: number | null) {
           />
         </template>
         <template #body>
-          <div class="flex min-h-0 flex-1 flex-col gap-3" data-shot="run-video-maximised">
+          <div class="flex min-h-0 flex-1 flex-col gap-3" data-shot="run-video-maximized">
             <p v-if="group === 'file'" class="text-xs text-muted">Tests ran in parallel; played here in file order</p>
             <RunVideoReel
               :key="reelKey!"

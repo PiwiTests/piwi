@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { test, expect, type Page } from './fixtures';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -5,7 +6,7 @@ import { PROJECT } from '#shared/test-project-names';
 import { retryPost, waitForHydration } from './utils';
 
 /**
- * Maximise on the run's Video tab: it opens the video review dialog around the same reel, with the same group, worker
+ * Maximize on the run's Video tab: it opens the video review dialog around the same reel, with the same group, worker
  * and search, plays one video at a time, starts at the test the tab was on and hands the test back on close.
  */
 
@@ -13,14 +14,14 @@ import { retryPost, waitForHydration } from './utils';
 const VIDEO = readFileSync(join(process.cwd(), 'public/demo/videos/checkout-pay-timeout.webm'));
 const TITLES = ['opens the cart', 'fills the card', 'places the order', 'shows the receipt'];
 
-test.describe('Video tab maximise', () => {
+test.describe('Video tab maximize', () => {
   test.describe.configure({ mode: 'serial' });
   const t0 = Date.now() - 120_000;
   let runId = 0;
 
   test.beforeAll(async ({ request }) => {
     const start = await retryPost(request, '/api/test-runs/start', {
-      data: { projectName: PROJECT.VIDEO_MAXIMISE, startTime: new Date(t0).toISOString() },
+      data: { projectName: PROJECT.VIDEO_MAXIMIZE, startTime: new Date(t0).toISOString() },
     });
     expect(start.ok()).toBeTruthy();
     const started = await start.json();
@@ -29,7 +30,7 @@ test.describe('Video tab maximise', () => {
 
     const cases = TITLES.map((title, i) => ({
       title,
-      location: `tests/maximise.spec.ts:${5 + i * 10}:3`,
+      location: `tests/maximize.spec.ts:${5 + i * 10}:3`,
       retries: 0,
       workerIndex: 0,
       startedAt: t0 + i * 4000,
@@ -77,7 +78,7 @@ test.describe('Video tab maximise', () => {
 
   const tab = (page: Page) => page.locator('[data-shot="run-video-tab"]');
   const dialog = (page: Page) => page.getByRole('dialog', { name: 'Video review' });
-  const maximise = (page: Page) => tab(page).getByRole('button', { name: 'Maximise video' });
+  const maximize = (page: Page) => tab(page).getByRole('button', { name: 'Maximize video' });
   const bar = (page: Page) => page.getByRole('group', { name: 'Tests in this reel' });
   /** The index of the block the playhead is on. */
   const currentBlock = async (page: Page) =>
@@ -92,10 +93,10 @@ test.describe('Video tab maximise', () => {
 
   test('the button opens the dialog with the reel, and the close button closes it', async ({ page }) => {
     await openVideoTab(page);
-    await expect(maximise(page)).toBeVisible();
+    await expect(maximize(page)).toBeVisible();
     await expect(dialog(page)).toHaveCount(0);
 
-    await maximise(page).click();
+    await maximize(page).click();
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page).getByRole('button', { name: 'Worker', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -109,12 +110,12 @@ test.describe('Video tab maximise', () => {
 
     await dialog(page).getByRole('button', { name: 'Close' }).click();
     await expect(dialog(page)).toHaveCount(0);
-    await expect(maximise(page)).toBeVisible();
+    await expect(maximize(page)).toBeVisible();
   });
 
   test('Escape closes it', async ({ page }) => {
     await openVideoTab(page);
-    await maximise(page).click();
+    await maximize(page).click();
     await expect(dialog(page)).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog(page)).toHaveCount(0);
@@ -123,7 +124,7 @@ test.describe('Video tab maximise', () => {
   test('the grouping and the search are the tab’s own: File picked inside stays on the tab', async ({ page }) => {
     await openVideoTab(page);
     await tab(page).getByRole('textbox', { name: 'Search tests' }).fill('receipt');
-    await maximise(page).click();
+    await maximize(page).click();
 
     // The search shows inside the dialog, filtering the same reel.
     await expect(dialog(page).getByRole('textbox', { name: 'Search tests' })).toHaveValue('receipt');
@@ -149,7 +150,7 @@ test.describe('Video tab maximise', () => {
       .click();
     await expect.poll(() => currentBlock(page)).toBe(2);
 
-    await maximise(page).click();
+    await maximize(page).click();
     await expect(dialog(page)).toBeVisible();
     await expect.poll(() => currentBlock(page)).toBe(2);
     await expect(bar(page)).toHaveCount(1);
@@ -165,13 +166,57 @@ test.describe('Video tab maximise', () => {
     await expect.poll(() => currentBlock(page)).toBe(3);
   });
 
+  /** Plays the reel on show from its last test to the end, which leaves the checklist ticked and Play offering a restart. */
+  async function playToTheEnd(scope: Locator, page: Page) {
+    // The reel may still be loading its first video when the row is clicked: click again until the playhead is there.
+    await expect(async () => {
+      await scope
+        .locator('ul > li')
+        .getByRole('button', { name: /shows the receipt/ })
+        .click();
+      expect(await currentBlock(page)).toBe(3);
+    }).toPass();
+    await scope.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(scope.getByText(`${TITLES.length} of ${TITLES.length} tests`)).toBeVisible({ timeout: 15_000 });
+    await expect(scope.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  }
+
+  test('Play after the reel has ended starts over at the first test, on the tab and in the dialog', async ({
+    page,
+  }) => {
+    // Three passes of the reel's last test, each played in real time.
+    test.setTimeout(120_000);
+    await openVideoTab(page);
+    await playToTheEnd(tab(page), page);
+    // The tab was never maximized: Play starts the reel over at its first test, not at the one it ended on.
+    await tab(page).getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => currentBlock(page)).toBe(0);
+    await expect(tab(page).getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+
+    // Opened on the first test, the dialog's reel starts over there too.
+    await tab(page).getByRole('button', { name: 'Pause', exact: true }).click();
+    await maximize(page).click();
+    await expect(dialog(page)).toBeVisible();
+    await playToTheEnd(dialog(page), page);
+    await dialog(page).getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => currentBlock(page)).toBe(0);
+
+    // Back on the tab, which starts where the dialog was left: the same on a reel played to its end.
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toHaveCount(0);
+    await expect.poll(() => currentBlock(page)).toBe(0);
+    await playToTheEnd(tab(page), page);
+    await tab(page).getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => currentBlock(page)).toBe(0);
+  });
+
   test('only one video plays at a time: the tab’s reel is not mounted while the dialog is open', async ({ page }) => {
     await openVideoTab(page);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect.poll(async () => (await videos(page)).playing).toBe(1);
     expect((await videos(page)).count).toBe(2);
 
-    await maximise(page).click();
+    await maximize(page).click();
     await expect(dialog(page)).toBeVisible();
     // The tab's two elements are gone; the dialog's two are there, and nothing plays until Play is pressed.
     await expect.poll(async () => (await videos(page)).count).toBe(2);
@@ -188,7 +233,7 @@ test.describe('Video tab maximise', () => {
   test('fills the screen of a phone', async ({ page }) => {
     await openVideoTab(page, { width: 375, height: 667 });
     // The label is for screen readers on a phone; the button keeps its name.
-    await maximise(page).click();
+    await maximize(page).click();
     await expect(dialog(page)).toBeVisible();
     // The dialog animates in: measure once it has settled, to the pixel.
     await expect
