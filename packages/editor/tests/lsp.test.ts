@@ -1734,11 +1734,10 @@ describe('the test tree', () => {
                   status: 'passed',
                   failure: null,
                   url: `${url}/test-cases/1`,
-                  // The catalog's tags, owner, average and latest durations, and the project's quarantine.
+                  // The catalog's tags, owner and latest duration, and the project's quarantine.
                   tags: ['@smoke', '@checkout'],
                   owner: 'ada',
                   quarantined: true,
-                  durationMs: 1234,
                   resultDurationMs: 988,
                 },
               ],
@@ -1804,7 +1803,6 @@ describe('the test tree', () => {
             tags: [],
             owner: null,
             quarantined: false,
-            durationMs: null,
             resultDurationMs: null,
           },
         ],
@@ -2850,8 +2848,8 @@ describe('runs as they happen', () => {
 
   test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
     const startTime = '2026-09-27T12:00:00.000Z';
-    runDetails.set(60, {
-      id: 60,
+    runDetails.set(66, {
+      id: 66,
       status: 'running',
       branch: 'main',
       startTime,
@@ -2862,33 +2860,33 @@ describe('runs as they happen', () => {
       skippedTests: 0,
       didNotRunTests: 0,
     });
-    pushInstanceEvent({ type: 'run-started', runId: 60, projectId: 7 });
-    const first = await waitFor(() => ciHeard.find((s) => s.runId === 60));
+    pushInstanceEvent({ type: 'run-started', runId: 66, projectId: 7 });
+    const first = await waitFor(() => ciHeard.find((s) => s.runId === 66));
     expect(first).toMatchObject({
-      name: 'CI run #60',
+      name: 'CI run #66',
       branch: 'main',
-      url: expect.stringMatching(/\/test-runs\/60$/),
+      url: expect.stringMatching(/\/test-runs\/66$/),
       summary: '0 of 3 tests',
       tests: [],
       ended: false,
     });
     // The context follows it as its run in progress too: one connection to the run's stream serves both.
-    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 60));
-    await waitFor(() => (runStreams.get(60)?.size === 1 ? true : undefined));
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 66));
+    await waitFor(() => (runStreams.get(66)?.size === 1 ? true : undefined));
     await new Promise((r) => setTimeout(r, 50));
-    expect(runStreams.get(60)?.size).toBe(1);
+    expect(runStreams.get(66)?.size).toBe(1);
 
     // What leaves the session as the client holds it tells the client nothing: the same tally, the same live view.
     const told = ciHeard.length;
     const tally = { totalTests: 3, passedTests: 0, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
-    pushInstanceEvent({ type: 'run-progress', runId: 60, projectId: 7, ...tally });
-    pushRunEvent(60, 'run-progress', { status: 'running', ...tally });
-    pushRunEvent(60, 'live-view', { enabled: false, keyed: false });
+    pushInstanceEvent({ type: 'run-progress', runId: 66, projectId: 7, ...tally });
+    pushRunEvent(66, 'run-progress', { status: 'running', ...tally });
+    pushRunEvent(66, 'live-view', { enabled: false, keyed: false });
     await new Promise((r) => setTimeout(r, 700));
     expect(ciHeard.slice(told)).toEqual([]);
 
-    pushRunEvent(60, 'live-view', { enabled: true, keyed: true });
-    pushRunEvent(60, 'test-begin', {
+    pushRunEvent(66, 'live-view', { enabled: true, keyed: true });
+    pushRunEvent(66, 'test-begin', {
       title: 'pays',
       filePath: 'tests/checkout.spec.ts',
       location: 'tests/checkout.spec.ts:3:1',
@@ -2898,7 +2896,7 @@ describe('runs as they happen', () => {
       retries: 0,
       browser: { projectName: 'chromium' },
     });
-    pushRunEvent(60, 'step-begin', {
+    pushRunEvent(66, 'step-begin', {
       title: 'Click',
       subtitle: "getByRole('button', { name: 'Pay now' })",
       location: '/ci/work/shop/tests/checkout.spec.ts:5:20',
@@ -2906,7 +2904,7 @@ describe('runs as they happen', () => {
       shardIndex: null,
       stepCategory: 'pw:api',
     });
-    const running = await waitFor(() => [...ciHeard].reverse().find((s) => s.runId === 60 && s.tests[0]?.at)?.tests[0]);
+    const running = await waitFor(() => [...ciHeard].reverse().find((s) => s.runId === 66 && s.tests[0]?.at)?.tests[0]);
     expect(running).toMatchObject({
       title: ['pays'],
       line: 2,
@@ -2915,9 +2913,9 @@ describe('runs as they happen', () => {
       at: {
         line: 4,
         character: 19,
-        text: "CI run #60 · worker 1: Click getByRole('button', { name: 'Pay now' })",
+        text: "CI run #66 · worker 1: Click getByRole('button', { name: 'Pay now' })",
       },
-      watch: expect.stringMatching(/\/test-runs\/60\?watch=1$/),
+      watch: expect.stringMatching(/\/test-runs\/66\?watch=1$/),
     });
     expect(fileURLToPath(running.uri!)).toBe(fs.realpathSync(path.join(dir, 'tests/checkout.spec.ts')));
     expect(running.at!.uri).toBe(running.uri);
@@ -2929,16 +2927,25 @@ describe('runs as they happen', () => {
     })) as FileSummary;
     const line = summary.lines.find((l) => l.line === 2 && l.status !== undefined);
     expect(line?.status).not.toBe('running');
-    expect(line?.title).toMatch(/ · running in CI run #60 · /);
+    expect(line?.title).toMatch(/ · running in CI run #66 · /);
 
     // The run ends: the session's last notification.
-    runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 3 });
-    pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 3, passedTests: 3, failedTests: 0 });
-    pushInstanceEvent({ type: 'run-finished', runId: 60, projectId: 7, status: 'passed' });
-    const ended = await waitFor(() => ciHeard.find((s) => s.runId === 60 && s.ended));
+    runDetails.set(66, { ...runDetails.get(66), status: 'passed', passedTests: 3 });
+    pushRunEvent(66, 'run-finished', { status: 'passed', totalTests: 3, passedTests: 3, failedTests: 0 });
+    pushInstanceEvent({ type: 'run-finished', runId: 66, projectId: 7, status: 'passed' });
+    const ended = await waitFor(() => ciHeard.find((s) => s.runId === 66 && s.ended));
     expect(ended).toMatchObject({ progress: { status: 'passed' }, watchable: false });
     expect(ended.tests[0]).toMatchObject({ at: null, watch: null });
     await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    // Its verdict names it as the branch's CI run, which the client's run notifications scope may leave unsaid.
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 66));
+    expect(verdict).toMatchObject({
+      origin: 'ci',
+      branch: 'main',
+      passed: 3,
+      failed: 0,
+      verdict: { title: 'CI run #66 on main', text: '3 passed, 0 failed', failing: false },
+    });
   });
 
   test('an initializing run of the branch has its stream opened once it runs, not while it initializes', async () => {
@@ -3097,6 +3104,7 @@ describe('runs as they happen', () => {
     expect(verdict).toEqual({
       root: dir,
       runId: 61,
+      origin: 'editor',
       ref: command.ref,
       url: `${url}/test-runs/61`,
       passed: 1,
@@ -3110,6 +3118,7 @@ describe('runs as they happen', () => {
       newFailureCount: 1,
       // Worded once, for both clients.
       verdict: {
+        title: 'run #61',
         text: '1 of 2 CI failures fixed, 1 still failing (checkout.spec.ts › pays) · 1 new failure (checkout.spec.ts › pays by card)',
         failing: true,
         always: false,

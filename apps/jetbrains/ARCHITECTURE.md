@@ -447,12 +447,16 @@ platform's, which says how serious it is. D25 lists the five group ids, which us
 `Glue.runVerdict`), in the service's words (`RunEnded.verdict`), with **Open the failures**, **Open in dashboard**, and **Re-run failing** when something fails, or
 **Only on failure** when nothing does while the setting is `always`. The run's balloon follows
 `PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, the default, `never`; in
-`.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting, as
-`Run #124 · Failed 1 of 3`, a warning when one of the runs failed. The balloon is titled by its run, `Piwi: run #124`
-(`Glue.runVerdictTitle`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
+`.idea/workspace.xml`, on this machine only), and a CI run of the branch's (`RunEnded.origin`) only while
+`PiwiLocalSettings.runNotificationsScope` is `mineAndCi`, the default (`Glue.RUN_NOTIFICATION_SCOPES`). A run with
+`repeat` (**Verify ×3**) is reported whatever the setting, as `Failed 1 of 3`, a warning when one of the runs failed.
+The balloon is titled by the run the service names, `Piwi: run #124`, `Piwi: CI run #130 on feature-x`
+(`Glue.RunVerdict.title`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
 this project's frame is in the background calls once, as the service says (`RunStop.calls`, `Glue.attentionStops`,
 `PiwiRunSessions.heard`): `AppIcon.requestAttention`, which the system shows as a bouncing or flashing icon, a modal
-dialog open or not; never a stop the person asked for, one an agent drives or holds, or a desktop app's job's.
+dialog open or not, and `AppIcon.requestFocus` first while no window of the IDE is active and the debugger's 'Focus
+application on breakpoint' is on, its default (the registry key `debugger.mayBringFrameToFrontOnBreakpoint`); never a
+stop the person asked for, one an agent drives or holds, or a desktop app's job's.
 
 **Diagnostic severity.** The severity of a failure's diagnostic is `PiwiLocalSettings.failureSeverity`
 (`Glue.FAILURE_SEVERITIES`, in the Runs group of the same page), sent in `credentials()`. The LSP client shows an

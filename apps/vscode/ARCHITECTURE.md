@@ -80,7 +80,8 @@ files (`summaryOf`), and draws it in two places:
   (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
   `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
   failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
-  service's summary says so.
+  service's summary says so. Each tint has a scrollbar mark of its own, opaque as the JetBrains schemes' error stripes
+  (`piwi.*OverviewRuler`), and so do a recording's block, the execution point and a held failure.
 - Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
@@ -159,6 +160,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
 | `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
@@ -285,9 +287,10 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification in the service's words
-(`RunEnded.verdict`, `runVerdict` in `src/glue.ts`), as the
-`piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
+When a run started from the editor, or a CI run of the branch the service followed (`RunEnded.origin`), ends,
+`piwi/runEnded` shows as a notification in the service's words (`RunEnded.verdict`, `runVerdict` in `src/glue.ts`,
+`Piwi: CI run #130 on feature-x · 1 new failure (…)`), as the `piwi.runNotifications` setting allows (`always`,
+`failures`, the default, `never`), a CI run's only while `piwi.runNotificationsScope` is `mineAndCi`, the default:
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;
@@ -899,10 +902,10 @@ The run is the one a profile run's command started, by its ref, or the editor's 
 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
-has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
-carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
-(`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
-its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. A result is published with its own
+has no flaky result (`testOutcome` shows one as passed), so a flaky test's item carries the `flaky` tag
+(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with *flaky* (`flakyMark`). Every known test's
+item also carries its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. An item has no
+description: the view names an item by its description when it has one, in place of its title. A result is published with its own
 duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none
 for a run in progress. With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed
 ring. The API `activate` returns gives what the view shows (`testExplorer`).

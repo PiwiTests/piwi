@@ -1804,8 +1804,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         forgetShared(answers);
         const read = await Promise.all(
           due.map(async (c) => {
+            const before = c.failures;
             const [changed, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
-            if (ended) runWatch.end(c);
+            if (ended) runWatch.end(c, before);
             return changed;
           }),
         );
@@ -3547,7 +3548,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           tags: playwrightTags(found?.tags),
           owner: found?.owner?.trim() || null,
           quarantined: found ? context.quarantined.has(found.id) : false,
-          durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
           resultDurationMs: duration,
         }),
       );
@@ -4266,8 +4266,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     forgetShared(answers);
     await Promise.all(
       contexts.map(async (c) => {
+        const before = c.failures;
         const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
-        if (ended) runWatch.end(c);
+        if (ended) runWatch.end(c, before);
       }),
     );
     runChanged();

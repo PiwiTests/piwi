@@ -137,6 +137,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
+                    comboBox(Glue.RUN_NOTIFICATION_SCOPES, RunNotificationScopeRenderer())
+                        .label("The runs it says it for:", LabelPosition.TOP)
+                        .bindItem({ local.runNotificationsScope }, { local.runNotificationsScope = it ?: "mineAndCi" })
+                        .comment("A CI run of the branch says what it fixed and its new failures against the run it replaced")
+                }
+                row {
                     comboBox(Glue.STATUS_BAR_ALERTS, StatusBarAlertRenderer())
                         .label("The status bar item's text turns red:", LabelPosition.TOP)
                         .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
@@ -368,6 +374,16 @@ private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
             "failures" -> "Say what it changed when something fails"
             "never" -> "Say nothing"
             else -> "Say what it changed"
+        }
+    }
+}
+
+/** A choice of `PiwiLocalSettings.runNotificationsScope`, in words. */
+private class RunNotificationScopeRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = when (value) {
+            "mine" -> "The runs started here"
+            else -> "The runs started here and the branch's CI runs"
         }
     }
 }

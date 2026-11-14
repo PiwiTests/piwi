@@ -149,7 +149,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   const blockBackground = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.recordingBlockBackground'),
-    overviewRulerColor: new vscode.ThemeColor('piwi.recordingBlockBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.recordingBlockOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   /** The block's first line, in the gutter: a red dot in a ring while recording, the gray ring while paused. */
