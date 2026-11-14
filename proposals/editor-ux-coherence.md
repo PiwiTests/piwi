@@ -86,10 +86,13 @@ Playwright projects (HM1). M4's record family: JetBrains draws Record's actions 
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
-`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
+`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M4 in part: Piwi Picker draws Stop recording as a square in a ring (`stop-circle`) and Share live as a broadcast mark
+(`broadcast`) on its buttons and its "shared live" line, in the recording bar, the popup and the DevTools panel, apart
+from the run's Stop and a share of a result. M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4); both editors tint a failing test, its failing line and a recording in
 `STATUS_COLORS`' failed and running fills, the JetBrains schemes blending them over classic Default's or Darcula's background, and VS Code's
-held failure's arrow takes the failed fill (LI3). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+held failure's arrow takes the failed fill (LI3); VS Code's running ring spins, still under the system's reduced
+motion (TL5 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
@@ -1180,7 +1183,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): the glyphs Appendix A still marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [LR14](#lr14) |
-| <a id="m5"></a>M5 | **The running ring animated** ([LI3](#li3)) where the gutter allows it (§13, question 3) | `ide` | [TL5](#tl5) |
+| <a id="m5"></a>M5 | **The running ring animated in JetBrains** ([LI3](#li3)), if its gutter allows it (§13, question 3) | `ide` | [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
@@ -1347,19 +1350,19 @@ such action.
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
-| Stop recording | – | `stop-circle` (new) | `$(stop-circle)` | `stopRecording.svg` |
+| Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |
 | Step | `redo-dot` | `skip` | `$(debug-step-over)` | `Actions.TraceOver` |
-| Finish | `arrow-up-from-dot` | `step-out` (new) | `$(debug-step-out)` | `Actions.StepOut` |
+| Finish | `arrow-up-from-dot` | `step-out` | `$(debug-step-out)` | `Actions.StepOut` |
 | End the test | `ban` | `blocked` | `$(circle-slash)` | `RunConfigurations.TestIgnored` |
 | Stop the run | `square` | `stop` | `$(debug-stop)` | `Actions.Suspend` |
 | Pick | `crosshair` | `pick` | `$(target)` | `General.Locate` |
 | Assert | `check-circle` | `check-circle` | `$(pass)` | `General.InspectionsOK` |
 | Assert a region | `scan` | `viewport` | `$(screen-full)` or `$(piwi-region)` (new) | `region.svg` |
 | Mock a request | `network` | `network` | `$(arrow-swap)` or `$(piwi-mock)` (new) | `mock.svg` |
-| Share live ([LR14](#lr14)) | `radio` | `broadcast` (new) | `$(broadcast)` | `live.svg` |
-| Stop sharing live | – | – | `$(piwi-stop-live)` (new) | `stopLive.svg` |
+| Share live ([LR14](#lr14)) | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
+| Stop sharing live | `circle-stop` | `eye-off` | `$(piwi-stop-live)` | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
 | Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |
 | Run on my machine | `monitor-play` | – | – | – |
@@ -1385,7 +1388,7 @@ such action.
 | Passed: `emerald-500` `#10b981` | `check-circle-2` | a dot in the fill | `test-passed.svg` | `RunConfigurations.TestPassed` |
 | Failed: `rose-500` `#f43f5e` | `x-circle` | a dot in the fill | `test-failed.svg` | `RunConfigurations.TestError` |
 | Flaky: `fuchsia-500` `#d946ef` | `shuffle` | a dot in the fill | `test-flaky.svg`, and `$(piwi-flaky)` (new) for a codicon | `testFlaky.svg` |
-| Running: `blue-500` `#3b82f6` | `loader-circle`, spinning | – | a ring in `test-running.svg` | `testRunning.svg`, a ring |
+| Running: `blue-500` `#3b82f6` | `loader-circle`, spinning | – | a ring in `test-running.svg`, spinning | `testRunning.svg`, a ring |
 | Skipped: `zinc-400` `#a1a1aa`; fixme `zinc-600` | `minus-circle` | a dot in the fill | `test-skipped.svg` | `RunConfigurations.TestIgnored` |
 | Did not run: `amber-500` `#f59e0b` | `circle-slash` | – | – | `RunConfigurations.TestNotRan` |
 | Interrupted: `slate-500` `#64748b` | `circle-pause`; the tray's dot | – | – | – |
@@ -1404,8 +1407,7 @@ still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/
 running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
 lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
-draws `crosshair`, and Piwi Picker's recording bar stops with `stop`, the square
-(`apps/extension/src/content/record-panel.ts:673`). VS Code's `$(beaker)` stays the Piwi mark on the status item and the
+draws `crosshair`,. VS Code's `$(beaker)` stays the Piwi mark on the status item and the
 run node until `$(piwi-mark)` is drawn.
 
 ## Appendix B. Checked and found sound

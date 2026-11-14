@@ -187,7 +187,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
-- **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte**, in
+- **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte** (VS Code's
+  running ring adds the style that spins it), in
   `STATUS_COLORS`' fills, and so are the recording marks (`icons/recording*.svg`, `recordPaused*.svg`); both color
   schemes' failing and recording tints blend those fills over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`)
   background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.

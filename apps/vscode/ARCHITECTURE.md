@@ -298,7 +298,9 @@ when one of the runs failed. A `piwi/notice` is shown as a warning or an informa
 One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
 one write after the other); a key that setting holds is not shown (`noticeShown`).
 
-A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result.
+A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result. The
+ring spins in twelve steps a second (a CSS animation inside the SVG), and holds still when the system asks for less motion; VS Code's own
+`workbench.reduceMotion` does not reach an image.
 `runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a
 second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the latest run changes.
 
