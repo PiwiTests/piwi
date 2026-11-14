@@ -32,10 +32,10 @@ Built since: R4 (the fixture-free tier tallied per scope; an API request context
 `dispose()` leaves no step), S1 to S3 and S5 to S7 (the history changes a finding only from full default-branch runs,
 moves one only from them, keys it by its opening line, joins a finding another run stored at once, and counts a clean
 run only when its report could show the finding; the gate checks the capability), S4 (a handle's line and count on the
-Resources tab) and S8 in part (each new leak in the pull-request comment with its fix, and every fact).
+Resources tab) and S8 (each new leak, server and process in the pull-request comment with its fix and every fact,
+and the default branch's open leaks a full run of the change no longer shows).
 
-Not built: R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S8's
-servers and processes and its line for a leak the change fixed, S9, the failure timeline's object lanes, and §6's
+Not built: R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S9, the failure timeline's object lanes, and §6's
 larger items. All of R1 to R4 and S1 to S9 were filed as PiwiTests/piwi#1174.
 
 ## 0. The findings that matter most

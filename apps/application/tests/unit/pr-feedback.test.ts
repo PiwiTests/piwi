@@ -16,6 +16,7 @@ import {
   resolvePrFeedbackSettings,
   type PrChangeCoverage,
   type PrFailureEntry,
+  type PrNewLeaks,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { errorExcerpt } from '#shared/notification-events';
@@ -817,6 +818,82 @@ describe('new leaks', () => {
       'utf8',
     );
     expect(verdicts).toContain(`'${HOOK_OPENED}'`);
+  });
+
+  test('lists a server or process the change leaves running, with its line', () => {
+    const body = buildPrComment(
+      summary({
+        newLeaks: {
+          baseBranch: 'main',
+          leaks: [
+            {
+              verdict: 'handle',
+              kind: 'handle',
+              where: 'TCPServerWrap',
+              site: 'tests/reports.spec.ts:30',
+              detail: '"exports" (tests/reports.spec.ts)',
+              tests: 1,
+              count: 1,
+            },
+          ],
+        },
+      }),
+    );
+    expect(body).toContain('#### 🟠 Left open by this change (1)\n\nNever seen on `main`.\n\n');
+    expect(body).toContain(
+      '- **Left running server** · `tests/reports.spec.ts:30` · left running in the worker by "exports" (tests/reports.spec.ts) · stop it before its test ends',
+    );
+  });
+
+  test('leaves out the line of a handle that has none', () => {
+    const watcher = {
+      verdict: 'handle',
+      kind: 'handle',
+      where: 'FSEventWrap',
+      detail: '"watches" (tests/a.spec.ts)',
+      tests: 1,
+      count: 1,
+    } as const;
+    const body = buildPrComment(
+      summary({ newLeaks: { baseBranch: 'main', leaks: [watcher], closed: [{ ...watcher, tests: 0, count: 0 }] } }),
+    );
+    expect(body).toContain(
+      '- **Left running file watcher** · left running in the worker by "watches" (tests/a.spec.ts) · stop it before its test ends',
+    );
+    expect(body).toContain('none failed.\n\n- **Left running file watcher**\n');
+    expect(body).not.toContain('``');
+  });
+
+  test('lists each open leak of the base branch the change closed, and posts for it alone', () => {
+    const closed = {
+      baseBranch: 'main',
+      leaks: [],
+      closed: [
+        {
+          verdict: 'leaked',
+          kind: 'context',
+          where: 'tests/cart.spec.ts:12',
+          site: 'tests/cart.spec.ts:12',
+          tests: 0,
+          count: 0,
+        },
+        {
+          verdict: 'handle',
+          kind: 'handle',
+          where: 'TCPServerWrap',
+          site: 'tests/reports.spec.ts:30',
+          tests: 0,
+          count: 0,
+        },
+      ],
+    } satisfies PrNewLeaks;
+    const body = buildPrComment(summary({ newLeaks: closed }));
+    expect(body).not.toContain('Left open');
+    expect(body).toContain(
+      '#### 🟢 Closed by this change (2)\n\nOpen on `main`, and not in this run, where a test of its file passed and none failed.\n\n- **Leaked context** · `tests/cart.spec.ts:12`\n- **Left running server** · `tests/reports.spec.ts:30`',
+    );
+    expect(isQuietRun({ onlyOnFailure: true }, summary({ newLeaks: closed }))).toBe(false);
+    expect(isQuietRun({ onlyOnFailure: true }, summary({ newLeaks: { ...closed, closed: [] } }))).toBe(true);
   });
 
   test('adds nothing when the branch introduced no leak', () => {

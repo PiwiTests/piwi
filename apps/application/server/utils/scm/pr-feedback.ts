@@ -71,7 +71,7 @@ import { isExpectedFailurePassed, looksFixedTests } from '#shared/status-classif
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
-import { runFindingsNovelty } from '#shared/handlers/resource-findings';
+import { runClosedFindings, runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { isLeak } from '#shared/resource-fingerprint.mjs';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -550,13 +550,20 @@ async function postFinishedRunFeedback(
   };
 }
 
-/** The leaks of a run that its base branch never showed, or null when the run sent no resource report. */
+/**
+ * The leaks and Node handles of a run that its base branch never showed, and
+ * the open ones of the base branch it closed, or null when the run sent no
+ * resource report.
+ */
 async function readNewLeaks(db: DbClient, runId: number): Promise<PrSummaryInput['newLeaks']> {
   const novelty = await runFindingsNovelty(db, runId).catch(() => null);
   if (!novelty) return null;
   return {
     baseBranch: novelty.baseBranch,
-    leaks: novelty.findings.filter((f) => f.isNew && isLeak(f.finding)).map((f) => f.finding),
+    leaks: novelty.findings
+      .filter((f) => f.isNew && (isLeak(f.finding) || f.finding.verdict === 'handle'))
+      .map((f) => f.finding),
+    closed: await runClosedFindings(db, runId, novelty).catch(() => []),
   };
 }
 
