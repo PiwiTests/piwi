@@ -78,7 +78,7 @@ plans/                The maintainer's local planning folder: gitignored, absent
 Prerequisites: **Node.js 24+**, npm, Git. `npm ci` at the repository root installs every workspace (a Claude Code web
 session runs it, builds the reporter and installs Chromium in `.claude/hooks/session-start.sh`). Each area guide lists
 its own commands; the dashboard's run from `apps/application/` (`npm run app:dev`, http://localhost:7494, with no
-configuration: the SQLite database and `.data/` are created on the first API call).
+configuration: the SQLite database and `.data/` are created when the server starts).
 
 - `npm run knip` (root) lists unused files, exports, types and dependencies, and undeclared imports, across every JS
   workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's `Format, lint and typecheck`
