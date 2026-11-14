@@ -506,6 +506,8 @@ overview from the app: G1 holds its facts and leaves its prose.
   checks editor commands, not Piwi Picker's labels, which nothing in the syntax tells from emphasis. G7 lets a number
   open a heading or a list item. G8 knows the destinations a variable names and two listed by hand, not those set
   in the dashboard, such as a webhook's address.
+- **A flaky end-to-end test on `main`**: "the g-h and g-p chords navigate" of `tests/keyboard-nav.spec.ts` failed 2
+  of 6 repeats on a local dev server at `16bbe607`, the `g h` chord leaving the page on `/projects`.
 - **`npm run knip` fails in a fresh session** until `npx nuxt prepare` has run in `apps/runner`.
 - **Not audited**: whether the screenshots and videos still match the UI, the in-app help text, the blog post, the
   READMEs of the three backend integrations, and the prose of the generated reference pages beyond spot checks.
