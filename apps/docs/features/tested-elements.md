@@ -39,9 +39,9 @@ links to its page in the dashboard. **Find these locators in Piwi ↗** opens th
 [Locators page](./locator-usage#the-locators-page) with the element's locators already checked.
 
 The side panel sums up the page: how many of its interactive elements a test reaches, how many
-none does, and how many tests have locators resolving here. Three of its four tabs list the matched
-elements, the tests, and the elements no test reaches, each with a filter; the fourth is
-[**At risk**](#brittle-locators). A row of the third
+none does, and how many tests have locators resolving here. Its tabs list the matched
+elements, the tests, and the elements no test reaches, each with a filter; the last is
+[**At risk**](#brittle-locators). A row of the untested elements
 copies a ranked locator for that element, to start writing its test. The page is re-checked as it
 changes, so opening a menu or a dialog adds what the tests reach inside it.
 

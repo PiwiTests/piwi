@@ -238,7 +238,8 @@ every docs link the code builds, every link between pages and every `https://piw
 descriptions and the word budgets; the prose bans (endpoints, MCP tool count, changelog wording such as "since
 version" or "now supports", planned work); the hand-written reference pages and the _Live demo_ section of
 `features/ui-overview.md`; the recipes' links; the demo examples; the positioning line and the single-source snippets.
-`docs-page-meta.test.ts` checks that each page's description is at least 50 characters.
+`docs-page-meta.test.ts` checks that each page's description is at least 50 characters. `docs-claims.test.ts` checks
+counts, quoted editor commands, figures in recipes and the privacy page's destinations.
 
 The docs build itself fails only on a link to a missing page, so this test is what catches a heading that moved. It
 computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`); when you move a section, keep

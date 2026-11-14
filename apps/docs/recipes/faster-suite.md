@@ -11,7 +11,7 @@ The instinct is to look for slow tests. That is usually the smallest part of the
 clock is mostly made of four things, and only one of them is "the app is slow":
 
 1. **Waits somebody wrote** — `waitForTimeout` sleeps that were a workaround once.
-2. **Timeouts nobody revisited** — a 30s budget on a test that takes 3s costs 27s *every time it fails*.
+2. **Timeouts nobody revisited** — a thirty-second budget on a three-second test costs twenty-seven seconds *every time it fails*.
 3. **Retries of flaky tests** — paid on every run, and they buy no signal.
 4. **The application itself** — the only part that needs a real fix.
 
@@ -24,8 +24,9 @@ app faster; it tells you whether that is even the problem.
 consumed) and **Wasted CI time** — the portion that produced no signal, defined as time inside wait
 steps plus time spent on attempts that ended failed or timed out.
 
-If wasted time is a small slice, your suite is just big: look at the application and parallelism (steps 5
-and 6). If it is a large slice, start with steps 2 to 4.
+If wasted time is a small slice, your suite is just big: look at [the application](#_5-ask-whether-the-app-is-slow-not-the-test) and
+[parallelism](#_6-spend-the-parallelism-you-already-have). If it is a large slice, start with [the waits](#_2-reclaim-the-waits-you-wrote),
+[the timeouts](#_3-tighten-the-timeouts-that-only-bill-you-on-failure) and [the flaky retries](#_4-stop-paying-for-flaky-retries).
 
 The widget also states how much is **reclaimable** by tightening timeouts and dropping stale
 `test.slow()` marks.
@@ -56,22 +57,22 @@ An oversized per-test timeout is free while tests pass and brutal when they don'
 its entire budget before anyone learns anything.
 
 The **Performance** tab's **Timeout opportunities** lists tests whose configured timeout dwarfs their
-real p95 duration, plus tests still carrying a `test.slow()` mark they have outgrown. Each row suggests
+[real duration](/features/slow-tests#timeout-opportunities), plus tests still carrying a `test.slow()` mark they have outgrown. Each row suggests
 a tighter value and the time reclaimable per failing run, ranked by impact.
 
 <figure>
-  <img src="/screenshots/performance-trends.png" alt="Project Performance tab showing the duration trend chart with total, average and P90 series and timeline markers, above the slowest-tests table">
-  <figcaption>The Performance tab: average and P90 duration over time, then the ranked slowest tests.</figcaption>
+  <img src="/screenshots/performance-trends.png" alt="Project Performance tab showing the duration trend chart with total, average and percentile series and timeline markers, above the slowest-tests table">
+  <figcaption>The Performance tab: average and percentile duration over time, then the ranked slowest tests.</figcaption>
 </figure>
 
-Read the **P90** line, not the average: a handful of slow outliers move P90 and barely move the mean,
+Read the [percentile line](/features/slow-tests#duration-trends), not the average: a handful of slow outliers move it and barely move the mean,
 and it's the outliers that decide how long a shard takes.
 
 ## 4. Stop paying for flaky retries
 
 A flaky test bills you twice, for the failed attempt and for the retry, on every run where it misbehaves.
 That is why Piwi ranks flaky tests by **wasted CI minutes** rather than by flakiness score: a test that flakes
-often but finishes in 200ms costs little, and one that flakes weekly on a four-minute timeout hurts.
+often but finishes in milliseconds costs little, and one that flakes weekly on a four-minute timeout hurts.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
 version: work down the impact order, fix the red dots, and
@@ -112,6 +113,6 @@ just not aggregated across the suite.
 ## Related
 - [Slow tests & wasted time](/features/slow-tests) — the full reference for trends, slowest
   tests and timeout hygiene
-- [Cut the flakiness that costs the most](./flaky-cleanup) — step 4 in full
+- [Cut the flakiness that costs the most](./flaky-cleanup) — the flaky-retries step in full
 - [Analytics](/features/analytics) — CI time and wasted CI time across every project
 - [Capture fixtures](/guide/capture-fixtures) — what unlocks the network and Web Vitals views

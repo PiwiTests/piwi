@@ -152,8 +152,8 @@ Under the gap list, **map health** counts each input against what it could hold 
 an input that is short shows the step that fills it, so a quiet tab is not mistaken for a covered application.
 
 <figure>
-  <img src="/screenshots/scenario-gaps-map-health.png" alt="Map health: seven inputs of a Test Map, probes short at 7 of 16 routes">
-  <figcaption>Six inputs complete; probes reach 7 of 16 routes, with the step that adds the rest.</figcaption>
+  <img src="/screenshots/scenario-gaps-map-health.png" alt="Map health: seven inputs of a Test Map, probes short of half the routes">
+  <figcaption>Six inputs complete; probes reach under half the routes, with the step that adds the rest.</figcaption>
 </figure>
 
 ## What this is not

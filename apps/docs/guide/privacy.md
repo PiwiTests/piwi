@@ -7,9 +7,9 @@ lang: en-US
 # Privacy & data flow
 
 Test results are revealing: they carry your source paths, error messages, screenshots of your app,
-network calls, and sometimes your git history. This page inventories where those bytes go.
+network calls, and sometimes your git history. This page lists where they go.
 
-In short: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
+**There is no telemetry**, no usage analytics, no crash reporting, and no license or
 activation call. The server never checks for updates; the desktop app checks at startup (optional, in
 **Settings → About**) and on **Check for updates**, then reads the newer releases' notes from GitHub, anonymously.
 Every outbound call the server makes is listed below; all but two are opt-in. An air-gapped instance works the same.
@@ -27,21 +27,22 @@ Every outbound call the server makes is listed below; all but two are opt-in. An
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
 | Slack or your webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
+| Your PostgreSQL server | Only if you [use one](/operate/database#postgresql) | Everything but the files |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | OAuth exchange and profile picture |
 | Your OpenTelemetry collector | Only if you name one ([tracing](/operate/tracing)) | A span per request and SQL statement, with its text |
+| A project's OpenAPI URL | Only if a project [sets one](/features/scenario-gaps#declared-surface) | A request for the document |
 
 The reporter sends your instance what its options switch on. [Code reach](/features/code-reach) and
 [server coverage](/features/server-coverage), off by default, send repository-relative paths; line numbers and
 blob ids only with `coverage.browser` or `coverage.server` set to `'functions'` or `'lines'`. `piwi coverage
 upload` adds the commit's tracked paths. Source code and hit counts never leave.
 
-Two rows need no setting, the anonymous git-host reads and a link's title: both fail quietly offline; the rest is
-off until configured.
+Two rows need no setting, the anonymous git-host reads and a link's title: both fail quietly offline.
 
 The **AI provider** is the one to weigh: it alone receives your source code and the full
-failure context. It's opt-in and goes only to the endpoint *you* set (with a local
-model over Ollama or vLLM, nothing leaves the machine); you can preview the exact
-context before it's sent, and cap its size. See
+failure context, and only at the endpoint *you* set (with a local
+model over Ollama or vLLM, nothing leaves the machine). You can preview the exact
+context before it's sent, and cap its size:
 [AI diagnosis → Privacy](/features/ai-diagnosis#privacy).
 
 ## What never leaves your server
@@ -49,7 +50,7 @@ context before it's sent, and cap its size. See
 - **Traces.** The Playwright trace viewer is bundled and served by your instance at
   `/trace-viewer/`. Opening a trace from Piwi uploads it nowhere, unlike sending a colleague to
   the hosted `trace.playwright.dev`.
-- **The API reference.** Rendered in-app from your instance's own OpenAPI spec, with no third-party CDN, so it
+- **The API reference.** Rendered in-app from your instance's OpenAPI spec, with no third-party CDN, so it
   works offline.
 - **Screenshots, videos, HTML reports.** Stored on your disk or S3 bucket, served by your instance.
 - **HTML report execution.** Reports run with scripts enabled inside a CSP sandbox with a unique opaque origin. Piwi
@@ -57,7 +58,7 @@ context before it's sent, and cap its size. See
   report document and cannot read the dashboard's cookies or local storage. Uploaded reports remain untrusted active
   content.
 - **Your IDE mapping.** The [Open in editor](/features/ide-integration) workspace root lives in your browser's
-  local storage, because the source is on your machine, not the server's, and is never sent to the
+  local storage, because the source is on your machine, and is never sent to the
   dashboard.
 
 ## What reaches your server from Piwi Picker
@@ -80,7 +81,7 @@ report's title and steps, with their typed values and nothing else, to that app 
 
 ## What Piwi deliberately does not capture
 
-Some data is skipped at the source, so never exists to leak:
+Some data is never captured, so cannot leak:
 
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* (role, accessible name, test id), never what was typed into it. Traces and the
@@ -88,7 +89,7 @@ Some data is skipped at the source, so never exists to leak:
   Error call logs never keep them, nor a request's credential headers, nor steps or an assertion's values on a
   password field or one whose locator names a secret (`Mot de passe`).
   The **DOM** view and AI diagnosis show them, passwords masked.
-- **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
+- **Page-inventory field contents.** The [page inventory](./reporter#configuration-options)
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
   dashboard can tell which the suite never exercises. The name of a control that holds user input (a
   textbox, `select`, `textarea` or contenteditable editor) is never read from its content, so a
@@ -124,24 +125,25 @@ API: the settings UI shows them read-only with a lock badge.
 ## The demo
 
 The [live demo](https://piwitests.dev/demo/) has no backend. It runs the real application against
-an in-browser SQLite database seeded with fake data, inside a service worker. Nothing you click there
+an in-browser SQLite database seeded with fake data, inside a service worker. Nothing you click
 reaches a server.
 
 ## Retention
 
-You are responsible for the data you keep. Set `PIWI_RETENTION_DAYS` for
-nightly pruning of old runs and their files, or delete in bulk from **Settings → Storage**.
+You are responsible for the data you keep: `PIWI_RETENTION_DAYS` prunes old runs and their files
+nightly, or delete in bulk from **Settings → Storage**.
 Deleting a run removes its executions, traces, reports, and any evidence payloads nothing else
-references. See [Storage → Data retention](/operate/storage#data-retention).
+references: [Storage → Data retention](/operate/storage#data-retention).
 
 ## Verifying any of this
 
-The source is public and the outbound surface is small enough to audit: watch the container's egress, or read
+The source is public and the outbound surface small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/piwi/tree/main/apps/application/server/utils): the AI
 provider, SCM, SMTP, notification, OAuth, Jira, Zephyr Scale, CI server, OpenTelemetry, OpenAPI, avatar and
-link-unfurl clients alone open a socket there; the S3 client is in `server/storage/`.
+link-unfurl clients alone open a socket there; the S3 client is in `server/storage/`, PostgreSQL's in
+`server/database/`.
 
 ## Related
-- [Authentication](/operate/authentication), [API keys](/operate/api-keys) and [Access, roles and groups](/operate/project-access): roles, keys and project-level access
+- [Authentication](/operate/authentication), [API keys](/operate/api-keys) and [Access, roles and groups](/operate/project-access)
 - [Production checklist](/operate/production-checklist#before-you-expose-it): hardening a public instance
-- [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home): the same question, short form
+- [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home): the short form

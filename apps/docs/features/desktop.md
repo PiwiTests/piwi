@@ -29,7 +29,7 @@ What each installer needs:
 
 | OS | Installer |
 |----|-----------|
-| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
+| **Windows** (x64) | `.exe` (per-user, no admin) or `.msi` (per-machine) |
 | **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 

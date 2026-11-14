@@ -9,23 +9,23 @@ lang: en-US
 
 Flaky-test cleanup usually stalls for the same reason: the list is long, every entry looks equally
 annoying, and there's no obvious first move. Ranking by flakiness score doesn't help much either — a
-test that flakes constantly but finishes in 200 ms costs almost nothing.
+test that flakes constantly but finishes in milliseconds costs almost nothing.
 
 Rank by what it *costs* instead, fix three, and leave the rest running.
 
 ## 1. Work by impact, not by score
 
 The **Flaky** view of the project's **Failures** tab scores each test from two signals — retry passes
-and status alternation, weighted 60/40 — shows its overall failure rate alongside, and lists the tests
+and status alternation, [weighted](/features/flaky-tests#flaky-test-detection) — shows its overall failure rate alongside, and lists the tests
 by **impact**: wasted CI minutes (retry passes × average failed duration) plus a per-retry penalty.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="The Flaky view listing intermittent tests with wasted CI minutes, score, failure rate, top suspect, root cause, retry passes or flips and last flake, under root-cause filter chips and a runs-window selector">
-  <figcaption>The Flaky view — ranked by impact, filterable by root cause, over the last 20, 50 or 100 runs.</figcaption>
+  <figcaption>The Flaky view — ranked by impact, filterable by root cause, over a window of recent runs.</figcaption>
 </figure>
 
-Start at the top and work down. Each row carries a color-coded dot for wasted CI minutes — green under
-5, amber under 30, red at 30 or more — and in a suite carrying real flake debt a few red rows usually
+Start at the top and work down. Each row carries a dot for wasted CI minutes — green, amber or red, at the
+[thresholds of the impact ranking](/features/flaky-tests#impact-ranking) — and in a suite carrying real flake debt a few red rows usually
 account for most of the total.
 
 ## 2. Filter by root cause and fix a class at once
@@ -42,8 +42,8 @@ compatibility bug.
 
 Two filters change the answer, and both are worth setting deliberately:
 
-- **Runs window** — the last 20, 50 or 100 runs: recent behavior or a longer baseline. A test fixed last
-  week still looks awful over the last 100.
+- **Runs window** — one of the [lookback windows](/features/flaky-tests#flaky-test-detection): recent behavior or a longer
+  baseline. A test fixed last week still looks awful over the longest.
 - **Environment** — pick an environment in the project's **Filters** block and the analysis reads only
   its runs, so `staging` noise doesn't inflate a test that's stable in `production`. Set it via the
   reporter's `environment` option or `PIWI_ENVIRONMENT`.
@@ -59,7 +59,7 @@ is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run
 
 - Passing runs accumulate as a **streak**; a failure or a pass on retry resets it, a skip does neither.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
-- **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
+- **Candidates** (**Proposed for quarantine** in the Flaky view) are the flaky tests over the [waste and score thresholds](/features/flaky-tests#quarantine-with-a-way-out), ranked by impact.
 - **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest
   has been there.
 
@@ -83,8 +83,8 @@ for "what should I fix this sprint?" without opening a browser.
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/settings/api).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
-[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,
-Apple-silicon macOS and Linux x86-64, and the installers aren't signed yet.
+[desktop app](/features/desktop) runs the same analysis with no Docker and no Node, on the
+[systems it is built for](/features/desktop#where-it-is), and the installers aren't signed yet.
 
 ## Related
 - [Flaky tests](/features/flaky-tests) — the full scoring, quarantine, and performance reference

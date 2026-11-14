@@ -31,7 +31,7 @@ reporter's CLI), so a skill works before the MCP server is set up, only more slo
 
 ## What agents report back
 
-Three workflow skills end by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
+These workflow skills end by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
 detectors learn from it:
 
 | Skill | Reports back with |

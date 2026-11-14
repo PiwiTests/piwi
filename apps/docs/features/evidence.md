@@ -114,7 +114,7 @@ that needs no green baseline: the structure at the failure against the last diff
 Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` [option](/guide/reporter#basic-configuration), one per page. The failing step shows the [capture fixtures](/guide/capture-fixtures#what-gets-captured)' screenshot of the failing page, else the only one.
 :::
 
-With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
+With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), these views go deeper:
 
 - **Source → Full stack**: the failing action's whole call stack, each frame with its source,
   dependency frames folded, Open in editor on your project's frames.

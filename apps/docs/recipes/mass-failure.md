@@ -14,7 +14,7 @@ The job is to collapse the list before reading any stack traces.
 ## 1. Read the clusters, not the tests
 
 Failures sharing an **error fingerprint** are grouped automatically, so the run tells you
-*"40 failures, 3 root causes"* before you open anything.
+*"forty failures, three root causes"* before you open anything.
 
 <figure>
   <img src="/screenshots/failure-clusters.png" alt="A red run's Tests tab grouped by cluster: one group per root cause with its test count, triage status and an Open cluster link, and the passing tests folded away">

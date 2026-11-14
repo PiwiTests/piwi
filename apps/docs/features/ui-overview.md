@@ -154,7 +154,7 @@ capabilities this instance uses ([Choose what you use](/operate/capabilities)); 
 
 ## Live demo
 
-The [live demo](https://piwitests.dev/demo/) runs in your browser and adds four controls. **Simulate a test run**
+The [live demo](https://piwitests.dev/demo/) runs in your browser and adds these controls. **Simulate a test run**
 replays a reporter's stream, to watch a run arrive. **Acting as** switches between seeded identities, whose
 [roles](/operate/project-access) change what each sees and can do, including changes made on the
 [permission grid](/operate/project-access#permission-grid). **Guided tour** asks what you do (**Developer**,

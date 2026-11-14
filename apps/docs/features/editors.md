@@ -129,7 +129,7 @@ A JetBrains IDE says caret, under **Tools → Piwi**, and has no **Get started**
 | Piwi: Restart the editor service, Open the log | Start the editor service again; show its log of starts, stops, errors and failed requests, where VS Code's `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
-Three commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
+These commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
 these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
 tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; `Cmd` for `Ctrl` on macOS.
 **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a

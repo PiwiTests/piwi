@@ -27,7 +27,7 @@ The **failure rate** is shown but not scored.
   <figcaption>The score and the impact ranking, computed for one test.</figcaption>
 </figure>
 
-The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and, unless already quarantined, offers **Quarantine**.
+The project's **Failures** tab has a **Flaky** view with a **lookback window** of 20, 50 or 100 runs. Each flaky test links to its history and, unless already quarantined, offers **Quarantine**.
 
 **Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
@@ -38,7 +38,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 ### Root-cause classification
 
-Every flaky test is automatically tagged with one of six categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
+Every flaky test is tagged with one of six categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
 
 | Category | Typical signals |
 |----------|-----------------|
@@ -103,8 +103,8 @@ Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries
 ### Per-test stability trend
 
 The **Trend** tab of a test's page draws its pass rate, [flaky rate](/guide/concepts#flaky-rate) and average duration over its
-[runs](/guide/concepts#test-case) of the last 30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
-see whether a fix actually stuck. The same series is the MCP `get_test_stability_trend` tool.
+[runs](/guide/concepts#test-case) of the last 30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, to
+see whether a fix stuck. The same series is the MCP `get_test_stability_trend` tool.
 
 ## Quarantine, with a way out
 

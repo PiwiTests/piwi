@@ -48,7 +48,7 @@ Elements inside an iframe are not ranked: their locator would need the frame's p
 
 ## The Piwi panel
 
-DevTools also gets a **Piwi** panel of its own, with five tabs. It shows what runs on the page and stays up while the
+DevTools also gets a **Piwi** panel of its own, with the tabs below. It shows what runs on the page and stays up while the
 page navigates; the recording and replay panels on the page stay too, for when DevTools is closed.
 
 - **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop

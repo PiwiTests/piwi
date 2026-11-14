@@ -147,7 +147,7 @@ test from its headline to its evidence.
 
 ## Where you write the tests
 
-The dashboard is where you read results. Two tools work where you write the tests, in your editor and in your browser:
+The dashboard is where you read results. Other tools work where you write the tests, in your editor and in your browser:
 
 - **[Editor extensions](/features/editors)**: the Piwi extension for VS Code and the Piwi plugin for the JetBrains IDEs
   with the LSP API (WebStorm, IntelliJ IDEA Ultimate, Rider). They record a test at the cursor in a browser your
