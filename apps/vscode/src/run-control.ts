@@ -43,6 +43,7 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 import { RUN_STOP_WORDS } from '@piwitests/editor/protocol';
+import { EDITOR_WORDS } from '@piwitests/editor/actions';
 import { editorWords } from '@piwitests/editor/words';
 
 /**
@@ -731,8 +732,8 @@ export function runLabel(session: RunSession): string {
 
 /** A run's **Hold failures** in words: whether a failed test waits at its line, and who said so when not its start. */
 export function holdText(hold: NonNullable<RunSession['hold']>): string {
-  const by = hold.by === 'agent' ? ', as an agent set it' : '';
-  return hold.on ? `Hold failures on: a failed test waits at its line${by}` : `Hold failures off${by}`;
+  const by = hold.by === 'agent' ? editorWords('hold.run.by-agent') : '';
+  return editorWords(hold.on ? 'hold.run.on' : 'hold.run.off', { by });
 }
 
 /** Text shown as itself in a Markdown tooltip: a folder's or a tool's name is never a link nor emphasis. */
@@ -1406,7 +1407,7 @@ export function stopControls(stop: ShownStop): StopControl[] {
   return [
     resume,
     { title: editorWords('stop.step'), command: RUN_COMMANDS.step },
-    { title: editorWords('stop.run-to', { cursor: 'cursor' }), command: RUN_COMMANDS.runTo },
+    { title: editorWords('stop.run-to', EDITOR_WORDS.vscode), command: RUN_COMMANDS.runTo },
     { title: editorWords('stop.finish'), command: RUN_COMMANDS.finish },
     ...(canEnd(stop) ? [{ title: editorWords('stop.end'), command: RUN_COMMANDS.end }] : []),
   ];

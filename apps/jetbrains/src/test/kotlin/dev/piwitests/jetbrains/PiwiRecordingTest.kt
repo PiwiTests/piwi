@@ -145,11 +145,11 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
         send(update("s1", "", state = "starting"))
         assertEquals(original.replace("});", "\n});"), text())
-        assertEquals("Opening the browser", session.view.text)
+        assertEquals("Piwi: opening the browser", session.view.text)
 
         send(update("s1", "await page.getByRole('button', { name: 'Pay' }).click();"))
         assertEquals(original.replace("});", "  await page.getByRole('button', { name: 'Pay' }).click();\n});"), text())
-        assertEquals("Recording · 1 step", session.view.text)
+        assertEquals("Piwi: recording · 1 step", session.view.text)
 
         val cartPage = "import { CartPage } from './pages/cart.page';"
         send(update("s1", "const cartPage = new CartPage(page);\nawait cartPage.pay();", importEdit = insertAt(1, "$cartPage\n")))
@@ -462,7 +462,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         val opening = "Opening Chromium with the options of the admin project."
         val session = recordings.register("s9", myFixture.editor, myFixture.file.virtualFile, "steps", RecordingPlacement(1, false, "  "), opening)
         assertSame(session, recordings.only())
-        assertEquals("Opening the browser · $opening", session.view.text)
+        assertEquals("Piwi: opening the browser · $opening", session.view.text)
         val actions = ActionManager.getInstance()
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
@@ -475,7 +475,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
-        assertEquals("Paused · 1 step", session.view.text)
+        assertEquals("Piwi: recording paused · 1 step", session.view.text)
         assertEquals("Piwi: recording paused · 1 step", statusText())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)

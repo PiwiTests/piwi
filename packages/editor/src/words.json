@@ -27,13 +27,18 @@
   "recording.pause": "Pause",
   "recording.resume": "Resume",
   "recording.keep-edits": "Keep my edits",
+  "recording.edited": "Piwi: you edited the recorded block, so the recording is paused. Resume writes the block again from the recorded steps; Keep my edits stops the recording and keeps the code as it is.",
   "worker": "Worker {n}",
+  "worker.title": "Piwi: worker {n}",
   "ci-lane": "worker {lane}",
   "ci-lane.shard": "shard {shard}, worker {lane}",
-  "hold.auto": "Piwi decides: on with a breakpoint or a page.pause()",
+  "hold.auto": "Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise",
   "hold.auto.short": "Auto",
-  "hold.on": "On from each run's start",
+  "hold.on": "On from each run's start: a failed test waits at its line for an answer",
   "hold.on.short": "On",
-  "hold.off": "Off from each run's start",
-  "hold.off.short": "Off"
+  "hold.off": "Off from each run's start: a failed test fails as it would without Piwi",
+  "hold.off.short": "Off",
+  "hold.run.on": "Hold failures on: a failed test waits at its line{by}",
+  "hold.run.off": "Hold failures off{by}",
+  "hold.run.by-agent": ", as an agent set it"
 }

@@ -2081,17 +2081,9 @@ export interface RunStartChoices {
 
 /** The choices of `piwi.runHoldFailures` in the editors' words, short as a line names them, whole in their detail. */
 export const HOLD_FAILURES_CHOICES: Array<{ choice: HoldFailuresChoice; label: string; detail: string }> = [
-  { choice: 'auto', label: editorWords('hold.auto.short'), detail: `${editorWords('hold.auto')}, off otherwise` },
-  {
-    choice: 'on',
-    label: editorWords('hold.on.short'),
-    detail: `${editorWords('hold.on')}: a failed test waits at its line for an answer`,
-  },
-  {
-    choice: 'off',
-    label: editorWords('hold.off.short'),
-    detail: `${editorWords('hold.off')}: a failed test fails as it would without Piwi`,
-  },
+  { choice: 'auto', label: editorWords('hold.auto.short'), detail: editorWords('hold.auto') },
+  { choice: 'on', label: editorWords('hold.on.short'), detail: editorWords('hold.on') },
+  { choice: 'off', label: editorWords('hold.off.short'), detail: editorWords('hold.off') },
 ];
 
 /** The settings' values as choices: a value of another type or outside the enum reads as its default. */

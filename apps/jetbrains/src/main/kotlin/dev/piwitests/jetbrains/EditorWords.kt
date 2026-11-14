@@ -3,7 +3,8 @@ package dev.piwitests.jetbrains
 /**
  * The words both editors write themselves, restating the editor service's `words.json`, which the VS Code extension
  * reads and `GlueTest` holds this copy to: a stop's controls and code actions with their short labels, a recording's
- * states and controls, a worker's and a CI lane's name, and the choices of Hold failures. `{cursor}` is the caret here.
+ * states, controls and edited block's message, a worker's and a CI lane's name, and Hold failures' choices and a run's
+ * state. `{cursor}` is the caret here.
  */
 object EditorWords {
     val WORDS: Map<String, String> = linkedMapOf(
@@ -35,15 +36,20 @@ object EditorWords {
         "recording.pause" to "Pause",
         "recording.resume" to "Resume",
         "recording.keep-edits" to "Keep my edits",
+        "recording.edited" to "Piwi: you edited the recorded block, so the recording is paused. Resume writes the block again from the recorded steps; Keep my edits stops the recording and keeps the code as it is.",
         "worker" to "Worker {n}",
+        "worker.title" to "Piwi: worker {n}",
         "ci-lane" to "worker {lane}",
         "ci-lane.shard" to "shard {shard}, worker {lane}",
-        "hold.auto" to "Piwi decides: on with a breakpoint or a page.pause()",
+        "hold.auto" to "Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise",
         "hold.auto.short" to "Auto",
-        "hold.on" to "On from each run's start",
+        "hold.on" to "On from each run's start: a failed test waits at its line for an answer",
         "hold.on.short" to "On",
-        "hold.off" to "Off from each run's start",
+        "hold.off" to "Off from each run's start: a failed test fails as it would without Piwi",
         "hold.off.short" to "Off",
+        "hold.run.on" to "Hold failures on: a failed test waits at its line{by}",
+        "hold.run.off" to "Hold failures off{by}",
+        "hold.run.by-agent" to ", as an agent set it",
     )
 
     /** The words of `key`, each `{name}` replaced by its value in `values`; `{cursor}` is the caret. */

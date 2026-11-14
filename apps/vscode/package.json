@@ -1394,7 +1394,7 @@
             "off"
           ],
           "enumDescriptions": [
-            "Piwi decides: on with a breakpoint or a page.pause(), off otherwise.",
+            "Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise.",
             "On from each run's start: a failed test waits at its line for an answer.",
             "Off from each run's start: a failed test fails as it would without Piwi."
           ],

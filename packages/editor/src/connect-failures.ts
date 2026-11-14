@@ -4,6 +4,7 @@
  * `Glue.CONNECT_FAILURE_WORDS` restates it, and `GlueTest` holds it to `connect-failures.json`.
  */
 import words from './connect-failures.json' with { type: 'json' };
+import { fillWords } from './words.js';
 
 export type ConnectFailureKind = keyof typeof words;
 
@@ -14,7 +15,5 @@ export function connectFailureWords(
   kind: ConnectFailureKind,
   values: Readonly<Record<string, string | number>> = {},
 ): string {
-  return CONNECT_FAILURE_WORDS[kind].replace(/\{(\w+)\}/g, (all, name: string) =>
-    name in values ? String(values[name]) : all,
-  );
+  return fillWords(CONNECT_FAILURE_WORDS[kind], values);
 }

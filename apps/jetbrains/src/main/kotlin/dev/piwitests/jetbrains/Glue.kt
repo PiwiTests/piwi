@@ -2697,8 +2697,8 @@ object Glue {
 
     /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
     fun holdText(hold: RunHoldFailures): String {
-        val by = if (hold.by == "agent") ", as an agent set it" else ""
-        return if (hold.on) "Hold failures on: a failed test waits at its line$by" else "Hold failures off$by"
+        val by = if (hold.by == "agent") EditorWords.words("hold.run.by-agent") else ""
+        return EditorWords.words(if (hold.on) "hold.run.on" else "hold.run.off", "by" to by)
     }
 
     /** What a shared browser's answer says, with the command that joins it. */
@@ -3528,10 +3528,10 @@ object Glue {
         val count = "steps" to stepCount(steps)
         val (text, actions) = when {
             stopping -> EditorWords.words("recording.status.stopping") to emptyList()
-            edited -> EditorWords.words("recording.block.edited", count) to listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
-            state == "starting" -> EditorWords.words("recording.block.starting") to listOf(RecordingAction.STOP)
-            state == "paused" -> EditorWords.words("recording.block.paused", count) to listOf(RecordingAction.RESUME, RecordingAction.STOP)
-            else -> EditorWords.words("recording.block.recording", count) to listOf(RecordingAction.PAUSE, RecordingAction.STOP)
+            edited -> EditorWords.words("recording.edited") to listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
+            state == "starting" -> EditorWords.words("recording.status.starting") to listOf(RecordingAction.STOP)
+            state == "paused" -> EditorWords.words("recording.status.paused", count) to listOf(RecordingAction.RESUME, RecordingAction.STOP)
+            else -> EditorWords.words("recording.status.recording", count) to listOf(RecordingAction.PAUSE, RecordingAction.STOP)
         }
         val note = message?.trim()?.ifEmpty { null }?.takeUnless { stopping }
         return RecordingBanner(if (note == null) text else "$text · $note", actions)

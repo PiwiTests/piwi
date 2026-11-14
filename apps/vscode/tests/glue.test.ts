@@ -18,7 +18,7 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
-import { EDITOR_WORDS } from '@piwitests/editor/words';
+import { CLIENT_WORDS } from '@piwitests/editor/words';
 import {
   DONT_SHOW_AGAIN,
   HOLD_FAILURES_CHOICES,
@@ -2637,11 +2637,13 @@ describe('how every run of the window starts', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
       contributes: { configuration: { properties: Record<string, { enumDescriptions?: string[] }> } };
     };
-    const described = manifest.contributes.configuration.properties['piwi.runHoldFailures']!.enumDescriptions!;
-    expect(
-      described.map((d, i) => d.startsWith(EDITOR_WORDS[(['hold.auto', 'hold.on', 'hold.off'] as const)[i]!])),
-    ).toEqual([true, true, true]);
-    expect(HOLD_FAILURES_CHOICES.map((c) => c.label)).toEqual(['Auto', 'On', 'Off']);
+    const whole = (['hold.auto', 'hold.on', 'hold.off'] as const).map((key) => `${CLIENT_WORDS[key]}.`);
+    expect(manifest.contributes.configuration.properties['piwi.runHoldFailures']!.enumDescriptions).toEqual(whole);
+    expect(HOLD_FAILURES_CHOICES.map((c) => [c.label, `${c.detail}.`])).toEqual([
+      ['Auto', whole[0]],
+      ['On', whole[1]],
+      ['Off', whole[2]],
+    ]);
   });
 
   test('Run options… offers both, with the current choice', () => {
