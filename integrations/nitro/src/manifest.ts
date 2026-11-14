@@ -1,7 +1,8 @@
 /**
  * The declared-surface route manifest the plugin serves at `/__piwi/manifest`
- * outside production. Nitro has no stable public API to enumerate its route table
- * at runtime: the module (`./module`) reads it at build time (`route-table.ts`),
+ * while capture is on (`NODE_ENV` `development` or `test`, unless
+ * `PIWI_TEST_LOGS_DISABLED` says otherwise). Nitro has no stable public API to
+ * enumerate its route table at runtime: the module (`./module`) reads it at build time (`route-table.ts`),
  * and the routes the server matches are added as they come, each request with its
  * method, matched pattern and handler file. The Piwi reporter fetches it once at
  * run start and uploads it, and a declared route no test reaches becomes a
