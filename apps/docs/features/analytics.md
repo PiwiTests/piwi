@@ -100,7 +100,8 @@ The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper
 
 ## Widgets and metrics
 
-The page is the built-in **Overview** [analytics dashboard](./dashboards), in four bands. [Analytics widgets](/reference/analytics-widgets)
+The page opens on the built-in **Overview** [analytics dashboard](./dashboards), in four bands, unless you or an
+administrator [made another the default](./dashboards#your-default-dashboard). [Analytics widgets](/reference/analytics-widgets)
 lists every widget an [analytics dashboard](./dashboards) can place, and [Metrics](/reference/metrics) defines every
 number they show, with its unit and which direction is better.
 
@@ -169,7 +170,7 @@ projects is under [Where markers show up](./timeline-markers#where-markers-show-
 ## Related
 
 - [Dashboards](./dashboards): analytics dashboards of your own
-- [Quality reports](./quality-reports): this page as a document, with **Export**
+- [Quality reports](./quality-reports): this page as a document, with **Quality report**
 - [Flaky tests](./flaky-tests): the per-project analysis these widgets aggregate
 - [Timeline markers](./timeline-markers): annotate the trends with real-world events
 - [Cut costly flakiness](/recipes/flaky-cleanup): from the flaky leaderboard to an afternoon of fixes

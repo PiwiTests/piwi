@@ -42,14 +42,14 @@ each metric's definition, and its limits: lists of tests reach back only as far 
 
 ### The verdict is built by rules
 
-The opening sentence ("The pass rate on main fell 2.1 points to 95.8%, and 3 failure causes were
+The opening sentence ("The pass rate on main fell 2.1 points to 95.8%, and 3 failure clusters were
 fixed.") comes from fixed rules over the numbers, never from a model. Its tone is **good** at a pass rate
 of 90% or more that did not drop by more than a point, **bad** under 50% or after a drop of 5 points or
 more, **mixed** otherwise.
 
 ## Exporting a report
 
-Click **Export** on the Analytics page (the current scope) or on a project page (that project, last 30
+Click **Quality report** on the Analytics page (the current scope) or on a project page (that project, last 30
 days). The dialog previews the report; pick another dashboard or the language, then **Download**:
 
 | Format | What you get |
@@ -147,7 +147,7 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 ## Turning reports off
 
 Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in **Settings → Capabilities** hides
-the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
+the *Quality report* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.
 

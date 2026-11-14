@@ -147,15 +147,15 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Quality reports',
     summary:
       'The analytics page as a document for someone who never opens the dashboard: a verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown, Excel or JSON.',
-    how: 'Click Export on the Analytics page or on a project page, pick a dashboard and download the format you need.',
+    how: 'Click Quality report on the Analytics page or on a project page, pick a dashboard and download the format you need.',
     icon: 'i-lucide-file-chart-column',
     doc: 'features/quality-reports',
   },
   {
     id: 'pr-feedback',
-    title: 'Pull-request feedback',
+    title: 'Pull requests',
     summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
-    how: 'Configure it in Settings — needs a repository access token.',
+    how: 'Configure it in Settings — needs an SCM token with write access.',
     icon: 'i-lucide-git-pull-request',
     doc: 'features/pr-feedback',
     to: '/settings/pr-feedback',
@@ -174,7 +174,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
   },
   {
     id: 'integrations',
-    title: 'Issue tracking',
+    title: 'Integrations',
     summary: 'Create and link issues in Jira, GitHub or GitLab straight from a failure cluster.',
     how: 'Connect a system in Settings.',
     icon: 'i-lucide-plug',
@@ -187,10 +187,10 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Source control',
     summary:
       'The commits behind a failure, CODEOWNERS-derived ownership, and pull-request feedback on the branch that broke.',
-    how: 'Add a repository access token on the project, or globally in Settings.',
+    how: 'Add an SCM token in Settings → Source control, or on the project in its Source control settings.',
     icon: 'i-lucide-git-branch',
     doc: 'guide/source-control',
-    to: '/settings/ai',
+    to: '/settings/source-control',
     toLabel: 'Add a token',
   },
   {
@@ -223,10 +223,10 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
   },
   {
     id: 'test-map',
-    title: 'Scenario gaps',
+    title: 'Gaps and Map',
     summary:
-      'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
-    how: "Automatic — the map builds from your runs, and gaps appear on a project's Coverage tab as reach accrues.",
+      'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from, and the map of what your tests reach.',
+    how: "Automatic — the map builds from your runs, and gaps appear in the Gaps and Map views of a project's Coverage tab as reach accrues.",
     icon: 'i-lucide-map',
     doc: 'features/scenario-gaps',
   },
@@ -253,12 +253,12 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
   },
   {
     id: 'flake-lab',
-    title: 'Flake suspects',
+    title: 'Flake Lab',
     summary:
-      'For a flaky test, the requests, neighbors and load its failures share and its passes do not, each with the counts behind it and the condition that would test it.',
-    how: 'Automatic — suspects appear on a flaky test’s Flakiness tab once its history holds at least three failures that share something.',
+      'For a flaky test, the requests, neighbors and load its failures share and its passes do not, each with the counts behind it and the condition that would test it, and a project tab of the experiments that test them.',
+    how: "Automatic — suspects appear on a flaky test’s Flakiness tab once its history holds at least three failures that share something, and the experiments on the project's Flake Lab tab.",
     icon: 'i-lucide-search-check',
-    doc: 'features/flaky-tests',
+    doc: 'features/flake-lab',
   },
   {
     id: 'resources',
