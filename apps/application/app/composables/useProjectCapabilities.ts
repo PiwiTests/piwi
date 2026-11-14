@@ -10,7 +10,10 @@ const projectCapabilitiesKey = (projectId: number) => `capabilities-project-${pr
  * read is running joins it. A read that fails keeps the states last read or written for the project; with none, it
  * fails, and the payload holds no states for the project.
  */
-function useProjectCapabilityStates(projectId: number, options: { lazy?: boolean; server?: boolean } = {}) {
+function useProjectCapabilityStates(
+  projectId: number,
+  options: { lazy?: boolean; server?: boolean; immediate?: boolean } = {},
+) {
   const nuxtApp = useNuxtApp();
   const requestFetch = useRequestFetch();
   const key = projectCapabilitiesKey(projectId);
@@ -79,11 +82,15 @@ export async function useProjectCapabilities(projectId: number) {
   return { capabilities: items, state, isHidden, canDecide, decide, decideMany };
 }
 
-/** Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads. Renders nothing. */
+/**
+ * Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads, once the app
+ * has hydrated: a page's own read is the one its first render waits for. Renders nothing.
+ */
 const ProjectCapabilitiesRead = defineComponent({
   props: { projectId: { type: Number, required: true } },
   setup(props) {
-    void useProjectCapabilityStates(props.projectId, { lazy: true, server: false });
+    const { execute } = useProjectCapabilityStates(props.projectId, { lazy: true, server: false, immediate: false });
+    onNuxtReady(() => execute());
     return () => null;
   },
 });
