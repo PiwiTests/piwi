@@ -360,7 +360,8 @@ class OpenFailuresAction : DumbAwareAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+        PiwiFailuresToolWindowFactory.showFailures(project)
+        PiwiGetStarted.done("failures")
     }
 }
 
@@ -383,10 +384,10 @@ class ShowFlakyTestsAction : DumbAwareAction() {
         val project = e.project ?: return
         val root = shownRoot(project, project.service<PiwiProjectService>())
         val window = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID) ?: return
-        window.activate {
+        PiwiFailuresToolWindowFactory.showFailures(project) {
             val tree = window.contentManager.contents.firstNotNullOfOrNull {
                 com.intellij.util.ui.UIUtil.findComponentOfType(it.component, com.intellij.ui.treeStructure.Tree::class.java)
-            } ?: return@activate
+            } ?: return@showFailures
             // The model, not the rows: a collapsed config's group has no row.
             val groups = mutableListOf<Pair<javax.swing.tree.DefaultMutableTreeNode, String>>()
             fun find(parent: javax.swing.tree.DefaultMutableTreeNode, at: String) {
@@ -396,9 +397,9 @@ class ShowFlakyTestsAction : DumbAwareAction() {
                     if (node != null && Glue.isFlakyGroup(node.key)) groups += child to here else find(child, here)
                 }
             }
-            val top = tree.model.root as? javax.swing.tree.DefaultMutableTreeNode ?: return@activate
+            val top = tree.model.root as? javax.swing.tree.DefaultMutableTreeNode ?: return@showFailures
             find(top, "")
-            val group = groups.firstOrNull { it.second == root }?.first ?: groups.singleOrNull()?.first ?: return@activate
+            val group = groups.firstOrNull { it.second == root }?.first ?: groups.singleOrNull()?.first ?: return@showFailures
             val path = javax.swing.tree.TreePath(group.path)
             tree.expandPath(path)
             tree.selectionPath = path

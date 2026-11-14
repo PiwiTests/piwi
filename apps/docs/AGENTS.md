@@ -333,6 +333,9 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
 - **A gallery image with no marketing-specific treatment** belongs to a scene rather than to a capture of the live demo:
   the harness renders icons from the bundled collection and runs offline, so the image stays reproducible as the UI
   moves.
+- **The editors' first steps show docs screenshots too**: the onboarding script
+  (`packages/editor/src/onboarding.json`) names the ones VS Code's walkthrough and JetBrains' Get started tab show,
+  which the drift test counts as shown; renaming one updates the script.
 - **Run `npm run app:screens:check` after adding or deleting an image**: it fails on an image with no scene and on a
   scene whose image is missing. An image no page, README or extension README shows is deleted with its scene: the
   drift test fails on it.

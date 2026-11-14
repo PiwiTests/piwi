@@ -167,8 +167,7 @@ object PiwiCommands {
             notification.addAction(
                 NotificationAction.createSimpleExpiring(label) {
                     when (label) {
-                        Glue.OPEN_FAILURES -> ToolWindowManager.getInstance(project)
-                            .getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+                        Glue.OPEN_FAILURES -> PiwiFailuresToolWindowFactory.showFailures(project)
                         Glue.OPEN_IN_DASHBOARD -> ended.url?.let { BrowserUtil.browse(it) }
                         Glue.RERUN_FAILING -> rerunFailing(project)
                         Glue.ONLY_ON_FAILURE -> {
@@ -283,6 +282,7 @@ object PiwiCommands {
             return false
         }
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
+        PiwiGetStarted.done("run")
         command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
         val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)

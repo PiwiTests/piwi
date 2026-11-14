@@ -953,6 +953,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * `select` is false (the Worker tab is in sight, and keeps the place). On the event thread.
      */
     fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
+        PiwiGetStarted.done("breakpoint")
         // The same slot's next stop keeps Interact while Watch stays on; another slot's, or one taking no input,
         // turns it off before the watch ends.
         val before = livePage()?.component as? PausedPagePanel

@@ -46,6 +46,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
   level); `GlueTest` holds the copy, the scopes and the defaults to the file.
+- **The Get Started tab plays the editor service's onboarding script** (`packages/editor/src/onboarding.json`),
+  restated in `OnboardingSteps`, its screenshots bundled by `processResources`; `GlueTest` holds the copy to the file.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
@@ -265,7 +267,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   [Status bar](ARCHITECTURE.md#status-bar): before changing what one of them shows.
 - [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, the
   run control (stops, their actions and shortcuts, the paused page) and the code from a stop.
-- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the first-run notification.
+- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the Get started tab.
 - [Recording](ARCHITECTURE.md#recording): starting a recording, writing the block, warnings, undo.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),
   [Connect](ARCHITECTURE.md#connect), [Settings and secrets](ARCHITECTURE.md#settings-and-secrets),

@@ -6,6 +6,7 @@
 !dist/piwi-use-reporter.cjs
 !dist/record-ide.js
 !dist/record-ide-messages.json
+!dist/walkthrough/**
 !package.json
 !README.md
 !CHANGELOG.md

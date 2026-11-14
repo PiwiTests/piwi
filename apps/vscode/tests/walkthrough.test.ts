@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { ONBOARDING, stepButton, stepText } from '@piwitests/editor/onboarding';
+import { EDITOR_SETTINGS } from '@piwitests/editor/settings';
 import { PLAYWRIGHT_CONFIGS, WALKTHROUGH } from '../src/glue';
 
 const root = path.resolve(__dirname, '..');
@@ -27,14 +29,59 @@ describe('the walkthrough', () => {
     expect(manifest.activationEvents).toContain(`workspaceContains:${PLAYWRIGHT_CONFIGS}`);
   });
 
+  test('plays the onboarding script, its MCP step in two forms for whether VS Code lists the server itself', () => {
+    expect([walkthrough.title, walkthrough.description]).toEqual([ONBOARDING.title, ONBOARDING.description]);
+    const expected = ONBOARDING.steps.flatMap((step) => {
+      const button = stepButton(step, 'vscode')!;
+      const played = (id: string, text: string, when?: string) => ({
+        id,
+        title: step.title,
+        description: `${text}\n[${button.label}](command:${button.run})`,
+        media: step.image?.vscode
+          ? { image: `dist/walkthrough/${step.image.vscode}`, altText: step.title }
+          : { markdown: `walkthrough/${step.id}.md` },
+        ...(when ? { when } : {}),
+      });
+      return step.provided
+        ? [
+            played(step.id, stepText(step, 'vscode'), '!piwi.mcpProvided'),
+            played(`${step.id}-provided`, stepText(step, 'vscode', true), 'piwi.mcpProvided'),
+          ]
+        : [played(step.id, stepText(step, 'vscode'))];
+    });
+    const played = walkthrough.steps.map((step: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(step).filter(([key]) => key !== 'completionEvents')),
+    );
+    expect(played).toEqual(expected);
+  });
+
   test('has a button on each step that runs a command of the extension or focuses its view', () => {
-    expect(walkthrough.steps.length).toBeGreaterThanOrEqual(4);
-    expect(walkthrough.steps.length).toBeLessThanOrEqual(6);
     for (const step of walkthrough.steps) {
       const command = button(step.description);
       expect(command, step.id).toBeDefined();
       expect(commands.has(command!) || views.has(command!.replace(/\.focus$/, '')), command).toBe(true);
     }
+  });
+
+  test('ships the docs screenshots it shows, which the build copies', () => {
+    expect(shipped).toContain('!dist/walkthrough/**');
+    const build = fs.readFileSync(path.join(root, 'build.mjs'), 'utf-8');
+    expect(build).toContain('packages/editor/src/onboarding.json');
+    expect(build).toContain("'dist/walkthrough'");
+    for (const step of walkthrough.steps.filter((s: { media: { image?: string } }) => s.media.image)) {
+      const image = path.basename(step.media.image as string);
+      expect(fs.existsSync(path.join(root, '..', 'docs', 'public', 'screenshots', image)), image).toBe(true);
+    }
+  });
+
+  test('names every setting of the registry on its settings step, and no other', () => {
+    const page = fs.readFileSync(path.join(root, 'walkthrough', 'settings.md'), 'utf-8');
+    const keys = EDITOR_SETTINGS.flatMap((s) => (s.key ? [s.key] : []));
+    for (const key of keys) expect(page, key).toContain(`\`${key}\``);
+    // Every other name it quotes is a color the extension contributes.
+    const colors = new Set(contributes.colors.map((c: { id: string }) => c.id));
+    const named = [...page.matchAll(/`(piwi\.[\w.]+)`/g)].map((m) => m[1]!);
+    expect(named.filter((name) => !keys.includes(name) && !colors.has(name))).toEqual([]);
   });
 
   test('checks a step off on the extension’s commands, views and context keys', () => {
@@ -50,8 +97,8 @@ describe('the walkthrough', () => {
     }
   });
 
-  test('ships the Markdown of each step', () => {
-    for (const step of walkthrough.steps) {
+  test('ships the Markdown of each step that shows no screenshot', () => {
+    for (const step of walkthrough.steps.filter((s: { media: { markdown?: string } }) => s.media.markdown)) {
       const file = step.media.markdown as string;
       expect(fs.existsSync(path.join(root, file)), file).toBe(true);
       expect(shipped, file).toContain(`!${path.posix.dirname(file)}/**`);

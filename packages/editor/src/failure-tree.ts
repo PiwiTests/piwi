@@ -496,5 +496,8 @@ export function failuresView(contexts: ContextViewState[], failing: number): Fai
         : `No run of ${idle.projectName ?? 'this project'} yet. Run the tests with the Piwi reporter.`,
     };
   }
-  return { state: 'disconnected', message: 'Piwi is not connected to an instance, so it has no run to show.' };
+  return {
+    state: 'disconnected',
+    message: 'Piwi is not connected to an instance, so it has no run to show. Recording works without one.',
+  };
 }

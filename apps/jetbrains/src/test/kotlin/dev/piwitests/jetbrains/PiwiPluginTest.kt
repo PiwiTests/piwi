@@ -738,55 +738,80 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
-     * failures and the documentation, once per installation.
+     * The first project holding a Playwright config opens the Get Started tab, once per installation and when the
+     * first-run queue gives it the turn; its buttons are registered actions with the onboarding script's labels, and a
+     * step's action checks it off.
      */
-    fun testTheFirstRunNotificationShowsOncePerInstallation() {
+    fun testGetStartedOpensOncePerInstallation() {
         val service = project.getService(PiwiProjectService::class.java)
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-        val shown = mutableListOf<com.intellij.notification.Notification>()
-        project.messageBus.connect(testRootDisposable).subscribe(
-            com.intellij.notification.Notifications.TOPIC,
-            object : com.intellij.notification.Notifications {
-                override fun notify(notification: com.intellij.notification.Notification) {
-                    if (notification.content == Glue.FIRST_RUN) shown += notification
-                }
-            },
-        )
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         val config = File(project.basePath!!, "playwright.config.ts")
-        val before = properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN)
+        val before = properties.getBoolean(PiwiGetStarted.SHOWN)
         try {
-            properties.unsetValue(PiwiProjectService.FIRST_RUN_SHOWN)
+            properties.unsetValue(PiwiGetStarted.SHOWN)
             config.writeText("export default {};\n")
             val found = service.searchPlaywright()
-            service.offerFirstRun(found, listOf("https://piwi.example.com"))
+            // Another offer took the session's turn: the tab waits for a later session.
+            service.openGetStartedOnce(found, Glue.FirstRunQueue().apply { take() }) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals("a project naming an instance is connected", emptyList<Any>(), shown)
-            assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
-            service.offerFirstRun(found, emptyList())
+            assertNull(window.contentManager.findContent(PiwiGetStarted.TAB))
+            assertFalse(properties.getBoolean(PiwiGetStarted.SHOWN))
+            val queue = Glue.FirstRunQueue()
+            service.openGetStartedOnce(found, queue) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(listOf("Connect…", "Open the failures", "Learn more"), shown.single().actions.map { it.templateText })
-            // Each kind has its group, the requests' sticky, a confirmation fading on its own.
+            val tab = window.contentManager.findContent(PiwiGetStarted.TAB)
+            assertNotNull(tab)
+            assertTrue(properties.getBoolean(PiwiGetStarted.SHOWN))
+            assertFalse("the tab took the session's turn", queue.take())
+            window.contentManager.removeContent(tab, true)
+            service.openGetStartedOnce(found, Glue.FirstRunQueue()) { it.run() }
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertNull("once per installation", window.contentManager.findContent(PiwiGetStarted.TAB))
+            // Each button runs a registered action whose text is its label.
+            val actions = ActionManager.getInstance()
+            assertEquals(
+                OnboardingSteps.STEPS.map { it.label },
+                OnboardingSteps.STEPS.map { actions.getAction(it.actionId)?.templatePresentation?.text },
+            )
+            // The screenshots it names are bundled.
+            for (step in OnboardingSteps.STEPS.filter { it.image != null }) {
+                assertNotNull(step.image, PiwiGetStarted::class.java.getResource("/onboarding/${step.image}"))
+            }
+            // An offer: titled Piwi, with its icon, in the suggestions' group; each kind has its group.
             val groups = com.intellij.notification.NotificationGroupManager.getInstance()
             assertEquals(
                 PiwiNotice.entries.map { it.group to (if (it == PiwiNotice.REQUEST) "STICKY_BALLOON" else "BALLOON") },
                 PiwiNotice.entries.map { it.group to groups.getNotificationGroup(it.group)!!.displayType.name },
             )
-            // A warning keeps the platform's icon.
             assertNull(PiwiNotifier.create(PiwiNotice.PROBLEM, "x", com.intellij.notification.NotificationType.WARNING).icon)
-            // An offer: titled Piwi, with its icon, in the suggestions' group.
-            val offer = shown.single()
+            val offer = PiwiNotifier.create(PiwiNotice.OFFER, "x")
             assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
             assertNotNull(offer.icon)
             assertTrue(offer.isSuggestionType)
-            assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
-            service.offerFirstRun(found, emptyList())
-            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals("once per installation", 1, shown.size)
         } finally {
             config.delete()
             service.searchPlaywright()
-            properties.setValue(PiwiProjectService.FIRST_RUN_SHOWN, before)
+            properties.setValue(PiwiGetStarted.SHOWN, before)
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /** A step is checked off where its action succeeded, once, and Open the failures checks its step off. */
+    fun testAStepIsCheckedOffWhereItsActionSucceeded() {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        val key = "piwi.getStarted.done.failures"
+        val before = properties.getBoolean(key)
+        try {
+            properties.unsetValue(key)
+            assertFalse(PiwiGetStarted.isDone("failures"))
+            val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project)
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+            ActionManager.getInstance().getAction("Piwi.OpenFailures").actionPerformed(event)
+            assertTrue(PiwiGetStarted.isDone("failures"))
+        } finally {
+            properties.setValue(key, before)
         }
     }
 

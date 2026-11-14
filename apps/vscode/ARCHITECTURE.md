@@ -206,21 +206,30 @@ failures) and `piwi.runPage` (a run named its page) ([Run control](#run-control)
 
 ## Walkthrough
 
-**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`). Its steps are: connect, the failures, a run,
-a recording, the MCP server, and the settings.
+**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`), which plays the editor service's onboarding
+script (`@piwitests/editor/onboarding`, `onboarding.json`), as the JetBrains plugin's Get Started tab does: connect, the
+failures, a run, a breakpoint stop, a recording, pairing Piwi Picker, the MCP server, and the settings.
 
-- Each step's media is a Markdown file of `walkthrough/`, which `.vscodeignore` ships.
-- Each step has a button that runs a command of the extension: `piwi.connect`, `piwi.failures.focus`,
-  `piwi.rerunFailing`, `piwi.recordFile`, `piwi.copyMcpConfiguration`, `piwi.openSettings`.
-- Each step is checked off by its completion events (`onContext:piwi.active`, `onView:piwi.failures`, `onCommand:…`).
+- Each step's title, text and button are the script's, its button the action catalog's command in VS Code's words.
+- Its media is the docs screenshot the script names, which `build.mjs` copies to `dist/walkthrough/`, or else a
+  Markdown file of `walkthrough/`; `.vscodeignore` ships both.
+- The MCP step comes in two forms: `piwi.mcpProvided`, set where VS Code lists Piwi's MCP server itself (1.101 and
+  later), shows the one that says so.
+- Each step is checked off by its completion events (`onContext:piwi.active`, `onView:piwi.failures`,
+  `onContext:piwi.runStopped`, `onCommand:…`).
+
+**The first-run queue.** The walkthrough comes first; the desktop app's offer and the MCP notice then share one turn per
+window (`takeFirstRunTurn`), and one that does not get it keeps its flag unset for a later window. Where VS Code lists
+the MCP server itself, the notice stays silent once the walkthrough opened.
 
 The walkthrough opens once per machine (`piwi.walkthroughOpened` in global state), on the first activation in a
 workspace that holds a Playwright config (`PLAYWRIGHT_CONFIGS` in `src/glue.ts`, the activation event's glob). It does
 not open when `workbench.welcomePage.walkthroughs.openOnInstall` is off, nor in the integration suite's window
 (`ExtensionMode.Test`). **Piwi: Get started** (`piwi.getStarted`) opens it again (`WALKTHROUGH`).
 
-`tests/walkthrough.test.ts` checks that each step names a contributed command or view, a context key the extension
-sets, and a shipped Markdown file: a step that still names a renamed command, view or context key fails it.
+`tests/walkthrough.test.ts` holds the steps to the script, and checks that each names a contributed command or view, a
+context key the extension sets, and a shipped Markdown file or screenshot, and that the settings step names every
+setting of the registry.
 
 ## Coverage marks
 

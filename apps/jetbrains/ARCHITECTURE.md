@@ -32,7 +32,7 @@ does with it. It is reference material: open the section for the area you change
   - [Code from a stop](#code-from-a-stop)
   - [CI runs of the branch](#ci-runs-of-the-branch)
 - [Finding Playwright configs](#finding-playwright-configs)
-  - [First-run notification](#first-run-notification)
+  - [Get started](#get-started)
 - [Recording](#recording)
   - [Starting a recording](#starting-a-recording)
   - [Writing the recorded block](#writing-the-recorded-block)
@@ -815,19 +815,25 @@ after the IDE reports one of these changes:
 - such a change of a folder where configs are searched (`Glue.mayHoldConfigs`), since the IDE reports a new folder
   without the files in it.
 
-### First-run notification
+### Get started
 
-A search whose answer changes offers the first-run notification (`PiwiProjectService.offerFirstRun`), once per
-installation (`piwi.firstRunShown`, an application-level `PropertiesComponent` flag). It shows when all of these hold
-(`Glue.showsFirstRun`):
+A search whose answer changes opens the **Get started** tab of the Piwi tool window (`PiwiGetStarted`,
+`PiwiProjectService.openGetStartedOnce`), unfocused, once per installation (`piwi.getStartedShown`, an
+application-level `PropertiesComponent` flag), in a trusted project that holds a Playwright config, connected or not
+(`Glue.showsGetStarted`). **Get started** (`Piwi.GetStarted`, under Tools → Piwi, the tool window's gear and Help) opens
+it again.
 
-- the project is trusted and holds a Playwright config;
-- no context of the status is connected (the status is null until the service starts);
-- nothing names an instance: the settings, `PIWI_DASHBOARD_URL` in the environment or in a config folder's `.env`, or
-  the desktop app running.
+The tab plays the editor service's onboarding script, restated in `OnboardingSteps` (`GlueTest` holds it to
+`onboarding.json`): each step's title, text, a button that runs its registered action, the docs screenshot it names,
+which `processResources` bundles under `onboarding/`, and a check mark once done. The connection is done while this
+project is connected, the tab drawn again as that changes; any other step once its action succeeded somewhere
+(`PiwiGetStarted.done`): the failures shown, a run started, a stop's page shown, a recording started, the pairing or an
+MCP configuration copied, the settings opened. A button runs its action as from the editor in use, which an action on
+the code at the caret needs, and says so beside it when the action cannot run now.
 
-The balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…** (`PiwiConnectFlow.run`, as `Piwi.Connect`),
-**Open the failures** (the tool window) and **Learn more** (`Glue.DOCS_URL`). `PiwiPluginTest` checks the flag.
+**The first-run queue** (`Glue.FIRST_RUN`): one offer per IDE session, the first to ask: the tab, which asks once
+the configs are found, the desktop app's offer or the MCP offer. One that does not get the turn keeps its flag unset
+for a later session; the tab sets its flag only once it opened (`PiwiGetStarted.open`).
 
 A trusted project with no Playwright config whose MSBuild project (a `.csproj`, `.fsproj`, `.vbproj` or
 `Directory.Build.props`, in the folders and repository the configs are searched in, `Glue.searchedFolders`) references
@@ -1067,7 +1073,8 @@ person's own option, from the settings page or an action, is handed and drawn ag
 (Settings Sync, Import Settings); a project whose service is not running is not started for it. In Rider, the project's files sit under
 `.idea/.idea.<Name>/.idea/`, as the settings page's comments say, and a project of one `.ipr` file keeps them in it and its `.iws` (`Glue.storeFiles`). Each group of the page opens with one comment
 saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
-(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The runs' MCP server's token is in the `PasswordSafe`.
+(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The Agents (MCP) group holds the actions that copy the MCP servers'
+configurations and reset the runs' token as buttons, each running its registered action. The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
