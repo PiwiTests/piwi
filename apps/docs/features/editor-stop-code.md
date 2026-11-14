@@ -31,7 +31,8 @@ headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
   in the palette while a stop offers them (**Piwi: Assert at the stop**, **Piwi: Mock a request at the
-  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**. - **In a JetBrains IDE**,
+  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
+- **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
   bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**).
 
