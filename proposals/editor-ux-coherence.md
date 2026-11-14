@@ -86,7 +86,8 @@ Playwright projects (HM1). M4's record family: JetBrains draws Record's actions 
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
-`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
+`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M4 in part: Piwi Picker draws Stop recording as a square in a ring (`stop-circle`) and Share live as a broadcast mark
+(`broadcast`), apart from the run's Stop and a share of a result, and Finish steps out (`step-out`). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4); both editors tint a failing test, its failing line and a recording in
 `STATUS_COLORS`' failed and running fills, the JetBrains schemes blending them over classic Default's or Darcula's background, and VS Code's
 held failure's arrow takes the failed fill (LI3). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
@@ -1347,18 +1348,18 @@ such action.
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
-| Stop recording | – | `stop-circle` (new) | `$(stop-circle)` | `stopRecording.svg` |
+| Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |
 | Step | `redo-dot` | `skip` | `$(debug-step-over)` | `Actions.TraceOver` |
-| Finish | `arrow-up-from-dot` | `step-out` (new) | `$(debug-step-out)` | `Actions.StepOut` |
+| Finish | `arrow-up-from-dot` | `step-out` | `$(debug-step-out)` | `Actions.StepOut` |
 | End the test | `ban` | `blocked` | `$(circle-slash)` | `RunConfigurations.TestIgnored` |
 | Stop the run | `square` | `stop` | `$(debug-stop)` | `Actions.Suspend` |
 | Pick | `crosshair` | `pick` | `$(target)` | `General.Locate` |
 | Assert | `check-circle` | `check-circle` | `$(pass)` | `General.InspectionsOK` |
 | Assert a region | `scan` | `viewport` | `$(screen-full)` or `$(piwi-region)` (new) | `region.svg` |
 | Mock a request | `network` | `network` | `$(arrow-swap)` or `$(piwi-mock)` (new) | `mock.svg` |
-| Share live ([LR14](#lr14)) | `radio` | `broadcast` (new) | `$(broadcast)` | `live.svg` |
+| Share live ([LR14](#lr14)) | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
 | Stop sharing live | – | – | `$(piwi-stop-live)` (new) | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
 | Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |

@@ -670,7 +670,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   title.className = 'title';
   title.textContent = hudTitle(steps.length);
   const stopBtn = makeButton(t('common_stop'), () => void handleStop(), {
-    icon: 'stop',
+    icon: 'stop-circle',
     tone: 'danger',
     small: true,
     className: 'stop',

@@ -3165,19 +3165,19 @@ function renderShare(run: RunsRun, live: HubLive, hub: RunsHub | undefined): HTM
       box.setAttribute('aria-label', t('runs_shareLive'));
       box.setAttribute('aria-describedby', warning.id);
       box.append(warning);
-      button(t('runs_shareLive'), () => answerShare(run, true), 'share-yes', { icon: 'share', tone: 'primary' });
+      button(t('runs_shareLive'), () => answerShare(run, true), 'share-yes', { icon: 'broadcast', tone: 'primary' });
       if (offersWindow) {
         button(t('runs_shareWindow'), () => answerShare(run, true, true), 'share-window-yes', {
-          icon: 'share',
+          icon: 'broadcast',
           title: t('runs_shareWindowTitle'),
         });
       }
       button(t('common_cancel'), () => answerShare(run, false), 'share-no', { icon: 'close' });
     } else {
-      button(t('runs_shareLive'), () => askShare(run), 'share', { icon: 'share', title: t('runs_shareLiveTitle') });
+      button(t('runs_shareLive'), () => askShare(run), 'share', { icon: 'broadcast', title: t('runs_shareLiveTitle') });
       if (offersWindow && !byWindow) {
         button(t('runs_shareWindow'), () => askShare(run, true), 'share-window', {
-          icon: 'share',
+          icon: 'broadcast',
           tone: 'ghost',
           title: t('runs_shareWindowTitle'),
         });
