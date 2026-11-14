@@ -282,3 +282,50 @@ test.describe('fail fast', () => {
     await expect(page.locator('#missing')).not.toBeVisible();
   });
 });
+
+test.describe('skip stability wait', () => {
+  test.use({ skipStabilityWait: true });
+
+  const BUTTON = `<button id="b" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">go</button>`;
+
+  test('clicks without waiting for the element to keep still, sooner than stock', async ({ page }) => {
+    await page.setContent(BUTTON);
+    const time = async (clicks: number) => {
+      const started = Date.now();
+      for (let i = 0; i < clicks; i++) await page.locator('#b').click();
+      return Date.now() - started;
+    };
+    state.skipStabilityWait = false;
+    const stock = await time(20);
+    state.skipStabilityWait = true;
+    const before = state.counters.skippedStabilityWaits;
+    const skipped = await time(20);
+    expect(state.counters.skippedStabilityWaits).toBe(before + 20);
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '40');
+    expect(skipped).toBeLessThan(stock);
+  });
+
+  test('keeps the hit-target check: an overlay still blocks the click', async ({ page }) => {
+    await page.setContent(`${BUTTON}<div style="position:fixed;inset:0;background:transparent"></div>`);
+    const error = await page
+      .locator('#b')
+      .click({ timeout: 800 })
+      .catch((e: Error) => e);
+    expect(String(error)).toContain('intercepts pointer events');
+  });
+
+  test('keeps the enabled check: a disabled button is waited for', async ({ page }) => {
+    await page.setContent(
+      `<button id="b" disabled>go</button><script>setTimeout(() => (b.disabled = false), 300)</script>`,
+    );
+    await page.locator('#b').click();
+  });
+
+  test('lands a click on an element that has stopped moving', async ({ page }) => {
+    await page.setContent(`<style>#b{position:relative;left:0;transition:left .3s}#b.moved{left:200px}</style>${BUTTON}
+      <script>requestAnimationFrame(() => b.classList.add('moved'))</script>`);
+    await page.waitForTimeout(400);
+    await page.locator('#b').click();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '1');
+  });
+});

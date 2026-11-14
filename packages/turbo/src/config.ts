@@ -60,6 +60,12 @@ export interface Optimizations {
      * its own Node code while an assertion waits must leave it off.
      */
     failFast?: boolean;
+    /**
+     * Clicks, hovers, taps and drags stop waiting for the element to keep still for two animation frames. The visible,
+     * enabled and hit-target checks stay, so an element still moving under the pointer is retried. Leave it off for
+     * apps that ignore input while they animate.
+     */
+    skipStabilityWait?: boolean;
   };
 }
 
@@ -99,7 +105,9 @@ function defined<T extends object>(options: T): Partial<T> {
 }
 
 function modeOf(setting: unknown): string | undefined {
-  return typeof setting === 'object' && setting !== null ? (setting as { mode?: string }).mode : (setting as string | undefined);
+  return typeof setting === 'object' && setting !== null
+    ? (setting as { mode?: string }).mode
+    : (setting as string | undefined);
 }
 
 /**
@@ -134,7 +142,8 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   const result: AnyConfig = { ...config, use: { ...config.use } };
   const use = result.use as Record<string, unknown> & { contextOptions?: Record<string, unknown> };
   if (config.projects) result.projects = config.projects.map((project) => ({ ...project }));
-  if (options.trace) use.trace = typeof use.trace === 'object' && use.trace ? { ...use.trace, mode: options.trace } : options.trace;
+  if (options.trace)
+    use.trace = typeof use.trace === 'object' && use.trace ? { ...use.trace, mode: options.trace } : options.trace;
   if (options.lightTraces) {
     const current = use.trace as TraceMode | { mode: TraceMode } | undefined;
     const mode = typeof current === 'object' ? current.mode : (current ?? 'off');
@@ -157,5 +166,6 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.fastScreenshots) use.fastScreenshots = true;
   if (experimental.retryIntervals) use.retryIntervals = experimental.retryIntervals;
   if (experimental.failFast) use.failFast = true;
+  if (experimental.skipStabilityWait) use.skipStabilityWait = true;
   return result as T;
 }

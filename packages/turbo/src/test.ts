@@ -44,6 +44,7 @@ export const test = base.extend<TurboOptions>({
   fastScreenshots: [false, { option: true }],
   retryIntervals: [undefined, { option: true }],
   failFast: [false, { option: true }],
+  skipStabilityWait: [false, { option: true }],
 
   // One fixture does everything, so a test pays for one extra fixture whatever the options. The hooks are on for this
   // test only: a worker runs one test at a time, so the setting covers every page of the test, including the ones it
@@ -57,6 +58,7 @@ export const test = base.extend<TurboOptions>({
       fastScreenshots,
       retryIntervals,
       failFast,
+      skipStabilityWait,
       connectOptions,
       browserName,
     },
@@ -67,7 +69,7 @@ export const test = base.extend<TurboOptions>({
     // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
     const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
-    const hooks = fast || !!intervals || failFast;
+    const hooks = fast || !!intervals || failFast || skipStabilityWait;
     if (hooks) {
       if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
@@ -79,6 +81,7 @@ export const test = base.extend<TurboOptions>({
     state.fastScreenshots = fast;
     state.retryIntervals = intervals;
     state.failFast = failFast;
+    state.skipStabilityWait = skipStabilityWait;
     try {
       if (failFast) await context.addInitScript(IDLE_TRACKER);
       for (const rule of blockRequests)
@@ -103,6 +106,7 @@ export const test = base.extend<TurboOptions>({
       state.fastScreenshots = false;
       state.retryIntervals = undefined;
       state.failFast = false;
+      state.skipStabilityWait = false;
     }
   },
 });

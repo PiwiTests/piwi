@@ -4,6 +4,8 @@
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
 //   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
+//   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
+//                     visible, enabled and hit-target checks stay
 //
 // Both wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
@@ -24,13 +26,15 @@ export const state = {
   fastScreenshots: false,
   retryIntervals: undefined as number[] | undefined,
   failFast: false,
+  skipStabilityWait: false,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
   pagesSeen: 0,
   /** The first internal that did not have the expected shape. */
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
-  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0 },
+  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0, skippedStabilityWaits: 0 },
+  elementHooked: false,
 };
 
 class IncompatibleError extends Error {
@@ -155,6 +159,29 @@ function hookFailFast(proto: ServerPage): void {
   };
 }
 
+function hookElementHandle(handle: ServerPage): void {
+  const proto = Object.getPrototypeOf(handle);
+  const evaluateInUtility = proto.evaluateInUtility as ((fn: unknown, arg: unknown) => Promise<unknown>) | undefined;
+  if (typeof evaluateInUtility !== 'function' || typeof proto._performPointerAction !== 'function') {
+    throw new IncompatibleError("Playwright's element handle has no evaluateInUtility/_performPointerAction");
+  }
+  if (!String(proto._performPointerAction).includes('checkElementStates(node, elementStates2')) {
+    throw new IncompatibleError("Playwright's pointer action no longer checks its element states in one call");
+  }
+  proto.evaluateInUtility = function (this: ServerPage, fn: unknown, arg: unknown) {
+    const states = (arg as { elementStates?: unknown } | undefined)?.elementStates;
+    if (state.skipStabilityWait && Array.isArray(states) && states.includes('stable')) {
+      state.counters.skippedStabilityWaits++;
+      return evaluateInUtility.call(this, fn, {
+        ...(arg as object),
+        elementStates: states.filter((each) => each !== 'stable'),
+      });
+    }
+    return evaluateInUtility.call(this, fn, arg);
+  };
+  state.elementHooked = true;
+}
+
 function hookFrame(frame: ServerPage): void {
   const proto = Object.getPrototypeOf(frame);
   const original = proto.retryWithProgressAndBackoff as
@@ -180,6 +207,38 @@ function hookFrame(frame: ServerPage): void {
     return this.retryWithProgressAndTimeouts(progress, intervals, action);
   };
   hookFailFast(proto);
+  const retryIfNotConnected = proto._retryWithProgressIfNotConnected as
+    | ((progress: Progress, target: unknown, options: unknown, action: RetryAction) => Promise<unknown>)
+    | undefined;
+  if (typeof retryIfNotConnected !== 'function') {
+    throw new IncompatibleError("Playwright's frame has no _retryWithProgressIfNotConnected");
+  }
+  // The element handle class is reached from the first action's handle.
+  proto._retryWithProgressIfNotConnected = function (
+    this: ServerPage,
+    progress: Progress,
+    target: unknown,
+    options: unknown,
+    action: RetryAction,
+  ) {
+    return retryIfNotConnected.call(
+      this,
+      progress,
+      target,
+      options,
+      (inner: unknown, handle: unknown, ...rest: unknown[]) => {
+        if (!state.elementHooked) {
+          try {
+            hookElementHandle(handle);
+          } catch (error) {
+            state.error ??= error as Error;
+            if (state.skipStabilityWait) throw error;
+          }
+        }
+        return action(inner, handle, ...rest);
+      },
+    );
+  };
   state.frameHooked = true;
 }
 

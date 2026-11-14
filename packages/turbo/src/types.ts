@@ -15,4 +15,6 @@ export interface TurboOptions {
   retryIntervals: number[] | undefined;
   /** Experimental: a failing web-first assertion ends once nothing can change the page before its timeout. */
   failFast: boolean;
+  /** Experimental: pointer actions skip the wait for the element to keep still; the hit-target check stays. */
+  skipStabilityWait: boolean;
 }

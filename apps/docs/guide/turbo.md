@@ -83,7 +83,7 @@ A faster suite can surface races that slower runs hid. Measure on your own suite
 
 ## Experimental hooks
 
-**Experimental.** Three options reach into Playwright's internals inside each test worker:
+**Experimental.** Four options reach into Playwright's internals inside each test worker:
 
 - `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger. Runs
   that write snapshots keep the stock encoding.
@@ -92,9 +92,13 @@ A faster suite can surface races that slower runs hid. Measure on your own suite
 - `failFast`: a failing assertion ends once nothing can change the page before its timeout, instead of waiting it
   out. It shortens red runs on pages that go idle, and does nothing on a page that polls. A test that changes the page
   from its own Node code while an assertion waits must leave it off.
+- `skipStabilityWait`: clicks, hovers, taps and drags stop waiting for the element to keep still. The visible, enabled
+  and hit-target checks stay. Leave it off for apps that ignore input while they animate.
 
 ```ts
-withOptimizations(config, { experimental: { fastScreenshots: true, retryIntervals: [10, 20, 40, 50], failFast: true } });
+withOptimizations(config, {
+  experimental: { fastScreenshots: true, retryIntervals: [10, 20, 40, 50], failFast: true, skipStabilityWait: true },
+});
 ```
 
 They run only on the Playwright versions they were tested with, and throw instead of falling back: on another

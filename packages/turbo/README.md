@@ -9,7 +9,8 @@ and every test still gets its own fresh browser context.
   record lighter traces and keep them only for failures, screenshot failed tests only, emulate reduced motion, run
   animations at once. Supported Playwright features, safe across upgrades.
 - **Experimental hooks** into Playwright's internals: faster PNG encoding for Chromium screenshots, a shorter backoff
-  for Playwright's retry loop, and failing an assertion early once nothing can change the page. Off by default, pinned
+  for Playwright's retry loop, failing an assertion early once nothing can change the page, and pointer actions that
+  skip the wait for the element to keep still. Off by default, pinned
   to the Playwright versions they were tested with, and they throw instead of falling back when anything differs.
 
 Presets bundle them by how much a test can notice: `safe`, `fast` and `experimental`.
@@ -90,6 +91,7 @@ withOptimizations(config, {
     fastScreenshots: true,
     retryIntervals: [10, 20, 40, 50],
     failFast: true,
+    skipStabilityWait: true,
   },
 });
 ```
@@ -110,11 +112,15 @@ or for one file: `test.use({ fastScreenshots: true })`.
   polls in a row, and its call log says so. It does nothing for passing tests, and nothing on a page that polls (an
   interval keeps it busy). A test that changes the page from its own Node code while an assertion waits must leave it
   off.
+- **`skipStabilityWait`**: clicks, hovers, taps and drags stop waiting for the element to keep still for two animation
+  frames. The visible, enabled and hit-target checks stay, so an element still moving under the pointer is retried.
+  Leave it off for apps that ignore input while they animate. On Flashwright's benchmark suites it took 5–20% off a
+  run with one worker.
 
 How they work: Playwright's server runs inside each test worker for a browser the worker launches. @piwitests/turbo wraps
 the server `Page.prototype.reportAsNew`, and from the first page it reaches the frame class
-(`retryWithProgressAndBackoff`, `expect`, `_expectInternal`, `isNonRetriableError`) and Chromium's CDP session (`send`)
-and wraps those. A worker runs one test at a time,
+(`retryWithProgressAndBackoff`, `expect`, `_expectInternal`, `isNonRetriableError`, `_retryWithProgressIfNotConnected`),
+the element handle class (`evaluateInUtility`) and Chromium's CDP session (`send`) and wraps those. A worker runs one test at a time,
 so a test that enables a hook gets it on every page it opens, and no other test does.
 
 They refuse to run, with an error that names the reason, when:
@@ -152,7 +158,7 @@ own suite. The benchmark lives in the repository and is not part of the npm pack
 The experimental hooks follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a fork of
 Playwright that makes them its defaults: faster PNG encoding with the same pixels, and less waiting between the checks
 of actions and assertions, failure screenshots taken only when a test fails, instant animations, and assertions that
-fail once the page is idle. @piwitests/turbo applies a subset of them to stock Playwright at runtime instead of forking
+fail once the page is idle, and pointer actions that skip the wait for a still element. @piwitests/turbo applies a subset of them to stock Playwright at runtime instead of forking
 it. It contains no Flashwright or Playwright code; both are Apache-2.0.
 
 @piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by
