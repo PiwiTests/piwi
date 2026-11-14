@@ -240,11 +240,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 7. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
    Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
 
-8. **The settings differ in each editor, and JetBrains introduces Piwi with one balloon**: VS Code's list is
-   alphabetical with code values, the scopes differ, the gutter icons, locator warnings and tint cannot be switched off,
-   and JetBrains has no Get Started (M10, M11).
-
-9. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
+8. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
 
 The rest of this document is the evidence behind these and the smaller findings (§3 to §9 and §14), the larger
 items (§10), the defects still open (§11) and the ranked plan (§12).
@@ -1321,6 +1317,7 @@ such action.
 |---|---|---|---|---|
 | Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
+| Get started | – | – | `$(book)` | `AllIcons.General.ShowInfos` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
 | A test's actions | – | – | `$(list-selection)` | the result icon itself (its click) |

@@ -255,7 +255,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                                 "the stopped page, and has Piwi write the code there",
                         )
                 }
-                for (id in AGENT_ACTIONS) row { actionButton(id) }
+                for (id in AGENT_ACTIONS) row { actionButton(id) { if (isModified) apply() } }
             }
             onReset { show() }
         }
@@ -397,10 +397,18 @@ private val AGENT_ACTIONS = listOf(
     "Piwi.ResetRunsMcpToken",
 )
 
-/** A button that runs the registered action `id`, with its text, from the settings page. */
-private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String) {
+/**
+ * A button that runs the registered action `id`, with its text, from the settings page, once `first` ran: the page's
+ * changes applied, which the action reads.
+ */
+private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String, first: () -> Unit) {
     val action = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return
     button(action.templatePresentation.text ?: id) { e ->
+        try {
+            first()
+        } catch (_: com.intellij.openapi.options.ConfigurationException) {
+            return@button
+        }
         com.intellij.openapi.actionSystem.ActionManager.getInstance()
             .tryToExecute(action, null, e.source as? java.awt.Component, "PiwiSettings", true)
     }

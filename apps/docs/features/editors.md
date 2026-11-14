@@ -32,11 +32,12 @@ the reporter already uses: the `PIWI_*` variables in the environment or the work
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect…** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
 
-The first workspace with a Playwright config opens the first steps once per machine: in VS Code, the **Get started
-with Piwi** walkthrough, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; in a JetBrains IDE, the
-**Get started** tab of the Piwi tool window ([JetBrains plugin](./jetbrains#install-and-start)). **Piwi: Get started**
-opens them again. The editor's other first offers, the desktop app and the MCP server, come one per window, after the
-first steps.
+The first workspace with a Playwright config opens the first steps: VS Code's **Get started with Piwi** walkthrough
+once per machine (unless `workbench.welcomePage.walkthroughs.openOnInstall` is off), a JetBrains IDE's **Get started**
+tab once per installation ([JetBrains plugin](./jetbrains#install-and-start)). **Piwi: Get started** opens them
+again. The desktop app and MCP offers follow one at a time: one per window in VS Code, per IDE session in a JetBrains
+IDE. VS Code 1.101 and later lists the MCP server itself.
+
 In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in editor](./ide-integration#vs-code-the-piwi-extension).
 

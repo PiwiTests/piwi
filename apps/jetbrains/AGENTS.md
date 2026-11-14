@@ -267,7 +267,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   [Status bar](ARCHITECTURE.md#status-bar): before changing what one of them shows.
 - [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, the
   run control (stops, their actions and shortcuts, the paused page) and the code from a stop.
-- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the first-run notification.
+- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the Get started tab.
 - [Recording](ARCHITECTURE.md#recording): starting a recording, writing the block, warnings, undo.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),
   [Connect](ARCHITECTURE.md#connect), [Settings and secrets](ARCHITECTURE.md#settings-and-secrets),

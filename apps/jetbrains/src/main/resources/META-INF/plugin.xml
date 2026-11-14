@@ -59,10 +59,6 @@
     <depends>com.intellij.modules.ultimate</depends>
     <depends>JavaScript</depends>
 
-    <applicationListeners>
-        <listener class="dev.piwitests.jetbrains.PiwiGetStarted$Progress" topic="com.intellij.openapi.actionSystem.ex.AnActionListener"/>
-    </applicationListeners>
-
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>

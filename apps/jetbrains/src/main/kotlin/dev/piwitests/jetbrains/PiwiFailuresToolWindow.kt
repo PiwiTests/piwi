@@ -463,6 +463,13 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         /** The tool window's tab, named as the status bar's Open the failures and a run's notification name it. */
         const val TAB_NAME = "Failures"
 
+        /** The tool window on its Failures tab, whichever tab was selected, then `then`. */
+        fun showFailures(project: com.intellij.openapi.project.Project, then: Runnable? = null) {
+            val window = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(ID) ?: return
+            window.contentManager.findContent(TAB_NAME)?.let { window.contentManager.setSelectedContent(it) }
+            window.activate(then)
+        }
+
         private fun nodeOf(value: Any?): Glue.FailureNode? = (value as? DefaultMutableTreeNode)?.userObject as? Glue.FailureNode
 
         /** The keys of the expanded nodes of the tree. */

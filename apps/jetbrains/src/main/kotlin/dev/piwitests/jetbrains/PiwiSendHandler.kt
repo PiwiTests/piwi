@@ -441,6 +441,7 @@ class PairPickerAction : AnAction(), DumbAware {
             }.getOrDefault(emptyList())
             ApplicationManager.getApplication().invokeLater {
                 CopyPasteManager.getInstance().setContents(StringSelection(address))
+                PiwiGetStarted.done("pair")
                 if (project != null) {
                     PiwiCommands.notify(
                         project,

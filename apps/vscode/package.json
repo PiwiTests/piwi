@@ -231,7 +231,7 @@
           {
             "id": "mcp",
             "title": "Give your agent Piwi's MCP server",
-            "description": "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings. It holds your API key: keep it out of the repository.\n[Copy the MCP server configuration…](command:piwi.copyMcpConfiguration)",
+            "description": "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings, never into a file of the repository.\n[Copy the MCP server configuration…](command:piwi.copyMcpConfiguration)",
             "media": {
               "markdown": "walkthrough/mcp.md"
             },
@@ -248,7 +248,7 @@
               "markdown": "walkthrough/mcp.md"
             },
             "completionEvents": [
-              "onContext:piwi.mcpProvided"
+              "onCommand:piwi.copyMcpConfiguration"
             ],
             "when": "piwi.mcpProvided"
           },

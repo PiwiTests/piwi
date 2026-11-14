@@ -64,7 +64,7 @@ object OnboardingSteps {
         Step(
             id = "mcp",
             title = "Give your agent Piwi's MCP server",
-            text = "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings. It holds your API key: keep it out of the repository.",
+            text = "Your agent can read the suite's failures, flaky tests and healings: copy the server's configuration into its MCP settings, never into a file of the repository.",
             label = "Copy the MCP server configuration",
             actionId = "Piwi.CopyMcpConfiguration",
             image = null,

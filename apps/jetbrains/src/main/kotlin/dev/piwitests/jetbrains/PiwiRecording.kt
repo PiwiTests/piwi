@@ -159,6 +159,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
         val start = since?.lineStart(placement.line)
         val session = RecordingSession(this, project, sessionId, editor, file, into, placement, message, start)
         sessions[sessionId] = session
+        PiwiGetStarted.done("record")
         Disposer.register(this, session)
         session.refreshView()
         early.remove(sessionId)?.let { session.apply(it) }

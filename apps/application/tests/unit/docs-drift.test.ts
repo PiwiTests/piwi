@@ -886,6 +886,12 @@ describe('docs images', () => {
     ]
       .filter((path) => existsSync(join(repoRoot, path)))
       .map(read)
+      // The editors' first steps show the screenshots the onboarding script names.
+      .concat(
+        [...read('packages/editor/src/onboarding.json').matchAll(/"([\w.-]+\.png)"/g)].map(
+          (m) => `screenshots/${m[1]}`,
+        ),
+      )
       .join('\n');
     const unused = ['screenshots', 'videos'].flatMap((dir) =>
       readdirSync(join(repoRoot, 'apps/docs/public', dir))

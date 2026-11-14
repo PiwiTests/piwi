@@ -558,6 +558,9 @@ object Glue {
     fun showsGetStarted(shown: Boolean, trusted: Boolean, configDirs: List<Path>): Boolean =
         !shown && trusted && configDirs.isNotEmpty()
 
+    /** What a Get Started button says when its action cannot run here now, such as one on the code at the caret. */
+    fun notNowText(label: String): String = "$label needs a test file open at a test, or something to act on: not now."
+
     /** A step of the onboarding script as the HTML the Get Started tab shows: its text, its `code` spans as code. */
     fun onboardingHtml(text: String): String = escapeHtml(text).replace(Regex("`([^`]+)`"), "<code>$1</code>")
 

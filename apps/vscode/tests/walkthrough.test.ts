@@ -65,16 +65,23 @@ describe('the walkthrough', () => {
 
   test('ships the docs screenshots it shows, which the build copies', () => {
     expect(shipped).toContain('!dist/walkthrough/**');
+    const build = fs.readFileSync(path.join(root, 'build.mjs'), 'utf-8');
+    expect(build).toContain('packages/editor/src/onboarding.json');
+    expect(build).toContain("'dist/walkthrough'");
     for (const step of walkthrough.steps.filter((s: { media: { image?: string } }) => s.media.image)) {
       const image = path.basename(step.media.image as string);
       expect(fs.existsSync(path.join(root, '..', 'docs', 'public', 'screenshots', image)), image).toBe(true);
     }
   });
 
-  test('names every setting of the registry on its settings step', () => {
+  test('names every setting of the registry on its settings step, and no other', () => {
     const page = fs.readFileSync(path.join(root, 'walkthrough', 'settings.md'), 'utf-8');
-    for (const setting of EDITOR_SETTINGS.filter((s) => s.key !== null))
-      expect(page, setting.key!).toContain(`\`${setting.key}\``);
+    const keys = EDITOR_SETTINGS.flatMap((s) => (s.key ? [s.key] : []));
+    for (const key of keys) expect(page, key).toContain(`\`${key}\``);
+    // Every other name it quotes is a color the extension contributes.
+    const colors = new Set(contributes.colors.map((c: { id: string }) => c.id));
+    const named = [...page.matchAll(/`(piwi\.[\w.]+)`/g)].map((m) => m[1]!);
+    expect(named.filter((name) => !keys.includes(name) && !colors.has(name))).toEqual([]);
   });
 
   test('checks a step off on the extension’s commands, views and context keys', () => {

@@ -131,9 +131,12 @@ tasks {
     }
     // The docs screenshots the Get Started tab shows, as the onboarding script names them.
     processResources {
-        from("../docs/public/screenshots") {
-            include(onboardingImages)
-            into("onboarding")
+        // An empty include would take every screenshot.
+        if (onboardingImages.isNotEmpty()) {
+            from("../docs/public/screenshots") {
+                include(onboardingImages)
+                into("onboarding")
+            }
         }
     }
     test {

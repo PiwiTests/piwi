@@ -825,12 +825,15 @@ it again.
 
 The tab plays the editor service's onboarding script, restated in `OnboardingSteps` (`GlueTest` holds it to
 `onboarding.json`): each step's title, text, a button that runs its registered action, the docs screenshot it names,
-which `processResources` bundles under `onboarding/`, and a check mark once done. A step is done once its action ran,
-anywhere (`PiwiGetStarted.Progress`, an `AnActionListener`), the connection once a context is connected, and the
-breakpoint once a stop's page showed.
+which `processResources` bundles under `onboarding/`, and a check mark once done. The connection is done while this
+project is connected, the tab drawn again as that changes; any other step once its action succeeded somewhere
+(`PiwiGetStarted.done`): the failures shown, a run started, a stop's page shown, a recording started, the pairing or an
+MCP configuration copied, the settings opened. A button runs its action as from the editor in use, which an action on
+the code at the caret needs, and says so beside it when the action cannot run now.
 
-**The first-run queue** (`Glue.FIRST_RUN`): one offer per IDE session, the tab first, then the desktop app's offer or
-the MCP offer, whichever asks first; one that does not get the turn keeps its flag unset for a later session.
+**The first-run queue** (`Glue.FIRST_RUN`): one offer per IDE session, the first to ask: the tab, which asks once
+the configs are found, the desktop app's offer or the MCP offer. One that does not get the turn keeps its flag unset
+for a later session; the tab sets its flag only once it opened (`PiwiGetStarted.open`).
 
 A trusted project with no Playwright config whose MSBuild project (a `.csproj`, `.fsproj`, `.vbproj` or
 `Directory.Build.props`, in the folders and repository the configs are searched in, `Glue.searchedFolders`) references

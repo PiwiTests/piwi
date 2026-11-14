@@ -393,12 +393,19 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * Once per installation, the first time a trusted project holds a Playwright config (`Glue.showsGetStarted`): the
      * Get Started tab, unfocused, which takes the IDE's first-run turn (`Glue.FIRST_RUN`).
      */
-    fun openGetStartedOnce(found: Glue.PlaywrightSearch, queue: Glue.FirstRunQueue = Glue.FIRST_RUN) {
+    fun openGetStartedOnce(
+        found: Glue.PlaywrightSearch,
+        queue: Glue.FirstRunQueue = Glue.FIRST_RUN,
+        later: (Runnable) -> Unit = { ToolWindowManager.getInstance(project).invokeLater(it) },
+    ) {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
         if (!Glue.showsGetStarted(properties.getBoolean(PiwiGetStarted.SHOWN), trusted(), found.configDirs)) return
         if (!queue.take()) return
-        properties.setValue(PiwiGetStarted.SHOWN, true)
-        ApplicationManager.getApplication().invokeLater({ project.service<PiwiGetStarted>().open(focus = false) }, gone)
+        // Once the tool windows are registered and the Piwi one made available; a tab that could not open is not shown.
+        later {
+            if (gone.value(null) || properties.getBoolean(PiwiGetStarted.SHOWN)) return@later
+            if (project.service<PiwiGetStarted>().open(focus = false)) properties.setValue(PiwiGetStarted.SHOWN, true)
+        }
     }
 
     /**

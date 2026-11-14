@@ -754,19 +754,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
             config.writeText("export default {};\n")
             val found = service.searchPlaywright()
             // Another offer took the session's turn: the tab waits for a later session.
-            service.openGetStartedOnce(found, Glue.FirstRunQueue().apply { take() })
+            service.openGetStartedOnce(found, Glue.FirstRunQueue().apply { take() }) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertNull(window.contentManager.findContent(PiwiGetStarted.TAB))
             assertFalse(properties.getBoolean(PiwiGetStarted.SHOWN))
             val queue = Glue.FirstRunQueue()
-            service.openGetStartedOnce(found, queue)
+            service.openGetStartedOnce(found, queue) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             val tab = window.contentManager.findContent(PiwiGetStarted.TAB)
             assertNotNull(tab)
             assertTrue(properties.getBoolean(PiwiGetStarted.SHOWN))
             assertFalse("the tab took the session's turn", queue.take())
             window.contentManager.removeContent(tab, true)
-            service.openGetStartedOnce(found, Glue.FirstRunQueue())
+            service.openGetStartedOnce(found, Glue.FirstRunQueue()) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertNull("once per installation", window.contentManager.findContent(PiwiGetStarted.TAB))
             // Each button runs a registered action whose text is its label.
@@ -798,18 +798,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
-    /** A step's action, run anywhere, checks the step off. */
-    fun testAStepsActionChecksItOff() {
+    /** A step is checked off where its action succeeded, once, and Open the failures checks its step off. */
+    fun testAStepIsCheckedOffWhereItsActionSucceeded() {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-        val key = "piwi.getStarted.done.settings"
+        val key = "piwi.getStarted.done.failures"
         val before = properties.getBoolean(key)
         try {
             properties.unsetValue(key)
-            assertFalse(PiwiGetStarted.isDone("settings"))
-            val action = ActionManager.getInstance().getAction("Piwi.OpenSettings")
-            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, com.intellij.openapi.actionSystem.DataContext.EMPTY_CONTEXT)
-            PiwiGetStarted.Progress().afterActionPerformed(action, event, com.intellij.openapi.actionSystem.AnActionResult.PERFORMED)
-            assertTrue(PiwiGetStarted.isDone("settings"))
+            assertFalse(PiwiGetStarted.isDone("failures"))
+            val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project)
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+            ActionManager.getInstance().getAction("Piwi.OpenFailures").actionPerformed(event)
+            assertTrue(PiwiGetStarted.isDone("failures"))
         } finally {
             properties.setValue(key, before)
         }

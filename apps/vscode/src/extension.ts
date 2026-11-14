@@ -1272,6 +1272,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => explorer?.dispose() });
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
+  // The editor whose cursor a command acts on: the active one, else the last one active while a view such as the
+  // walkthrough has the focus.
+  let lastTextEditor = vscode.window.activeTextEditor;
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) lastTextEditor = editor;
+    }),
+  );
+  const cursorEditor = () =>
+    vscode.window.activeTextEditor ??
+    (lastTextEditor && !lastTextEditor.document.isClosed ? lastTextEditor : undefined);
 
   /** Saves the open document at `uri` when it has unsaved changes: a run reads its spec as saved. */
   const saveSpec = async (uri: string) => {
@@ -1299,10 +1310,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * else by its location; with `repeat`, by its location, that many times.
    */
   const runTestAt = async (at: unknown, repeat?: number) => {
-    const editor = vscode.window.activeTextEditor;
+    const editor = cursorEditor();
     const target =
       testLineArg(at) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
-    if (!target) return;
+    if (!target) {
+      void vscode.window.showInformationMessage('Piwi: open a spec and put the cursor in a test, then run it.');
+      return;
+    }
     const found = await lc
       .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri: target.uri, line: target.line, character: 0 })
       .catch(() => null);
