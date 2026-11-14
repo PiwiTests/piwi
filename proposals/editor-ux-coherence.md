@@ -82,7 +82,15 @@ alone (AC1, AC3 in part). M3's status menu: a click on VS Code's status item ope
 (`piwi.statusMenu`), a quick pick in the JetBrains popup's sections, its first row the item's own action, so Enter
 still refreshes. M13 in part: VS Code's status tooltip links Connect only while not connected, gives the item's
 failing count after the local runs, and says how many tests the failed results are when a test failed on several
-Playwright projects (HM1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+Playwright projects (HM1); both editors' status items turn red only for a test the editor's own run failed that the
+baseline does not fail (`RunStatus.alarm`, decided by the service), as `piwi.statusBarAlert` and its JetBrains twin
+choose (`new`, `any`, `never`), never for a run in progress (HM2). VS Code's count item is folded into the Piwi item,
+which counts the window's runs from their processes as JetBrains' single item does, with Watch a worker's test in the
+status menu (LR1 in part: the stop and share items remain), and both word a run's count alike, `run #78 · 3 of 9 · 1
+failed · 1 flaky` (`countWords`, `Glue.countWords`, client copies under the same tests), the pass or error glyph once
+it ended (LR18). A run's status reads in the dashboard's words from the service (`RunStatus.run.statusText`), and a
+recording as `recording` or `recording paused`, with the recording glyph in JetBrains too (HM4 in part: the service's
+one line, LR2, remains). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
@@ -576,7 +584,7 @@ draws red text beside `TestError` (`Glue.kt:452-455`, `PiwiStatusBar.kt:144, 159
 that background for a last resort. **(seen)** Fix: a severity in the status view, alert only for failures new against
 the baseline that a run started here or local edits produced, until the next run; the error background or foreground for
 alert alone; 'Piwi: 2 failing' as the text; a setting, `piwi.statusBarAlert` (`new`, `any`, `never`) and its JetBrains
-twin. What counts as new is open (§13). ([M13](#m13), [LI6](#li6))
+twin. What counts as new is decided (§13). ([M13](#m13), [LI6](#li6))
 
 <a id="hm4"></a>**HM4. One status state wears different glyphs in the two editors, and both print a run's raw status.**
 Recording, live sharing and Connect are the Piwi mark, an eye and a person in JetBrains
@@ -1238,8 +1246,8 @@ whether M14's places are interim.
    1.91 engines floor.
 6. **VS Code's status click**, decided: the status menu, with the state's action preselected so Enter keeps today's
    refresh.
-7. **What turns the status item to its alarm** ([HM2](#hm2)): failures new against the baseline, only those a run
-   started here or local edits produced, or both?
+7. **What turns the status item to its alarm** ([HM2](#hm2)), decided: failures new against the baseline that the
+   editor's own run produced, both conditions, with `piwi.statusBarAlert` (`new`, `any`, `never`) and its JetBrains twin.
 8. **Where VS Code's Runs view lives**: in the Piwi panel beside Failures, matching JetBrains' Runs tab (this document's
    lean), or in Run and Debug, where developers looked at a stop? Whether JetBrains draws its run views in Swing or JCEF
    is the live-run study's open question 9.
@@ -1404,7 +1412,7 @@ and each codicon in the `codicon.css` VS Code 1.143.1 bundles; every lucide name
 
 The draft leaves its collisions to settle, which `menus.test.ts` and `PiwiPluginTest` list as the glyphs two concepts
 still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/vscode/package.json:359-364`); Verify ×3's `$(sync)` spins in the
-running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
+running status item and its count (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
 lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
 draws `crosshair`,. VS Code's `$(beaker)` stays the Piwi mark on the status item and the

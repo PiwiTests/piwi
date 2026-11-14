@@ -280,6 +280,8 @@ data class StatusResult(val contexts: List<ContextStatus>? = null, val desktopUr
 data class RunInfo(
     val id: Int = 0,
     val status: String? = null,
+    /** `status` in the dashboard's words: `timed out` for `timedout`. */
+    val statusText: String? = null,
     val startTime: String? = null,
     val totalTests: Int = 0,
     val passedTests: Int = 0,
@@ -316,7 +318,8 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
- * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
+ * them, `failingTests` the tests among them, `alarm` whether the status item shows its alarm (the credentials'
+ * `statusBarAlert` chooses), `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
@@ -330,6 +333,7 @@ data class RunStatus(
     val failures: Int = 0,
     val checkedOut: String? = null,
     val failingTests: Int? = null,
+    val alarm: Boolean = false,
     val resolved: Int? = null,
     val overlays: Int? = null,
     val live: LiveRun? = null,
@@ -828,7 +832,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
- * `sign-in`, through the instance's OAuth; `key` when null.
+ * `sign-in`, through the instance's OAuth; `key` when null. `statusBarAlert` chooses which failures turn the status
+ * item to its alarm (`RunStatus.alarm`): `new`, `any` or `never`; `new` when null.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -839,6 +844,7 @@ data class EditorCredentials(
     val baselines: Map<String, BaselineChoice>? = null,
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
+    val statusBarAlert: String? = null,
 )
 
 /**

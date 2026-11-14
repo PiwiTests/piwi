@@ -352,6 +352,7 @@ import {
   type RunIdResult,
   type RunStatus,
   type RunStatusResult,
+  type StatusBarAlert,
   type SetBaselineParams,
   type SetRunPairingParams,
   type StartRunParams,
@@ -642,6 +643,25 @@ function ciCommit(context: PiwiContext, runId: number | undefined): string | nul
 /** Whether the editor started the run: a command of `piwi/runArgs` or `piwi/runSelection`. */
 function isOwnRun(context: PiwiContext, runId: number | undefined): boolean {
   return runId !== undefined && context.ownRuns.has(runId);
+}
+
+/**
+ * Whether the status item shows its alarm for `context` (`RunStatus.alarm`): with `new`, a test the editor's own run
+ * failed (an overlay of `ownRuns`, which the service knows while it runs) that did not fail on that project in the
+ * baseline (`isNew`) and that the baseline failed on no other project (listed from it, failed again by a later run, or
+ * fixed since); with `any`, any failing test; never with `never`.
+ */
+export function statusAlarm(context: PiwiContext, alert: StatusBarAlert): boolean {
+  const failures = context.failures?.failures ?? [];
+  if (alert === 'never') return false;
+  if (alert === 'any') return failures.length > 0;
+  const baseline = new Set([
+    ...failures.filter((f) => f.source !== 'overlay' || !f.isNew).map((f) => f.testCaseId),
+    ...(context.failures?.resolved ?? []).map((r) => r.testCaseId),
+  ]);
+  return failures.some(
+    (f) => f.source === 'overlay' && f.isNew && isOwnRun(context, f.runId) && !baseline.has(f.testCaseId),
+  );
 }
 
 /**
@@ -1703,6 +1723,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ? {
                 id: run.id,
                 status: run.status,
+                statusText: statusWords(run.status),
                 startTime: run.startTime,
                 totalTests: run.totalTests,
                 passedTests: run.passedTests,
@@ -1714,6 +1735,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             : null,
           failures: c.failures?.failures.length ?? 0,
           failingTests: failing.size,
+          alarm: statusAlarm(c, credentials.statusBarAlert ?? 'new'),
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
           live: c.live ? { ...c.live, url: c.client!.runUrl(c.live.runId) } : null,
@@ -4495,8 +4517,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
     applyBaselines();
-    // The failures read so far take the severity these credentials choose.
+    // The failures read so far take the severity these credentials choose, the status item its alarm.
     publishFailures();
+    sendRunStatus();
     // The refresh opens the streams the instance refused again, with these credentials.
     void refreshAll();
   });

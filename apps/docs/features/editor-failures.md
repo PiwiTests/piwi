@@ -80,7 +80,7 @@ commit, or a commit your clone lacks, the files as saved when the editor first s
 
 The latest run's failures as a tree: the **Failures** view of the **Piwi** panel in VS Code, the Piwi tool window in a
 JetBrains IDE. Its first node is the run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally`, with its age, or
-the progress of the run you started (`running 4/9`). Under it:
+the progress of your run, `running 4 of 9`. Under it:
 
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.

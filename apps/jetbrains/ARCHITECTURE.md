@@ -261,7 +261,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **Each node's glyph** is the one `PiwiIcons.FAILURE_NODES` gives its icon key, the table VS Code's `FAILURE_ICONS`
   draws too (a cluster Lucide's `layers`, `icons/layers.svg`; an owner `General.User`; a spec a file), which
   `PiwiPluginTest` holds to the protocol's `FailureTreeIcon` keys.
-- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
+- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4 of 9 · 1 failed`, counted
   as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
   session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
 - **A row.** A `ColoredTreeCellRenderer` draws a failure's title, run and place; its headline is in the hover, the
@@ -337,12 +337,15 @@ The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBa
 platform's text presentations take no color. It shows:
 
 - an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
-  instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared,
-  `AnimatedIcon.Default` for a run in progress or a read;
-- the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) while tests of the run it counts fail,
-  a run in progress by its own failures (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's
-  progress), and in the status bar's foreground
-  (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`) otherwise.
+  instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared, the recording
+  glyph (`PiwiIcons.recording`, red, or the gray ring while paused) while a recording runs, `AnimatedIcon.Default` for
+  a recording opening the browser or stopping, a run in progress or a read, and the failed or passed icon once the
+  runs the item counts from their processes ended (`Glue.runProgressIcon`);
+- the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the service's alarm
+  (`RunStatus.alarm`, `StatusView.error`), as `PiwiLocalSettings.statusBarAlert` chooses it on Settings → Tools →
+  Piwi, sent in the credentials: `new`, the default, only for a test a run this project started failed that the
+  baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a recording, a stop, a share or
+  a run in progress; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config
 folder holding it, else the first connected one; `PiwiStatusBarWidget.shownFile`), and is drawn again on
@@ -1204,9 +1207,9 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
 The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
-code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestError` icon and
-the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
-directory instead (`statusItemFailing`).
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestError` icon,
+which the fixture's failures call for, is not written: the capture goes to the temporary directory instead
+(`statusItemFailing`). Its label keeps the bar's color: the fixture's failures are a CI run's, never the alarm.
 
 **The license.** The IDE's config directory stays in `.ide/config` across runs, because the license lives there. On a
 machine without one, the IDE shows its license dialog:
