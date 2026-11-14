@@ -603,7 +603,7 @@ export const SETTINGS_ANCHORS = [
     pages: ['/settings/source-control'],
     describes:
       'Settings → Source control: the instance-wide SCM token the features that read or write a repository use for a project without its own.',
-    requires: { capability: 'scm', permission: 'settings:manage' },
+    requires: { permission: 'settings:manage' },
     doc: 'guide/source-control#set-the-token',
     sample: { route: '/settings/source-control' },
   },
@@ -613,7 +613,7 @@ export const SETTINGS_ANCHORS = [
     pages: ['/settings/source-control'],
     describes:
       'The SCM token: the GitHub, GitLab or Bitbucket token a project without its own reads its repository with and posts pull-request feedback with.',
-    requires: { capability: 'scm', permission: 'settings:manage' },
+    requires: { permission: 'settings:manage' },
     help: 'project.scm-token',
     doc: 'guide/source-control#set-the-token',
     sample: { route: '/settings/source-control' },

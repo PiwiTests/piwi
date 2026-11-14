@@ -20,7 +20,13 @@ test.describe.serial('Settings → Source control', () => {
     await expect(page.getByText('A token is stored, encrypted.')).toBeVisible();
     expect((await (await request.get('/api/settings/ai')).json()).hasScmToken).toBe(true);
 
+    // Remove takes effect on Save, and Keep it takes it back.
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep it', exact: true }).click();
+    await expect(page.getByText('A token is stored, encrypted.')).toBeVisible();
+    expect((await (await request.get('/api/settings/ai')).json()).hasScmToken).toBe(true);
+    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'SCM token' })).toBeVisible();
     expect((await (await request.get('/api/settings/ai')).json()).hasScmToken).toBe(false);
   });

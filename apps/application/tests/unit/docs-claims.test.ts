@@ -465,25 +465,28 @@ describe('a place named in the docs is a place of the dashboard', () => {
   // The controls of the project page that sit outside its tabs.
   const PROJECT_CONTROLS = ['Filters', 'Quality report', 'Import'];
   const PATH = /\b(Project|Test run|Run) → ([A-Z][A-Za-z -]*[A-Za-z])(?: → ([A-Z][A-Za-z -]*[A-Za-z]))?/g;
-  // A path into Settings has one form for each place: "Project → Settings → Members" for a section of a project's
-  // Settings tab (read by PATH), "Settings → Source control" for a page of Settings. Another product's settings (an
-  // editor's, a Git host's, an agent's, Piwi Picker's) start at the first step of its own path, listed here, or follow
-  // another step ("Appearance & Behavior → System Settings → HTTP Proxy").
+  // A path into Settings has one form for each place, read here once bold and the "›" separator are set aside:
+  // "Project → Settings → Members" for a section of a project's Settings tab (read by PATH), "Settings → Source
+  // control" for a page of Settings (SETTINGS_PAGES in shared/settings-metadata.ts). A label is matched whole: the
+  // longest page or section label the path starts with, so "Settings → AI diagnosis" names a project's section.
+  // Another product's settings are named by the start of their own path (OTHER_SETTINGS), or by what comes before
+  // "Settings" (OTHER_SETTINGS_OWNERS: the JetBrains IDEs' "System Settings", Piwi Picker's own Settings).
   const OTHER_SETTINGS = [
-    'Tools',
+    'Tools → Piwi',
+    'Tools →',
     'Keymap',
-    'Editor',
+    'Editor →',
     'Plugins',
-    'Appearance',
-    'Languages',
-    'Build',
-    'Developer',
-    'System',
-    'Connectors',
-    'Sites',
+    'Appearance & Behavior →',
+    'Languages & Frameworks',
+    'Build → Debugger',
+    'Developer settings →',
+    'System → Webhooks',
+    'Connectors →',
+    'Sites Piwi Picker may run on',
   ];
-  const SETTINGS_PATH =
-    /(\b[A-Za-z]+['’]s |\b[A-Z][a-z]+ |→ )?(?:\*\*)?\bSettings → (?:\*\*)?([A-Z][A-Za-z -]*[A-Za-z])/g;
+  const OTHER_SETTINGS_OWNERS = ['System', 'Browser extension →'];
+  const SETTINGS_MARK = /\bSettings → /g;
 
   const names = (segment: string, labels: readonly string[]) =>
     labels.some((label) => segment === label || segment.startsWith(`${label} `));
@@ -492,44 +495,75 @@ describe('a place named in the docs is a place of the dashboard', () => {
     [...text.matchAll(PATH)].flatMap(([path, page, first, second]) => {
       if (page !== 'Project') {
         const tabs = RUN_TABS.map((tab) => tab.label);
-        return names(first!, tabs) ? [] : [`"${path}": a run's tabs are ${tabs.join(', ')}`];
+        return names(first!, tabs) ? [] : [`"${path}": a run's tabs are ${tabs.join(', ')} (shared/app-places.ts)`];
       }
       if (names(first!, [MENU])) {
         const pages = PROJECT_MENU_PAGES.map((menuPage) => menuPage.label);
-        return !second || names(second, pages) ? [] : [`"${path}": the ${MENU} menu opens ${pages.join(', ')}`];
+        return !second || names(second, pages)
+          ? []
+          : [`"${path}": the ${MENU} menu opens ${pages.join(', ')} (shared/app-places.ts)`];
       }
       if (names(first!, PROJECT_CONTROLS)) return [];
       const tab: PlaceTab | undefined = PROJECT_TABS.find((projectTab) => names(first!, [projectTab.label]));
       if (!tab) {
         const tabs = PROJECT_TABS.map((projectTab) => projectTab.label);
-        return [`"${path}": a project's tabs are ${tabs.join(', ')}, and its other pages open from ${MENU}`];
+        return [
+          `"${path}": a project's tabs are ${tabs.join(', ')}, and its other pages open from ${MENU} (shared/app-places.ts)`,
+        ];
       }
       if (tab.value === 'settings') {
         const sections = PROJECT_SETTINGS_SECTIONS.map((section) => section.label);
-        return !second || names(second, sections)
+        return !second || longestLabel(second, sections)
           ? []
-          : [`"${path}": the sections of a project's Settings are ${sections.join(', ')}`];
+          : [`"${path}": the sections of a project's Settings are ${sections.join(', ')} (shared/app-places.ts)`];
       }
       const views = (tab.views ?? []).map((view) => view.label);
       return !second || views.length === 0 || names(second, views)
         ? []
-        : [`"${path}": the views of ${tab.label} are ${views.join(', ')}`];
+        : [`"${path}": the views of ${tab.label} are ${views.join(', ')} (shared/app-places.ts)`];
     });
 
-  // A path that follows another step, or "System Settings", is not the dashboard's; "the project's Settings → X" is
-  // refused for the project form.
+  /** The longest label of `labels` that `rest` starts with, ended at a word boundary. */
+  const longestLabel = (rest: string, labels: readonly string[]): string | undefined =>
+    labels
+      .filter((label) => rest.startsWith(label) && !/^[\p{L}\p{N}]/u.test(rest.slice(label.length)))
+      .sort((a, b) => b.length - a.length)[0];
+
   const settingsProblemsOf = (text: string): string[] =>
-    [...text.matchAll(SETTINGS_PATH)].flatMap(([path, before, first]) => {
-      if (before === '→ ' || (before && /^[A-Z]/.test(before) && !/['’]s $/.test(before))) return [];
-      if (names(first!, OTHER_SETTINGS)) return [];
-      if (before && /^project['’]s $/i.test(before)) {
-        return [`"${path}": write a section of a project's Settings as "Project → Settings → ${first}"`];
+    [...text.matchAll(SETTINGS_MARK)].flatMap((match) => {
+      const before = text.slice(Math.max(0, match.index - 40), match.index);
+      const rest = text
+        .slice(match.index + match[0].length, match.index + match[0].length + 80)
+        .replace(/\s*\n\s*/g, ' ');
+      const path = `Settings → ${rest.slice(0, 40)}`;
+      if (!/^[A-Z]/.test(rest)) return [];
+      if (/\bProject → $/.test(before)) return [];
+      if (/\bproject(?:['’]s)? (?:→ )?$/i.test(before)) {
+        return [
+          `"${before.trim().split(/\s+/).pop()} ${path}": write a project's Settings path as "Project → Settings → …"`,
+        ];
       }
+      if (OTHER_SETTINGS_OWNERS.some((owner) => before.endsWith(`${owner} `))) return [];
+      if (OTHER_SETTINGS.some((root) => rest.startsWith(root))) return [];
       const pages = SETTINGS_PAGE_PLACES.map((place) => place.label);
-      return names(first!, pages) ? [] : [`"${path}": the pages of Settings are ${pages.join(', ')}`];
+      const sections = PROJECT_SETTINGS_SECTIONS.map((section) => section.label);
+      const page = longestLabel(rest, pages);
+      const section = longestLabel(rest, sections);
+      if (section && (!page || section.length > page.length)) {
+        return [`"${path}": ${section} is a section of a project's Settings: write "Project → Settings → ${section}"`];
+      }
+      return page
+        ? []
+        : [`"${path}": the pages of Settings (SETTINGS_PAGES, shared/settings-metadata.ts) are ${pages.join(', ')}`];
     });
 
-  const problemsOf = (text: string): string[] => [...tabProblemsOf(text), ...settingsProblemsOf(text)];
+  /** Prose with bold set aside and a "›" path written with "→", the one form the checks read. */
+  const normalized = (text: string) => text.replace(/\*\*/g, '').replace(/ › /g, ' → ');
+
+  const problemsOf = (text: string): string[] => {
+    const prose = normalized(text);
+    return [...tabProblemsOf(prose), ...settingsProblemsOf(prose)];
+  };
 
   test('a path is read to its tab, its view or its menu page', () => {
     expect(problemsOf('**Project → Coverage → Gaps**, then Test run → Changes.')).toEqual([]);
@@ -540,12 +574,21 @@ describe('a place named in the docs is a place of the dashboard', () => {
   });
 
   test('a path into Settings is read to a page of Settings or a section of a project’s Settings', () => {
-    expect(problemsOf('In **Settings → Source control**, then Project → Settings → Members.')).toEqual([]);
+    expect(problemsOf('Set it in **Settings → Source control**, then in Project → **Settings** → Members.')).toEqual(
+      [],
+    );
+    expect(
+      problemsOf('In **Settings** → **AI**, then Settings › Storage, which Settings → Account takes too.'),
+    ).toEqual([]);
     expect(problemsOf('under Settings → Tools → Piwi in a JetBrains IDE')).toEqual([]);
     expect(problemsOf('Appearance & Behavior → System Settings → HTTP Proxy')).toEqual([]);
-    expect(problemsOf('in Settings → Repository')).toHaveLength(1);
+    expect(problemsOf('In Settings → Repository')).toHaveLength(1);
+    expect(problemsOf('Open Settings → System health')).toHaveLength(1);
+    expect(problemsOf('Global instructions (Settings → AI diagnosis)')).toHaveLength(1);
     expect(problemsOf('Project → Settings → Repository')).toHaveLength(1);
     expect(problemsOf("the project's Settings → Source control")).toHaveLength(1);
+    expect(problemsOf("Set it in the project's **Settings › Coverage**")).toHaveLength(1);
+    expect(problemsOf('under project → Settings → Members')).toHaveLength(1);
   });
 
   const entries = PIWI_FEATURE_GROUPS.flatMap((group) => group.features).map(
@@ -555,11 +598,13 @@ describe('a place named in the docs is a place of the dashboard', () => {
   test.each(entries)('the catalog entry "%s" says where it is', (title, where) => {
     expect(
       problemsOf(where),
-      `shared/piwi-features.ts, "${title}": name the place by its label in shared/app-places.ts`,
+      `shared/piwi-features.ts, "${title}": name the place by its label, in the form the problem gives`,
     ).toEqual([]);
   });
 
   test.each(handWrittenPages)('%s names places the dashboard has', (page) => {
-    expect(problemsOf(proseOf(page)), `${page}: name the place by its label in shared/app-places.ts`).toEqual([]);
+    expect(problemsOf(proseOf(page)), `${page}: name the place by its label, in the form the problem gives`).toEqual(
+      [],
+    );
   });
 });

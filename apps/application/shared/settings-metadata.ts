@@ -258,14 +258,14 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
   },
   {
     // The instance-wide SCM token: every feature that reads or writes a
-    // repository uses it for a project that sets none of its own.
+    // repository uses it for a project that sets none of its own. Not tied to
+    // the `scm` capability, so a stored token stays removable when it is declined.
     id: 'source-control',
     label: 'Source control',
     icon: 'i-lucide-git-branch',
     to: '/settings/source-control',
     group: 'analysis',
     permission: 'settings:manage',
-    capability: 'scm',
     fields: [{ id: 'source-control.scm-token', label: 'SCM token', help: 'project.scm-token' }],
   },
   {

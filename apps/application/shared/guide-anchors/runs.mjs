@@ -310,7 +310,7 @@ export const RUNS_ANCHORS = [
     pages: ['/test-runs/[id]'],
     reveal: [{ query: { tab: 'timeline' } }],
     describes:
-      'The Workers tab’s timeline: each worker’s tests in time, under the CPU, memory and open pages of the machine that ran them.',
+      'The Timeline tab: each worker’s tests in time, under the CPU, memory and open pages of the machine that ran them.',
     shownWhen: 'When the run’s tests reported when they started and on which worker.',
     help: 'run.timeline',
     doc: 'features/cpu-memory-disk',

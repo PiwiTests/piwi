@@ -71,9 +71,11 @@ export const RUN_TABS = [
 ] as const satisfies readonly PlaceTab[];
 
 /**
- * Other `?tab=` values of the run page and the tab each opens: the addresses
- * links already hold (`test-cases`, `workers`) and the names of tabs that
- * became part of another.
+ * Other `?tab=` values the run page answers and the tab each opens, where the
+ * page rewrites the address to that tab's own value: `test-cases` and
+ * `workers`, the names of the parts of a tab (`failure-groups`, the Tests tab
+ * grouped by cluster) and of what a tab holds (`insights`, `regression`,
+ * `compare`, `endpoints`).
  */
 export const RUN_TAB_ALIASES: Readonly<Record<string, RunTabValue>> = {
   'test-cases': 'tests',

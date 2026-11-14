@@ -72,7 +72,7 @@ const { can } = useAuth();
 // Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
-// *Export*: this project as a quality report over the last 30 days, the project page's own window.
+// *Quality report*: this project as a quality report over the last 30 days, the project page's own window.
 const reportOpen = ref(false);
 const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
 // *Schedule…*: a report schedule over this project.

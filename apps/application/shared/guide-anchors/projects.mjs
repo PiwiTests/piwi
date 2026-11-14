@@ -593,7 +593,7 @@ export const PROJECTS_ANCHORS = [
     reveal: [{ query: { tab: 'settings', section: 'coverage' } }],
     describes:
       'The Coverage section: the areas of code counted apart, the files coverage includes or leaves out, and what the Coverage tab’s gaps compare the tests against.',
-    requires: { capability: 'coverage', permission: 'project:manage' },
+    requires: { permission: 'project:manage' },
     help: 'coverage.areas',
     doc: 'features/combined-coverage#areas',
     sample: { route: '/projects/1?tab=settings&section=coverage', expect: PROJECT_1 },

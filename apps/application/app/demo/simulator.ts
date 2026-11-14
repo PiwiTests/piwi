@@ -141,7 +141,7 @@ interface SimTest {
 /** The groups of the simulator's menu, in its order: each scenario names the one it is listed under. */
 export const DEMO_SCENARIO_GROUPS = [
   { id: 'results', label: 'Results' },
-  { id: 'causes', label: 'Failure causes' },
+  { id: 'causes', label: 'Why tests fail or stop' },
   { id: 'speed', label: 'Speed and resources' },
   { id: 'setups', label: 'Run setups' },
 ] as const;

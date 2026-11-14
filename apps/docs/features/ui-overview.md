@@ -27,7 +27,8 @@ sidebar.
 ## Analytics
 
 `/analytics`: trends across projects and over time, where Home shows what is happening now. It opens your
-[default dashboard](./dashboards#your-default-dashboard), else the built-in *Overview*; `/analytics/d/:id` opens one
+[default dashboard](./dashboards#your-default-dashboard), else the one an administrator set for everyone, else the
+built-in *Overview*; `/analytics/d/:id` opens one
 [dashboard](./dashboards), which the header switcher picks, and `/analytics/dashboards` lists them all. The filters at the top
 scope every widget; the widgets are listed on [Analytics widgets](/reference/analytics-widgets), and the filters and
 period comparisons on [Analytics](./analytics). [Timeline markers](./timeline-markers) overlay deploys and

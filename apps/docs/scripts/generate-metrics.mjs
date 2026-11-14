@@ -17,7 +17,7 @@ const jiti = createJiti(import.meta.url);
 
 const { METRICS } = await jiti.import(join(repoRoot, 'application/shared/analytics/metrics.ts'));
 
-/** One section per grain, the thing a metric counts, in this order; `anchor` keeps a section's address when its title differs. */
+/** One section per grain, the thing a metric counts, in this order; `anchor` is a section's id where it is not its title's slug. */
 const GRAINS = [
   { id: 'run', title: 'Runs', intro: 'Counted over the runs of the period.' },
   { id: 'test', title: 'Tests', intro: 'Counted over the tests and executions of the period.' },
