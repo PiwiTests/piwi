@@ -225,7 +225,7 @@ export const CLUSTERS_ANCHORS = [
     kind: 'block',
     pages: ['/failure-clusters/[id]'],
     describes:
-      'The Occurrences over time chart, folded to its header: how often the failure cause failed and how many tests, with the moment its fix landed.',
+      'The Occurrences over time chart, folded to its header: how often the failure cluster failed and how many tests, with the moment its fix landed.',
     help: 'cluster.occurrence-trend',
     doc: 'features/failure-clusters#occurrences-over-time',
     sample: { route: '/failure-clusters/10', expect: USERS_TABLE_CLUSTER },

@@ -140,7 +140,7 @@ describe('French insights', () => {
     });
     expect(fr.insight(FACTS['time-to-fix-growth'], f)).toEqual({
       message: `Le délai médian de correction s’allonge par rapport à la période du 1er août 2026 au 31 août 2026${NBSP}: 4${NNBSP}jours`,
-      detail: `Il était de 0,5${NNBSP}jour, sur 3 causes d’échec corrigées pendant la période.`,
+      detail: `Il était de 0,5${NNBSP}jour, sur 3 groupes d’échecs corrigés pendant la période.`,
     });
     expect(fr.insight(FACTS['target-missed'], f)).toEqual({
       message: `checkout · Taux de réussite des tests${NBSP}: 11,5 points sous l’objectif`,
@@ -255,8 +255,8 @@ describe('French widget documents', () => {
       assignee: 'Avery',
     });
     expect(fr.listItem(cause, f)).toEqual({
-      title: `Cause d’échec n°${NNBSP}5`,
-      detail: '1 occurrence · TimeoutError · attribuée à Avery',
+      title: `Groupe d’échecs n°${NNBSP}5`,
+      detail: '1 occurrence · TimeoutError · attribué à Avery',
     });
     expect(
       fr.listItem(item({ source: 'flaky-tests', score: 42, alternations: 3, totalRuns: 20 }, 'pays by card'), f),
@@ -328,9 +328,9 @@ describe('French widget documents', () => {
     expect(
       breakdownRows('run-kind', 'Run kind', [group('full', 'Full runs'), group('partial', 'Partial runs')]),
     ).toEqual({ header: 'Type d’exécution', groups: ['Exécutions complètes', 'Exécutions partielles'] });
-    expect(breakdownRows('cluster-status', 'Failure cause status', [group('open', 'Open')])).toEqual({
-      header: 'Statut de la cause d’échec',
-      groups: ['Ouvertes'],
+    expect(breakdownRows('cluster-status', 'Failure cluster status', [group('open', 'Open')])).toEqual({
+      header: 'Statut du groupe d’échecs',
+      groups: ['Ouverts'],
     });
     // A branch named like a label Piwi writes is still a name from the data.
     expect(breakdownRows('branch', 'Branch', [group('Other', 'Other')]).groups).toEqual(['Other']);
