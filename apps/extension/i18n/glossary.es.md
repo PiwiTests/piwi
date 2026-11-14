@@ -28,8 +28,7 @@ Spanish word is as clear. This catalog is a draft until a native reader reviews 
 | to replay | reproducir | `Reproducido` / `No reproducido` for the verdict |
 | screenshot | captura de pantalla | `hacer una captura de pantalla` |
 | tested elements | elementos probados | the tool's name, capitalized as a title: *Elementos probados* |
-| project mappings | proyectos por sitio | |
-| address pattern (URL pattern) | patrón de dirección | |
+| URL pattern | patrón de dirección | the settings section's name, in the plural: *Patrones de dirección* |
 | branch | rama | `rama predeterminada` |
 | instance (Piwi) | instancia | `tu instancia de Piwi` |
 | API key | clave de API | |

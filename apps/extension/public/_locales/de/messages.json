@@ -280,7 +280,7 @@
     "message": "Playwright-Ansicht"
   },
   "devtools_pick": {
-    "message": "Wählen"
+    "message": "Element wählen"
   },
   "devtools_pickTitle": {
     "message": "Ein Element auf der Seite wählen, für seine geordneten, stabilen Locators"
@@ -690,7 +690,7 @@
     "message": "Speichern und testen"
   },
   "options_mappingsHeading": {
-    "message": "Projekte je Website"
+    "message": "Adressmuster"
   },
   "options_mappingsHint": {
     "message": "Welches Projekt auf welcher Website gilt. Die Muster dieses Browsers werden zuerst gelesen, dann die Ihrer Instanz, und das erste passende gewinnt. $star$ passt innerhalb eines Pfadteils, $globstar$ über mehrere Teile hinweg. Der Branch ist optional: der unter diesen Adressen bereitgestellte (etwa eine Staging-Website auf $example$). Getestete Elemente zeigt dann, was die Tests dieses Branches erreichen.",
@@ -1089,7 +1089,7 @@
     "message": "Von Ihrer Piwi-Instanz"
   },
   "options_serverHint": {
-    "message": "In den Einstellungen jedes Projekts unter Browser extension URLs festgelegt und bei jedem Öffnen dieser Seite gelesen."
+    "message": "In den Einstellungen jedes Projekts unter URL patterns festgelegt und bei jedem Öffnen dieser Seite gelesen."
   },
   "options_serverRefresh": {
     "message": "Aktualisieren"
@@ -1207,7 +1207,7 @@
     "message": "Beginnen Sie das Muster mit http://, https:// oder einem Platzhalter."
   },
   "options_editorHeading": {
-    "message": "An den Editor senden"
+    "message": "Editor"
   },
   "options_editorHint": {
     "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt. Die Läufe, die er startet, erscheinen dann im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen."
@@ -1628,7 +1628,7 @@
     "message": "Ein Test findet es dann mit"
   },
   "assert_dialog": {
-    "message": "Vorgeschlagene Assertions"
+    "message": "Assertions"
   },
   "assert_count_one": {
     "message": "$count$ vorgeschlagene Assertion",
@@ -1664,7 +1664,7 @@
     "message": "Für dieses Element wurde kein Locator gefunden, daher gibt es keine Assertion vorzuschlagen."
   },
   "agent_title": {
-    "message": "Kontext für einen KI-Agenten"
+    "message": "KI-Kontext"
   },
   "agent_hint": {
     "message": "Fügen Sie diesen Text in Ihren KI-Coding-Assistenten ein"
@@ -2149,7 +2149,7 @@
     "message": "Die Funktionen dieses Projekts erneut von Piwi herunterladen"
   },
   "functions_noProject": {
-    "message": "Dieser Website ist noch kein Piwi-Projekt zugeordnet. Öffnen Sie die Einstellungen von Piwi Picker und fügen Sie die Website unter Projekte je Website hinzu, oder wählen Sie ein Projekt unter Aktives Projekt im Menü von Piwi Picker."
+    "message": "Dieser Website ist noch kein Piwi-Projekt zugeordnet. Öffnen Sie die Einstellungen von Piwi Picker und fügen Sie die Website unter Adressmuster hinzu, oder wählen Sie ein Projekt unter Aktives Projekt im Menü von Piwi Picker."
   },
   "functions_empty": {
     "message": "$project$ hat noch keine Testfunktionen. Fügen Sie im Piwi-Dashboard eine hinzu, von Hand oder indem Sie den Code einer Funktion einfügen.",
@@ -6478,7 +6478,7 @@
     "message": "Ihr Editor wird gesucht…"
   },
   "runs_statusUnpaired": {
-    "message": "Koppeln Sie Piwi Picker in den Einstellungen unter „An den Editor senden“ mit VS Code oder einer JetBrains-IDE, um die dort gestarteten Läufe zu verfolgen."
+    "message": "Koppeln Sie Piwi Picker in den Einstellungen unter „Editor“ mit VS Code oder einer JetBrains-IDE, um die dort gestarteten Läufe zu verfolgen."
   },
   "runs_statusNoAccess": {
     "message": "Piwi Picker darf die Adresse Ihres Editors nicht mehr erreichen: Koppeln Sie ihn in den Einstellungen erneut."

@@ -23,8 +23,7 @@ one of `store/amo-description.fr.md`: plain sentences, `vous`, no anglicism wher
 | to replay | rejouer | |
 | screenshot | capture d’écran | |
 | tested elements | éléments testés | the tool's name, capitalized as a title: *Éléments testés* |
-| project mappings | projets par site | |
-| address pattern (URL pattern) | motif d’adresse | |
+| URL pattern | motif d’adresse | the settings section's name, in the plural: *Motifs d’adresse* |
 | branch | branche | |
 | instance (Piwi) | instance | `votre instance Piwi` |
 | API key | clé d’API | |

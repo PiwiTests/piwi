@@ -25,8 +25,7 @@ This is a draft: no native reader has reviewed it yet.
 | to replay | reproduzir | `Reproduzir um relatório de bug`; the verdict's "reproduced" is the same verb |
 | screenshot | captura de tela | `fazer uma captura de tela` |
 | tested elements | elementos testados | the tool's name, capitalized as a title: *Elementos testados* |
-| project mappings | projetos por site | |
-| address pattern (URL pattern) | padrão de endereço | |
+| URL pattern | padrão de endereço | the settings section's name, in the plural: *Padrões de endereço* |
 | branch | branch (feminino) | `a branch`, `todas as branches` |
 | instance (Piwi) | instância | `sua instância do Piwi` |
 | API key | chave de API | |

@@ -142,7 +142,7 @@ test.describe.serial('project URL patterns', () => {
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
-    await expect(card.getByRole('heading', { name: 'Browser extension URLs' })).toBeVisible();
+    await expect(card.getByRole('heading', { name: 'URL patterns' })).toBeVisible();
     await expect(card.getByText('No pattern yet.')).toBeVisible();
     await card.getByRole('button', { name: 'Add https://staging.shop.example/**' }).click();
     await expect(card.getByLabel('Environment')).toHaveValue('staging');

@@ -614,8 +614,11 @@ body.panel {
   background: var(--divider);
 }
 
-/* A narrow panel: the tools show their icons alone, their labels kept for assistive technology and as tooltips. */
-@media (max-width: 1100px) {
+/*
+ * A narrow panel: the tools show their icons alone, their labels kept for assistive technology and as tooltips. The
+ * width is the one the longest catalog's tabs and tools take in one row (German, about 1,290 pixels).
+ */
+@media (max-width: 1320px) {
   .toolbar {
     flex-wrap: wrap;
   }

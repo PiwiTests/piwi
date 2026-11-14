@@ -819,7 +819,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
         needs: ['extension'],
-        where: 'Browser extension → Settings; Project → Settings → Browser extension URLs',
+        where: 'Browser extension → Settings; Project → Settings → Browser extension → URL patterns',
         doc: 'features/extension-connection',
         part: 'Set up',
       },

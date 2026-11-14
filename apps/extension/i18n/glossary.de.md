@@ -26,8 +26,7 @@ above all on popup tiles, buttons and badges.
 | to replay | abspielen | `einen Bug-Report abspielen`, `erneut abspielen` |
 | screenshot | Screenshot (maskulin) | |
 | tested elements | getestete Elemente | the tool's name, capitalized as a title: *Getestete Elemente* |
-| project mappings | Projekte je Website | |
-| address pattern (URL pattern) | Adressmuster | |
+| URL pattern | Adressmuster | the settings section's name, in the plural: *Adressmuster* |
 | branch | Branch (maskulin) | `der Branch`, `die Branches` |
 | instance (Piwi) | Instanz | `Ihre Piwi-Instanz` |
 | API key | API-Schlüssel | |

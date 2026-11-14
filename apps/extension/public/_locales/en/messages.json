@@ -342,16 +342,16 @@
     "description": "Button in the toolbar of the DevTools Piwi panel: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
   },
   "devtools_pick": {
-    "message": "Pick",
-    "description": "DevTools, Piwi panel toolbar: button that starts Pick an element in the inspected page. One short word; the tooltip is devtools_pickTitle."
+    "message": "Pick an element",
+    "description": "DevTools, Piwi panel toolbar: button that starts Pick an element in the inspected page. The tool’s name, as popup_pick; a narrow panel shows the icon alone, and the tooltip is devtools_pickTitle."
   },
   "devtools_pickTitle": {
     "message": "Pick an element on the page: its ranked, stable locators",
     "description": "DevTools, Piwi panel toolbar: tooltip of devtools_pick. One line."
   },
   "devtools_lint": {
-    "message": "Lint",
-    "description": "DevTools, Piwi panel toolbar: button that turns the lint overlay on in the inspected page. One short word, as popup_lint; the tooltip is devtools_lintTitle."
+    "message": "Lint overlay",
+    "description": "DevTools, Piwi panel toolbar: button that turns the lint overlay on in the inspected page. The tool’s name, as popup_lint; a narrow panel shows the icon alone, and the tooltip is devtools_lintTitle."
   },
   "devtools_lintTitle": {
     "message": "Mark the elements of the page that are hard to test",
@@ -815,11 +815,11 @@
   },
   "options_statePaired": {
     "message": "Paired",
-    "description": "Settings page: badge beside the Desktop app and Send to editor headings once paired. One word."
+    "description": "Settings page: badge beside the Desktop app and Editor headings once paired. One word."
   },
   "options_stateNotPaired": {
     "message": "Not paired",
-    "description": "Settings page: badge beside the Desktop app and Send to editor headings before pairing. Short."
+    "description": "Settings page: badge beside the Desktop app and Editor headings before pairing. Short."
   },
   "options_lead": {
     "message": "Optional. Connected to your Piwi instance, the recorder uses your projects’ own page objects and helper functions, and ranks them live as you record. Picking locators and recording a plain test always work without it.",
@@ -846,12 +846,12 @@
     "description": "Settings page, under “Use an API key instead”: saves the address and the key typed, after checking that the instance accepts them. Short."
   },
   "options_mappingsHeading": {
-    "message": "Project mappings",
-    "description": "Settings page: heading of the table saying which Piwi project applies on which site."
+    "message": "URL patterns",
+    "description": "Settings page: heading of the table saying which Piwi project applies on which site. The dashboard and the docs name the list the same way."
   },
   "options_mappingsHint": {
     "message": "Which project applies on which site. Patterns kept in this browser are read first, then your instance’s, and the first that matches wins. $star$ matches within one part of the path, $globstar$ across parts. The branch, optional, is the one deployed at those addresses (a staging site on $example$, say): Tested elements then shows what that branch’s tests reach.",
-    "description": "Settings page: hint of the project mappings. The placeholders are shown as code. $example$ is a branch name; $globstar$ is the wildcard across parts of a path; $star$ is the wildcard for one part of a path.",
+    "description": "Settings page: hint of the URL patterns. The placeholders are shown as code. $example$ is a branch name; $globstar$ is the wildcard across parts of a path; $star$ is the wildcard for one part of a path.",
     "placeholders": {
       "example": {
         "content": "$1",
@@ -869,15 +869,15 @@
   },
   "options_sitesConnectFirst": {
     "message": "Sites map to your instance’s projects: connect first.",
-    "description": "Settings page, Project mappings card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
+    "description": "Settings page, URL patterns card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
   },
   "options_addMapping": {
     "message": "Add a line",
-    "description": "Settings page: button adding a line to the project mappings."
+    "description": "Settings page: button adding a line to the URL patterns."
   },
   "options_noMappings": {
     "message": "No lines yet: add one below.",
-    "description": "Settings page: the project mappings are empty."
+    "description": "Settings page: the URL patterns are empty."
   },
   "options_pattern": {
     "message": "Address pattern",
@@ -1328,8 +1328,8 @@
     "description": "Settings page: heading of the URL patterns read from the Piwi instance."
   },
   "options_serverHint": {
-    "message": "Set in each project’s settings, under Browser extension URLs, and read each time this page opens.",
-    "description": "Settings page: hint under options_serverHeading. “Browser extension URLs” is the name of the section in the dashboard, which is in English: keep it in English."
+    "message": "Set in each project’s settings, under URL patterns, and read each time this page opens.",
+    "description": "Settings page: hint under options_serverHeading. “URL patterns” is the name of the card in the dashboard, which is in English: keep it in English."
   },
   "options_serverRefresh": {
     "message": "Refresh",
@@ -1472,8 +1472,8 @@
     "description": "Settings page: the instance refused the pattern. http://, https:// stay as they are."
   },
   "options_editorHeading": {
-    "message": "Send to editor",
-    "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer."
+    "message": "Editor",
+    "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer, for Send to editor and the Runs window."
   },
   "options_editorHint": {
     "message": "In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and are inserted at its cursor. The runs it starts then show in the Runs window (Runs, in the popup), where you pause, step and watch them.",
@@ -1527,7 +1527,7 @@
   },
   "options_siteUseEditor": {
     "message": "Used by your editor: Unpair removes this access.",
-    "description": "Settings page, the sites card: beside the paired editor's address, whose Revoke is disabled. “Unpair” is the Send to editor card's button (options_editorUnpair)."
+    "description": "Settings page, the sites card: beside the paired editor's address, whose Revoke is disabled. “Unpair” is the Editor card's button (options_editorUnpair)."
   },
   "options_siteBusyRecording": {
     "message": "A recording is running there: stop it first.",
@@ -1577,7 +1577,7 @@
   },
   "options_editorNotProven": {
     "message": "Paired with $url$, but the program on that port does not prove it is your editor, so nothing goes to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies, or update Piwi there.",
-    "description": "Settings page, the Send to editor card's status line when the program on the paired editor's port does not prove it holds the pairing's token (another program took the port, or the editor's Piwi is older than the proof). $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "description": "Settings page, the Editor card's status line when the program on the paired editor's port does not prove it holds the pairing's token (another program took the port, or the editor's Piwi is older than the proof). $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1587,7 +1587,7 @@
   },
   "options_editorUnreachable": {
     "message": "Paired with $url$, but nothing answers there now: open your editor with Piwi’s extension. If its “Piwi: Pair with Piwi Picker” copies another address, pair with that one.",
-    "description": "Settings page, the Send to editor card's status line when nothing answers at the paired editor's address. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "description": "Settings page, the Editor card's status line when nothing answers at the paired editor's address. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1597,7 +1597,7 @@
   },
   "options_editorNoAccess": {
     "message": "Paired with $url$, but the browser took back Piwi Picker’s access to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies.",
-    "description": "Settings page, the Send to editor card's status line when the permission to reach the paired editor's address was taken back. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "description": "Settings page, the Editor card's status line when the permission to reach the paired editor's address was taken back. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1972,8 +1972,8 @@
     "description": "Lint overlay: before the locator a test uses once the suggested test id is added to the element’s container."
   },
   "assert_dialog": {
-    "message": "Suggested assertions",
-    "description": "Assertions panel: accessible name of the dialog that lists expect(…) lines for a picked element."
+    "message": "Assertions",
+    "description": "Assertions panel: accessible name of the dialog that lists expect(…) lines for a picked element. The tool’s name, as popup_assertions."
   },
   "assert_count_one": {
     "message": "$count$ suggested assertion",
@@ -2014,8 +2014,8 @@
     "description": "Assertions panel, in place of the list, when no locator could be built for the picked element."
   },
   "agent_title": {
-    "message": "Context for an AI agent",
-    "description": "Agent context panel: its title and the dialog’s accessible name. The panel shows a text block describing the picked element, to paste into an AI coding assistant."
+    "message": "Agent context",
+    "description": "Agent context panel: its title and the dialog’s accessible name, the tool’s name as popup_agentContext. The panel shows a text block describing the picked element, to paste into an AI coding assistant."
   },
   "agent_hint": {
     "message": "Paste this into your AI coding assistant",
@@ -2095,7 +2095,7 @@
   },
   "pick_overlayBanner": {
     "message": "Piwi inspector — click any element to generate locators for it",
-    "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Context for an AI agent)."
+    "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Agent context)."
   },
   "pick_overlayKeys": {
     "message": "Enter picks the focused element · ↑ parent · ↓ child · Esc skip",
@@ -2582,8 +2582,8 @@
     "description": "Test functions: tooltip of the Refresh button."
   },
   "functions_noProject": {
-    "message": "No Piwi project is mapped to this site yet. Open Piwi Picker’s settings and add the site under Project mappings, or choose a project under Active project in Piwi Picker’s menu.",
-    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading), “Active project” the popup’s select (popup_activeProject)."
+    "message": "No Piwi project is mapped to this site yet. Open Piwi Picker’s settings and add the site under URL patterns, or choose a project under Active project in Piwi Picker’s menu.",
+    "description": "Test functions: shown instead of the list when no project applies to the page. “URL patterns” is a section of the settings page (options_mappingsHeading), “Active project” the popup’s select (popup_activeProject)."
   },
   "functions_empty": {
     "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, by hand or by pasting a function’s code.",
@@ -7664,8 +7664,8 @@
     "description": "Runs window, while it asks the paired editor for its runs."
   },
   "runs_statusUnpaired": {
-    "message": "Pair Piwi Picker with VS Code or a JetBrains IDE, under Send to editor in the settings, to follow the runs it starts.",
-    "description": "Runs window, when no editor is paired. “Send to editor” is the settings card’s heading (options_editorHeading)."
+    "message": "Pair Piwi Picker with VS Code or a JetBrains IDE, under Editor in the settings, to follow the runs it starts.",
+    "description": "Runs window, when no editor is paired. “Editor” is the settings card’s heading (options_editorHeading)."
   },
   "runs_statusNoAccess": {
     "message": "Piwi Picker may no longer reach your editor’s address: pair it again in the settings.",

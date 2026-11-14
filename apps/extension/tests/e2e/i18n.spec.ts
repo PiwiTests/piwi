@@ -6,6 +6,7 @@ import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.js';
 import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { openDevtoolsPage } from './devtools-stub.js';
 import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 import {
   answerNext,
@@ -222,7 +223,7 @@ test.describe('in a French browser', () => {
       'Español',
       'Português (Brasil)',
     ]);
-    await expect(page.getByRole('heading', { name: 'Projets par site' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Motifs d’adresse' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
     await expect(page.locator('#instance-pill')).toHaveText('Non connecté');
     await expect(page.locator('#desktop-pill')).toHaveText('Non associé');
@@ -275,6 +276,29 @@ test.describe('in a German browser', () => {
     await expect(page.getByRole('button', { name: /Element wählen/ })).toBeVisible();
     expect(await untranslated(page)).toEqual([]);
     expect(await clipped(page)).toEqual([]);
+  });
+
+  test('the DevTools toolbar names each tool in one row, or shows its icons alone when narrower', async ({
+    context,
+    page,
+    extensionId,
+  }) => {
+    await page.route('https://shop.example/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<p>Shop</p>' }),
+    );
+    await page.goto('https://shop.example/');
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', page);
+    await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+    const pick = panel.getByRole('button', { name: 'Element wählen', exact: true });
+    for (const width of [1321, 1320]) {
+      await panel.setViewportSize({ width, height: 300 });
+      await expect(pick).toBeVisible();
+      const fits = await panel.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('.toolbar')!;
+        return bar.scrollWidth <= bar.clientWidth && bar.offsetHeight < 40;
+      });
+      expect(fits, `${width} pixels wide`).toBe(true);
+    }
   });
 
   test('the settings say German is a draft, and where to suggest a correction', async ({ context, extensionId }) => {

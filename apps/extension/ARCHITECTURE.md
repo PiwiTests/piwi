@@ -243,12 +243,12 @@ connected or paired. The cards:
 - **Connect to Piwi**: the instance URL, with a pill saying how the instance answered its last request
   (`#instance-health`); a **Connect** button below it, which runs an RFC 8628 device authorization; a folded **Use an
   API key instead** with its own **Save and test**; **Disconnect**.
-- **Project mappings**, shown once an instance is kept:
+- **URL patterns**, shown once an instance is kept:
   - the instance's URL patterns, read-only, marked **Piwi**;
   - the patterns kept in this browser, a table whose **Save** keeps only them;
   - a folded **Add a site** form.
 - **Desktop app** (see "The desktop app").
-- **Send to editor**.
+- **Editor**: the pairing that Send to editor and the Runs window use.
 - **Sites Piwi Picker may run on**: every host permission granted (`chrome.permissions.getAll`), each with a **Revoke**
   button. The list is redrawn on `chrome.permissions.onAdded` / `onRemoved` and when the recording's or the replay's
   state changes. `site-grants.ts` (pure) keeps the site of a running recording or replay, and the origins the instance
@@ -565,7 +565,7 @@ The instance's pages are marked, so the dashboard knows the extension is install
 - The script reads nothing from the page and sends nothing. `instance-marker.spec.ts` covers it with the real worker and
   grant.
 
-### Project mappings and the active project
+### URL patterns and the active project
 
 The settings page reads the instance's own URL patterns (`GET /api/extension/url-patterns`) when it connects and each
 time it opens. `applyServerSync` caches them in `ConnectionSettings.serverMappings`, with `serverProjects`, whose
@@ -2000,7 +2000,7 @@ it.
 
 **A panel over the page with a backdrop is modal through `holdFocus`** (`src/content/modal-panel.ts`): `aria-modal`, the
 focus on its first control, Tab kept inside, and the focus given back as it closes. These are the pick results,
-multi-pick, Assertions, Context for an AI agent and Test functions.
+multi-pick, Assertions, Agent context and Test functions.
 
 **A panel that leaves the page usable is a landmark, not a dialog**: `role="region"` with its translated name as
 `aria-label`, and a close button with an accessible name. These are the lint overlay, the Playwright view and the
