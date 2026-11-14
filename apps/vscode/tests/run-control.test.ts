@@ -16,6 +16,7 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  attentionStops,
   countWords,
   ciLaneArg,
   ciLaneCaption,
@@ -663,6 +664,25 @@ describe('Hold failures', () => {
     const item = progressItem(sessionsOf(held('ed-1', false)))!;
     const arg = encodeURIComponent(JSON.stringify([{ ref: 'ed-1', on: true }]));
     expect(item.tooltip).toContain(`Hold failures off · [Turn on](command:piwi.holdFailures?${arg})`);
+  });
+});
+
+describe('a stop that calls for attention', () => {
+  test('is one the service says calls, each once', () => {
+    const at = (line: number, reason: RunStop['reason'], calls: boolean) =>
+      worker(line, 'stopped', { stop: { ...stopAt(spec, line), reason, ...(calls ? { calls: true as const } : {}) } });
+    const sessions = sessionsOf(
+      session('ed-1', [
+        at(1, 'failure', true),
+        at(2, 'page-pause', true),
+        at(3, 'breakpoint', false),
+        at(4, 'failure', false),
+      ]),
+    );
+    const attended = new Set<string>();
+    expect(attentionStops(stopsOf(sessions), attended).map((s) => s.stop.reason)).toEqual(['failure', 'page-pause']);
+    // Called once: the same stops call no more.
+    expect(attentionStops(stopsOf(sessions), attended)).toEqual([]);
   });
 });
 

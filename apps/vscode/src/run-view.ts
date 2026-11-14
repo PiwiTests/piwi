@@ -137,6 +137,7 @@ import {
   stopPick,
   stopsFor,
   stopsOf,
+  attentionStops,
   targetStop,
   endChoice,
   watchTargetsFor,
@@ -528,6 +529,23 @@ export function registerRunControl(
     return focused;
   };
 
+  /** The stops already called attention to (`attentionStops`). */
+  const attended = new Set<string>();
+  /**
+   * A notification for a stop that calls while the window is in the background: Resume, or go to its line with the
+   * focus, as the person asked, the stop as it stands then.
+   */
+  const callAttention = async (stop: ShownStop) => {
+    const resume = 'Resume';
+    const go = 'Go to the stopped line';
+    const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout ?? null);
+    const picked = await vscode.window.showWarningMessage(`Piwi: ${said}`, resume, go);
+    if (picked === resume) await answerStop('resume', targetOf(stop));
+    else if (picked === go) {
+      const now = stops().find((s) => stopKey(s) === stopKey(stop));
+      if (now && (await reveal(now, true, () => false))) stopsShown.opened(now, true);
+    }
+  };
   /**
    * Open a stop's file in its turn, unless it went on meanwhile, with the focus as `StopsShown` decides then. The next
    * stop's turn comes once the file shows, or after `OPEN_MS`: a file that shows later takes no focus, and counts as
@@ -1521,6 +1539,9 @@ export function registerRunControl(
       sessions = heardNow.sessions;
       if (session.ended) forgetEdits();
       changed();
+      // A test held at its failure or at page.pause() while the window is in the background calls once.
+      const due = attentionStops(stopsOf(sessions), attended);
+      if (!vscode.window.state.focused) for (const stop of due) void callAttention(stop);
       // Breakpoints changed between the run's start and its first worker.
       if (fresh) sendBreakpoints();
     },

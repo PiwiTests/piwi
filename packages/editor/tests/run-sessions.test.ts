@@ -771,6 +771,39 @@ describe('RunSessions', () => {
     return { sent, sessions, attach };
   }
 
+  test('calls the person for a held failure or a page.pause(), never for a stop someone asked for or an agent holds', async () => {
+    const { sent, sessions, attach } = harness({ watched: () => true });
+    const stopOf = (stop: number, reason: 'failure' | 'page-pause' | 'breakpoint'): RunToHub => ({
+      type: 'stopped',
+      stop,
+      reason,
+      title: 'Click',
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: false,
+    });
+    const worker = attach(0, { holds: ['failure'] });
+    const stopNow = (reason: string) => {
+      const stop = sent[sent.length - 1]?.workers[0]?.stop;
+      return stop?.reason === reason ? stop : undefined;
+    };
+    worker.read(stopOf(1, 'failure'));
+    expect((await waitFor(() => stopNow('failure'))).calls).toBe(true);
+    worker.read({ type: 'running', stop: 1 });
+    worker.read(stopOf(2, 'page-pause'));
+    expect((await waitFor(() => stopNow('page-pause'))).calls).toBe(true);
+    worker.read({ type: 'running', stop: 2 });
+    worker.read(stopOf(3, 'breakpoint'));
+    expect((await waitFor(() => stopNow('breakpoint'))).calls).toBeUndefined();
+    // A failure held because an agent turned Hold failures on waits for the agent.
+    sessions.hold({ ref: 'ed-1', on: true }, 'agent');
+    worker.read({ type: 'running', stop: 3 });
+    worker.read(stopOf(4, 'failure'));
+    await waitFor(() => (sent[sent.length - 1]?.workers[0]?.stop?.since && stopNow('failure') ? true : undefined));
+    expect(stopNow('failure')?.calls).toBeUndefined();
+    sessions.dispose();
+  });
+
   test('gives a new follower each run as the client last heard it, so both hear the changes after it alike', async () => {
     const { sent, sessions, attach } = harness({ burstMs: 200 });
     const worker = attach(0);

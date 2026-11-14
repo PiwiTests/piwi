@@ -16,7 +16,7 @@ import { isFlakyResult } from '@piwitests/core/status-classify';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
 import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
-import type { LiveRun, LiveTestStatus, Notice, RepeatVerdict, RunEnded } from './protocol.js';
+import type { LiveRun, LiveTestStatus, Notice, RepeatVerdict, RunEnded, VerdictWords } from './protocol.js';
 import {
   InstanceStream,
   RunStreams,
@@ -182,6 +182,48 @@ export function runVerdict(
     newFailures: [...added.values()].slice(0, VERDICT_TITLES),
     stillFailingCount: still.size,
     newFailureCount: added.size,
+  };
+}
+
+/** Titles as a verdict lists them: the first ones, then how many more. */
+function titleList(titles: string[], count: number): string {
+  const more = count - titles.length;
+  return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
+}
+
+/** The verdict both clients show of a run that ended (`RunEnded.verdict`), from what it counted and changed. */
+export function verdictWords(ended: Omit<RunEnded, 'verdict'>): VerdictWords {
+  if (ended.repeat) {
+    return {
+      text: ended.repeat.verdict,
+      failing: ended.repeat.failed,
+      always: true,
+      actions: ['failures', 'dashboard'],
+    };
+  }
+  const still = ended.stillFailingCount;
+  const added = ended.newFailureCount;
+  const parts: string[] = [];
+  if (ended.fixed || still) {
+    const total = ended.fixed + still;
+    const fixed = `${ended.fixed} of ${total} CI ${total === 1 ? 'failure' : 'failures'} fixed`;
+    parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
+  }
+  if (added) parts.push(`${added} new ${added === 1 ? 'failure' : 'failures'} ${titleList(ended.newFailures, added)}`);
+  if (!parts.length) {
+    const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
+    if (ended.flaky) counts.push(`${ended.flaky} flaky`);
+    if (ended.skipped) {
+      counts.push(`${ended.skipped} skipped${ended.endedAtStop ? ` (${ended.endedAtStop} ended at a stop)` : ''}`);
+    }
+    parts.push(counts.join(', '));
+  }
+  const failing = still + added > 0 || ended.failed > 0;
+  return {
+    text: parts.join(' · '),
+    failing,
+    always: false,
+    actions: failing ? ['failures', 'dashboard', 'rerun'] : ['failures', 'dashboard'],
   };
 }
 
@@ -817,7 +859,7 @@ export class RunWatch {
     const ref = this.refOf(context, runId);
     // Counted by the run's own process, under the ref its run carries.
     const endedAtStop = Math.min(run.skippedTests, watch ? (this.options.endedAtStop?.(watch.ref) ?? 0) : 0);
-    runEnded({
+    const ended: Omit<RunEnded, 'verdict'> = {
       root: context.root,
       runId,
       ...(ref ? { ref } : {}),
@@ -829,7 +871,8 @@ export class RunWatch {
       ...(endedAtStop > 0 ? { endedAtStop } : {}),
       ...runVerdict(before, context.failures, runId),
       ...(tally ? { repeat: repeatVerdict(tally.repeat, tally, run) } : {}),
-    });
+    };
+    runEnded({ ...ended, verdict: verdictWords(ended) });
   }
 
   /** The ref of the command whose run `runId` is on the context's instance; null when the service keeps none. */

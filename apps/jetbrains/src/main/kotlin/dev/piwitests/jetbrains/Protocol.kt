@@ -480,7 +480,8 @@ data class CiFrame(
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
  * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
- * were ended at a stop (End the test), null for none.
+ * were ended at a stop (End the test), null for none. `verdict` is the verdict in the service's words, as both clients
+ * show it.
  */
 data class RunEnded(
     val root: String? = null,
@@ -498,6 +499,18 @@ data class RunEnded(
     val stillFailingCount: Int? = null,
     val newFailureCount: Int? = null,
     val repeat: RepeatVerdict? = null,
+    val verdict: VerdictWords? = null,
+)
+
+/**
+ * A run's verdict in words, after its number: `text`, what it changed or its counts; `failing`, a warning; `always`,
+ * said whatever the run notifications setting; `actions`, `failures`, `dashboard` and `rerun`, in order.
+ */
+data class VerdictWords(
+    val text: String = "",
+    val failing: Boolean = false,
+    val always: Boolean = false,
+    val actions: List<String> = emptyList(),
 )
 
 /** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`, and whether one of the runs failed. */
@@ -897,6 +910,11 @@ data class RunStop(
     val bar: Boolean = false,
     val since: String? = null,
     val by: String? = null,
+    /**
+     * The stop calls for the person's attention while the IDE is out of sight, once: a held failure or a `page.pause()`
+     * in a run launched here that no agent asked for, drives or holds.
+     */
+    val calls: Boolean = false,
     /**
      * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
      * person last acted on it. A person's action takes it from the agent. Null while nobody drives.

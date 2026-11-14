@@ -951,60 +951,22 @@ object Glue {
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
 
-    private fun titleList(titles: List<String>, count: Int): String {
-        val more = count - titles.size
-        return "(${titles.joinToString(", ")}${if (more > 0) " and $more more" else ""})"
-    }
-
     /**
-     * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
-     * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run failing** when something fails, and **Only on failure** when nothing does while `setting` is `always`.
-     * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
-     * `Run #124 · Failed 1 of 3`, whatever the setting.
+     * What a run the editor started changed, once it ended, in the service's words (`RunEnded.verdict`): `Run #124 · 1 of
+     * 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the
+     * service's actions when something fails, and **Only on failure** when nothing does while `setting` is `always`.
+     * Null when `setting` keeps it quiet; a run of each test several times says how its runs went whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
-        val repeat = ended.repeat
-        if (repeat?.verdict != null) {
-            return RunVerdict(repeat.failed, "Run #${ended.runId} · ${repeat.verdict}", listOf(OPEN_FAILURES, OPEN_IN_DASHBOARD))
-        }
-        val stillTitles = ended.stillFailing.orEmpty()
-        val newTitles = ended.newFailures.orEmpty()
-        val still = ended.stillFailingCount ?: stillTitles.size
-        val added = ended.newFailureCount ?: newTitles.size
-        val parts = mutableListOf<String>()
-        if (ended.fixed > 0 || still > 0) {
-            val total = ended.fixed + still
-            val fixed = "${ended.fixed} of $total CI ${if (total == 1) "failure" else "failures"} fixed"
-            parts += if (still > 0) "$fixed, $still still failing ${titleList(stillTitles, still)}" else fixed
-        }
-        if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
-        if (parts.isEmpty()) {
-            val endedAtStop = ended.endedAtStop ?: 0
-            parts += listOfNotNull(
-                "${ended.passed} passed",
-                "${ended.failed} failed",
-                if (ended.flaky > 0) "${ended.flaky} flaky" else null,
-                if (ended.skipped > 0) {
-                    "${ended.skipped} skipped" + if (endedAtStop > 0) " ($endedAtStop ended at a stop)" else ""
-                } else {
-                    null
-                },
-            ).joinToString(", ")
-        }
-        val failing = still + added > 0 || ended.failed > 0
-        if (setting == "never" || (setting == "failures" && !failing)) return null
-        return RunVerdict(
-            failing,
-            "Run #${ended.runId} · ${parts.joinToString(" · ")}",
-            listOfNotNull(
-                OPEN_FAILURES,
-                OPEN_IN_DASHBOARD,
-                if (failing) RERUN_FAILING else null,
-                if (!failing && setting == "always") ONLY_ON_FAILURE else null,
-            ),
-        )
+        val words = ended.verdict ?: return null
+        if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
+        val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
+        val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
+        return RunVerdict(words.failing, "Run #${ended.runId} · ${words.text}", actions + onlyOnFailure)
     }
+
+    /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */
+    private val VERDICT_ACTIONS = mapOf("failures" to OPEN_FAILURES, "dashboard" to OPEN_IN_DASHBOARD, "rerun" to RERUN_FAILING)
 
     /** Where the service found the instance, in the words of the settings page. */
     fun sourceLabel(source: String?): String = when (source) {
@@ -2008,6 +1970,14 @@ object Glue {
 
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
+
+    /** The stops that call for the person's attention as the service says (`RunStop.calls`), each once (`attended`, the last 200). */
+    fun attentionStops(stops: List<ShownStop>, attended: LinkedHashSet<String>): List<ShownStop> {
+        val due = stops.filter { it.stop.calls && stopKey(it) !in attended }
+        due.forEach { attended += stopKey(it) }
+        while (attended.size > 200) attended.remove(attended.first())
+        return due
+    }
 
     /** What tells a worker's slot from another: its run and its slot. */
     private fun slotKey(ref: String, slot: Int): String = "$ref\u0000$slot"

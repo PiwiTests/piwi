@@ -255,6 +255,17 @@ export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
 }
 
+/** How many stops `attentionStops` remembers having called attention to. */
+const MAX_ATTENDED = 200;
+
+/** The stops that call for the person's attention as the service says (`RunStop.calls`), each once (`attended`). */
+export function attentionStops(stops: readonly ShownStop[], attended: Set<string>): ShownStop[] {
+  const due = stops.filter((s) => s.stop.calls && !attended.has(stopKey(s)));
+  for (const s of due) attended.add(stopKey(s));
+  while (attended.size > MAX_ATTENDED) attended.delete(attended.values().next().value!);
+  return due;
+}
+
 /** What tells a worker's slot from another: its run and its slot. */
 function slotKey(stop: { ref: string; slot: number }): string {
   return `${stop.ref}\0${stop.slot}`;

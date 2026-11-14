@@ -98,6 +98,14 @@ offers **Only on failure**), or never; **Settings** opens it in VS Code.
 A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
 setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 
+## A test that waits for you
+
+A test held at its failure, or stopped at `page.pause()`, while the editor is in the background, calls you once: a
+notification with **Resume** and **Go to the stopped line** in VS Code, the system's attention request (a bouncing or
+flashing icon) in a JetBrains IDE. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does, nor
+one an agent drives or a desktop app's job, which calls from its own window.
+[A paused run](./editor-run-control) has the controls.
+
 ## Related
 
 - [The editor's status bar](./editor-status-bar): the latest run, the run in progress, and when the item turns red.

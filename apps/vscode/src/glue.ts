@@ -973,59 +973,27 @@ export const VERDICT_ACTIONS = {
   settings: 'Settings',
 } as const;
 
-/** Titles as a verdict lists them: the first ones, then how many more. */
-function titleList(titles: string[], count: number): string {
-  const more = count - titles.length;
-  return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
-}
-
 /**
- * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
- * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`; each
- * last with **Settings**, which opens `piwi.runNotifications`.
- * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
- * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
+ * What a run the editor started changed, once it ended, in the service's words (`RunEnded.verdict`): `Piwi: run #124 ·
+ * 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`. A warning when
+ * something fails, with the service's actions, then **Only on failure** while nothing fails and `setting` is `always`,
+ * and last **Settings**, which opens `piwi.runNotifications`. Null when `setting` keeps it quiet; a run of each test
+ * several times says how its runs went whatever the setting, with the service's actions alone.
  */
 export function runVerdict(
   ended: RunEnded,
   setting: RunNotifications = 'always',
 ): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
-  if (ended.repeat) {
-    const { verdict, failed } = ended.repeat;
-    return {
-      severity: failed ? 'warning' : 'information',
-      text: `Piwi: run #${ended.runId} · ${verdict}`,
-      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard],
-    };
-  }
-  const still = ended.stillFailingCount ?? ended.stillFailing.length;
-  const added = ended.newFailureCount ?? ended.newFailures.length;
-  const parts: string[] = [];
-  if (ended.fixed || still) {
-    const fixed = `${ended.fixed} of ${ended.fixed + still} CI ${ended.fixed + still === 1 ? 'failure' : 'failures'} fixed`;
-    parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
-  }
-  if (added) parts.push(`${plural(added, 'new failure')} ${titleList(ended.newFailures, added)}`);
-  if (!parts.length) {
-    const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
-    if (ended.flaky) counts.push(`${ended.flaky} flaky`);
-    if (ended.skipped) {
-      counts.push(`${ended.skipped} skipped${ended.endedAtStop ? ` (${ended.endedAtStop} ended at a stop)` : ''}`);
-    }
-    parts.push(counts.join(', '));
-  }
-  const failing = still + added > 0 || ended.failed > 0;
-  if (setting === 'never' || (setting === 'failures' && !failing)) return null;
+  const { text, failing, always, actions } = ended.verdict;
+  if (!always && (setting === 'never' || (setting === 'failures' && !failing))) return null;
   return {
     severity: failing ? 'warning' : 'information',
-    text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
+    text: `Piwi: run #${ended.runId} · ${text}`,
     actions: [
-      VERDICT_ACTIONS.failures,
-      VERDICT_ACTIONS.dashboard,
-      ...(failing ? [VERDICT_ACTIONS.rerun] : []),
-      ...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []),
-      VERDICT_ACTIONS.settings,
+      ...actions.map((a) => VERDICT_ACTIONS[a]),
+      ...(always
+        ? []
+        : [...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []), VERDICT_ACTIONS.settings]),
     ],
   };
 }

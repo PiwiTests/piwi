@@ -3108,6 +3108,13 @@ describe('runs as they happen', () => {
       newFailures: ['checkout.spec.ts › pays by card'],
       stillFailingCount: 1,
       newFailureCount: 1,
+      // Worded once, for both clients.
+      verdict: {
+        text: '1 of 2 CI failures fixed, 1 still failing (checkout.spec.ts › pays) · 1 new failure (checkout.spec.ts › pays by card)',
+        failing: true,
+        always: false,
+        actions: ['failures', 'dashboard', 'rerun'],
+      },
     });
     // Said once, whatever else reads the run again.
     await runsClient.sendRequest('piwi/refreshRun');

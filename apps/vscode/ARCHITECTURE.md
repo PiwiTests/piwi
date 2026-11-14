@@ -285,7 +285,8 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as the
+When a run started from the editor ends, `piwi/runEnded` shows as a notification in the service's words
+(`RunEnded.verdict`, `runVerdict` in `src/glue.ts`), as the
 `piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
@@ -295,7 +296,10 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 - each last with **Settings**, which opens the Settings editor at `piwi.runNotifications`.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
-when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+when one of the runs failed. A test held at its failure or stopped at `page.pause()` while the window is in the
+background calls once, as the service says (`RunStop.calls`), as a warning with **Resume** and **Go to the stopped
+line**, which reveals it with the focus (`attentionStops` in `src/run-control.ts`, `callAttention` in
+`src/run-view.ts`); never a stop the person asked for, one an agent drives or holds, or a desktop app's job's. A `piwi/notice` is shown as a warning or an information message, as its severity says.
 One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
 one write after the other); a key that setting holds is not shown (`noticeShown`).
 

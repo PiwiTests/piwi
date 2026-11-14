@@ -543,9 +543,18 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 - `stillFailing`: the tests it failed again (failing before in another run, or not new on the instance's word);
 - `newFailures`: the tests it failed that were not failing before;
 - `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
-  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
+  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none;
+- `verdict`: what both clients show, in words (`verdictWords`): what it changed (`1 of 3 CI failures fixed, 2 still
+  failing (…) · 1 new failure (…)`), else its counts, or how a run of each test several times went; whether something
+  fails, whether it is said whatever the client's run notifications setting (a repeated run), and its actions' ids
+  (`failures`, `dashboard`, `rerun`). The clients add their own setting's actions and the run's number.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+
+A stop calls for the person's attention (`RunStop.calls`, `RunSessions.view`) when it is a test held at its failure
+or stopped at `page.pause()` in a run launched here: never a desktop app's job in its own checkout (its window calls),
+a stop an agent asked for or drives, or a failure held because an agent turned Hold failures on. Each client calls
+once per stop while it is out of sight.
 
 ### CI runs of the branch
 
