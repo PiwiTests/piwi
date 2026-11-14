@@ -10,9 +10,11 @@
  * every target runs as its own server on a copy, signed in as an
  * administrator, so a newer build migrates the copy the way an upgrade would.
  * On PostgreSQL the seed is analyzed once with autovacuum off on its tables,
- * and every copy inherits both; once each build's first start has done its
- * startup work, the tables it wrote to on its copy are analyzed again reading
- * every row (`settleSeed`, `settleCopy` in `lib/pg.mjs`). For each page it
+ * and every copy inherits both; once every build's first start has done its
+ * startup work, each table any build wrote to, created, or changed the columns
+ * or expression indexes of is analyzed again on every copy at one target that
+ * reads every row (`settleSeed`, `settleCopies` in `lib/pg.mjs`). The first
+ * start fails the run when a build's startup work does not end. For each page it
  * measures the server render over HTTP and the full load in Chromium, then
  * replays every API call the pages made. On PostgreSQL every request's SQL is
  * read from `pg_stat_statements`; a last pass with OpenTelemetry on lists the
@@ -64,7 +66,7 @@ import {
   redact,
   statementDelta,
   statementSnapshot,
-  settleCopy,
+  settleCopies,
   settleSeed,
   waitForDisconnect,
 } from './lib/pg.mjs';
@@ -183,7 +185,7 @@ async function prepareSeed() {
     scale: opts.scale,
     dialect,
     build: buildStamp(reference.outputDir),
-    settled: dialect === 'postgres',
+    ...(dialect === 'postgres' ? { settled: true } : {}),
   });
   const keyPath = join(workDir, `seed-${dialect}.json`);
   const seedDb =
@@ -344,27 +346,39 @@ function typicalSql(deltas) {
   return { source: 'pg_stat_statements', statements: d.statements, ms: d.ms, queries: d.queries, nested: [] };
 }
 
-/** Start every target, wait until its startup work is done, and sign in. */
-async function startTargets({ otel }) {
+/**
+ * Start every target, wait until its startup work is done, and sign in. With `strict`, startup work that does not
+ * end fails the run. On a failure the servers already started are stopped.
+ */
+async function startTargets({ otel, strict = false }) {
   const servers = [];
-  for (const target of targets) {
-    const server = await startServer({
-      name: target.name,
-      outputDir: target.outputDir,
-      port: await freePort(),
-      database: target.database,
-      workDir: join(workDir, target.name),
-      otel: otel ? { endpoint: otel.endpoint, serviceName: `piwi-perf-${target.name}` } : null,
-      log,
-    });
-    servers.push(server);
+  try {
+    for (const target of targets) {
+      const server = await startServer({
+        name: target.name,
+        outputDir: target.outputDir,
+        port: await freePort(),
+        database: target.database,
+        workDir: join(workDir, target.name),
+        otel: otel ? { endpoint: otel.endpoint, serviceName: `piwi-perf-${target.name}` } : null,
+        log,
+      });
+      servers.push(server);
+    }
+    await Promise.all(
+      servers.map((s) =>
+        waitForIdle(s, {
+          activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase(s.name)) : null,
+          strict,
+          log,
+        }),
+      ),
+    );
+    for (const s of servers) await signIn(s);
+  } catch (error) {
+    await Promise.all(servers.map((s) => s.stop()));
+    throw error;
   }
-  await Promise.all(
-    servers.map((s) =>
-      waitForIdle(s, { activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase(s.name)) : null, log }),
-    ),
-  );
-  for (const s of servers) await signIn(s);
   return Object.fromEntries(servers.map((s) => [s.name, s]));
 }
 
@@ -445,18 +459,19 @@ async function main() {
   // Each build's first start runs its migrations and startup work on its copy; on PostgreSQL the copy is then
   // settled, with the server stopped so the cumulative statistics hold every write it made.
   log('First start of every target…');
-  const firstStart = await startTargets({ otel: null });
+  const firstStart = await startTargets({ otel: null, strict: true });
   await Promise.all(Object.values(firstStart).map((s) => s.stop()));
   if (pg) {
-    for (const t of targets) {
-      await waitForDisconnect(pg.sql, pgDatabase(t.name));
-      const started = Date.now();
-      const analyzed = await settleCopy(opts['pg-url'], pgDatabase(t.name));
-      const tables = analyzed.map((a) => `${a.table} (${a.rows} rows, ${a.target ? `target ${a.target}` : 'sampled'})`);
-      log(
-        `  ${t.name}: copy settled in ${Math.round((Date.now() - started) / 1000)} s; analyzed again: ${tables.join(', ') || 'none'}`,
-      );
-    }
+    for (const t of targets) await waitForDisconnect(pg.sql, pgDatabase(t.name));
+    const started = Date.now();
+    const analyzed = await settleCopies(
+      opts['pg-url'],
+      targets.map((t) => pgDatabase(t.name)),
+    );
+    const tables = analyzed.map((a) => `${a.table} (${a.rows} rows, ${a.target ? `target ${a.target}` : 'sampled'})`);
+    log(
+      `  copies settled in ${Math.round((Date.now() - started) / 1000)} s; analyzed again on every copy: ${tables.join(', ') || 'none'}`,
+    );
   }
 
   for (let session = 0; session < samples.sessions; session++) {

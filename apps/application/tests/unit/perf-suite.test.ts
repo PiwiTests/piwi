@@ -11,6 +11,7 @@ import { COMMENT_MARKER, renderComparison } from '../../scripts/perf/lib/markdow
 import { startOtlpReceiver, traceIdFromServerTiming } from '../../scripts/perf/lib/otlp-receiver.mjs';
 import { pageScenarios, shardPages } from '../../scripts/perf/lib/scenarios.mjs';
 import { mergeResults } from '../../scripts/perf/lib/merge.mjs';
+import { waitForIdle } from '../../scripts/perf/lib/targets.mjs';
 import { fullReadTarget, MAX_STATISTICS_TARGET, statementDelta } from '../../scripts/perf/lib/pg.mjs';
 
 type Batch = { table: string; rows: Record<string, unknown>[] } | { manifest: { counts: Record<string, number> } };
@@ -328,7 +329,7 @@ describe('performance report', () => {
     expect(md).toContain('server render 100 ms → 217 ms (+117 %, p < 0.001, by session +100 % / +129 %)');
     expect(md).toContain('split into 2 sessions, each starting every server afresh after 2 warm-up rounds');
     expect(md).toContain('the median of every session, each on server processes of its own, grows past both floors');
-    expect(md).toContain('the tables it wrote to on its copy were analyzed again reading every row');
+    expect(md).toContain('was analyzed again on every copy, at one target that reads every row');
   });
 
   it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {
@@ -493,6 +494,19 @@ describe('performance suite split across machines', () => {
     expect(md).toContain('split across 2 machines');
     expect(md).toContain('Machines: pages 1–2 on 4 × CPU 1, Node v24; page 3 on 4 × CPU 2, Node v24.');
   });
+});
+
+describe('performance targets', () => {
+  it('fails a first start whose startup work does not end, and measures anyway after it', async () => {
+    let cpu = 0;
+    const busy = { name: 'head', cpuTimeMs: () => (cpu += 1000) };
+    await expect(waitForIdle(busy, { timeoutMs: 1500, strict: true, log: () => {} })).rejects.toThrow(
+      'head: startup work still running after 1.5 s',
+    );
+    const lines: string[] = [];
+    await waitForIdle(busy, { timeoutMs: 1500, log: (line: string) => lines.push(line) });
+    expect(lines[0]).toContain('measuring anyway');
+  }, 10_000);
 });
 
 describe('performance SQL counts', () => {
