@@ -18,7 +18,8 @@
     "runner:lint:fix": "oxlint --config oxlint.config.mts . --fix",
     "runner:format": "oxfmt --config oxfmt.config.mts --write \"server/\" \"scripts/\" \"tests/\" \"app/\" \"nuxt.config.ts\"",
     "runner:format:check": "oxfmt --config oxfmt.config.mts --check \"server/\" \"scripts/\" \"tests/\" \"app/\" \"nuxt.config.ts\"",
-    "test": "npm run runner:test"
+    "test": "npm run runner:test",
+    "postinstall": "nuxt prepare"
   },
   "dependencies": {
     "@nuxt/ui": "^4.12.0",
