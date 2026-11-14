@@ -1798,7 +1798,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
-      if (e.affectsConfiguration('piwi.failingTestTint')) filesChanged();
+      if (e.affectsConfiguration('piwi.failingTestTint')) decorateVisible();
       if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {

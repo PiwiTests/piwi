@@ -79,6 +79,28 @@
       ]
     },
     {
+      "key": "piwi.statusBarAlert",
+      "jetbrains": "statusBarAlert",
+      "group": "runs",
+      "scope": "user",
+      "type": "string",
+      "default": "new",
+      "choices": [
+        {
+          "value": "new",
+          "label": "For a new failure a run started here caused"
+        },
+        {
+          "value": "any",
+          "label": "For any failing test"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
+      ]
+    },
+    {
       "key": "piwi.breakpoints",
       "jetbrains": "breakpoints",
       "group": "runs",
@@ -209,28 +231,6 @@
       "scope": "user",
       "type": "boolean",
       "default": true
-    },
-    {
-      "key": "piwi.statusBarAlert",
-      "jetbrains": "statusBarAlert",
-      "group": "editor",
-      "scope": "user",
-      "type": "string",
-      "default": "new",
-      "choices": [
-        {
-          "value": "new",
-          "label": "For a new failure a run started here caused"
-        },
-        {
-          "value": "any",
-          "label": "For any failing test"
-        },
-        {
-          "value": "never",
-          "label": "Never"
-        }
-      ]
     },
     {
       "key": "piwi.mcpAuthorization",

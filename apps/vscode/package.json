@@ -1427,11 +1427,33 @@
               "The runs started here and the branch's CI runs"
             ]
           },
+          "piwi.statusBarAlert": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "new",
+              "any",
+              "never"
+            ],
+            "enumDescriptions": [
+              "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a teammate's never does.",
+              "For any failing test, CI failures included.",
+              "Never: the item still counts the failing tests."
+            ],
+            "default": "new",
+            "description": "When the Piwi status bar item takes the error background.",
+            "order": 2,
+            "enumItemLabels": [
+              "For a new failure a run started here caused",
+              "For any failing test",
+              "Never"
+            ]
+          },
           "piwi.breakpoints": {
             "type": "boolean",
             "default": true,
             "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed.",
-            "order": 2,
+            "order": 3,
             "scope": "application"
           },
           "piwi.runHeaded": {
@@ -1439,7 +1461,7 @@
             "scope": "application",
             "default": false,
             "markdownDescription": "Run every test headed, with its browser window shown: each run Piwi starts, in every window, **Verify ×3** included. Off, a run follows the Playwright config; a run with a `page.pause()` runs headed either way, as does a run with breakpoints when the project's `@piwitests/reporter` is older than 0.62.0. **Piwi: Run options…** changes it.",
-            "order": 3
+            "order": 4
           },
           "piwi.runHoldFailures": {
             "type": "string",
@@ -1456,7 +1478,7 @@
             ],
             "default": "auto",
             "markdownDescription": "**Hold failures** of each run Piwi starts, in every window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it.",
-            "order": 4,
+            "order": 5,
             "enumItemLabels": [
               "Auto",
               "On",
@@ -1467,7 +1489,7 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts, Debug with Piwi headed and holding each failure at its line. Results only: it discovers no test.",
-            "order": 5,
+            "order": 6,
             "scope": "window"
           }
         }
@@ -1543,28 +1565,6 @@
             "markdownDescription": "While a CI run of the branch runs, show where each of its tests stands, at the end of that line.",
             "order": 4,
             "scope": "application"
-          },
-          "piwi.statusBarAlert": {
-            "type": "string",
-            "scope": "application",
-            "enum": [
-              "new",
-              "any",
-              "never"
-            ],
-            "enumDescriptions": [
-              "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a teammate's never does.",
-              "For any failing test, CI failures included.",
-              "Never: the item still counts the failing tests."
-            ],
-            "default": "new",
-            "description": "When the Piwi status bar item takes the error background.",
-            "order": 5,
-            "enumItemLabels": [
-              "For a new failure a run started here caused",
-              "For any failing test",
-              "Never"
-            ]
           }
         }
       },

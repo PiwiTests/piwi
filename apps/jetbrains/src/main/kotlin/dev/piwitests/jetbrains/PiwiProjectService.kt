@@ -944,6 +944,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** The files that show their tests' results drawn again, as a choice of how they show changed. On the event thread. */
     fun testsShownAgain() = drawAgain(Glue.Redraw.TESTS)
 
+    /**
+     * Every open file's summary asked again and drawn, as the choice of the lines above the code changed: after the
+     * credentials that carry it, which the service reads first. On the event thread.
+     */
+    fun lensesShownAgain() {
+        pushed.incrementAndGet()
+        drawAgain(Glue.Redraw.ALL)
+    }
+
     /** Whether a file shows its tests' results in the gutter, as `PiwiTestAnnotator` last drew it. */
     fun showsTests(file: VirtualFile, shows: Boolean) {
         if (shows) filesWithTests += file.url else filesWithTests -= file.url

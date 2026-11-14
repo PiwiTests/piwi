@@ -143,6 +143,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment("A CI run of the branch says what it fixed and its new failures against the run it replaced")
                 }
                 row {
+                    comboBox(Glue.STATUS_BAR_ALERTS, ChoiceRenderer("statusBarAlert"))
+                        .label("The status bar item's text turns red:", LabelPosition.TOP)
+                        .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
+                        .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
+                }
+                row {
                     checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
@@ -218,12 +224,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     checkBox("Show where a CI run of the branch stands, at the end of each line it runs")
                         .bindSelected({ local.ciPositions }, { local.ciPositions = it })
                 }
-                row {
-                    comboBox(Glue.STATUS_BAR_ALERTS, ChoiceRenderer("statusBarAlert"))
-                        .label("The status bar item's text turns red:", LabelPosition.TOP)
-                        .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
-                        .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
-                }
             }
             group(SettingsWords.GROUPS.getValue("agents")) {
                 row {
@@ -275,9 +275,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val breakpoints = service.local().breakpoints
         val agents = service.local().serveRunsToAgents
         val tint = service.local().failingTestTint
+        val lenses = service.local().codeLens
         val positions = service.local().ciPositions
         super.apply()
         if (service.local().failingTestTint != tint) service.testsShownAgain()
+        if (service.local().codeLens != lenses) service.lensesShownAgain()
         if (service.local().ciPositions != positions) project.getServiceIfCreated(PiwiCiRuns::class.java)?.positionsSwitched()
         // The service serves the runs to agents, or stops, at once.
         if (service.local().serveRunsToAgents != agents) {

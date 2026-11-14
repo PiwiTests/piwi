@@ -588,10 +588,6 @@ function testTitles(text: string): Set<string> {
 }
 
 /**
- * The severity of a failure's diagnostic as the client's setting chooses it (`error` when unset): a warning at most for
- * a run on another branch, an information for a line edited since the run; null with `off`.
- */
-/**
  * The lines of a summary the person's choice of lenses shows (`EditorCredentials.codeLens`): every one; with
  * `problems`, a failure's and an uncovered change's alone; with `off`, none. A test's line, its gutter mark, stays.
  */
@@ -601,6 +597,10 @@ function lensesShown(summary: FileSummary, lens: CodeLensChoice): FileSummary {
   return { file: summary.file && kept(summary.file) ? summary.file : null, lines: summary.lines.filter(kept) };
 }
 
+/**
+ * The severity of a failure's diagnostic as the client's setting chooses it (`error` when unset): a warning at most for
+ * a run on another branch, an information for a line edited since the run; null with `off`.
+ */
 function failureSeverity(
   setting: FailureSeverity | null | undefined,
   otherBranch: boolean,
