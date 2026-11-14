@@ -457,7 +457,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       blocks.push({
         kind: 'table',
         columns: [
-          { key: 'cause', label: ctx.s.title('Failure cause') },
+          { key: 'cause', label: ctx.s.title('Failure cluster') },
           { key: 'project', label: ctx.s.labels.projects },
           { key: 'fixed', label: ctx.s.labels.date, align: 'right' },
         ],
@@ -512,7 +512,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         { key: 'change', label: ctx.s.labels.change, align: 'right' },
         { key: 'runs', label: ctx.s.metricLabel('runs', 'Runs'), align: 'right' },
         { key: 'flaky', label: ctx.s.metricLabel('flaky-occurrences', 'Flaky occurrences'), align: 'right' },
-        { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+        { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure clusters'), align: 'right' },
         ...(data.some((row) => row.targets?.length)
           ? [{ key: 'targets', label: ctx.s.labels.targets, align: 'right' as const }]
           : []),
@@ -558,9 +558,9 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     {
       kind: 'stats',
       tiles: [
-        plainTile(ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), ctx.f.number(data.totalOpen)),
+        plainTile(ctx.s.metricLabel('open-failure-causes', 'Open failure clusters'), ctx.f.number(data.totalOpen)),
         plainTile(
-          ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'),
+          ctx.s.metricLabel('failure-causes-fixed', 'Failure clusters fixed'),
           ctx.f.number(data.resolvedInPeriod),
         ),
       ],
@@ -568,7 +568,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     {
       kind: 'table',
       columns: [
-        { key: 'cause', label: ctx.s.title('Failure cause') },
+        { key: 'cause', label: ctx.s.title('Failure cluster') },
         { key: 'project', label: ctx.s.labels.projects },
         { key: 'occurrences', label: '#', align: 'right' },
         { key: 'age', label: ctx.s.title('Age'), align: 'right' },
@@ -848,8 +848,8 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
             ctx.s.metricLabel('fixes-that-held', 'Fixes that held'),
             ctx.f.value(data.fixesHeldPct, 'percent', 1),
           ),
-          plainTile(ctx.s.metricLabel('failure-causes-opened', 'Failure causes opened'), ctx.f.number(data.opened)),
-          plainTile(ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'), ctx.f.number(data.fixed)),
+          plainTile(ctx.s.metricLabel('failure-causes-opened', 'Failure clusters opened'), ctx.f.number(data.opened)),
+          plainTile(ctx.s.metricLabel('failure-causes-fixed', 'Failure clusters fixed'), ctx.f.number(data.fixed)),
         ],
       },
       seriesBlock(
@@ -857,12 +857,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         null,
         [
           {
-            label: ctx.s.metricLabel('failure-causes-opened', 'Failure causes opened'),
+            label: ctx.s.metricLabel('failure-causes-opened', 'Failure clusters opened'),
             points: data.points.map((p) => ({ date: p.date, value: p.opened })),
             color: 'failed',
           },
           {
-            label: ctx.s.metricLabel('failure-causes-fixed', 'Failure causes fixed'),
+            label: ctx.s.metricLabel('failure-causes-fixed', 'Failure clusters fixed'),
             points: data.points.map((p) => ({ date: p.date, value: p.fixed })),
             color: 'passed',
           },
@@ -877,7 +877,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         kind: 'table',
         columns: [
           { key: 'age', label: ctx.s.title('Age') },
-          { key: 'count', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+          { key: 'count', label: ctx.s.metricLabel('open-failure-causes', 'Open failure clusters'), align: 'right' },
         ],
         rows: data.openByAge.map((g) => row({ age: ctx.s.title(g.label), count: num(ctx, g.count, 'count') })),
       });
@@ -893,7 +893,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
             kind: 'table',
             columns: [
               { key: 'owner', label: ctx.s.title('Owner') },
-              { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure causes'), align: 'right' },
+              { key: 'open', label: ctx.s.metricLabel('open-failure-causes', 'Open failure clusters'), align: 'right' },
               { key: 'flaky', label: ctx.s.metricLabel('flaky-tests', 'Flaky tests'), align: 'right' },
               { key: 'wasted', label: ctx.s.metricLabel('wasted-ci-minutes', 'Wasted CI minutes'), align: 'right' },
               { key: 'ttf', label: ctx.s.metricLabel('median-time-to-fix', 'Median time to fix'), align: 'right' },

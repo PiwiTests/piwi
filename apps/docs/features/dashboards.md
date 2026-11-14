@@ -23,7 +23,8 @@ The scope and what the numbers mean are on [Analytics](./analytics); sending one
 
 The header's switcher lists every dashboard you can open, with a search:
 
-- **Built-in**: Overview (the analytics page, four bands and sixteen widgets), and the report dashboards
+- **Built-in**: Overview (four bands and sixteen widgets, where `/analytics` opens unless a
+  [default](#your-default-dashboard) is set), and the report dashboards
   Executive, Engineering and Gaps digest (only where the [Test Map](./scenario-gaps) is not declined), whose
   contents [Quality reports](./quality-reports#what-a-report-contains) describes. The Team dashboard is a quality
   report only, offered when the report's tests have an owner. A built-in dashboard cannot be changed, only duplicated.
@@ -135,7 +136,7 @@ instead.
 
 ## Scheduling and exporting a dashboard
 
-*Export* renders the dashboard on screen as a [quality report](./quality-reports) (the saved dashboard
+*Quality report* renders the dashboard on screen as a [quality report](./quality-reports) (the saved dashboard
 is offered first), and *Schedule…* creates a [report schedule](./quality-reports#report-schedules) on
 it. Deleting a dashboard that schedules render names them first; they stop, shown as inactive with the
 reason on the Reports page, until their owner picks another dashboard.

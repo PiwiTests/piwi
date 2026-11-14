@@ -602,7 +602,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or Excel, sent on a schedule by email, Slack or webhook and kept as snapshots.',
         needs: [],
-        where: 'Analytics → Export, Schedule…; Project → Export; Quality reports',
+        where: 'Analytics → Quality report, Schedule…; Project → Quality report; Quality reports',
         doc: 'features/quality-reports',
       },
       {
@@ -1066,7 +1066,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Give each person the rights their job needs, project by project, through five project roles granted to users or groups; a Project admin manages the members of their own projects.',
         needs: ['admin'],
-        where: 'Settings → Permissions, Settings → Groups; project Settings → Members',
+        where: 'Settings → Permissions, Settings → Groups; Project → Settings → Members',
         doc: 'operate/project-access',
       },
       {

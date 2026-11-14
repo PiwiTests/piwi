@@ -104,7 +104,7 @@ test.describe('Stuck tests', () => {
       // The Timeline draws each running test as a bar to now: the stuck one amber, over the pale bar of the usual time
       // its mark carries; the bank transfer over the one the project's usual durations give; the one with no passing
       // runs without one.
-      await page.goto(`/test-runs/${runId}?tab=workers`);
+      await page.goto(`/test-runs/${runId}?tab=timeline`);
       const timeline = page.locator('[data-shot="run-timeline"]');
       const stuckBar = timeline.locator('[data-timeline-running][data-stuck]');
       await expect(stuckBar).toHaveCount(1, { timeout: 30_000 });

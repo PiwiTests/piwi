@@ -168,7 +168,7 @@ test.describe('Video review fit', () => {
 
         test('gives the fold back when the Video tab is left', async ({ page }) => {
           await page.setViewportSize(size);
-          await page.goto(`/test-runs/${runId}?tab=test-cases`);
+          await page.goto(`/test-runs/${runId}?tab=tests`);
           await waitForHydration(page);
           await page.getByRole('button', { name: 'Hide summary' }).click();
           await expect(page.getByRole('button', { name: 'Show summary' })).toBeVisible();

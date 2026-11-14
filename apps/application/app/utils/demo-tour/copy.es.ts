@@ -118,7 +118,7 @@ export const ES_COPY = {
         },
         analytics: {
           title: 'La calidad a lo largo del tiempo',
-          body: 'Los **Headline numbers** de todos los proyectos en los últimos 30 días, frente a los 30 anteriores: tasas de éxito, pruebas inestables, minutos de CI desperdiciados, causas de fallo abiertas, tiempo de corrección. Cuando un proyecto fija un objetivo, la tarjeta indica cuántos lo cumplen.',
+          body: 'Los **Headline numbers** de todos los proyectos en los últimos 30 días, frente a los 30 anteriores: tasas de éxito, pruebas inestables, minutos de CI desperdiciados, grupos de fallos abiertos, tiempo de corrección. Cuando un proyecto fija un objetivo, la tarjeta indica cuántos lo cumplen.',
         },
         dashboards: {
           title: 'Un panel por equipo',

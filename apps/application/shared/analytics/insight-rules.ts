@@ -250,7 +250,7 @@ export const EN_INSIGHTS: InsightPhrasebook = {
   }),
   'time-to-fix-growth': (f) => ({
     message: `Median time to fix grew to ${f.days} days vs ${englishComparison(f.vs)}`,
-    detail: `Up from ${f.previousDays} days, over ${f.fixed} failure causes fixed this period.`,
+    detail: `Up from ${f.previousDays} days, over ${f.fixed} failure clusters fixed this period.`,
   }),
   'suite-shrank': (f) => ({
     message: `The suite shrank by ${f.lost} tests vs ${englishComparison(f.vs)}`,
@@ -261,8 +261,8 @@ export const EN_INSIGHTS: InsightPhrasebook = {
     detail: `${f.now} tests are in quarantine now, up from ${f.previous}.`,
   }),
   'owner-load': (f) => ({
-    message: `${f.owner} holds ${f.open} of the ${f.total} open failure causes`,
-    detail: `${f.share}% of the open failure causes wait on one owner.`,
+    message: `${f.owner} holds ${f.open} of the ${f.total} open failure clusters`,
+    detail: `${f.share}% of the open failure clusters wait on one owner.`,
   }),
 };
 

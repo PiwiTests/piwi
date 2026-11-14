@@ -24,7 +24,7 @@ export function pageScenarios({ projectId, runId, executionId }) {
     { id: 'project-settings', label: 'Project › Settings', path: project('settings') },
     { id: 'run-tests', label: 'Test run › Tests', path: run() },
     { id: 'run-changes', label: 'Test run › Changes', path: run('changes') },
-    { id: 'run-timeline', label: 'Test run › Timeline', path: run('workers') },
+    { id: 'run-timeline', label: 'Test run › Timeline', path: run('timeline') },
     { id: 'execution-trace', label: 'Failed test with a trace', path: `/test-run-cases/${executionId}` },
     { id: 'analytics', label: 'Analytics › Overview', path: '/analytics/d/overview?period=last-30d' },
     {

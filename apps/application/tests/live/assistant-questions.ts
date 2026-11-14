@@ -628,7 +628,7 @@ const run: LiveQuestion[] = [
     id: 'run-memory',
     topic: 'run',
     question: 'Why does memory climb during this run?',
-    on: '/test-runs/62?tab=workers',
+    on: '/test-runs/62?tab=timeline',
     tools: ['get_resource_profile', 'get_run'],
     facts: [example('resources-leaky-timeline', /login fixture/i)],
   },
@@ -699,7 +699,7 @@ const setting: LiveQuestion[] = [
     tools: SETTING_TOOLS,
     facts: [docs('guide/source-control', 'Repository access')],
     blocks: ['guide'],
-    anchors: ['ai-repository-access'],
+    anchors: ['source-control-token'],
   },
   {
     id: 'auto-diagnose',
@@ -917,7 +917,7 @@ const setup: LiveQuestion[] = [
     tools: [...DOCS_TOOLS, 'find_anchors'],
     facts: [docs('guide/source-control', 'SCM token'), docs('guide/source-control', 'Repository access')],
     blocks: ['checklist', 'guide'],
-    anchors: ['project-scm-token', 'ai-repository-access'],
+    anchors: ['project-scm-token', 'source-control-token'],
   },
   {
     id: 'gitlab-self-hosted',

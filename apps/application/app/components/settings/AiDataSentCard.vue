@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * What the model receives, in Settings → AI: where the evidence of a diagnosis
- * goes, the repository token that lets it read commits, and the context
- * limits, one folded group per kind of evidence.
+ * goes, where the repository token that lets it read commits is set, and the
+ * context limits, one folded group per kind of evidence.
  */
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
@@ -90,20 +90,6 @@ function resetGroup(group: ContextLimitGroup) {
 function unused(key: keyof ContextLimits): boolean {
   return textOnly.value && IMAGE_LIMIT_FIELDS.includes(key);
 }
-
-const replacingToken = ref(false);
-const hasToken = computed(() => Boolean(form.settings.value?.hasScmToken) && !form.removeScmToken.value);
-function removeToken() {
-  form.removeScmToken.value = true;
-  form.scmToken.value = '';
-  replacingToken.value = false;
-}
-watch(
-  () => form.settings.value,
-  () => {
-    replacingToken.value = false;
-  },
-);
 </script>
 
 <template>
@@ -128,42 +114,11 @@ watch(
         <p v-for="line in others" :key="line" class="mt-1 text-xs text-muted">{{ line }}</p>
       </div>
 
-      <SettingsField
-        label="Repository access token"
-        help="project.scm-token"
-        description="Lets diagnosis read commits and diffs from private GitHub, GitLab or Bitbucket repositories. Public repositories need none, and a project's own token takes precedence."
-        data-tour="ai-repository-access"
-      >
-        <p v-if="!form.canStoreSecrets.value" class="text-sm text-muted">
-          Needs <code class="font-mono text-xs">PIWI_SECRET_KEY</code> on the server to be stored.
-        </p>
-        <div v-else-if="hasToken && !replacingToken" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="flex items-center gap-1.5 text-sm text-highlighted"> A token is stored, encrypted. </span>
-          <UButton color="neutral" variant="link" size="sm" class="px-0" @click="replacingToken = true"
-            >Replace</UButton
-          >
-          <UButton color="neutral" variant="link" size="sm" class="px-0" @click="removeToken">Remove</UButton>
-        </div>
-        <div v-else class="space-y-1">
-          <UInput
-            v-model="form.scmToken.value"
-            type="password"
-            placeholder="ghp_…, glpat-… or a Bitbucket token"
-            autocomplete="off"
-            class="w-full font-mono sm:max-w-md"
-          />
-          <p v-if="form.removeScmToken.value" class="text-xs text-muted">
-            The stored token is removed when you save.
-            <button
-              type="button"
-              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-              @click="form.removeScmToken.value = false"
-            >
-              Keep it
-            </button>
-          </p>
-        </div>
-      </SettingsField>
+      <p class="text-sm text-highlighted" data-tour="ai-repository-access">
+        Diagnosis reads the commits and diffs of a private repository with the SCM token of
+        <NuxtLink to="/settings/source-control" :class="SENTENCE_LINK_CLASS">Settings → Source control</NuxtLink>, or
+        the one of the project's Source control settings. A public repository needs none.
+      </p>
 
       <div class="space-y-2">
         <p class="inline-flex items-center gap-1 text-sm font-semibold text-highlighted">
@@ -239,8 +194,8 @@ watch(
       </div>
 
       <p class="text-xs text-muted">
-        API keys and tokens are stored encrypted in the database, readable by administrators only. For stricter setups,
-        set the <code class="font-mono">PIWI_AI_*</code> environment variables instead.
+        API keys are stored encrypted in the database, readable by administrators only. For stricter setups, set the
+        <code class="font-mono">PIWI_AI_*</code> environment variables instead.
       </p>
     </div>
   </SectionCard>

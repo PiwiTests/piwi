@@ -178,7 +178,7 @@ keep the tags that matter:
 #### Keys in test tags
 
 A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it covers (`SHOP-T123`). Two patterns, under
-**Project → Settings → Integrations → Keys in test tags**, tell Piwi which tags are which:
+**Project → Settings → Keys in test tags**, tell Piwi which tags are which:
 
 - **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`. Piwi
   [links the issue](#issues-the-tests-declare) to the failure cluster of a test that carries the tag.

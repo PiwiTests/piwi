@@ -21,7 +21,7 @@ function projectCondition(ctx: AnalyticsContext, column: any): SQL | undefined {
 }
 
 /**
- * What is being done about failures in the period: failure causes fixed and
+ * What is being done about failures in the period: failure clusters fixed and
  * whether the fixes held, open ones assigned or ticketed, tests quarantined
  * and released, auto-heal pull requests opened.
  *

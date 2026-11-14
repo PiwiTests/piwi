@@ -386,7 +386,7 @@ describe('the trend insight rules', () => {
     expect(ids({ flakyDebt: debt(11, 10) })).toEqual([]);
   });
 
-  test('owner-load fires when one owner holds more than half the open failure causes', () => {
+  test('owner-load fires when one owner holds more than half the open failure clusters', () => {
     const row = (owner: string | null, openClusters: number) => ({
       owner,
       openClusters,

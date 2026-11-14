@@ -14,7 +14,7 @@ import { fakeJetbrainsIdes } from './utils/fake-jetbrains';
 async function openTheSettings(page: Page) {
   await page.goto('/');
   await waitForHydration(page);
-  await page.getByRole('button', { name: 'Configuration' }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Open in editor…' }).click();
   await expect(page.getByRole('dialog').filter({ hasText: 'Click a source path anywhere' })).toBeVisible();
 }

@@ -137,7 +137,7 @@ The run source is resolved first-match-wins: `--run-id`, then `--from-file`, the
 
 Print a [quality report](/features/quality-reports) from the dashboard, so a CI scheduler can post it every
 week. It calls the report endpoint with the API key; the scope and the dashboard are the ones the
-*Export* dialog offers.
+*Quality report* dialog offers.
 
 ```bash
 npx @piwitests/reporter report --project checkout --period 7d --format md

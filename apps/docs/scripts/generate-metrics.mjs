@@ -17,13 +17,14 @@ const jiti = createJiti(import.meta.url);
 
 const { METRICS } = await jiti.import(join(repoRoot, 'application/shared/analytics/metrics.ts'));
 
-/** One section per grain, the thing a metric counts, in this order. */
+/** One section per grain, the thing a metric counts, in this order; `anchor` is a section's id where it is not its title's slug. */
 const GRAINS = [
   { id: 'run', title: 'Runs', intro: 'Counted over the runs of the period.' },
   { id: 'test', title: 'Tests', intro: 'Counted over the tests and executions of the period.' },
   {
     id: 'cluster',
-    title: 'Failure causes',
+    title: 'Failure clusters',
+    anchor: 'failure-causes',
     intro: 'Counted over [failure clusters](/guide/concepts#error-fingerprint-failure-cluster), which outlive run retention.',
   },
   {
@@ -69,7 +70,7 @@ function grainSection(grain) {
   const metrics = METRICS.filter((metric) => metric.grain === grain.id);
   if (metrics.length === 0) return '';
   return [
-    `## ${grain.title}`,
+    grain.anchor ? `## ${grain.title} {#${grain.anchor}}` : `## ${grain.title}`,
     '',
     grain.intro,
     '',

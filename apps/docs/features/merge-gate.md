@@ -103,7 +103,7 @@ An evaluation made with a key that can upload or control the project's runs (Upl
 key `piwi gate` uses) is stored with its policy, its verdict, its violations and warnings, and the pull request it
 judged. Any other reader of the project gets the verdict only: nothing is stored or posted.
 
-- **A commit status of its own.** Turn on **Gate status** under the project's **Settings → Source control**, and each
+- **A commit status of its own.** Turn on **Gate status** under **Project → Settings → Source control**, and each
   stored verdict is also posted as your status context plus `/gate` (`piwi/tests/gate`): green with *Gate policy
   satisfied*, red with the first violation. A branch rule can then require the gate rather than the run. It needs
   [pull-request feedback](/features/pr-feedback#turn-it-on) on, with **Set a commit status**, and `PIWI_SITE_URL`

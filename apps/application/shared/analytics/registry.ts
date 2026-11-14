@@ -135,7 +135,7 @@ export const metricOptionsSchema = z.object({
 export const LIST_SOURCES = ['runs', 'failure-clusters', 'flaky-tests', 'scenario-gaps'] as const;
 
 export const listOptionsSchema = z.object({
-  /** What the list shows, matching the scope: runs, failure causes, flaky tests or scenario gaps. */
+  /** What the list shows, matching the scope: runs, failure clusters, flaky tests or scenario gaps. */
   source: z.enum(LIST_SOURCES).default('runs'),
   limit: z.number().int().min(5).max(25).default(10),
 });
@@ -226,7 +226,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'progress',
     title: 'Fixes and triage',
-    description: 'Failure causes fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
+    description: 'Failure clusters fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
     icon: 'i-lucide-list-checks',
     size: 'half',
     band: 'pain',
@@ -245,7 +245,8 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'risks',
     title: 'Risks',
-    description: 'Missed targets, metrics moving the wrong way, failing projects, old failure causes, quarantine debt.',
+    description:
+      'Missed targets, metrics moving the wrong way, failing projects, old failure clusters, quarantine debt.',
     icon: 'i-lucide-triangle-alert',
     size: 'half',
     band: 'pain',
@@ -254,7 +255,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'portfolio',
     title: 'Portfolio health',
-    description: 'Every project: pass rate and its change, flaky volume, open failure causes, latest run.',
+    description: 'Every project: pass rate and its change, flaky volume, open failure clusters, latest run.',
     icon: 'i-lucide-table-properties',
     size: 'full',
     band: 'health',
@@ -374,7 +375,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'time-to-fix',
     title: 'Time to fix',
-    description: 'Failure causes opened and fixed, the median time to fix, fixes that held, open causes by age.',
+    description: 'Failure clusters opened and fixed, the median time to fix, fixes that held, open clusters by age.',
     icon: 'i-lucide-wrench',
     size: 'half',
     band: 'pain',
@@ -383,7 +384,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'ownership',
     title: 'Ownership',
-    description: 'One row per owner: open failure causes, flaky tests, wasted CI minutes, median time to fix.',
+    description: 'One row per owner: open failure clusters, flaky tests, wasted CI minutes, median time to fix.',
     icon: 'i-lucide-users',
     size: 'full',
     band: 'pain',
@@ -433,7 +434,7 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'list',
     title: 'List',
-    description: 'The latest runs, open failure causes, flakiest tests or open scenario gaps.',
+    description: 'The latest runs, open failure clusters, flakiest tests or open scenario gaps.',
     icon: 'i-lucide-list',
     size: 'half',
     band: 'detail',

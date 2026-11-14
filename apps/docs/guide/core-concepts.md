@@ -62,7 +62,7 @@ Read it in two directions:
 | Execution | `/test-run-cases/:id` | [Failure evidence](/features/evidence#one-execution-diagnosis-first) |
 | Failure cluster | `/failure-clusters/:id` | [Failure clusters](/features/failure-clusters) |
 | Cross-project view | `/analytics` | [Analytics](/features/analytics) |
-| Quality report | *Export* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
+| Quality report | *Quality report* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
 | Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |
 
 ## Related

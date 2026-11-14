@@ -33,7 +33,8 @@ The report keeps the language it was written in; the test Piwi writes from it is
 
 ## The report's page
 
-**Bug reports**, in a project's **More** menu, lists them newest first, by status. A report's page says what the
+**Bug reports**, in a project's **More actions** menu and in the command palette on its pages, lists them newest
+first, by status. A report's page says what the
 tester expected and what the page showed instead, where the report stands, and what to do next, with these tabs:
 
 - **Steps**: the steps in words, each marked step with its expected result, the value the page showed and the note.

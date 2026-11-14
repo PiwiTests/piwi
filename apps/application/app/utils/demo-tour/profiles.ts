@@ -193,7 +193,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
     stops: [
       {
         id: 'timeline',
-        route: '/test-runs/63?tab=workers',
+        route: '/test-runs/63?tab=timeline',
         expect: { run: { id: 63, project: 'web-dashboard' } },
         anchor: 'run-timeline',
         side: 'bottom',

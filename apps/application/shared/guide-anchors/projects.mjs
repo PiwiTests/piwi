@@ -570,8 +570,7 @@ export const PROJECTS_ANCHORS = [
     kind: 'tab',
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'capabilities' } }],
-    describes:
-      'The Capabilities section: the project’s overrides of the instance’s capability defaults, and what its Gaps tab compares the tests against.',
+    describes: 'The Capabilities section: the project’s overrides of the instance’s capability defaults.',
     doc: 'operate/capabilities',
     sample: { route: '/projects/1?tab=settings&section=capabilities', expect: PROJECT_1 },
   },
@@ -593,8 +592,8 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'coverage' } }],
     describes:
-      'The Coverage section: the areas of the code counted apart, such as front and back, and the patterns of the files coverage includes or leaves out.',
-    requires: { capability: 'coverage', permission: 'project:manage' },
+      'The Coverage section: the areas of code counted apart, the files coverage includes or leaves out, and what the Coverage tab’s gaps compare the tests against.',
+    requires: { permission: 'project:manage' },
     help: 'coverage.areas',
     doc: 'features/combined-coverage#areas',
     sample: { route: '/projects/1?tab=settings&section=coverage', expect: PROJECT_1 },

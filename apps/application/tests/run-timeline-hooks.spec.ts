@@ -81,7 +81,7 @@ test.describe('Run timeline hooks and gaps', () => {
   });
 
   test('draws hooks by default, names the failed hook and explains hook time and worker restarts', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
 
     const hookBars = page.locator('[data-timeline-hook]');
@@ -120,7 +120,7 @@ test.describe('Run timeline hooks and gaps', () => {
   });
 
   test('draws a retried attempt apart and joins the attempts of a test on hover', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
 
     // Three bars, two tests: the failed attempt Playwright retried is not another test.
@@ -191,7 +191,7 @@ test.describe('Run timeline lanes the reporter names', () => {
   });
 
   test('keeps a restarted worker on its lane and counts the lanes', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
 
     await expect(page.getByRole('button', { name: 'Timeline (2)' })).toBeVisible();
