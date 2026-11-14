@@ -41,7 +41,7 @@ const toggles: Array<{ key: 'comment' | 'status' | 'onlyOnFailure'; label: strin
     key: 'onlyOnFailure',
     label: 'Only comment on failures',
     description:
-      'Keeps green runs from adding a comment, unless their change left a file no test reached. The commit status is still set either way.',
+      'Keeps green runs from adding a comment, unless they fixed a failure cluster, left or closed a leak, or their change left a file no test reached. The commit status is still set either way.',
   },
 ];
 

@@ -149,16 +149,18 @@ export interface PrSummaryInput {
   changeCoverage?: PrChangeCoverage | null;
   /** Locators the diff breaks whose tests this run did not exercise. */
   locatorBreaks?: PrLocatorBreaks | null;
-  /** Browsers, contexts and pages this run left open that the base branch never showed. */
+  /** Browsers, contexts, pages and Node handles this run left open that the base branch never showed. */
   newLeaks?: PrNewLeaks | null;
 }
 
 // ── New leaks ────────────────────────────────────────────────────────────────
 
-/** The leaks a run introduces against its base branch. */
+/** The leaks a run introduces against its base branch, and those it no longer shows. */
 export interface PrNewLeaks {
   baseBranch: string;
   leaks: WireResourceFinding[];
+  /** Open leaks and handles of the base branch that this run could have shown and did not. */
+  closed?: WireResourceFinding[];
 }
 
 /** Max new leaks listed in the pull-request comment. */
@@ -188,6 +190,7 @@ function leakFix(finding: WireResourceFinding): string {
   }
   if (finding.verdict === 'leaked' && finding.scope === 'describe') return 'close it in an `afterAll`';
   if (finding.verdict === 'probable' && finding.detail?.endsWith(HOOK_OPENED)) return 'close it in an `afterAll`';
+  if (finding.verdict === 'handle') return 'stop it before its test ends';
   return 'close it before its test ends';
 }
 
@@ -204,7 +207,8 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
     const view = findingView(finding);
     const facts = view.facts.join(' · ');
     const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
-    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
+    const where = view.where ? ` · ${codeSpan(view.where)}` : '';
+    return `- **${view.label}**${where}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
   });
   const leakCheck = nl.leaks.some(isTestLeak)
     ? " Set `leakCheck: 'fail'` to catch the next one a test leaves open, locally."
@@ -215,6 +219,27 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
     lines.join('\n'),
   ];
   if (n > MAX_LEAKS_LISTED) blocks.push(`…and ${n - MAX_LEAKS_LISTED} more`);
+  return blocks.join('\n\n');
+}
+
+/**
+ * Render the closed-leaks section: one line per open leak or handle of the
+ * base branch this run could have shown and did not, with the line that
+ * opened it when it is known. Null when there is none.
+ */
+export function renderClosedLeaks(nl: PrNewLeaks): string | null {
+  const closed = nl.closed ?? [];
+  if (closed.length === 0) return null;
+  const lines = closed.slice(0, MAX_LEAKS_LISTED).map((finding) => {
+    const view = findingView(finding);
+    return `- **${view.label}**${view.where ? ` · ${codeSpan(view.where)}` : ''}`;
+  });
+  const blocks = [
+    `#### 🟢 Closed by this change (${closed.length})`,
+    `Open on ${codeSpan(nl.baseBranch)}, and not in this run, where a test of its file passed and none failed.`,
+    lines.join('\n'),
+  ];
+  if (closed.length > MAX_LEAKS_LISTED) blocks.push(`…and ${closed.length - MAX_LEAKS_LISTED} more`);
   return blocks.join('\n\n');
 }
 
@@ -668,8 +693,9 @@ export function buildPrComment(input: PrSummaryInput): string {
   }
 
   if (input.newLeaks) {
-    const section = renderNewLeaks(input.newLeaks);
-    if (section) sections.push(section);
+    for (const section of [renderNewLeaks(input.newLeaks), renderClosedLeaks(input.newLeaks)]) {
+      if (section) sections.push(section);
+    }
   }
 
   if (input.changeCoverage) {
@@ -736,8 +762,8 @@ export function hasUncoveredChanges(cc: PrChangeCoverage | null | undefined): bo
 
 /**
  * True when `onlyOnFailure` keeps the comment off a run: no failure counts
- * against it (`countedFailures`), it fixed no cluster, it opened no new leak and
- * its change left no uncovered change.
+ * against it (`countedFailures`), it fixed no cluster, it opened or closed no
+ * leak and its change left no uncovered change.
  */
 export function isQuietRun(settings: Pick<PrFeedbackSettings, 'onlyOnFailure'>, summary: PrSummaryInput): boolean {
   return (
@@ -745,6 +771,7 @@ export function isQuietRun(settings: Pick<PrFeedbackSettings, 'onlyOnFailure'>, 
     countedFailures(summary) === 0 &&
     (summary.fixedClusters?.length ?? 0) === 0 &&
     (summary.newLeaks?.leaks.length ?? 0) === 0 &&
+    (summary.newLeaks?.closed?.length ?? 0) === 0 &&
     !hasUncoveredChanges(summary.changeCoverage)
   );
 }
