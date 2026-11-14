@@ -1044,7 +1044,26 @@ export interface RunEnded {
    * otherwise.
    */
   repeat?: RepeatVerdict;
+  /** The verdict as both clients show it (`verdictWords`). */
+  verdict: VerdictWords;
 }
+
+/**
+ * A run's verdict in words, after its number (`run #124 · …`): what it changed, `1 of 3 CI failures fixed, 2 still
+ * failing (login.spec.ts › logs in, checkout.spec.ts › pays) · 1 new failure (…)`, else its counts, `9 passed, 0 failed,
+ * 1 skipped (1 ended at a stop)`, or for a run of each test several times how its runs went, `Failed 1 of 3`.
+ * `failing` makes it a warning; `always` says it whatever the client's run notifications setting (a run of each test
+ * several times); `actions` are the client's, in order: open the failures, open the run in the dashboard, re-run the
+ * failing tests.
+ */
+export interface VerdictWords {
+  text: string;
+  failing: boolean;
+  always: boolean;
+  actions: VerdictAction[];
+}
+
+export type VerdictAction = 'failures' | 'dashboard' | 'rerun';
 
 /** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`. */
 export interface RepeatVerdict {

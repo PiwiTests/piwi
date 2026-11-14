@@ -1899,9 +1899,19 @@ describe('the verdict of a run started from the editor', () => {
     newFailures: [],
     stillFailingCount: 2,
     newFailureCount: 0,
+    verdict: {
+      text: '1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
+      failing: true,
+      always: false,
+      actions: ['failures', 'dashboard', 'rerun'],
+    },
+  };
+  const passing: RunEnded = {
+    ...ended,
+    verdict: { text: '1 of 1 CI failure fixed', failing: false, always: false, actions: ['failures', 'dashboard'] },
   };
 
-  test('says how many CI failures it fixed and names those still failing, with Re-run failing', () => {
+  test('says the service’s words after the run, with its actions, then Settings', () => {
     expect(runVerdict(ended)).toEqual({
       severity: 'warning',
       text: 'Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
@@ -1909,21 +1919,7 @@ describe('the verdict of a run started from the editor', () => {
     });
   });
 
-  test('names its new failures, and how many more past the first five', () => {
-    const titles = ['a.spec.ts › 1', 'a.spec.ts › 2', 'a.spec.ts › 3', 'a.spec.ts › 4', 'a.spec.ts › 5'];
-    const verdict = runVerdict({
-      ...ended,
-      fixed: 0,
-      stillFailing: [],
-      stillFailingCount: 0,
-      newFailures: titles,
-      newFailureCount: 7,
-    });
-    expect(verdict?.text).toBe(`Piwi: run #124 · 7 new failures (${titles.join(', ')} and 2 more)`);
-  });
-
-  test('a run that fixed everything it ran is an information, without Re-run failing, offering Only on failure', () => {
-    const passing = { ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 };
+  test('a run where nothing fails is an information, offering Only on failure', () => {
     expect(runVerdict(passing)).toEqual({
       severity: 'information',
       text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
@@ -1933,32 +1929,21 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(ended)?.actions).not.toContain('Only on failure');
   });
 
-  test('a run that touched no failure gives its counts', () => {
-    const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
-    expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
-    // The skipped that were ended at a stop are named beside them.
-    expect(runVerdict({ ...quiet, flaky: 0, passed: 3, skipped: 2, endedAtStop: 1 })?.text).toBe(
-      'Piwi: run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)',
-    );
-  });
-
   test('the setting keeps it quiet: always, only when something fails, or never', () => {
-    const passing = { ...ended, failed: 0, stillFailing: [], stillFailingCount: 0 };
     expect(runVerdict(passing, 'failures')).toBeNull();
     expect(runVerdict(ended, 'failures')).not.toBeNull();
     expect(runVerdict(ended, 'never')).toBeNull();
   });
 
-  test('a run of each test three times says how many of its runs passed, whatever the setting', () => {
-    expect(runVerdict({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } }, 'never')).toEqual({
+  test('a verdict the service says always is said whatever the setting, with its actions alone', () => {
+    const repeated: RunEnded = {
+      ...ended,
+      verdict: { text: 'Failed 1 of 3', failing: true, always: true, actions: ['failures', 'dashboard'] },
+    };
+    expect(runVerdict(repeated, 'never')).toEqual({
       severity: 'warning',
       text: 'Piwi: run #124 · Failed 1 of 3',
       actions: ['Open the failures', 'Open in dashboard'],
-    });
-    const passed = { ...ended, failed: 0, repeat: { verdict: 'Passed 3 of 3', failed: false } };
-    expect(runVerdict(passed, 'failures')).toMatchObject({
-      severity: 'information',
-      text: 'Piwi: run #124 · Passed 3 of 3',
     });
   });
 });

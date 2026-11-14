@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { PiwiContext } from '../src/context';
-import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch, unreachedNotice } from '../src/run-watch';
+import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch, unreachedNotice, verdictWords } from '../src/run-watch';
 import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
@@ -72,6 +72,60 @@ describe('the verdict of a run of each test several times', () => {
     expect(exitVerdict(3, null, 'tests/checkout.spec.ts:42').message).toBe(
       'The 3 runs of tests/checkout.spec.ts:42 ended without an exit code: see the output.',
     );
+  });
+});
+
+describe('the verdict both clients show of a run that ended', () => {
+  const ended = {
+    root: '/w',
+    runId: 124,
+    url: 'http://piwi/test-runs/124',
+    passed: 9,
+    failed: 0,
+    flaky: 0,
+    skipped: 0,
+    fixed: 0,
+    stillFailing: [],
+    newFailures: [],
+    stillFailingCount: 0,
+    newFailureCount: 0,
+  };
+
+  test('says what it changed, the first titles then how many more, as a warning while something fails', () => {
+    expect(
+      verdictWords({
+        ...ended,
+        failed: 3,
+        fixed: 1,
+        stillFailing: ['login.spec.ts › logs in'],
+        stillFailingCount: 2,
+        newFailures: ['cart.spec.ts › adds'],
+        newFailureCount: 1,
+      }),
+    ).toEqual({
+      text: '1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in and 1 more) · 1 new failure (cart.spec.ts › adds)',
+      failing: true,
+      always: false,
+      actions: ['failures', 'dashboard', 'rerun'],
+    });
+  });
+
+  test('says its counts when it changed nothing, the tests ended at a stop beside the skipped', () => {
+    expect(verdictWords({ ...ended, flaky: 1, skipped: 2, endedAtStop: 1 })).toEqual({
+      text: '9 passed, 0 failed, 1 flaky, 2 skipped (1 ended at a stop)',
+      failing: false,
+      always: false,
+      actions: ['failures', 'dashboard'],
+    });
+  });
+
+  test('says how a run of each test several times went, whatever the run notifications setting', () => {
+    expect(verdictWords({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } })).toEqual({
+      text: 'Failed 1 of 3',
+      failing: true,
+      always: true,
+      actions: ['failures', 'dashboard'],
+    });
   });
 });
 

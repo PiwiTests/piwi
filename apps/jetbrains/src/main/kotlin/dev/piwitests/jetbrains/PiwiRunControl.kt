@@ -568,7 +568,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         // Before the draws that follow, so a rerun under the ref starts with Interact off.
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
+        // A test held at its failure or at page.pause() while the IDE is in the background calls once.
+        val due = synchronized(lock) { Glue.attentionStops(Glue.stopsOf(sessions), attended) }
+        if (due.isNotEmpty()) {
+            ApplicationManager.getApplication().invokeLater({
+                if (!ApplicationManager.getApplication().isActive) com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+            }, gone)
+        }
     }
+
+    /** The stops already called attention to (`Glue.attentionStops`). */
+    private val attended = LinkedHashSet<String>()
 
     /** A run started with `breakpoints`: they are not sent to it again, and its lines are the documents' now. */
     fun started(ref: String, breakpoints: List<Glue.RunBreakpoint>) {
