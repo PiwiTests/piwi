@@ -13,7 +13,7 @@ npm install
 npm run app:dev      # dashboard at http://localhost:7494
 ```
 
-The SQLite database and `.data/` storage are created automatically on first API call — no configuration needed. To hack on the reporter package instead, work in `packages/reporter/` (`npm run reporter:build`, or `npm run reporter:dev` for watch mode).
+The SQLite database and `.data/` storage are created when the server starts — no configuration needed. To hack on the reporter package instead, work in `packages/reporter/` (`npm run reporter:build`, or `npm run reporter:dev` for watch mode).
 
 ## Quality checks & tests
 

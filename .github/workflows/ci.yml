@@ -378,10 +378,6 @@ jobs:
         working-directory: apps/application
         run: npm run app:typecheck:tests
 
-      # Only the dashboard's install prepares its `.nuxt`; the Runner's window typecheck reads its own.
-      - name: Prepare the Runner window
-        run: npm run runner:prepare -w apps/runner
-
       - name: Typecheck the packages
         run: |
           npm run reporter:typecheck -w packages/reporter
@@ -612,11 +608,6 @@ jobs:
       - name: Test the shared layer
         working-directory: packages/run-ui
         run: npm run run-ui:test
-
-      # The window's tsconfig extends the `.nuxt` that `nuxt prepare` writes; the install prepares the dashboard's.
-      - name: Prepare the Runner window
-        working-directory: apps/runner
-        run: npm run runner:prepare
 
       - name: Test the host and the window
         working-directory: apps/runner
