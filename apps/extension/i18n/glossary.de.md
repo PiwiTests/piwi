@@ -40,6 +40,7 @@ above all on popup tiles, buttons and badges.
 | to hover | mit der Maus zeigen | the tool says *unter der Maus* |
 | strict mode | Strict Mode | Playwright's term, kept |
 | brittle | fragil | `ein fragiler Locator` |
+| watch (a locator's stability level) | beobachten | the level between stable and brittle, *Watch* in the dashboard |
 | to act on (an element) | bedienen | `von Tests bedient`, for click, fill and the other actions |
 | to check (an assertion) | prüfen | `nur geprüft`; *aktivieren* is for a checkbox |
 | enabled / disabled (state) | nutzbar / ausgegraut | as the bug panel says it; *aktivieren* / *deaktivieren* check and uncheck a checkbox |

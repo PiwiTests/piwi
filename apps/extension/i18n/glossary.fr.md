@@ -24,6 +24,7 @@ one of `store/amo-description.fr.md`: plain sentences, `vous`, no anglicism wher
 | screenshot | capture d’écran | |
 | tested elements | éléments testés | the tool's name, capitalized as a title: *Éléments testés* |
 | URL pattern | motif d’adresse | the settings section's name, in the plural: *Motifs d’adresse* |
+| watch (a locator's stability level) | à surveiller | the level between stable and brittle, *Watch* in the dashboard |
 | branch | branche | |
 | instance (Piwi) | instance | `votre instance Piwi` |
 | API key | clé d’API | |

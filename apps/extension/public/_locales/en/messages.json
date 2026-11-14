@@ -1756,8 +1756,8 @@
     "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but that the stability rules call brittle."
   },
   "common_verdictWatch": {
-    "message": "could break",
-    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but could break when the page changes."
+    "message": "watch",
+    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone and that a stability rule has something to say about: the Watch level, as the dashboard and the docs name it. One word, lower case."
   },
   "multipick_picked_one": {
     "message": "$count$ similar item picked",
@@ -6108,8 +6108,8 @@
     }
   },
   "coverage_noteWatch": {
-    "message": "Could break: $rules$",
-    "description": "Tested elements, card over the page: under a locator that could break. $rules$ lists the reasons, from the stability_ messages.",
+    "message": "Watch: $rules$",
+    "description": "Tested elements, card over the page: under a locator at the Watch level, as the dashboard names it. $rules$ lists the reasons, from the stability_ messages.",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -6380,8 +6380,8 @@
     "description": "DevTools, Piwi sidebar: after the verdict, the locator follows every stability rule. One word, lower case."
   },
   "devtools_watch": {
-    "message": "could break: $rules$",
-    "description": "DevTools, Piwi sidebar: after the verdict, the locator could break. $rules$ lists the reasons, from the stability_ messages.",
+    "message": "watch: $rules$",
+    "description": "DevTools, Piwi sidebar: after the verdict, the locator is at the Watch level, as the dashboard names it. $rules$ lists the reasons, from the stability_ messages.",
     "placeholders": {
       "rules": {
         "content": "$1",

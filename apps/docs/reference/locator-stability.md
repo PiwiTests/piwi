@@ -19,9 +19,8 @@ of three levels:
 
 - **Brittle**: at least one rule gives it that level. The [Tested elements](/features/tested-elements#brittle-locators)
   overlay lists it under **At risk**, and offers a replacement; the Locators page says why.
-- **Watch**, which Piwi Picker writes **could break** (in its pick results, the DevTools sidebar and the Tested
-  elements cards): a rule has something to say, but the locator does not break on its own. Shown on the element's card
-  and on the Locators page, never listed under **At risk**.
+- **Watch**: a rule has something to say, but the locator does not break on its own. Shown on the Locators page, and
+  in Piwi Picker's pick results, DevTools sidebar and Tested elements cards; never listed under **At risk**.
 - **Stable**: no rule has anything to say.
 
 A locator takes the level of its worst part: a stable container cannot save a brittle target, and a brittle container

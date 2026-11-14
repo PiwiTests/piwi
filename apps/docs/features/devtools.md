@@ -22,7 +22,7 @@ shows:
 
 ```
 getByTestId('cart-button')                        ✓ unique · stable
-getByRole('button', { name: 'Cart, 2 items' })    ✓ unique · could break: number in text
+getByRole('button', { name: 'Cart, 2 items' })    ✓ unique · watch: number in text
 getByText('🛒 2')                                 ✓ unique · stable
 ```
 

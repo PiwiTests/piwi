@@ -26,6 +26,7 @@ This is a draft: no native reader has reviewed it yet.
 | screenshot | captura de tela | `fazer uma captura de tela` |
 | tested elements | elementos testados | the tool's name, capitalized as a title: *Elementos testados* |
 | URL pattern | padrão de endereço | the settings section's name, in the plural: *Padrões de endereço* |
+| watch (a locator's stability level) | a observar | the level between stable and brittle, *Watch* in the dashboard |
 | branch | branch (feminino) | `a branch`, `todas as branches` |
 | instance (Piwi) | instância | `sua instância do Piwi` |
 | API key | chave de API | |

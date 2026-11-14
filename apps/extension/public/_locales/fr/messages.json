@@ -1439,7 +1439,7 @@
     "message": "fragile"
   },
   "common_verdictWatch": {
-    "message": "peut casser"
+    "message": "à surveiller"
   },
   "multipick_picked_one": {
     "message": "$count$ élément similaire choisi",
@@ -5163,7 +5163,7 @@
     }
   },
   "coverage_noteWatch": {
-    "message": "Peut casser : $rules$",
+    "message": "À surveiller : $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -5394,7 +5394,7 @@
     "message": "stable"
   },
   "devtools_watch": {
-    "message": "peut casser : $rules$",
+    "message": "à surveiller : $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",

@@ -1439,7 +1439,7 @@
     "message": "fragil"
   },
   "common_verdictWatch": {
-    "message": "kann brechen"
+    "message": "beobachten"
   },
   "multipick_picked_one": {
     "message": "$count$ ähnlicher Eintrag gewählt",
@@ -5163,7 +5163,7 @@
     }
   },
   "coverage_noteWatch": {
-    "message": "Kann brechen: $rules$",
+    "message": "Beobachten: $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",
@@ -5394,7 +5394,7 @@
     "message": "stabil"
   },
   "devtools_watch": {
-    "message": "kann brechen: $rules$",
+    "message": "beobachten: $rules$",
     "placeholders": {
       "rules": {
         "content": "$1",

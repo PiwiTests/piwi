@@ -45,6 +45,7 @@ Spanish word is as clear. This catalog is a draft until a native reader reviews 
 | hidden / visible | oculto / visible | states agree with the noun: `oculto`, `oculta` |
 | enabled / disabled | habilitado / deshabilitado | in the report's own words, `disponible` / `atenuado` |
 | brittle | frágil | a brittle locator `puede fallar` |
+| watch (a locator's stability level) | a vigilar | the level between stable and brittle, *Watch* in the dashboard |
 
 ## The tools' names
 

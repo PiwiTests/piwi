@@ -1401,7 +1401,7 @@ a **candidate** is one ranked locator for the element.
   `textsAmong` gives.
 - **Verdict words** (`verdictWords`, `src/shared/verdict-words.ts`, unit-tested) say what a checked locator is worth,
   from its verdict and `locatorStability` (`assessLocatorChain`'s level and rules):
-  - a word: `stable`, `could break`, `brittle`, `unique by position`, `3 matches`, `not checked`;
+  - a word: `stable`, `watch`, `brittle`, `unique by position`, `3 matches`, `not checked`;
   - a tone;
   - an explanation: `unique · brittle: CSS class`.
 

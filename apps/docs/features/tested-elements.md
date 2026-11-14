@@ -90,7 +90,7 @@ branch's tests will not find, before the branch's suite runs. The lists follow t
 ## Brittle locators
 
 The overlay marks an element a [brittle locator](/reference/locator-stability#levels) finds with an orange corner;
-**Brittle**, in the panel, hides the marks. A locator at the *Watch* level reads **Could break** on the element's card.
+**Brittle**, in the panel, hides the marks. A locator at the *Watch* level reads **Watch** on the element's card, followed by the rules that flag it.
 
 The **At risk** tab lists the brittle locators finding something on the page, those used by a failing or flaky test
 first, then those shared by the most tests, with their tests and call sites. For one that finds a single element, it
