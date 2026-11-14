@@ -21,6 +21,36 @@ async function speedUpAnimations(context: BrowserContext, page: Page): Promise<v
   }
 }
 
+type ContextSettings = {
+  extraHTTPHeaders: Record<string, string> | undefined;
+  permissions: string[] | undefined;
+  geolocation: { latitude: number; longitude: number; accuracy?: number } | undefined;
+  offline: boolean | undefined;
+};
+
+/**
+ * Puts back what Playwright's context reuse leaves from the previous test: offline mode, extra HTTP headers,
+ * permissions and geolocation as configured, and, on Chromium, the Cache Storage of every origin the test visited.
+ */
+async function resetForNextTest(
+  context: BrowserContext,
+  settings: ContextSettings,
+  origins: Set<string>,
+  chromium: boolean,
+): Promise<void> {
+  await context.setOffline(settings.offline ?? false);
+  await context.setExtraHTTPHeaders(settings.extraHTTPHeaders ?? {});
+  await context.clearPermissions();
+  if (settings.permissions?.length) await context.grantPermissions(settings.permissions);
+  await context.setGeolocation(settings.geolocation ?? null);
+  const page = context.pages()[0];
+  if (!chromium || !page || !origins.size) return;
+  const session = await context.newCDPSession(page);
+  for (const origin of origins)
+    await session.send('Storage.clearDataForOrigin', { origin, storageTypes: 'cache_storage' });
+  await session.detach();
+}
+
 type Outcome = Pick<TestInfo, 'status' | 'expectedStatus' | 'attach'>;
 
 /** Attaches a screenshot of every open page of `context` when the test failed, and does nothing when it passed. */
@@ -37,7 +67,14 @@ export async function captureFailure(context: BrowserContext, testInfo: Outcome)
   return captured;
 }
 
-export const test = base.extend<TurboOptions>({
+export const test = base.extend<
+  Omit<TurboOptions, 'reuseContextWithReset'>,
+  Pick<TurboOptions, 'reuseContextWithReset'>
+>({
+  // Playwright reuses one context per worker only through this option, so a suite on plain @playwright/test never
+  // reuses a context without the reset below.
+  reuseContextWithReset: [false, { scope: 'worker', option: true }],
+  reuseContext: [async ({ reuseContextWithReset }, use) => use(reuseContextWithReset), { scope: 'worker' }],
   blockRequests: [[], { option: true }],
   failureScreenshots: [false, { option: true }],
   instantAnimations: [false, { option: true }],
@@ -61,6 +98,11 @@ export const test = base.extend<TurboOptions>({
       skipStabilityWait,
       connectOptions,
       browserName,
+      reuseContextWithReset,
+      extraHTTPHeaders,
+      permissions,
+      geolocation,
+      offline,
     },
     use,
     testInfo,
@@ -99,9 +141,24 @@ export const test = base.extend<TurboOptions>({
           return page;
         };
       }
+      const origins = new Set<string>();
+      if (reuseContextWithReset) {
+        context.on('request', (request) => {
+          const { protocol, origin } = new URL(request.url());
+          if (protocol === 'http:' || protocol === 'https:') origins.add(origin);
+        });
+      }
       await use(context);
       await Promise.all(speedUps.values());
       if (failureScreenshots) await captureFailure(context, testInfo);
+      if (reuseContextWithReset) {
+        await resetForNextTest(
+          context,
+          { extraHTTPHeaders, permissions, geolocation, offline },
+          origins,
+          browserName === 'chromium',
+        );
+      }
     } finally {
       state.fastScreenshots = false;
       state.retryIntervals = undefined;

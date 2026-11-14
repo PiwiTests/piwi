@@ -8,10 +8,11 @@ type Matcher = string | RegExp | Array<string | RegExp>;
 /**
  * A named bundle of optimizations, by how much a test can notice:
  * - `safe`: nothing a test observes changes. Traces and video for failures or retries only, and failure screenshots.
- * - `fast`: `safe`, plus changes to what the page does: reduced motion and instant animations.
- * - `experimental`: `fast`, plus the hooks into Playwright's internals.
+ * - `fast`: `safe`, plus changes to what the page does: reduced motion and instant animations, and one browser context
+ *   per worker, reset between tests.
+ * - `max`: `fast`, plus every hook into Playwright's internals.
  */
-export type Preset = 'safe' | 'fast' | 'experimental';
+export type Preset = 'safe' | 'fast' | 'max';
 
 export interface Optimizations {
   /** A bundle of the options below. An option named next to it wins over the preset. */
@@ -24,6 +25,12 @@ export interface Optimizations {
    * snapshots: the trace keeps the actions, network, console and sources, and the viewer shows no page at each step.
    */
   lightTraces?: boolean | 'actions';
+  /**
+   * One browser context per worker, reset between tests, in place of a new context for each test: Playwright's own
+   * reuse, plus turbo's reset of offline mode, extra headers, permissions, geolocation and Cache Storage. Needs `test`
+   * from `@piwitests/turbo/test`, and video off.
+   */
+  reuseContext?: boolean;
   /**
    * With retries, records video on the first retry instead of `retain-on-failure`, which records every test to keep the
    * failed ones.
@@ -122,12 +129,20 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
   if (trace === 'on' || trace === 'retain-on-failure') safe.trace = retries ? 'on-first-retry' : 'retain-on-failure';
   if (modeOf(config.use?.screenshot) === 'only-on-failure') safe.failureScreenshots = true;
   if (preset === 'safe') return safe;
-  const fast: Optimizations = { ...safe, reducedMotion: true, instantAnimations: true };
+  const fast: Optimizations = { ...safe, reducedMotion: true, instantAnimations: true, reuseContext: true };
   if (preset === 'fast') return fast;
-  if (preset === 'experimental') {
-    return { ...fast, experimental: { fastScreenshots: true, retryIntervals: EXPERIMENTAL_RETRY_INTERVALS } };
+  if (preset === 'max') {
+    return {
+      ...fast,
+      experimental: {
+        fastScreenshots: true,
+        retryIntervals: EXPERIMENTAL_RETRY_INTERVALS,
+        failFast: true,
+        skipStabilityWait: true,
+      },
+    };
   }
-  throw new Error(`@piwitests/turbo: unknown preset "${String(preset)}"; use safe, fast or experimental`);
+  throw new Error(`@piwitests/turbo: unknown preset "${String(preset)}"; use safe, fast or max`);
 }
 
 /** Returns `config` with the given optimizations applied. Every one is off unless named, or part of the preset. */
@@ -154,6 +169,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
   if (options.instantAnimations) use.instantAnimations = true;
+  if (options.reuseContext) use.reuseContextWithReset = true;
   if (options.failureScreenshots) {
     // In place of Playwright's own capture, unless the config asks for every test's screenshots.
     if (use.screenshot !== 'on' && use.screenshot !== 'on-first-failure') {

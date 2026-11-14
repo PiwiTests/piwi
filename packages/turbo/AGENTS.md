@@ -9,7 +9,9 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
 - **No copied Playwright or Flashwright code** (both Apache-2.0): hooks wrap internals at runtime. Code taken from
   either would need its license and NOTICE kept beside it. The README's Credits name Flashwright as the source of the
   techniques; keep them when a technique is added.
-- **One fresh browser context per test**, as in stock Playwright: every lever keeps it.
+- **A browser context is shared between tests only through `reuseContextWithReset`** (`src/test.ts`), which adds the
+  reset Playwright's `reuseContext` leaves out; `tests/e2e/reuse-isolation.spec.ts` checks each kind of state, and a
+  new kind of state a test can leave gets a pair of tests there.
 - **Every lever is off unless named** in `withOptimizations` or `use`, or part of the preset; a project's own settings
   win, and an option left `undefined` keeps the preset's value (`tests/config.test.ts`).
 - **The experimental hooks fail loudly** (`src/hooks.ts`): a Playwright version outside `TESTED_VERSIONS`, an internal

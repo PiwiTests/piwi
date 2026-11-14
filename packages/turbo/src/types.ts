@@ -11,6 +11,11 @@ export interface TurboOptions {
   instantAnimations: boolean;
   /** Experimental, Chromium: encode PNG screenshots for speed. */
   fastScreenshots: boolean;
+  /**
+   * Worker option: keep one browser context per worker, reset between tests by Playwright and by turbo, in place of a
+   * new context for each test. Needs video off.
+   */
+  reuseContextWithReset: boolean;
   /** Experimental: the backoff of Playwright's retry loop, in milliseconds. */
   retryIntervals: number[] | undefined;
   /** Experimental: a failing web-first assertion ends once nothing can change the page before its timeout. */

@@ -4,7 +4,7 @@
 //   npm run turbo:bench                                            every variant against stock
 //   npm run turbo:bench -- --only tuned,tuned+fast-png,tuned+retry,tuned+hooks --runs 8
 //                                                            the hooks against the tuned suite
-//   npm run turbo:bench -- --only stock,failure-screenshots,instant-animations,preset-safe,preset-fast,preset-experimental
+//   npm run turbo:bench -- --only stock,failure-screenshots,instant-animations,preset-safe,preset-fast,preset-max
 //                                                            the newer levers and the presets against stock
 // A variant's order in this list decides the baseline: the first variant of a run.
 import { createRequire } from 'node:module';
@@ -83,10 +83,11 @@ export default {
     },
     { name: 'preset-safe', description: "preset: 'safe'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'safe' } },
     { name: 'preset-fast', description: "preset: 'fast'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast' } },
+    { name: 'preset-max', description: "preset: 'max'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'max' } },
     {
-      name: 'preset-experimental',
-      description: "preset: 'experimental'.",
-      env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'experimental' },
+      name: 'preset-fast-no-reuse',
+      description: "preset: 'fast' with reuseContext: false.",
+      env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast', BENCH_REUSE: '0' },
     },
     {
       name: 'stock-red',

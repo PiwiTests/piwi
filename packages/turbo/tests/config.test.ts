@@ -98,25 +98,36 @@ describe('presets', () => {
     expect(result.use?.trace).toBe('on-first-retry');
   });
 
-  test('fast adds reduced motion and instant animations', () => {
+  test('fast adds reduced motion, instant animations and context reuse', () => {
     const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'fast' });
-    expect(result.use).toMatchObject({ contextOptions: { reducedMotion: 'reduce' }, instantAnimations: true });
+    expect(result.use).toMatchObject({
+      contextOptions: { reducedMotion: 'reduce' },
+      instantAnimations: true,
+      reuseContextWithReset: true,
+    });
     expect(result.use).not.toHaveProperty('retryIntervals');
   });
 
-  test('experimental adds both hooks', () => {
-    const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'experimental' });
+  test('max adds every hook', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'max' });
     expect(result.use).toMatchObject({
       fastScreenshots: true,
       retryIntervals: [10, 20, 40, 50],
+      failFast: true,
+      skipStabilityWait: true,
       instantAnimations: true,
     });
+  });
+
+  test('turns reuse off when asked, whatever the preset', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'fast', reuseContext: false });
+    expect(result.use).not.toHaveProperty('reuseContextWithReset');
   });
 
   test('an option named next to the preset wins', () => {
     const result = withOptimizations<PlaywrightTestConfig>(
       {},
-      { preset: 'experimental', trace: 'on', experimental: { retryIntervals: [25] } },
+      { preset: 'max', trace: 'on', experimental: { retryIntervals: [25] } },
     );
     expect(result.use).toMatchObject({ trace: 'on', retryIntervals: [25], fastScreenshots: true });
   });
@@ -130,7 +141,7 @@ describe('presets', () => {
   test('keeps the preset where an option is left undefined', () => {
     const result = withOptimizations<PlaywrightTestConfig>(
       { use: { trace: 'on' } },
-      { preset: 'experimental', trace: undefined, instantAnimations: undefined, experimental: { failFast: undefined } },
+      { preset: 'max', trace: undefined, instantAnimations: undefined, experimental: { failFast: undefined } },
     );
     expect(result.use).toMatchObject({ trace: 'retain-on-failure', instantAnimations: true, fastScreenshots: true });
   });
@@ -138,7 +149,7 @@ describe('presets', () => {
   test('turns on no trace, screenshot or video the config leaves off', () => {
     const result = withOptimizations<PlaywrightTestConfig>(
       { use: { trace: 'off', screenshot: 'off', video: 'off' } },
-      { preset: 'experimental' },
+      { preset: 'max' },
     );
     expect(result.use).toMatchObject({ trace: 'off', screenshot: 'off', video: 'off' });
     expect(result.use).not.toHaveProperty('failureScreenshots');
