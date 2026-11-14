@@ -373,7 +373,7 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 
 ## Left for later
 
-Each item is tracked by a GitHub issue of `PiwiTests/piwi`.
+The first two items are tracked by [#1413](https://github.com/PiwiTests/piwi/issues/1413); the third by no issue.
 
 - **File names that differ from their page's title** (L14, [#1413](https://github.com/PiwiTests/piwi/issues/1413)):
   renamed only when the page moves anyway, with a redirect; none has moved.
