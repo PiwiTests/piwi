@@ -429,7 +429,8 @@ describe('the layers of a worker’s lane view', () => {
   });
 
   it('never sends a secret the test typed, and nothing once the lane view is off', () => {
-    const said = JSON.stringify(layers());
+    // What was sent, without when it arrived: a time in milliseconds is thirteen digits, and can hold the PIN's four.
+    const said = JSON.stringify(layers().map(({ message }) => message));
     expect(said).not.toContain(SECRET);
     expect(said).not.toContain(CARD);
     expect(said).not.toContain(PIN);
