@@ -8,8 +8,8 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
 - **MIT**, like `packages/core`: no code from the FSL parts of the repository moves in here.
 - **No copied Playwright or Flashwright code** (both Apache-2.0): hooks wrap internals at runtime. The README's
   Credits name Flashwright as the source of the techniques; keep them when a technique is added.
-- **A browser context is shared between tests only through `reuseContextWithReset`** (`src/test.ts`), which adds the
-  reset Playwright's `reuseContext` leaves out. `tests/e2e/reuse-isolation.ts` holds a pair of tests for each kind of
+- **turbo resets a context whenever Playwright reuses it** (`_turboReused` in `src/test.ts`: `reuseContextWithReset`
+  or `PW_TEST_REUSE_CONTEXT`, with video off). `tests/e2e/reuse-isolation.ts` holds a pair of tests for each kind of
   state a test can leave, run by one spec per reset; a new kind of state gets a pair there.
 - **Every lever is off unless named** in `withOptimizations` or `use`, or part of the preset; a project's own settings
   win, and an option left `undefined` keeps the preset's value (`tests/config.test.ts`).

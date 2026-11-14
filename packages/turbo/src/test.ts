@@ -1,6 +1,19 @@
 // `test` with @piwitests/turbo's fixtures: request blocking, failure screenshots, instant animations, and
 // the experimental hooks, each off until enabled in `use`.
-import { test as base, expect, type BrowserContext, type Page, type Request, type TestInfo } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  type BrowserContext,
+  type CDPSession,
+  type Page,
+  type PlaywrightTestArgs,
+  type PlaywrightTestOptions,
+  type PlaywrightWorkerArgs,
+  type PlaywrightWorkerOptions,
+  type Request,
+  type TestInfo,
+  type TestType,
+} from '@playwright/test';
 import {
   assertHooksWork,
   hookExistingPage,
@@ -21,8 +34,8 @@ function guidOf(object: Page | BrowserContext): string {
   return (object as unknown as { _guid: string })._guid;
 }
 
-/** The contexts that have the idle tracker, by guid: the hooks keep it for the context's life. */
-const trackedContexts = new Set<string>();
+/** The CDP sessions turbo opens and keeps: a test's own are detached as it ends. */
+const ownSessions = new WeakSet<CDPSession>();
 
 /** The tabs whose animations run faster, by guid: a reused context keeps its tab, and the tab its playback rate. */
 const fastTabs = new Set<string>();
@@ -36,6 +49,7 @@ async function speedUpAnimations(context: BrowserContext, page: Page): Promise<v
   if (fastTabs.has(guidOf(page))) return;
   try {
     const session = await context.newCDPSession(page);
+    ownSessions.add(session);
     await session.send('Animation.setPlaybackRate', { playbackRate: 1000 });
     fastTabs.add(guidOf(page));
   } catch (error) {
@@ -49,6 +63,7 @@ type ContextSettings = {
   permissions: string[] | undefined;
   geolocation: { latitude: number; longitude: number; accuracy?: number } | undefined;
   offline: boolean | undefined;
+  httpCredentials: Parameters<BrowserContext['setHTTPCredentials']>[0] | undefined;
 };
 
 const SETTERS = [
@@ -57,6 +72,7 @@ const SETTERS = [
   'grantPermissions',
   'clearPermissions',
   'setGeolocation',
+  'setHTTPCredentials',
 ] as const;
 type Setter = (typeof SETTERS)[number];
 
@@ -81,15 +97,12 @@ function watchSettings(context: BrowserContext): Set<Setter> {
 
 /**
  * Puts back what Playwright's context reuse leaves from the previous test, only where the test changed it: offline
- * mode, extra HTTP headers, permissions and geolocation as configured. Without fastReset, which clears it itself,
- * also clears the Cache Storage of every origin the test visited, on Chromium.
+ * mode, extra HTTP headers, permissions, geolocation and HTTP credentials as configured.
  */
 async function resetForNextTest(
   context: BrowserContext,
   settings: ContextSettings,
   changed: Set<Setter>,
-  origins: Set<string>,
-  clearCaches: boolean,
 ): Promise<void> {
   const touched = new Set(changed);
   if (touched.has('setOffline')) await context.setOffline(settings.offline ?? false);
@@ -99,10 +112,24 @@ async function resetForNextTest(
     if (settings.permissions?.length) await context.grantPermissions(settings.permissions);
   }
   if (touched.has('setGeolocation')) await context.setGeolocation(settings.geolocation ?? null);
+  if (touched.has('setHTTPCredentials')) await context.setHTTPCredentials(settings.httpCredentials ?? null);
   // The resets above go through the watched setters too: the next test starts with nothing recorded.
   changed.clear();
-  const page = context.pages()[0];
-  if (!clearCaches || !page || !origins.size) return;
+}
+
+/** The origins whose Cache Storage the last test of a reused context left, by context guid. */
+const cachesLeft = new Map<string, Set<string>>();
+
+/**
+ * Clears the Cache Storage the last test left, which Playwright's reset keeps. It runs as the next test starts, after
+ * that reset: no page of the last test can write to it any more, and its service workers are gone.
+ */
+async function clearCachesLeft(context: BrowserContext): Promise<void> {
+  const origins = cachesLeft.get(guidOf(context));
+  cachesLeft.delete(guidOf(context));
+  if (!origins?.size) return;
+  // In a reused context, the `page` fixture takes this page.
+  const page = context.pages()[0] ?? (await context.newPage());
   const session = await context.newCDPSession(page);
   for (const origin of origins)
     await session.send('Storage.clearDataForOrigin', { origin, storageTypes: 'cache_storage' });
@@ -111,13 +138,25 @@ async function resetForNextTest(
 
 type Outcome = Pick<TestInfo, 'status' | 'expectedStatus' | 'attach'>;
 
-/** Attaches a screenshot of every open page of `context` when the test failed, and does nothing when it passed. */
-export async function captureFailure(context: BrowserContext, testInfo: Outcome): Promise<number> {
+type CaptureOptions = { fullPage?: boolean; omitBackground?: boolean };
+
+/**
+ * Attaches a screenshot of every open page of `context` and of the other contexts of its browser, which the test
+ * opened, when the test failed, and does nothing when it passed.
+ */
+export async function captureFailure(
+  context: BrowserContext,
+  testInfo: Outcome,
+  options: CaptureOptions = {},
+): Promise<number> {
   if (testInfo.status === testInfo.expectedStatus) return 0;
+  const contexts = [context, ...(context.browser()?.contexts() ?? []).filter((other) => other !== context)];
   let captured = 0;
-  for (const open of context.pages()) {
+  for (const open of contexts.flatMap((each) => each.pages())) {
     if (open.isClosed()) continue;
-    const body = await open.screenshot({ timeout: 5000 }).catch(() => undefined);
+    const body = await open
+      .screenshot({ timeout: 5000, fullPage: options.fullPage, omitBackground: options.omitBackground })
+      .catch(() => undefined);
     if (!body) continue;
     await testInfo.attach('screenshot', { body, contentType: 'image/png' });
     captured++;
@@ -125,14 +164,26 @@ export async function captureFailure(context: BrowserContext, testInfo: Outcome)
   return captured;
 }
 
-type WorkerOptions = 'reuseContextWithReset' | 'fastReset' | 'fastStackTraces';
+type WorkerOptions = 'reuseContextWithReset' | 'fastReset' | 'fastStackTraces' | 'failureScreenshots';
 
-export const test = base.extend<
+function modeOf(setting: unknown): string | undefined {
+  return typeof setting === 'object' && setting !== null ? (setting as { mode?: string }).mode : (setting as string);
+}
+
+/** The worker's failure capture, which the `screenshot` fixture sets up: none, or the options of its screenshots. */
+let failureCapture: CaptureOptions | undefined;
+
+/** `test` with turbo's options, typed from `@playwright/test` alone. */
+export type TurboTest = TestType<
+  PlaywrightTestArgs & PlaywrightTestOptions & Omit<TurboOptions, WorkerOptions>,
+  PlaywrightWorkerArgs & PlaywrightWorkerOptions & Pick<TurboOptions, WorkerOptions>
+>;
+
+export const test: TurboTest = base.extend<
   Omit<TurboOptions, WorkerOptions>,
-  Pick<TurboOptions, WorkerOptions> & { _turboStackTraces: void }
+  Pick<TurboOptions, WorkerOptions> & { _turboStackTraces: void; _turboReused: boolean }
 >({
-  // Playwright reuses one context per worker only through this option, so a suite on plain @playwright/test never
-  // reuses a context without the reset below.
+  // turbo's `test` hands this option to Playwright's reuseContext, so its context is reused with the reset below.
   reuseContextWithReset: [false, { scope: 'worker', option: true }],
   fastReset: [false, { scope: 'worker', option: true }],
   fastStackTraces: [false, { scope: 'worker', option: true }],
@@ -144,10 +195,18 @@ export const test = base.extend<
     },
     { scope: 'worker', auto: true },
   ],
+  // Whether Playwright reuses the context, by its own rule: the option or PW_TEST_REUSE_CONTEXT, and no video.
+  _turboReused: [
+    async ({ reuseContextWithReset, video }, use) => {
+      const requested = reuseContextWithReset || !!process.env.PW_TEST_REUSE_CONTEXT;
+      await use(requested && (modeOf(video) ?? 'off') === 'off');
+    },
+    { scope: 'worker' },
+  ],
   reuseContext: [
-    async ({ reuseContextWithReset, fastReset, connectOptions }, use) => {
+    async ({ reuseContextWithReset, _turboReused, fastReset, connectOptions }, use) => {
       // The reset of a reused context runs before each test's fixtures, so fastReset holds for the whole worker.
-      if (reuseContextWithReset && fastReset) {
+      if (_turboReused && fastReset) {
         if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
           throw new Error(
             '@piwitests/turbo: fastReset needs a browser launched by the test worker, not a connected one',
@@ -161,7 +220,21 @@ export const test = base.extend<
     { scope: 'worker' },
   ],
   blockRequests: [[], { option: true }],
-  failureScreenshots: [false, { option: true }],
+  failureScreenshots: [false, { scope: 'worker', option: true }],
+  // turbo captures failed tests in place of Playwright's `only-on-failure`, which screenshots every test's pages and
+  // keeps the failed ones: for the tests on this `test` only, so a spec on @playwright/test's keeps Playwright's.
+  screenshot: [
+    async ({ screenshot, failureScreenshots }, use) => {
+      const mode = modeOf(screenshot);
+      const options: CaptureOptions = typeof screenshot === 'object' && screenshot ? screenshot : {};
+      failureCapture =
+        failureScreenshots && mode !== 'on' && mode !== 'on-first-failure'
+          ? { fullPage: options.fullPage, omitBackground: options.omitBackground }
+          : undefined;
+      await use(failureCapture && mode === 'only-on-failure' ? 'off' : screenshot);
+    },
+    { scope: 'worker' },
+  ],
   instantAnimations: [false, { option: true }],
   fastScreenshots: [false, { option: true }],
   retryIntervals: [undefined, { option: true }],
@@ -175,7 +248,7 @@ export const test = base.extend<
     {
       context,
       blockRequests,
-      failureScreenshots,
+      screenshot,
       instantAnimations,
       fastScreenshots,
       retryIntervals,
@@ -183,21 +256,24 @@ export const test = base.extend<
       skipStabilityWait,
       connectOptions,
       browserName,
-      reuseContextWithReset,
+      _turboReused: reused,
       fastReset,
       extraHTTPHeaders,
       permissions,
       geolocation,
       offline,
+      httpCredentials,
     },
     use,
     testInfo,
   ) => {
+    // Depending on `screenshot` sets the worker's failure capture up before this fixture runs.
+    void screenshot;
     const intervals = validIntervals(retryIntervals);
     // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
     const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
-    const hooks = fast || !!intervals || failFast || skipStabilityWait || (reuseContextWithReset && fastReset);
+    const hooks = fast || !!intervals || failFast || skipStabilityWait || (reused && fastReset);
     if (hooks) {
       if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
@@ -215,14 +291,14 @@ export const test = base.extend<
     state.failFast = failFast;
     state.skipStabilityWait = skipStabilityWait;
     try {
-      if (failFast && !trackedContexts.has(guidOf(context))) {
-        await context.addInitScript(IDLE_TRACKER);
-        trackedContexts.add(guidOf(context));
-      }
+      if (failFast) await context.addInitScript(IDLE_TRACKER);
       for (const rule of blockRequests)
         await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
       // A reused context comes back for the next test: whatever this test adds to it is removed when it ends.
       const listeners: Array<() => void> = [];
+      // The origins whose Cache Storage the reset of a reused context keeps; fastReset clears it itself.
+      const clearCaches = reused && browserName === 'chromium' && !fastReset;
+      if (clearCaches) await clearCachesLeft(context);
       const speedUps = new Map<Page, Promise<void>>();
       // A reused context starts the test with the last test's tab, which the test gets without newPage. A tab an
       // earlier test sped up is closed for a test without instant animations, which gets a new one.
@@ -248,10 +324,19 @@ export const test = base.extend<
         };
         listeners.push(() => (context.newPage = newPage));
       }
-      const changed = reuseContextWithReset ? watchSettings(context) : new Set<Setter>();
-      // The origins whose Cache Storage the reset of a reused context keeps; fastReset clears it itself.
+      const changed = reused ? watchSettings(context) : new Set<Setter>();
+      // A reused context keeps the CDP sessions a test opens, and what they set: they are detached as it ends.
+      const sessions: CDPSession[] = [];
+      if (reused) {
+        const newCDPSession = context.newCDPSession;
+        context.newCDPSession = async (...args) => {
+          const session = await newCDPSession.apply(context, args);
+          sessions.push(session);
+          return session;
+        };
+        listeners.push(() => (context.newCDPSession = newCDPSession));
+      }
       const origins = new Set<string>();
-      const clearCaches = reuseContextWithReset && browserName === 'chromium' && !fastReset;
       if (clearCaches) {
         const onRequest = (request: Request) => {
           const { protocol, origin } = new URL(request.url());
@@ -263,17 +348,17 @@ export const test = base.extend<
       try {
         await use(context);
         await Promise.all(speedUps.values());
-        if (failureScreenshots) await captureFailure(context, testInfo);
+        if (failureCapture) await captureFailure(context, testInfo, failureCapture);
       } finally {
         for (const remove of listeners) remove();
       }
-      if (reuseContextWithReset) {
+      if (clearCaches) cachesLeft.set(guidOf(context), origins);
+      if (reused) {
+        for (const session of sessions) if (!ownSessions.has(session)) await session.detach().catch(() => {});
         await resetForNextTest(
           context,
-          { extraHTTPHeaders, permissions, geolocation, offline },
+          { extraHTTPHeaders, permissions, geolocation, offline, httpCredentials },
           changed,
-          origins,
-          clearCaches,
         );
       }
     } finally {

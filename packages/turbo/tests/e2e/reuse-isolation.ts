@@ -19,6 +19,25 @@ export function defineIsolationTests(test: typeof turboTest): void {
         response.end("self.addEventListener('fetch', () => {});");
         return;
       }
+      if (request.url === '/basic') {
+        const authorization = request.headers.authorization;
+        response.writeHead(authorization ? 200 : 401, {
+          'content-type': 'text/html',
+          ...(authorization ? {} : { 'www-authenticate': 'Basic realm="leak"' }),
+        });
+        response.end(`<p id="auth">${authorization ?? 'none'}</p>`);
+        return;
+      }
+      // A service worker that caches every response it fetches, as offline-first apps do.
+      if (request.url === '/caching-sw.js') {
+        response.writeHead(200, { 'content-type': 'text/javascript' });
+        response.end(`self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+          self.addEventListener('fetch', (event) => event.respondWith(fetch(event.request).then(async (fetched) => {
+            await (await caches.open('runtime')).put(event.request, fetched.clone());
+            return fetched;
+          })));`);
+        return;
+      }
       response.writeHead(200, { 'content-type': 'text/html' });
       response.end(`<p>headers: ${JSON.stringify(request.headers['x-leak'] ?? null)}</p>`);
     });
@@ -169,6 +188,73 @@ export function defineIsolationTests(test: typeof turboTest): void {
     await page.goto(origin);
     const registrations = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
     expect(registrations).toBe(0);
+  });
+
+  // The browser keeps the credentials it sent to an origin for the context's life: the next test asks another one.
+  const otherOrigin = () => origin.replace('127.0.0.1', 'localhost');
+
+  test('leaves HTTP credentials behind', async ({ page, context }) => {
+    await context.setHTTPCredentials({ username: 'user', password: 'secret' });
+    await page.goto(`${origin}/basic`);
+    await expect(page.locator('#auth')).not.toHaveText('none');
+  });
+
+  test('starts with no HTTP credentials for an origin', async ({ page }) => {
+    await page.goto(`${otherOrigin()}/basic`);
+    await expect(page.locator('#auth')).toHaveText('none');
+  });
+
+  const timezone = (page: Page) => page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  let configuredTimezone: string;
+
+  test('leaves emulation set through its own CDP session behind', async ({ page, context }) => {
+    configuredTimezone = await timezone(page);
+    const session = await context.newCDPSession(page);
+    await session.send('Emulation.setTimezoneOverride', { timezoneId: 'Pacific/Chatham' });
+    expect(await timezone(page)).toBe('Pacific/Chatham');
+  });
+
+  test('starts with no emulation of the last test', async ({ page }) => {
+    await page.goto(origin);
+    expect(await timezone(page)).toBe(configuredTimezone);
+  });
+
+  const cachesLeft = (page: Page) => page.evaluate(() => caches.keys());
+
+  test('leaves a page that keeps writing to its caches', async ({ page }) => {
+    await page.goto(origin);
+    await page.evaluate(() => setInterval(() => void caches.open('late'), 5));
+  });
+
+  test('starts with no cache the last page wrote after the test', async ({ page }) => {
+    await page.goto(origin);
+    expect(await cachesLeft(page)).toEqual([]);
+  });
+
+  test('leaves a service worker that caches what it fetches', async ({ page }) => {
+    await page.goto(origin);
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.register('/caching-sw.js');
+      await navigator.serviceWorker.ready;
+    });
+    await page.reload();
+    await expect.poll(() => cachesLeft(page)).toEqual(['runtime']);
+  });
+
+  test("starts with no cache of the last test's service worker", async ({ page }) => {
+    await page.goto(origin);
+    expect(await cachesLeft(page)).toEqual([]);
+  });
+
+  test('closes its last page after writing to its caches', async ({ page }) => {
+    await page.goto(origin);
+    await page.evaluate(async () => void (await caches.open('closed')));
+    await page.close();
+  });
+
+  test('starts with no cache of a page the last test closed', async ({ page }) => {
+    await page.goto(origin);
+    expect(await cachesLeft(page)).toEqual([]);
   });
 
   // Compared by their protocol ids: the objects themselves are too large for a readable diff.

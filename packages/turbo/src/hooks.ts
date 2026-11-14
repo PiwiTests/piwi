@@ -3,11 +3,10 @@
 //   fast screenshots  adds CDP's `optimizeForSpeed` to Chromium's `Page.captureScreenshot` for PNGs (same pixels,
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
-//   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout; its idle
-//                     tracker, an init script, stays in a reused context for its life
+//   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
 //   fast reset        when Playwright resets a reused context, clears the storage of the origins the test visited
-//                     from the frames still on them and through CDP, so the reset has no origin to load, and moves
-//                     the mouse away only from a tab a pointer acted in
+//                     through CDP, so the reset has no origin to load, and moves the mouse away only from a tab a
+//                     pointer acted in
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
@@ -16,7 +15,6 @@
 // They wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
 import { createRequire } from 'node:module';
-import { IDLE_TRACKER } from './idle-tracker';
 import { TESTED_VERSIONS } from './versions';
 
 const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
@@ -31,6 +29,8 @@ type RetryAction = (...args: any[]) => Promise<unknown>;
 export const state = {
   installed: false,
   fastScreenshots: false,
+  /** Screenshot assertions in progress with no baseline to compare with: what they take becomes the baseline. */
+  baselinesBeingWritten: 0,
   retryIntervals: undefined as number[] | undefined,
   failFast: false,
   skipStabilityWait: false,
@@ -57,7 +57,8 @@ export const state = {
 class IncompatibleError extends Error {
   constructor(message: string) {
     super(
-      `@piwitests/turbo: ${message}. Turn the experimental hooks off (fastScreenshots, retryIntervals) to run on stock Playwright.`,
+      `@piwitests/turbo: ${message}. Turn the experimental hooks off (the \`experimental\` options, or a preset ` +
+        'other than max) to run on stock Playwright.',
     );
     this.name = 'TurboIncompatibleError';
   }
@@ -83,7 +84,7 @@ export function checkVersion(version: string, allowUntested = false): void {
   if (TESTED_VERSIONS.includes(version) || allowUntested) return;
   throw new IncompatibleError(
     `the experimental hooks are tested with playwright-core ${TESTED_VERSIONS.join(', ')}, and ${version} is installed. ` +
-      'Run the compatibility tests and the benchmark with PIWI_TURBO_ALLOW_UNTESTED=1 before using this version',
+      'Set PIWI_TURBO_ALLOW_UNTESTED=1 to run them on it anyway',
   );
 }
 
@@ -111,8 +112,11 @@ const IDLE_CHECK_MS = 250;
 
 /** Whether nothing in `frame`'s page can change it within `remaining` milliseconds. */
 async function pageIsIdle(frame: ServerPage, remaining: number): Promise<boolean> {
-  const frames: ServerPage[] = frame._page.frames();
-  if (frames.some((each) => each._inflightRequests?.size)) return false;
+  // Every page of the context: a popup or another tab can post to the page, or change what it shows.
+  const frames: ServerPage[] = frame._page.browserContext.pages().flatMap((page: ServerPage) => page.frames());
+  if (frames.some((each) => !(each._inflightRequests instanceof Set)))
+    throw new IncompatibleError("Playwright's frames no longer keep their requests in flight in _inflightRequests");
+  if (frames.some((each) => each._inflightRequests.size)) return false;
   const checks = frames.map(async (each) => {
     const context = await each.context('main');
     const injected = await context.injectedScript();
@@ -183,40 +187,25 @@ function hookFailFast(proto: ServerPage): void {
 const CLEARED_STORAGE =
   'local_storage,indexeddb,cache_storage,service_workers,file_systems,websql,shared_storage,storage_buckets';
 
-// Run in each frame of the page a reset leaves: clears the tab's session storage of the frame's origin, and drops what
-// the page writes to storage until it is gone.
-const SEAL_STORAGE = `(() => {
-  try { sessionStorage.clear(); } catch {}
-  Storage.prototype.setItem = function () {};
-})()`;
-
-/** False when a frame went away before its storage was sealed: Playwright's reset then clears its origin. */
-async function sealStorage(frames: ServerPage[], progress: unknown): Promise<boolean> {
-  try {
-    for (const frame of frames) await frame.evaluateExpression(progress, SEAL_STORAGE, { world: 'main' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Contexts whose next storage reset clears their visited origins through CDP. */
-const sealedContexts = new WeakSet<object>();
-
-/** The idle tracker stays in the context it is added to for the context's life, across a reused context's tests. */
-function hookIdleTracker(core: ServerPage): void {
-  const proto = core.server?.BrowserContext?.prototype;
-  const addInitScript = proto?.addInitScript as ((progress: unknown, source: string) => Promise<unknown>) | undefined;
-  if (typeof addInitScript !== 'function')
-    throw new IncompatibleError("Playwright's server BrowserContext has no addInitScript()");
-  proto.addInitScript = async function (this: ServerPage, progress: unknown, source: string) {
-    const script = (await addInitScript.call(this, progress, source)) as { dispose?: unknown };
-    if (source !== IDLE_TRACKER) return script;
-    if (typeof script?.dispose !== 'function')
-      throw new IncompatibleError("Playwright's init scripts have no dispose()");
-    // The reset of a reused context disposes what the test's client added: the tracker is kept.
-    script.dispose = async () => {};
-    return script;
+/** A screenshot assertion without a baseline writes what it takes as the baseline: in the stock encoding. */
+function hookBaselines(Page: ServerPage): void {
+  const expectScreenshot = Page.prototype.expectScreenshot as
+    | ((progress: unknown, options: { expected?: unknown }) => Promise<unknown>)
+    | undefined;
+  if (typeof expectScreenshot !== 'function')
+    throw new IncompatibleError("Playwright's server Page has no expectScreenshot()");
+  Page.prototype.expectScreenshot = async function (
+    this: ServerPage,
+    progress: unknown,
+    options: { expected?: unknown },
+  ) {
+    if (options?.expected) return expectScreenshot.call(this, progress, options);
+    state.baselinesBeingWritten++;
+    try {
+      return await expectScreenshot.call(this, progress, options);
+    } finally {
+      state.baselinesBeingWritten--;
+    }
   };
 }
 
@@ -228,50 +217,41 @@ function hookContextReset(core: ServerPage): void {
     | undefined;
   if (typeof resetForReuse !== 'function' || typeof setStorageState !== 'function')
     throw new IncompatibleError("Playwright's server BrowserContext has no resetForReuse()/setStorageState()");
-  const steps = [
-    'gotoImpl(progress2, "about:blank", {})',
-    'setStorageState(progress2, this._options.storageState, "resetForReuse")',
-  ];
-  if (
-    !steps.every((step) => String(resetForReuse).includes(step)) ||
-    !String(setStorageState).includes('this._origins')
-  ) {
+  const reset = String(resetForReuse);
+  const blank = reset.indexOf('gotoImpl(progress2, "about:blank", {})');
+  const storage = reset.indexOf('setStorageState(progress2, this._options.storageState, "resetForReuse")');
+  if (blank < 0 || storage < blank || !String(setStorageState).includes('this._origins'))
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
-  }
-  // Before Playwright's reset: the frames still on the visited origins clear their session storage, which belongs to
-  // the tab, and stop writing to storage until the reset navigates them away.
-  proto.resetForReuse = async function (this: ServerPage, progress: unknown, params: unknown) {
-    sealedContexts.delete(this);
-    const origins = this._origins as Set<string> | undefined;
-    const page = this.pages?.()[0];
-    if (state.fastReset && origins instanceof Set && page?.delegate?._mainFrameSession?._client) {
-      const frames = page.frames() as ServerPage[];
-      if (frames.some((frame) => typeof frame.origin !== 'function' || typeof frame.evaluateExpression !== 'function'))
-        throw new IncompatibleError("Playwright's server frame has no origin()/evaluateExpression()");
-      const kept = frames.filter((frame) => origins.has(frame.origin()));
-      // An origin the test left has no frame to reach its session storage from: Playwright's reset loads it.
-      const reachable = [...origins].every((origin) => kept.some((frame) => frame.origin() === origin));
-      if (reachable && (await sealStorage(kept, progress))) sealedContexts.add(this);
-    }
-    return resetForReuse.call(this, progress, params);
-  };
-  // Playwright's reset restores the storage once no page of the test is left on a visited origin. Sealed, the rest
-  // of their storage is cleared through CDP, so only the configured storage state's origins are loaded. Otherwise
-  // Playwright loads each origin to clear its storage, all but Cache Storage, cleared here.
+  // Playwright's reset restores the storage once the test's other pages are closed and its tab is on about:blank. The
+  // storage of every origin the test visited, the tab's session storage included, is cleared here through CDP, so
+  // Playwright loads only the configured storage state's origins. With no page left, Playwright opens one and loads
+  // each origin to clear it, all but its Cache Storage, cleared after.
   proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
-    const sealed = sealedContexts.delete(this);
-    const session = this.pages?.()[0]?.delegate?._mainFrameSession?._client;
-    if (mode === 'resetForReuse' && state.fastReset && session) {
-      const origins = this._origins as Set<string>;
-      const storageTypes = sealed ? CLEARED_STORAGE : 'cache_storage';
-      for (const origin of origins) await session.send('Storage.clearDataForOrigin', { origin, storageTypes });
-      if (sealed) {
-        state.counters.fastResets++;
-        origins.clear();
-      }
+    const origins = this._origins as Set<string> | undefined;
+    if (mode !== 'resetForReuse' || !state.fastReset || !(origins instanceof Set))
+      return setStorageState.call(this, progress, storageState, mode);
+    const visited = [...origins];
+    const session = mainSession(this);
+    if (session) {
+      state.counters.fastResets++;
+      for (const origin of visited)
+        await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
+      origins.clear();
+      return setStorageState.call(this, progress, storageState, mode);
     }
-    return setStorageState.call(this, progress, storageState, mode);
+    const result = await setStorageState.call(this, progress, storageState, mode);
+    const opened = mainSession(this);
+    if (opened) {
+      for (const origin of visited)
+        await opened.send('Storage.clearDataForOrigin', { origin, storageTypes: 'cache_storage' });
+    }
+    return result;
   };
+}
+
+/** The CDP session of a server context's first page, on Chromium. */
+function mainSession(context: ServerPage): ServerPage {
+  return context.pages?.()[0]?.delegate?._mainFrameSession?._client;
 }
 
 function hookElementHandle(handle: ServerPage): void {
@@ -368,7 +348,12 @@ function hookChromiumSession(page: ServerPage): void {
   const original = proto.send as ((method: string, params?: Record<string, unknown>) => Promise<unknown>) | undefined;
   if (typeof original !== 'function') throw new IncompatibleError("Chromium's CDP session has no send()");
   proto.send = function send(this: ServerPage, method: string, params?: Record<string, unknown>) {
-    if (state.fastScreenshots && method === 'Page.captureScreenshot' && params?.format === 'png') {
+    if (
+      state.fastScreenshots &&
+      !state.baselinesBeingWritten &&
+      method === 'Page.captureScreenshot' &&
+      params?.format === 'png'
+    ) {
       state.counters.optimizedScreenshots++;
       return original.call(this, method, { ...params, optimizeForSpeed: true });
     }
@@ -423,7 +408,7 @@ function isChromium(page: ServerPage): boolean {
 }
 
 /**
- * Installs the hooks in this process. They stay inert until `state.fastScreenshots` or `state.retryIntervals` is set.
+ * Installs the hooks in this process. Each stays inert until its flag in `state` is set.
  * Throws when the installed Playwright is not a tested version, unless `allowUntested` (for compatibility testing).
  */
 export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTESTED === '1' } = {}): void {
@@ -434,7 +419,7 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
   hookContextReset(core);
-  hookIdleTracker(core);
+  hookBaselines(Page);
   const reportAsNew = Page.prototype.reportAsNew;
   // Every new page passes through reportAsNew: the first one gives access to the classes to wrap.
   Page.prototype.reportAsNew = function (this: ServerPage, ...args: unknown[]) {

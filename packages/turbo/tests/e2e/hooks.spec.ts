@@ -65,6 +65,20 @@ test.describe('fast screenshots', () => {
     expect(state.counters.optimizedScreenshots).toBe(count + 1);
   });
 
+  test('keep the stock encoding where an assertion writes its baseline', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    type ExpectScreenshot = (options: object) => Promise<{ actual?: Buffer }>;
+    const expectScreenshot = (page as unknown as { _expectScreenshot: ExpectScreenshot })._expectScreenshot.bind(page);
+    const options = { timeout: 5000, type: 'png', isNot: false, scale: 'css' };
+    // No baseline: what the assertion takes becomes the baseline.
+    const before = state.counters.optimizedScreenshots;
+    const { actual } = await expectScreenshot(options);
+    expect(state.counters.optimizedScreenshots).toBe(before);
+    // A baseline to compare with: the captures are encoded for speed.
+    await expectScreenshot({ ...options, expected: actual });
+    expect(state.counters.optimizedScreenshots).toBeGreaterThan(before);
+  });
+
   test('leave JPEG screenshots alone', async ({ page }) => {
     await page.setContent(STATIC_PAGE);
     const before = state.counters.optimizedScreenshots;
@@ -218,6 +232,22 @@ test.describe('failureScreenshots', () => {
     expect(await captureFailure(context, info)).toBe(2);
     expect(attached).toEqual(['screenshot', 'screenshot']);
   });
+
+  test('captures a context the test opened, with the configured options', async ({ page, context, browser }) => {
+    await page.setContent('<div style="height: 3000px">tall</div>');
+    const other = await browser.newContext();
+    await (await other.newPage()).setContent('<p>another context</p>');
+    const shots: Buffer[] = [];
+    const info = {
+      status: 'failed' as const,
+      expectedStatus: 'passed' as const,
+      attach: async (_name: string, { body }: { body?: string | Buffer }) => void shots.push(body as Buffer),
+    };
+    expect(await captureFailure(context, info, { fullPage: true })).toBe(2);
+    await other.close();
+    // A PNG's height sits at bytes 20 to 23: the full page is taller than the viewport.
+    expect(shots[0].readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
+  });
 });
 
 test.describe('fail fast', () => {
@@ -239,6 +269,54 @@ test.describe('fail fast', () => {
     expect(error, 'the assertion fails').toBeTruthy();
     expect(elapsed).toBeLessThan(2000);
     expect(state.counters.failedFast).toBe(before + 1);
+  });
+
+  async function serve(page: Page, html: string) {
+    await page.route('https://idle.test/**', (route) => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.goto('https://idle.test/');
+  }
+
+  test('waits for WebCrypto', async ({ page }) => {
+    await serve(
+      page,
+      `<p id="out"></p><script>(async () => {
+        const algorithm = { name: 'RSA-PSS', modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
+        for (let i = 0; i < 3; i++) await crypto.subtle.generateKey(algorithm, true, ['sign', 'verify']);
+        out.textContent = 'done';
+      })()</script>`,
+    );
+    await expect(page.locator('#out')).toHaveText('done', { timeout: 30000 });
+  });
+
+  test('waits for IndexedDB', async ({ page }) => {
+    await serve(
+      page,
+      `<p id="out"></p><script>
+        const open = indexedDB.open('idle', 1);
+        open.onupgradeneeded = () => open.result.createObjectStore('rows');
+        open.onsuccess = () => {
+          const transaction = open.result.transaction('rows', 'readwrite');
+          for (let i = 0; i < 20000; i++) transaction.objectStore('rows').put({ i, text: 'x'.repeat(200) }, i);
+          transaction.oncomplete = () => (out.textContent = 'stored');
+        };
+      </script>`,
+    );
+    await expect(page.locator('#out')).toHaveText('stored', { timeout: 30000 });
+  });
+
+  test('waits for a message a popup is about to post', async ({ page, context }) => {
+    await context.route('https://idle.test/popup', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<script>setTimeout(() => opener.postMessage('hello', '*'), 1500)</script>`,
+      }),
+    );
+    await serve(
+      page,
+      `<p id="out"></p><script>addEventListener('message', (event) => (out.textContent = event.data))</script>`,
+    );
+    await page.evaluate(() => void window.open('/popup'));
+    await expect(page.locator('#out')).toHaveText('hello', { timeout: 5000 });
   });
 
   test('waits for a timer that is due before the timeout', async ({ page }) => {

@@ -64,9 +64,9 @@ export const test = extendPiwiFixtures(base);
 export { expect };
 ```
 
-`failureScreenshots`, in every preset, turns Playwright's `screenshot` option off, and the capture fixtures follow
-it: the run keeps screenshots of a failed test's pages, but not Piwi's screenshot of the page it last acted on. Name
-`failureScreenshots: false` to keep that one.
+`failureScreenshots`, in every preset, turns Playwright's `screenshot` option off for the tests on turbo's `test`, and
+the capture fixtures over it follow it: the run keeps screenshots of a failed test's pages, but not Piwi's screenshot of
+the page it last acted on. Name `failureScreenshots: false` to keep that one.
 
 ## Presets
 
@@ -89,7 +89,7 @@ These need your paths and URLs, so no preset sets them.
   state file stays out of Git.
 - `blockRequests` aborts the requests that match a glob, a regular expression or a predicate, typically third-party
   scripts that hold the `load` event. Routes a test adds with `page.route` run first; never block a script the app
-  needs.
+  needs. Like any route, it turns off Chromium's HTTP cache for the context.
 
 On the reference suite, these two took a run from 81 s to 48 s each. All the public levers together, with four
 workers, took it to 16 s.
@@ -97,8 +97,9 @@ workers, took it to 16 s.
 ## Context reuse
 
 `fast` keeps one browser context per worker and resets it between tests, instead of creating a context for each test:
-Playwright's own `reuseContext`, plus turbo's reset of offline mode, extra HTTP headers, permissions, geolocation and,
-on Chromium, Cache Storage, which Playwright's reset leaves behind. The package's tests check each kind of state a test
+Playwright's own `reuseContext`, plus turbo's reset of offline mode, extra HTTP headers, permissions, geolocation,
+HTTP credentials, the CDP sessions a test opened and, on Chromium, Cache Storage, which Playwright's reset leaves
+behind. The browser keeps the HTTP credentials it sent to an origin for the context's life. The package's tests check each kind of state a test
 can leave. It needs video off, and `reuseContext: false` turns it off. On Flashwright's benchmark suites it took 3–20%
 off the app suites, and added 2–8% to a suite of trivial tests and to one of very large pages, where Playwright's reset
 of a context takes longer than a new context: turn it off for such a suite. On a suite whose time is mostly waiting on
@@ -112,12 +113,12 @@ Every preset is a set of these options; name one to override it.
 |---|---|
 | `trace` | The trace mode, such as `retain-on-failure`, or `on-first-retry` when CI retries. |
 | `lightTraces` | Keeps each action's DOM snapshot and leaves out the ARIA and screenshot snapshots and the screencast; `'actions'` leaves out the DOM snapshots too. |
-| `failureScreenshots` | Screenshots a test's pages only when it fails. With `only-on-failure`, Playwright captures every test and keeps the failed ones. |
+| `failureScreenshots` | Screenshots a test's pages, and those of contexts it opened, only when it fails. With `only-on-failure`, Playwright captures every test and keeps the failed ones. A spec on `@playwright/test`'s `test` keeps Playwright's capture. |
 | `videoOnRetry` | With retries, records video on the first retry instead of `retain-on-failure`, which records every test. |
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations. |
 | `instantAnimations` | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion. |
 | `reuseContext` | One browser context per worker, reset between tests. |
-| `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` or the folder given. The runner loads Playwright before the config: set `NODE_COMPILE_CACHE` in the environment to cache its start too. Skipped when coverage is collected or a compile cache is already set. |
+| `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given. The runner loads Playwright before the config: set `NODE_COMPILE_CACHE` in the environment to cache its start too. Skipped when coverage is collected or a compile cache is already set. |
 
 `lightTraces` halved the CPU time of a suite that traces every test. On Piwi's own suite, one CI shard of 242 tests,
 `trace: 'on-first-retry'` and `reducedMotion` took 13% off the wall time and 28% off the CPU time, and
@@ -129,18 +130,19 @@ suite before keeping any of these.
 **Experimental.** Six options reach into Playwright's internals inside each test worker. `max` turns them all on;
 name them under `experimental` to pick some.
 
-- `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger. A
-  run with `--update-snapshots` keeps the stock encoding; a missing baseline that a run writes is encoded for speed.
+- `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger.
+  `toHaveScreenshot` writes its baselines in the stock encoding; a `page.screenshot()` compared with `toMatchSnapshot`
+  is encoded for speed, also when it becomes the baseline.
 - `retryIntervals`: the waits between the checks of Playwright's retry loop. Stock is `[20, 50, 100, 100, 500]` ms.
-- `failFast`: a failing assertion ends once nothing can change the page before its timeout. It shortens red runs on
-  pages that go idle, does nothing on a page that polls, and must stay off for a test that changes the page from its
-  own Node code while an assertion waits.
+- `failFast`: a failing assertion ends once nothing can change the page before its timeout: no request, timer,
+  animation, socket, worker or pending storage, crypto or decoding work in any page of the context. It shortens red
+  runs on pages that go idle, does nothing on a page that polls, and must stay off for a test that changes the page
+  from its own Node code while an assertion waits, or a page that waits on another browser context or a prompt.
 - `skipStabilityWait`: clicks, hovers, taps and drags stop waiting for the element to keep still. The visible, enabled
   and hit-target checks stay. Leave it off for apps that ignore input while they animate.
-- `fastReset` (Chromium, with context reuse): between tests, the storage of the origins the test visited is cleared
-  from the frames still on them and through CDP, where Playwright's reset loads each origin again. After a test that
-  left an origin it visited, Playwright's reset runs as it is. The mouse is moved away from the tab only after a test
-  that used Playwright's mouse or touchscreen.
+- `fastReset` (Chromium, with context reuse): between tests, the storage of every origin the test visited is cleared
+  through CDP, where Playwright's reset loads each origin again. The mouse is moved away from the tab only after a
+  test that used Playwright's mouse or touchscreen.
 - `fastStackTraces`: Playwright captures a stack for every API call, and looks up a source map for each of its
   frames. The frames of Node and of `node_modules`, which have none, skip the lookup; stack traces read the same.
 

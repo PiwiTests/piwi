@@ -55,7 +55,7 @@ describe('withOptimizations', () => {
       {},
       { signIn: { storageState: 'state.json', project: 'login' } },
     );
-    expect(result.projects!.map((project) => project.name)).toEqual(['login', 'tests']);
+    expect(result.projects!.map((project) => project.name)).toEqual(['login', '']);
     expect(result.projects![1]!.dependencies).toEqual(['login']);
   });
 
@@ -92,7 +92,11 @@ describe('presets', () => {
       { use: { trace: 'on', screenshot: 'only-on-failure' } },
       { preset: 'safe' },
     );
-    expect(result.use).toMatchObject({ trace: 'retain-on-failure', screenshot: 'off', failureScreenshots: true });
+    expect(result.use).toMatchObject({
+      trace: 'retain-on-failure',
+      screenshot: 'only-on-failure',
+      failureScreenshots: true,
+    });
     expect(result.use).not.toHaveProperty('contextOptions');
   });
 
@@ -148,7 +152,29 @@ describe('presets', () => {
       { use: { trace: 'on' } },
       { preset: 'max', trace: undefined, instantAnimations: undefined, experimental: { failFast: undefined } },
     );
-    expect(result.use).toMatchObject({ trace: 'retain-on-failure', instantAnimations: true, fastScreenshots: true });
+    expect(result.use).toMatchObject({
+      trace: 'retain-on-failure',
+      instantAnimations: true,
+      fastScreenshots: true,
+      failFast: true,
+    });
+  });
+
+  test("keeps the config's screenshots of every test when failureScreenshots is named", () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { use: { screenshot: { mode: 'on', fullPage: true } } },
+      { failureScreenshots: true },
+    );
+    expect(result.use?.screenshot).toEqual({ mode: 'on', fullPage: true });
+    expect(result.use).not.toHaveProperty('failureScreenshots');
+  });
+
+  test('records video in object form on the first retry, with its options', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { retries: 1, use: { video: { mode: 'retain-on-failure', size: { width: 640, height: 480 } } } },
+      { videoOnRetry: true },
+    );
+    expect(result.use?.video).toEqual({ mode: 'on-first-retry', size: { width: 640, height: 480 } });
   });
 
   test('turns on no trace, screenshot or video the config leaves off', () => {

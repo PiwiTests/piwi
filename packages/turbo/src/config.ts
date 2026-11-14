@@ -1,6 +1,8 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
 import module from 'node:module';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
 import type { BlockRule } from './types';
 
@@ -35,8 +37,10 @@ export interface Optimizations {
   reuseContext?: boolean;
   /**
    * Node's compile cache for the test workers, which shortens their start: `true` caches in
-   * `node_modules/.cache/piwi-turbo-compile`. The runner has loaded Playwright before the config: `NODE_COMPILE_CACHE`
-   * set in the environment caches its start too. Skipped when `NODE_V8_COVERAGE` or a compile cache is already set.
+   * `node_modules/.cache/piwi-turbo-compile`, or the temporary folder without `node_modules`. The processes the runner
+   * starts (the web server, global setup) use it too. The runner has loaded Playwright before the config:
+   * `NODE_COMPILE_CACHE` set in the environment caches its start too. Skipped when `NODE_V8_COVERAGE` or a compile cache
+   * is already set.
    */
   compileCache?: boolean | string;
   /**
@@ -106,7 +110,8 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
   if (typeof storageState !== 'string' || !storageState) {
     throw new Error('@piwitests/turbo: signIn.storageState must be the path the setup project saves to');
   }
-  const projects: AnyProject[] = config.projects?.length ? config.projects : [{ name: 'tests' }];
+  // Without projects, Playwright's own project has no name: snapshot paths and reports stay as they were.
+  const projects: AnyProject[] = config.projects?.length ? config.projects : [{ name: '' }];
   if (projects.some((item) => item.name === project)) {
     throw new Error(
       `@piwitests/turbo: a project is already named "${project}"; pass signIn.project to name the setup project`,
@@ -124,6 +129,12 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
 }
 
 const EXPERIMENTAL_RETRY_INTERVALS = [10, 20, 40, 50];
+
+/** The run folder's `node_modules/.cache`, else the system's temporary folder: never a new `node_modules`. */
+function defaultCompileCache(): string {
+  const modules = resolve('node_modules');
+  return existsSync(modules) ? join(modules, '.cache', 'piwi-turbo-compile') : join(tmpdir(), 'piwi-turbo-compile');
+}
 
 function enableCompileCache(directory: string): void {
   if (process.env.NODE_COMPILE_CACHE || process.env.NODE_DISABLE_COMPILE_CACHE || process.env.NODE_V8_COVERAGE) return;
@@ -193,18 +204,18 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
     const snapshots = options.lightTraces === 'actions' ? false : { dom: true, aria: false, screen: false };
     use.trace = { ...(typeof current === 'object' ? current : {}), mode, snapshots, screenshots: false };
   }
-  if (options.videoOnRetry && result.retries && use.video === 'retain-on-failure') use.video = 'on-first-retry';
+  if (options.videoOnRetry && result.retries && modeOf(use.video) === 'retain-on-failure') {
+    use.video =
+      typeof use.video === 'object' && use.video ? { ...use.video, mode: 'on-first-retry' } : 'on-first-retry';
+  }
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
   if (options.instantAnimations) use.instantAnimations = true;
   if (options.reuseContext) use.reuseContextWithReset = true;
-  if (options.failureScreenshots) {
-    // In place of Playwright's own capture, unless the config asks for every test's screenshots.
-    if (use.screenshot !== 'on' && use.screenshot !== 'on-first-failure') {
-      use.screenshot = 'off';
-      use.failureScreenshots = true;
-    }
-  }
+  // turbo's `test` captures in place of Playwright, unless the config asks for every test's screenshots.
+  const screenshot = modeOf(use.screenshot);
+  if (options.failureScreenshots && screenshot !== 'on' && screenshot !== 'on-first-failure')
+    use.failureScreenshots = true;
   if (options.signIn) applySignIn(result, options.signIn);
   const experimental = options.experimental ?? {};
   if (experimental.fastScreenshots) use.fastScreenshots = true;
@@ -214,7 +225,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.fastReset) use.fastReset = true;
   if (experimental.fastStackTraces) use.fastStackTraces = true;
   if (options.compileCache) {
-    enableCompileCache(options.compileCache === true ? 'node_modules/.cache/piwi-turbo-compile' : options.compileCache);
+    enableCompileCache(options.compileCache === true ? defaultCompileCache() : options.compileCache);
   }
   return result as T;
 }
