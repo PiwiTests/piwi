@@ -724,22 +724,37 @@ export function holdableRuns(sessions: Sessions): RunSession[] {
 }
 
 /**
- * A run named apart from the others in a list: its page when it has one, else what it runs (`RunSession.name`), else its
- * folder's name, else its ref.
+ * A run named apart from the others in a list (`among`): its page when it has one, else what it runs
+ * (`RunSession.name`), else its folder's name, else its ref; its ref after it while another of the list reads the same.
  */
-export function runLabel(session: RunSession): string {
+export function runLabel(session: RunSession, among: Iterable<RunSession> = []): string {
+  return apart(plainLabel, session, among);
+}
+
+/**
+ * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), the
+ * same in the JetBrains plugin (`Glue.runTitle`); else `runLabel`. Its ref after it while another of `among` reads the
+ * same.
+ */
+export function runTitle(session: RunSession, among: Iterable<RunSession> = []): string {
+  return apart(plainTitle, session, among);
+}
+
+function plainLabel(session: RunSession): string {
   if (session.page) return runName(session.page);
   if (session.name) return session.name;
   const folder = session.root?.split(/[\\/]/).filter(Boolean).pop();
   return folder ? `Run in ${folder} (${session.ref})` : `Run ${session.ref}`;
 }
 
-/**
- * A run as a chooser and a worker view name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), the same in
- * the JetBrains plugin (`Glue.runTitle`); else `runLabel`.
- */
-export function runTitle(session: RunSession): string {
-  return session.page && session.name ? `${runName(session.page)} · ${session.name}` : runLabel(session);
+function plainTitle(session: RunSession): string {
+  return session.page && session.name ? `${runName(session.page)} · ${session.name}` : plainLabel(session);
+}
+
+function apart(name: (s: RunSession) => string, session: RunSession, among: Iterable<RunSession>): string {
+  const text = name(session);
+  for (const other of among) if (other.ref !== session.ref && name(other) === text) return `${text} (${session.ref})`;
+  return text;
 }
 
 /** A run's **Hold failures** in words: whether a failed test waits at its line, and who said so when not its start. */
@@ -852,7 +867,7 @@ export function workerName(lane: number): string {
  */
 export function watchableWorkers(sessions: Sessions, pausable = false): WatchTarget[] {
   // The run is named beside its worker only while workers of several runs can be watched.
-  const runs = [...sessions.values()].filter((s) => s.workers.some((w) => w.watchable)).length;
+  const runs = [...sessions.values()].filter((s) => s.workers.some((w) => w.watchable));
   return [...sessions.values()].flatMap((s) =>
     s.workers
       .filter((w) => w.watchable && (!pausable || canPauseWorker(w)))
@@ -861,7 +876,7 @@ export function watchableWorkers(sessions: Sessions, pausable = false): WatchTar
         worker: w.worker,
         lane: w.parallelIndex,
         label: workerName(w.parallelIndex),
-        description: `${runs > 1 ? `${runTitle(s)} · ` : ''}${
+        description: `${runs.length > 1 ? `${runTitle(s, runs)} · ` : ''}${
           !w.test ? 'between tests' : `${w.state === 'stopped' ? 'stopped in' : 'running'} ${w.test.title.join(' › ')}`
         }`,
       })),
@@ -1023,7 +1038,7 @@ export function workersNow(sessions: Sessions): string[] {
     [...s.workers]
       .sort((a, b) => a.parallelIndex - b.parallelIndex)
       .map((w) => {
-        const run = live.length > 1 ? `${runLabel(s)} · ` : '';
+        const run = live.length > 1 ? `${runLabel(s, live)} · ` : '';
         const what = w.test ? `${testTitle(w.test)}${w.state === 'stopped' ? ' · stopped' : ''}` : 'between tests';
         return `${run}${workerName(w.parallelIndex)} · ${what}`;
       }),
@@ -1109,7 +1124,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const holds = held.flatMap((s) => {
     if (!s.hold) return [];
     const arg = encodeURIComponent(JSON.stringify([{ ref: s.ref, on: !s.hold.on }]));
-    const name = held.length > 1 ? `${escapedMarkdown(runLabel(s))}: ` : '';
+    const name = held.length > 1 ? `${escapedMarkdown(runLabel(s, held))}: ` : '';
     return [
       `${name}${holdText(s.hold)} · [Turn ${s.hold.on ? 'off' : 'on'}](command:${RUN_COMMANDS.holdFailures}?${arg})`,
     ];
@@ -1119,7 +1134,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const kept = [...sessions.values()];
   const present = kept.flatMap((s) => {
     const text = presenceText(s);
-    return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text}`)] : [];
+    return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s, kept)}: ` : ''}${text}`)] : [];
   });
   // Who started the one run that says, when a person did not: an agent's run never reads as the person's own.
   const by = told.length === 1 ? [...sessions.values()].find((s) => s.progress)?.label : undefined;

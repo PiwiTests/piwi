@@ -759,6 +759,21 @@ describe('Share live', () => {
     expect(watchTargetsFor(all, { ref: 'ed-2' })).toEqual([]);
   });
 
+  test('names each run before its workers once several have workers to watch, two of one name by their refs', () => {
+    const one = { ...session('ed-1', [worker(0, 'running', { watchable: true })]), name: 'checkout.spec.ts:12' };
+    const two = { ...session('ed-2', [worker(0, 'between', { watchable: true })]), name: 'checkout.spec.ts:12' };
+    expect(watchableWorkers(sessionsOf(one, two)).map((t) => t.description)).toEqual([
+      'checkout.spec.ts:12 (ed-1) · running checkout › pays',
+      'checkout.spec.ts:12 (ed-2) · between tests',
+    ]);
+    const paged = { ...one, page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } };
+    expect(watchableWorkers(sessionsOf(paged, two))[0]!.description).toBe(
+      'Run #78 · checkout.spec.ts:12 · running checkout › pays',
+    );
+    expect(runTitle(two, [one, two])).toBe('checkout.spec.ts:12 (ed-2)');
+    expect(runTitle(two)).toBe('checkout.spec.ts:12');
+  });
+
   test('says what the worker panel’s slot does, and whether its image is of now', () => {
     const uri = 'file:///work/shop/tests/cart.spec.ts';
     const running = worker(5, 'running', { parallelIndex: 1 });

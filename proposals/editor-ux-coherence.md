@@ -160,15 +160,15 @@ and a project from the instance's list. The sign-in shows in the panel, its code
 and Open browser again, and VS Code's sign-in message gains the same buttons (ST16, left out of this document).
 LI13's states for waiting on trust and a Node.js start problem are dropped from M12: the settings page's In use group already says both, with Node.js settings…. M14 built but for LR6's nightly check of the stop row's width: VS Code's
 editor title holds Pause or Resume, Step, Finish and Stop in the debug toolbar's order, and its context menu a stop's
-controls first while a test is stopped; JetBrains puts a stop's controls first in the editor's context menu and the run
-controls in the Run menu while a run is live (`PiwiLiveRunGroup`), and a run's Run tab carries `Piwi.RunControl` in its
-toolbar (`PiwiRunTab`) (LR3). VS Code's Go to the stopped line was built before (LR4). JetBrains' stop inlay takes VS
+controls while a test is stopped, after the editor's Go to entries; JetBrains puts a stop's controls first in the
+editor's context menu and the run controls in the Run menu while a run is live (`PiwiLiveRunGroup`), and a run's Run
+tab carries `Piwi.RunControl`'s actions, acting on its run, in its toolbar (`PiwiRunTab`) (LR3). VS Code's Go to the stopped line was built before (LR4). JetBrains' stop inlay takes VS
 Code's row, Resume, Step, Finish and Write code…, in an inlay hint's font with the gutter's mark, the other controls in
 its context menu, and VS Code's line gives up its own lenses while a stop shows (LR6). A run's session opens as its
-command starts (`RunSession.starting`, `piwi/commandStarted`, which JetBrains now sends), so the status line says
-`starting checkout.spec.ts:12…` and Stop ends it (LR13). The service names each run it builds (`RunCommand.name`,
-`RunSession.name`, `runName`), its task or Run tab title and its name in every chooser and worker view (`runTitle`)
-(LR16). LR4, LR13 and LR16 are left out of this document. Record here is a code action where the
+command starts (`RunSession.starting`, `piwi/commandStarted`, which JetBrains sends from the console and the IDE's
+runner), so the status line and an agent's `run_list` say it is starting and Stop ends it (LR13). The service names
+each run it builds (`RunCommand.name`, `RunSession.name`, `runName`), its task or Run tab title and its name in every
+chooser and the Watch chooser (`runTitle`), two of one name with their refs (LR16). LR4, LR13 and LR16 are left out of this document. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -196,8 +196,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 **Summary.**
 
 - **What is left.** Most of the plan's quick wins are built; the steps left center on one concept table and the words
-  both clients show (M4, M22), the status menu (M3, M13), the run controls in the debugger's
-  places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the start
+  both clients show (M4, M22), the status menu (M3, M13), one page per worker (M15), one action list per test line and Debug with Piwi (M7, M8), the start
   options in one shape (M10), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
@@ -238,9 +237,8 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 2. **The status item behaves differently in each editor.** VS Code paints the item red for CI failures the developer did not cause, shows up to nine run items, and
    counts one run twice in two wordings ([HM2](#hm2), [LR1](#lr1), [LR18](#lr18)).
 
-3. **A stopped Piwi run's controls are missing where JetBrains' debugger keeps its own**: no Run menu, editor menu or
-   Run tab entries, no way back to the stopped line in VS Code, and no page per worker carrying the controls
-   ([LR3](#lr3), [LR8](#lr8)).
+3. **No page per worker carries a stopped Piwi run's controls**, as the debugger's view of a thread does; the
+   debugger's other places hold them ([LR3](#lr3), [LR8](#lr8)).
 
 4. **From a test's own line, neither editor offers more than Run and Verify ×3, and nothing debugs it**: JetBrains'
    result icon opens a browser, VS Code's Testing menus have no Piwi entry and no Debug profile ([TL2](#tl2),
@@ -1169,7 +1167,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 ### Sequence
 
 The quick wins that stand alone (Q13, Q27, Q28, Q30), each on its own. Then, on the action catalog, one Piwi menu
-(M3) and the run-control places (M14); M4 draws the glyphs
+(M3); M4 draws the glyphs
 Appendix A still marks, and M5 animates the running ring. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.

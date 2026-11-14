@@ -5167,7 +5167,7 @@ describe('a test the instance does not know yet', () => {
       // On the run channel, nobody attending it: no breakpoint, no record channel.
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
-      name: 'checkout.spec.ts:5',
+      name: 'checkout.spec.ts:5 ×3',
     });
     expect(await runArgs({ locations: ['tests/checkout.spec.ts:5'], repeat: 0 })).toBeNull();
 

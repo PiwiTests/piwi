@@ -2503,7 +2503,7 @@ object Glue {
         val live = sessions.values.filter { !it.ended && !it.workers.isNullOrEmpty() }
         val lines = live.flatMap { session ->
             session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
-                val run = if (live.size > 1) "${runLabel(session)} · " else ""
+                val run = if (live.size > 1) "${runLabel(session, live)} · " else ""
                 // A title's own line breaks as spaces: one line per worker.
                 val test = w.test?.title?.joinToString(" › ")?.replace(Regex("\\s+"), " ")
                 val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
@@ -2527,7 +2527,7 @@ object Glue {
      */
     fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> {
         // The run is named beside its worker only while workers of several runs can be watched.
-        val runs = sessions.values.count { s -> s.workers.orEmpty().any { it.watchable } }
+        val runs = sessions.values.filter { s -> s.workers.orEmpty().any { it.watchable } }
         return sessions.values.flatMap { session ->
             session.workers.orEmpty()
                 .filter { it.watchable && (!pausable || (it.state != "stopped" && !it.pausing && it.test?.cannotPause == null)) }
@@ -2538,7 +2538,7 @@ object Glue {
                         w.state == "stopped" -> "stopped in $title"
                         else -> "running $title"
                     }
-                    val run = if (runs > 1) "${runTitle(session)} · " else ""
+                    val run = if (runs.size > 1) "${runTitle(session, runs)} · " else ""
                     WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $run$doing")
                 }
         }
@@ -2568,7 +2568,7 @@ object Glue {
      */
     fun runsPresenceText(sessions: Map<String, RunSession>): String? {
         val lines = sessions.values.mapNotNull { session ->
-            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session)}: $it" else it }
+            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session, sessions.values)}: $it" else it }
         }
         return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
@@ -2667,7 +2667,13 @@ object Glue {
     fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
         val shared = sharedRunsOf(sessions).filter { it.live.shared }
         val entries = shared.flatMap { run ->
-            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it).replaceFirstChar { c -> c.lowercaseChar() } } else null
+            // "Run #78" reads "run #78" inside a sentence; what a run runs keeps its own case.
+            val among = shared.mapNotNull { sessions[it.ref] }
+            val name = if (shared.size > 1) {
+                sessions[run.ref]?.let { runLabel(it, among) }?.let { if (it.startsWith("Run ")) "r${it.drop(1)}" else it }
+            } else {
+                null
+            }
             listOfNotNull(
                 run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the page of $n" } ?: "Open the run page", run.ref, it) },
                 run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the link of $n" } ?: "Copy the run page's link", run.ref, it) },
@@ -2751,23 +2757,33 @@ object Glue {
         sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
 
     /**
-     * A run named apart from the others in a list: its page when it has one, else what it runs (`RunSession.name`), else
-     * its folder's name, else its ref.
+     * A run named apart from the others in a list (`among`): its page when it has one, else what it runs
+     * (`RunSession.name`), else its folder's name, else its ref; its ref after it while another of the list reads the
+     * same, as VS Code's `runLabel`.
      */
-    fun runLabel(session: RunSession): String {
+    fun runLabel(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainLabel, session, among)
+
+    /**
+     * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as
+     * VS Code's `runTitle`; else [runLabel]. Its ref after it while another of `among` reads the same.
+     */
+    fun runTitle(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainTitle, session, among)
+
+    private fun plainLabel(session: RunSession): String {
         session.page?.let { return "Run #${it.id}" }
         session.name?.let { return it }
         val folder = session.root?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
         return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
     }
 
-    /**
-     * A run as a chooser and a worker view name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as VS
-     * Code's `runTitle`; else [runLabel].
-     */
-    fun runTitle(session: RunSession): String {
+    private fun plainTitle(session: RunSession): String {
         val name = session.name
-        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else runLabel(session)
+        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+    }
+
+    private fun apart(name: (RunSession) -> String, session: RunSession, among: Collection<RunSession>): String {
+        val text = name(session)
+        return if (among.any { it.ref != session.ref && name(it) == text }) "$text (${session.ref})" else text
     }
 
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */

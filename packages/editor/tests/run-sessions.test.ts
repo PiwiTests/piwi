@@ -707,6 +707,29 @@ describe('RunSessions', () => {
     expect(sent[sent.length - 1]!.starting).toBeUndefined();
     sessions.commandEnded('ed-1');
     expect(sent[sent.length - 1]!.ended).toBe(true);
+    // Its rerun under the same ref starts again, its workers heard before or not.
+    sessions.commandStarted('ed-1', '/work/shop');
+    expect(sent[sent.length - 1]).toMatchObject({ ref: 'ed-1', starting: true, ended: false });
+  });
+
+  test('stops listing a run as starting once nothing of it connected in a while, and keeps it until its command ends', async () => {
+    const sent: RunSession[] = [];
+    const sessions = new RunSessions({
+      notify: (session) => void sent.push(session),
+      answersStops: () => true,
+      notice: () => {},
+      rootOf: () => '/work/shop',
+      paceMs: 0,
+      lingerMs: 20,
+      startingMs: 30,
+    });
+    sessions.commandStarted('ed-2', '/work/shop');
+    expect(sent[sent.length - 1]!.starting).toBe(true);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(sent[sent.length - 1]).toMatchObject({ ref: 'ed-2', ended: false });
+    expect(sent[sent.length - 1]!.starting).toBeUndefined();
+    sessions.commandEnded('ed-2');
+    expect(sent[sent.length - 1]!.ended).toBe(true);
   });
 
   test('ends a run a while after its last worker left, unless another connects, and paces the other changes', async () => {

@@ -106,6 +106,9 @@ export const SESSION_PACE_MS = 300;
 export const SESSION_BURST_MS = 50;
 /** How long a session waits for a worker after its last one left before it ends: Playwright starts a new one. */
 export const SESSION_LINGER_MS = 5_000;
+
+/** How long a run opened as its command started reads as starting with nothing of it connected (`commandStarted`). */
+export const STARTING_MS = 120_000;
 /** How long `piwi/pausedPage`, and an intent, wait for the worker's answer. */
 export const PAUSED_PAGE_WAIT_MS = 10_000;
 /** The runs whose breakpoints (for workers that connect later) and whose command's end the service keeps, at most. */
@@ -523,6 +526,8 @@ export interface RunSessionsOptions {
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
+  /** `STARTING_MS`, shorter in tests. */
+  startingMs?: number;
   requestMs?: number;
   /** How long after a worker was asked for its page's text another ask of it is merged with that one. */
   laneTextMs?: number;
@@ -604,7 +609,10 @@ type HubLaneEvent = LaneEvent<RunTest, HeldStop, RunWaiting>;
 interface Session {
   ref: string;
   root: string | null;
-  /** Opened as its command started (`commandStarted`), before the run reached the service. */
+  /**
+   * Opened as its command started (`commandStarted`), and nothing of the run reached the service since, `STARTING_MS`
+   * at most.
+   */
   starting: boolean;
   workers: Map<number, Worker>;
   /** Who was present on the run when it was last told (`presentKey`). */
@@ -888,6 +896,7 @@ export class RunSessions {
     if (session.terminal && begin.runner === true) session.runner = true;
     this.anotherRun(session);
     session.main = socket;
+    session.starting = false;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     session.progress = {
@@ -975,6 +984,7 @@ export class RunSessions {
     // A run its own process announced first learns from its workers that an editor's test runner started it.
     if (session.terminal && attach.runner === true) session.runner = true;
     session.workersSeen = true;
+    session.starting = false;
     if (session.linger) this.anotherRun(session);
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -2386,7 +2396,8 @@ export class RunSessions {
   /**
    * The client started the command of a run the service built, which reports under `ref`, in `cwd`: its session opens
    * at once, `starting` until the run's own process or a worker reaches the service (a web server or a global setup can
-   * take a minute), so the run is listed and stopped from its first second.
+   * take a minute), `STARTING_MS` at most, so the run is listed and stopped from its first second. It ends as its
+   * command does (`commandEnded`), whether anything of it connected or not.
    */
   commandStarted(ref: string, cwd: string): void {
     const running = this.sessions.get(ref);
@@ -2394,6 +2405,12 @@ export class RunSessions {
     const session = this.open(ref, cwd, false);
     session.starting = true;
     this.changed(session, true);
+    const timer = setTimeout(() => {
+      if (!session.starting || session.ended) return;
+      session.starting = false;
+      this.changed(session, true);
+    }, this.options.startingMs ?? STARTING_MS);
+    timer.unref?.();
   }
 
   /**
@@ -2774,7 +2791,7 @@ export class RunSessions {
     };
     const label = this.options.labelOf?.(session.ref);
     if (label) view.label = label;
-    if (session.starting && !session.workersSeen && !session.main && !this.heard.has(session.ref)) view.starting = true;
+    if (session.starting) view.starting = true;
     const name = this.options.nameOf?.(session.ref);
     if (name) view.name = name;
     const commit = checkoutCommitOf(session.ref);

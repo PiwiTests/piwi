@@ -357,6 +357,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             // The run may end after the plugin was unloaded: its service is then gone.
             existingServer()?.commandEnded(params)
         }
+
+        override fun commandStarted(params: CommandStartedParams) {
+            existingServer()?.commandStarted(params)
+        }
     }
 
     /** Share live said what it sends in this project since it opened: it asks no more. */
@@ -462,7 +466,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             ExecutionManager.EXECUTION_TOPIC,
             object : ExecutionListener {
                 override fun processStarted(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler) {
-                    runnerRef(env)?.let { track(it, handler) }
+                    val ref = runnerRef(env) ?: return
+                    track(ref, handler)
+                    // Listed as starting, with Stop, until it reports, as a run of the console is.
+                    ApplicationManager.getApplication().executeOnPooledThread { remote.commandStarted(CommandStartedParams(ref)) }
                 }
 
                 override fun processTerminated(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler, exitCode: Int) {
@@ -1739,7 +1746,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 .setRenderer(
                     object : SimpleListCellRenderer<String>() {
                         override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-                            text = value?.let { ref -> sessions[ref]?.let(Glue::runTitle) ?: ref }.orEmpty()
+                            text = value?.let { ref -> sessions[ref]?.let { Glue.runTitle(it, target.refs.mapNotNull(sessions::get)) } ?: ref }.orEmpty()
                         }
                     },
                 )
@@ -1860,7 +1867,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     object : SimpleListCellRenderer<String>() {
                         override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
                             val session = value?.let { sessions[it] }
-                            text = listOfNotNull(session?.let(Glue::runTitle) ?: value, session?.hold?.let { Glue.holdText(it) }).joinToString(" · ")
+                            val among = target.refs.mapNotNull(sessions::get)
+                            text = listOfNotNull(session?.let { Glue.runTitle(it, among) } ?: value, session?.hold?.let { Glue.holdText(it) }).joinToString(" · ")
                         }
                     },
                 )
@@ -1894,12 +1902,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         offers: (Glue.ShownStop) -> Boolean = { true },
         control: Boolean = false,
         clicked: Glue.ShownStop? = null,
+        run: String? = null,
         action: (Glue.ShownStop) -> Unit,
     ) {
         if (clicked != null && offers(clicked)) return action(clicked)
         val uri = editor?.virtualFile?.let { fileUri(it) }
         val line = editor?.caretModel?.logicalPosition?.line
-        val all = stops()
+        val all = stops().filter { run == null || it.ref == run }
         val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, line)
         when (val chosen = shownStops.choose(candidates, uri, line, control)) {
             is Glue.StopChoice.One -> return action(chosen.stop)
@@ -2267,6 +2276,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** The stop a popup's actions act on, which the registered controls and code actions read before the caret. */
         val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
 
+        /** The run a control acts on, the Run tab's: its stops alone. */
+        val RUN: DataKey<String> = DataKey.create("piwi.run")
+
         /** Each control's registered action. */
         val CONTROL_IDS = mapOf(
             Glue.StopControl.RESUME to "Piwi.ResumeRun",
@@ -2347,6 +2359,9 @@ internal interface RunRemote {
     fun setEditorBreakpoints(params: SetBreakpointsParams): Boolean
 
     fun commandEnded(params: CommandEndedParams)
+
+    /** The command of a run the service built started (`piwi/commandStarted`): the service lists the run as starting. */
+    fun commandStarted(params: CommandStartedParams)
 }
 
 /** How long a left click waits for a second one before it goes alone, and how far apart two clicks of one may be. */
@@ -3132,8 +3147,9 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
 }
 
 /**
- * The line above a stop, at its indentation: what is about to run, then its controls (**Resume**, **Step**, **Run to
- * caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
+ * The line above a stop, at its indentation, after the execution point's glyph: what is about to run, then its links
+ * (`Glue.stopInlayLinks`: **Resume**, **Step**, **Finish**, **Write code…**, as VS Code's row), which [StopInlayMouse]
+ * clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
     val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)
@@ -3349,9 +3365,12 @@ class StopRunAction : RunControlAction() {
             .setRenderer(
                 object : SimpleListCellRenderer<RunSession>() {
                     override fun customize(list: JList<out RunSession>, value: RunSession?, index: Int, selected: Boolean, hasFocus: Boolean) {
-                        text = value?.let(Glue::runTitle).orEmpty()
-                        toolTipText = value?.workers.orEmpty().mapNotNull { it.test?.title?.joinToString(" › ") }.joinToString(", ")
-                            .ifEmpty { null }
+                        text = value?.let { Glue.runTitle(it, live) }.orEmpty()
+                        toolTipText = if (value?.starting == true) {
+                            "starting"
+                        } else {
+                            value?.workers.orEmpty().mapNotNull { it.test?.title?.joinToString(" › ") }.joinToString(", ").ifEmpty { null }
+                        }
                     }
                 },
             )
@@ -3368,14 +3387,15 @@ class StopRunAction : RunControlAction() {
  */
 abstract class StopControlAction(private val control: Glue.StopControl) : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) =
-        controls.stopped && (control != Glue.StopControl.RUN_TO_CARET || e.getData(CommonDataKeys.EDITOR) != null)
+        controls.stopped && (control != Glue.StopControl.RUN_TO_CARET || e.getData(CommonDataKeys.EDITOR)?.virtualFile != null)
 
     override fun givesWayTo(debugSessions: List<XDebugSession>) = debugSessions.any { it.isSuspended }
 
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
         val sessions = sessions(e) ?: return
-        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true, clicked = e.getData(PiwiRunSessions.STOP)) {
+        val run = e.getData(PiwiRunSessions.RUN)
+        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true, clicked = e.getData(PiwiRunSessions.STOP), run = run) {
             sessions.perform(it, control, editor)
         }
     }

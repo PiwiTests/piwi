@@ -2223,6 +2223,9 @@ describe('the task a test run is', () => {
     const long = runTaskName(['--grep', 'x'.repeat(200)]);
     expect(long).toHaveLength(80);
     expect(long.endsWith('…')).toBe(true);
+    // The run's name the service gave comes first, cut as long.
+    expect(runTaskName(['tests/login.spec.ts:12'], undefined, 'login.spec.ts:12')).toBe('login.spec.ts:12');
+    expect(runTaskName([], undefined, 'y'.repeat(200))).toHaveLength(80);
   });
 });
 

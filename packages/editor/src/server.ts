@@ -164,6 +164,7 @@ import {
   playwrightTestCommand,
   repeatArgs,
   runName,
+  commandName,
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
@@ -2073,7 +2074,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const watchedRuns = new Set<string>();
   /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
   const runLabels = new Map<string, string>();
-  /** What each registered run is called (`runName`) and where it runs, by its ref, kept as long as its command line. */
+  /** What each registered run is called (`runName`) and where it runs, by its ref, kept as long as its command line or its live run. */
   const runNames = new Map<string, { name: string; cwd: string }>();
   /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
   const unattendedRuns = new Set<string>();
@@ -3809,7 +3810,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    */
   const registered = (command: RunCommand): RunCommand => {
     if (!command.ref) return command;
-    const run: RunCommand = { ...command, name: runName(command.args) };
+    const named = command.args.length || playwrightArgsOf(command.command);
+    const run: RunCommand = { ...command, name: named ? runName(command.args) : commandName(command.command) };
     runCommands.delete(run.ref!);
     runCommands.set(run.ref!, run.command);
     runNames.set(run.ref!, { name: run.name!, cwd: run.cwd });
@@ -3819,7 +3821,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
     for (const ref of runLabels.keys()) if (!runCommands.has(ref)) runLabels.delete(ref);
-    for (const ref of runNames.keys()) if (!runCommands.has(ref)) runNames.delete(ref);
+    // A live run keeps its name to its end.
+    const live = new Set(runSessions.current().map((session) => session.ref));
+    for (const ref of runNames.keys()) if (!runCommands.has(ref) && !live.has(ref)) runNames.delete(ref);
     runLines.started(run.ref!, unsavedFiles);
     return run;
   };

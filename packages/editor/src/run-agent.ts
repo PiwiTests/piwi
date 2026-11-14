@@ -1096,6 +1096,7 @@ export class RunAgent {
       return {
         run: session.ref,
         ended: session.ended,
+        ...(session.starting ? { starting: true } : {}),
         launcher: session.runner ? 'test runner' : session.terminal ? 'terminal' : this.words.host,
         command: cutText(this.options.command(session.ref) ?? '', 2000).text || null,
         page: session.page ?? null,
@@ -1135,6 +1136,14 @@ export class RunAgent {
         workers: [],
       }));
     // What a failure's error says may quote the page: it goes apart, with the stops' errors.
+    // The runs no process of which reached the service yet, an agent's apart.
+    const startingRefs = [
+      ...runs.filter((run) => run.starting).map((run) => run.run),
+      ...starting.map((run) => run.run),
+    ];
+    const byAgent = startingRefs.filter((ref) => this.started.has(ref)).length;
+    const byPerson = startingRefs.length - byAgent;
+    const settled = runs.length + starting.length - startingRefs.length;
     const errors = this.current().flatMap((session) => [
       ...(session.progress?.failure?.error ? [{ run: session.ref, failure: session.progress.failure.error }] : []),
       ...session.workers.flatMap((worker) => {
@@ -1155,9 +1164,11 @@ export class RunAgent {
         ok: true,
         message:
           [
-            runs.length ? `${runs.length === 1 ? '1 run' : `${runs.length} runs`} of ${this.words.runs}.` : '',
-            starting.length === 1 ? '1 run an agent started is starting.' : '',
-            starting.length > 1 ? `${starting.length} runs agents started are starting.` : '',
+            settled ? `${settled === 1 ? '1 run' : `${settled} runs`} of ${this.words.runs}.` : '',
+            byPerson === 1 ? '1 run is starting.' : '',
+            byPerson > 1 ? `${byPerson} runs are starting.` : '',
+            byAgent === 1 ? '1 run an agent started is starting.' : '',
+            byAgent > 1 ? `${byAgent} runs agents started are starting.` : '',
             runs.length || starting.length ? '' : `No run of ${this.words.runs} runs now: ${this.words.start}.`,
           ]
             .filter(Boolean)
@@ -1188,6 +1199,8 @@ export class RunAgent {
   private state(session: RunSession | undefined, log: RunLog, ref?: string): string {
     // A run an agent started whose workers have not connected yet.
     if (!session && !log.ended && ref !== undefined && this.started.has(ref)) return 'starting';
+    // A run whose command started and no process of which reached the service yet.
+    if (session?.starting && !session.ended && !log.ended) return 'starting';
     if (!session || session.ended || log.ended) return 'ended';
     if (session.workers.some((w) => w.stop)) return 'stopped';
     return session.workers.some((w) => w.test) ? 'running' : 'between';

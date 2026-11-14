@@ -11,23 +11,28 @@ const menus = manifest.contributes.menus as Record<
 >;
 
 describe("the editor's context menu", () => {
-  test('holds a stop’s controls first while a test is stopped, as the debugger’s, then one Piwi submenu: run, record, a recording’s controls', () => {
+  test('holds a stop’s controls while a test is stopped, before the editor’s own groups, then one Piwi submenu: run, record, a recording’s controls', () => {
     expect(manifest.contributes.submenus).toContainEqual({ id: 'piwi.editorContext', label: 'Piwi' });
     expect(
       menus['editor/context']!.filter((e) => (e.command ?? e.submenu)?.startsWith('piwi.')).map((e) => [
         e.group,
         e.command ?? e.submenu,
-        e.when?.startsWith('piwi.runStopped') ?? false,
       ]),
     ).toEqual([
-      ['0_piwi_run@1', 'piwi.resumeRun', true],
-      ['0_piwi_run@2', 'piwi.stepRun', true],
-      ['0_piwi_run@3', 'piwi.runToCursor', true],
-      ['0_piwi_run@4', 'piwi.finishRun', true],
-      ['0_piwi_run@5', 'piwi.endTest', true],
-      ['0_piwi_run@6', 'piwi.showStop', true],
-      ['piwi@1', 'piwi.editorContext', false],
+      ['0_piwi_run@1', 'piwi.resumeRun'],
+      ['0_piwi_run@2', 'piwi.stepRun'],
+      ['0_piwi_run@3', 'piwi.runToCursor'],
+      ['0_piwi_run@4', 'piwi.finishRun'],
+      ['0_piwi_run@5', 'piwi.endTest'],
+      ['0_piwi_run@6', 'piwi.showStop'],
+      ['piwi@1', 'piwi.editorContext'],
     ]);
+    // Each control where the palette offers it, but while a recording takes the editor.
+    const palette = menus['commandPalette']!;
+    for (const entry of menus['editor/context']!.filter((e) => e.group?.startsWith('0_piwi_run'))) {
+      const when = palette.find((p) => p.command === entry.command)!.when;
+      expect(entry.when, entry.command).toBe(`!piwi.recording && ${when}`);
+    }
     const entries = menus['piwi.editorContext']!.map((e) => [e.group!.split('@')[0], e.command]);
     expect(entries).toEqual([
       ['1_run', 'piwi.runTestAtCursor'],
@@ -83,16 +88,16 @@ describe("a spec's editor title", () => {
   const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
   const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
 
-  test('shows Stop recording while recording, a live run’s controls in the debug toolbar’s order, else Record on a spec', () => {
+  test('shows Stop recording while recording, a live run’s controls in the debug toolbar’s order (Pause or Resume, and Stop on a run this window can stop), else Record on a spec', () => {
     const buttons = menus['editor/title']!.filter((e) => e.group?.startsWith('navigation'));
     expect(buttons.map((e) => [e.group, e.command, e.when])).toEqual([
       ['navigation@1', 'piwi.stopRecording', 'piwi.recording'],
       ['navigation@1', 'piwi.resumeRun', '!piwi.recording && piwi.runStopped'],
-      ['navigation@1', 'piwi.record', `${spec} && !piwi.recording && !piwi.runActive`],
-      ['navigation@1', 'piwi.pauseRun', '!piwi.recording && piwi.runPausable'],
+      ['navigation@1', 'piwi.record', `${spec} && !piwi.recording && !piwi.runStopped && !piwi.runPausable`],
+      ['navigation@1', 'piwi.pauseRun', '!piwi.recording && piwi.runPausable && !piwi.runStopped'],
       ['navigation@2', 'piwi.stepRun', '!piwi.recording && piwi.runStopped && !piwi.runFailed'],
       ['navigation@3', 'piwi.finishRun', '!piwi.recording && piwi.runStopped && !piwi.runFailed'],
-      ['navigation@4', 'piwi.stopRun', '!piwi.recording && piwi.runActive'],
+      ['navigation@4', 'piwi.stopRun', '!piwi.recording && piwi.runStoppable'],
     ]);
   });
 

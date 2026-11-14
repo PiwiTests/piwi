@@ -169,17 +169,55 @@ export function flakeCommand(testCaseId: number, kind: 'reproduce' | 'verify'): 
     : `npx @piwitests/reporter flake ${testCaseId}`;
 }
 
-/** A test file among a run's arguments, with the line and column it may name: `tests/a.spec.ts:3`. */
-const TEST_FILE_ARG = /^[^-\s]\S*\.[cm]?[jt]sx?(:\d+){0,2}$/;
+/** A grep that a person would not read as a title: a regular expression's syntax beyond `.`. */
+const GREP_PATTERN = /[|()^$\\[\]*+?{}]/;
 
 /**
- * What a run is called wherever a person sees or picks it, from its arguments after `playwright test`: its first test
- * file with the line it names (`checkout.spec.ts:12`) and how many more, else the title it greps, else every test.
+ * What a run is called wherever a person sees or picks it, from its arguments after `playwright test`: its first
+ * filter, a test file with the line it names (`checkout.spec.ts:12`), and how many more, else the title it greps, else
+ * every test; then how many times each test repeats (`checkout.spec.ts:12 ×3`). A file reads as its spec's own name,
+ * without the classes `specPattern` writes (`[[]id].spec.ts` is `[id].spec.ts`).
  */
 export function runName(args: readonly string[]): string {
-  const files = args.filter((arg) => TEST_FILE_ARG.test(arg)).map((arg) => arg.split(/[\\/]/).pop()!);
-  if (files.length) return files.length > 1 ? `${files[0]} and ${files.length - 1} more` : files[0]!;
-  const grep = args.findIndex((arg) => arg === '-g' || arg === '--grep');
-  if (grep >= 0 && args[grep + 1]) return args[grep + 1]!;
-  return 'every test';
+  const files: string[] = [];
+  const values = new Map<string, string>();
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (!arg.startsWith('-')) {
+      const file = arg.split(/[\\/]/).filter(Boolean).pop();
+      if (file) files.push(file.replace(/\[(.)\]/g, '$1'));
+      continue;
+    }
+    const eq = arg.indexOf('=');
+    const option = eq < 0 ? arg : arg.slice(0, eq);
+    if (!PLAYWRIGHT_OPTIONS.get(option)) continue;
+    const value = eq < 0 ? args[++i] : arg.slice(eq + 1);
+    if (value && !values.has(option)) values.set(option, value);
+  }
+  const grep = values.get('--grep') ?? values.get('-g');
+  const what = files.length
+    ? files.length > 1
+      ? `${files[0]} and ${files.length - 1} more`
+      : files[0]!
+    : grep
+      ? GREP_PATTERN.test(grep)
+        ? 'tests by title'
+        : grep
+      : 'every test';
+  const repeat = Number(values.get('--repeat-each'));
+  return Number.isInteger(repeat) && repeat > 1 ? `${what} ×${repeat}` : what;
+}
+
+/**
+ * A command whose arguments are not one `playwright test`'s named as a run, without `npx`: a chain of `playwright test`
+ * whole, any other up to its first option or its next command (`npx @piwitests/reporter flake 42` is `piwi flake 42`).
+ */
+export function commandName(command: string): string {
+  const words = command
+    .split(/\s+/)
+    .filter((word) => word && word !== 'npx')
+    .map((word) => (word === '@piwitests/reporter' ? 'piwi' : word));
+  if (words[0] === 'playwright' && words[1] === 'test') return words.join(' ');
+  const end = words.findIndex((word) => word.startsWith('-') || ['&&', '||', ';', '|'].includes(word));
+  return (end < 0 ? words : words.slice(0, end)).join(' ');
 }

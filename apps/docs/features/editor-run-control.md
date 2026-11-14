@@ -55,7 +55,7 @@ controls:
 
 `Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Finish  Write code…
 
-It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. Both editors' line holds Resume, Step, Finish and **Write code…** (Resume alone at a failure), the line's own lenses giving way; VS Code's hover holds all controls;
+It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. Both editors' line holds Resume, Step, Finish and **Write code…** (Resume alone at a failure), VS Code's lenses giving way; VS Code's hover holds all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click and the inlay's context menu list the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.

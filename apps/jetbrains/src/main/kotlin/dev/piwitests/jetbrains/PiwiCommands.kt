@@ -393,7 +393,7 @@ object PiwiCommands {
             // Stop, among the run's controls, ends it; the service lists the run as starting until it reports.
             if (ref != null && !project.isDisposed) {
                 project.service<PiwiRunSessions>().track(ref, handler)
-                project.service<PiwiProjectService>().server()?.commandStarted(CommandStartedParams(ref))
+                project.service<PiwiRunSessions>().remote.commandStarted(CommandStartedParams(ref))
             }
             ApplicationManager.getApplication().invokeLater {
                 if (project.isDisposed) {
@@ -404,6 +404,7 @@ object PiwiCommands {
                         handler,
                         Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
                         RunOutputLinks(project, cwd),
+                        ref,
                     ) {
                         ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
                         handler.destroyProcess()

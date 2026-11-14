@@ -87,13 +87,15 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 ### Where the run controls are
 
 - **In VS Code**: the Piwi item's menu while they apply, after **Go to the stopped line**; the command palette; the
-  editor title, Pause or Resume, Step, Finish and Stop in the debug toolbar's order, the others under `…`; and, while a
-  test is stopped, first in the editor's context menu.
+  editor title, Pause or Resume, Step, Finish and Stop (on a run this window started) in the debug toolbar's order, the
+  others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries.
 - **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
-  Run tab; the status bar item's menu; and, while a test is stopped, first in the editor's context menu.
+  Run tab, acting on that run; the status bar item's menu; and, while a test is stopped, first in the editor's context
+  menu.
 
-A run is named after what it runs (`checkout.spec.ts:12`, `a.spec.ts and 2 more`, the title it greps), with its number
-on the instance once it has one (`Run #78 · checkout.spec.ts:12`), in its terminal or Run tab and wherever you pick it.
+A run is named after what it runs (`checkout.spec.ts:12`, `a.spec.ts and 2 more`, the title it greps, `×3` after a
+Verify ×3, a Flake Lab line's command), in its terminal or Run tab and wherever you pick it, where it also has its
+number on the instance once it has one (`Run #78 · checkout.spec.ts:12`). Two runs of one name show their refs.
 
 ## Code at a stop
 

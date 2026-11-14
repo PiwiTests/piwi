@@ -985,7 +985,12 @@ export function registerRunControl(
         target.candidates.map((ref) => {
           const session = sessions.get(ref);
           return {
-            label: session ? runTitle(session) : ref,
+            label: session
+              ? runTitle(
+                  session,
+                  target.candidates.flatMap((r) => sessions.get(r) ?? []),
+                )
+              : ref,
             description: session?.root ?? undefined,
             detail: session?.hold ? holdText(session.hold) : undefined,
             ref,
@@ -1018,7 +1023,12 @@ export function registerRunControl(
         target.candidates.map((candidate) => {
           const session = sessions.get(candidate);
           return {
-            label: session ? runTitle(session) : candidate,
+            label: session
+              ? runTitle(
+                  session,
+                  target.candidates.flatMap((r) => sessions.get(r) ?? []),
+                )
+              : candidate,
             description: session?.root ?? undefined,
             ref: candidate,
           };
@@ -1259,7 +1269,7 @@ export function registerRunControl(
     if (live.length < 2) return live[0]?.ref ?? null;
     const picked = await vscode.window.showQuickPick(
       live.map((s) => ({
-        label: runTitle(s),
+        label: runTitle(s, live),
         description: s.starting ? 'starting' : (s.root ?? undefined),
         detail:
           s.workers

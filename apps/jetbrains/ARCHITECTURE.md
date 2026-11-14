@@ -589,10 +589,13 @@ with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
 
 While a run is live, a stop's controls come first in the editor's context menu (`Piwi.EditorRunControl`, while a test
 is stopped) and the run controls in the Run menu (`Piwi.RunMenu`), each a `PiwiLiveRunGroup` hidden otherwise. A run
-started in the console has a Run tab built as the platform's `RunContentExecutor` builds one, with `Piwi.RunControl`
-in its toolbar between Rerun and Stop and Close (`PiwiRunTab`), titled after the run's name (`RunCommand.name`); the
-plugin tells the service as its command starts (`piwi/commandStarted`). The choosers and the Worker tab's name a run by
-`Glue.runTitle` (`Run #78 · checkout.spec.ts:12`), its worker's run only while several runs have workers to watch.
+started in the console has a Run tab built as the platform's `RunContentExecutor` builds one (`PiwiRunTab`: Rerun on
+its key, a Stop that kills the process clicked again while it ends), titled after the run's name (`RunCommand.name`),
+with `Piwi.RunControl`'s actions but its Stop in its toolbar, each wrapped (`registeredWith`) to act on the tab's run
+alone (`PiwiRunSessions.RUN`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
+runner's runs as their process starts. The choosers name a run by `Glue.runTitle` (`Run #78 · checkout.spec.ts:12`),
+with its ref while another of the list reads the same, the Watch chooser a worker's run only while several runs have
+workers to watch.
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
 (`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; the Paused page
