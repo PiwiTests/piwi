@@ -161,13 +161,23 @@ export function runVerdict(
   before: BranchFailures | null,
   after: BranchFailures | null,
   runId: number,
+  origin: RunEnded['origin'] = 'editor',
 ): Pick<RunEnded, 'fixed' | 'stillFailing' | 'newFailures' | 'stillFailingCount' | 'newFailureCount'> {
   const failingBefore = new Set((before?.failures ?? []).filter((f) => f.runId !== runId).map((f) => f.testCaseId));
   const failingAfter = new Set((after?.failures ?? []).map((f) => f.testCaseId));
+  const failingIn = new Set((after?.failures ?? []).filter((f) => f.runId === runId).map((f) => f.testCaseId));
+  // A CI run fixed what the baseline it replaced failed, once it is the baseline; a run of the editor's, what it lists
+  // as resolved.
   const fixed = new Set(
-    (after?.resolved ?? [])
-      .filter((r) => r.runId === runId && !failingAfter.has(r.testCaseId))
-      .map((r) => r.testCaseId),
+    origin === 'ci'
+      ? after?.run?.id === runId
+        ? (before?.failures ?? [])
+            .filter((f) => f.source === 'baseline' && f.runId !== runId && !failingIn.has(f.testCaseId))
+            .map((f) => f.testCaseId)
+        : []
+      : (after?.resolved ?? [])
+          .filter((r) => r.runId === runId && !failingAfter.has(r.testCaseId))
+          .map((r) => r.testCaseId),
   );
   const still = new Map<number, string>();
   const added = new Map<number, string>();
@@ -193,8 +203,13 @@ function titleList(titles: string[], count: number): string {
 
 /** The verdict both clients show of a run that ended (`RunEnded.verdict`), from what it counted and changed. */
 export function verdictWords(ended: Omit<RunEnded, 'verdict'>): VerdictWords {
+  const title =
+    ended.origin === 'ci'
+      ? `CI run #${ended.runId}${ended.branch ? ` on ${ended.branch}` : ''}`
+      : `run #${ended.runId}`;
   if (ended.repeat) {
     return {
+      title,
       text: ended.repeat.verdict,
       failing: ended.repeat.failed,
       always: true,
@@ -204,7 +219,10 @@ export function verdictWords(ended: Omit<RunEnded, 'verdict'>): VerdictWords {
   const still = ended.stillFailingCount;
   const added = ended.newFailureCount;
   const parts: string[] = [];
-  if (ended.fixed || still) {
+  if (ended.origin === 'ci') {
+    if (ended.fixed) parts.push(`${ended.fixed} fixed`);
+    if (still) parts.push(`${still} still failing ${titleList(ended.stillFailing, still)}`);
+  } else if (ended.fixed || still) {
     const total = ended.fixed + still;
     const fixed = `${ended.fixed} of ${total} CI ${total === 1 ? 'failure' : 'failures'} fixed`;
     parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
@@ -220,6 +238,7 @@ export function verdictWords(ended: Omit<RunEnded, 'verdict'>): VerdictWords {
   }
   const failing = still + added > 0 || ended.failed > 0;
   return {
+    title,
     text: parts.join(' · '),
     failing,
     always: false,
@@ -416,6 +435,8 @@ export class RunWatch {
   private readonly attempts = new Map<PiwiContext, Map<number, Map<string, LiveTestStatus>>>();
   /** The runs of the editor's own whose verdict was said, by instance. */
   private readonly told = new Set<string>();
+  /** The CI runs of a branch a context followed (`LiveRun.ci`), by `runKey`: each is told as it ends. */
+  private readonly ciFollowed = new Set<string>();
   /** The results of the repeated runs of the editor's own, by instance and run, until their verdict is said. */
   private readonly tallies = new Map<string, RepeatTally>();
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -598,6 +619,7 @@ export class RunWatch {
     for (const pending of this.settling.values()) clearTimeout(pending.timer);
     this.settling.clear();
     this.tallies.clear();
+    this.ciFollowed.clear();
     if (this.progressTimer) clearTimeout(this.progressTimer);
   }
 
@@ -663,8 +685,10 @@ export class RunWatch {
   /**
    * Follow a run in progress as the context's live run, the editor's own before any other; a run that already ended
    * is read with the context's latest run instead. A read of the live run with a status it has passed changes nothing.
+   * A CI run of the branch is told as it ends, followed as the live run or not.
    */
   private follow(context: PiwiContext, run: RunDetails, own: boolean): void {
+    if (!own && isCiRun(run) && context.client) this.ciFollowed.add(runKey(context.client.connection, run.id));
     if (!ACTIVE.has(run.status)) {
       this.settle(context, run.id);
       return;
@@ -834,14 +858,27 @@ export class RunWatch {
       if (this.disposed) return;
       if (context.live && ended.has(context.live.runId)) this.end(context);
       this.options.changed();
-      for (const id of ended) if (context.ownRuns.has(id)) void this.tell(context, id, before);
+      const connection = context.client?.connection;
+      for (const id of ended) {
+        if (context.ownRuns.has(id)) void this.tell(context, id, before, 'editor');
+        else if (connection && this.ciFollowed.delete(runKey(connection, id)))
+          void this.tell(context, id, before, 'ci');
+      }
     }, SETTLE_MS);
     timer.unref?.();
     this.settling.set(context, { timer, ended });
   }
 
-  /** Say what a run of the editor's own changed, once: its counts, and the failures read before and after it ended. */
-  private async tell(context: PiwiContext, runId: number, before: BranchFailures | null): Promise<void> {
+  /**
+   * Say what a run of the editor's own, or a CI run of the branch, changed, once: its counts, and the failures read
+   * before and after it ended.
+   */
+  private async tell(
+    context: PiwiContext,
+    runId: number,
+    before: BranchFailures | null,
+    origin: RunEnded['origin'],
+  ): Promise<void> {
     const client = context.client;
     const runEnded = this.options.runEnded;
     if (!client || !runEnded) return;
@@ -851,6 +888,8 @@ export class RunWatch {
     const run = await client.runDetails(runId).catch(() => null);
     if (!run || this.disposed || ACTIVE.has(run.status)) {
       this.told.delete(key);
+      // Told when it ends again.
+      if (origin === 'ci' && !this.disposed) this.ciFollowed.add(key);
       return;
     }
     const tally = this.tallies.get(key);
@@ -862,6 +901,8 @@ export class RunWatch {
     const ended: Omit<RunEnded, 'verdict'> = {
       root: context.root,
       runId,
+      origin,
+      ...(origin === 'ci' && run.branch ? { branch: run.branch } : {}),
       ...(ref ? { ref } : {}),
       url: client.runUrl(runId),
       passed: run.passedTests,
@@ -869,7 +910,7 @@ export class RunWatch {
       flaky: run.flakyTests ?? 0,
       skipped: run.skippedTests,
       ...(endedAtStop > 0 ? { endedAtStop } : {}),
-      ...runVerdict(before, context.failures, runId),
+      ...runVerdict(before, context.failures, runId, origin),
       ...(tally ? { repeat: repeatVerdict(tally.repeat, tally, run) } : {}),
     };
     runEnded({ ...ended, verdict: verdictWords(ended) });

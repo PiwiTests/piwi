@@ -160,6 +160,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
 | `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
@@ -286,9 +287,10 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification in the service's words
-(`RunEnded.verdict`, `runVerdict` in `src/glue.ts`), as the
-`piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
+When a run started from the editor, or a CI run of the branch the service followed (`RunEnded.origin`), ends,
+`piwi/runEnded` shows as a notification in the service's words (`RunEnded.verdict`, `runVerdict` in `src/glue.ts`,
+`Piwi: CI run #130 on feature-x · 1 new failure (…)`), as the `piwi.runNotifications` setting allows (`always`,
+`failures`, the default, `never`), a CI run's only while `piwi.runNotificationsScope` is `mineAndCi`, the default:
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;

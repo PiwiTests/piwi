@@ -535,19 +535,24 @@ result:
 clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
 its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
-Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what the run
-changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries the ref of the command
-that started the run while the service keeps that command (`RefWatch.carried`), the run's counts, and:
+Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
+`RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
+run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it
+(`origin`: `editor` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
+keeps that command (`RefWatch.carried`), the run's counts, and:
 
-- `fixed`: the tests failing before that it passed;
+- `fixed`: the tests failing before that it passed; for a CI run, those the baseline it replaced failed, once it is the
+  baseline;
 - `stillFailing`: the tests it failed again (failing before in another run, or not new on the instance's word);
 - `newFailures`: the tests it failed that were not failing before;
 - `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
   (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none;
-- `verdict`: what both clients show, in words (`verdictWords`): what it changed (`1 of 3 CI failures fixed, 2 still
-  failing (…) · 1 new failure (…)`), else its counts, or how a run of each test several times went; whether something
-  fails, whether it is said whatever the client's run notifications setting (a repeated run), and its actions' ids
-  (`failures`, `dashboard`, `rerun`). The clients add their own setting's actions and the run's number.
+- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `CI run #130 on
+  feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
+  `2 fixed · …`), else its counts, or how a run of each test several times went; whether something fails, whether it
+  is said whatever the client's run notifications setting (a repeated run), and its actions' ids (`failures`,
+  `dashboard`, `rerun`). The clients add their own setting's actions, and leave a CI run's unsaid while their run
+  notifications' scope is the editor's runs alone.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
 

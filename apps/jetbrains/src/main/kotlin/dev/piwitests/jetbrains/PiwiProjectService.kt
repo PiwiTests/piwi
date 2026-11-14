@@ -106,6 +106,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var runHeaded: Boolean = false,
         var runHoldFailures: String = "auto",
         var runNotifications: String = "failures",
+        var runNotificationsScope: String = "mineAndCi",
         var statusBarAlert: String = "new",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,

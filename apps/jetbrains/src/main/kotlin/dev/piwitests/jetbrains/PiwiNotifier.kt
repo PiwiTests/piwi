@@ -35,7 +35,7 @@ object PiwiNotifier {
 
     /**
      * A balloon of `kind` saying `content` (HTML: escape plain text first), not shown until `notify`, titled Piwi or,
-     * for a run's verdict, by its run (`Glue.runVerdictTitle`).
+     * for a run's verdict, by its run (`Glue.RunVerdict.title`).
      */
     fun create(
         kind: PiwiNotice,

@@ -64,11 +64,13 @@ comes unasked, may come again and hides nothing the developer must hear carries 
 and a run that was lost carry none, so a key is on some notices rather than on each. VS Code offers **Don't Show
 Again** on it, kept in `piwi.hiddenMessages`. VS Code's own repeated messages, JetBrains' gear and the balloon test
 remain (HM15 in part). M21 in part: the service words a run's verdict once for both clients (`RunEnded.verdict`,
-`verdictWords`), its text, whether it fails, whether it is said whatever the setting and its actions' ids (HM16 in
-part: a verdict for every run the editor followed, and its scope, remain), and a test held at its failure or at
-`page.pause()` while the editor is in the background calls once, VS Code with a notification offering Resume and Go to
-the stopped line, JetBrains with `AppIcon.requestAttention`, as the service marks the stop (`RunStop.calls`) (HM17 in
-part: the status item's badge and raising the IDE on 'Focus application on breakpoint' remain). M4 in
+`verdictWords`), the run it names, its text, whether it fails, whether it is said whatever the setting and its
+actions' ids, for the editor's runs and the CI runs of the branch it followed (`RunEnded.origin`), which a scope on the
+run notifications setting leaves out (`piwi.runNotificationsScope` and its JetBrains twin) (HM16 in part: the terminal
+and IDE runner's runs wait on the study's P7), and a test held at its failure or at `page.pause()` while the editor is
+in the background calls once, VS Code with a notification offering Resume and Go to the stopped line, JetBrains with
+`AppIcon.requestAttention`, or raising the IDE while 'Focus application on breakpoint' is on, as the service marks the
+stop (`RunStop.calls`) (HM17 in part: the status item's badge goes with M13's line). M4 in
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye
@@ -1205,12 +1207,12 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8), [NF3](#nf3) |
 | <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
-| <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18) |
+| <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state, a stop that waits for the person shown in it until answered | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18), [HM17](#hm17) |
 | <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
-| <a id="m21"></a>M21 | **The rest of the verdicts**: one for every run the editor followed, those of terminal runs after the study's P7, with a scope on the run notifications setting; the status item's badge for a stop that waits | `ide` | [HM16](#hm16), [HM17](#hm17) |
+| <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18), [AC9](#ac9), [NF3](#nf3) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
 | <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends | `ide` | none ([LI20](#li20)) |

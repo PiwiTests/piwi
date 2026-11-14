@@ -1926,6 +1926,7 @@ describe('the verdict of a run started from the editor', () => {
   const ended: RunEnded = {
     root: '/w',
     runId: 124,
+    origin: 'editor',
     url: 'http://piwi/test-runs/124',
     passed: 1,
     failed: 2,
@@ -1937,6 +1938,7 @@ describe('the verdict of a run started from the editor', () => {
     stillFailingCount: 2,
     newFailureCount: 0,
     verdict: {
+      title: 'run #124',
       text: '1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
       failing: true,
       always: false,
@@ -1945,7 +1947,13 @@ describe('the verdict of a run started from the editor', () => {
   };
   const passing: RunEnded = {
     ...ended,
-    verdict: { text: '1 of 1 CI failure fixed', failing: false, always: false, actions: ['failures', 'dashboard'] },
+    verdict: {
+      title: 'run #124',
+      text: '1 of 1 CI failure fixed',
+      failing: false,
+      always: false,
+      actions: ['failures', 'dashboard'],
+    },
   };
 
   test('says the service’s words after the run, with its actions, then Settings', () => {
@@ -1975,13 +1983,35 @@ describe('the verdict of a run started from the editor', () => {
   test('a verdict the service says always is said whatever the setting, with its actions alone', () => {
     const repeated: RunEnded = {
       ...ended,
-      verdict: { text: 'Failed 1 of 3', failing: true, always: true, actions: ['failures', 'dashboard'] },
+      verdict: {
+        title: 'run #124',
+        text: 'Failed 1 of 3',
+        failing: true,
+        always: true,
+        actions: ['failures', 'dashboard'],
+      },
     };
     expect(runVerdict(repeated, 'never')).toEqual({
       severity: 'warning',
       text: 'Piwi: run #124 · Failed 1 of 3',
       actions: ['Open the failures', 'Open in dashboard'],
     });
+  });
+
+  test('a CI run of the branch is named by the service, and said only while the scope takes it', () => {
+    const ci: RunEnded = {
+      ...ended,
+      origin: 'ci',
+      branch: 'feature-x',
+      runId: 130,
+      verdict: { ...ended.verdict, title: 'CI run #130 on feature-x', text: '1 new failure (cart.spec.ts › adds)' },
+    };
+    expect(runVerdict(ci, 'failures', 'mineAndCi')?.text).toBe(
+      'Piwi: CI run #130 on feature-x · 1 new failure (cart.spec.ts › adds)',
+    );
+    expect(runVerdict(ci, 'always', 'mine')).toBeNull();
+    // The editor's own runs whatever the scope.
+    expect(runVerdict(ended, 'always', 'mine')).not.toBeNull();
   });
 });
 

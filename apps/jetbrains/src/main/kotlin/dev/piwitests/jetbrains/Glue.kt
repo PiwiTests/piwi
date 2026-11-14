@@ -906,6 +906,12 @@ object Glue {
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
     /**
+     * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
+     * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
+     */
+    val RUN_NOTIFICATION_SCOPES = listOf("mineAndCi", "mine")
+
+    /**
      * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
      * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
      */
@@ -942,27 +948,26 @@ object Glue {
     const val ONLY_ON_FAILURE_SET =
         "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
 
-    /** The title of a run's verdict balloon, which tells two runs' balloons apart: `Piwi: run #124`. */
-    fun runVerdictTitle(runId: Int): String = "Piwi: run #$runId"
-
-    /** A run's verdict under its balloon's title (`runVerdictTitle`): its sentence without the run it names. */
-    fun runVerdictBody(verdict: RunVerdict, runId: Int): String = verdict.text.removePrefix("Run #$runId · ")
-
-    /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
-    data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
+    /**
+     * A run's verdict: a warning when something fails, its balloon's title, which names the run so two runs' balloons
+     * read apart (`Piwi: run #124`, `Piwi: CI run #130 on feature-x`), its sentence, and the actions it offers.
+     */
+    data class RunVerdict(val warning: Boolean, val title: String, val text: String, val actions: List<String>)
 
     /**
-     * What a run the editor started changed, once it ended, in the service's words (`RunEnded.verdict`): `Run #124 · 1 of
-     * 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the
-     * service's actions when something fails, and **Only on failure** when nothing does while `setting` is `always`.
-     * Null when `setting` keeps it quiet; a run of each test several times says how its runs went whatever the setting.
+     * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `1 of 3 CI failures fixed, 2
+     * still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the service's actions when
+     * something fails, and **Only on failure** when nothing does while `setting` is `always`. Null when `setting` keeps
+     * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its
+     * runs went whatever the setting.
      */
-    fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
+    fun runVerdict(ended: RunEnded, setting: String = "always", scope: String = "mineAndCi"): RunVerdict? {
         val words = ended.verdict ?: return null
+        if (ended.origin == "ci" && scope == "mine") return null
         if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
         val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
         val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
-        return RunVerdict(words.failing, "Run #${ended.runId} · ${words.text}", actions + onlyOnFailure)
+        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure)
     }
 
     /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */

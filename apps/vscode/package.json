@@ -1344,6 +1344,19 @@
           "default": "failures",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         },
+        "piwi.runNotificationsScope": {
+          "type": "string",
+          "enum": [
+            "mine",
+            "mineAndCi"
+          ],
+          "enumDescriptions": [
+            "The runs started from the editor.",
+            "Those, and the CI runs of the checked-out branch Piwi follows."
+          ],
+          "default": "mineAndCi",
+          "description": "Which runs a notification of piwi.runNotifications comes for: a CI run of the branch says what it fixed and its new failures against the run it replaced."
+        },
         "piwi.failureSeverity": {
           "type": "string",
           "enum": [

@@ -79,6 +79,7 @@ describe('the verdict both clients show of a run that ended', () => {
   const ended = {
     root: '/w',
     runId: 124,
+    origin: 'editor' as const,
     url: 'http://piwi/test-runs/124',
     passed: 9,
     failed: 0,
@@ -103,6 +104,7 @@ describe('the verdict both clients show of a run that ended', () => {
         newFailureCount: 1,
       }),
     ).toEqual({
+      title: 'run #124',
       text: '1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in and 1 more) · 1 new failure (cart.spec.ts › adds)',
       failing: true,
       always: false,
@@ -120,6 +122,7 @@ describe('the verdict both clients show of a run that ended', () => {
 
   test('says its counts when it changed nothing, the tests ended at a stop beside the skipped', () => {
     expect(verdictWords({ ...ended, flaky: 1, skipped: 2, endedAtStop: 1 })).toEqual({
+      title: 'run #124',
       text: '9 passed, 0 failed, 1 flaky, 2 skipped (1 ended at a stop)',
       failing: false,
       always: false,
@@ -127,8 +130,32 @@ describe('the verdict both clients show of a run that ended', () => {
     });
   });
 
+  test('names a CI run of the branch and what it fixed against the baseline it replaced', () => {
+    const ci = { ...ended, origin: 'ci' as const, branch: 'feature-x', runId: 130 };
+    expect(
+      verdictWords({
+        ...ci,
+        failed: 2,
+        fixed: 2,
+        stillFailing: ['login.spec.ts › logs in'],
+        stillFailingCount: 1,
+        newFailures: ['cart.spec.ts › adds'],
+        newFailureCount: 1,
+      }),
+    ).toEqual({
+      title: 'CI run #130 on feature-x',
+      text: '2 fixed · 1 still failing (login.spec.ts › logs in) · 1 new failure (cart.spec.ts › adds)',
+      failing: true,
+      always: false,
+      actions: ['failures', 'dashboard', 'rerun'],
+    });
+    expect(verdictWords({ ...ci, branch: undefined }).title).toBe('CI run #130');
+    expect(verdictWords(ci).text).toBe('9 passed, 0 failed');
+  });
+
   test('says how a run of each test several times went, whatever the run notifications setting', () => {
     expect(verdictWords({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } })).toEqual({
+      title: 'run #124',
       text: 'Failed 1 of 3',
       failing: true,
       always: true,

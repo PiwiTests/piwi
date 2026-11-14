@@ -964,6 +964,9 @@ export function hasCoverageMarks(result: CoverageResult | null | undefined): boo
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
 export type RunNotifications = 'always' | 'failures' | 'never';
 
+/** Whose runs a verdict comes for (`piwi.runNotificationsScope`): the editor's own, or those and the branch's CI runs. */
+export type RunNotificationsScope = 'mine' | 'mineAndCi';
+
 /** The actions a run's verdict offers. */
 export const VERDICT_ACTIONS = {
   failures: 'Open the failures',
@@ -974,21 +977,24 @@ export const VERDICT_ACTIONS = {
 } as const;
 
 /**
- * What a run the editor started changed, once it ended, in the service's words (`RunEnded.verdict`): `Piwi: run #124 ·
- * 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`. A warning when
- * something fails, with the service's actions, then **Only on failure** while nothing fails and `setting` is `always`,
- * and last **Settings**, which opens `piwi.runNotifications`. Null when `setting` keeps it quiet; a run of each test
- * several times says how its runs went whatever the setting, with the service's actions alone.
+ * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `Piwi: run #124 · 1 of 3 CI failures
+ * fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`, `Piwi: CI run #130 on feature-x · 1 new
+ * failure (…)`. A warning when something fails, with the service's actions, then **Only on failure** while nothing
+ * fails and `setting` is `always`, and last **Settings**, which opens `piwi.runNotifications`. Null when `setting` keeps
+ * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its runs
+ * went whatever the setting, with the service's actions alone.
  */
 export function runVerdict(
   ended: RunEnded,
   setting: RunNotifications = 'always',
+  scope: RunNotificationsScope = 'mineAndCi',
 ): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
-  const { text, failing, always, actions } = ended.verdict;
+  const { title, text, failing, always, actions } = ended.verdict;
+  if (ended.origin === 'ci' && scope === 'mine') return null;
   if (!always && (setting === 'never' || (setting === 'failures' && !failing))) return null;
   return {
     severity: failing ? 'warning' : 'information',
-    text: `Piwi: run #${ended.runId} · ${text}`,
+    text: `Piwi: ${title} · ${text}`,
     actions: [
       ...actions.map((a) => VERDICT_ACTIONS[a]),
       ...(always

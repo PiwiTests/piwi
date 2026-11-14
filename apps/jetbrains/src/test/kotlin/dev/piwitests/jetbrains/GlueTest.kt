@@ -3242,19 +3242,21 @@ class GlueTest {
         stillFailing = listOf("login.spec.ts › logs in", "checkout.spec.ts › pays"), newFailures = emptyList(),
         stillFailingCount = 2, newFailureCount = 0,
         verdict = VerdictWords(
+            "run #124",
             "1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
             failing = true,
             actions = listOf("failures", "dashboard", "rerun"),
         ),
     )
-    private val passing = ended.copy(verdict = VerdictWords("1 of 1 CI failure fixed", actions = listOf("failures", "dashboard")))
+    private val passing = ended.copy(verdict = VerdictWords("run #124", "1 of 1 CI failure fixed", actions = listOf("failures", "dashboard")))
 
     @Test
     fun `a run's verdict says the service's words after the run, with its actions`() {
         assertEquals(
             Glue.RunVerdict(
                 true,
-                "Run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
+                "Piwi: run #124",
+                "1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
                 listOf("Open the failures", "Open in dashboard", "Re-run failing"),
             ),
             Glue.runVerdict(ended),
@@ -3264,7 +3266,7 @@ class GlueTest {
     @Test
     fun `a run where nothing fails is an information, offering Only on failure`() {
         assertEquals(
-            Glue.RunVerdict(false, "Run #124 · 1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure")),
+            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure")),
             Glue.runVerdict(passing),
         )
     }
@@ -3278,11 +3280,26 @@ class GlueTest {
 
     @Test
     fun `a verdict the service says always is said whatever the setting, with its actions alone`() {
-        val passed = ended.copy(verdict = VerdictWords("Passed 3 of 3", always = true, actions = listOf("failures", "dashboard")))
-        assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the failures", "Open in dashboard")), Glue.runVerdict(passed, "never"))
+        val passed = ended.copy(verdict = VerdictWords("run #124", "Passed 3 of 3", always = true, actions = listOf("failures", "dashboard")))
         // The balloon is titled by its run, so two runs' balloons read apart.
-        assertEquals("Piwi: run #124", Glue.runVerdictTitle(124))
-        assertEquals("Passed 3 of 3", Glue.runVerdict(passed, "failures")?.let { Glue.runVerdictBody(it, 124) })
+        assertEquals(
+            Glue.RunVerdict(false, "Piwi: run #124", "Passed 3 of 3", listOf("Open the failures", "Open in dashboard")),
+            Glue.runVerdict(passed, "never"),
+        )
+    }
+
+    @Test
+    fun `a CI run of the branch is named by the service, and said only while the scope takes it`() {
+        val ci = ended.copy(
+            origin = "ci",
+            branch = "feature-x",
+            runId = 130,
+            verdict = ended.verdict!!.copy(title = "CI run #130 on feature-x", text = "1 new failure (cart.spec.ts › adds)"),
+        )
+        assertEquals("Piwi: CI run #130 on feature-x", Glue.runVerdict(ci, "failures", "mineAndCi")?.title)
+        assertEquals(null, Glue.runVerdict(ci, "always", "mine"))
+        // The editor's own runs whatever the scope.
+        assertEquals(true, Glue.runVerdict(ended, "always", "mine") != null)
     }
 
     @Test

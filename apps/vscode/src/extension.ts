@@ -178,6 +178,7 @@ import {
   testAtRun,
   testLineArg,
   type RunNotifications,
+  type RunNotificationsScope,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
   HOLD_FAILURES_CHOICES,
@@ -1865,11 +1866,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       coverageArrived(result);
       filesChanged();
     }),
-    // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
+    // A run started here, or a CI run of the branch, ended and was read: what it changed, as
+    // `piwi.runNotifications` and `piwi.runNotificationsScope` allow.
     lc.onNotification(RUN_ENDED_NOTIFICATION, async (ended: RunEnded) => {
       explorer?.runEnded(ended);
-      const setting = vscode.workspace.getConfiguration('piwi').get<RunNotifications>('runNotifications');
-      const verdict = runVerdict(ended, setting);
+      const config = vscode.workspace.getConfiguration('piwi');
+      const verdict = runVerdict(
+        ended,
+        config.get<RunNotifications>('runNotifications'),
+        config.get<RunNotificationsScope>('runNotificationsScope'),
+      );
       if (!verdict) return;
       const picked = await (verdict.severity === 'warning'
         ? vscode.window.showWarningMessage(verdict.text, ...verdict.actions)

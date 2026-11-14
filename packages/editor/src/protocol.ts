@@ -1027,6 +1027,13 @@ export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
 export interface RunEnded {
   root: string;
   runId: number;
+  /**
+   * Who started it: `editor`, a command the service built for this editor; `ci`, a CI run of the branch the editor
+   * followed (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
+   */
+  origin: 'editor' | 'ci';
+  /** The branch a CI run ran on, which its verdict names. */
+  branch?: string;
   /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
   ref?: string;
   /** The run's page in the dashboard. */
@@ -1056,14 +1063,16 @@ export interface RunEnded {
 }
 
 /**
- * A run's verdict in words, after its number (`run #124 · …`): what it changed, `1 of 3 CI failures fixed, 2 still
- * failing (login.spec.ts › logs in, checkout.spec.ts › pays) · 1 new failure (…)`, else its counts, `9 passed, 0 failed,
- * 1 skipped (1 ended at a stop)`, or for a run of each test several times how its runs went, `Failed 1 of 3`.
+ * A run's verdict in words: the run it names (`title`: `run #124`, `CI run #130 on feature-x`), and what it changed
+ * (`text`), `1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays) · 1 new
+ * failure (…)`, for a CI run `2 fixed · 1 new failure (…)`, else its counts, `9 passed, 0 failed, 1 skipped (1 ended at a
+ * stop)`, or for a run of each test several times how its runs went, `Failed 1 of 3`.
  * `failing` makes it a warning; `always` says it whatever the client's run notifications setting (a run of each test
  * several times); `actions` are the client's, in order: open the failures, open the run in the dashboard, re-run the
  * failing tests.
  */
 export interface VerdictWords {
+  title: string;
   text: string;
   failing: boolean;
   always: boolean;

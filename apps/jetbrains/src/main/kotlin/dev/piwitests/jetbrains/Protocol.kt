@@ -485,6 +485,10 @@ data class CiFrame(
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
+    /** `editor`, a command built for this IDE; `ci`, a CI run of the branch the service followed. */
+    val origin: String = "editor",
+    /** The branch a CI run ran on. */
+    val branch: String? = null,
     val ref: String? = null,
     val url: String? = null,
     val passed: Int = 0,
@@ -502,10 +506,12 @@ data class RunEnded(
 )
 
 /**
- * A run's verdict in words, after its number: `text`, what it changed or its counts; `failing`, a warning; `always`,
- * said whatever the run notifications setting; `actions`, `failures`, `dashboard` and `rerun`, in order.
+ * A run's verdict in words: `title`, the run it names (`run #124`, `CI run #130 on feature-x`); `text`, what it changed
+ * or its counts; `failing`, a warning; `always`, said whatever the run notifications setting; `actions`, `failures`,
+ * `dashboard` and `rerun`, in order.
  */
 data class VerdictWords(
+    val title: String = "",
     val text: String = "",
     val failing: Boolean = false,
     val always: Boolean = false,

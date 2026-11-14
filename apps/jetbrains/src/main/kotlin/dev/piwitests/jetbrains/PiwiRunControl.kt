@@ -569,12 +569,20 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
         // A stop the service says calls (`RunStop.calls`) calls once while this project's frame is in the background,
-        // a modal dialog open or not.
+        // a modal dialog open or not: it raises the frame where the debugger's 'Focus application on breakpoint' is on,
+        // else asks for attention.
         val due = synchronized(lock) { Glue.attentionStops(Glue.stopsOf(sessions), attended) }
         if (due.isNotEmpty()) {
             ApplicationManager.getApplication().invokeLater({
                 val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)
-                if (frame?.isActive != true) com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+                if (frame?.isActive != true) {
+                    val icon = com.intellij.ui.AppIcon.getInstance()
+                    if (frame != null && com.intellij.openapi.util.registry.Registry.`is`(FOCUS_ON_BREAKPOINT, false)) {
+                        icon.requestFocus(frame)
+                    } else {
+                        icon.requestAttention(project, false)
+                    }
+                }
             }, com.intellij.openapi.application.ModalityState.any(), gone)
         }
     }
@@ -2199,6 +2207,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         /** What a control says when no editor service runs to send it to. */
         private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
+
+        /** The registry key of the debugger's 'Focus application on breakpoint' (Settings → Build, Execution → Debugger). */
+        private const val FOCUS_ON_BREAKPOINT = "debugger.mayBringFrameToFrontOnBreakpoint"
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L
