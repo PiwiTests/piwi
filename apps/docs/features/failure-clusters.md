@@ -160,4 +160,4 @@ Over the [MCP server](/features/mcp), `list_open_clusters` lists the open cluste
 - [Triage a run gone red](/recipes/mass-failure): a red run collapsed into causes
 - [AI diagnosis](./ai-diagnosis): a cluster explained against your diff
 - [Failure evidence](./evidence): one execution's evidence
-- [Core concepts](/guide/concepts#error-fingerprint-failure-cluster): the terms
+- [Glossary](/guide/concepts#error-fingerprint-failure-cluster): the terms

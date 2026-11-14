@@ -30,7 +30,7 @@ pull request of their own:
 
 - **The follow-ups**, each tracked by an issue (#1406 to #1420): a later pull request settled C3.16 and D17, gave the
   failure inbox a page of its own, recorded in the glossary the meaning each word of [Words used two
-  ways](#words-used-two-ways) keeps, widened G2, G3, G7 and G8, and corrected the blog post, the integrations'
+  ways](#words-used-two-ways) keeps and corrected the pages where a second sense misled, widened G2, G3, G7 and G8, and corrected the blog post, the integrations'
   READMEs and a catalog place against the code.
 
 What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
@@ -501,8 +501,9 @@ Each item is tracked by a GitHub issue of `PiwiTests/piwi`.
 - **The UI overview** ([#1408](https://github.com/PiwiTests/piwi/issues/1408)) claims its main pages and tabs and
   still leaves out the analytics dashboard routes, the bug report page and the test case's tabs.
 - **Words used two ways** ([#1412](https://github.com/PiwiTests/piwi/issues/1412)). The glossary records, under *Words
-  kept to one meaning*, the meaning each word of the table keeps and the name its other senses take, and the pages
-  that used one in another sense were corrected. Two need the app to move: the analytics metrics and targets say
+  kept to one meaning*, the meaning each word of the table keeps and the name its other senses take. Where a page's
+  second sense misled and the page is not another tool's, it was corrected (Flake Lab's repetitions, an execution
+  called a test case in the test metadata reference, a provider's console); the other pages keep their wording. Two need the app to move: the analytics metrics and targets say
   "failure cause" (`shared/analytics/metrics.ts`, `targets.ts`, `insight-rules.ts`), and one stability level is
   Watch in the dashboard and "could break" in Piwi Picker.
 - **What the app could change**, items 3 to 13 ([#1414](https://github.com/PiwiTests/piwi/issues/1414)) and 14 to 21

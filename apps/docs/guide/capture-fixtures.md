@@ -163,5 +163,5 @@ A runnable example project exercising every capture path, a failing test include
 
 - [Reporter](./reporter): the setup the fixtures build on
 - [Reporter options](/reference/reporter-options#what-gets-captured): every capture option
-- [Core concepts](./concepts#locator-snapshot): what a locator snapshot stores, and what it doesn't
+- [Glossary](./concepts#locator-snapshot): what a locator snapshot stores, and what it doesn't
 - [Locator healing](/features/locator-healing): the feature the locator snapshots power

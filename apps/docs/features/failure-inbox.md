@@ -29,9 +29,8 @@ seen**, and exceptional **badges** only (a regression on the default branch, *sn
 Each queue has a live count and is shareable as `?queue=`:
 
 - **All open**: every open cluster not snoozed.
-- **New**: first seen, or seen again, since your previous visit (kept per browser).
-- **Mine**: assigned to you, or owned by you when it has no assignee
-  ([owners and assignees](./failure-clusters#owners-and-assignees)).
+- **New**: first seen, or seen again, since your previous browser session (kept per browser).
+- **Mine**: assigned to you, or owned by you ([owners and assignees](./failure-clusters#owners-and-assignees)).
 - **Needs ticket**: untracked default-branch clusters older than the binding's age (2 days by default; see
   [issue tracking](./issue-tracking)).
 - **Regressions**: regressed on the default branch, failing there still.
@@ -42,8 +41,9 @@ Each queue has a live count and is shareable as `?queue=`:
 ### Triage from the row or the keyboard
 
 Open, resolve, ignore, quarantine, assign, snooze, link a known issue or create a tracker issue from the row, by mouse
-or [key](/reference/keyboard-shortcuts#failure-inbox); `x` selects rows for a **bulk bar**. The triage actions need
-the Maintainer role or above on the project.
+or [key](/reference/keyboard-shortcuts#failure-inbox); `x` selects rows for a **bulk bar**. Resolve, ignore,
+quarantine, assign and snooze need the Maintainer role or above on the project; linking a known issue and creating a
+tracker issue need Contributor.
 
 Resolve, ignore, snooze and assign on one row can be undone for a few seconds. A known issue pins a URL; with an
 [issue tracker](/operate/integrations) bound, Jira links unfurl and stay in sync ([issue tracking](./issue-tracking)).

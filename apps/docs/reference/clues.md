@@ -80,4 +80,4 @@ names that diagnosis and its summary.
 
 - [Failure evidence](/features/evidence#clues): where the clues appear, with the evidence they cite
 - [Your first failure, explained](/guide/first-failure): the situation block the **Most likely** line belongs to
-- [Core concepts](/guide/concepts#story): the story
+- [Glossary](/guide/concepts#story): the story

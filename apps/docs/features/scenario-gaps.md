@@ -172,5 +172,5 @@ project or for the instance, and these surfaces disappear.
 - [Uncovered changes in pull requests](/features/uncovered-changes): the changed files no test reaches
 - [Probes](/features/probes): whether a test that reaches a route would notice it breaking
 - [Gap detectors & exposure](/reference/gap-detectors): every detector, the exposure factors, what the graph includes
-- [Core concepts](/guide/concepts#test-map): the Test Map vocabulary
+- [Glossary](/guide/concepts#test-map): the Test Map vocabulary
 - [Agent skills](/features/agent-skills): write-the-missing-test

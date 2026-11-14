@@ -222,8 +222,8 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 - **`concepts.md` is the vocabulary source of truth**, the Glossary — project / test run / **test case** (a test's
   identity across time) / **execution** (one attempt, one browser — the `test_runs_cases` row) / failure cluster /
   fingerprint / baseline. Use those words consistently in docs *and* UI copy; link the anchor instead of redefining a
-  term. It keeps its URL under `guide/` (pages link its anchors) and shows the Reference sidebar; `core-concepts.md`
-  in Get started names the words a first run meets and links each entry, defining none of its own. A word that names
+  term. It keeps its URL under `guide/` (pages link its anchors) and shows in the Reference sidebar; `core-concepts.md`
+  in Get started defines the words a first run meets in a line each and links each glossary entry. A word that names
   two things keeps one meaning there, listed under *Words kept to one meaning*.
 - **`ui-overview.md` is a map, not a manual** — one short paragraph per view plus a link to the page that explains the
   concept. Feature explanations belong on the feature page. It is the page most likely to accrete a manual, because a

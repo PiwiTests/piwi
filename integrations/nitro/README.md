@@ -171,9 +171,9 @@ dependency; when no call matches, nothing is applied). The plugin reports
 the fault it actually applied in `X-Piwi-Trace` (root-span `piwi.probe.applied`),
 so a probe the server did not honor is recorded as **inconclusive**, never a pass.
 
-**Entry condition (experimental, not yet measured).** Turn this on when the client probes (level one) report
-"not-noticed" on at least one in ten probed pairs — the signal that the suite has false comfort the network boundary
-cannot reveal.
+**Entry condition (experimental, unmeasured).** Turn this on when the client probes (level one) report
+"not-noticed" on at least one in ten probed pairs across your pilot projects — the signal that the suite has false
+comfort the network boundary cannot reveal.
 
 **Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope:
 
