@@ -4,6 +4,8 @@
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
 //   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
+//   fast reset        before Playwright resets a reused context, clears the storage of the origins the test visited
+//                     from the frames still on them and through CDP, so the reset has nothing to navigate to
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //
@@ -27,13 +29,14 @@ export const state = {
   retryIntervals: undefined as number[] | undefined,
   failFast: false,
   skipStabilityWait: false,
+  fastReset: false,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
   pagesSeen: 0,
   /** The first internal that did not have the expected shape. */
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
-  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0, skippedStabilityWaits: 0 },
+  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0, skippedStabilityWaits: 0, fastResets: 0 },
   elementHooked: false,
 };
 
@@ -159,6 +162,68 @@ function hookFailFast(proto: ServerPage): void {
   };
 }
 
+const CLEARED_STORAGE =
+  'local_storage,indexeddb,cache_storage,service_workers,file_systems,websql,shared_storage,storage_buckets';
+
+// Run in each frame of the page a reset leaves: clears the tab's session storage of the frame's origin, and drops what
+// the page writes to storage until it is gone.
+const SEAL_STORAGE = `(() => {
+  try { sessionStorage.clear(); } catch {}
+  Storage.prototype.setItem = function () {};
+})()`;
+
+/** False when a frame went away before its storage was sealed: Playwright's reset then clears its origin. */
+async function sealStorage(frames: ServerPage[], progress: unknown): Promise<boolean> {
+  try {
+    for (const frame of frames) await frame.evaluateExpression(progress, SEAL_STORAGE, { world: 'main' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hookContextReset(core: ServerPage): void {
+  const proto = core.server?.BrowserContext?.prototype;
+  const resetForReuse = proto?.resetForReuse as ((progress: unknown, params: unknown) => Promise<unknown>) | undefined;
+  if (typeof resetForReuse !== 'function')
+    throw new IncompatibleError("Playwright's server BrowserContext has no resetForReuse()");
+  const source = String(resetForReuse);
+  const steps = [
+    'isClosedOrClosingOrCrashed()',
+    'gotoImpl(progress2, "about:blank", {})',
+    'setStorageState(progress2, this._options.storageState, "resetForReuse")',
+  ];
+  if (!steps.every((step) => source.includes(step))) {
+    throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
+  }
+  proto.resetForReuse = async function (this: ServerPage, progress: unknown, params: unknown) {
+    const origins = this._origins as Set<string> | undefined;
+    const page = this.pages?.()[0];
+    const session = page?.delegate?._mainFrameSession?._client;
+    if (state.fastReset && origins instanceof Set && session && !page.isClosedOrClosingOrCrashed()) {
+      // The first step of Playwright's reset: the test's other pages close.
+      for (const open of this.possiblyUninitializedPages()) if (open !== page) await open.close(progress);
+      const frames = page.frames() as ServerPage[];
+      if (frames.some((frame) => typeof frame.origin !== 'function' || typeof frame.evaluateExpression !== 'function'))
+        throw new IncompatibleError("Playwright's server frame has no origin()/evaluateExpression()");
+      const kept = frames.filter((frame) => origins.has(frame.origin()));
+      // Session storage belongs to the tab and is reached from a frame of its origin. An origin the test left has
+      // none, so Playwright's reset loads it, and every other one.
+      const reachable = [...origins].every((origin) => kept.some((frame) => frame.origin() === origin));
+      if (reachable && (await sealStorage(kept, progress))) {
+        state.counters.fastResets++;
+        await page.mainFrame().gotoImpl(progress, 'about:blank', {});
+        // With no page of the test left to write to it, the rest of the origin's storage is cleared.
+        for (const origin of origins)
+          await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
+        // With no visited origin left, Playwright restores only the configured storage state's origins.
+        origins.clear();
+      }
+    }
+    return resetForReuse.call(this, progress, params);
+  };
+}
+
 function hookElementHandle(handle: ServerPage): void {
   const proto = Object.getPrototypeOf(handle);
   const evaluateInUtility = proto.evaluateInUtility as ((fn: unknown, arg: unknown) => Promise<unknown>) | undefined;
@@ -277,6 +342,7 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   const Page = core.server?.Page;
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
+  hookContextReset(core);
   const reportAsNew = Page.prototype.reportAsNew;
   // Every new page passes through reportAsNew: the first one gives access to the classes to wrap.
   Page.prototype.reportAsNew = function (this: ServerPage, ...args: unknown[]) {

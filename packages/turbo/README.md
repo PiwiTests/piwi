@@ -37,11 +37,11 @@ import { test, expect } from '@piwitests/turbo/test';
 
 ## Presets
 
-| Preset | Turns on                                                                                                                                                                                                       |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry.          |
-| `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                          |
-| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, and pointer actions that skip the wait for a still element.                     |
+| Preset | Turns on                                                                                                                                                                                                                                                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of the runner and its workers. |
+| `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                                                                                       |
+| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, and a lighter reset of the reused context.                                           |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
@@ -67,22 +67,23 @@ These two need your paths and URLs, so no preset sets them.
 extra HTTP headers, permissions and geolocation go back to the configured values, and on Chromium the Cache Storage
 of every origin the test visited is cleared. Playwright resets the rest: pages, cookies, storage, the HTTP cache,
 service workers, routes, init scripts, bindings, the clock, the viewport and emulated media.
-`tests/e2e/reuse-isolation.spec.ts` checks each of them. Reuse only happens through `@piwitests/turbo/test`, and needs
+`tests/e2e/reuse-isolation.ts` checks each of them. Reuse only happens through `@piwitests/turbo/test`, and needs
 video off. Turn it off with `reuseContext: false`.
 
 ## Advanced: the levers one by one
 
 Every preset is a set of these options; name one to override it.
 
-| Option               | What it does                                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trace`              | The trace mode, e.g. `retain-on-failure` or `on-first-retry`.                                                                                             |
-| `lightTraces`        | `true` keeps each action's DOM snapshot and leaves out the ARIA and screenshot snapshots and the screencast; `'actions'` leaves out the DOM snapshots too. |
-| `failureScreenshots` | Screenshots a test's pages only when it fails. With `only-on-failure`, Playwright captures every test and keeps the failed ones.                         |
-| `videoOnRetry`       | With retries, records video on the first retry instead of `retain-on-failure`, which records every test.                                                 |
-| `reducedMotion`      | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations.                                                                          |
-| `instantAnimations`  | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion.                                                     |
-| `reuseContext`       | One browser context per worker, reset between tests (see above).                                                                                          |
+| Option               | What it does                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trace`              | The trace mode, e.g. `retain-on-failure` or `on-first-retry`.                                                                                                                               |
+| `lightTraces`        | `true` keeps each action's DOM snapshot and leaves out the ARIA and screenshot snapshots and the screencast; `'actions'` leaves out the DOM snapshots too.                                  |
+| `failureScreenshots` | Screenshots a test's pages only when it fails. With `only-on-failure`, Playwright captures every test and keeps the failed ones.                                                            |
+| `videoOnRetry`       | With retries, records video on the first retry instead of `retain-on-failure`, which records every test.                                                                                    |
+| `reducedMotion`      | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations.                                                                                                            |
+| `instantAnimations`  | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion.                                                                                       |
+| `reuseContext`       | One browser context per worker, reset between tests (see above).                                                                                                                            |
+| `compileCache`       | Node's compile cache for the runner and its workers, in `node_modules/.cache/piwi-turbo-compile` or the folder given. Skipped when coverage is collected or a compile cache is already set. |
 
 ### Experimental hooks
 
@@ -90,7 +91,13 @@ Every preset is a set of these options; name one to override it.
 
 ```ts
 withOptimizations(config, {
-  experimental: { fastScreenshots: true, retryIntervals: [10, 20, 40, 50], failFast: true, skipStabilityWait: true },
+  experimental: {
+    fastScreenshots: true,
+    retryIntervals: [10, 20, 40, 50],
+    failFast: true,
+    skipStabilityWait: true,
+    fastReset: true,
+  },
 });
 ```
 
@@ -104,13 +111,16 @@ withOptimizations(config, {
   from its own Node code while an assertion waits.
 - **`skipStabilityWait`**: clicks, hovers, taps and drags stop waiting for the element to keep still. The visible,
   enabled and hit-target checks stay. Leave it off for apps that ignore input while they animate.
+- **`fastReset`** (Chromium, with `reuseContext`): between tests, the storage of the origins the test visited is
+  cleared from the frames still on them and through CDP, where Playwright's reset loads each origin again to clear
+  it. After a test that left an origin it visited, Playwright's reset runs as it is.
 
-The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`, and from the
-first page the frame class, the element handle class and Chromium's CDP session. They refuse to run, with an error
-that names the reason, on a `playwright-core` version they were not tested with (`TESTED_VERSIONS`, currently
-1.64.1), on an internal with another shape, or when the browser runs outside the worker. To try a new Playwright
-version, run `npm run turbo:test:e2e` and the benchmark with `PIWI_TURBO_ALLOW_UNTESTED=1`, then add it to
-`TESTED_VERSIONS`.
+The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew` and
+`BrowserContext.prototype.resetForReuse`, and from the first page the frame class, the element handle class and
+Chromium's CDP session. They refuse to run, with an error that names the reason, on a `playwright-core` version they
+were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
+outside the worker. To try a new Playwright version, run `npm run turbo:test:e2e` and the benchmark with
+`PIWI_TURBO_ALLOW_UNTESTED=1`, then add it to `TESTED_VERSIONS`.
 
 ## The benchmark
 

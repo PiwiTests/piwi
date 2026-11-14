@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { withOptimizations } from '../src/config';
 
@@ -193,4 +196,32 @@ test('records video on the first retry only when the config retries', () => {
   expect(retrying.use?.video).toBe('on-first-retry');
   const once = withOptimizations<PlaywrightTestConfig>({ use: { video: 'retain-on-failure' } }, { preset: 'safe' });
   expect(once.use?.video).toBe('retain-on-failure');
+});
+
+describe('compileCache', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  test('sets the cache folder for the runner and its workers', () => {
+    vi.stubEnv('NODE_DISABLE_COMPILE_CACHE', undefined);
+    vi.stubEnv('NODE_V8_COVERAGE', undefined);
+    vi.stubEnv('NODE_COMPILE_CACHE', undefined);
+    const folder = join(mkdtempSync(join(tmpdir(), 'piwi-turbo-')), 'cache');
+    withOptimizations({}, { compileCache: folder });
+    expect(process.env.NODE_COMPILE_CACHE).toBe(folder);
+  });
+
+  test('keeps a compile cache already set', () => {
+    vi.stubEnv('NODE_DISABLE_COMPILE_CACHE', undefined);
+    vi.stubEnv('NODE_COMPILE_CACHE', '/somewhere/else');
+    withOptimizations({}, { preset: 'safe' });
+    expect(process.env.NODE_COMPILE_CACHE).toBe('/somewhere/else');
+  });
+
+  test('stays off while coverage is collected', () => {
+    vi.stubEnv('NODE_DISABLE_COMPILE_CACHE', undefined);
+    vi.stubEnv('NODE_COMPILE_CACHE', undefined);
+    vi.stubEnv('NODE_V8_COVERAGE', join(tmpdir(), 'coverage'));
+    withOptimizations({}, { compileCache: true });
+    expect(process.env.NODE_COMPILE_CACHE).toBeUndefined();
+  });
 });

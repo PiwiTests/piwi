@@ -1,4 +1,6 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
+import module from 'node:module';
+import { resolve } from 'node:path';
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
 import type { BlockRule } from './types';
 
@@ -31,6 +33,11 @@ export interface Optimizations {
    * from `@piwitests/turbo/test`, and video off.
    */
   reuseContext?: boolean;
+  /**
+   * Node's compile cache for the runner and the workers, which shortens their start: `true` caches in
+   * `node_modules/.cache/piwi-turbo-compile`. Skipped when `NODE_V8_COVERAGE` or a compile cache is already set.
+   */
+  compileCache?: boolean | string;
   /**
    * With retries, records video on the first retry instead of `retain-on-failure`, which records every test to keep the
    * failed ones.
@@ -73,6 +80,11 @@ export interface Optimizations {
      * apps that ignore input while they animate.
      */
     skipStabilityWait?: boolean;
+    /**
+     * With `reuseContext`, on Chromium: the reset between tests clears the storage of the origins the test visited
+     * through CDP instead of loading each of them.
+     */
+    fastReset?: boolean;
   };
 }
 
@@ -107,6 +119,14 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
 
 const EXPERIMENTAL_RETRY_INTERVALS = [10, 20, 40, 50];
 
+function enableCompileCache(directory: string): void {
+  if (process.env.NODE_COMPILE_CACHE || process.env.NODE_DISABLE_COMPILE_CACHE || process.env.NODE_V8_COVERAGE) return;
+  const path = resolve(directory);
+  // The runner caches from here on; workers inherit the variable and cache from their start.
+  module.enableCompileCache?.(path);
+  process.env.NODE_COMPILE_CACHE = path;
+}
+
 function defined<T extends object>(options: T): Partial<T> {
   return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
@@ -124,7 +144,7 @@ function modeOf(setting: unknown): string | undefined {
 export function presetOptions(preset: Preset, config: AnyConfig): Optimizations {
   const retries = typeof config.retries === 'number' && config.retries > 0;
   const trace = modeOf(config.use?.trace);
-  const safe: Optimizations = { videoOnRetry: true };
+  const safe: Optimizations = { videoOnRetry: true, compileCache: true };
   // With retries, the first retry records the trace; without, every test records and only failures keep it.
   if (trace === 'on' || trace === 'retain-on-failure') safe.trace = retries ? 'on-first-retry' : 'retain-on-failure';
   if (modeOf(config.use?.screenshot) === 'only-on-failure') safe.failureScreenshots = true;
@@ -139,6 +159,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         retryIntervals: EXPERIMENTAL_RETRY_INTERVALS,
         failFast: true,
         skipStabilityWait: true,
+        fastReset: true,
       },
     };
   }
@@ -183,5 +204,9 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.retryIntervals) use.retryIntervals = experimental.retryIntervals;
   if (experimental.failFast) use.failFast = true;
   if (experimental.skipStabilityWait) use.skipStabilityWait = true;
+  if (experimental.fastReset) use.fastReset = true;
+  if (options.compileCache) {
+    enableCompileCache(options.compileCache === true ? 'node_modules/.cache/piwi-turbo-compile' : options.compileCache);
+  }
   return result as T;
 }

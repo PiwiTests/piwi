@@ -16,6 +16,11 @@ export interface TurboOptions {
    * new context for each test. Needs video off.
    */
   reuseContextWithReset: boolean;
+  /**
+   * Experimental worker option, with `reuseContextWithReset` on Chromium: the reset between tests clears the storage of
+   * the origins the test visited without navigating to them.
+   */
+  fastReset: boolean;
   /** Experimental: the backoff of Playwright's retry loop, in milliseconds. */
   retryIntervals: number[] | undefined;
   /** Experimental: a failing web-first assertion ends once nothing can change the page before its timeout. */

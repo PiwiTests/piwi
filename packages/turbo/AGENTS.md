@@ -10,8 +10,8 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
   either would need its license and NOTICE kept beside it. The README's Credits name Flashwright as the source of the
   techniques; keep them when a technique is added.
 - **A browser context is shared between tests only through `reuseContextWithReset`** (`src/test.ts`), which adds the
-  reset Playwright's `reuseContext` leaves out; `tests/e2e/reuse-isolation.spec.ts` checks each kind of state, and a
-  new kind of state a test can leave gets a pair of tests there.
+  reset Playwright's `reuseContext` leaves out. `tests/e2e/reuse-isolation.ts` holds a pair of tests for each kind of
+  state a test can leave, run by one spec per reset; a new kind of state gets a pair there.
 - **Every lever is off unless named** in `withOptimizations` or `use`, or part of the preset; a project's own settings
   win, and an option left `undefined` keeps the preset's value (`tests/config.test.ts`).
 - **The experimental hooks fail loudly** (`src/hooks.ts`): a Playwright version outside `TESTED_VERSIONS`, an internal
