@@ -96,6 +96,7 @@ import {
   type RunIdResult,
   type EditorCredentials,
   type FailureSeverity,
+  type StatusBarAlert,
   type McpAuthorization,
   type SetBaselineParams,
   type SetRunPairingParams,
@@ -213,7 +214,7 @@ import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
-import { stopRunAnswer } from './run-control';
+import { progressItem, stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
 import { registerCiRuns } from './ci-view';
 import {
@@ -358,6 +359,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
+    statusBarAlert: settings.get<StatusBarAlert>('statusBarAlert') ?? 'new',
     mcpAuthorization: settings.get<McpAuthorization>('mcpAuthorization') ?? 'key',
   };
 }
@@ -811,13 +813,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           (ref, instance) => ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
           (root) => flakyListed(root),
         );
+    // The window's runs, as their own processes count them, take the item's text and lead its tooltip: one count of
+    // a run, the JetBrains plugin's single item's.
+    const sessions = runSessions();
+    const counted = serviceDown ? null : progressItem(new Map(sessions.map((s) => [s.ref, s])));
+    const text = counted ? counted.text : view.text;
     statusItem.text = refreshing
-      ? refreshingText(view.text)
-      : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
+      ? refreshingText(text)
+      : heldText(text, counted || view.ownLive ? heldStops(sessions) : null);
     // How every run of the window starts, with the link that changes it, wherever a config is found.
-    const tooltip = new vscode.MarkdownString(
-      view.action === 'none' ? view.tooltip : `${view.tooltip}\n\n${runStartLine(runChoices())}`,
-    );
+    const own = counted ? `${counted.tooltip}\n\n---\n\n${view.tooltip}` : view.tooltip;
+    const tooltip = new vscode.MarkdownString(view.action === 'none' ? own : `${own}\n\n${runStartLine(runChoices())}`);
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
@@ -827,7 +833,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuFlakyRoot = view.flakyRoot ?? null;
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
-    statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+    // A run the item counts is never the alarm.
+    statusItem.backgroundColor =
+      view.error && !counted ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
@@ -1341,6 +1349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           pausable: !!contextKey('piwi.runPausable'),
           stoppable: !!contextKey('piwi.runStoppable'),
           page: !!contextKey('piwi.runPage'),
+          watchable: !!contextKey('piwi.runWatchable'),
         },
         failing: contextKey('piwi.failuresView') === 'failures',
         flakyRoot: menuFlakyRoot,
@@ -1675,6 +1684,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         e.affectsConfiguration('piwi.serverUrl') ||
         e.affectsConfiguration('piwi.project') ||
         e.affectsConfiguration('piwi.failureSeverity') ||
+        e.affectsConfiguration('piwi.statusBarAlert') ||
         e.affectsConfiguration('piwi.mcpAuthorization')
       )
         credentialsChanged();

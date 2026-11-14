@@ -107,7 +107,6 @@ import {
   liveItem,
   liveMenu,
   RunningLines,
-  progressItem,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -223,7 +222,6 @@ const ITEM_ORDER = [
   'give-up',
   RUN_COMMANDS.stop,
   'live',
-  'progress',
 ];
 
 /** The commands the lens's and the hover's links run. */
@@ -407,12 +405,7 @@ export function registerRunControl(
     setContextKey('piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
     const live = liveItem(sessions, windowShared);
-    const progress = progressItem(sessions);
-    for (const control of [
-      ...controlItems(state),
-      ...(live ? [{ ...live, key: 'live' }] : []),
-      ...(progress ? [{ ...progress, key: 'progress' }] : []),
-    ]) {
+    for (const control of [...controlItems(state), ...(live ? [{ ...live, key: 'live' }] : [])]) {
       const key = control.key ?? control.command ?? 'pausing';
       shown.add(key);
       const i = item(key);

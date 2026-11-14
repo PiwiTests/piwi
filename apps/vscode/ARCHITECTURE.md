@@ -159,6 +159,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
@@ -482,7 +483,7 @@ refused, as the panel hides or closes, at another slot's stop, at a stop that ta
 away (`changed`), so a rerun under the ref starts with it off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
-(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and the status menu's Watch a worker's test open
 **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
@@ -539,7 +540,7 @@ among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Pau
 (`stopPresence`) add who drives the stop (`driverText`, from `RunStop.driver`: `You drive this stop`, `An agent drives
 this stop: your input takes control` where the stop takes input) and who else watches its page (`watchersText`, from
 `RunWorker.watchers`, the editor itself named `you` and left out when alone); the paused page's caption follows them as
-they change. The progress item's tooltip names the other tools that have each run open (`presenceText`, from
+they change. The count's tooltip, leading the status item's, names the other tools that have each run open (`presenceText`, from
 `RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
 off, Escape included, gives it back.
 
@@ -562,10 +563,13 @@ click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Cop
 sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
 asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
-`piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
-out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
-run's own process tells the service: so it counts offline and with the desktop app. An agent's run ends it with its
-label (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
+`piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself counts the window's runs while one says
+(`progressItem`): the tests they ran out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of
+9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`, the pass or error glyph
+once they ended), from `RunSession.progress`, which the run's own process tells the service: so it counts offline and
+with the desktop app, one count of a run, as the JetBrains plugin's single item does. Its tooltip leads the item's, and
+its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label
+(`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
@@ -646,12 +650,18 @@ The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
 
+**The alarm**, `statusBarItem.errorBackground`, is the service's (`RunStatus.alarm`), as `piwi.statusBarAlert`, sent in
+the credentials, chooses: `new`, the default, only for a test a run this window started failed that the baseline does
+not fail, until a run fixes it or the service restarts (it knows its own runs, `ownRuns`, while it runs), so a CI
+failure or a teammate's is counted but never red; `any`, any failing test;
+`never`. A run in progress is never the alarm.
+
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
 in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
 told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
-the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
-counts the window's runs from the same events, with or without an instance.
+the run is finalizing or another run takes the ref, so the count never goes back. While the window's runs count from
+their own events, with or without an instance, the item shows that count instead (`progressItem`).
 
 **A click** opens the status menu (`piwi.statusMenu`, `statusMenu` in `src/glue.ts`): a quick pick in the JetBrains
 popup's sections, each row titled by the action catalog and offered only where its command acts, from the context keys
@@ -659,7 +669,7 @@ this extension last set (`src/context-keys.ts`, since VS Code reads none back). 
 the item's own action (a recording's controls follow it), which depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
-  a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
+  a run started here holds a stop, the run's count shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
   linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;

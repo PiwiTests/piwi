@@ -137,6 +137,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
+                    comboBox(Glue.STATUS_BAR_ALERTS, StatusBarAlertRenderer())
+                        .label("The status bar item's text turns red:", LabelPosition.TOP)
+                        .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
+                        .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
+                }
+                row {
                     comboBox(Glue.FAILURE_SEVERITIES, FailureSeverityRenderer())
                         .label("A failing test's line in the editor:", LabelPosition.TOP)
                         .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
@@ -262,6 +268,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             local.desktop,
             local.desktopProject,
             local.failureSeverity,
+            local.statusBarAlert,
             local.mcpAuthorization,
         )
     }
@@ -340,6 +347,17 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         desktopCheck.isSelected = local.desktop
         desktopProjectField.text = local.desktopProject
         show()
+    }
+}
+
+/** A choice of `PiwiLocalSettings.statusBarAlert`, in words. */
+private class StatusBarAlertRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = when (value) {
+            "any" -> "For any failing test"
+            "never" -> "Never"
+            else -> "For a new failure a run started here caused"
+        }
     }
 }
 

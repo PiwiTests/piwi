@@ -1030,6 +1030,21 @@ function testTitle(test: RunTest): string {
 }
 
 /**
+ * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a stop`,
+ * each outcome only when there is one.
+ */
+export function countWords(done: number, total: number, failed = 0, flaky = 0, endedAtStop = 0): string {
+  return [
+    `${done} of ${total}`,
+    failed ? `${failed} failed` : '',
+    flaky ? `${flaky} flaky` : '',
+    endedAtStop ? `${endedAtStop} ended at a stop` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
  * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
  * many they hold, and how many of them failed, were flaky or were ended at a stop (End the test), for every run kept
  * that says so (none from a reporter that predates it), with the run's number on the instance once one run names it.
@@ -1058,7 +1073,18 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     .join(', ');
   const watchable = watchableWorkers(sessions).length > 0;
   const pages = runPagesOf(sessions);
-  const one = told.length === 1 && pages.length === 1 ? pages[0]! : null;
+  // The run's number when one run counts, from that run's own page.
+  const teller = told.length === 1 ? [...sessions.values()].find((s) => s.progress) : undefined;
+  const one = teller?.page && teller.page.id > 0 ? teller.page : null;
+  // A spinner while a run goes on; once every run that counts ended, how they ended: passed, failed (a failed test, a
+  // failure of its own, a timeout), else stopped short (interrupted).
+  const glyph = told.some((p) => p.status === 'running')
+    ? '$(sync~spin)'
+    : failed || told.some((p) => p.status === 'failed' || p.status === 'timedout')
+      ? '$(error)'
+      : told.every((p) => p.status === 'passed')
+        ? '$(pass)'
+        : '$(warning)';
   const links = [
     ...pages.map(
       (p) =>
@@ -1087,7 +1113,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const by = told.length === 1 ? [...sessions.values()].find((s) => s.progress)?.label : undefined;
   return {
     name: 'Piwi: Run progress',
-    text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}${by ? ` · ${by}` : ''}`,
+    text: `${glyph} Piwi: ${one ? `run #${one.id} · ` : ''}${countWords(done, total, failed, flaky, endedAtStop)}${by ? ` · ${by}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
       `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${by ? ` ${escapedMarkdown(by)}.` : ''}` +
