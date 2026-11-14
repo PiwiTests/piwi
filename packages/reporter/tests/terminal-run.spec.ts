@@ -252,7 +252,7 @@ describe('a run started in a terminal', () => {
     expect(mains[0]!.main[0]).toMatchObject({ token: TOKEN, ref: attach?.type === 'run-attach' ? attach.ref : '' });
     expect(mains[0]!.main[0]).not.toHaveProperty('runner');
     expect(opened).toHaveLength(2);
-    // The editor's channel is its record channel too: Record here and Assert are offered, Pick a locator, which needs
+    // The editor's channel is its record channel too: Record and Assert are offered, Pick a locator, which needs
     // the editor's pairing, is not while its file names none.
     const takes = attach?.type === 'run-attach' ? attach.takes : [];
     expect(takes).toEqual(expect.arrayContaining(['record', 'assert', 'end']));
@@ -342,7 +342,7 @@ describe('a run started in a terminal', () => {
       token: TOKEN,
       ref: expect.stringMatching(/^terminal-\d+-\d+$/),
     });
-    // The app takes the picks, and holds no recorder: Pick a locator, but neither Record here nor Assert.
+    // The app takes the picks, and holds no recorder: Pick a locator, but neither Record nor Assert.
     const takes = attach?.type === 'run-attach' ? attach.takes : [];
     expect(takes).toContain('pick');
     expect(takes).not.toEqual(expect.arrayContaining(['record']));

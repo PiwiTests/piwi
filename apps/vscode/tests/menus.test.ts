@@ -181,6 +181,7 @@ describe("the commands' glyphs", () => {
       ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
       ['piwi.verifyTestAtCursor', 'piwi.verifyFailure'],
       ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
+      ['piwi.holdFailures', 'piwi.setRunHoldFailures'],
       // Follow the active editor and Watch a worker's test, still to settle.
       ['piwi.stopFollowingEditor', 'piwi.watchWorker'],
     ];

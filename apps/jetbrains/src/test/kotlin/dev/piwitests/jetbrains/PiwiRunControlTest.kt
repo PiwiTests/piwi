@@ -435,7 +435,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
         assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
-        assertEquals(listOf("Resume", "Step", "Run to caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
+        assertEquals(listOf("Resume", "Step", "Run to the caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
 
         myFixture.openFileInEditor(file)
         val actions = ActionManager.getInstance()

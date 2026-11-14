@@ -163,7 +163,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
                             "A run with a breakpoint in a test or page object pauses before the action on that line, " +
-                                "headless unless Run headed is on: its page shows in the Paused page tab. Needs " +
+                                "headless unless the runs start headed: its page shows in the Paused page tab. Needs " +
                                 "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
                                 "older reporter, or one whose version Piwi cannot read, the run starts headed. " +
                                 "Kept for you only, in .idea/workspace.xml",
@@ -175,7 +175,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment(
                             "A verification too. Otherwise a run is headless but for a spec with a page.pause(), and " +
                                 "for a run with breakpoints when @piwitests/reporter is older than 0.62.0. " +
-                                "Tools → Piwi → Run headed. Kept for you only, in .idea/workspace.xml",
+                                "Tools → Piwi → Turn headed runs on or off. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {

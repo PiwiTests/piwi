@@ -19,7 +19,7 @@ whose project enables live view, and connect to an editor or the desktop app for
 
 | Where | Share | Stop |
 |---|---|---|
-| VS Code | **Piwi: Share the run live on the team instance**, or the Piwi item's menu | **Piwi: Stop sharing the run live**, or **Stop sharing** in the Piwi item's menu under **Shared live**, beside **Open the run page** and **Copy the run page's link**, after a confirmation |
+| VS Code | **Piwi: Share the run live on the team instance**, or the Piwi item's menu | **Piwi: Stop sharing the run live**, or **Stop sharing** in the Piwi item's menu under **Shared live**, beside **Open the run page** and **Copy the run page's link**, which **Piwi: Shared live: open the run page, copy its link or stop sharing…** also lists, after a confirmation |
 | JetBrains IDEs | **Tools → Piwi → Share the run live on the team instance** | **Tools → Piwi → Stop sharing the run live**, or **Stop sharing the run** in the status bar item's menu, after a confirmation |
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing**, after a confirmation |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing…**, after a confirmation |

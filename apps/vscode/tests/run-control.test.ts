@@ -501,7 +501,13 @@ describe('what the controls offer', () => {
     expect(ending.endable).toBe(true);
     const [stop] = stopsOf(at(stopAt(spec, 5)));
     expect(canEnd(stop!)).toBe(true);
-    expect(stopControls(stop!).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish', 'End test']);
+    expect(stopControls(stop!).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Run to the cursor',
+      'Finish',
+      'End the test',
+    ]);
     expect(controlState(at(stopAt(spec, 5), [])).endable).toBe(false);
     expect(controlState(at({ ...stopAt(spec, 5), reason: 'failure' })).endable).toBe(false);
   });
@@ -1962,13 +1968,13 @@ describe('a failure held for the editor', () => {
     expect(stopControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
       'Resume',
       'Step',
-      'Run to cursor',
+      'Run to the cursor',
       'Finish',
     ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Held at its failure · Timed out 5000ms waiting for click');
   });
 
-  test('keeps the lens row above a stop to five entries: Run to cursor, End test and each action stay in its hover', () => {
+  test('keeps the lens row above a stop to five entries: Run to the cursor, End the test and each action stay in its hover', () => {
     expect(stopLensControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
       'Resume',
       'Step',

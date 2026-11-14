@@ -344,7 +344,7 @@ const SCENES = {
       .first()
       .locator('span', { hasText: /^await$/ })
       .first();
-    const hover = page.locator('.monaco-hover:not(.hidden)', { hasText: 'Run to cursor' }).first();
+    const hover = page.locator('.monaco-hover:not(.hidden)', { hasText: 'Run to the cursor' }).first();
     await token.hover();
     await hover.waitFor({ state: 'visible', timeout: 10_000 });
     await settle(page, 800);

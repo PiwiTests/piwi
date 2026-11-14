@@ -8365,7 +8365,7 @@
   },
   "runs_record": {
     "message": "Record",
-    "description": "Runs window, button on a stopped test: starts the pause bar’s Record here in the test’s window."
+    "description": "Runs window, button on a stopped test: starts the pause bar’s Record in the test’s window."
   },
   "runs_recordTitle": {
     "message": "Record steps in the test’s window: they go to the editor, which writes them above this line",

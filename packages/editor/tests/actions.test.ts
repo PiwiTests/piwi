@@ -57,12 +57,21 @@ describe('the action catalog', () => {
     expect(jetbrainsActions.filter((a) => a.text.startsWith('Piwi: '))).toEqual([]);
   });
 
-  test('ends a title with an ellipsis only in the editor that asks, and names a JetBrains toggle by its state', () => {
+  test('ends a title with an ellipsis only in the editor that asks, and names a toggle by both its states', () => {
     const copy = EDITOR_ACTIONS.find((a) => a.vscode === 'piwi.copyMcpConfiguration')!;
     expect(actionTitle(copy, 'vscode')).toBe('Copy the MCP server configuration…');
     expect(actionTitle(copy, 'jetbrains')).toBe('Copy the MCP server configuration');
     const coverage = EDITOR_ACTIONS.find((a) => a.vscode === 'piwi.toggleCoverage')!;
-    expect(actionTitle(coverage, 'jetbrains')).toBe('Show coverage marks');
+    expect(actionTitle(coverage, 'jetbrains')).toBe(actionTitle(coverage, 'vscode'));
+  });
+
+  test('gives both editors the grouping of the failures, the run options and the documentation', () => {
+    const vscodeOnly = EDITOR_ACTIONS.filter((a) => a.vscode && !a.jetbrains).map((a) => a.title);
+    const jetbrainsOnly = EDITOR_ACTIONS.filter((a) => a.jetbrains && !a.vscode).map((a) => a.title);
+    expect(vscodeOnly).not.toContain('Group the failures by…');
+    expect(jetbrainsOnly).not.toContain('Open the documentation');
+    expect(jetbrainsOnly).not.toContain('Turn headed runs on or off');
+    expect(jetbrainsOnly).not.toContain("Hold failures from each run's start…");
   });
 
   test('says the cursor and the window in each editor’s own word', () => {

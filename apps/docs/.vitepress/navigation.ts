@@ -295,6 +295,10 @@ export const referenceSidebar: SidebarGroup[] = [
     ],
   },
   {
+    text: 'Editors',
+    items: [{ text: 'Editor commands', link: '/reference/editor-commands' }],
+  },
+  {
     text: 'Automation',
     items: [
       { text: 'MCP tools', link: '/reference/mcp-tools' },

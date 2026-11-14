@@ -215,7 +215,7 @@ export interface HubTest {
   cannotPause: string | null;
 }
 
-/** What a stop of a worker can start from outside the page, in the test's window: the pause bar's Pick a locator and Record here. */
+/** What a stop of a worker can start from outside the page, in the test's window: the pause bar's Pick a locator and Record. */
 export type HubIntent = 'pick' | 'record';
 
 /**
