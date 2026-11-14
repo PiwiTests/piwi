@@ -100,7 +100,7 @@ The one place Piwi does write is [auto-heal PRs](/features/auto-heal), and even 
 
 ## Flaky tests and wasted time
 
-A flaky test is a test whose result you cannot trust, and every suite has some. Piwi computes a [composite flakiness score](/features/flaky-tests) per test (retry passes, status flips, failure rate) and classifies the likely root cause, but the ranking that matters is a different one: impact, measured in wasted CI minutes. Retries multiplied by the average failed duration, plus whether the test blocks the pipeline. A test that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is the one to fix. **Fix the expensive ones, not the annoying ones.**
+A flaky test is a test whose result you cannot trust, and every suite has some. Piwi computes a [composite flakiness score](/features/flaky-tests) per test (retry passes, status flips, failure rate) and classifies the likely root cause, but the ranking that matters is a different one: impact, measured in wasted CI minutes. Retries multiplied by the average failed duration, plus a fixed weight for each retry pass. A test that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is the one to fix. **Fix the expensive ones, not the annoying ones.**
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="The flaky tests tab: each test with its composite score, failure rate, retry passes and impact">
@@ -119,7 +119,7 @@ Everything above lives in the dashboard. These pieces reach back into your workf
 
 - **The CI gate.** `npx @piwitests/reporter gate` fails a build on the dashboard's analysis instead of the raw exit code: new regressions, newly flaky tests, a failure cluster never seen before, missing required tags. A red run full of known quarantined flakes can pass; a green-looking run that introduced a brand-new failure cluster can fail.
 - **Pull-request feedback.** When a run finishes on a branch with an open PR, Piwi comments with new failures separated from pre-existing ones, each with its owner and the suggested replacement locator. The owner comes from CODEOWNERS, read from the repository, so nobody edits test files to declare ownership.
-- **Fix verification.** A cluster doesn't just go quiet: when a full run executes every test it covers and they all pass, Piwi records the fix with the run, the commit, and how long the cluster was open. There are three verdicts, because they are not the same claim: stopped failing (a flaky test can do that by accident), diagnosis verified (the commits since the last failure touched a file the suggested patch named), and regressed (the fix didn't hold). A partial run never closes a cluster, because a test that didn't execute hasn't been shown to pass.
+- **Fix verification.** A cluster doesn't just go quiet: when a run executes every test it covers and they all pass, Piwi records the fix with the run, the commit, and how long the cluster was open. There are three verdicts, because they are not the same claim: stopped failing (a flaky test can do that by accident), diagnosis verified (the commits since the last failure touched a file the suggested patch named), and regressed (the fix didn't hold). A run that leaves one of its tests out never closes a cluster, because a test that didn't execute hasn't been shown to pass.
 - **Fix plans for agents.** The [MCP server](/features/mcp) lets a coding agent ask for a fix plan: one call returning the diagnosis, the validated patch, the locator replacement with the file and line to edit, the failing tests, the owner, and the command that verifies the work. That last part is what makes it a loop instead of a lookup: the agent can prove its own fix landed.
 
 ## Ideas worth keeping
@@ -172,12 +172,12 @@ The failure loop is the heart. These make it comfortable to live with every day.
 
 Not everyone wants to run a server. The [desktop app](/features/desktop) bundles the same server that ships in the Docker image inside a [Tauri](https://tauri.app/) shell, bound to `127.0.0.1`, with your data in a local folder. But packaging is the boring half: the interesting features are the ones **only a desktop app can do**, because they need to touch your machine.
 
-- **Run tests from the dashboard.** A failing run is one click from a local retry: **Run locally** re-runs the failed tests using your project's own Playwright and the app's bundled Node, nothing to install, with headed, UI-mode, inspector and repeat-each presets (up to 1000 times, the flake-hunting mode). A test case has a Reproduce locally shortcut, a cluster can re-run every affected test at once, and the results stream straight back into the dashboard.
-- **One-click MCP setup.** The app detects installed AI clients (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI) and writes the `piwi` entry into each client's own config file, with a backup kept and the entry rewritten if the app's address changes later.
+- **Run tests from the dashboard.** A failing run is one click from a local retry: **Re-run 3 failed tests** re-runs them using your project's own Playwright and the app's bundled Node, nothing to install, with headed, UI-mode, inspector and repeat-each presets (up to 1000 times, the flake-hunting mode). A test case has **Run this test**, a cluster can re-run every affected test at once, and the results stream straight back into the dashboard.
+- **One-click MCP setup.** The app detects installed AI clients (Claude Code, Claude Desktop, Cursor, OpenCode, VS Code, Windsurf, Gemini CLI) and writes a `piwi-desktop` entry into each client's own config file, with a backup kept and the entry rewritten if the app's address changes later.
 - **Import straight from disk.** Drop a Playwright blob report or a trace zip on the window and it is imported from its path on disk, nothing uploaded anywhere.
 - **Projects from local folders.** Point a project at its checkout and the app checks the setup (Playwright present, reporter wired into the config) before creating it.
 
-The reporter also finds the app on its own when nothing else is configured, without ever hijacking a project pointed at a shared dashboard or a CI job. The installers are unsigned for now, Windows and Apple-silicon macOS only; everywhere else, Docker or `npx` is the way in.
+The reporter also finds the app on its own when nothing else is configured, without ever hijacking a project pointed at a shared dashboard or a CI job. The installers are unsigned, for Windows, Apple-silicon macOS and x86-64 Linux; everywhere else, Docker or `npx` is the way in.
 
 ### The browser extension
 
@@ -200,7 +200,7 @@ Every source path in the dashboard is clickable and can [open in your editor](/f
 
 ### A few more, in brief
 
-- **Live streaming** replaced polling with SSE through a single global stream the day it shipped: runs appear test by test while CI is still executing, and a run is marked `interrupted` after an hour of silence.
+- **Live streaming** replaced polling with SSE through a single global stream the day it shipped: runs appear test by test while CI is still executing, and a run is marked `interrupted` after two minutes of silence, until its next event revives it.
 - **Shards merge on their own.** Piwi detects the CI run behind each shard, so a suite split six ways still lands as one run, streaming in from all shards at once.
 - **You can backfill history.** Playwright blob reports and bare trace files from before Piwi existed can be imported from a page in the dashboard, idempotently, and imports deliberately trigger nothing: no notifications, no AI diagnosis, no regression signals.
 - **Evidence can leave the dashboard.** A failing execution or a whole cluster exports as a self-contained HTML file, a ZIP, a PDF or Markdown, readable with no server. Opt-in share links give a read-only URL anyone can open without an account.

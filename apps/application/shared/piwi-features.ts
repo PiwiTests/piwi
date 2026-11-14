@@ -250,7 +250,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Server-side warnings, errors and spans captured per test and shown next to the request that triggered them.',
         needs: ['backend'],
-        where: 'Execution → network',
+        where: 'Execution → Network',
         doc: 'guide/backend-logs',
       },
     ],
