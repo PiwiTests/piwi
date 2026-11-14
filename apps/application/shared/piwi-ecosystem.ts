@@ -331,7 +331,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       { option: 'No token', when: 'History, clusters, flaky scores and locator healing are unaffected.' },
       {
         option: 'A GitHub, GitLab or Bitbucket token',
-        when: 'Set instance-wide (Settings → Source control) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments and commit statuses (GitHub, GitLab) and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), both with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
+        when: 'Set instance-wide (Settings → Source control) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments, commit statuses and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
       },
     ],
     doc: 'guide/source-control',
@@ -432,7 +432,9 @@ export const FEEDBACK_CHANNELS = {
 
 /**
  * The docs sections the tool quotes verbatim (as plain-text list items) rather
- * than restating: the four jobs, the two rules and the stated limits.
+ * than restating: the jobs, the two rules and the stated limits. The jobs'
+ * anchor is the one their heading declares (`{#the-four-jobs}`), an address
+ * agents store: keep it.
  */
 export const QUOTED_DOCS_SECTIONS = {
   jobs: 'guide/what-piwi-does#the-four-jobs',
@@ -442,7 +444,7 @@ export const QUOTED_DOCS_SECTIONS = {
 
 /** The topics the MCP `describe_piwi` tool answers, with what each returns. */
 export const DESCRIBE_PIWI_TOPICS = {
-  overview: 'What Piwi is and is not (its four jobs, two rules and limits), its pieces, and this instance.',
+  overview: 'What Piwi is and is not (its five jobs, two rules and limits), its pieces, and this instance.',
   ecosystem: 'Every piece — what it is, how to get it, when you need it.',
   choices: 'The setup decisions, their options and defaults (and, for administrators, what this instance chose).',
   features:

@@ -2780,6 +2780,28 @@ function videoFitScene(width, height, suffix) {
   };
 }
 
+/** The run's Video tab with its Maximize button, then the same reel maximized into the video review dialog. */
+function videoMaximizeScene(width, height, suffix) {
+  const name = `run-video-maximized${suffix}`;
+  return {
+    name,
+    description: `The run's Video tab at ${width}x${height}: the Maximize button, then the reel maximized into the video review dialog`,
+    route: `/test-runs/${VIDEO_MARKS_RUN}?tab=video`,
+    viewport: { width, height },
+    outputs: [`${name}-button.png`, `${name}-dialog.png`],
+    async run({ page, settle, shoot }) {
+      const tab = '[data-shot="run-video-tab"]';
+      await page.locator(`${tab} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('button');
+      await page.getByRole('button', { name: 'Maximize video' }).click();
+      await page.locator('[role="dialog"] [data-testid="video-action-count"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('dialog');
+    },
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -5227,6 +5249,8 @@ const SCENES = [
   videoFitScene(375, 812, '-phone'),
   videoFitScene(1280, 720, '-laptop'),
   videoFitScene(375, 667, '-phone-short'),
+  videoMaximizeScene(1280, 800, ''),
+  videoMaximizeScene(375, 667, '-phone'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),

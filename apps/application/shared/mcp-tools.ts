@@ -1284,7 +1284,7 @@ export const MCP_TOOL_DEFS = [
     capability: 'test-map',
     permission: 'triage:write',
     description: md(
-      'Give a verdict on a scenario gap, as the gap inbox does, and return its new status.',
+      'Give a verdict on a scenario gap, as the Gaps view of a project’s Coverage tab does, and return its new status.',
       'Pass the gap id from `list_scenario_gaps`. A verdict counts for or against the detector that raised the gap. `verb` is:',
       [
         '`accept`: queue its draft, optionally for `assignedTo`',

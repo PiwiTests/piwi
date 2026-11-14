@@ -559,7 +559,7 @@ export async function duplicateDashboard(
 
 /**
  * Remove dashboards matching `where`. The report schedules rendering one are
- * deactivated first and keep no dashboard, so the Reports page shows them
+ * deactivated first and keep no dashboard, so the Quality reports page shows them
  * inactive until their owner points them at another dashboard.
  */
 export async function deleteDashboardRows(db: DrizzleDB, where: SQL): Promise<number[]> {
