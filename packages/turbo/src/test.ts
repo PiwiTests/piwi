@@ -5,12 +5,6 @@ import { assertHooksWork, installHooks, state, validIntervals } from './hooks';
 import { IDLE_TRACKER } from './idle-tracker';
 import type { BlockRule, TurboOptions } from './types';
 
-type HookSettings = {
-  fastScreenshots: boolean;
-  retryIntervals: number[] | undefined;
-  failFast: boolean;
-};
-
 function routeMatcher(rule: BlockRule): string | RegExp | ((url: URL) => boolean) {
   return typeof rule === 'function' ? (url: URL) => rule(url) : rule;
 }
@@ -43,10 +37,7 @@ export async function captureFailure(context: BrowserContext, testInfo: Outcome)
   return captured;
 }
 
-/** The animation speed-ups still being applied, per context: the `page` fixture waits for them before the test. */
-const speedUps = new WeakMap<BrowserContext, Set<Promise<void>>>();
-
-export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
+export const test = base.extend<TurboOptions>({
   blockRequests: [[], { option: true }],
   failureScreenshots: [false, { option: true }],
   instantAnimations: [false, { option: true }],
@@ -54,60 +45,65 @@ export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
   retryIntervals: [undefined, { option: true }],
   failFast: [false, { option: true }],
 
-  // Turns the hooks on for this test only. A worker runs one test at a time, so the setting covers every page of the
-  // test, including the ones it opens itself, and no other test. Fast screenshots apply to Chromium only.
-  _turboHooks: [
-    async ({ fastScreenshots, retryIntervals, failFast, connectOptions, browserName }, use, testInfo) => {
-      const intervals = validIntervals(retryIntervals);
-      // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
-      const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
-      const fast = fastScreenshots && browserName === 'chromium' && !updating;
-      if (fast || intervals || failFast) {
-        if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
-          throw new Error(
-            '@piwitests/turbo: the experimental hooks need a browser launched by the test worker, not a connected one',
-          );
-        }
-        installHooks();
-      }
-      state.fastScreenshots = fast;
-      state.retryIntervals = intervals;
-      state.failFast = failFast;
-      try {
-        await use({ fastScreenshots: fast, retryIntervals: intervals, failFast });
-      } finally {
-        state.fastScreenshots = false;
-        state.retryIntervals = undefined;
-        state.failFast = false;
-      }
+  // One fixture does everything, so a test pays for one extra fixture whatever the options. The hooks are on for this
+  // test only: a worker runs one test at a time, so the setting covers every page of the test, including the ones it
+  // opens itself, and no other test. Fast screenshots and instant animations apply to Chromium only.
+  context: async (
+    {
+      context,
+      blockRequests,
+      failureScreenshots,
+      instantAnimations,
+      fastScreenshots,
+      retryIntervals,
+      failFast,
+      connectOptions,
+      browserName,
     },
-    { auto: true },
-  ],
-
-  context: async ({ context, blockRequests, instantAnimations, browserName, _turboHooks }, use) => {
-    if (_turboHooks.failFast) await context.addInitScript(IDLE_TRACKER);
-    for (const rule of blockRequests)
-      await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
-    if (instantAnimations && browserName === 'chromium') {
-      const pending = new Set<Promise<void>>();
-      speedUps.set(context, pending);
-      context.on('page', (page) => {
-        const done = speedUpAnimations(context, page).finally(() => pending.delete(done));
-        pending.add(done);
-      });
-      await use(context);
-      await Promise.all(pending);
-      return;
+    use,
+    testInfo,
+  ) => {
+    const intervals = validIntervals(retryIntervals);
+    // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
+    const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
+    const fast = fastScreenshots && browserName === 'chromium' && !updating;
+    const hooks = fast || !!intervals || failFast;
+    if (hooks) {
+      if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
+        throw new Error(
+          '@piwitests/turbo: the experimental hooks need a browser launched by the test worker, not a connected one',
+        );
+      }
+      installHooks();
     }
-    await use(context);
-  },
-
-  page: async ({ page, failureScreenshots, _turboHooks }, use, testInfo) => {
-    if (_turboHooks.fastScreenshots || _turboHooks.retryIntervals || _turboHooks.failFast)
-      assertHooksWork({ needsChromium: _turboHooks.fastScreenshots });
-    await Promise.all(speedUps.get(page.context()) ?? []);
-    await use(page);
-    if (failureScreenshots) await captureFailure(page.context(), testInfo);
+    state.fastScreenshots = fast;
+    state.retryIntervals = intervals;
+    state.failFast = failFast;
+    try {
+      if (failFast) await context.addInitScript(IDLE_TRACKER);
+      for (const rule of blockRequests)
+        await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
+      const speedUps = new Map<Page, Promise<void>>();
+      if (instantAnimations && browserName === 'chromium')
+        context.on('page', (page) => speedUps.set(page, speedUpAnimations(context, page)));
+      if (hooks || (instantAnimations && browserName === 'chromium')) {
+        // A page the test gets from newPage, the `page` fixture's included, is ready before the test uses it.
+        const newPage = context.newPage.bind(context);
+        context.newPage = async (...args) => {
+          const page = await newPage(...args);
+          if (hooks) assertHooksWork({ needsChromium: fast });
+          await speedUps.get(page);
+          return page;
+        };
+      }
+      await use(context);
+      await Promise.all(speedUps.values());
+      if (failureScreenshots) await captureFailure(context, testInfo);
+    } finally {
+      state.fastScreenshots = false;
+      state.retryIntervals = undefined;
+      state.failFast = false;
+    }
   },
 });
 
