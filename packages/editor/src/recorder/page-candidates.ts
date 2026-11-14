@@ -7,6 +7,7 @@
 import { isPageExpression } from '@piwitests/core/codegen';
 import { isLocatorChainMethod } from '@piwitests/core/locator-chain';
 import type { PageCandidate, PageCandidatesResult, RecordInto, RecordingPlacement } from '../protocol.js';
+import { importBindings } from './imports.js';
 
 type CursorContext = PageCandidatesResult['context'];
 
@@ -1486,4 +1487,20 @@ export function declaredNamesAt(text: string, caretLine: number): Set<string> {
 export function fileFixtures(text: string): Set<string> {
   const model = new FileModel(text);
   return new Set(model.declarations.flatMap((d) => (d.fixture === undefined ? [] : [d.fixture])));
+}
+
+/**
+ * What Record here writes at a caret's line: a new test (`test`) at the top level or between a describe's tests, past
+ * the file's imports; steps (`steps`) in the body of a test, a hook or another function; null in a class body between
+ * its members, and on or above the last import statement or `require` declaration.
+ */
+export function recordPlace(text: string, caretLine: number): RecordInto | null {
+  const model = new FileModel(text);
+  const context = model.contextAt(blockPosition(model, caretLine).offset);
+  if (context === 'class') return null;
+  if (context !== 'file') return 'steps';
+  const statements = importBindings(text).statements;
+  const last = statements[statements.length - 1]?.end;
+  const lastImport = last === undefined ? -1 : text.slice(0, last).split(/\r\n|\r|\n/).length - 1;
+  return caretLine > lastImport ? 'test' : null;
 }

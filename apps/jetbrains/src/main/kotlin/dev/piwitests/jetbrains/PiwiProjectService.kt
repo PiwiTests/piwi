@@ -939,6 +939,28 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (shows) filesWithTests += file.url else filesWithTests -= file.url
     }
 
+    /** The answers of `piwi/recordPlace` by file, document stamp and line, the latest [RECORD_PLACES_KEPT]. */
+    private val recordPlaces = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<Triple<String, Long, Int>, RecordPlaceResult>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Triple<String, Long, Int>, RecordPlaceResult>) =
+                size > RECORD_PLACES_KEPT
+        },
+    )
+
+    /**
+     * What Record here writes at a line of a file (`piwi/recordPlace`), asked off the event thread and kept by the
+     * document's stamp; on the event thread, only an answer kept. Null when the service gives none in time.
+     */
+    fun recordPlace(file: VirtualFile, stamp: Long, line: Int): RecordPlaceResult? {
+        val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
+        val key = Triple(uri, stamp, line)
+        recordPlaces[key]?.let { return it }
+        if (ApplicationManager.getApplication().isDispatchThread) return null
+        val answer = server()?.recordPlace(RecordPlaceParams(uri, line))?.awaitCancellably(RECORD_PLACE_MILLIS) ?: return null
+        recordPlaces[key] = answer
+        return answer
+    }
+
     /**
      * `piwi/fileSummary` for `file` when its text is at `stamp` (its document's modification stamp): asked once, for the
      * gutter and Code Vision of one highlighting pass, and asked again once the text or anything the service pushes
@@ -995,6 +1017,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     companion object {
         const val TIMEOUT_SECONDS = 20L
+
+        /** How long Alt+Enter's list waits for where Record here writes: the service reads the open document alone. */
+        private const val RECORD_PLACE_MILLIS = 300L
+
+        /** The answers of where Record here writes kept: a few files' worth of caret lines. */
+        private const val RECORD_PLACES_KEPT = 64
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
 
         /** Whether the first-run notification was shown on this installation: an application-level property. */
