@@ -92,7 +92,7 @@ export interface HandbackCounts {
   outcomes: Partial<Record<HandbackKind, OutcomeTally>>;
   /** Diagnoses written in the period, those rated, and those rated helpful. Null where `ai` is declined. */
   ratings: { written: number; rated: number; helpful: number } | null;
-  /** Failure causes fixed in the period that carry a completed diagnosis. Null where `ai` is declined. */
+  /** Failure clusters fixed in the period that carry a completed diagnosis. Null where `ai` is declined. */
   diagnosedFixes: number | null;
 }
 
@@ -148,7 +148,7 @@ async function loadRatings(db: DrizzleDB, projectIds: number[], from: Date, to: 
   };
 }
 
-/** Failure causes whose fix landed in `[from, to)` and that carry a completed cluster diagnosis. */
+/** Failure clusters whose fix landed in `[from, to)` and that carry a completed cluster diagnosis. */
 async function countDiagnosedFixes(db: DrizzleDB, projectIds: number[], from: Date, to: Date): Promise<number> {
   if (projectIds.length === 0) return 0;
   const [row] = await db

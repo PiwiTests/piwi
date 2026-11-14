@@ -4,7 +4,7 @@
  * over its last complete cadence (the period *Run now* reports on), without
  * saving anything. *Email* is the message exactly as the server renders it,
  * the chart drawn from the same marks; *Full report* is the report every
- * delivery is kept as on the Reports page, where *Open in Piwi* leads.
+ * delivery is kept as on the Quality reports page, where *Open in Piwi* leads.
  */
 import { chartMarksSvg } from '#shared/reports/chart';
 import { makeFormatter } from '#shared/reports/format';
@@ -142,7 +142,7 @@ const deliveries = computed(() => {
             >: {{ d.what }}.
           </li>
         </ul>
-        <p class="text-xs text-muted">Each report is also kept on the Reports page, as the full report.</p>
+        <p class="text-xs text-muted">Each report is also kept on the Quality reports page, as the full report.</p>
         <p v-if="includeNarrative" class="text-xs text-muted">
           The AI narrative is written when each report is sent; the preview keeps the rule-based verdict in its place.
         </p>

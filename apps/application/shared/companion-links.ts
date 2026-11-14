@@ -1,6 +1,6 @@
 /**
  * Where Piwi's separately installed tools are published: the store listings and
- * download pages the dashboard links to (the user menu's Piwi tools, Settings →
+ * download pages the dashboard links to (the user menu's Companion tools, Settings →
  * Companion tools, the Open in editor dialog).
  */
 

@@ -58,16 +58,16 @@ object Glue {
     }
 
     /**
-     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * **Hold failures** from each run's start (`PiwiUserSettings.runHoldFailures`): `auto` leaves it to the service, on
      * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
      */
     val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
 
     /** A choice of [HOLD_FAILURES_CHOICES] in words, for a menu or a setting. */
     fun holdFailuresLabel(choice: String): String = when (choice) {
-        "on" -> "On from each run's start"
-        "off" -> "Off from each run's start"
-        else -> "Auto: on with a breakpoint or a page.pause()"
+        "on" -> EditorWords.words("hold.on")
+        "off" -> EditorWords.words("hold.off")
+        else -> EditorWords.words("hold.auto")
     }
 
     /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
@@ -134,6 +134,33 @@ object Glue {
         val idea = Regex("/\\.idea(/|$)").find(path) ?: return path
         return path.substring(0, idea.range.first).ifEmpty { "/" }
     }
+
+    /** Where a project keeps the settings the team can share, and the ones kept for the person alone. */
+    data class StoreFiles(val shared: String, val workspace: String)
+
+    /**
+     * A project's settings files, from the path of its project file (`Project.projectFilePath`): `piwi.xml` and
+     * `workspace.xml` in `.idea`, or in Rider's `.idea/.idea.<name>/.idea`, relative to the folder holding the project
+     * (`projectFolder`); a project of one `.ipr` file keeps them in it and its `.iws`.
+     */
+    fun storeFiles(projectFilePath: String?): StoreFiles {
+        val path = projectFilePath?.replace('\\', '/') ?: return StoreFiles(".idea/piwi.xml", ".idea/workspace.xml")
+        if (path.endsWith(".ipr")) {
+            val name = path.substringAfterLast('/')
+            return StoreFiles(name, name.removeSuffix(".ipr") + ".iws")
+        }
+        val folder = path.substringBeforeLast('/', "")
+        val relative = if (Regex("/\\.idea(/|$)").containsMatchIn(folder)) folder.removePrefix(projectFolder(folder)).trim('/') else ""
+        val store = relative.ifEmpty { ".idea" }
+        return StoreFiles("$store/piwi.xml", "$store/workspace.xml")
+    }
+
+    /**
+     * Where a copied MCP configuration is pasted: the agent's MCP settings, the AI Assistant's page named only while
+     * that plugin (`com.intellij.ml.llm`, not bundled) is enabled.
+     */
+    fun mcpPasteWhere(aiAssistant: Boolean): String =
+        if (aiAssistant) "your agent's MCP settings, such as Settings → Tools → AI Assistant → Model Context Protocol" else "your agent's MCP settings"
 
     /** The folders, each once, without those inside another one. */
     fun outermost(folders: List<Path>): List<Path> {
@@ -251,8 +278,9 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
-     * `RESTART` starts a service that stopped again, with Open the log after it.
+     * reads the instance and the configs again (Read the instance and the configs again), `NODE_SETTINGS` opens the
+     * Node.js settings, then starts the service again, `RESTART` starts a service that stopped again, with Open the log
+     * after it.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
 
@@ -423,7 +451,7 @@ object Glue {
         }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
-            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload Piwi reads it now.$hint"
+            val tooltip = "$problem$config\nPiwi reads it again on its own, and now on Read the instance and the configs again.$hint"
             return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
         if (!shown.connected) {
@@ -524,7 +552,7 @@ object Glue {
     /** The editor extensions' documentation, which the first-run notification's **Learn more** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
 
-    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Documentation**). */
+    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Open the documentation**). */
     const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
@@ -914,13 +942,13 @@ object Glue {
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
     /**
-     * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
+     * Whose runs say what they changed (`PiwiUserSettings.runNotificationsScope`, VS Code's
      * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
      */
-    val RUN_NOTIFICATION_SCOPES = listOf("mineAndCi", "mine")
+    val RUN_NOTIFICATION_SCOPES = listOf("mine", "mineAndCi")
 
     /**
-     * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
+     * Which failures turn the status item to its alarm, its text in the error color (`PiwiUserSettings.statusBarAlert`,
      * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
      */
     val STATUS_BAR_ALERTS = listOf("new", "any", "never")
@@ -930,6 +958,12 @@ object Glue {
      * or `off`, which leaves the failures to the tool window and the gutter.
      */
     val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
+
+    /**
+     * The lines above the code the service gives (`EditorCredentials.codeLens`), which Code Vision shows: `all`;
+     * `problems`, a failure's and an uncovered change's alone; `off`, none.
+     */
+    val CODE_LENS_CHOICES = listOf("all", "problems", "off")
 
     /**
      * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
@@ -2352,7 +2386,7 @@ object Glue {
     data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
-    fun workerName(lane: Int): String = "Worker ${lane + 1}"
+    fun workerName(lane: Int): String = EditorWords.words("worker", "n" to lane + 1)
 
     /** The accessible name of the Paused Page tab's image, in the VS Code extension's words. */
     const val PAUSED_PAGE_NAME = "The page of the paused test"
@@ -2696,8 +2730,8 @@ object Glue {
 
     /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
     fun holdText(hold: RunHoldFailures): String {
-        val by = if (hold.by == "agent") ", as an agent set it" else ""
-        return if (hold.on) "Hold failures on: a failed test waits at its line$by" else "Hold failures off$by"
+        val by = if (hold.by == "agent") EditorWords.words("hold.run.by-agent") else ""
+        return EditorWords.words(if (hold.on) "hold.run.on" else "hold.run.off", "by" to by)
     }
 
     /** What a shared browser's answer says, with the command that joins it. */
@@ -2839,15 +2873,15 @@ object Glue {
 
     /** The controls offered above a stop, in order. */
     enum class StopControl(override val label: String, val action: String) : StopLink {
-        RESUME("Resume", "resume"),
-        STEP("Step", "step"),
-        RUN_TO_CARET("Run to caret", "run-to"),
-        FINISH("Finish", "finish"),
-        END("End test", "end"),
+        RESUME(EditorWords.words("stop.resume"), "resume"),
+        STEP(EditorWords.words("stop.step"), "step"),
+        RUN_TO_CARET(EditorWords.words("stop.run-to"), "run-to"),
+        FINISH(EditorWords.words("stop.finish"), "finish"),
+        END(EditorWords.words("stop.end"), "end"),
     }
 
     /**
-     * The controls a stop offers: all of them, End test where its reporter takes it (`canEnd`); at a failure, Resume
+     * The controls a stop offers: all of them, End the test where its reporter takes it (`canEnd`); at a failure, Resume
      * alone, which lets the test end as it failed (Step, Finish and End do the same).
      */
     fun stopControls(stop: ShownStop): List<StopControl> =
@@ -2870,11 +2904,17 @@ object Glue {
         val takes: List<String>,
         val inPage: Boolean,
     ) : StopLink {
-        PICK("Pick a locator", "Pick", "pick", listOf("pick"), true),
-        RECORD("Record", "Record", "record", listOf("record"), true),
-        ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
-        ASSERT_REGION("Assert a region", "Assert region", "assert-region", listOf("assert-region"), true),
-        MOCK("Mock a request", "Mock", "mock", listOf("requests", "mock"), false),
+        PICK(EditorWords.words("action.pick"), EditorWords.words("action.pick.short"), "pick", listOf("pick"), true),
+        RECORD(EditorWords.words("action.record"), EditorWords.words("action.record.short"), "record", listOf("record"), true),
+        ASSERT(EditorWords.words("action.assert"), EditorWords.words("action.assert.short"), "assert", listOf("assert"), true),
+        ASSERT_REGION(
+            EditorWords.words("action.assert-region"),
+            EditorWords.words("action.assert-region.short"),
+            "assert-region",
+            listOf("assert-region"),
+            true,
+        ),
+        MOCK(EditorWords.words("action.mock"), EditorWords.words("action.mock.short"), "mock", listOf("requests", "mock"), false),
     }
 
     /** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */
@@ -3499,7 +3539,7 @@ object Glue {
         val start = line.indexOf(written)
         if (start < 0 || line.indexOf(written, start + 1) >= 0) return emptyList()
         return locators.filter { it.isNotEmpty() && it != written }
-            .map { LocatorChoice("Use $it", it, start, start + written.length) }
+            .map { LocatorChoice("Piwi: use $it", it, start, start + written.length) }
     }
 
     /** "1 step", "3 steps". */
@@ -3518,14 +3558,13 @@ object Glue {
      * if any, follows.
      */
     fun recordingBanner(state: String?, steps: Int, edited: Boolean, stopping: Boolean, message: String?): RecordingBanner {
+        val count = "steps" to stepCount(steps)
         val (text, actions) = when {
-            stopping -> "Piwi: stopping the recording…" to emptyList()
-            edited -> "Piwi: recording paused, since you changed the recorded lines. Resume writes them again from the browser." to
-                listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
-            state == "starting" -> "Piwi: opening the browser to record into this file…" to listOf(RecordingAction.STOP)
-            state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}" to listOf(RecordingAction.RESUME, RecordingAction.STOP)
-            else -> "Piwi is recording what you do in the browser · ${stepCount(steps)}" to
-                listOf(RecordingAction.PAUSE, RecordingAction.STOP)
+            stopping -> EditorWords.words("recording.status.stopping") to emptyList()
+            edited -> EditorWords.words("recording.edited") to listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
+            state == "starting" -> EditorWords.words("recording.status.starting") to listOf(RecordingAction.STOP)
+            state == "paused" -> EditorWords.words("recording.status.paused", count) to listOf(RecordingAction.RESUME, RecordingAction.STOP)
+            else -> EditorWords.words("recording.status.recording", count) to listOf(RecordingAction.PAUSE, RecordingAction.STOP)
         }
         val note = message?.trim()?.ifEmpty { null }?.takeUnless { stopping }
         return RecordingBanner(if (note == null) text else "$text · $note", actions)
@@ -3533,10 +3572,10 @@ object Glue {
 
     /** The status bar while a recording runs: its state and its step count. */
     fun recordingStatus(state: String?, steps: Int, edited: Boolean, stopping: Boolean): String = when {
-        stopping -> "Piwi: stopping the recording"
-        state == "starting" -> "Piwi: opening the browser"
-        edited || state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}"
-        else -> "Piwi: recording · ${stepCount(steps)}"
+        stopping -> EditorWords.words("recording.status.stopping")
+        state == "starting" -> EditorWords.words("recording.status.starting")
+        edited || state == "paused" -> EditorWords.words("recording.status.paused", "steps" to stepCount(steps))
+        else -> EditorWords.words("recording.status.recording", "steps" to stepCount(steps))
     }
 
     /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */
@@ -3635,8 +3674,8 @@ object Glue {
     /** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
     private fun ciLane(lane: Int?, shard: Int?): String = when {
         lane == null -> ""
-        shard != null -> "shard $shard, worker $lane"
-        else -> "worker $lane"
+        shard != null -> EditorWords.words("ci-lane.shard", "shard" to shard, "lane" to lane)
+        else -> EditorWords.words("ci-lane", "lane" to lane)
     }
 
     private fun ciLane(test: CiTest): String = ciLane(test.lane, test.shard)

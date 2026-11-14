@@ -109,6 +109,6 @@ Project admin on the project; the hover cards need only read access to it.
 ## Related
 
 - [Results in Zephyr Scale](/features/test-management): when a run is sent, what is sent and Sync again
-- [Integrations](./integrations): the Jira Cloud connection and how connections are managed
+- [Jira Cloud](./integrations): the Jira Cloud connection and how connections are managed
 - [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts the stored token
 - [Configuration reference](/reference/configuration#integrations): the integration variables

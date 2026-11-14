@@ -104,6 +104,8 @@ import {
   type LineLocator,
   type LineState,
   type TestCall,
+  locatorLineTellsMore,
+  piwiActionTitle,
   testActions,
 } from './analysis.js';
 import {
@@ -171,7 +173,13 @@ import { RunStreams } from './run-stream.js';
 import { CiSessions } from './ci-sessions.js';
 import { CiWatch } from './ci-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
-import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
+import {
+  breakpointLines,
+  declaredNamesAt,
+  fileFixtures,
+  pageCandidates,
+  recordPlace,
+} from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
@@ -185,7 +193,7 @@ import {
   siblingSpecs,
   type LauncherFactory,
 } from './recorder/sessions.js';
-import { expectModuleOf, importInsertion } from './recorder/imports.js';
+import { expectModuleOf, importInsertion, testImportOf } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
@@ -219,6 +227,7 @@ import {
   MCP_REQUEST,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
+  RECORD_PLACE_REQUEST,
   RECORD_REQUEST,
   NEW_TEST_FILE_REQUEST,
   RECORDING_COMMAND_REQUEST,
@@ -300,6 +309,7 @@ import {
   type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
+  type CodeLensChoice,
   type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
@@ -342,6 +352,8 @@ import {
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
   type PageCandidatesResult,
+  type RecordPlaceParams,
+  type RecordPlaceResult,
   type RecordParams,
   type NewTestFileParams,
   type NewTestFileResult,
@@ -428,6 +440,10 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
+/** The modules other test runners give `test` from. */
+const OTHER_TEST_MODULES = new Set(['vitest', '@jest/globals', 'node:test', 'bun:test']);
+/** A JavaScript or TypeScript file, where Record here writes. */
+const SCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 /** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
 const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
 /** The commands whose runs the hub names to Piwi Picker, at most. */
@@ -569,6 +585,16 @@ function testTitles(text: string): Set<string> {
     if (m) titles.add(m[2]!);
   }
   return titles;
+}
+
+/**
+ * The lines of a summary the person's choice of lenses shows (`EditorCredentials.codeLens`): every one; with
+ * `problems`, a failure's and an uncovered change's alone; with `off`, none. A test's line, its gutter mark, stays.
+ */
+function lensesShown(summary: FileSummary, lens: CodeLensChoice): FileSummary {
+  if (lens !== 'problems' && lens !== 'off') return summary;
+  const kept = (l: SummaryLine) => l.status !== undefined || (lens === 'problems' && l.problem === true);
+  return { file: summary.file && kept(summary.file) ? summary.file : null, lines: summary.lines.filter(kept) };
 }
 
 /**
@@ -1299,29 +1325,36 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * each (`failuresAnswer`).
    */
   /**
-   * Debug this failure (`WorkspaceFailure.debug`): the dashboard's Debug in my editor run of its test, the one test of
-   * its spec, as it stands, titled as it failed, stopping once at the line it failed through (`debugRunOf`); null when
-   * the spec holds no such test or several.
+   * What a failure's node offers on its test, the one test of its spec, as it stands, titled as it failed; nothing when
+   * the spec holds no such test or several: the test's `test(…)` line (`WorkspaceFailure.test`), Verify ×3 by its
+   * location (`verify`), and Debug this failure (`debug`), the dashboard's Debug in my editor run stopping once at the
+   * line it failed through (`debugRunOf`).
    */
-  const failureDebugRun = (
+  const failureTestActions = (
     context: PiwiContext,
     spec: string,
     f: BranchFailure,
     stop: EditorBreakpoint,
-  ): RunTestsArgs | null => {
+  ): Pick<WorkspaceFailure, 'test' | 'verify' | 'debug'> => {
     const file = path.join(context.root, spec);
     const text = readText(file);
-    if (text === null) return null;
+    if (text === null) return {};
     const titled = testCalls(text.split(/\r?\n/)).filter((c) => c.title === f.title);
-    if (titled.length !== 1) return null;
+    if (titled.length !== 1) return {};
+    const call = titled[0]!;
     const uri = pathToFileURL(file).href;
-    return debugRunOf(
+    const debug = debugRunOf(
       { uri, root: context.root, text, name: spec },
-      titled[0]!,
+      call,
       stop,
       f.browserName ?? null,
       f.executionId,
     );
+    return {
+      test: { uri, line: call.line },
+      verify: { uri, root: context.root, testIds: [], locations: [`${spec}:${call.line + 1}`], repeat: 3 },
+      ...(debug ? { debug } : {}),
+    };
   };
 
   const failuresResult = (pass: Placer): FailuresResult => {
@@ -1333,7 +1366,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!at || at.state === 'gone') return [];
         const spec = specOf(context, f);
         const failingUri = pathToFileURL(at.file).href;
-        const debug = failureDebugRun(context, spec, f, { uri: failingUri, line: at.line - 1 });
+        const onTest = failureTestActions(context, spec, f, { uri: failingUri, line: at.line - 1 });
         return [
           {
             uri: failingUri,
@@ -1357,7 +1390,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
-            ...(debug ? { debug } : {}),
+            ...onTest,
           },
         ];
       });
@@ -2375,7 +2408,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           });
         }
       }
-      for (const finding of stabilityFindings(locatorsInFile(context.index, relative!))) {
+      const findings =
+        credentials.locatorWarnings === false ? [] : stabilityFindings(locatorsInFile(context.index, relative!));
+      for (const finding of findings) {
         const text = lines[finding.line - 1] ?? '';
         const range = locatorRange(text, finding.locator);
         diagnostics.push({
@@ -3009,7 +3044,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         }
       }
     }
-    return actions;
+    return actions.map((a) => ({ ...a, title: piwiActionTitle(a.title) }));
   });
 
   // In test code: after a page expression's `.` (`page.`, `adminPage.`, `this.page.`), the chains the suite uses on the
@@ -3293,7 +3328,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   };
 
-  connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> => {
+  connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> =>
+    lensesShown(await fileSummaryOf(params), credentials.codeLens ?? 'all'),
+  );
+
+  /** A file's summary, every line of it, before the person's choice of lenses (`lensesShown`) filters it. */
+  const fileSummaryOf = async (params: FileSummaryParams): Promise<FileSummary> => {
     const empty: FileSummary = { file: null, lines: [] };
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
@@ -3312,17 +3352,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
     if (isTestCode(context, relative)) {
       const out: SummaryLine[] = [];
+      /** Each locator line's one test, when it has one, which a lens inside that test's own call does not repeat. */
+      const onlyTest = new Map<SummaryLine, number>();
       for (const l of locatorsInFile(context.index, relative!)) {
         const counts = testCounts(l.tests);
-        out.push({
+        const locatorLine: SummaryLine = {
           line: l.line - 1,
           title: [plural(l.tests.length, 'test'), l.actions.slice(0, 2).join(', '), counts].filter(Boolean).join(' · '),
           command: run(
             l.tests.map((t) => t.id),
             l.tests.length === 1 ? 'that uses this locator' : 'that use this locator',
           ),
-        });
+        };
+        out.push(locatorLine);
+        if (l.tests.length === 1) onlyTest.set(locatorLine, l.tests[0]!.id);
       }
+      /** The lines each test's call spans in the spec, by its id. */
+      const spans: Array<{ id: number; from: number; to: number }> = [];
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
@@ -3335,6 +3381,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       )) {
         if (!found) continue;
         const i = call.line;
+        spans.push({ id: found.id, from: call.line, to: call.endLine ?? call.line });
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
@@ -3407,6 +3454,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const why = failure.diagnosed || !failed.headline ? null : clip(failed.headline, 120);
         const mark = failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)}` : '✗ Failed here';
         reasons.push({
+          problem: true,
           line: failure.line,
           title: why ? `${mark} · ${why}` : mark,
           command: {
@@ -3416,6 +3464,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           },
         });
         reasons.push({
+          problem: true,
           line: failure.line,
           title: 'Run this test',
           command: {
@@ -3426,6 +3475,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         });
         if (failed.screenshot) {
           reasons.push({
+            problem: true,
             line: failure.line,
             title: 'Screenshot',
             command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
@@ -3433,6 +3483,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         }
         if (failed.traces.length) {
           reasons.push({
+            problem: true,
             line: failure.line,
             title: 'Trace',
             command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
@@ -3456,7 +3507,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           }
         : null;
-      return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
+      // A locator line whose only test is the one whose call holds it says nothing that test's line does not.
+      const shown = out.filter((l) => locatorLineTellsMore(l.line, onlyTest.get(l) ?? null, spans));
+      return { file: fileLine, lines: [...reasons, ...shown].sort((a, b) => a.line - b.line) };
     }
 
     const repoRelative = relativeTo(context.repoRoot, file);
@@ -3528,7 +3581,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             }
           : undefined;
       return {
-        file: { line: 0, title: `Uncovered changes: ${uncovered.label}`, ...(gaps ? { command: gaps } : {}) },
+        file: {
+          problem: true,
+          line: 0,
+          title: `Uncovered changes: ${uncovered.label}`,
+          ...(gaps ? { command: gaps } : {}),
+        },
         lines: [],
       };
     }
@@ -3548,7 +3606,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ),
     };
     return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
-  });
+  };
 
   connection.onRequest(TESTS_FOR_FILE_REQUEST, async (params: TestsForFileParams): Promise<TestsForFile> => {
     const file = uriToPath(params.uri);
@@ -3583,7 +3641,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
-    const lines = (readText(file) ?? '').split(/\r?\n/);
+    const text = readText(file) ?? '';
+    // A spec whose `test` another runner gives (a Vitest or Jest file beside the suite) is none of Playwright's.
+    if (OTHER_TEST_MODULES.has(testImportOf(text) ?? '')) return none;
+    const lines = text.split(/\r?\n/);
     const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
@@ -4281,6 +4342,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onRequest(PAGE_CANDIDATES_REQUEST, (params: PageCandidatesParams): PageCandidatesResult => {
     const file = uriToPath(params.uri);
     return pageCandidates((file ? readText(file) : null) ?? '', params.line);
+  });
+
+  connection.onRequest(RECORD_PLACE_REQUEST, (params: RecordPlaceParams): RecordPlaceResult => {
+    const file = uriToPath(params?.uri);
+    const context = file && SCRIPT_FILE.test(file) ? contextFor(file) : null;
+    // A file under the config's folder, not one of the rest of its repository.
+    const text = context && relativeTo(context.root, file!) ? readText(file!) : null;
+    const place = text !== null && Number.isSafeInteger(params.line) ? recordPlace(text, params.line) : null;
+    if (place === 'test') return { place, title: 'Piwi: record a test here…' };
+    if (place === 'steps') return { place, title: 'Piwi: record steps here…' };
+    return { place: null, title: null };
   });
 
   connection.onRequest(RECORD_REQUEST, async (params: RecordParams): Promise<RecordResult> => {

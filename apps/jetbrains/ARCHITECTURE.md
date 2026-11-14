@@ -82,8 +82,8 @@ Otherwise:
 
 - the start fails with that reason, which `PiwiProjectService.startFailed` keeps (`startProblem`) and says once;
 - the status bar item reads `Piwi: Node.js`, and its menu opens the Node.js settings first (`openNodeSettings`,
-  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Reload Piwi** while it
-  does not run.
+  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Read the instance and the
+  configs again** while it does not run.
 
 **The first file.** The service starts with the first supported file opened, since 2024.1 has no way to start it
 without one. Until then the status is null, and the status bar and the tool window say so.
@@ -151,10 +151,22 @@ latest result from `piwi/fileSummary`:
 - `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
   why. The test's background goes around that line, since two backgrounds on one line have no set order.
 
+**Piwi test results** on Settings → Editor → General → Gutter Icons switches the gutter icon off, the backgrounds
+staying: `PiwiTestResultsGutter` (`PiwiRunLineMarker.kt`) is a `LineMarkerProviderDescriptor` that marks nothing,
+registered for the page to list it, and the annotator reads its switch (`LineMarkerSettings`). The IDE's own run icon
+on a test (`JSTestRunLineMarkersProvider`) lists `Piwi.RunLineMarker` in its menu
+(`JSTestRunLineMarkersAdditionalActionGroup`): `PiwiRunLineMarkerActions` reads the test's element from
+`Location.DATA_KEY`, which the platform's `LineMarkerActionWrapper` sets for the group's `getChildren`, and offers
+**Run with Piwi** and **Verify ×3 with Piwi** on its line (`TEST_LINE`) in a spec under a config's folder, once
+`piwi/testAt` finds a test there (300 ms at most): the menu is every JS test runner's, and a describe's line holds none.
+With the result icon off, its list of the test's actions goes with it.
+
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
-then that run's result. Code Vision (`PiwiCodeVisionProvider.kt`) draws the summary's other lines and skips the test
-lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
+then that run's result. `PiwiUserSettings.failingTestTint` off leaves both backgrounds out, and a change of it draws
+the files with tests again (`testsShownAgain`); `codeLens`, which the service applies, asks every open file's summary
+again once the credentials carry it (`lensesShownAgain`). Code Vision (`PiwiCodeVisionProvider.kt`) draws the
+summary's other lines and skips the test lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
 provider: `PiwiCodeVisionProvider` the first, `PiwiCodeVisionSlot2` to `PiwiCodeVisionSlot8` the next ones, each after
 the one before (`Glue.codeVisionSlot`, `Glue.CODE_VISION_SLOTS`). They share the group `piwi.summary`, which
 `PiwiCodeVisionSettings` names Piwi in the Code Vision settings. The IDE shows as many entries per line as those
@@ -210,7 +222,7 @@ service's hover names the tests behind a line; the lines on a function come in `
   URI. A deleted file is forgotten.
 
 **Show or hide the coverage marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
-`PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks. A file
+`PiwiUserSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks. A file
 without line coverage draws nothing.
 
 ## Native views and pushes
@@ -230,8 +242,9 @@ The service pushes each of the three answers when it changes (`piwi/statusChange
 event thread, for all the pushes received meanwhile.
 
 It reads the three answers whole (`refreshStatus`) only when the plugin starts (the tool window and the status bar item
-are created), on **Reload Piwi**, on **Refresh the latest run** (`Piwi.RefreshRun`), and after new credentials. One read
-runs at a time, and a read asked for meanwhile follows it. A push that arrives during a read wins over the answer read.
+are created), on **Read the instance and the configs again**, on **Refresh the latest run** (`Piwi.RefreshRun`), and
+after new credentials. One read runs at a time, and a read asked for meanwhile follows it. A push that arrives during a
+read wins over the answer read.
 
 ## Tool window
 
@@ -245,15 +258,17 @@ With no failure, the empty text is `Glue.failuresEmpty` of the state the service
 links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare with…).
 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
-  dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
-  and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
-  and the MCP configurations, Reload Piwi, Restart the editor service, Open the log, Settings… and Documentation.
+  dashboard**, **Compare with…** and **Group the failures by…**, then the navigation (previous and next failure, expand
+  and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker and
+  the MCP configurations, Read the instance and the configs again, Restart the editor service, Open the log, Settings…
+  and Open the documentation.
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
   `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
   are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
 - **Each node's tooltip** is the service's (`FailureTreeNode.tooltip`, kept in `Glue.FailureNode.tooltip`), one line
   each through `Glue.htmlTooltip`: a failure's title, headline, run, cluster and owner, a run's counts.
-- **The grouping** is chosen in the **Group by** drop-down, of `ToggleAction`s, and kept in `PiwiLocalSettings.failuresGrouping`. It is
+- **The grouping** is chosen with **Group the failures by…** (`Piwi.GroupFailuresBy`, a popup of `ToggleAction`s under
+  the toolbar button, also under **Tools → Piwi**), and kept in `PiwiLocalSettings.failuresGrouping`. It is
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
@@ -318,7 +333,9 @@ that each of Piwi's resolves to a file, and lists the actions that share a glyph
 (`WorkspaceFailure.root`). **Debug this failure** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
 built for it (`WorkspaceFailure.debug`) once the files are saved, quietly (the service says why it refuses a debug
 run); so does **Debug with Piwi** among a test's actions on the result icon (`TestAction.kind` `debug`,
-`PiwiCommands.debug`). A run that names its own start keeps it (`Glue.withRunStart`).
+`PiwiCommands.debug`). **Verify the test ×3** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
+the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. A run that names its own start keeps it
+(`Glue.withRunStart`).
 
 ### Compare with
 
@@ -351,7 +368,7 @@ platform's text presentations take no color. It shows:
   the passed icon), marked with a dot (`ExecutionUtil.getIndicator`) while a stop waits for the person
   (`RunLine.calls`);
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the service's alarm
-  (`RunStatus.alarm`, `StatusView.error`), as `PiwiLocalSettings.statusBarAlert` chooses it on Settings → Tools →
+  (`RunStatus.alarm`, `StatusView.error`), as `PiwiUserSettings.statusBarAlert` chooses it on Settings → Tools →
   Piwi, sent in the credentials: `new`, the default, only for a test a run this project started failed that the
   baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a
   recording or the runs' line; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
@@ -366,9 +383,9 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 
 - connected: **Refresh the latest run** (`Piwi.RefreshRun`, `PiwiProjectService.refreshRun`: `piwi/refreshRun`, then
   `refreshStatus`, on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
-- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Reload Piwi**;
-- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Reload Piwi**; the
-  service also reads it again as the restarted app rewrites its discovery file;
+- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Read the instance and the configs again**;
+- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Read the instance and
+  the configs again**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
 - the service that ran stopped (`Piwi: not running`, `PiwiProjectService.serviceStopped`): **Restart the editor
@@ -405,7 +422,7 @@ opens the run the status bar shows.
 
 ### Playwright runner
 
-The **Run the tests in the IDE's Playwright runner** setting (`PiwiLocalSettings.playwrightRunner`) is off by default.
+The **Run the tests in the IDE's Playwright runner** setting (`PiwiUserSettings.playwrightRunner`) is off by default.
 When it is on, a test run whose command is `npx playwright test …` (`Glue.playwrightTestArgs`) starts as a temporary
 Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
 
@@ -455,9 +472,9 @@ platform's, which says how serious it is. D25 lists the five group ids, which us
 `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded` (`PiwiCommands.runEnded`,
 `Glue.runVerdict`), in the service's words (`RunEnded.verdict`), with **Open the failures**, **Open in dashboard**, and **Re-run failing** when something fails, or
 **Only on failure** when nothing does while the setting is `always`. The run's balloon follows
-`PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, the default, `never`; in
-`.idea/workspace.xml`, on this machine only), and a CI run of the branch's (`RunEnded.origin`) only while
-`PiwiLocalSettings.runNotificationsScope` is `mineAndCi`, the default (`Glue.RUN_NOTIFICATION_SCOPES`). A run with
+`PiwiUserSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, the default, `never`; each
+person's own, in every project), and a CI run of the branch's (`RunEnded.origin`) only while
+`PiwiUserSettings.runNotificationsScope` is `mineAndCi`, the default (`Glue.RUN_NOTIFICATION_SCOPES`). A run with
 `repeat` (**Verify ×3**) is reported whatever the setting, as `Failed 1 of 3`, a warning when one of the runs failed.
 The balloon is titled by the run the service names, `Piwi: run #124`, `Piwi: CI run #130 on feature-x`
 (`Glue.RunVerdict.title`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
@@ -494,12 +511,12 @@ actions.
 ### How a run starts
 
 Every test run takes the person's start options (`Glue.withRunStart`, `RunStartOptions` in the protocol), kept in
-`PiwiLocalSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run headed**
+`PiwiUserSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run headed**
 is on, nothing otherwise (the service runs it headless but for a spec with a `page.pause()`, and for a run with
 breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
 `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
 `PiwiCommands.runTests`, a verification included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as
-built. **Tools → Piwi → Run headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold failures from each run's start…**
+built. **Tools → Piwi → Turn headed runs on or off** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold failures from each run's start…**
 (`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.
 
 ### Breakpoints
@@ -512,7 +529,7 @@ and **Run a saved selection…**. The breakpoints come from `PiwiProjectService.
    local files, in a read action;
 2. then `Glue.runBreakpoints`, keeping those in script files under a Playwright config's folder.
 
-The checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`, on this machine only) turns them off.
+The checkbox under **Settings → Tools → Piwi** (`PiwiUserSettings.breakpoints`, each person's own in every project) turns them off.
 
 When the command carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or says the
 run pauses at a `page.pause()` (`RunCommand.pauses`), `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing
@@ -564,7 +581,7 @@ with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
   (`STOP`, `registeredWith`) with its key shown;
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
   `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
-  **Resume**, **Step**, **Run to caret** and **Finish** as links, and **End test** at a stop whose worker takes `end`
+  **Resume**, **Step**, **Run to the caret** and **Finish** as links, and **End the test** at a stop whose worker takes `end`
   and is no failure (`Glue.canEnd`, `Glue.stopControls`). An `EditorMouseListener` on the multicaster clicks
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
@@ -703,7 +720,7 @@ service's reference.
 **The actions.** A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`): after
 the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
 offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`, `Piwi.AssertRegionAtStop`,
-`Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a
+`Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record**, **Assert** and **Assert a region** at a
 stop the pause bar shows, **Mock a request** at any; the inlay names them shorter (`StopLink.inlayLabel`). Each is a
 `piwi/stopAction` on a pooled thread naming its stop, its answer a balloon. Mock a request lists `piwi/stopRequests`
 in a popup, the latest first, filtered by URL as you type (`setNamerForFiltering`; `RequestRenderer`: the method and
@@ -790,8 +807,8 @@ Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwrig
 The tool window, the status bar item and the service wait for the search. The service's workspace folders are the
 folders it searched (`createInitializeParams`).
 
-**Searching again.** **Reload Piwi** searches again, and so does `watchConfigs`, a second after the IDE reports one of
-these changes:
+**Searching again.** **Read the instance and the configs again** searches again, and so does `watchConfigs`, a second
+after the IDE reports one of these changes:
 
 - a config created, removed, renamed or moved (`Glue.isPlaywrightConfig`: every name Playwright reads a config from,
   `.mts` and `.cts` included);
@@ -826,7 +843,9 @@ service's reference.
 ### Starting a recording
 
 **Record here** (`PiwiRecordingActions.kt`) is under **Tools → Piwi**, in the editor's menu, in Alt+Insert's Generate
-menu (`Piwi.RecordHereGenerate`), and on Alt+Enter through `RecordHereIntention.kt`. It asks `piwi/pageCandidates`
+menu (`Piwi.RecordHereGenerate`), and on Alt+Enter through `RecordHereIntention.kt`, only where `piwi/recordPlace`
+says it writes, under the service's title (**Piwi: record a test here…**, **Piwi: record steps here…**; waited for
+off the event thread, 300 ms at most, and kept by the document's stamp and the line, `PiwiProjectService.recordPlace`). It asks `piwi/pageCandidates`
 where the caret is (`Glue.recordInto`): outside every test, function and class it records a new test; anywhere else,
 the steps there, which the service refuses where they cannot go. Without an answer, nothing starts.
 
@@ -880,7 +899,7 @@ thread.
   until their line changes.
 - **Quick fixes.** Once the recording stopped, a warning on a step with other verified locators
   (`RecordingStep.locators`, kept with the warning in `RecordingWarningMark`) offers each one as a quick fix
-  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Use getByTestId('pay')** puts
+  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Piwi: use getByTestId('pay')** puts
   it in place of the written locator, found on the line exactly once, in one command, and the line it changes no longer
   shows the warning. None is offered while it records, since the next update writes the block again.
 - **The banner** over the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step
@@ -1032,16 +1051,23 @@ file is opened.
 
 ## Settings and secrets
 
-| What                                               | Where                                           |
-| -------------------------------------------------- | ----------------------------------------------- |
-| The instance URL and the project (`PiwiSettings`)  | `.idea/piwi.xml`, which a repository may commit |
-| The API key, **per instance** (`Glue.apiKeyEntry`) | the IDE's `PasswordSafe`                        |
-| Choices made on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
+| What                                                                | Where                                           |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| The instance URL and the project (`PiwiSettings`)                   | `.idea/piwi.xml`, which a repository may commit |
+| The API key, **per instance** (`Glue.apiKeyEntry`)                  | the IDE's `PasswordSafe`                        |
+| Choices made for this project on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
+| Each person's own options (`PiwiUserSettings`), in every project    | the IDE's `options/piwi.xml`                    |
 
-`PiwiLocalSettings` holds the choice of the desktop app and its project, a recording's choices, the failures'
-grouping, the breakpoints setting, the Playwright runner setting, how a run starts (headed, Hold failures), the run
-notifications, the coverage marks, the failure severity, how the agent signs in to Piwi's MCP server, whether the runs
-are served to agents and the port they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
+The settings registry's scope says where an option goes: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`,
+`user` in `PiwiUserSettings`, an application-level service, as VS Code keeps a person's own options in the user settings
+(`GlueTest` checks each). `PiwiLocalSettings` also holds the choice of the desktop app and its project, a recording's
+choices, the failures' grouping, the baselines and the port the runs were last served to agents at. A change of a
+person's own option, from the settings page or an action, is handed and drawn again in every open project
+(`PiwiUserSettings.changed`, `PiwiProjectService.userSettingsChanged`), also when the IDE reads its settings again
+(Settings Sync, Import Settings); a project whose service is not running is not started for it. In Rider, the project's files sit under
+`.idea/.idea.<Name>/.idea/`, as the settings page's comments say, and a project of one `.ipr` file keeps them in it and its `.iws` (`Glue.storeFiles`). Each group of the page opens with one comment
+saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
+(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
@@ -1054,14 +1080,14 @@ entry runs one exact release, `Glue.MCP_REMOTE` (`npx -y mcp-remote@<version>`, 
 CVE-2025-6514), over streamable HTTP alone (`--transport http-only`): `npx` with no version runs whatever npm serves
 that day, with the key or the token in its environment.
 
-With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the AI Assistant group of the
+With `PiwiUserSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the Agents (MCP) group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
 in through the instance's OAuth. The notification says which (`Glue.mcpAuthorizationNote`).
 
 **The runs' MCP server.** The editor service serves this project's runs to the agents of this machine as an MCP server
 of its own ([Agents](../../packages/editor/ARCHITECTURE.md#agents) in its reference). The initialization options say
 whether (`agents`, from `PiwiProjectService.agentsOptions`): `PiwiLocalSettings.serveRunsToAgents` (**Serve the test
-runs this project starts to the agents of this machine**, in the AI Assistant group of the settings page, which sends
+runs this project starts to the agents of this machine**, in the Agents (MCP) group of the settings page, which sends
 `piwi/agents` on a change), the port it listened at last (`agentsPort`) and the token, kept in the `PasswordSafe`
 per project (`Glue.agentsTokenEntry` of `Project.getLocationHash`, a new one when none is kept: `Glue.newAgentsToken`).
 So a configuration copied once still connects after a restart. When another program holds the kept port, the service
@@ -1078,7 +1104,8 @@ Claude Code or Cursor** (`CopyRunsMcpHttpConfigurationAction`) writes the `mcpSe
 of the repository. The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
 an MCP server, and the MCP Server plugin's `mcpServer.mcpToolset` extension point, which adds tools to the IDE's own
 server, starts at 2025.2 (the plugin compiles against 2024.1, [Platform compatibility](#platform-compatibility)), so
-the person pastes the entry.
+the person pastes the entry. The notices name the agent's MCP settings, and the AI Assistant's page only while that
+plugin is enabled (`Glue.mcpPasteWhere`, `CopyMcpConfigurationAction.aiAssistantEnabled`).
 
 **Share with Playwright tools** (`ShareWithPlaywrightAction`, `Piwi.ShareWithPlaywright`, and the last item of a stop's
 gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (`MessageDialogBuilder.yesNo`,

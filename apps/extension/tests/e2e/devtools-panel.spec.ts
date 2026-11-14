@@ -266,8 +266,8 @@ test.describe('the Piwi panel', () => {
     const shop = await context.newPage();
     const panel = await openPanel(shop, extensionId, context);
     await stubPageTools(panel, true);
-    await panel.getByRole('button', { name: 'Pick', exact: true }).click();
-    await panel.getByRole('button', { name: 'Lint', exact: true }).click();
+    await panel.getByRole('button', { name: 'Pick an element', exact: true }).click();
+    await panel.getByRole('button', { name: 'Lint overlay', exact: true }).click();
     await panel.getByRole('button', { name: 'Playwright view' }).click();
     await expect
       .poll(() => pageToolCalls(panel))
@@ -366,9 +366,9 @@ trustedTest.describe('the Piwi panel on a site the extension may run on', () => 
     await panel.evaluate(() => {
       chrome.permissions.request = (() => Promise.resolve(true)) as typeof chrome.permissions.request;
     });
-    await panel.getByRole('button', { name: 'Lint', exact: true }).click();
+    await panel.getByRole('button', { name: 'Lint overlay', exact: true }).click();
     await expect(shop.locator('#piwi-lint-overlay-host')).toBeAttached();
-    await panel.getByRole('button', { name: 'Pick', exact: true }).click();
+    await panel.getByRole('button', { name: 'Pick an element', exact: true }).click();
     await expect(shop.locator('#__piwi_picker_banner')).toHaveCount(1);
     await expect(panel.locator('#notice')).toBeEmpty();
   });

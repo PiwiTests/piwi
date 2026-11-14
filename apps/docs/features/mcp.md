@@ -21,7 +21,7 @@ tool on its whole description and its parameters. Two answer questions about Piw
 `describe_piwi` reads the documentation bundled with the server, and `get_release_notes` the changelog up to the
 running version. Three read the [coverage](/features/coverage-insights) tests record: `get_coverage` (a file's lines
 and the tests behind them, or which target lines a test ran), `compare_coverage` (a failure against its last pass, or a
-test's runs against each other) and `get_coverage_loss` (what quarantining or deleting tests leaves uncovered).
+test's runs against each other) and `get_coverage_loss` (what [quarantining](./flaky-tests#quarantine-with-a-way-out) or deleting tests leaves uncovered).
 `get_impacted_tests` takes your working diff and returns the tests it impacts, narrowed to the tests that ran the
 changed lines where coverage was recorded ([line level](/features/change-impact#line-level)), with a command to run
 them. They return compact JSON, list tools page with `{ items, nextCursor }` (`get_project_test_catalog`
@@ -217,12 +217,14 @@ Windsurf reads `~/.codeium/windsurf/mcp_config.json`; Continue reads `~/.continu
 
 ## Prompts
 
-The server also exposes MCP **prompts**, which a client offers as slash commands. `setup_piwi` generates the setup
-for a Playwright project that does not report here yet. It fills in this instance's URL, whether it requires a key
-and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and a first run.
-The six workflow [agent skills](/features/agent-skills) are prompts too (`investigate_failure`,
+The server also exposes MCP **prompts**, which a client offers as slash commands, with nothing to install.
+`setup_piwi` sets up a Playwright project that does not report here yet, with this instance's URL, whether it
+requires a key and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and
+a first run; an optional `projectName` names the project. Each workflow [agent skill](/features/agent-skills) is a prompt too (`investigate_failure`,
 `apply_locator_healing`, `stabilize_flaky_tests`, `run_the_right_tests`, `write_the_missing_test`,
-`fix_a_reported_bug`), each with an optional `focus` argument, in the version this server ships.
+`fix_a_reported_bug`), in the version this server ships, with an optional `focus` (a run, a cluster, a test, a gap or a
+bug report, as an id or a URL). Prompts need the MCP connection; installed skills work
+offline.
 
 ## Related
 

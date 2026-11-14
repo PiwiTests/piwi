@@ -6,6 +6,8 @@ lang: en-US
 
 # Editor extensions
 
+<Needs editor />
+
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
 (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
 are editing. Both run the same editor service; the [JetBrains plugin](./jetbrains) page lists what the plugin needs
@@ -19,7 +21,8 @@ and draws differently.
 ## Install and connect
 
 **You need a Piwi instance:** the [desktop app](/features/desktop), `npx @piwitests/server` or the Docker image.
-Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+Recording, running a test by its line, and pausing and stepping through it need none. Piwi reads Playwright Test
+suites in JavaScript and TypeScript.
 
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`
@@ -49,7 +52,7 @@ Lines above the code (CodeLens):
 | File | What it shows | Click |
 |---|---|---|
 | A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover that result's run, the pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
-| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or flake | runs those tests |
+| A page object or spec | above each locator line (in a spec, unless its only test is the one around it), the tests using it, their actions, and how many fail or flake | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
@@ -92,46 +95,46 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
 connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: VS Code's
-`mcp.json` or Cursor's `mcpServers`, as you choose; the AI Assistant's in a JetBrains IDE, an `mcpServers` entry
-running `mcp-remote`. It holds your API key: keep it out of the repository.
+`mcp.json` or Cursor's `mcpServers`, as you choose; in a JetBrains IDE, an `mcpServers` entry running `mcp-remote`,
+for your agent's MCP settings (the AI Assistant's, when it is installed and enabled). It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
-to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
+to `sign-in` (**Settings → Tools → Piwi → Agents (MCP)** in a JetBrains IDE): the server comes without a key, and the
 agent [signs in](/features/mcp#authentication) in your browser when it first connects. You revoke that token with
 your API keys. The desktop app keeps its own token. For the runs the editor starts:
 [Run control for agents](./agent-run-control).
 
+## Colors and hidden messages
+
+VS Code's theme colors, set in `workbench.colorCustomizations`: `piwi.failingTestBackground` and
+`piwi.failingLineBackground` tint a failing test and the line it failed at, `piwi.failingTestOverviewRuler` and
+`piwi.failingLineOverviewRuler` mark them in the scrollbar; `piwi.flakyForeground` colors the word flaky after a flaky
+test's line in the Testing view; `piwi.recordingBlockBackground` and `piwi.recordingBlockOverviewRuler` mark the block
+a recording writes; `piwi.executionPointBackground` and `piwi.executionPointOverviewRuler` the line a test is stopped
+at, `piwi.failurePointBackground` and `piwi.failurePointOverviewRuler` the line it holds a failure at. The coverage
+marks have [their own](./editor-coverage#the-marks). A JetBrains IDE has the failing test, its line, the lines being
+recorded and the stopped line under **Settings → Editor → Color Scheme → Piwi**.
+
+**Don't Show Again** on a message of the editor service adds its kind to VS Code's `piwi.hiddenMessages`:
+`agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the
+window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing`
+(a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
+
+VS Code's Piwi settings come in five groups, Connection, Runs, In the editor, Agents (MCP) and Advanced, as JetBrains'
+settings page does: [Editor settings](/reference/editor-settings) lists each one, what the editor shows among them.
+Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
+every workspace: a repository's `.vscode/settings.json` sets only the instance and the project, the failure severity,
+serving runs to agents and Piwi's tests in the Testing view. A JetBrains IDE keeps the same choices in its own
+settings, for every project, and the failure severity and serving runs to agents for each project.
+
 ## Commands
 
-A JetBrains IDE says caret, under **Tools → Piwi**, and has no **Get started** or **Write code at the stop…**.
-
-| Command | What it does |
-|---|---|
-| Piwi: Connect…, Disconnect | See [Editor connection](./editor-connection) |
-| Piwi: Reload Piwi | Fetch the indexes and the latest run again |
-| Piwi: Refresh the latest run | Read the latest run again |
-| Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
-| Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
-| Piwi: Run this spec | Run every test of the spec as it stands |
-| Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
-| Piwi: Re-run the failing tests | Run every test still failing: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) |
-| Piwi: Open in dashboard | Open this file's test, or the latest run |
-| Piwi: Run a saved selection… | Run a saved [selection](/features/test-selection) |
-| Piwi: Open the latest run | Open the run the status bar shows |
-| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-failures#compare-with-another-run) |
-| Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
-| Piwi: Record here…, Record a new test file… | Record at the cursor, or into a new spec: [Record tests from the editor](./editor-recording) |
-| Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
-| Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor, Finish the test, End the test, Stop the run, Show the paused page, Write code at the stop… | [Pause and step from the editor](./editor-run-control), [Code from a pause](./editor-stop-code) |
-| Piwi: Show or hide the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
-| Piwi: Restart the editor service, Open the log | Start the editor service again; show its log of starts, stops, errors and failed requests, where VS Code's `piwi.trace.server` setting adds its traffic |
-| Piwi: Get started | Open the walkthrough |
-
-Three commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
-these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
-tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; `Cmd` for `Ctrl` on macOS.
-**Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
-JetBrains IDE (search `Piwi`).
+Each extension's commands, under **Piwi:** in VS Code's command palette and **Tools → Piwi** in a JetBrains IDE, are
+listed with what they do on [Editor commands](/reference/editor-commands). Three have the same shortcut in both
+editors (where some keymaps and plugins already use these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor,
+`Ctrl+Shift+Alt+F` re-runs the failing tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording;
+`Cmd` for `Ctrl` on macOS. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
+**Settings → Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs
 
@@ -140,7 +143,7 @@ the lines above the code with Code Vision, and its actions under **Tools → Piw
 
 ## Related
 
-- [Failures in the editor](./editor-failures): the CI failures at their lines, the quick fixes and the failures view.
-- [Runs from the editor](./editor-runs): run tests, and follow the run in [the status bar](./editor-status-bar).
-- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them in a browser.
-- [Editor connection](./editor-connection): the instance the editor reads, and its key.
+- [Failures in the editor](./editor-failures): the CI failures, their quick fixes and the failures view.
+- [Runs from the editor](./editor-runs): run tests, and follow them in [the status bar](./editor-status-bar).
+- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them.
+- [Write, run and fix a test](./write-run-fix): the loop across tools.

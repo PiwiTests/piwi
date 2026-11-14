@@ -12,7 +12,7 @@ When a CI run of the whole suite finishes, Piwi can write its results to Zephyr 
 cycle in Zephyr) holding one result for each test case key the run's tests carry. The test run links back to the
 run's page in Piwi, and the run's page shows what was sent.
 
-It is **off until an [administrator connects Zephyr Scale and binds the project](/operate/zephyr-scale#bind-a-project)**,
+It is **off until an [administrator connects Zephyr Scale and a Project admin binds the project](/operate/zephyr-scale#bind-a-project)**,
 and a new binding starts as a **dry run** that sends nothing.
 
 ## When a run is sent
@@ -23,7 +23,8 @@ A run is sent once, when it finishes, if all of these hold:
   environments;
 - the run came from CI and ran the whole suite to the end. A partial run (a filter, a selection, a rerun of the failed
   tests), a run that was interrupted or timed out, a run from a developer's machine, the desktop app or an editor, a
-  lab run and an imported run send nothing;
+  lab run, a bisect step or a reproduction, a run requested from the dashboard, a run flagged as an
+  [environment incident](./environment-incidents) and an imported run send nothing;
 - the project's test case catalog has been read, and at least one test of the run carries a key the catalog holds.
 
 A run split across shards is sent once, after its last shard reports, with the results of every shard. Sending is a
@@ -110,4 +111,4 @@ among its links, as the key, and removing the link there does not delete anythin
 - [Zephyr Scale Cloud](/operate/zephyr-scale): connect it, bind a project and read the test case catalog
 - [Test metadata](/reference/test-metadata): the tags and external IDs a test carries its case key in
 - [Issue tracking (Jira)](./issue-tracking): the other integration that writes to an external tool
-- [Integrations](/operate/integrations): how connections are managed
+- [Jira Cloud](/operate/integrations): how connections are managed

@@ -65,7 +65,7 @@ title bars, a view's inline row and a quick pick, not in the palette or a contex
 their command's glyph in the choice among them (`STOP_ACTIONS.icon`). `tests/menus.test.ts` holds both. Piwi's own
 glyphs are those of the product icon font the brand asset generator writes (`media/piwi-icons.woff`,
 `contributes.icons`, ids of two segments as VS Code takes them): `$(piwi-mark)`, which the idle status item and the
-failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing and Reload Piwi glyphs
+failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing and reload glyphs
 (`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-stop-live)`, `$(piwi-reload)`), and Run to the cursor's
 (`$(piwi-run-to-cursor)`, an arrow into a text caret as the JetBrains platform draws it), at one line weight.
 
@@ -149,31 +149,41 @@ A setting left empty keeps the environment's own variable. A change of one of th
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
 output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
 (`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
-view's welcome offers it while the service does not answer, and so does a Reload Piwi it did not answer. A failed request
-reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
-service is down. The client writes to the extension's own log channel (`outputChannel`), which a restart keeps; a
-service whose first start failed starts again only with the window.
+view's welcome offers it while the service does not answer, and so does **Read the instance and the configs again** when
+it does not answer. A failed request reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and
+the status item and the view say the service is down. The client writes to the extension's own log channel
+(`outputChannel`), which a restart keeps; a service whose first start failed starts again only with the window.
 
 ## Settings and stored state
 
-The settings (`contributes.configuration` in `package.json`):
+The settings (`contributes.configuration` in `package.json`), in the groups and order of the editor service's settings
+registry (`packages/editor/src/settings.json`), which `tests/settings.test.ts` holds them to with their scope, type,
+default and choice labels (`enumItemLabels`). A team's options (`piwi.serverUrl`, `piwi.project`) and those a project
+may set for itself (`piwi.failureSeverity`, `piwi.serveRunsToAgents`, `piwi.testExplorer`) are window-scoped; every
+other one is each person's own, application-scoped, which a committed `.vscode/settings.json` cannot set:
 
-| Setting                  | Values, default first                    | What it does                                                                                    |
-| ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
-| `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
-| `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
-| `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
-| `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
-| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
-| `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
-| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
-| `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
-| `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
-| `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
-| `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
-| `piwi.testExplorer`      | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
-| `piwi.trace.server`      | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
+| Setting                      | Values, default first                    | What it does                                                                                                |
+| ---------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `piwi.serverUrl`             | a URL                                    | The instance. Connect writes it in the workspace settings.                                                  |
+| `piwi.project`               | a project name                           | The project. Connect writes it in the workspace settings.                                                   |
+| `piwi.breakpoints`           | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                                      |
+| `piwi.runHeaded`             | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Application scope.                    |
+| `piwi.runHoldFailures`       | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Application scope.             |
+| `piwi.runNotifications`      | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                                     |
+| `piwi.runNotificationsScope` | `mineAndCi`, `mine`                      | Whether the branch's CI runs have one too ([Runs](#runs)).                                                  |
+| `piwi.statusBarAlert`        | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.                     |
+| `piwi.hiddenMessages`        | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                            |
+| `piwi.failureSeverity`       | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                                     |
+| `piwi.codeLens`              | `all`, `problems`, `off`                 | The lines the service gives above the code (`EditorCredentials.codeLens`). Application scope.               |
+| `piwi.gutterIcons`           | `true`, `false`                          | Each test's outcome mark in the gutter; off, its line keeps the hover (`decorateTests`). Application scope. |
+| `piwi.coverageMarks`         | `true`, `false`                          | The coverage marks ([Coverage marks](#coverage-marks)). Application scope.                                  |
+| `piwi.locatorWarnings`       | `true`, `false`                          | The brittle locators' diagnostics (`EditorCredentials.locatorWarnings`). Application scope.                 |
+| `piwi.failingTestTint`       | `true`, `false`                          | A failing test's and its failing line's background (`decorateTests`). Application scope.                    |
+| `piwi.ciPositions`           | `true`, `false`                          | The CI positions at the ends of lines ([CI runs](#ci-runs-of-the-branch)). Application scope.               |
+| `piwi.mcpAuthorization`      | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it.             |
+| `piwi.serveRunsToAgents`     | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                               |
+| `piwi.testExplorer`          | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                                           |
+| `piwi.trace.server`          | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                                    |
 
 What the extension stores:
 
@@ -184,7 +194,7 @@ What the extension stores:
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
-  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
+  (`piwi.baseline`), `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
   (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`), and the runs' MCP server's port
   (`piwi.agentsPort`).
 
@@ -233,8 +243,8 @@ the service pushes the marks it moved. The service's hover names the tests behin
 mean, since VS Code shows no hover on a decoration's border. What the service computes:
 [Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
 
-**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
-(`piwi.coverageShown`, shown by default). The command is in the palette only once a file showed marks
+**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them, writing `piwi.coverageMarks` to the
+user settings (shown by default). The command is in the palette only once a file showed marks
 (`piwi.hasCoverage`), so a workspace without coverage shows nothing of it.
 
 ## Failures view
@@ -271,7 +281,9 @@ reference.
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
 (`root`). **Debug this failure** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
 service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
-debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`).
+debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`). **Verify the test ×3**
+(`piwi.verifyFailure`) runs `WorkspaceFailure.verify`, and **Go to the test** (`piwi.goToFailureTest`) opens
+`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`.
 
 **The rest of the view.**
 
@@ -369,8 +381,9 @@ Every test run takes the person's start options (`withRunStart` in `src/glue.ts`
 `piwi.runHeaded` and `piwi.runHoldFailures` at each run: `headed: true` when Run headed is on, `holdFailures` when Hold
 failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
 Testing view's and Verify ×3 included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
-**Piwi: Run options…** (`piwi.runOptions`) changes them in a QuickPick, writing the workspace's settings when they hold a
-value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
+**Piwi: Turn headed runs on or off** (`piwi.toggleRunHeaded`) and **Piwi: Hold failures from each run's start…**
+(`piwi.setRunHoldFailures`) change them, and **Piwi: Run options…** (`piwi.runOptions`) offers both in a QuickPick, each written in the user's settings, which no workspace overrides (both are
+application-scoped), and the status bar item's tooltip ends with them (`runStartLine`).
 
 ### Breakpoints
 
@@ -592,9 +605,9 @@ What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#
 service's reference.
 
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
-`stopActions`): **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a stop the pause bar shows,
+`stopActions`): **Pick a locator**, **Record**, **Assert** and **Assert a region** at a stop the pause bar shows,
 **Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
-Finish (`stopLensControls`): Run to cursor, End test and each action are in its hover, so the row fits beside the line's
+Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits beside the line's
 own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
 (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
 `piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
@@ -682,11 +695,11 @@ the item's own action (a recording's controls follow it), which depends on the s
 - a test is stopped: **Go to the stopped line** (`piwi.showStop`), then the connected state's action;
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`) unless
   it shows the runs' line;
-- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
-  linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
+- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Read the instance and the
+  configs again**, its tooltip linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
-  `retry` action): **Piwi: Reload Piwi**; the service also reads it again as the restarted app rewrites its discovery
-  file;
+  `retry` action): **Piwi: Read the instance and the configs again**; the service also reads it again as the restarted
+  app rewrites its discovery file;
 - not connected: **Piwi: Connect…**;
 - the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
   (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
@@ -810,7 +823,10 @@ service's reference.
 `src/recording.ts` records a test from the editor.
 
 - **Piwi: Record here…** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
-  test, function and class it records a new `test`; anywhere else, `steps` there.
+  test, function and class it records a new `test`; anywhere else, `steps` there. Ctrl+. and the Refactor… menu offer
+  it as a code action (kind `refactor.piwi`) where `piwi/recordPlace` says it writes, under the service's title
+  (**Piwi: record a test here…**, **Piwi: record steps here…**), recording at the line it asked about (`piwi.record`
+  with the document's `uri` and the `line`); the light bulb, asked on every cursor move, does not.
 - **Piwi: Record a new test file…** creates a spec first (`file`), next to the active test file or in the config's
   `testDir`.
 
@@ -831,7 +847,7 @@ at `RecordResult.placement`), with the service's import edit (`importEdit`) in t
 
 Once the recording stopped, a warning on a step with other verified locators (`RecordingStep.locators`) offers each one
 as a quick fix (a `CodeActionProvider` on the diagnostic, `locatorChoices` in `src/glue.ts`).
-**Use getByTestId('pay')** puts it in place of the written locator, found on the line exactly once, as one workspace
+**Piwi: use getByTestId('pay')** puts it in place of the written locator, found on the line exactly once, as one workspace
 edit. None is offered while it records, since the next update writes the block again.
 
 ### Edits, recording from a paused test, and Stop
@@ -912,7 +928,7 @@ The run is the one a profile run's command started, by its ref, or the editor's 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
 has no flaky result (`testOutcome` shows one as passed), so a flaky test's item carries the `flaky` tag
-(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with *flaky* (`flakyMark`). Every known test's
+(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with _flaky_ (`flakyMark`). Every known test's
 item also carries its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. An item has no
 description: the view names an item by its description when it has one, in place of its title. A result is published with its own
 duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none
@@ -1029,10 +1045,10 @@ Chromium. The window keeps its secrets in a file (`--password-store=basic`): wit
 never answers and no run starts.
 
 `scripts/record-loop.mjs` films the docs' loop of a recording, `apps/docs/public/videos/editor-recording-loop.mp4`, on
-the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, copied into its
-`node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from the loop's
-Playwright config (`--window-position`, `--window-size`), and the script drives it over its debugging port, as a
-person's trusted input. The stub instance lists the page object method the coupon's steps fold into.
+the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, which `writeWorkspace`
+copies into its `node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from
+the loop's Playwright config (`--window-position`, `--window-size`), and the script drives it over its debugging port,
+as a person's trusted input. The stub instance lists the page object method the coupon's steps fold into.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in

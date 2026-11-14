@@ -185,7 +185,7 @@ class GlueTest {
         assertEquals(
             Glue.StatusView(
                 "Piwi: unreachable",
-                "$problem\nPiwi reads it again on its own; Reload Piwi reads it now.",
+                "$problem\nPiwi reads it again on its own, and now on Read the instance and the configs again.",
                 null,
                 Glue.StatusAction.RETRY,
                 Glue.StatusIcon.UNREACHABLE,
@@ -2271,6 +2271,91 @@ class GlueTest {
     }
 
     @Test
+    fun `the settings page's groups, choices and defaults are the editor service's registry`() {
+        val file = java.io.File("../../packages/editor/src/settings.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val registry = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        val groups = registry.getAsJsonArray("groups").associate { it.asJsonObject.let { g -> g["id"].asString to g["title"].asString } }
+        assertEquals(groups.entries.toList(), SettingsWords.GROUPS.entries.toList())
+        val settings = registry.getAsJsonArray("settings").map { it.asJsonObject }.filter { !it["jetbrains"].isJsonNull }
+        val choices = settings.filter { it.has("choices") }.associate { setting ->
+            setting["jetbrains"].asString to setting.getAsJsonArray("choices").map { it.asJsonObject }.associate { choice ->
+                val label = choice["label"]
+                choice["value"].asString to if (label.isJsonPrimitive) label.asString else label.asJsonObject["jetbrains"].asString
+            }
+        }
+        assertEquals(choices.mapValues { it.value.entries.toList() }.entries.toList(), SettingsWords.CHOICES.mapValues { it.value.entries.toList() }.entries.toList())
+        // The combos list each option's choices in the registry's order.
+        val lists = mapOf(
+            "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
+            "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
+            "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
+            "codeLens" to Glue.CODE_LENS_CHOICES,
+        )
+        assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
+        // A team's option is the project's shared setting, a project's the person's in this project (`PiwiLocalSettings`),
+        // a person's own the IDE's (`PiwiUserSettings`), each with its default.
+        for (setting in settings) {
+            val field = setting["jetbrains"].asString
+            val state: Any = when (setting["scope"].asString) {
+                "team" -> PiwiSettings.State()
+                "project" -> PiwiLocalSettings.State()
+                else -> PiwiUserSettings.State()
+            }
+            val value = state.javaClass.getMethod("get" + field.replaceFirstChar(Char::uppercase)).invoke(state)
+            val expected = setting["default"].let { if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asString }
+            assertEquals(field, expected, value)
+        }
+    }
+
+    @Test
+    fun `each settings group links its section of the docs' Editor settings page`() {
+        assertEquals("https://piwitests.dev/reference/editor-settings#in-the-editor", SettingsWords.docsUrl("editor"))
+        assertEquals("https://piwitests.dev/reference/editor-settings#agents-mcp", SettingsWords.docsUrl("agents"))
+        assertEquals("https://piwitests.dev/reference/editor-settings", PiwiHelp().getHelpPageUrl(PiwiHelp.SETTINGS_TOPIC))
+        assertEquals(null, PiwiHelp().getHelpPageUrl("dev.piwitests.piwi.other"))
+    }
+
+    @Test
+    fun `the project's settings files, as the settings page names them`() {
+        assertEquals(Glue.StoreFiles(".idea/piwi.xml", ".idea/workspace.xml"), Glue.storeFiles("/home/me/shop/.idea/misc.xml"))
+        assertEquals(
+            Glue.StoreFiles(".idea/.idea.Shop/.idea/piwi.xml", ".idea/.idea.Shop/.idea/workspace.xml"),
+            Glue.storeFiles("/home/me/Shop/.idea/.idea.Shop/.idea/misc.xml"),
+        )
+        assertEquals(
+            Glue.StoreFiles(".idea/.idea.Shop/.idea/piwi.xml", ".idea/.idea.Shop/.idea/workspace.xml"),
+            Glue.storeFiles("C:\\src\\Shop\\.idea\\.idea.Shop\\.idea\\misc.xml"),
+        )
+        assertEquals(Glue.StoreFiles(".idea/piwi.xml", ".idea/workspace.xml"), Glue.storeFiles(null))
+        // A project of one file keeps every setting in it and its workspace file.
+        assertEquals(Glue.StoreFiles("shop.ipr", "shop.iws"), Glue.storeFiles("/home/me/shop.ipr"))
+    }
+
+    @Test
+    fun `a copied MCP configuration names the AI Assistant only while it is enabled`() {
+        assertEquals("your agent's MCP settings", Glue.mcpPasteWhere(aiAssistant = false))
+        assertEquals(
+            "your agent's MCP settings, such as Settings → Tools → AI Assistant → Model Context Protocol",
+            Glue.mcpPasteWhere(aiAssistant = true),
+        )
+    }
+
+    @Test
+    fun `the words both editors write are the editor service's, which VS Code reads`() {
+        val file = java.io.File("../../packages/editor/src/words.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val table = com.google.gson.Gson().fromJson(file.readText(), Map::class.java)
+        assertEquals(table, EditorWords.WORDS)
+        assertEquals(table.keys.toList(), EditorWords.WORDS.keys.toList())
+        // A stop's controls, its code actions and a worker read from the table, the caret for the cursor.
+        assertEquals("Run to the caret", Glue.StopControl.RUN_TO_CARET.label)
+        assertEquals("Assert region", Glue.StopAction.ASSERT_REGION.inlayLabel)
+        assertEquals("Worker 2", Glue.workerName(1))
+        assertEquals("Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise", Glue.holdFailuresLabel("auto"))
+    }
+
+    @Test
     fun `an instance on this machine is tried on every loopback address`() {
         assertEquals(
             listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),
@@ -2756,8 +2841,8 @@ class GlueTest {
         val line = "await page.$written.click();"
         assertEquals(
             listOf(
-                Glue.LocatorChoice("Use getByTestId('pay')", "getByTestId('pay')", 11, 41),
-                Glue.LocatorChoice("Use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
+                Glue.LocatorChoice("Piwi: use getByTestId('pay')", "getByTestId('pay')", 11, 41),
+                Glue.LocatorChoice("Piwi: use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
             ),
             Glue.locatorChoices(line, step),
         )
@@ -2776,11 +2861,11 @@ class GlueTest {
     @Test
     fun `the banner says what the recording does and offers what applies`() {
         assertEquals(
-            Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Piwi: opening the browser", listOf(Glue.RecordingAction.STOP)),
             Glue.recordingBanner("starting", 0, edited = false, stopping = false, message = null),
         )
         assertEquals(
-            Glue.RecordingBanner("Piwi is recording what you do in the browser · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Piwi: recording · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
             Glue.recordingBanner("recording", 1, edited = false, stopping = false, message = " "),
         )
         assertEquals(
@@ -2791,8 +2876,13 @@ class GlueTest {
             listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.KEEP_EDITS),
             Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).actions,
         )
+        // Edited, it says what Resume and Keep my edits do to the block, as VS Code's message does.
         assertEquals(
-            Glue.RecordingBanner("Piwi: stopping the recording…", emptyList()),
+            EditorWords.WORDS.getValue("recording.edited"),
+            Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).text,
+        )
+        assertEquals(
+            Glue.RecordingBanner("Piwi: stopping the recording", emptyList()),
             Glue.recordingBanner("recording", 3, edited = true, stopping = true, message = "ignored"),
         )
     }
@@ -3290,7 +3380,7 @@ class GlueTest {
         assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\"}", Gson().toJson(Glue.withRunStart(selection, false, "auto")))
         assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\",\"headed\":true,\"holdFailures\":false}", Gson().toJson(Glue.withRunStart(selection, true, "off")))
         assertEquals(listOf("auto", "on", "off"), Glue.HOLD_FAILURES_CHOICES)
-        assertEquals("Off from each run's start", Glue.holdFailuresLabel("off"))
+        assertEquals(EditorWords.WORDS.getValue("hold.off"), Glue.holdFailuresLabel("off"))
     }
 
     @Test

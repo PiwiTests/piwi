@@ -430,10 +430,12 @@ describe('the layers of a worker’s lane view', () => {
 
   it('never sends a secret the test typed, and nothing once the lane view is off', () => {
     const said = JSON.stringify(layers());
+    // A number typed stands on its own: the same digits inside a timestamp or an image's base64 are not it.
+    const typed = (digits: string) => new RegExp(`(?<![0-9A-Za-z+/])${digits}(?![0-9A-Za-z+/])`);
     expect(said).not.toContain(SECRET);
     expect(said).not.toContain(CARD);
-    expect(said).not.toContain(PIN);
-    expect(said).not.toContain(CODE);
+    expect(said).not.toMatch(typed(PIN));
+    expect(said).not.toMatch(typed(CODE));
     expect(offAt).toBeLessThan(Infinity);
     expect(layers().filter(({ at }) => at > offAt + 200)).toEqual([]);
   });

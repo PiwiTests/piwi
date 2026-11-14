@@ -128,6 +128,13 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/workspace.ts`: the configs the workspace holds and the git reads (`committedTextAt`, `mergeBase`, `headFiles`).
 - `src/actions.ts`: the editors' action catalog: each action's VS Code command id, JetBrains action ids and title,
   which `tests/actions.test.ts` holds both manifests to.
+- `src/settings.ts`, `src/settings.json`: the editors' settings registry: each option's VS Code key and JetBrains
+  field, its group and order, its scope (a team's or a person's), type, default and choice labels, the editor's own
+  word where the two differ; VS Code's manifest and the JetBrains settings page are held to it.
+- `src/words.ts`, `src/words.json`: the words both clients write themselves (a stop's controls and code actions with
+  their short labels, a recording's states and controls, a worker's and a CI lane's name, the choices of Hold failures),
+  `{name}` for a value the client fills in; VS Code reads them, and the JetBrains plugin's `EditorWords.WORDS` restates
+  them, held to the file by `GlueTest`.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).
@@ -217,8 +224,8 @@ the custom messages of `src/protocol.ts`:
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
-  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`,
-    `piwi/newTestFile`.
+  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/recordPlace`,
+    `piwi/renderSteps`, `piwi/newTestFile`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
@@ -422,6 +429,12 @@ The failures are placed again on the timer that analyzes an edited document, and
 
 ### File summary and the test at a position
 
+The summary's lines are filtered once for both clients by the person's choice (`EditorCredentials.codeLens`,
+`lensesShown`): every line; with `problems`, a failure's reason and evidence and a file's uncovered changes alone
+(`SummaryLine.problem`); with `off`, none. A test's line, its gutter mark, always stays. A spec's locator line whose only
+test is the one whose call holds it is left out (`locatorLineTellsMore`), and `EditorCredentials.locatorWarnings` false
+leaves out the brittle locators' diagnostics.
+
 On a spec, `piwi/fileSummary` gives each test's line:
 
 - its latest result (`status`), which the clients draw in the gutter;
@@ -440,8 +453,13 @@ On a spec, `piwi/fileSummary` gives each test's line:
   spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
   `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
   the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
-  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`, `failureDebugRun`: the one test of its spec
-  titled as it failed), stopping at its own line, for **Debug this failure**.
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug this
+  failure**, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
+  spec titled as it failed (`failureTestActions`).
+
+Every code action the service answers carries Piwi's name, its words after it starting lower-case (`piwiActionTitle`:
+`Piwi: heal with getByRole(…)`, `Piwi: run this test`); the clients' recorded-locator fixes read the same
+(`Piwi: use getByTestId('pay')`).
 
 `piwi/testAt` answers, for a position of a spec:
 
@@ -774,7 +792,7 @@ names the commit (`desktop-<id>-at-<commit>`, `checkoutCommitOf` in `@piwitests/
 context's (`root` null), so its stops are at the checkout's files; its session says so (`RunSession.checkout`), and the
 clients name the reproduction and its commit where it stops and offer no Stop, the app's to give (`canStopRun`). A
 reproduction holds its failures from its start (`watched`); a bisect step or a Flake Lab, a run nobody attends, none.
-The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record here is refused there.
+The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record is refused there.
 
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
@@ -1257,7 +1275,7 @@ At a stop of a job the desktop app runs in a throwaway checkout (`RunSession.che
 code is made from the checkout's file as the editor holds it, else as it is on disk (`StopActionsOptions.copy`, a
 regular file of 2 MB at most), its line followed through the editor's edits as a workspace file's (the service follows
 a document it opens of a file a checkout's worker stands stopped in, `inCheckoutStop`), and sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
-checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record here is refused
+checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record is refused
 there (`checkoutRecordWhy`), and the job's picks go to the desktop app's window, to copy, never to this editor's Send
 to editor, whose `piwi/applyPick` would write in the workspace's file of the same path.
 
@@ -1279,7 +1297,7 @@ removed or rewrote from its start.
 **Placement.** Each block goes where `placementBefore` puts a recording's (a chain broken over lines included), on the
 page expression `pageCandidates` gives there (`this.page` in a page object), with the config's preferred locators and
 the import of `expect` the file lacks (`blockImports`). The first code of a run adds that the stopped test goes on with
-the code it started with. `placementBefore` refuses, for Record here too:
+the code it started with. `placementBefore` refuses, for Record too:
 
 - a declaration's line: the block goes inside the body of a test or a function (`BlockPlacement.context`, where the
   line starts);
@@ -1817,6 +1835,9 @@ It finds:
   fixture named like a page that no page call of the test runs on (`todoPage`) is offered after `page`, as one that
   `may be a page object`;
 - the context there: `test`, `function`, `class` or `file`, which `piwi/record` checks against `into`;
+- what Record here writes at a line (`recordPlace`, `piwi/recordPlace`), for both editors' code action: a new test past
+  the last import outside every test, function and class, steps in a test's or a function's body, and nothing in a class
+  body between its members or on the imports, with the action's title (`Piwi: record a test here…`);
 - the names declared before the caret: a page object already declared is not instantiated again;
 - where the block goes and how it is indented: the caret's line when it is blank, else a new line after it, or after
   the statement whose brackets the caret is in (a multi-line `expect(`). A caret inside a bracket the file never closes

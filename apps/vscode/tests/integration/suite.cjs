@@ -125,18 +125,18 @@ const tests = {
         failure.range,
         vscode.CodeActionKind.QuickFix.value,
       );
-      return found?.some((a) => a.title.startsWith('Heal')) ? found : null;
+      return found?.some((a) => a.title.startsWith('Piwi: heal with')) ? found : null;
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
-    assert.ok(titles.includes("Heal: use getByRole('row', { name: /Mug/ })"), titles.join(' | '));
-    assert.ok(titles.includes('Open the trace'), titles.join(' | '));
-    assert.ok(titles.includes('Open the failure in the dashboard'), titles.join(' | '));
-    assert.ok(titles.includes('Copy context for agent'), titles.join(' | '));
-    const copy = actions.find((a) => a.title === 'Copy context for agent');
+    assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the trace'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the failure in the dashboard'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: copy context for agent'), titles.join(' | '));
+    const copy = actions.find((a) => a.title === 'Piwi: copy context for agent');
     await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
-    const heal = actions.find((a) => a.title.startsWith('Heal'));
+    const heal = actions.find((a) => a.title.startsWith('Piwi: heal with'));
     assert.ok(await vscode.workspace.applyEdit(heal.edit));
     const document = await vscode.workspace.openTextDocument(pageObject);
     assert.equal(document.lineAt(4).text, "  row = () => this.page.getByRole('row', { name: /Mug/ });");
@@ -709,8 +709,8 @@ const tests = {
       }, 'the terminal run’s lenses');
       const title = '$(debug-pause) Stopped at a breakpoint · Fill "one" locator(\'input\') · run in a terminal';
       assert.ok(lenses.includes(title), lenses.join(' | '));
-      // End test is in the stop's hover and the palette; the lens row keeps to five entries.
-      assert.ok(!lenses.includes('End test'), lenses.join(' | '));
+      // End the test is in the stop's hover and the palette; the lens row keeps to five entries.
+      assert.ok(!lenses.includes('End the test'), lenses.join(' | '));
       await vscode.commands.executeCommand('piwi.endTest');
       await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
     } finally {
@@ -740,6 +740,23 @@ const tests = {
       socket.destroy();
     }
     await waitFor(() => !sessionOf(), 'the end of the shared run');
+  },
+
+  async 'Ctrl+. offers Record here where the service says it writes'() {
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts'));
+    await vscode.window.showTextDocument(spec);
+    const titles = async (line) => {
+      const found = await vscode.commands.executeCommand(
+        'vscode.executeCodeActionProvider',
+        spec,
+        new vscode.Range(line, 0, line, 0),
+        'refactor.piwi',
+      );
+      return (found ?? []).map((a) => a.title);
+    };
+    await waitFor(async () => ((await titles(3)).includes('Piwi: record steps here…') ? true : null), 'Record here');
+    assert.deepEqual(await titles(1), ['Piwi: record a test here…']);
+    assert.deepEqual(await titles(0), []);
   },
 
   async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {

@@ -41,7 +41,7 @@ built with the `runner` feature.
 
 ```bash
 npm run runner:test          # unit tests (vitest)
-npm run runner:typecheck     # host and tests (tsc), then the window (nuxt typecheck; after runner:prepare)
+npm run runner:typecheck     # host and tests (tsc), then the window (nuxt typecheck, on the .nuxt the install prepares)
 npm run runner:lint
 npm run runner:format:check
 npm run runner:build         # dist/server.cjs (the host)

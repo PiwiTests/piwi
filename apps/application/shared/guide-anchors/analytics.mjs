@@ -41,7 +41,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'action',
     pages: DASHBOARD_PAGES,
     describes:
-      'The Export button, which previews the dashboard’s scope as a quality report to download as PDF, HTML, Markdown, Excel or JSON.',
+      'The Quality report button, which previews the dashboard’s scope as a quality report to download as PDF, HTML, Markdown, Excel or JSON.',
     requires: { capability: 'quality-reports' },
     doc: 'features/quality-reports#exporting-a-report',
     sample: { route: '/analytics' },
@@ -156,7 +156,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: DASHBOARD_PAGES,
     describes:
-      'The Headline numbers of a dashboard: pass rates, flaky tests, wasted CI minutes, open failure causes and time to fix, against the period before.',
+      'The Headline numbers of a dashboard: pass rates, flaky tests, wasted CI minutes, open failure clusters and time to fix, against the period before.',
     shownWhen: 'When the dashboard holds the Headline numbers widget, as Overview does.',
     help: 'analytics.stats',
     doc: 'features/analytics',
@@ -233,7 +233,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: DASHBOARD_PAGES,
     describes:
-      'The Time to fix chart: failure causes opened and fixed per bucket, the median time from first failure to fix, the fixes that held, open causes by age.',
+      'The Time to fix chart: failure clusters opened and fixed per bucket, the median time from first failure to fix, the fixes that held, open clusters by age.',
     shownWhen: 'When the dashboard holds it, as Overview does.',
     help: 'analytics.time-to-fix',
     doc: 'reference/analytics-widgets#where-the-pain-is',
@@ -346,7 +346,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: OTHER_DASHBOARD_PAGES,
     describes:
-      'The Fixes and triage widget: the failure causes fixed and whether the fixes held, the open ones assigned or linked to a ticket, the tests quarantined.',
+      'The Fixes and triage widget: the failure clusters fixed and whether the fixes held, the open ones assigned or linked to a ticket, the tests quarantined.',
     shownWhen: 'When the dashboard holds it, as the built-in Executive and Engineering dashboards do.',
     help: 'analytics.progress',
     doc: 'reference/analytics-widgets#where-the-pain-is',
@@ -357,7 +357,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: OTHER_DASHBOARD_PAGES,
     describes:
-      'The Risks widget: the metrics that moved the wrong way, the projects failing run after run, the oldest open failure causes and the quarantined tests.',
+      'The Risks widget: the metrics that moved the wrong way, the projects failing run after run, the oldest open failure clusters and the quarantined tests.',
     shownWhen: 'When the dashboard holds it, as the built-in Executive and Engineering dashboards do.',
     help: 'analytics.risks',
     doc: 'reference/analytics-widgets#where-the-pain-is',
@@ -368,7 +368,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: OTHER_DASHBOARD_PAGES,
     describes:
-      'The Ownership widget: per owner, the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own.',
+      'The Ownership widget: per owner, the open failure clusters assigned to them, and the flaky tests and wasted CI minutes of the tests they own.',
     shownWhen: 'When the dashboard holds it, as the built-in Engineering dashboard does.',
     help: 'analytics.ownership',
     doc: 'reference/analytics-widgets#where-the-pain-is',
@@ -439,7 +439,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: OTHER_DASHBOARD_PAGES,
     describes:
-      'A List widget: the latest runs, the open failure causes seen most, the flakiest tests or the top open scenario gaps, each opening its page.',
+      'A List widget: the latest runs, the open failure clusters seen most, the flakiest tests or the top open scenario gaps, each opening its page.',
     shownWhen: 'When a saved dashboard holds one.',
     help: 'analytics.list',
     doc: 'features/dashboards#widgets',

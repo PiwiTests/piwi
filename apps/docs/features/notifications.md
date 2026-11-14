@@ -172,4 +172,4 @@ Send a test email from **Settings → Notifications** to confirm delivery.
 - [Configuration reference](/reference/configuration): every environment variable
 - [Notification events & webhooks](/reference/notification-events): every event and the webhook body
 - [Quality reports](./quality-reports#report-schedules): scheduled quality reports sent to these channels
-- [Failure clusters & the inbox](./failure-clusters): what triggers the cluster events
+- [Failure clusters](./failure-clusters): what triggers the cluster events

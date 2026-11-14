@@ -456,13 +456,13 @@ export interface AnalyticsClusterItem {
 }
 
 export interface AnalyticsProgress {
-  /** Failure causes whose fix landed in the period. */
+  /** Failure clusters whose fix landed in the period. */
   fixed: number;
   /** Of those, the ones that have not failed again. */
   held: number;
-  /** Open failure causes someone is assigned to. */
+  /** Open failure clusters someone is assigned to. */
   assigned: number;
-  /** Open failure causes linked to a tracker ticket. */
+  /** Open failure clusters linked to a tracker ticket. */
   withTicket: number;
   releasedFromQuarantine: number;
   quarantined: number;
@@ -487,7 +487,7 @@ export interface AnalyticsRisks {
   worsening: AnalyticsRiskMetric[];
   /** Projects whose latest runs failed in a row, longest streak first. */
   failingProjects: Array<{ projectId: number; name: string; streak: number }>;
-  /** The oldest open failure causes. */
+  /** The oldest open failure clusters. */
   oldestOpen: AnalyticsClusterItem[];
   openCount: number;
   quarantine: { count: number; oldestDays: number | null };
@@ -518,7 +518,7 @@ export interface AnalyticsHandbacks {
   heals: { suggested: number; adopted: number; verified: number } | null;
   healPullRequests: { opened: number; merged: number; closed: number; verified: number } | null;
   /**
-   * Diagnoses written and rated, the diagnosed failure causes fixed, those
+   * Diagnoses written and rated, the diagnosed failure clusters fixed, those
    * whose fix changed the files the diagnosis named, and those that failed again.
    */
   diagnoses: {
@@ -745,33 +745,33 @@ export interface AnalyticsTimeToFix {
   bucketDays: number;
   opened: number;
   fixed: number;
-  /** Median and 90th percentile of the time to fix over the causes fixed in the period, in days. */
+  /** Median and 90th percentile of the time to fix over the clusters fixed in the period, in days. */
   medianDays: number | null;
   p90Days: number | null;
   /** The median over the comparison period. */
   previousMedianDays: number | null;
   /** Fixes of the period that have not regressed, 0–100. */
   fixesHeldPct: number | null;
-  /** Open failure causes by age, youngest first. */
+  /** Open failure clusters by age, youngest first. */
   openByAge: Array<{ label: string; count: number }>;
 }
 
 export interface AnalyticsOwnershipRow {
   /** The owner's name; null for the *Unowned* row. */
   owner: string | null;
-  /** Open failure causes assigned to the owner. */
+  /** Open failure clusters assigned to the owner. */
   openClusters: number;
   /** Distinct tests owned that passed only on a retry in the period. */
   flakyTests: number;
   /** Wasted CI minutes of the owner's tests in the period. */
   wastedMinutes: number;
-  /** Median time to fix, in days, over the causes the owner fixed in the period. */
+  /** Median time to fix, in days, over the clusters the owner fixed in the period. */
   medianTimeToFixDays: number | null;
 }
 
 export interface AnalyticsOwnership {
   rows: AnalyticsOwnershipRow[];
-  /** Open failure causes in scope, for the share each owner holds. */
+  /** Open failure clusters in scope, for the share each owner holds. */
   totalOpenClusters: number;
 }
 

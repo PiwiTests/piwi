@@ -780,6 +780,7 @@ describe('coverage in the editor', () => {
     expect(await hover(refunds, 1)).toBe('');
     expect(await client.sendRequest('piwi/fileSummary', { uri: uri(refunds) })).toEqual({
       file: {
+        problem: true,
         line: 0,
         title: `Uncovered changes: ${label}`,
         command: {

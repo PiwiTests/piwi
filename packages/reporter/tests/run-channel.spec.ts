@@ -330,7 +330,7 @@ describe('the worker’s run connection', () => {
     }
   });
 
-  it('takes Pick a locator only with a pairing, and Record here and Assert only with a record channel', () => {
+  it('takes Pick a locator only with a pairing, and Record and Assert only with a record channel', () => {
     const channel = formatRecordChannel({ path: '/tmp/channel.sock', token: TOKEN });
     expect(workerTakes({ PIWI_RUN_CHANNEL: channel })).toEqual(
       RUN_TAKES.filter((take) => take !== 'pick' && take !== 'record' && take !== 'assert'),
@@ -398,7 +398,7 @@ describe('the worker’s run connection', () => {
         value: {
           ok: false,
           message:
-            "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+            "Record needs the pause bar in the test's window, and this stop shows none: run the test headed.",
         },
       });
     } finally {

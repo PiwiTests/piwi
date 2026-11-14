@@ -15,7 +15,7 @@ The data lives in two places — back up both, together:
 1. **The database** — the SQLite file `.data/piwi.db` (the default), or your PostgreSQL database.
 2. **File storage** — `.data/storage/` (HTML reports, traces, attachments), unless you keep artifacts in [S3](./storage#s3-compatible-storage), in which case the bucket is your storage backup.
 
-Keep the server's `PIWI_SECRET_KEY` as well, stored apart from the backups (a password manager, your secret store): the AI keys, SCM and Jira tokens and webhook secrets in the database are encrypted with it. Restored under another key, they cannot be read, and each must be entered again. `PIWI_AUTH_SECRET` only signs session cookies: a new one signs everyone out.
+Keep the server's `PIWI_SECRET_KEY` as well, stored apart from the backups (a password manager, your secret store): the [credentials stored in the database](/guide/privacy#secrets-at-rest) are encrypted with it. Restored under another key, they cannot be read, and each must be entered again. `PIWI_AUTH_SECRET` only signs session cookies: a new one signs everyone out.
 
 The two must be consistent with each other: a database row points at a stored trace, so a backup that captures one without the other can dangle. The simplest way to guarantee consistency is to stop the container before copying; the online methods below avoid the downtime.
 
@@ -45,7 +45,7 @@ If artifacts are in S3, lean on the bucket's own durability and versioning rathe
 
 ## Restoring
 
-Restoring is also how you roll back after an upgrade goes wrong — the rollback path is "restore your backup", never "pull the old tag" against an already-migrated database.
+Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is not supported](./upgrading#downgrading-is-not-supported) gives the steps.
 
 1. **Stop the container.**
 2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, delete any leftover `.data/piwi.db-wal` and `.data/piwi.db-shm` files (the server runs SQLite in write-ahead-log mode, and a stale log would be replayed onto the restored file), put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; on a Linux host, hand the restored files back to the container's user with `sudo chown -R 1001:1001 .data`. For PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
@@ -55,13 +55,13 @@ Then confirm the running version at **Settings → About**, and that recent runs
 
 ## The desktop app
 
-The [desktop build](/features/desktop) bundles its own server, and its database and storage live in a per-machine data directory *outside* the app bundle, migrated on first launch exactly as the server does — so the same forward-only rule applies. Back up the folder below before a major version jump; a newer build will migrate it, an older one cannot open it.
+The [desktop build](/features/desktop) bundles its own server, and its database and storage live in a per-machine data directory *outside* the app bundle, so installing a newer build keeps them. A newer build migrates them on first launch exactly as the server does, so the same forward-only rule applies: back up the folder below before a major version jump; an older build cannot open it once migrated.
 
 The data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
 on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
-folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM
-tokens.
+folder** show it. Back up the parent folder while the app is closed: its `secret.key` is the app's `PIWI_SECRET_KEY`, which
+decrypts the stored credentials.
 
 ## When to back up
 

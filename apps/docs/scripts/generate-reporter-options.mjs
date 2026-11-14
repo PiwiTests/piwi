@@ -262,7 +262,7 @@ editLink: false
 
 # Reporter options
 
-These options go in the reporter's options object in \`playwright.config.ts\`, or in \`wrapConfig\`'s second argument (see [Reporter](/guide/reporter#configuration-options)). Most of them can also be set with the environment variable shown in their row. The variable only fills in an option you left unset, so an explicit option always wins, with one exception: on a plain reporter entry, \`PIWI_VERBOSE\` overrides even an explicit \`verbose\` option (under \`wrapConfig\` the option wins).
+These options go in the reporter's options object in \`playwright.config.ts\`, or in \`wrapConfig\`'s second argument (see [Reporter](/guide/reporter#configuration-options)). Most of them can also be set with the environment variable shown in their row. The variable only fills in an option you left unset, so an explicit option wins, with two exceptions: \`PIWI_DESKTOP_APP\` overrides the \`desktopApp\` option, and on a plain reporter entry, \`PIWI_VERBOSE\` overrides even an explicit \`verbose\` option (under \`wrapConfig\` the option wins).
 
 ## Values from \`.env\`
 

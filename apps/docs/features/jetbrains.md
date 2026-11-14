@@ -6,6 +6,8 @@ lang: en-US
 
 # JetBrains plugin
 
+<Needs editor />
+
 The Piwi plugin brings the [editor extensions](./editors) to the JetBrains IDEs with the LSP API: WebStorm, IntelliJ
 IDEA Ultimate, Rider and the others, from 2024.1. It runs the same editor service as the VS Code extension, so the
 editor pages describe it too, with the JetBrains names of each action. This page lists what the plugin needs, and
@@ -24,9 +26,9 @@ Android Studio lack the LSP API the plugin needs.
 
 The plugin starts the editor service with the project's Node.js interpreter, 20 or later (**Settings → Languages &
 Frameworks → Node.js**, which the status bar opens when it is missing or older), once it finds a Playwright config
-within four folders of the project's (in Rider, the solution's) or of its Git root, and looks again on **Tools → Piwi →
-Reload Piwi**. It reads the connection the reporter already uses; otherwise, **Settings → Tools → Piwi** signs you in
-with the browser: [Editor connection](./editor-connection).
+within four folders of the project's (in Rider, the solution's) or of its Git root and you open a file, and looks again
+on **Tools → Piwi → Read the instance and the configs again**. It reads the connection the reporter already uses;
+otherwise, **Settings → Tools → Piwi** signs you in with the browser: [Editor connection](./editor-connection).
 
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 
@@ -68,20 +70,19 @@ line** on the debugger's Show Execution Point key:
   can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
   **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, a failure's trace
   and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
-- **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
-  icon for its state, and the error color for a new failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
+- **[The status bar](./editor-status-bar)** item has an icon for the run's state, and the error color for a new
+  failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
-  way. A click opens a menu of the actions, led by what the item calls for:
-  [the status bar](./editor-status-bar). While a run is [shared live](./share-live), the menu opens its page,
+  way. While a run is [shared live](./share-live), its menu opens the run's page,
   copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
   menu leaves out what does not apply.
-- **[Recording](./editor-recording)** starts from **Record here**, Alt+Enter or Alt+Insert, and **New → Playwright test
+- **[Recording](./editor-recording)** starts from **Record here…**, Alt+Enter or Alt+Insert, and **New → Playwright test
   (recorded)…** on a folder of a Playwright config; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
   started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
-  caret**, **Finish** and **End test**; they are also in the status bar item's menu, after each stop to go to, and
+  the caret**, **Finish** and **End the test**; they are also in the status bar item's menu, after each stop to go to, and
   under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in the Piwi tool window's **Paused page**
   tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
@@ -97,16 +98,16 @@ line** on the debugger's Show Execution Point key:
   off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
   tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate
   and Rider; where it lacks one, the option is off and says why.
-- **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
+- **The severity of a failure**: **Settings → Tools → Piwi → In the editor** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
-- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → AI Assistant** chooses whether the copied
+- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → Agents (MCP)** chooses whether the copied
   configuration holds the IDE's key or has the agent sign in through the browser
   ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
 - **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the runs' MCP server configuration for
-  agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
+  agents** gives an agent that starts commands (the AI Assistant among them) the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;
-  **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
+  **Settings → Tools → Piwi → Agents (MCP)** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
   stopped test's browser with Playwright tools**, after a warning.
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.

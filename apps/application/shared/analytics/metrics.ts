@@ -24,7 +24,7 @@ export const DIMENSIONS = [
   { id: 'feature', label: 'Feature', grain: 'test' },
   { id: 'spec-directory', label: 'Spec directory', grain: 'test' },
   { id: 'error-type', label: 'Error type', grain: 'cluster' },
-  { id: 'cluster-status', label: 'Failure cause status', grain: 'cluster' },
+  { id: 'cluster-status', label: 'Failure cluster status', grain: 'cluster' },
   { id: 'assignee', label: 'Assignee', grain: 'cluster' },
   { id: 'gap-class', label: 'Gap class', grain: 'gap' },
   { id: 'gap-feature', label: 'Feature', grain: 'gap' },
@@ -222,7 +222,7 @@ export const METRICS = [
   },
   {
     id: 'open-failure-causes',
-    label: 'Open failure causes',
+    label: 'Open failure clusters',
     unit: 'count',
     betterWhen: 'lower',
     definition: 'Failure clusters that are open and not snoozed at the end of the period.',
@@ -233,7 +233,7 @@ export const METRICS = [
   },
   {
     id: 'failure-causes-opened',
-    label: 'Failure causes opened',
+    label: 'Failure clusters opened',
     unit: 'count',
     betterWhen: 'lower',
     definition: 'Failure clusters created inside the period.',
@@ -244,7 +244,7 @@ export const METRICS = [
   },
   {
     id: 'failure-causes-fixed',
-    label: 'Failure causes fixed',
+    label: 'Failure clusters fixed',
     unit: 'count',
     betterWhen: 'higher',
     definition: 'Failure clusters whose fix landed inside the period.',
@@ -266,7 +266,7 @@ export const METRICS = [
   },
   {
     id: 'oldest-open-failure-cause',
-    label: 'Oldest open failure cause',
+    label: 'Oldest open failure cluster',
     unit: 'days',
     betterWhen: 'lower',
     definition: 'Age of the oldest open failure cluster.',
@@ -390,7 +390,7 @@ export const METRICS = [
     unit: 'percent',
     betterWhen: 'higher',
     definition:
-      'Diagnosed failure causes fixed in the period whose fix changed the files the diagnosis named, over the diagnosed failure causes fixed in the period.',
+      'Diagnosed failure clusters fixed in the period whose fix changed the files the diagnosis named, over the diagnosed failure clusters fixed in the period.',
     source: 'live',
     grain: 'handback',
     dimensions: [],

@@ -1,13 +1,14 @@
 ---
-title: Integrations
+title: Jira Cloud
 description: "Connect Jira Cloud to the dashboard: the token and permissions it needs, trusted hosts, status sync and the inbound webhook."
 lang: en-US
 ---
 
-# Integrations
+# Jira Cloud
 
-Connect an issue tracker, bind a project to it, and the project's links to the tracker stop being dead URLs: Piwi
-fetches the ticket's title and status through the connection and keeps the badge current when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
+Connect Jira Cloud under **Settings → Integrations**, bind a project to it, and the project's links to Jira stop
+being dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current when
+you refresh. Jira Server and Data Center are not supported. This page sets up the connection; filing and syncing
 issues from a failure is [Issue tracking (Jira)](/features/issue-tracking). Zephyr Scale Cloud has
 [its own page](./zephyr-scale).
 

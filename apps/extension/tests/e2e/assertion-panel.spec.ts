@@ -128,7 +128,7 @@ test.describe('assertion-panel.js', () => {
     await expect.poll(panel).not.toBeNull();
     expect(await panel()).toEqual({
       lang: 'fr',
-      label: 'Assertions suggérées',
+      label: 'Assertions',
       title: '3 assertions suggérées',
       sub: "Avec le locator getByTestId('submit-btn')",
       close: 'Fermer',

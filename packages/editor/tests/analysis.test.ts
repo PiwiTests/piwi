@@ -12,8 +12,10 @@ import {
   headedCommand,
   locatorChainOnLine,
   locatorCompletionSite,
+  locatorLineTellsMore,
   pauseAtValue,
   pickEditOnLine,
+  piwiActionTitle,
   placeLine,
   testCalls,
 } from '../src/analysis';
@@ -556,5 +558,39 @@ describe('withoutComments', () => {
       ' '.repeat('/* await page.pause();'.length),
       '                      await page.pause();',
     ]);
+  });
+});
+
+describe('piwiActionTitle', () => {
+  test('names a quick fix Piwi, its words after the colon in lower case', () => {
+    expect(piwiActionTitle('Run this test')).toBe('Piwi: run this test');
+    expect(piwiActionTitle('Open the trace')).toBe('Piwi: open the trace');
+  });
+
+  test('reads a heal as heal with its locator', () => {
+    expect(piwiActionTitle("Heal: use getByRole('button', { name: 'Pay' })")).toBe(
+      "Piwi: heal with getByRole('button', { name: 'Pay' })",
+    );
+  });
+
+  test('leaves a title already named Piwi as it is', () => {
+    expect(piwiActionTitle("Piwi: use getByTestId('pay')")).toBe("Piwi: use getByTestId('pay')");
+  });
+});
+
+describe('locatorLineTellsMore', () => {
+  const spans = [
+    { id: 7, from: 2, to: 6 },
+    { id: 8, from: 8, to: 12 },
+  ];
+
+  test('drops a locator line inside the call of its only test', () => {
+    expect(locatorLineTellsMore(4, 7, spans)).toBe(false);
+  });
+
+  test('keeps one of several tests, one outside its test, and one of another test', () => {
+    expect(locatorLineTellsMore(4, null, spans)).toBe(true);
+    expect(locatorLineTellsMore(14, 7, spans)).toBe(true);
+    expect(locatorLineTellsMore(10, 7, spans)).toBe(true);
   });
 });

@@ -127,9 +127,9 @@ test.describe.serial('project URL patterns', () => {
     await expect(staging.getByRole('button', { name: /^Add all/ })).toHaveCount(0);
 
     await production.getByRole('button', { name: 'Add all production suggestions' }).click();
-    await expect(card.getByLabel('URL pattern')).toHaveCount(2);
+    await expect(card.getByLabel('URL pattern', { exact: true })).toHaveCount(2);
     for (const [index, pattern] of ['https://admin.shop.example/**', 'https://shop.example/**'].entries()) {
-      await expect(card.getByLabel('URL pattern').nth(index)).toHaveValue(pattern);
+      await expect(card.getByLabel('URL pattern', { exact: true }).nth(index)).toHaveValue(pattern);
       await expect(card.getByLabel('Environment').nth(index)).toHaveValue('production');
     }
     await expect(production).toBeHidden();
@@ -142,7 +142,7 @@ test.describe.serial('project URL patterns', () => {
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
-    await expect(card.getByRole('heading', { name: 'Browser extension URLs' })).toBeVisible();
+    await expect(card.getByRole('heading', { name: 'URL patterns' })).toBeVisible();
     await expect(card.getByText('No pattern yet.')).toBeVisible();
     await card.getByRole('button', { name: 'Add https://staging.shop.example/**' }).click();
     await expect(card.getByLabel('Environment')).toHaveValue('staging');
@@ -176,7 +176,7 @@ test.describe.serial('project URL patterns', () => {
 
     await page.reload();
     await waitForHydration(page);
-    await expect(card.getByLabel('URL pattern')).toHaveValue('https://staging.shop.example/**');
+    await expect(card.getByLabel('URL pattern', { exact: true })).toHaveValue('https://staging.shop.example/**');
     await expect(card.getByLabel('Path prefix', { exact: true })).toHaveValue('/app');
     await expect(card.getByLabel('Tests’ path prefix')).toHaveValue('/v2');
     // A pattern already in the list is no longer suggested.
@@ -189,7 +189,7 @@ test.describe.serial('project URL patterns', () => {
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await card.getByRole('button', { name: 'Add a pattern' }).click();
-    await card.getByLabel('URL pattern').last().fill('shop.example/**');
+    await card.getByLabel('URL pattern', { exact: true }).last().fill('shop.example/**');
     await expect(card.getByText('Start with http://, https:// or a wildcard')).toBeVisible();
     await expect(card.getByRole('button', { name: 'Save patterns' })).toBeDisabled();
   });

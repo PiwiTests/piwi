@@ -470,7 +470,7 @@ const headerActions = computed(() => {
   }
   if (!isHidden('quality-reports')) {
     actions.push({
-      label: 'Export',
+      label: 'Quality report',
       icon: 'i-lucide-file-down',
       variant: 'outline',
       color: 'neutral',

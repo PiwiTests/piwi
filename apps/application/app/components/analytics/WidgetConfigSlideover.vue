@@ -101,7 +101,7 @@ const breakdownItems = computed(() => [
 ]);
 const SOURCE_LABELS: Record<(typeof LIST_SOURCES)[number], string> = {
   runs: 'Latest runs',
-  'failure-clusters': 'Open failure causes',
+  'failure-clusters': 'Open failure clusters',
   'flaky-tests': 'Flakiest tests',
   'scenario-gaps': 'Open scenario gaps',
 };

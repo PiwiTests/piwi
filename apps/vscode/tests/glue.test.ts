@@ -18,8 +18,10 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
+import { CLIENT_WORDS } from '@piwitests/editor/words';
 import {
   DONT_SHOW_AGAIN,
+  HOLD_FAILURES_CHOICES,
   noticeShown,
   withHiddenMessage,
   OwnRunCounts,
@@ -103,7 +105,6 @@ import {
   type TextSpan,
   type TreeTest,
   runOptionPicks,
-  runOptionTarget,
   runStartChoices,
   runStartLine,
   runStartOptions,
@@ -148,6 +149,14 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
     },
   ],
 });
+
+/** A setting of the extension's manifest, from whichever of its groups holds it. */
+function manifestSetting(key: string): unknown {
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')) as {
+    contributes: { configuration: Array<{ properties: Record<string, unknown> }> };
+  };
+  return manifest.contributes.configuration.find((group) => key in group.properties)?.properties[key];
+}
 
 describe('statusMenu', () => {
   const idle = {
@@ -1239,8 +1248,10 @@ describe('a notice of the service', () => {
   });
 
   test('can be hidden by every kind the service names, in the settings', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
-    const setting = manifest.contributes.configuration.properties['piwi.hiddenMessages'];
+    const setting = manifestSetting('piwi.hiddenMessages') as {
+      items: { enum: string[]; enumDescriptions: string[] };
+      scope: string;
+    };
     expect(setting.items.enum).toEqual([...NOTICE_KEYS]);
     expect(setting.items.enumDescriptions).toHaveLength(NOTICE_KEYS.length);
     expect(setting.scope).toBe('application');
@@ -1381,9 +1392,9 @@ describe('a recorded line’s warning', () => {
     const start = line.indexOf(written);
     const end = start + written.length;
     expect(locatorChoices(line, step)).toEqual([
-      { title: "Use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
+      { title: "Piwi: use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
       {
-        title: "Use getByRole('button', { name: 'Pay' })",
+        title: "Piwi: use getByRole('button', { name: 'Pay' })",
         locator: "getByRole('button', { name: 'Pay' })",
         start,
         end,
@@ -2631,6 +2642,16 @@ describe('how every run of the window starts', () => {
     );
   });
 
+  test('word Hold failures as the editors’ words table does, in the setting too', () => {
+    const whole = (['hold.auto', 'hold.on', 'hold.off'] as const).map((key) => `${CLIENT_WORDS[key]}.`);
+    expect((manifestSetting('piwi.runHoldFailures') as { enumDescriptions: string[] }).enumDescriptions).toEqual(whole);
+    expect(HOLD_FAILURES_CHOICES.map((c) => [c.label, `${c.detail}.`])).toEqual([
+      ['Auto', whole[0]],
+      ['On', whole[1]],
+      ['Off', whole[2]],
+    ]);
+  });
+
   test('Run options… offers both, with the current choice', () => {
     const picks = runOptionPicks({ headed: false, holdFailures: 'on' });
     expect(picks.map((p) => [p.option, p.label, p.description])).toEqual([
@@ -2641,13 +2662,6 @@ describe('how every run of the window starts', () => {
     expect(picks[0]!.detail).toBe(
       'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
     );
-  });
-
-  test('Run options… writes to the workspace’s settings only when they hold a value', () => {
-    expect(runOptionTarget(undefined)).toBe('global');
-    expect(runOptionTarget({})).toBe('global');
-    expect(runOptionTarget({ workspaceValue: 'off' })).toBe('workspace');
-    expect(runOptionTarget({ workspaceValue: false })).toBe('workspace');
   });
 });
 

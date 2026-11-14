@@ -376,11 +376,12 @@ export class GitHubProvider extends ScmProvider {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         const msg = body?.message ?? `GitHub API returned ${res.status}`;
         if (res.status === 403 && msg.toLowerCase().includes('rate limit')) {
-          return 'GitHub API rate limit exceeded. Set an SCM token in Settings → AI to increase the limit.';
+          return 'GitHub API rate limit exceeded. Set an SCM token in Settings → Source control to increase the limit.';
         }
         if (res.status === 404)
           return 'Repository not found on GitHub. Check the remote URL in your test run metadata.';
-        if (res.status === 401) return 'GitHub API authentication failed. Check your SCM token in Settings → AI.';
+        if (res.status === 401)
+          return 'GitHub API authentication failed. Check your SCM token in Settings → Source control.';
         return `GitHub API error: ${msg}`;
       }
       return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;

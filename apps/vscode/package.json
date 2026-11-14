@@ -78,7 +78,7 @@
         }
       },
       "piwi-reload": {
-        "description": "Reload Piwi: read the instance and the configs again",
+        "description": "Read the instance and the configs again",
         "default": {
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E004"
@@ -139,7 +139,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Reload Piwi](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Read the instance and the configs again](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {
@@ -260,8 +260,14 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openDocumentation",
+        "title": "Open the documentation",
+        "icon": "$(question)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.refresh",
-        "title": "Reload Piwi",
+        "title": "Read the instance and the configs again",
         "icon": "$(piwi-reload)",
         "category": "Piwi"
       },
@@ -326,6 +332,18 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.toggleRunHeaded",
+        "title": "Turn headed runs on or off",
+        "icon": "$(window)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.setRunHoldFailures",
+        "title": "Hold failures from each run's start…",
+        "icon": "$(debug-breakpoint-unsupported)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.openInDashboard",
         "title": "Open in dashboard",
         "category": "Piwi",
@@ -339,7 +357,7 @@
       },
       {
         "command": "piwi.openRunPage",
-        "title": "Open the run page",
+        "title": "Open the page of a run of this window",
         "category": "Piwi",
         "icon": "$(globe)"
       },
@@ -351,7 +369,7 @@
       },
       {
         "command": "piwi.openLiveRun",
-        "title": "Open the run in progress",
+        "title": "Open the branch's run in progress",
         "category": "Piwi",
         "icon": "$(globe)"
       },
@@ -396,6 +414,18 @@
         "title": "Debug this failure",
         "category": "Piwi",
         "icon": "$(debug-alt)"
+      },
+      {
+        "command": "piwi.verifyFailure",
+        "title": "Verify the test ×3",
+        "category": "Piwi",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "piwi.goToFailureTest",
+        "title": "Go to the test",
+        "category": "Piwi",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "piwi.rerunFailing",
@@ -921,6 +951,14 @@
         {
           "command": "piwi.debugFailure",
           "when": "false"
+        },
+        {
+          "command": "piwi.verifyFailure",
+          "when": "false"
+        },
+        {
+          "command": "piwi.goToFailureTest",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -1128,6 +1166,16 @@
           "group": "1_run@2"
         },
         {
+          "command": "piwi.verifyFailure",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bverify\\b/",
+          "group": "1_run@3"
+        },
+        {
+          "command": "piwi.goToFailureTest",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\btest\\b/",
+          "group": "0_go@1"
+        },
+        {
           "command": "piwi.openTrace",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\btrace\\b/",
           "group": "2_evidence@1"
@@ -1313,171 +1361,311 @@
         "when": "piwi.runStopped && !piwi.runFailed && debugState != 'stopped'"
       }
     ],
-    "configuration": {
-      "title": "Piwi",
-      "properties": {
-        "piwi.serverUrl": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first; then this setting; then the Piwi desktop app while it runs. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only. Choosing the desktop app with **Piwi: Connect** puts it first while it runs, on this machine only, and keeps this setting for when it does not."
-        },
-        "piwi.project": {
-          "type": "string",
-          "default": "",
-          "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
-        },
-        "piwi.breakpoints": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed."
-        },
-        "piwi.runHeaded": {
-          "type": "boolean",
-          "scope": "window",
-          "default": false,
-          "markdownDescription": "Run every test headed, with its browser window shown: each run Piwi starts from this window, **Verify ×3** included. Off, a run follows the Playwright config; a run with a `page.pause()` runs headed either way, as does a run with breakpoints when the project's `@piwitests/reporter` is older than 0.62.0. **Piwi: Run options…** changes it."
-        },
-        "piwi.runHoldFailures": {
-          "type": "string",
-          "scope": "window",
-          "enum": [
-            "auto",
-            "on",
-            "off"
-          ],
-          "enumDescriptions": [
-            "Piwi decides: on for a run with a breakpoint it can stop at or a page.pause(), off otherwise.",
-            "On from each run's start: a failed test waits at its line for an answer.",
-            "Off from each run's start: a failed test fails as it would without Piwi."
-          ],
-          "default": "auto",
-          "markdownDescription": "**Hold failures** of each run Piwi starts from this window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it."
-        },
-        "piwi.hiddenMessages": {
-          "type": "array",
-          "scope": "application",
-          "uniqueItems": true,
-          "items": {
+    "configuration": [
+      {
+        "title": "Connection",
+        "order": 0,
+        "properties": {
+          "piwi.serverUrl": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first; then this setting; then the Piwi desktop app while it runs. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only. Choosing the desktop app with **Piwi: Connect** puts it first while it runs, on this machine only, and keeps this setting for when it does not. [Documentation](https://piwitests.dev/reference/editor-settings#connection)",
+            "order": 0,
+            "scope": "window"
+          },
+          "piwi.project": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder. [Documentation](https://piwitests.dev/reference/editor-settings#connection)",
+            "order": 1,
+            "scope": "window"
+          }
+        }
+      },
+      {
+        "title": "Runs",
+        "order": 1,
+        "properties": {
+          "piwi.runNotifications": {
             "type": "string",
             "enum": [
-              "agent-let-go",
-              "window-shared",
-              "unattended-resumed",
-              "reporter-missing"
+              "always",
+              "failures",
+              "never"
             ],
             "enumDescriptions": [
-              "A stop an agent held goes on once the agent went idle.",
-              "A run is shared live, as this window's runs are.",
-              "A test stopped where nobody attends the run goes on.",
-              "A run did not reach the instance, from a config without the Piwi reporter."
+              "Say what every run changed, once it ends.",
+              "Only when the run failed a test.",
+              "Never: the status bar, the gutter and the failures view still show it."
+            ],
+            "default": "failures",
+            "markdownDescription": "When a run started from the editor, or a CI run of the branch (piwi.runNotificationsScope), ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 0,
+            "scope": "application",
+            "enumItemLabels": [
+              "Say what it changed",
+              "Say what it changed when something fails",
+              "Say nothing"
             ]
           },
-          "default": [],
-          "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again."
-        },
-        "piwi.statusBarAlert": {
-          "type": "string",
-          "scope": "window",
-          "enum": [
-            "new",
-            "any",
-            "never"
-          ],
-          "enumDescriptions": [
-            "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a teammate's never does.",
-            "For any failing test, CI failures included.",
-            "Never: the item still counts the failing tests."
-          ],
-          "default": "new",
-          "description": "When the Piwi status bar item takes the error background."
-        },
-        "piwi.runNotifications": {
-          "type": "string",
-          "enum": [
-            "always",
-            "failures",
-            "never"
-          ],
-          "enumDescriptions": [
-            "Say what every run changed, once it ends.",
-            "Only when the run failed a test.",
-            "Never: the status bar, the gutter and the failures view still show it."
-          ],
-          "default": "failures",
-          "description": "When a run started from the editor, or a CI run of the branch (piwi.runNotificationsScope), ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
-        },
-        "piwi.runNotificationsScope": {
-          "type": "string",
-          "enum": [
-            "mine",
-            "mineAndCi"
-          ],
-          "enumDescriptions": [
-            "The runs started from the editor.",
-            "Those, and the CI runs of the checked-out branch Piwi follows."
-          ],
-          "default": "mineAndCi",
-          "description": "Which runs a notification of piwi.runNotifications comes for: a CI run of the branch says what it fixed and its new failures against the run it replaced."
-        },
-        "piwi.failureSeverity": {
-          "type": "string",
-          "enum": [
-            "error",
-            "warning",
-            "information",
-            "off"
-          ],
-          "enumDescriptions": [
-            "An error, in the Problems panel and on the line.",
-            "A warning.",
-            "An information.",
-            "None: the failures view, the gutter and the lines above the tests still show it."
-          ],
-          "default": "error",
-          "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
-        },
-        "piwi.mcpAuthorization": {
-          "type": "string",
-          "scope": "application",
-          "enum": [
-            "key",
-            "sign-in"
-          ],
-          "enumDescriptions": [
-            "The agent uses the editor's API key, with your role and project access.",
-            "The agent signs in through the instance's OAuth, the first time it connects, for a token of its own that you can revoke in Settings → Account → API keys."
-          ],
-          "default": "key",
-          "markdownDescription": "How the editor's agent signs in to Piwi's MCP server, as the extension provides it and as **Piwi: Copy the MCP server configuration** writes it. The desktop app's server takes its own token either way."
-        },
-        "piwi.serveRunsToAgents": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent, and **Piwi: Reset the runs' MCP server token** gives it a new token."
-        },
-        "piwi.testExplorer": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts, Debug with Piwi headed and holding each failure at its line. Results only: it discovers no test."
-        },
-        "piwi.trace.server": {
-          "type": "string",
-          "scope": "window",
-          "enum": [
-            "off",
-            "messages",
-            "verbose"
-          ],
-          "enumDescriptions": [
-            "Nothing.",
-            "Each request, answer and notification.",
-            "Each one with its contents."
-          ],
-          "default": "off",
-          "description": "Traces the traffic with the Piwi editor service in the Piwi output channel, which Piwi: Open the log shows."
+          "piwi.runNotificationsScope": {
+            "type": "string",
+            "enum": [
+              "mine",
+              "mineAndCi"
+            ],
+            "enumDescriptions": [
+              "The runs started from the editor.",
+              "Those, and the CI runs of the checked-out branch Piwi follows."
+            ],
+            "default": "mineAndCi",
+            "markdownDescription": "Which runs a notification of piwi.runNotifications comes for: a CI run of the branch says what it fixed and its new failures against the run it replaced. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 1,
+            "scope": "application",
+            "enumItemLabels": [
+              "The runs started here",
+              "The runs started here and the branch's CI runs"
+            ]
+          },
+          "piwi.statusBarAlert": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "new",
+              "any",
+              "never"
+            ],
+            "enumDescriptions": [
+              "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a teammate's never does.",
+              "For any failing test, CI failures included.",
+              "Never: the item still counts the failing tests."
+            ],
+            "default": "new",
+            "markdownDescription": "When the Piwi status bar item takes the error background. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 2,
+            "enumItemLabels": [
+              "For a new failure a run started here caused",
+              "For any failing test",
+              "Never"
+            ]
+          },
+          "piwi.breakpoints": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 3,
+            "scope": "application"
+          },
+          "piwi.runHeaded": {
+            "type": "boolean",
+            "scope": "application",
+            "default": false,
+            "markdownDescription": "Run every test headed, with its browser window shown: each run Piwi starts, in every window, **Verify ×3** included. Off, a run follows the Playwright config; a run with a `page.pause()` runs headed either way, as does a run with breakpoints when the project's `@piwitests/reporter` is older than 0.62.0. **Piwi: Run options…** changes it. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 4
+          },
+          "piwi.runHoldFailures": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "auto",
+              "on",
+              "off"
+            ],
+            "enumDescriptions": [
+              "Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise.",
+              "On from each run's start: a failed test waits at its line for an answer.",
+              "Off from each run's start: a failed test fails as it would without Piwi."
+            ],
+            "default": "auto",
+            "markdownDescription": "**Hold failures** of each run Piwi starts, in every window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 5,
+            "enumItemLabels": [
+              "Auto",
+              "On",
+              "Off"
+            ]
+          },
+          "piwi.testExplorer": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts, Debug with Piwi headed and holding each failure at its line. Results only: it discovers no test. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "order": 6,
+            "scope": "window"
+          }
+        }
+      },
+      {
+        "title": "In the editor",
+        "order": 2,
+        "properties": {
+          "piwi.codeLens": {
+            "type": "string",
+            "default": "all",
+            "enum": [
+              "all",
+              "problems",
+              "off"
+            ],
+            "markdownDescription": "The lines Piwi writes above the code: the tests behind a locator or a file, a test's evidence, its Flake Lab commands. `problems` keeps a failure's reason and evidence and a file's uncovered changes; `off` shows none. Each test's mark in the gutter or the Testing view stays. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "enumDescriptions": [
+              "Every line Piwi has.",
+              "Only a failure's reason and evidence, and a file's uncovered changes.",
+              "None."
+            ],
+            "order": 0,
+            "scope": "application",
+            "enumItemLabels": [
+              "Every line",
+              "A failure's and an uncovered change's alone",
+              "None"
+            ]
+          },
+          "piwi.gutterIcons": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Mark each test's latest result in the gutter, with a hover that says it. Off, the hover stays on the test's line, and a flaky test says so after it. While the Testing view lists Piwi's tests (`piwi.testExplorer`), its own gutter shows them instead. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 1,
+            "scope": "application"
+          },
+          "piwi.coverageMarks": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Show the coverage marks at the left of the lines a run reached, did not reach, or changed since. **Piwi: Show or hide the coverage marks** turns this on or off. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 2,
+            "scope": "application"
+          },
+          "piwi.failureSeverity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "off"
+            ],
+            "enumDescriptions": [
+              "An error, in the Problems panel and on the line.",
+              "A warning.",
+              "An information.",
+              "None: the failures view, the gutter and the lines above the tests still show it."
+            ],
+            "default": "error",
+            "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 3,
+            "scope": "window",
+            "enumItemLabels": [
+              "An error",
+              "A warning",
+              "Information",
+              "Nothing in the Problems panel"
+            ]
+          },
+          "piwi.locatorWarnings": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Warn at a locator the suite's history finds brittle or worth a look, with its stable alternative as a quick fix. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 4,
+            "scope": "application"
+          },
+          "piwi.failingTestTint": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Tint a failing test and the line it failed at (`piwi.failingTestBackground`, `piwi.failingLineBackground`). The gutter still marks them, unless `piwi.gutterIcons` is off. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 5,
+            "scope": "application"
+          },
+          "piwi.ciPositions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "While a CI run of the branch runs, show where each of its tests stands, at the end of that line. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "order": 6,
+            "scope": "application"
+          }
+        }
+      },
+      {
+        "title": "Agents (MCP)",
+        "order": 3,
+        "properties": {
+          "piwi.mcpAuthorization": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "key",
+              "sign-in"
+            ],
+            "enumDescriptions": [
+              "The agent uses the editor's API key, with your role and project access.",
+              "The agent signs in through the instance's OAuth, the first time it connects, for a token of its own that you can revoke in Settings → Account → API keys."
+            ],
+            "default": "key",
+            "markdownDescription": "How the editor's agent signs in to Piwi's MCP server, as the extension provides it and as **Piwi: Copy the MCP server configuration** writes it. The desktop app's server takes its own token either way. [Documentation](https://piwitests.dev/reference/editor-settings#agents-mcp)",
+            "order": 0,
+            "enumItemLabels": [
+              "The editor's API key",
+              "A sign-in in the browser"
+            ]
+          },
+          "piwi.serveRunsToAgents": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent, and **Piwi: Reset the runs' MCP server token** gives it a new token. [Documentation](https://piwitests.dev/reference/editor-settings#agents-mcp)",
+            "order": 1,
+            "scope": "window"
+          }
+        }
+      },
+      {
+        "title": "Advanced",
+        "order": 4,
+        "properties": {
+          "piwi.hiddenMessages": {
+            "type": "array",
+            "scope": "application",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "agent-let-go",
+                "window-shared",
+                "unattended-resumed",
+                "reporter-missing"
+              ],
+              "enumDescriptions": [
+                "A stop an agent held goes on once the agent went idle.",
+                "A run is shared live, as this window's runs are.",
+                "A test stopped where nobody attends the run goes on.",
+                "A run did not reach the instance, from a config without the Piwi reporter."
+              ]
+            },
+            "default": [],
+            "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again. [Documentation](https://piwitests.dev/reference/editor-settings#advanced)",
+            "order": 0
+          },
+          "piwi.trace.server": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "off",
+              "messages",
+              "verbose"
+            ],
+            "enumDescriptions": [
+              "Nothing.",
+              "Each request, answer and notification.",
+              "Each one with its contents."
+            ],
+            "default": "off",
+            "markdownDescription": "Traces the traffic with the Piwi editor service in the Piwi output channel, which Piwi: Open the log shows. [Documentation](https://piwitests.dev/reference/editor-settings#advanced)",
+            "order": 1,
+            "enumItemLabels": [
+              "Off",
+              "Messages",
+              "Verbose"
+            ]
+          }
         }
       }
-    },
+    ],
     "colors": [
       {
         "id": "piwi.failingTestBackground",

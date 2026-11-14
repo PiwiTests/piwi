@@ -61,7 +61,7 @@ URLs on `origin` are stored as paths (`/cart?from=mail`), so a spec rendered fro
 | `action` | string | `goto`, `click`, `dblclick`, `hover`, `fill`, `check`, `uncheck`, `selectOption`, `press`, `setInputFiles`, `dragTo`, `assert` or `manual`. |
 | `target` | object or null | The element the step acted on; null for `goto`, a key press on the page, or an `assert` on the URL. |
 | `value` | string or null | The URL for `goto`, the typed text for `fill`, the option for `selectOption`, the key for `press`, the chosen files' names for `setInputFiles`, one per line. |
-| `redacted` | boolean | The value was typed in a password field and was not kept; the spec reads it from an environment variable named after the field, such as `E2E_PASSWORD`. |
+| `redacted` | boolean | The value was typed in a password field, or in one whose `autocomplete` names a password, a card number, its security code or a one-time code, and was not kept; the spec reads it from an environment variable named after the field, such as `E2E_PASSWORD`. |
 | `pageUrl` | string | The page the step happened on; empty when it is not known, as in steps made from a test run after an action that may have left the page. Replay then waits for no particular page. |
 | `timestamp` | number | When it happened. |
 | `assertion` | object | On `assert` steps only; see below. |
@@ -95,9 +95,14 @@ locator finds, and `toBeChecked` checks a checkbox, a radio or an element with `
 
 ## Manual steps
 
-A `manual` step is one nothing can play: a person does it by hand. Piwi writes one when it makes steps from a test run
-and the run did not keep enough to play a call, such as a click at a point of the page, a value it kept only in part,
-or a check with a regular expression.
+A `manual` step is one nothing can play: a person does it by hand. Piwi writes one when it makes steps from a test run,
+as a failed execution's [Export](/reference/bug-report-file#a-report-made-from-a-test-run) does. Those steps hold the
+test's steps up to the failure, setup hooks included, and its failing assertion with what it expected and what the
+run received; a call the run did not keep enough of to play becomes a manual step naming the line of the test it
+stands for: a click at a point of the page, a value the run kept only in part, a file choice, an option chosen by its
+index or several options chosen at once, a check with a regular expression. API requests, scripts run in the page,
+route mocks and checks on values are not steps at all: the report's Markdown lists them under **Not replayed**, with
+why.
 
 ```json
 {

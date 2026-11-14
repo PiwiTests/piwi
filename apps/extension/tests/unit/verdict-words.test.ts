@@ -17,9 +17,9 @@ describe('verdictWords', () => {
       explanation: 'unique · stable',
     });
     expect(verdictWords(unique('watch', ['long-text']))).toEqual({
-      word: 'could break',
+      word: 'watch',
       tone: 'good',
-      explanation: 'unique · could break: long text',
+      explanation: 'unique · watch: long text',
     });
     expect(verdictWords(unique('brittle', ['css-class', 'css-structure']))).toEqual({
       word: 'brittle',

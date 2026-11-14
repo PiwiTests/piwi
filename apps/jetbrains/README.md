@@ -11,7 +11,8 @@ Install it from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin
 in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with Node.js 20 or later.
 
 **You need a Piwi instance:** the [desktop app](https://piwitests.dev/features/desktop), `npx @piwitests/server` or the
-Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+Docker image. Recording, running a test by its line, and pausing and stepping through it need none. Piwi reads
+Playwright Test suites in JavaScript and TypeScript.
 
 ## What it shows
 
@@ -43,7 +44,7 @@ Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScr
 The plugin reads the connection the Piwi reporter already uses: the `PIWI_*` variables in the environment or the
 workspace `.env`, or the Piwi desktop app. Otherwise, **Settings → Tools → Piwi** signs you in with the browser. Paths
 clicked in the dashboard open at their line in the IDE, locators picked in the Piwi Picker browser extension land at
-the caret, and Piwi's MCP server is one copy away for the AI Assistant.
+the caret, and Piwi's MCP server is one copy away for your agent.
 
 Self-hosted, zero telemetry. No file of your workspace is sent to the instance: its locator index, code reach and
 latest run are compared with your files locally.

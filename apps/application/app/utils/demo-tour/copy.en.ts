@@ -118,7 +118,7 @@ export const EN_COPY = {
         },
         analytics: {
           title: 'Quality over time',
-          body: '**Headline numbers** for every project over the last 30 days, against the 30 days before: pass rates, flaky tests, wasted CI minutes, open failure causes, time to fix. Where a project sets a target, the tile says how many meet it.',
+          body: '**Headline numbers** for every project over the last 30 days, against the 30 days before: pass rates, flaky tests, wasted CI minutes, open failure clusters, time to fix. Where a project sets a target, the tile says how many meet it.',
         },
         dashboards: {
           title: 'A dashboard per team',

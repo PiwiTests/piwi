@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Project settings → Capabilities → Scenario gaps: the OpenAPI document whose
+ * Project settings → Coverage → Scenario gaps: the OpenAPI document whose
  * routes become declared Test Map nodes, and the experimental server probes.
  * Each part follows its capability (`test-map`, `server-probes`) and the card
  * renders nothing when both are hidden.

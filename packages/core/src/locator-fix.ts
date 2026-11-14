@@ -1,8 +1,10 @@
 /**
  * The single recommended fix among ranked alternative locators: the one that
  * keeps the original locator's style when that style is stable enough, else the
- * most stable one. Shared by locator healing (server, dashboard) and the browser
- * extension's replacements for brittle locators, so both pick a fix the same way.
+ * most stable one. The style is read from the failing locator alone (the method
+ * of its last call), never from the suite's other locators. Shared by locator
+ * healing (server, dashboard), the editor service and the browser extension's
+ * replacements for brittle locators, so all pick a fix the same way.
  */
 import type { LocatorFixRecommendation, RankedLocator } from './locator-healing-types';
 

@@ -42,7 +42,7 @@ for the claims about Playwright and the capture's cost; they are not part of the
 - **A docs page**, Piwi with a browser grid: the settings, where to put a grid, what Piwi records, and what not to
   expose.
 
-Of the four things [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**: a
+Of the five jobs [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**: a
 failure the infrastructure caused is named as such, with the fact behind it. It feeds the first, **keep the history**,
 with the browser's cost run after run.
 

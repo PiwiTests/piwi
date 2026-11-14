@@ -8,13 +8,13 @@ export interface PauseBarArg {
   action: string;
   /** The locator the call runs on, as source; null when unknown or already in `action`. */
   locator: string | null;
-  /** Whether the editor that started the run can record from here: the bar then offers Record here. */
+  /** Whether the editor that started the run can record from here: the bar then offers Record. */
   record?: boolean;
   /** Whether the test can end here, skipped: the bar then offers End the test. */
   end?: boolean;
   /**
    * The test failed here (`action` says how) and its page is held before it closes: the bar says so and offers
-   * Resume, which lets the test end as it failed, Pick a locator and Record here, without Step and Finish.
+   * Resume, which lets the test end as it failed, Pick a locator and Record, without Step and Finish.
    */
   failure?: boolean;
 }
@@ -30,7 +30,7 @@ export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish' | 'en
 /**
  * Runs inside the browser via `evaluate()` — shows a bar fixed at the top of
  * the page while a test is paused before a call: where it is paused, the
- * attempt, the call and its locator, and its buttons (Record here when the editor can record, End the test when the
+ * attempt, the call and its locator, and its buttons (Record when the editor can record, End the test when the
  * test can end there). The choice lands in
  * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes, but in a
  * dialog, a menu or an open popup of the page, and while the bar is inert. The page under the bar stays live.
@@ -157,7 +157,7 @@ export function showPauseBar(arg: PauseBarArg): void {
     ...(arg.record
       ? [
           [
-            'Record here',
+            'Record',
             'record',
             'Record steps in this page: the editor writes them before this line',
             false,

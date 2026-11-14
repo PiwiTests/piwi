@@ -95,7 +95,7 @@ export const HELP_TOPICS = {
   'home.failure-inbox': {
     title: 'Failure inbox',
     text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
-    doc: 'features/failure-clusters#the-failure-inbox',
+    doc: 'features/failure-inbox',
   },
   'home.flake-lab': {
     title: 'Flake Lab queue',
@@ -126,7 +126,7 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → What the model receives → Repository access token**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → Source control**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
@@ -138,7 +138,7 @@ export const HELP_TOPICS = {
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {
     title: 'Insights',
-    text: 'Auto-generated findings over the selected period — missed targets, pass-rate drops, failing streaks, stale clusters, wasted CI time, a growing time to fix, a shrinking suite, a growing quarantine, one owner holding most open failure causes. Ranked by severity; click one to jump to the source.',
+    text: 'Auto-generated findings over the selected period — missed targets, pass-rate drops, failing streaks, stale clusters, wasted CI time, a growing time to fix, a shrinking suite, a growing quarantine, one owner holding most open failure clusters. Ranked by severity; click one to jump to the source.',
   },
   'analytics.portfolio': {
     title: 'Portfolio health',
@@ -188,12 +188,12 @@ export const HELP_TOPICS = {
   },
   'analytics.time-to-fix': {
     title: 'Time to fix',
-    text: 'How fast failures get fixed: failure causes opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the causes fixed in the period, the share of those fixes that held, and the open causes by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
+    text: 'How fast failures get fixed: failure clusters opened and fixed per bucket, the median and 90th-percentile time from first failure to fix over the clusters fixed in the period, the share of those fixes that held, and the open clusters by age. Failure clusters outlive run retention, so this reaches as far back as they do.',
     doc: 'reference/analytics-widgets#where-the-pain-is',
   },
   'analytics.ownership': {
     title: 'Ownership',
-    text: 'One row per owner: the open failure causes assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the causes they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
+    text: 'One row per owner: the open failure clusters assigned to them, and the flaky tests and wasted CI minutes of the tests they own (their `piwi:owner` annotation), with the median time to fix of the clusters they fixed. The Unowned row holds everything nobody is assigned to or owns. Test counts reach back only as far as retention keeps runs.',
     doc: 'reference/analytics-widgets#where-the-pain-is',
   },
   'analytics.environment-comparison': {
@@ -225,7 +225,7 @@ export const HELP_TOPICS = {
   },
   'analytics.verdict': {
     title: 'Verdict',
-    text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure causes fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
+    text: 'One or two sentences built by fixed rules from the pass rate, its change, the failure clusters fixed and still open, and the wasted CI time. Never written by a model, so it only repeats numbers shown elsewhere on the page.',
   },
   'analytics.narrative': {
     title: 'Narrative',
@@ -239,7 +239,7 @@ export const HELP_TOPICS = {
   },
   'analytics.progress': {
     title: 'Fixes and triage',
-    text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
+    text: 'Failure clusters fixed in the period and whether the fixes held, open clusters assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
   },
   'analytics.handbacks': {
     title: 'Hand-back outcomes',
@@ -248,7 +248,7 @@ export const HELP_TOPICS = {
   },
   'analytics.risks': {
     title: 'Risks',
-    text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
+    text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure clusters, and the tests waiting in quarantine.',
   },
   'analytics.scenario-gaps': {
     title: 'Scenario gaps',
@@ -262,7 +262,7 @@ export const HELP_TOPICS = {
   },
   'analytics.list': {
     title: 'List',
-    text: 'The top items matching the scope: the latest runs of the period, the open failure causes with the most occurrences, the flakiest tests, or the highest-scored open scenario gaps. Each one opens its page.',
+    text: 'The top items matching the scope: the latest runs of the period, the open failure clusters with the most occurrences, the flakiest tests, or the highest-scored open scenario gaps. Each one opens its page.',
     doc: 'features/dashboards#widgets',
   },
   'analytics.markers': {
@@ -441,7 +441,7 @@ export const HELP_TOPICS = {
   },
   'project.timeline': {
     title: 'Timeline markers',
-    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are detected automatically when tooling versions change between runs.',
+    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
     doc: 'features/timeline-markers',
     envVars: ['PIWI_AUTO_MARKERS'],
   },
@@ -493,8 +493,8 @@ export const HELP_TOPICS = {
     doc: 'features/ai-diagnosis#custom-instructions',
   },
   'project.scm-token': {
-    title: 'Repository access token',
-    text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads them with git instead, without a token.',
+    title: 'SCM token',
+    text: 'A GitHub, GitLab or Bitbucket token Piwi reads the repository with (the commits and diffs behind a failure, uncovered changes, `CODEOWNERS`) and, with write access, posts pull-request feedback and opens auto-heal pull requests with. A project’s own token overrides the one in **Settings → Source control**. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads with git instead, without a token.',
     doc: 'guide/source-control',
   },
   'case.stability-trend': {
@@ -504,12 +504,12 @@ export const HELP_TOPICS = {
   },
   'cluster.occurrence-trend': {
     title: 'Occurrences over time',
-    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. It opens on the days since the cluster was first seen, a week at least and a year at most, or on the last 90 days when the run that first saw it is no longer kept; the menu also offers the last 30, 90 and 365 days. Probe runs are left out.',
+    text: 'How often this failure cluster failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. It opens on the days since the cluster was first seen, a week at least and a year at most, or on the last 90 days when the run that first saw it is no longer kept; the menu also offers the last 30, 90 and 365 days. Probe runs are left out.',
     doc: 'features/failure-clusters#occurrences-over-time',
   },
   'project.targets': {
     title: 'Targets',
-    text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
+    text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cluster and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
     doc: 'features/analytics#targets',
   },
   'project.status-filter': {
@@ -524,7 +524,7 @@ export const HELP_TOPICS = {
     doc: 'features/branches#the-project-status',
   },
   'project.url-patterns': {
-    title: 'Browser extension URLs',
+    title: 'URL patterns',
     text: [
       'The addresses this project’s application is served at, as patterns over the whole URL: `*` matches within one path segment, `**` across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there.',
       '',

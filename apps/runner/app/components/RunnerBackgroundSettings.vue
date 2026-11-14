@@ -59,8 +59,8 @@ async function save(command: string, field: keyof BackgroundSettings, enabled: b
       <UCheckbox
         :model-value="settings.run_in_background"
         :disabled="saving"
-        label="Keep running in the tray when the window closes"
-        description="The instance reaches this machine only while Piwi Runner runs. Turned off, closing the window quits it."
+        label="Run in background"
+        description="Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it."
         @update:model-value="save('desktop_set_run_in_background', 'run_in_background', $event === true)"
       />
       <UCheckbox

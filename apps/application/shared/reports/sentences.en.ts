@@ -50,7 +50,7 @@ function verdict(facts: VerdictFacts, f: ValueFormatter): string {
   const points = facts.passRateDelta === null ? '' : f.number(Math.abs(facts.passRateDelta), 1);
   const fixed =
     facts.fixed > 0
-      ? `, and ${facts.fixed} ${plural(facts.fixed, 'failure cause was', 'failure causes were')} fixed`
+      ? `, and ${facts.fixed} ${plural(facts.fixed, 'failure cluster was', 'failure clusters were')} fixed`
       : '';
   let first: string;
   if (direction === 'up') {
@@ -64,7 +64,7 @@ function verdict(facts: VerdictFacts, f: ValueFormatter): string {
   }
   const rest: string[] = [];
   if (facts.open > 0) {
-    rest.push(`${facts.open} ${plural(facts.open, 'failure cause is', 'failure causes are')} still open.`);
+    rest.push(`${facts.open} ${plural(facts.open, 'failure cluster is', 'failure clusters are')} still open.`);
   }
   if (facts.wastedMinutes >= 1) {
     const cost = facts.wastedCost
@@ -79,13 +79,13 @@ function progress(p: AnalyticsProgress): string[] {
   const lines: string[] = [];
   if (p.fixed > 0) {
     const held = p.held === p.fixed ? (p.fixed === 1 ? 'it held' : 'all held') : `${p.held} held`;
-    lines.push(`${p.fixed} ${plural(p.fixed, 'failure cause', 'failure causes')} fixed; ${held}.`);
+    lines.push(`${p.fixed} ${plural(p.fixed, 'failure cluster', 'failure clusters')} fixed; ${held}.`);
   } else {
-    lines.push('No failure cause was fixed in the period.');
+    lines.push('No failure cluster was fixed in the period.');
   }
   if (p.assigned > 0 || p.withTicket > 0) {
     lines.push(
-      `${p.assigned} open ${plural(p.assigned, 'cause is', 'causes are')} assigned, ${p.withTicket} ${plural(p.withTicket, 'has', 'have')} a ticket.`,
+      `${p.assigned} open ${plural(p.assigned, 'cluster is', 'clusters are')} assigned, ${p.withTicket} ${plural(p.withTicket, 'has', 'have')} a ticket.`,
     );
   }
   if (p.releasedFromQuarantine > 0 || p.quarantined > 0) {
@@ -133,7 +133,7 @@ function handbacks(d: AnalyticsHandbacks, f: ValueFormatter): HandbackLine[] {
     }
     if (dx.diagnosedFixes > 0) {
       parts.push(
-        `the fix touched the diagnosed files in ${Math.min(dx.verified, dx.diagnosedFixes)} of ${dx.diagnosedFixes} fixed ${plural(dx.diagnosedFixes, 'cause', 'causes')}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'fixes')}`,
+        `the fix touched the diagnosed files in ${Math.min(dx.verified, dx.diagnosedFixes)} of ${dx.diagnosedFixes} fixed ${plural(dx.diagnosedFixes, 'cluster', 'clusters')}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'fixes')}`,
       );
     }
     if (dx.regressed > 0) parts.push(`${dx.regressed} failed again after the fix`);

@@ -13,8 +13,9 @@ you already have, in about a minute.
 
 ## 1. Open the run's Changes tab
 
-A run compares itself against **one baseline** — the last passing run on the same branch by default —
-and sorts the failures for you. The distinction you want is right there in the headings:
+A run compares itself against **one baseline**, an earlier passing run picked by the
+[baseline rule](/features/run-changes#the-baseline), and sorts the failures for you. The distinction you want is
+right there in the headings:
 
 - **New failures** — this test was passing on the baseline and is failing now.
 - **Still failing** — it was already failing before your change.
@@ -25,12 +26,14 @@ and sorts the failures for you. The distinction you want is right there in the h
   <figcaption>The Changes tab — read against one baseline, with new failures separated from tests that only passed on retry.</figcaption>
 </figure>
 
-If your test is under **Newly flaky / passed on retry**, stop here: it isn't your change. Jump to
-[cutting flakiness](./flaky-cleanup) when you have time to spend on it.
+If your test is under **Newly flaky / passed on retry**, its failure did not survive a retry: that points at
+flakiness, not a regression that breaks it every time. It does not clear your change, which can have made the test
+flaky ([what newly flaky says](/features/run-changes#what-newly-flaky-says-about-your-change)): its history (next
+step) tells a new flake from an old one. A long-standing flake belongs in [cutting flakiness](./flaky-cleanup).
 
 ## 2. Check the test's own history
 
-A single run can lie — a flaky test lands in "new regressions" whenever the baseline happened to be
+A single run can lie — a flaky test lands in **New failures** whenever the baseline happened to be
 green. Open the test case and read its **status history** and **stability trend**: pass rate, flaky
 rate, and duration bucketed over time.
 
@@ -66,10 +69,10 @@ Once you know it's a real regression, narrow the window:
 Not everyone wants to click through a dashboard mid-review.
 
 **Ask your coding agent.** The [MCP server](/features/mcp) is built into the running instance — nothing to
-install. `get_run_insights` returns the same regression / recovery / new-flaky split this page walks
+install. `get_run_insights` returns the same new failures / fixed / newly flaky split this page walks
 through, and `get_test_stability_trend` answers "is this getting flakier?" for one test.
 
-**Wire it into CI.** The [CI gate](/guide/ci#blocking-a-merge) already knows the difference: a test in
+**Wire it into CI.** The [CI merge gate](/features/merge-gate) already knows the difference: a test in
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) keeps running and keeps reporting, but doesn't
 block the merge — and the gate reports how many failures it excluded.
 
@@ -81,5 +84,5 @@ narrows it.
 
 ## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
-- [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
+- [Core concepts](/guide/core-concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

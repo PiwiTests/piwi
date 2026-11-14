@@ -6,6 +6,8 @@ lang: en-US
 
 # Failures in the editor
 
+<Needs editor />
+
 The [editor extensions](./editors) show the failures of the latest CI run at the lines that failed, lay your local runs
 over them, and follow each failing line through your edits until a run covers its test again.
 
@@ -22,20 +24,20 @@ is in your workspace (often a page object), else the `test(…)` line, with the 
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
 reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
-On a failure, the quick fixes are:
+On a failure, the light bulb lists Piwi's quick fixes, each titled `Piwi:` and its words:
 
-- **Heal: use …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
+- **heal with …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
   [locator healing](/features/locator-healing) has a recommendation for the failing locator.
-- **Run this test** runs the failing test; it comes first once you rewrote the line it failed at.
-- **Open the trace** opens it in `npx playwright show-trace`.
-- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and **Run Flake Lab on its
+- **run this test** runs the failing test; it comes first once you rewrote the line it failed at.
+- **open the trace** opens it in `npx playwright show-trace`.
+- **reproduce in the desktop app**, **find the breaking commit in the desktop app** and **run Flake Lab on its
   untested suspects in the desktop app**, for a test with an untested [flake suspect](./flake-lab), while the
-  [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records the result.
-- **Apply the fix plan, then run its verification**, when the failure's [cluster](/features/failure-clusters) has a
+  [desktop app](/features/desktop#jobs-from-your-editor) runs; **share on …** records the result.
+- **apply the fix plan, then run its verification**, when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files: the edit is previewed, then the plan's verify
   command runs in a terminal.
-- **Copy context for agent** copies the failure, its healing and fix plan.
-- **Open the failure in the dashboard** opens the execution page, with its [evidence](/features/evidence).
+- **copy context for agent** copies the failure, its healing and fix plan.
+- **open the failure in the dashboard** opens the execution page, with its [evidence](/features/evidence).
 
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
 test. Without one, **File an issue** opens the cluster in the dashboard.
@@ -47,9 +49,9 @@ test. Without one, **File an issue** opens the cluster in the dashboard.
 
 A failure of a run on the checked-out branch is an error; one from another branch, such as the default branch's while
 yours has no run yet, is a warning; one whose line you changed since the run is an information (a weak warning in a
-JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → Runs** in a JetBrains IDE) chooses
+JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → In the editor** in a JetBrains IDE) chooses
 `warning` or `information` in place of the error, or `off`: nothing in the Problems panel, while the failures view,
-the gutter and the lines above the tests still show the failures.
+the gutter and the lines above the tests (unless `piwi.codeLens` hides them) still show the failures.
 
 ## Your local runs
 
@@ -85,7 +87,7 @@ the progress of your run, `running 4 of 9`. Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
+  **Group the failures by…**, in the view's title bar or the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
@@ -101,36 +103,26 @@ editors, re-run that config's failing tests (**Re-run the failing tests**) and o
 context menu adds **Compare with…** for that config. With one config, the run is the first node.
 
 Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
-**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**,
-**Copy context for agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs,
-**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
-line.
+**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Go to the test**,
+**Debug this failure**, **Verify the test ×3**, **Open the screenshot**, **Copy context for agent**, and, on a CI
+failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the desktop app** and
+**Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
-run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
-**Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
-menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
-title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP
-configurations, **Reload Piwi**, the settings and **Documentation**. The tree is read again when a run ends or an edit
-moves a failure.
+latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected failure
+or run), **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in
+the `…` menu, selects the first failure of the file you switch to until **Stop following the active editor**, and the
+badge counts the failing tests, as the tool window's title and its icon's red dot do. The JetBrains tool window's gear
+menu keeps Connect, Piwi Picker's pairing, the MCP configurations, **Read the instance and the configs again**, the
+settings and **Open the documentation**. The tree is read again when a run ends or an edit moves a failure.
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (also retried on
 its own); a desktop app to restart or update; an instance still being read; or no connection, with
 **Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
 
-## Compare with another run
-
-By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:
-Compare with…** (**Tools → Piwi → Compare with…** in a JetBrains IDE, and the failures view's title bar) chooses another
-run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
-machine, without CI. Your runs since are laid over each. The status bar tooltip and the
-failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need
-not have passed: it is not the dashboard's [baseline](/guide/concepts#baseline-last-green-run), the last passing run.
-The choice is kept on this machine, per Playwright config.
-
 ## Related
 
-- [Editor extensions](./editors): what else the editor shows from your suite.
+- [The editor's status bar](./editor-status-bar#compare-with-another-run): choose the run the failures are read against.
 - [Runs from the editor](./editor-runs): run the failing tests again, and follow the run in the status bar.
 - [Locator healing](/features/locator-healing): where the heal quick fix comes from.

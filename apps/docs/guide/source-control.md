@@ -14,13 +14,13 @@ failure, or writes back to a pull request, goes through it.
 
 | Feature | What it does with the repository | Access |
 |---|---|---|
-| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the last green run, and the full source of the most suspect files | read |
+| [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) | Reads the commits and diffs since the [last green run](/features/run-changes#the-baseline), and the full source of the most suspect files | read |
 | The failure cluster's **What changed** panel | Lists commits, shows their diffs, and lets you pin a baseline commit | read |
 | [Uncovered changes](/features/uncovered-changes) | Diffs the run's commit against the pull request's base, or the last passing run, and flags changed files no test reached | read |
 | [Did the fix work?](/features/failure-clusters#did-the-fix-work) | Checks whether the commits after a fix touched the failing files | read |
 | [Notifications](/features/notifications) | Names the author of the fixing commit on `cluster.fixed` and `cluster.regressed` | read |
 | Ownership and the default branch | Reads `CODEOWNERS` for test owners, and the repository's default branch when the project sets none | read |
-| [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status | write |
+| [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status, and the [CI merge gate](/features/merge-gate#on-the-pull-request)'s status when it is on | write |
 | [Re-run in CI](/features/ci-rerun) | Dispatches a workflow or pipeline (a CI server takes its own token) | write |
 | [Auto-heal PRs](/features/auto-heal) | Opens a pull request with a locator fix | write |
 
@@ -29,14 +29,16 @@ logged, and the feature shows nothing rather than failing a run.
 
 ## Set the token
 
-- **Instance-wide**: **Settings → AI → What the model receives → Repository access token**. Every project uses it unless it has its own.
-- **Per project**: the **Source control** section of the project's **Settings** tab, field **SCM token**. It overrides
-  the instance-wide token for that project. Prefer one per project for write access: an instance-wide write token can
+- **Instance-wide**: **Settings → Source control**, field **SCM token** in its **Repository access** card. Every
+  project uses it unless it has its own.
+- **Per project**: **Project → Settings → Source control**, field **SCM token**. It overrides the instance-wide
+  token for that project. Prefer one per project for write access: an instance-wide write token can
   write everywhere it reaches.
 
 A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
-the field shows that one is stored. Leave the field empty to keep it. To remove it, save the instance-wide field empty,
-or click **Remove stored token** under the project field.
+the field shows that one is stored. Leave the field empty to keep it. To remove it, click **Remove** beside the
+instance-wide token, then **Save**, or **Remove stored token** under the project field. The page stays open when the
+Source control [capability](/operate/capabilities) is declined, so a stored token can still be removed.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
 A private repository needs one, except on the desktop app with a linked folder (below).
@@ -70,7 +72,7 @@ only to a host you named. A run without a remote URL has nothing to diff.
 
 | Host | Read features | Write features |
 |---|---|---|
-| GitHub | read access to repository contents | `repo` (classic), or fine-grained `contents: write` and `pull_requests: write`; `actions: write` (classic `workflow`) for re-runs |
+| GitHub | read access to repository contents | `repo` (classic), or fine-grained **Contents: write**, **Pull requests: write** and **Commit statuses: write**; **Actions: write** for re-runs |
 | GitLab | `read_api` | `api` |
 | Bitbucket | repository read | repository write; `pullrequest` for pull-request comments; `pipeline:write` for re-runs |
 
@@ -92,7 +94,7 @@ section is absent, it says why.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run before it where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on
-  GitHub and GitLab only.
+  GitHub, GitLab and Bitbucket Cloud only.
 
 ## Related
 

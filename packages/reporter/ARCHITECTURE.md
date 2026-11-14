@@ -129,7 +129,7 @@ What the package does to a user's run, process by process.
   `internal/collect/pause-events.ts` sends them with the test's step events, as `pause`
   events: the steps keep their clock, and the step statistics leave the stopped time out.
 - A locator picked at the bar is posted to the editor's `PIWI_EDITOR_SEND` address.
-- With `PIWI_RECORD_CHANNEL`, **Record here** and `page.pause()` connect to the editor
+- With `PIWI_RECORD_CHANNEL`, **Record** and `page.pause()` connect to the editor
   service's local socket and relay the recorder's binding calls over it
   (`internal/capture/record-handoff.ts`).
 
@@ -201,7 +201,7 @@ What the package does to a user's run, process by process.
   recording ends with the stop. The worker answers at once whether it started. It
   refuses at a stop that ended or is ending (its test ended, its page or context began to
   close), at one no bar shows whose live view nobody watches, at one whose page it cannot
-  tell, Record here and Assert when
+  tell, Record and Assert when
   the run has no `PIWI_RECORD_CHANNEL`, and any intent while a pick, a check or a
   recording runs.
 - **Assert** is the same hand-off in its `check` mode, naming the stop: the editor's
@@ -369,7 +369,7 @@ What the package does to a user's run, process by process.
   own dialog and resumes nothing. A draw the page did not answer the hold for within 10
   seconds takes none of the message's presses. The message lets go of its own hold as it
   ends while its stop holds; once the stop ended, it sends neither.
-- At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
+- At a stop no bar shows, Pick a locator, Record, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
   picker's choice list included, `__piwiChoiceCleanup`).
@@ -451,7 +451,7 @@ What the package does to a user's run, process by process.
   before a plain error's message), its title and error with the credentials of the URLs
   they name hidden (`hideSecretsInText`). The bar says `Failed at …` with Resume, Pick a
   locator (which replaces the failing locator, and is folded into its snapshot) and
-  Record here. Any answer lets the test end as it failed, and the editor service lets
+  Record. Any answer lets the test end as it failed, and the editor service lets
   one go at once in a run nobody watches.
 - While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
   `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
@@ -459,7 +459,7 @@ What the package does to a user's run, process by process.
   and does not get the pairing's token. Picks still go to the pairing
   (`editorSendAddress`). Both are put back after the test, since Playwright passes a
   worker's environment changes to the projects that depend on its project.
-  `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+  `PIWI_RECORD_CHANNEL` stays, for **Record**.
 
 **The instance's live view** (`internal/capture/live-view.ts`, with `PIWI_LIVE_VIEW`)
 
@@ -912,7 +912,7 @@ src/
                 inspect-on-failure, pick-on-failure (the failure-time overlay),
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the stop policy
                 over Playwright's debugger, the pause bar, a pick posted to
-                PIWI_EDITOR_SEND), record-handoff (Record here:
+                PIWI_EDITOR_SEND), record-handoff (Record:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
                 run-channel (the worker's run connection to the editor,
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,

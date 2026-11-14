@@ -27,7 +27,7 @@ import type { McpContext } from '../mcp/tools';
 export const EXPLAIN_SETTING: AiToolDef = {
   name: 'explain_setting',
   description:
-    'Explain one field of the Settings pages by its id (ai.diagnosis, ai.scm-token, localization.time-zone, ci-cost, …): its label and page, its help text and docs page, the PIWI_* variables that override it and which of them the environment sets now, its current value when the user may read it (never a secret: only whether it is set), and its guide anchor for show_guide. An unknown id answers with the list of field ids.',
+    'Explain one field of the Settings pages by its id (ai.diagnosis, source-control.scm-token, localization.time-zone, ci-cost, …): its label and page, its help text and docs page, the PIWI_* variables that override it and which of them the environment sets now, its current value when the user may read it (never a secret: only whether it is set), and its guide anchor for show_guide. An unknown id answers with the list of field ids.',
   inputSchema: {
     type: 'object',
     properties: { fieldId: { type: 'string', description: 'The field id, e.g. "ai.assistant"' } },
@@ -67,12 +67,18 @@ const READERS: Readonly<Record<string, (db: DbClient, ctx: McpContext) => Promis
     return text ? { value: text.slice(0, 500) } : { set: false };
   },
   // A secret: only whether one is stored.
-  'ai.scm-token': async (db) => ({ set: (await readAiSettings(db)).hasScmToken }),
+  'source-control.scm-token': async (db) => ({ set: (await readAiSettings(db)).hasScmToken }),
+};
+
+/** Field ids an agent may hold from where the field was before, and the id each names now. */
+const FIELD_ALIASES: Readonly<Record<string, string>> = {
+  'ai.scm-token': 'source-control.scm-token',
 };
 
 function findField(fieldId: string): { page: SettingsPageMeta; field: SettingFieldMeta } | null {
+  const id = FIELD_ALIASES[fieldId] ?? fieldId;
   for (const page of SETTINGS_PAGES) {
-    const field = page.fields.find((f) => f.id === fieldId);
+    const field = page.fields.find((f) => f.id === id);
     if (field) return { page, field };
   }
   return null;

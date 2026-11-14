@@ -67,10 +67,17 @@ the test, kept with its census.
 
 ## In the dashboard
 
-The reporter sends the panel with the run, which shows a **Resources** tab: the machine each shard ran on, the CPU
-over the run, when memory peaked, the panel's lines, and the [resource
-leaks](./resource-leaks#in-the-dashboard) found. Below them, the **costliest tests**: the tests whose worker and
-browser processes used the most CPU.
+The reporter sends the panel with the run. A run with a resource report (this panel, or
+[leak](./resource-leaks) findings) shows a **Resources** tab, unless the project declines the **Resources** capability
+in **Settings → Capabilities**:
+
+- the counts of each kind of leak finding, the CPU the run's processes used and the machine's peak memory;
+- the machine each shard ran on, the CPU over the run, when memory peaked, and the panel's lines;
+- the [leak findings](./resource-leaks#in-the-dashboard), each with the line or fixture that opened it and the line
+  that last used it, one click from your editor;
+- a switch drawing each worker's open pages on the Timeline tab;
+- the **costliest tests**: those whose worker and browser processes used the most CPU, with the pages each found
+  already open.
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the

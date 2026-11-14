@@ -1,0 +1,311 @@
+{
+  "groups": [
+    {
+      "id": "connection",
+      "title": "Connection"
+    },
+    {
+      "id": "runs",
+      "title": "Runs"
+    },
+    {
+      "id": "editor",
+      "title": "In the editor"
+    },
+    {
+      "id": "agents",
+      "title": "Agents (MCP)"
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced"
+    }
+  ],
+  "settings": [
+    {
+      "key": "piwi.serverUrl",
+      "jetbrains": "serverUrl",
+      "group": "connection",
+      "scope": "team",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "key": "piwi.project",
+      "jetbrains": "project",
+      "group": "connection",
+      "scope": "team",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "key": "piwi.runNotifications",
+      "jetbrains": "runNotifications",
+      "group": "runs",
+      "scope": "user",
+      "type": "string",
+      "default": "failures",
+      "choices": [
+        {
+          "value": "always",
+          "label": "Say what it changed"
+        },
+        {
+          "value": "failures",
+          "label": "Say what it changed when something fails"
+        },
+        {
+          "value": "never",
+          "label": "Say nothing"
+        }
+      ]
+    },
+    {
+      "key": "piwi.runNotificationsScope",
+      "jetbrains": "runNotificationsScope",
+      "group": "runs",
+      "scope": "user",
+      "type": "string",
+      "default": "mineAndCi",
+      "choices": [
+        {
+          "value": "mine",
+          "label": "The runs started here"
+        },
+        {
+          "value": "mineAndCi",
+          "label": "The runs started here and the branch's CI runs"
+        }
+      ]
+    },
+    {
+      "key": "piwi.statusBarAlert",
+      "jetbrains": "statusBarAlert",
+      "group": "runs",
+      "scope": "user",
+      "type": "string",
+      "default": "new",
+      "choices": [
+        {
+          "value": "new",
+          "label": "For a new failure a run started here caused"
+        },
+        {
+          "value": "any",
+          "label": "For any failing test"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
+      ]
+    },
+    {
+      "key": "piwi.breakpoints",
+      "jetbrains": "breakpoints",
+      "group": "runs",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.runHeaded",
+      "jetbrains": "runHeaded",
+      "group": "runs",
+      "scope": "user",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "piwi.runHoldFailures",
+      "jetbrains": "runHoldFailures",
+      "group": "runs",
+      "scope": "user",
+      "type": "string",
+      "default": "auto",
+      "choices": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "on",
+          "label": "On"
+        },
+        {
+          "value": "off",
+          "label": "Off"
+        }
+      ]
+    },
+    {
+      "key": "piwi.testExplorer",
+      "jetbrains": null,
+      "group": "runs",
+      "scope": "project",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": null,
+      "jetbrains": "playwrightRunner",
+      "group": "runs",
+      "scope": "user",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "piwi.codeLens",
+      "jetbrains": "codeLens",
+      "group": "editor",
+      "scope": "user",
+      "type": "string",
+      "default": "all",
+      "choices": [
+        {
+          "value": "all",
+          "label": "Every line"
+        },
+        {
+          "value": "problems",
+          "label": "A failure's and an uncovered change's alone"
+        },
+        {
+          "value": "off",
+          "label": "None"
+        }
+      ]
+    },
+    {
+      "key": "piwi.gutterIcons",
+      "jetbrains": null,
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.coverageMarks",
+      "jetbrains": "coverageMarks",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.failureSeverity",
+      "jetbrains": "failureSeverity",
+      "group": "editor",
+      "scope": "project",
+      "type": "string",
+      "default": "error",
+      "choices": [
+        {
+          "value": "error",
+          "label": "An error"
+        },
+        {
+          "value": "warning",
+          "label": "A warning"
+        },
+        {
+          "value": "information",
+          "label": {
+            "vscode": "Information",
+            "jetbrains": "A weak warning"
+          }
+        },
+        {
+          "value": "off",
+          "label": {
+            "vscode": "Nothing in the Problems panel",
+            "jetbrains": "Nothing in the editor's problems"
+          }
+        }
+      ]
+    },
+    {
+      "key": "piwi.locatorWarnings",
+      "jetbrains": "locatorWarnings",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.failingTestTint",
+      "jetbrains": "failingTestTint",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.ciPositions",
+      "jetbrains": "ciPositions",
+      "group": "editor",
+      "scope": "user",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.mcpAuthorization",
+      "jetbrains": "mcpAuthorization",
+      "group": "agents",
+      "scope": "user",
+      "type": "string",
+      "default": "key",
+      "choices": [
+        {
+          "value": "key",
+          "label": {
+            "vscode": "The editor's API key",
+            "jetbrains": "The IDE's API key"
+          }
+        },
+        {
+          "value": "sign-in",
+          "label": "A sign-in in the browser"
+        }
+      ]
+    },
+    {
+      "key": "piwi.serveRunsToAgents",
+      "jetbrains": "serveRunsToAgents",
+      "group": "agents",
+      "scope": "project",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "piwi.hiddenMessages",
+      "jetbrains": null,
+      "group": "advanced",
+      "scope": "user",
+      "type": "array",
+      "default": []
+    },
+    {
+      "key": "piwi.trace.server",
+      "jetbrains": null,
+      "group": "advanced",
+      "scope": "user",
+      "type": "string",
+      "default": "off",
+      "choices": [
+        {
+          "value": "off",
+          "label": "Off"
+        },
+        {
+          "value": "messages",
+          "label": "Messages"
+        },
+        {
+          "value": "verbose",
+          "label": "Verbose"
+        }
+      ]
+    }
+  ]
+}

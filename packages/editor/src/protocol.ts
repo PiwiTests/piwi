@@ -58,6 +58,11 @@ export interface SummaryLine {
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
   /**
+   * A line about a problem: a failure's reason and evidence above its failing line, a file's uncovered changes. The
+   * lines `EditorCredentials.codeLens` `problems` keeps.
+   */
+  problem?: boolean;
+  /**
    * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
    * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
    */
@@ -605,12 +610,23 @@ export interface EditorCredentials {
   /** Which failures turn the status item to its alarm (`RunStatus.alarm`): `new` when absent, `any` or `never`. */
   statusBarAlert?: StatusBarAlert | null;
   /**
+   * The lines `piwi/fileSummary` gives above the code, which the clients show as lenses: `all` when absent; `problems`,
+   * a failure's and an uncovered change's alone (`SummaryLine.problem`); `off`, none. A test's line, its gutter mark
+   * (`SummaryLine.status`), stays.
+   */
+  codeLens?: CodeLensChoice | null;
+  /** The brittle locators' diagnostics (`brittle`, `watch`): published unless false. */
+  locatorWarnings?: boolean | null;
+  /**
    * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
    * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
    * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
    */
   mcpAuthorization?: McpAuthorization | null;
 }
+
+/** The lines above the code the editor's setting shows (`EditorCredentials.codeLens`). */
+export type CodeLensChoice = 'all' | 'problems' | 'off';
 
 /** The severity of a failure's diagnostic, as the editor's setting chooses it. */
 export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';
@@ -1241,12 +1257,16 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */
+  test?: { uri: string; line: number };
+  /** Verify the test ×3: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
+  verify?: RunTestsArgs;
   /**
    * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
    * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
-   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, and where the run would be refused: its
-   * spec holds no one test of its title, the title or project is not one Piwi takes, or it stops on the test's own
-   * `test(…)` line.
+   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, where its spec holds no one test of its
+   * title (as are `test` and `verify`), and where the run would be refused: the title or project is not one Piwi takes,
+   * or it stops on the test's own `test(…)` line.
    */
   debug?: RunTestsArgs;
 }
@@ -1544,7 +1564,7 @@ export interface RecordParams {
 
 /**
  * `piwi/recordRequested` (notification, server to client): a test paused in a run the editor started asks to record
- * from there (**Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
+ * from there (**Record** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
  * recording as it starts one at the caret, with `piwi/record` naming `handoff`, without asking anything; a hand-off it
  * does not start within 30 seconds is refused, and the test goes on.
  */
@@ -1712,6 +1732,26 @@ export interface PageCandidatesResult {
 
 export const PAGE_CANDIDATES_REQUEST = 'piwi/pageCandidates';
 
+/** `piwi/recordPlace`: what Record here writes at a line of a file, for the code action that offers it there. */
+export interface RecordPlaceParams {
+  uri: string;
+  /** 0-based. */
+  line: number;
+}
+
+export interface RecordPlaceResult {
+  /**
+   * `test`, a new test, at the top level or between a describe's tests, past the file's imports; `steps`, in the body
+   * of a test, a hook or another function. Null where no code action offers Record here: a file that is not a script
+   * under a Playwright config's folder, a class body between its members, and the lines down to the last import.
+   */
+  place: 'test' | 'steps' | null;
+  /** The code action's title, `Piwi: record a test here…` or `Piwi: record steps here…`; null with `place`. */
+  title: string | null;
+}
+
+export const RECORD_PLACE_REQUEST = 'piwi/recordPlace';
+
 /**
  * What the desktop app is asked to do with a failure or a flaky test from the team instance: reproduce the failure,
  * bisect it, or run the test's Flake Lab experiment.
@@ -1834,9 +1874,11 @@ export const RUN_STOP_WORDS: Record<RunStopReason, string> = {
  * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
  * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); End the test at a stop
  * (`end`, `piwi/runControl`); and the run shared live on the team instance (`share`, `piwi/shareRun`). A worker lists
- * Pick a locator only where its run names the client's Send to editor
- * pairing, and Record here and Assert only where it names the record channel, which a run started in a terminal names
- * neither of. An older reporter lists fewer, or none: the service refuses what it does not take.
+ * Pick a locator only where its run names a Send to editor pairing, and Record and Assert only where it names the
+ * record channel. A run started in a terminal that follows an editor names that editor's run channel as its record
+ * channel, and its pairing when the editor's discovery file names one; a run that follows the desktop app names no
+ * record channel, and the app's pairing when the app's discovery file names one. A run that sets its own keeps it. An
+ * older reporter lists fewer, or none: the service refuses what it does not take.
  */
 export type RunTake =
   | 'pick'
@@ -2509,7 +2551,7 @@ export const HUB_REQUEST = 'piwi/hub';
 
 /**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and
- * Record here in the test's window (the locator comes back through the client's Send to editor listener, then
+ * Record in the test's window (the locator comes back through the client's Send to editor listener, then
  * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element
  * there, and `assert-region` the picker, for a region whose ARIA snapshot is read; `mock` makes `page.route(…)` from a
  * response the test kept (`request`, an id `piwi/stopRequests` lists). The code of `assert`, `assert-region` and

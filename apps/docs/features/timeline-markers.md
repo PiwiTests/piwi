@@ -31,7 +31,7 @@ Each marker belongs to one project and carries:
 - **Project charts** — the **Run trend** and **Performance trend** charts render each marker as a dashed vertical line with a colored flag handle. Hover the line or its flag for the marker's details (category, label, date, environment, linked run, description); click it to open the marker in the **Markers** panel, in its edit form when you can edit markers.
 - **Markers panel** — a **Markers** button beside the **Run trend** chart (on the project's Runs tab) opens a panel listing the project's markers, newest first. **Add marker** and each marker's edit button open the form in the panel itself; **Delete** is on each marker and in the edit form.
 - **Test-case history** — a single test's duration history chart shows the same markers, so you can tell whether an event affected that specific test. Clicking one opens it in the project's **Markers** panel.
-- **Analytics charts** — the trend charts of the analytics page draw the markers too, with the same details on hover.
+- **Analytics charts** — the trend charts of the [analytics page](./analytics) draw the markers too, with the same details on hover: every marker with one project in scope; across projects only `release`, `infra` and `incident` markers, each labeled with its project. The **Timeline markers** widget lists a period's markers, and the analytics periods *Since a marker* and *Release cycle* start from them.
 - **Run detail** — a run shows an **"After: …"** chip for the nearest preceding marker, so a single run tells you which event it followed.
 
 ## Environment scoping
@@ -48,10 +48,15 @@ Reading markers is available to anyone who can read the project. Creating, editi
 
 Piwi can create markers for you when a run's tooling changes. On each finished run it compares the run against the previous run **in the same environment** and, when the **Playwright version** or **reporter version** changed, adds an `auto` marker (category `config`) at that run's time — for example _Playwright 1.49.0 → 1.50.0_. Auto markers are labeled with a small sparkle icon and can be edited or deleted like any other.
 
+When a run's [environment](./run-environment) differs from the previous run on the same branch and in the same
+environment, it gets one `auto` marker per kind of change, labeled with the fields that changed: its runner or a
+browser (category `infra`), or a server under test (category `config`). A kind either run did not record counts as no
+change. A project that declines the Timeline markers [capability](/operate/capabilities) gets none of these.
+
 A run flagged as an [environment incident](./environment-incidents) gets an `auto` marker in the `incident`
 category, linked to the run.
 
-This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn both off. See the [configuration reference](/reference/configuration).
+This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn all three off. See the [configuration reference](/reference/configuration).
 
 ## Release markers keep their run
 

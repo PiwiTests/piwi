@@ -51,6 +51,15 @@ const probe = args.includes('--probe');
 const configFrom = option('--config') ? path.resolve(option('--config')) : undefined;
 const startTrial = args.includes('--start-trial');
 
+/** The options of WebStorm's TypeScript type hints (`ts.type.hints`), each turned off with the provider. */
+const TYPE_HINT_OPTIONS = [
+  'variables.and.fields',
+  'include.when.variable.type.matches.name',
+  'parameters.in.parens',
+  'non.paren.single.param',
+  'function.returns',
+];
+
 /** Where the downloaded IDE lives, beside the Gradle sandbox: gitignored. */
 const IDE_DIR = path.join(pluginRoot, '.ide');
 
@@ -75,6 +84,10 @@ const KEYS = {
  */
 async function findIde() {
   if (option('--ide')) return path.resolve(option('--ide'));
+  // The IDE's bundled Node.js services are CommonJS `.js` files; inside this repository they would otherwise take the
+  // root package.json's `"type": "module"`, and the TypeScript service would exit as it starts.
+  fs.mkdirSync(IDE_DIR, { recursive: true });
+  fs.writeFileSync(path.join(IDE_DIR, 'package.json'), '{ "type": "commonjs" }\n');
   const isIde = (name) => /^WebStorm-/.test(name) && fs.existsSync(path.join(IDE_DIR, name, 'bin', 'webstorm.sh'));
   const installed = fs.existsSync(IDE_DIR) ? fs.readdirSync(IDE_DIR).filter(isIde).sort() : [];
   if (installed.length) return path.join(IDE_DIR, installed.at(-1));
@@ -215,13 +228,25 @@ function writeIdeDirs(root, ide) {
 </application>
 `,
   );
-  // No code author hints or usage counts above the declarations: the fixture's one commit would sign every line, and
-  // the summaries the plugin adds above the tests are the point.
+  // No code author hints or usage counts above the declarations, and no inferred types beside them: the fixture's one
+  // commit would sign every line, and the summaries the plugin adds above the tests are the point.
   fs.writeFileSync(
     path.join(options, 'editor.xml'),
     `<application>
   <component name="EditorSettings">
     <option name="IS_WHITESPACES_SHOWN" value="false" />
+  </component>
+  <component name="DeclarativeInlayHintsSettings">
+    <option name="enabledOptions">
+      <map>
+${TYPE_HINT_OPTIONS.map((option) => `        <entry key="ts.type.hints#${option}" value="false" />`).join('\n')}
+      </map>
+    </option>
+    <option name="providerIdToEnabled">
+      <map>
+        <entry key="ts.type.hints" value="false" />
+      </map>
+    </option>
   </component>
   <component name="CodeVisionSettings">
     <option name="disabledCodeVisionProviderIds">

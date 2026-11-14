@@ -84,15 +84,9 @@ reporter entry's options.
 
 ## In the dashboard
 
-A run whose reporter sent findings shows a **Resources** tab:
-
-- the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
-- the findings, each with the line or fixture that opened it and the line that last used it, one click from your
-  editor;
-- a switch drawing each worker's open pages on the run's [Timeline tab](./cpu-memory-disk#in-the-dashboard):
-  a leak climbs test after test, a clean worker stays flat;
-- the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
-- the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
+The findings are listed on the run's **Resources** tab, beside what the run cost the machine
+([the tab](./cpu-memory-disk#in-the-dashboard)). Its switch draws each worker's open pages on the run's Timeline: a
+leak climbs test after test, a clean worker stays flat.
 
 On the run's **Timeline** tab, a red tail under a worker's row runs from the test that left an object open to its
 close or the worker's end, and an amber one from an object's last use to its close. Hover one for its lines; click it

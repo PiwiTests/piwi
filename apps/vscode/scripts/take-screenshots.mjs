@@ -206,7 +206,7 @@ const SCENES = {
     await goToLine(page, FAILING_LINE, 5);
     await settle(page, 800);
     await page.keyboard.press('Control+.');
-    await page.locator('.action-widget', { hasText: 'Heal: use' }).first().waitFor({ state: 'visible' });
+    await page.locator('.action-widget', { hasText: 'Piwi: heal with' }).first().waitFor({ state: 'visible' });
     await settle(page);
     await shoot(page, 'heal');
     await page.keyboard.press('Escape');
@@ -344,7 +344,7 @@ const SCENES = {
       .first()
       .locator('span', { hasText: /^await$/ })
       .first();
-    const hover = page.locator('.monaco-hover:not(.hidden)', { hasText: 'Run to cursor' }).first();
+    const hover = page.locator('.monaco-hover:not(.hidden)', { hasText: 'Run to the cursor' }).first();
     await token.hover();
     await hover.waitFor({ state: 'visible', timeout: 10_000 });
     await settle(page, 800);

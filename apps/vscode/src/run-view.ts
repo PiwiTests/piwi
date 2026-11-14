@@ -79,6 +79,7 @@ import {
   type StopRequestsParams,
   type StopRequestsResult,
 } from '@piwitests/editor/protocol';
+import { editorWords } from '@piwitests/editor/words';
 import {
   CaretCounts,
   EditLog,
@@ -478,7 +479,7 @@ export function registerRunControl(
    * focus, as the person asked, the stop as it stands then.
    */
   const callAttention = async (stop: ShownStop) => {
-    const resume = 'Resume';
+    const resume = editorWords('stop.resume');
     const go = 'Go to the stopped line';
     const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout ?? null);
     const picked = await vscode.window.showWarningMessage(`Piwi: ${said}`, resume, go);

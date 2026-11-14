@@ -13,6 +13,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 
 - **No logic that the JetBrains plugin would need too.** Diagnostics, quick fixes, hover and every other answer come
   from the service; this extension draws them, and a new feature starts as a service request.
+- **A word both editors write themselves is read from `@piwitests/editor/words`** (`words.json`: a stop's controls and
+  code actions, a recording's states, a worker's name, the choices of Hold failures), never written here again; the
+  JetBrains plugin restates the file and `GlueTest` holds its copy to it.
+- **A setting is registered in the editor service's settings registry first** (`packages/editor/src/settings.json`: its
+  group, order, scope, type, default and choice labels); `package.json`'s groups follow it, a team's option
+  window-scoped and a person's application-scoped, written to the user's settings. Checked by `tests/settings.test.ts`.
 - **A command's title is the action catalog's title** (`packages/editor/src/actions.ts`), the same as JetBrains' but
   the cursor for the caret and the window for the project. `packages/editor/tests/actions.test.ts` holds `package.json`
   to it.

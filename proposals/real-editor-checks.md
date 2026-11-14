@@ -39,9 +39,9 @@ Shared by the two editor scripts:
   with a page object whose line 15 holds a brittle locator (`locator('.btn-primary').nth(1)`), two tests failing on
   the latest CI run, a local run since that fixed a third, a flaky catalog test, a service the tests reach, and two
   Nitro server routes, one the checkout tests request and one none does (the `uncovered` scene changes it). It is
-  a git repository with one commit, so the branch and commit the service reports exist. It carries type stubs for
-  `@playwright/test` and `@piwitests/reporter` under `node_modules/` and a `tsconfig.json`, so neither editor's
-  TypeScript service reports errors of its own.
+  a git repository with one commit, so the branch and commit the service reports exist. It carries this repository's
+  Playwright and type stubs for `@piwitests/reporter` under `node_modules/`, and a `tsconfig.json`, so neither
+  editor's TypeScript service reports errors of its own and a JetBrains IDE draws its run icon on each test.
 - **The stub instance**, served by the same module: the routes the editor service reads (the project menu, the locator
   and code indexes, the test cases, the locator alternatives, the branch failures, the test functions, the healing of
   the failed cases, the run, the links, the screenshots) with answers consistent with the fixture.
@@ -169,7 +169,7 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
   click is the first `.quick-input-list .monaco-list-row` whose `.label-name` starts with the title, because the
   palette's fuzzy match ranks other commands first for some titles (a plain Enter opened a terminal). Go to Line
   (Ctrl+G) takes `:line:column`; with the line alone the input waits. The quick-fix menu is `.action-widget`,
-  filtered by text (`Heal: use`) and `.first()`, since several widgets can exist; the hover is
+  filtered by text (`Piwi: heal with`) and `.first()`, since several widgets can exist; the hover is
   `.monaco-hover:not(.hidden)`. Notifications are cleared at the start of a scene, never while a menu is open: the
   palette's text would land in the editor.
 - **The Marketplace README.** `vsce` rewrites every relative image link to
@@ -232,7 +232,7 @@ in one window for the whole suite; `npm run vscode:test:e2e` from `apps/vscode/`
 `xvfb-run -a -s "-screen 0 1920x1200x24"` on Linux. A local run takes about 15 seconds once VS Code is downloaded. The
 integration suite keeps its own stub instance. What follows is the reasoning it was built from.
 
-The screenshot script already waits on real UI states to capture: the quick-fix row that starts with `Heal: use`,
+The screenshot script already waits on real UI states to capture: the quick-fix row that starts with `Piwi: heal with`,
 the hover's content, the Problems panel. A Playwright test suite over the same launcher turns those waits into
 assertions:
 

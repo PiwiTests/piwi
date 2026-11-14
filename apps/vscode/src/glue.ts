@@ -49,11 +49,12 @@ import type {
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
+import { editorWords } from '@piwitests/editor/words';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 import { countWords, waitedFor } from './run-control';
 
-/** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
+/** What Read the instance and the configs again says when the service does not answer, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
 
 /** The button that runs `piwi.restartService`. */
@@ -1325,7 +1326,7 @@ export function editedLine(change: TextChange): number | null {
 
 /** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)`. */
 export interface LocatorChoice {
-  /** `Use getByTestId('pay')`. */
+  /** `Piwi: use getByTestId('pay')`. */
   title: string;
   locator: string;
   start: number;
@@ -1346,7 +1347,7 @@ export function locatorChoices(line: string, step: Pick<RecordingStep, 'locators
   if (start < 0 || line.includes(written, start + 1)) return [];
   return locators
     .filter((locator) => locator && locator !== written)
-    .map((locator) => ({ title: `Use ${locator}`, locator, start, end: start + written.length }));
+    .map((locator) => ({ title: `Piwi: use ${locator}`, locator, start, end: start + written.length }));
 }
 
 /** The service's import edit as a change of the document; null without one. */
@@ -1438,36 +1439,37 @@ export function recordingView(
   file: string,
 ): RecordingView {
   const count = plural(steps, 'step');
-  const stop: RecordingAction = { title: 'Stop', command: 'piwi.stopRecording' };
-  const resume: RecordingAction = { title: 'Resume', command: 'piwi.resumeRecording' };
+  const stop: RecordingAction = { title: editorWords('recording.stop'), command: 'piwi.stopRecording' };
+  const resume: RecordingAction = { title: editorWords('recording.resume'), command: 'piwi.resumeRecording' };
+  const words = { steps: count };
   if (edited) {
     return {
-      title: `$(circle-large-outline) Paused while you edit · ${count}`,
-      actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
+      title: `$(circle-large-outline) ${editorWords('recording.block.edited', words)}`,
+      actions: [resume, { title: editorWords('recording.keep-edits'), command: 'piwi.stopRecording' }],
+      status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
   if (state === 'paused') {
     return {
-      title: `$(circle-large-outline) Paused · ${count}`,
+      title: `$(circle-large-outline) ${editorWords('recording.block.paused', words)}`,
       actions: [stop, resume],
-      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
+      status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }
   if (state === 'starting') {
     return {
-      title: '$(loading~spin) Opening the browser',
+      title: `$(loading~spin) ${editorWords('recording.block.starting')}`,
       actions: [stop],
-      status: '$(loading~spin) Piwi: opening the browser',
+      status: `$(loading~spin) ${editorWords('recording.status.starting')}`,
       tooltip: `Recording into ${file}. Click to stop.`,
     };
   }
   return {
-    title: `$(record) Recording · ${count}`,
-    actions: [stop, { title: 'Pause', command: 'piwi.pauseRecording' }],
-    status: `$(record) Piwi: recording · ${count}`,
+    title: `$(record) ${editorWords('recording.block.recording', words)}`,
+    actions: [stop, { title: editorWords('recording.pause'), command: 'piwi.pauseRecording' }],
+    status: `$(record) ${editorWords('recording.status.recording', words)}`,
     tooltip: `Recording into ${file}. Click to stop.`,
   };
 }
@@ -2077,11 +2079,11 @@ export interface RunStartChoices {
   holdFailures: HoldFailuresChoice;
 }
 
-/** The choices of `piwi.runHoldFailures`, as **Piwi: Run options…** offers them. */
+/** The choices of `piwi.runHoldFailures` in the editors' words, short as a line names them, whole in their detail. */
 export const HOLD_FAILURES_CHOICES: Array<{ choice: HoldFailuresChoice; label: string; detail: string }> = [
-  { choice: 'auto', label: 'Auto', detail: 'On for a run with a breakpoint or a page.pause(), off otherwise' },
-  { choice: 'on', label: 'On', detail: 'From each run’s start: a failed test waits at its line for an answer' },
-  { choice: 'off', label: 'Off', detail: 'From each run’s start: a failed test fails as it would without Piwi' },
+  { choice: 'auto', label: editorWords('hold.auto.short'), detail: editorWords('hold.auto') },
+  { choice: 'on', label: editorWords('hold.on.short'), detail: editorWords('hold.on') },
+  { choice: 'off', label: editorWords('hold.off.short'), detail: editorWords('hold.off') },
 ];
 
 /** The settings' values as choices: a value of another type or outside the enum reads as its default. */
@@ -2144,12 +2146,4 @@ export function runOptionPicks(
     },
     { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
   ];
-}
-
-/**
- * Where **Piwi: Run options…** writes a setting: the workspace's settings when they hold a value for it, which would
- * win over the user's, else the user's.
- */
-export function runOptionTarget(inspected: { workspaceValue?: unknown } | undefined): 'workspace' | 'global' {
-  return inspected?.workspaceValue === undefined ? 'global' : 'workspace';
 }

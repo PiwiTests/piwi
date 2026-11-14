@@ -28,7 +28,7 @@ each rule below ends with the section to read there.
 - "What it is": before changing the manifest, a permission, the build, a popup tile, the settings page, how a script is
   injected or registered, the tool session or session storage.
 - "The debugging protocol" and its subsections: before changing the replay or anything using `chrome.debugger`.
-- "Connected mode": before changing the settings page's connection, requests, secrets, project mappings or the desktop
+- "Connected mode": before changing the settings page's connection, requests, secrets, URL patterns or the desktop
   app.
 - "The editor's runs": before changing the Runs window, the run shortcut, the run hubs or the editor's proof
   (`editor-proof.ts`).
@@ -108,8 +108,8 @@ each rule below ends with the section to read there.
 - **A new request to the instance goes through `withConnectionHealth`**, so the popup and the settings page show
   whether the instance answers. (see "Connection health")
 - **Never add a fetch to `refreshHud`: it runs on every captured step.** (see "Cache freshness")
-- **The active project comes only from `resolveActiveProject(settings, override, url)`.** (see "Project mappings and
-  the active project")
+- **The active project comes only from `resolveActiveProject(settings, override, url)`.** (see "URL patterns and the
+  active project")
 - **The function matcher never invents a function:** it scores catalog entries only, with the same
   `scoreTargetMatch` in the recorder and the Test functions panel. (see "What connecting adds" and "The Test functions
   panel")

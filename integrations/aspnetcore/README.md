@@ -2,7 +2,7 @@
 
 ASP.NET Core integration for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header.
 
-During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
+During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in the Piwi Dashboard, and are included in the AI diagnosis context.
 
 **Active in Development and Test by default.** No header is emitted in Production unless you opt in — see [Choosing the environments](#choosing-the-environments) for recette tiers with their own environment names.
 
@@ -161,7 +161,7 @@ Playwright test
                  └─ X-Piwi-Logs: <gzip+base64 JSON>
                       └─ Piwi reporter reads header
                            └─ stored as serverLogs on the network request
-                                └─ visible in test-case detail + AI diagnosis
+                                └─ visible on the execution page + AI diagnosis
 ```
 
 ## Route manifest
@@ -237,8 +237,8 @@ Lambdas created at startup, such as inline minimal API handlers, and work outsid
 
 The middleware accepts a signed fault instruction from a Piwi probe run (Test
 Map, level two). A verified header is recorded on `HttpContext.Items["PiwiProbe"]`;
-a fault is **applied** only once a project turns server probes on
-(`PIWI_SERVER_PROBES=true`), which stays off by default. The middleware runs only
+a fault is **applied** only when the app runs with `PIWI_SERVER_PROBES=true`, off by
+default, and the project has server probes on in the dashboard. The middleware runs only
 in the environments it is active in, Development and Test by default (the same
 guard as log capture).
 

@@ -28,8 +28,9 @@ import javax.swing.Icon
  * details as the tooltip and a click opening it in the dashboard, a background over a failing
  * test, and a stronger one on the line it failed at, with why as the tooltip, and whether that
  * line changed since the run. While a run the service follows runs a test, the icon says so, then gives that run's
- * result. The icon's right-click menu runs the test with Piwi: **Run with Piwi** and **Verify ×3 with Piwi**. The
- * summary is fetched outside the read action, shared with Code Vision, and drawn while the IDE indexes.
+ * result. The icon's right-click menu runs the test with Piwi: **Run with Piwi** and **Verify ×3 with Piwi**. Piwi
+ * test results on the Gutter Icons page switches the icon off (`PiwiTestResultsGutter`). The summary is fetched
+ * outside the read action, shared with Code Vision, and drawn while the IDE indexes.
  */
 class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>(), DumbAware {
     class Target(val project: Project, val file: VirtualFile, val stamp: Long)
@@ -56,6 +57,9 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         val document = file.viewProvider.document ?: return
         val uri = runCatching { file.virtualFile?.toNioPath()?.toUri()?.toString() }.getOrNull()
         val text = document.charsSequence
+        // Piwi test results, switched off on the Gutter Icons page, leaves the backgrounds alone, which have their own switch.
+        val icons = PiwiTestResultsGutter.shown()
+        val tinted = PiwiUserSettings.state().failingTestTint
         for (line in lines.orEmpty()) {
             if (line.line !in 0 until document.lineCount) continue
             val start = document.getLineStartOffset(line.line)
@@ -63,13 +67,15 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             var first = start
             while (first < end && text[first].isWhitespace()) first++
             if (first == end) continue
-            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
-                .range(TextRange(first, end))
-                .gutterIconRenderer(TestResultGutter(file.project, line, uri, document.createRangeMarker(first, end)))
-                .create()
+            if (icons) {
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                    .range(TextRange(first, end))
+                    .gutterIconRenderer(TestResultGutter(file.project, line, uri, document.createRangeMarker(first, end)))
+                    .create()
+            }
             val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
             val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), Glue.lineEndWithBreak(document.getLineEndOffset(it.line), document.textLength)) }
-            if (line.status == "failed") {
+            if (tinted && line.status == "failed") {
                 val last = (line.endLine ?: line.line).coerceIn(line.line, document.lineCount - 1)
                 val test = TextRange(start, Glue.lineEndWithBreak(document.getLineEndOffset(last), document.textLength))
                 // Two backgrounds on one line have no set order: the test's goes around the failing line.
@@ -82,7 +88,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                     holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(part).textAttributes(FAILING_TEST).create()
                 }
             }
-            if (failure != null && failedAt != null && !failedAt.isEmpty) {
+            if (tinted && failure != null && failedAt != null && !failedAt.isEmpty) {
                 // Why it failed is the diagnostic's and the hover's, which the service writes.
                 holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(failedAt).textAttributes(FAILING_LINE).create()
             }

@@ -20,7 +20,8 @@ hero:
       text: GitHub
       link: https://github.com/PiwiTests/piwi
 
-# The cards under the hero are the feature catalog's groups, one card each,
+# The cards under the hero come from the feature catalog: one per job, the
+# fifth being the Tools section, then trends and reports and self-hosting,
 # filled in by transformPageData in .vitepress/config.mts.
 ---
 
@@ -112,10 +113,11 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 ### I write Playwright tests
 
 - [Your first failure, explained](/guide/first-failure): one failing test, from its headline to its evidence
-- [Core concepts](/guide/concepts): run, test case, execution, failure cluster, baseline
+- [Core concepts](/guide/core-concepts): run, test case, execution, failure cluster, baseline
 - [Capture fixtures](/guide/capture-fixtures): the one file behind locator healing, network timing and console capture
 - [CI & sharding](/guide/ci): two environment variables, and every shard merged into one run
 - [Browser extension](/features/extension) and [Editor extensions](/features/editors): Piwi where you write the tests
+- [Write, run and fix a test](/features/write-run-fix): a test from an empty spec to a passing run, with the tool for each step
 
 ### Something is red right now
 

@@ -7,8 +7,8 @@ lang: en-US
 # One-click deploy
 
 If you don't have a server to run Docker on, these templates stand up an instance on a hosting provider
-instead. They all provision the same thing: **one container, one persistent volume mounted at
-`/app/.data`, and authentication on**. Railway, Render and Coolify also generate `PIWI_SECRET_KEY`,
+instead. They provision the same thing: **one container, one persistent volume mounted at
+`/app/.data`, and authentication on**; on Koyeb you attach the volume yourself. Railway, Render and Coolify also generate `PIWI_SECRET_KEY`,
 `PIWI_AUTH_SECRET` and `PIWI_SETUP_TOKEN`; on Fly.io and Koyeb you set them yourself. Beyond that, the difference is the provider's
 own volume and pricing model.
 
@@ -31,7 +31,7 @@ point it isn't one click. [Deploy it](./deployment) to a machine with Docker ins
 
 ## Railway
 
-Railway publishes templates from its own dashboard rather than from a file in this repository, so the
+Railway publishes templates from its own console rather than from a file in this repository, so the
 template's exact contents live in
 [`deploy/railway/template.md`](https://github.com/PiwiTests/piwi/blob/main/deploy/railway/template.md)
 and the repo ships a [`railway.json`](https://github.com/PiwiTests/piwi/blob/main/railway.json) pinning

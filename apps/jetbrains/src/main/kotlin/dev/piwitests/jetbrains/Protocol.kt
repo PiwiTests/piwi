@@ -29,6 +29,7 @@ data class SummaryLine(
     val failure: TestFailure? = null,
     val testCaseId: Int? = null,
     val actions: List<TestAction>? = null,
+    val problem: Boolean? = null,
 )
 
 /**
@@ -569,6 +570,10 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
+    val test: EditorBreakpoint? = null,
+    /** Verify the test ×3: its run by its location, three times; null where `test` is. */
+    val verify: RunTestsArgs? = null,
     /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
     val debug: RunTestsArgs? = null,
 )
@@ -806,6 +811,16 @@ data class RecordingUpdate(
 
 data class PageCandidatesParams(val uri: String, val line: Int, val character: Int)
 
+/** `piwi/recordPlace`: what Record here writes at a 0-based line of a file, for the intention that offers it there. */
+data class RecordPlaceParams(val uri: String, val line: Int)
+
+/**
+ * `test`, a new test, past the file's imports, at the top level or between a describe's tests; `steps`, in a test's,
+ * a hook's or another function's body; null where nothing offers it (a class body, the imports, a file that is no
+ * script under a config's folder). `title` names the intention: `Piwi: record a test here…`.
+ */
+data class RecordPlaceResult(val place: String? = null, val title: String? = null)
+
 /** A page expression the steps written at a position could run on, and why it is offered. */
 data class PageCandidate(val expression: String? = null, val reason: String? = null)
 
@@ -880,6 +895,8 @@ data class EditorCredentials(
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
     val statusBarAlert: String? = null,
+    val codeLens: String? = null,
+    val locatorWarnings: Boolean? = null,
 )
 
 /**
@@ -1557,6 +1574,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pageCandidates")
     fun pageCandidates(params: PageCandidatesParams): CompletableFuture<PageCandidatesResult?>
+
+    @JsonRequest("piwi/recordPlace")
+    fun recordPlace(params: RecordPlaceParams): CompletableFuture<RecordPlaceResult?>
 
     @JsonRequest("piwi/applyPick")
     fun applyPick(params: ApplyPickParams): CompletableFuture<ApplyPickResult?>

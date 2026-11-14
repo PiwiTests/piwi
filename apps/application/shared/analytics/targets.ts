@@ -14,7 +14,7 @@ export interface ProjectTargets {
   maxFlakyTests?: number;
   /** At most this many wasted CI minutes per week (scaled to the period's length). */
   maxWastedMinutesPerWeek?: number;
-  /** The oldest open failure cause at most this many days old. */
+  /** The oldest open failure cluster at most this many days old. */
   maxOpenClusterAgeDays?: number;
   /** The median time to fix at most this many days. */
   maxMedianTimeToFixDays?: number;
@@ -66,7 +66,7 @@ export const TARGET_DEFS: readonly TargetDef[] = [
     key: 'maxOpenClusterAgeDays',
     metric: 'oldest-open-failure-cause',
     direction: 'max',
-    label: 'Oldest open failure cause at most',
+    label: 'Oldest open failure cluster at most',
     suffix: 'days',
     max: 3650,
   },

@@ -44,7 +44,7 @@ All configuration is via environment variables (same as the Docker image). `PORT
 documented — with its default and whether the Settings UI can override it — in the
 [configuration reference](https://piwitests.dev/reference/configuration). Most deployments set at
 least `PIWI_SECRET_KEY`, the master key for encrypting secrets stored in the database
-(AI API keys, SCM tokens). Unset, saving any of those credentials fails, so set it in any
+(such as AI API keys and SCM tokens). Unset, saving any of those credentials fails, so set it in any
 real deployment. Generate one with:
 
 ```bash
@@ -67,7 +67,10 @@ $env:PORT='8080'; npx @piwitests/server
 ```
 
 The server listens on `127.0.0.1` only: with authentication off, anyone who reaches the port is an
-administrator. To serve other machines, enable authentication and set `HOST=0.0.0.0`.
+administrator. To serve other machines, set `HOST=0.0.0.0` only after the first steps of the
+[production checklist](https://piwitests.dev/operate/production-checklist#before-you-expose-it):
+authentication with `PIWI_AUTH_ENABLED=true`, `PIWI_AUTH_SECRET` and `PIWI_SETUP_TOKEN`, the encryption
+key, and HTTPS in front, since browser sign-in over plain `http://` works only on `localhost`.
 
 ## Sending results
 

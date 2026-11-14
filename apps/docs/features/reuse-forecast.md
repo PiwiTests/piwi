@@ -8,7 +8,7 @@ lang: en-US
 
 The reuse forecast answers two questions from the coverage your runs already record: how much of the last month's test
 time re-ran code that had already passed unchanged, and which tests failed even though the code they ran had not
-changed. It lives on a project's **Selections** tab and in the `get_reuse_forecast`
+changed. It lives on a project's **Selections** page and in the `get_reuse_forecast`
 [MCP tool](/reference/mcp-tools#workflow).
 
 <Needs reporter fixtures />
@@ -60,13 +60,15 @@ attempt with coverage naming its file versions. The working tree is diffed again
 [impact from that diff](/features/change-impact) selects it, when a changed file maps to no test, or when a file the
 pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
 executions, tagged `@no-reuse`, or in a spec file holding a serial group always runs. A run skips only the tests the plan names, in the Playwright projects
-their pass ran them in, so a new or renamed test runs. The run records the tests it skipped and did not execute as its
+their pass ran them in, so a new or renamed test runs. The diff counts untracked files, and a commit a shallow clone
+lacks is fetched. A plan is kept for 24 hours, and a job other than the one that made it uses it only when both
+checkouts are clean at the same commit; a job that cannot use it (an unreachable dashboard, an expired plan, another
+checkout) runs the whole suite, not a shard of it. The run records the tests it skipped and did not execute as its
 reused results: the run page's header counts them and lists them with the pass each one reuses, the pull-request
 comment counts them, and the `get_run` MCP tool returns their count. The run's own status, pass rate, flaky scores,
-durations and fix verification read executions only. In a run that passed with no run error, the
-[CI gate](/reference/cli#gate) counts a reused test as passed for its tag and selection rules, and `--max-reused` and
-`--require-executed` limit reuse. A run that claimed a plan it was not made for (another commit, a dirty checkout,
-another Playwright version, an expired plan) records no reuse and fails those two rules. A run whose shards' blob
+durations and fix verification read executions only. The [CI merge gate](/features/merge-gate#what-fails-it) can limit reuse, and counts a reused test as passed in a run
+that passed with no run error. A run that claimed a plan it was not made for (another commit, a dirty checkout,
+another Playwright version, an expired plan) records no reuse, and fails the gate's reuse rules. A run whose shards' blob
 reports are merged by `merge-reports` claims no plan, so its reuse is not recorded.
 
 <figure>

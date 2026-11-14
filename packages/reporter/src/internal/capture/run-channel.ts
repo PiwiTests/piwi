@@ -93,7 +93,7 @@ import { internalCall } from './quiet-capture.js';
  * (`PIWI_RUN_CHANNEL`, `@piwitests/core/run-channel`), opened once per worker before its first test and kept until
  * the worker ends. The worker says which test it runs and where it stops; the editor pauses it, answers its stops
  * (Step, Resume, Finish, Run to a line), changes the run's breakpoints, asks for an image of the stopped page, starts
- * the pause bar's Pick a locator or Record here, the check panel's Check an element or a region's ARIA snapshot from
+ * the pause bar's Pick a locator or Record, the check panel's Check an element or a region's ARIA snapshot from
  * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
  * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
  * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
@@ -216,7 +216,7 @@ export interface StopToHold {
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
   /**
-   * Start the bar's Pick a locator or Record here from outside the page, at a stop no bar shows only while its live
+   * Start the bar's Pick a locator or Record from outside the page, at a stop no bar shows only while its live
    * view is watched; refused without it.
    */
   intent?(what: RunIntent): IntentAnswer;
@@ -335,7 +335,7 @@ const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does no
 
 /**
  * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
- * (`PIWI_EDITOR_SEND`, which a run started in a terminal carries when its hub names one), Record here and Assert only
+ * (`PIWI_EDITOR_SEND`, which a run started in a terminal carries when its hub names one), Record and Assert only
  * where it names a record channel (`PIWI_RECORD_CHANNEL`, an editor's), and Pick on the image only on a Playwright
  * (`playwright`, when known) whose snapshots give each element's box (1.60).
  */
@@ -488,7 +488,7 @@ let hiddenEditorSend: string | undefined;
  * test starts (Playwright run from a test) opens no connection on this run and is not handed the pairing's token;
  * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
  * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
- * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record**.
  * The live view's key is out for the worker's whole life (`live-view.ts`).
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {

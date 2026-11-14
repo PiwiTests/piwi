@@ -2,7 +2,7 @@
 /**
  * The channels a delivery goes to, one per line: the channel's name, what it
  * sends and who receives it, and whose channel it is. Shown under a report
- * schedule's *Send to* and on each schedule of the Reports page.
+ * schedule's *Send to* and on each schedule of the Quality reports page.
  */
 import { channelOwnerLabel, type ChannelOwner } from '#shared/notifications/channel-recipients';
 
