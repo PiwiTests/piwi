@@ -153,7 +153,12 @@ action ran (ST1, ST2). Both disconnected homes offer Record a new test file…, 
 first-run queue in each editor: the first steps, then one offer per window or session; VS Code's MCP notice stays
 silent on 1.101 and later once the walkthrough opened (ST4). JetBrains' Agents (MCP) group holds the copy and token
 actions as buttons (ST21). ST1 to ST4 and ST21 are left out of this document; the settings step is held to the
-registry by a test rather than generated. Record here is a code action where the
+registry by a test rather than generated. M12 built: JetBrains' Connect panel (`PiwiConnectPanel`), in the settings
+page's Connection group, saved with Apply, and as Connect's one dialog in place of its chain of five: the desktop app
+with its projects, or an instance with Test connection, its key with Sign in…, Paste key… and Remove, saved on Apply,
+and a project from the instance's list. The sign-in shows in the panel, its code and link with Copy code, Copy link
+and Open browser again, and VS Code's sign-in message gains the same buttons (ST16, left out of this document).
+LI13's states for waiting on trust and a Node.js start problem stay with the settings page's In use group. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -508,16 +513,8 @@ settings page it links. The Status says how.
 
 ### 6.3 Connecting
 
-<a id="st16"></a>**ST16. Connecting in JetBrains is a chain of up to five modal dialogs, the settings page takes the
-project as free text, and the sign-in code and link sit in an uncopyable progress dialog.** `PiwiConnectFlow.run` chains
-the desktop-or-instance choice, the URL, sign in or paste, a modal sign-in and the project
-(`PiwiConnect.kt:131, 241, 257, 296-316, 162`). On the settings page both projects are free text
-(`PiwiConfigurable.kt:84-90`, `:110-116`), though the desktop app's list is at hand (`PiwiConnect.kt:206`), and the key
-has no Change or Remove. The sign-in's code and link are progress text (`PiwiConnect.kt:297-298`); VS Code's
-notification shows the code and no link (`apps/vscode/src/extension.ts:2207-2212`). A typo in the project reads as not
-connected, and a browser opened in another profile leaves Cancel as the only way out, in both editors. **(read)** Fix:
-[LI13](#li13)'s Connect panel, in the settings page and as one dialog, and a non-modal sign-in with Copy code, Copy link
-and Open browser again, as VS Code's notification also gets. ([M12](#m12), [LI13](#li13))
+Built with M12: one Connect panel in JetBrains, on the settings page and as one dialog, and a sign-in whose code and
+link stay at hand in both editors. The Status says how.
 
 ### 6.4 Agents
 
@@ -1028,7 +1025,7 @@ in…, Paste key… and Remove, a project combo from the instance. The sign-in i
 link (VS Code's gains Copy link); errors come from one table, and waiting for trust and a Node.js start problem become
 states with their fix. **Lives in** `PiwiConnect.kt`, `PiwiConfigurable.kt` and the service's words (FSL). **Replaces**
 up to five modal dialogs, a project typed by hand on the settings page, a page that reads None while connected.
-**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q27](#q27), [M12](#m12).
+**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q27](#q27), M12 (built).
 
 **Messages (principle 8).**
 
@@ -1159,7 +1156,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m10"></a>M10 | **The start options in one shape in both editors**; the settings registry, its grouped pages, the display switches and the scopes are built (Status) | `ide` | [NF3](#nf3) |
-| <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state, a stop that waits for the person shown in it until answered | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18), [HM17](#hm17) |
 | <a id="m14"></a>M14 | **Run controls where the debugger keeps its own**, as [LI9](#li9) places them: a run group in VS Code's `editor/context`, JetBrains' Run menu, editor menu and a Run tab with the controls, Go to the stopped line, the starting state, run names in the choosers, and JetBrains' inlay down to VS Code's paused text and four controls | `ide` | [LR3](#lr3), [LR6](#lr6), [LR4](#lr4), [LR13](#lr13), [LR16](#lr16) |
 | <a id="m15"></a>M15 | **One page per worker, with the controls as `Piwi.RunControl`'s toolbar**: the paused page joins the worker views; Watch and Interact as toggles with icons under one input rule, VS Code's tab icons, an accessible name on every control | `ide` | [LR8](#lr8), [NF6](#nf6) |

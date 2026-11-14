@@ -704,6 +704,42 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun hasApiKey(serverUrl: String): Boolean =
         serverUrl.isNotBlank() && !PasswordSafe.instance.getPassword(credentialAttributes(serverUrl)).isNullOrEmpty()
 
+    /** What saving the connection does to the key of its instance. */
+    sealed interface KeyChange {
+        object Keep : KeyChange
+
+        data class Set(val key: String) : KeyChange
+
+        object Remove : KeyChange
+    }
+
+    /** The key the password safe holds for the instance; reads the password safe: never on the event thread. */
+    fun apiKey(serverUrl: String): String? =
+        serverUrl.takeIf { it.isNotBlank() }?.let { PasswordSafe.instance.getPassword(credentialAttributes(it)) }?.ifEmpty { null }
+
+    /**
+     * Save the Connect panel: the instance and project, the change to that instance's key, whether the desktop app is
+     * read first while it runs and its project, then hand them to the service.
+     */
+    fun saveConnection(serverUrl: String, projectName: String, key: KeyChange, desktop: Boolean, desktopProject: String) {
+        val url = Glue.normalizeServerUrl(serverUrl) ?: serverUrl.trim()
+        val settings = settings()
+        settings.serverUrl = url
+        settings.project = projectName.trim()
+        if (url.isNotBlank()) {
+            when (key) {
+                is KeyChange.Set -> PasswordSafe.instance.setPassword(credentialAttributes(url), key.key.trim())
+                KeyChange.Remove -> PasswordSafe.instance.setPassword(credentialAttributes(url), null)
+                KeyChange.Keep -> Unit
+            }
+        }
+        val local = local()
+        local.desktop = desktop
+        local.desktopProject = desktopProject.trim()
+        if (desktop) local.desktopOffered = true
+        sendCredentials()
+    }
+
     /**
      * Save the instance and project, and hand them to the service; a null key forgets the
      * instance's key. The instance is read rather than the desktop app from then on.

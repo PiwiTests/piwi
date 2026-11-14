@@ -951,7 +951,9 @@ ring. The API `activate` returns gives what the view shows (`testExplorer`).
 1. When the desktop app runs, it first lists the app beside the instance the workspace names (`connectChoices` in
    `src/glue.ts`).
 2. Otherwise it asks for the instance's address, then asks the instance whether it needs a key.
-3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted.
+3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted. While the sign-in
+   waits, a message holds the code with **Copy code**, **Copy link**, **Open browser again** and **Cancel**, shown
+   again after each of its buttons until the browser answers.
 4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
    `SecretStorage`.
 

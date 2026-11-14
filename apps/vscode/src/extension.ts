@@ -2498,22 +2498,36 @@ async function signIn(base: string): Promise<string | null> {
     void vscode.window.showInformationMessage('Piwi: this instance predates the browser sign-in; paste an API key.');
     return pasteKey();
   }
-  await vscode.env.openExternal(vscode.Uri.parse(started.verificationUrl));
-  const result = await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
-      cancellable: true,
-    },
-    async (_progress, token) => {
-      const cancel = new AbortController();
-      token.onCancellationRequested(() => cancel.abort());
-      return waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
-        if (cancel.signal.aborted) return null;
-        throw e;
-      });
-    },
-  );
+  const page = vscode.Uri.parse(started.verificationUrl);
+  await vscode.env.openExternal(page);
+  const cancel = new AbortController();
+  const waiting = waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
+    if (cancel.signal.aborted) return null;
+    throw e;
+  });
+  // The message stays with the code and the link to copy, shown again after each of its buttons, until the browser
+  // answers or the person cancels; its buttons do nothing once the sign-in ended.
+  let ended = false;
+  void waiting.finally(() => (ended = true));
+  void (async () => {
+    while (!ended) {
+      const choice = await vscode.window.showInformationMessage(
+        `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
+        'Copy code',
+        'Copy link',
+        'Open browser again',
+        'Cancel',
+      );
+      if (ended) return;
+      if (choice === 'Copy code') await vscode.env.clipboard.writeText(started.userCode);
+      else if (choice === 'Copy link') await vscode.env.clipboard.writeText(started.verificationUrl);
+      else if (choice === 'Open browser again') await vscode.env.openExternal(page);
+      else if (choice === 'Cancel') return cancel.abort();
+      // Dismissed: the sign-in keeps waiting for the browser's answer, until it expires.
+      else return;
+    }
+  })();
+  const result = await waiting;
   if (!result) return null;
   if (result.status === 'approved' && result.apiKey) return result.apiKey;
   void vscode.window.showInformationMessage(

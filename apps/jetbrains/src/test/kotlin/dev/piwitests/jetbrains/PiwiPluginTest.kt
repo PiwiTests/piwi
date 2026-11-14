@@ -482,20 +482,50 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
-    /** Connect's choice beside the desktop app: one radio button per connection, one of them selected at a time. */
-    fun testConnectOffersTheConnectionsAsOneGroupOfRadioButtons() {
-        val choices = listOf(
-            Glue.ConnectChoice(Glue.ConnectTarget.DESKTOP, "The Piwi desktop app", "Runs on this machine.", "http://127.0.0.1:7495", true),
-            Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "https://a.example", "From the settings.", "https://a.example", false),
-            Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
-        )
-        val dialog = PiwiConnectFlow.ChooseConnectionDialog(project, choices)
+    /**
+     * The Connect panel: the settings as saved, the desktop app or an instance chosen with one radio button of two, a key
+     * pasted saved only on Apply, and Apply saving the source, the instance, its project and the desktop app's project.
+     */
+    fun testTheConnectPanelSavesTheConnectionOnApply() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val settings = service.settings()
+        val local = service.local()
+        val panel = PiwiConnectPanel(project, testRootDisposable)
         try {
-            assertEquals(listOf("The Piwi desktop app (in use)", "https://a.example", "Another instance…"), dialog.buttons.map { it.text })
-            assertEquals(Glue.ConnectTarget.INSTANCE, dialog.picked()?.target)
-            dialog.buttons[2].isSelected = true
-            assertEquals(listOf(false, false, true), dialog.buttons.map { it.isSelected })
-            assertEquals(Glue.ConnectTarget.OTHER, dialog.picked()?.target)
+            assertEquals(local.desktop, panel.desktopRadio.isSelected)
+            assertEquals(!local.desktop, panel.instanceRadio.isSelected)
+            assertFalse(panel.isModified())
+            panel.instanceRadio.isSelected = true
+            assertFalse("one of the two", panel.desktopRadio.isSelected)
+            panel.urlField.text = "https://panel.example/"
+            panel.projectCombo.editor.item = "Shop"
+            assertTrue(panel.isModified())
+            panel.apply()
+            assertEquals("https://panel.example" to "Shop", settings.serverUrl to settings.project)
+            assertFalse(local.desktop)
+            assertFalse(panel.isModified())
+            assertEquals(PiwiProjectService.KeyChange.Keep, panel.key)
+            // The desktop app read first, on its project.
+            panel.desktopRadio.isSelected = true
+            panel.desktopProject.addItem("Mugs")
+            panel.desktopProject.selectedItem = "Mugs"
+            panel.apply()
+            assertTrue(local.desktop)
+            assertEquals("Mugs", local.desktopProject)
+            // An address that is no URL is refused.
+            panel.urlField.text = "not a url"
+            assertThrows(com.intellij.openapi.options.ConfigurationException::class.java) { panel.apply() }
+        } finally {
+            service.disconnect()
+        }
+    }
+
+    /** Connect is one dialog holding the panel, an address given to it in its field, the instance chosen. */
+    fun testConnectIsOneDialogWithTheAddressItWasGiven() {
+        val dialog = PiwiConnectFlow.ConnectDialog(project, "https://given.example")
+        try {
+            assertEquals("https://given.example", dialog.panel.urlField.text)
+            assertTrue(dialog.panel.instanceRadio.isSelected)
         } finally {
             Disposer.dispose(dialog.disposable)
         }

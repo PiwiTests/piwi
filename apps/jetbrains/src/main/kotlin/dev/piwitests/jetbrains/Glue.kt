@@ -1289,6 +1289,53 @@ object Glue {
         if (needsKey) "$url answers. It asks for an API key: Connect… signs in or takes one."
         else "$url answers, and lists its projects without a key."
 
+    /** The desktop app's project list's first choice: the project linked there to this folder, by name when one is. */
+    fun linkedProjectLabel(linked: String?): String =
+        linked?.let { "$it, linked to this folder" } ?: "The one linked to this folder in the desktop app"
+
+    /** Whether the desktop app runs, and the project it links to this folder. */
+    fun desktopStateText(url: String?, linked: String?): String = when {
+        url == null -> "Not running on this machine: the instance below is read until it runs."
+        linked != null -> "Running at $url; this folder is linked there to $linked."
+        else -> "Running at $url: no address or key needed."
+    }
+
+    /** What Apply does to the key of an address: `keep`, `set` a new one, or `remove` it. */
+    fun keyChangeKind(change: Any): String = when (change) {
+        is PiwiProjectService.KeyChange.Set -> "set"
+        PiwiProjectService.KeyChange.Remove -> "remove"
+        else -> "keep"
+    }
+
+    /** The key row of the Connect panel: a key saved for `url` in the password safe, one to save or to remove on Apply. */
+    fun keyStateText(url: String, saved: Boolean, change: String): String = when (change) {
+        "set" -> "A new key for $url, saved on Apply"
+        "remove" -> "Removed on Apply"
+        else -> if (saved) "Saved for $url in the IDE's password safe" else "None saved for $url"
+    }
+
+    /** How many projects the instance lists, or that it lists none yet. */
+    fun projectsStateText(url: String, count: Int): String =
+        if (count == 0) "$url has no project yet: send a run with the Piwi reporter, then Refresh." else "$url lists $count ${if (count == 1) "project" else "projects"}."
+
+    /** The sign-in's words in the Connect panel. */
+    const val SIGN_IN_WAITING = "Allow the request in your browser, which shows this code. No browser opened? Copy the link."
+    const val SIGN_IN_CANCELLED = "Sign-in cancelled."
+    const val SIGN_IN_TOO_OLD = "This instance predates the browser sign-in: paste an API key instead."
+
+    /** What the browser answered the sign-in: a key, saved on Apply; a denial; or the request expired. */
+    fun signInAnswerText(url: String, status: String, hasKey: Boolean): String = when {
+        status == "approved" && hasKey -> "Signed in: a new key for $url, saved on Apply."
+        status == "approved" -> "$url allowed the request but sent no key."
+        status == "denied" -> "The request was denied in the browser."
+        else -> "The request expired: sign in again."
+    }
+
+    /** What Connect says once the desktop app is chosen: its project, or the one linked to this folder there. */
+    fun desktopConnectedText(project: String): String =
+        if (project.isBlank()) "Reading the desktop app while it runs, on the project linked there to this folder."
+        else "Reading the desktop app while it runs, project $project."
+
     /** What Test connection says of an address it could not use, in Connect's words. */
     fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
 
@@ -1369,40 +1416,6 @@ object Glue {
             if (desktop) add("the choice of the desktop app")
         }
         return if (parts.isEmpty()) null else "Forget ${parts.joinToString(", and ")}?"
-    }
-
-    enum class ConnectTarget { DESKTOP, INSTANCE, OTHER }
-
-    /** A connection Connect offers when the desktop app runs. */
-    data class ConnectChoice(val target: ConnectTarget, val label: String, val detail: String, val serverUrl: String?, val inUse: Boolean)
-
-    /**
-     * What Connect offers when the desktop app runs: the app, the instance the environment, the
-     * `.env` or the settings name (the app does not replace it: either is one choice away), and
-     * another instance.
-     */
-    fun connectChoices(status: StatusResult?, desktop: DesktopResult, savedUrl: String): List<ConnectChoice> {
-        val contexts = status?.contexts.orEmpty()
-        val context = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull()
-        val usesDesktop = context?.source == "desktop"
-        val choices = mutableListOf(
-            ConnectChoice(
-                ConnectTarget.DESKTOP,
-                "The Piwi desktop app, at ${desktop.url}",
-                desktop.linked?.let { "Runs on this machine; this folder is linked there to the project ${it.name}." }
-                    ?: "Runs on this machine: no address or key needed.",
-                null,
-                usesDesktop,
-            ),
-        )
-        val named = context?.instance?.serverUrl?.let { it to context.instance.source }
-            ?: normalizeServerUrl(savedUrl)?.let { it to "editor" }
-        if (named != null && named.first != desktop.url) {
-            val (url, source) = named
-            choices += ConnectChoice(ConnectTarget.INSTANCE, url, "From ${sourceLabel(source)}.", url, !usesDesktop && context?.serverUrl == url)
-        }
-        choices += ConnectChoice(ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false)
-        return choices
     }
 
     /** The desktop app's discovery file: its address, its token, and the folders linked to its projects. */

@@ -126,8 +126,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking`) and `GlueTest`.
 - **An `mcp-remote` entry runs one exact release over HTTP alone** (`Glue.MCP_REMOTE`, `--transport http-only`), for
   the instance's servers and the runs' alike. Checked by `GlueTest`.
-- **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
-  (`Glue.loopbackAlternatives`) and saves the one that answered. ([Connect](ARCHITECTURE.md#connect))
+- **An instance on this machine is never reached through the IDE's proxy.** Test connection tries every loopback
+  address (`Glue.loopbackAlternatives`) and keeps the one that answered. ([Connect](ARCHITECTURE.md#connect))
+- **The Connect panel saves nothing before Apply or Connect, and asks the instance and the desktop app off the event
+  thread**, its sign-in included (`PiwiConnectPanel`); `PiwiPluginTest` checks what Apply saves.
 
 ### Features
 
@@ -248,7 +250,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiRunLineMarker.kt`: Piwi's entries in the IDE run icon's menu, and the Gutter Icons switch of the result icon.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
-- `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
+- `PiwiConnect.kt`, `PiwiConnectPanel.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect, its panel and the
+  settings pages.
 - `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
