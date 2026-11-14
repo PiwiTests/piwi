@@ -58,7 +58,7 @@ object Glue {
     }
 
     /**
-     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * **Hold failures** from each run's start (`PiwiUserSettings.runHoldFailures`): `auto` leaves it to the service, on
      * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
      */
     val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
@@ -134,6 +134,24 @@ object Glue {
         val idea = Regex("/\\.idea(/|$)").find(path) ?: return path
         return path.substring(0, idea.range.first).ifEmpty { "/" }
     }
+
+    /**
+     * The folder of a project's settings files, relative to the folder holding the project (`projectFolder`), from the
+     * path of its project file (`Project.projectFilePath`, `<folder>/misc.xml`): `.idea`, or Rider's
+     * `.idea/.idea.<name>/.idea`.
+     */
+    fun storeFolder(projectFilePath: String?): String {
+        val folder = projectFilePath?.replace('\\', '/')?.substringBeforeLast('/', "") ?: return ".idea"
+        if (!Regex("/\\.idea(/|$)").containsMatchIn(folder)) return ".idea"
+        return folder.removePrefix(projectFolder(folder)).trim('/').ifEmpty { ".idea" }
+    }
+
+    /**
+     * Where a copied MCP configuration is pasted: the agent's MCP settings, the AI Assistant's page named only while
+     * that plugin (`com.intellij.ml.llm`, not bundled) is enabled.
+     */
+    fun mcpPasteWhere(aiAssistant: Boolean): String =
+        if (aiAssistant) "your agent's MCP settings, such as Settings → Tools → AI Assistant → Model Context Protocol" else "your agent's MCP settings"
 
     /** The folders, each once, without those inside another one. */
     fun outermost(folders: List<Path>): List<Path> {
@@ -915,13 +933,13 @@ object Glue {
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
     /**
-     * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
+     * Whose runs say what they changed (`PiwiUserSettings.runNotificationsScope`, VS Code's
      * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
      */
     val RUN_NOTIFICATION_SCOPES = listOf("mine", "mineAndCi")
 
     /**
-     * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
+     * Which failures turn the status item to its alarm, its text in the error color (`PiwiUserSettings.statusBarAlert`,
      * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
      */
     val STATUS_BAR_ALERTS = listOf("new", "any", "never")

@@ -131,12 +131,18 @@ scope, type, default and choice labels; VS Code's settings follow its groups (Co
 Advanced) with labeled choices, a team's options window-scoped and every other one application-scoped, the run options
 written to the user's settings (ST7, ST12 and NF8 in part); `failureSeverity`, `serveRunsToAgents` and `testExplorer`
 stay settable per project (open question 11 answered so), and JetBrains' page takes its group titles and labels, its
-AI Assistant group renamed Agents (MCP) (ST21 in part). The display switches (ST8) are built but for gutter icons and coverage marks:
+AI Assistant group renamed Agents (MCP) (ST21 in part). The display switches (ST8) are built:
 `piwi.codeLens` (all, problems, off), which the service applies to `piwi/fileSummary` for both clients, dropping a
 spec's locator line inside its only test; `piwi.locatorWarnings`, which it applies to the diagnostics;
-`piwi.failingTestTint`; and `piwi.ciPositions` (NF8), in an In the editor group of both settings pages.
-JetBrains' application-level defaults (ST12), one comment per storage group (ST13), the docs links (ST15) and the copy
-notices' agent wording (ST21) remain. Record here is a code action where the
+`piwi.gutterIcons` (VS Code's; JetBrains keeps the platform's Gutter Icons switch); `piwi.coverageMarks`, which the
+toggle writes; `piwi.failingTestTint`; and `piwi.ciPositions` (NF8), in an In the editor group of both settings pages.
+ST12 is built by scope rather than as a Defaults page: a person's own options live at the IDE's level in JetBrains
+(`PiwiUserSettings`, `options/piwi.xml`), as VS Code's user settings, a change applied in every open project, and a
+project's own stay in `workspace.xml`. Each JetBrains group says once where its options are kept, the path from the
+project's store folder, Rider's included (ST13); a reference page, Editor settings, lists every option by group, held to
+the registry, and each VS Code setting, each JetBrains group and the page's help button link its section (ST15); the
+copy notices name the agent's MCP settings, the AI Assistant's only while it is enabled (ST21). M10 is built but for
+NF3's one shape of the start options. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),

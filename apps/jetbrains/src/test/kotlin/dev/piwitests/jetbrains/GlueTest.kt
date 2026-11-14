@@ -2293,14 +2293,45 @@ class GlueTest {
             "codeLens" to Glue.CODE_LENS_CHOICES,
         )
         assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
-        // A team's option is the project's shared setting, any other one the person's (`PiwiLocalSettings`), with its default.
+        // A team's option is the project's shared setting, a project's the person's in this project (`PiwiLocalSettings`),
+        // a person's own the IDE's (`PiwiUserSettings`), each with its default.
         for (setting in settings) {
             val field = setting["jetbrains"].asString
-            val state: Any = if (setting["scope"].asString == "team") PiwiSettings.State() else PiwiLocalSettings.State()
+            val state: Any = when (setting["scope"].asString) {
+                "team" -> PiwiSettings.State()
+                "project" -> PiwiLocalSettings.State()
+                else -> PiwiUserSettings.State()
+            }
             val value = state.javaClass.getMethod("get" + field.replaceFirstChar(Char::uppercase)).invoke(state)
             val expected = setting["default"].let { if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asString }
             assertEquals(field, expected, value)
         }
+    }
+
+    @Test
+    fun `each settings group links its section of the docs' Editor settings page`() {
+        assertEquals("https://piwitests.dev/reference/editor-settings#in-the-editor", SettingsWords.docsUrl("editor"))
+        assertEquals("https://piwitests.dev/reference/editor-settings#agents-mcp", SettingsWords.docsUrl("agents"))
+        assertEquals("https://piwitests.dev/reference/editor-settings", PiwiHelp().getHelpPageUrl(PiwiHelp.SETTINGS_TOPIC))
+        assertEquals(null, PiwiHelp().getHelpPageUrl("dev.piwitests.piwi.other"))
+    }
+
+    @Test
+    fun `the project's settings folder, as the settings page names it`() {
+        assertEquals(".idea", Glue.storeFolder("/home/me/shop/.idea/misc.xml"))
+        assertEquals(".idea/.idea.Shop/.idea", Glue.storeFolder("/home/me/Shop/.idea/.idea.Shop/.idea/misc.xml"))
+        assertEquals(".idea/.idea.Shop/.idea", Glue.storeFolder("C:\\src\\Shop\\.idea\\.idea.Shop\\.idea\\misc.xml"))
+        assertEquals(".idea", Glue.storeFolder(null))
+        assertEquals(".idea", Glue.storeFolder("/home/me/shop.ipr"))
+    }
+
+    @Test
+    fun `a copied MCP configuration names the AI Assistant only while it is enabled`() {
+        assertEquals("your agent's MCP settings", Glue.mcpPasteWhere(aiAssistant = false))
+        assertEquals(
+            "your agent's MCP settings, such as Settings → Tools → AI Assistant → Model Context Protocol",
+            Glue.mcpPasteWhere(aiAssistant = true),
+        )
     }
 
     @Test

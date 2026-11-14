@@ -162,26 +162,28 @@ default and choice labels (`enumItemLabels`). A team's options (`piwi.serverUrl`
 may set for itself (`piwi.failureSeverity`, `piwi.serveRunsToAgents`, `piwi.testExplorer`) are window-scoped; every
 other one is each person's own, application-scoped, which a committed `.vscode/settings.json` cannot set:
 
-| Setting                  | Values, default first                    | What it does                                                                                    |
-| ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
-| `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
-| `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
-| `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Application scope.        |
-| `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Application scope. |
-| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
-| `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
-| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.         |
-| `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
-| `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
-| `piwi.codeLens`          | `all`, `problems`, `off`                 | The lines the service gives above the code (`EditorCredentials.codeLens`). Application scope.   |
-| `piwi.locatorWarnings`   | `true`, `false`                          | The brittle locators' diagnostics (`EditorCredentials.locatorWarnings`). Application scope.     |
-| `piwi.failingTestTint`   | `true`, `false`                          | A failing test's and its failing line's background (`decorateTests`). Application scope.        |
-| `piwi.ciPositions`       | `true`, `false`                          | The CI positions at the ends of lines ([CI runs](#ci-runs-of-the-branch)). Application scope.   |
-| `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
-| `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
-| `piwi.testExplorer`      | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
-| `piwi.trace.server`      | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
+| Setting                      | Values, default first                    | What it does                                                                                                |
+| ---------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `piwi.serverUrl`             | a URL                                    | The instance. Connect writes it in the workspace settings.                                                  |
+| `piwi.project`               | a project name                           | The project. Connect writes it in the workspace settings.                                                   |
+| `piwi.breakpoints`           | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                                      |
+| `piwi.runHeaded`             | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Application scope.                    |
+| `piwi.runHoldFailures`       | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Application scope.             |
+| `piwi.runNotifications`      | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                                     |
+| `piwi.runNotificationsScope` | `mineAndCi`, `mine`                      | Whether the branch's CI runs have one too ([Runs](#runs)).                                                  |
+| `piwi.statusBarAlert`        | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.                     |
+| `piwi.hiddenMessages`        | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                            |
+| `piwi.failureSeverity`       | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                                     |
+| `piwi.codeLens`              | `all`, `problems`, `off`                 | The lines the service gives above the code (`EditorCredentials.codeLens`). Application scope.               |
+| `piwi.gutterIcons`           | `true`, `false`                          | Each test's outcome mark in the gutter; off, its line keeps the hover (`decorateTests`). Application scope. |
+| `piwi.coverageMarks`         | `true`, `false`                          | The coverage marks ([Coverage marks](#coverage-marks)). Application scope.                                  |
+| `piwi.locatorWarnings`       | `true`, `false`                          | The brittle locators' diagnostics (`EditorCredentials.locatorWarnings`). Application scope.                 |
+| `piwi.failingTestTint`       | `true`, `false`                          | A failing test's and its failing line's background (`decorateTests`). Application scope.                    |
+| `piwi.ciPositions`           | `true`, `false`                          | The CI positions at the ends of lines ([CI runs](#ci-runs-of-the-branch)). Application scope.               |
+| `piwi.mcpAuthorization`      | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it.             |
+| `piwi.serveRunsToAgents`     | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                               |
+| `piwi.testExplorer`          | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                                           |
+| `piwi.trace.server`          | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                                    |
 
 What the extension stores:
 
@@ -192,7 +194,7 @@ What the extension stores:
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
-  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
+  (`piwi.baseline`), `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
   (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`), and the runs' MCP server's port
   (`piwi.agentsPort`).
 
@@ -241,8 +243,8 @@ the service pushes the marks it moved. The service's hover names the tests behin
 mean, since VS Code shows no hover on a decoration's border. What the service computes:
 [Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
 
-**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
-(`piwi.coverageShown`, shown by default). The command is in the palette only once a file showed marks
+**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them, writing `piwi.coverageMarks` to the
+user settings (shown by default). The command is in the palette only once a file showed marks
 (`piwi.hasCoverage`), so a workspace without coverage shows nothing of it.
 
 ## Failures view
@@ -926,7 +928,7 @@ The run is the one a profile run's command started, by its ref, or the editor's 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
 has no flaky result (`testOutcome` shows one as passed), so a flaky test's item carries the `flaky` tag
-(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with *flaky* (`flakyMark`). Every known test's
+(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with _flaky_ (`flakyMark`). Every known test's
 item also carries its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. An item has no
 description: the view names an item by its description when it has one, in place of its title. A result is published with its own
 duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none

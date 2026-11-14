@@ -45,7 +45,7 @@
     <p>The plugin reads the connection the Piwi reporter already uses (the environment, the workspace <code>.env</code>
     or the Piwi desktop app). Otherwise, <b>Settings → Tools → Piwi</b> signs you in with the browser. Paths clicked in
     the dashboard open at their line in the IDE, and locators picked in the Piwi Picker browser extension land at the
-    caret. Piwi's MCP server is one copy away for the AI Assistant.</p>
+    caret. Piwi's MCP server is one copy away for your agent.</p>
 
     <p>Self-hosted, zero telemetry. No file of your workspace is sent to the instance: its locator index, code reach
     and latest run are compared with your files locally.</p>
@@ -90,6 +90,7 @@
         <!-- The Paused page and Worker tabs close; the failures tab does not (isCloseable = false). -->
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg" canCloseContents="true"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
+        <webHelpProvider implementation="dev.piwitests.jetbrains.PiwiHelp"/>
         <projectConfigurable parentId="tools" id="dev.piwitests.piwi" displayName="Piwi"
                              instance="dev.piwitests.jetbrains.PiwiConfigurable"/>
         <search.optionContributor implementation="dev.piwitests.jetbrains.PiwiSearchableOptions"/>
@@ -291,11 +292,11 @@
                 <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                         text="Copy the MCP server configuration"
                         icon="AllIcons.Actions.Copy"
-                        description="An mcpServers entry for the AI Assistant's MCP settings"/>
+                        description="An mcpServers entry for your agent's MCP settings"/>
                 <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
                         text="Copy the runs' MCP server configuration for agents"
                         icon="AllIcons.Actions.Copy"
-                        description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
+                        description="An mcpServers entry through mcp-remote, for an agent that starts commands, to follow, stop and act on the test runs this project starts"/>
                 <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
                         text="Copy the runs' MCP server configuration for Claude Code or Cursor"
                         icon="AllIcons.Actions.Copy"

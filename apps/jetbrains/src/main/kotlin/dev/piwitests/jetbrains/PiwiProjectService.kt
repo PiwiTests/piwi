@@ -25,6 +25,7 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
@@ -83,12 +84,10 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
- * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
- * at the IDE's breakpoints, whether they run in the IDE's Playwright runner, whether they run headed, and their
- * Hold failures from each run's start (`Glue.HOLD_FAILURES_CHOICES`); when a run started from the IDE says what it changed (`always`,
- * `failures`, `never`); the baseline chosen with **Compare with…** for each Playwright
- * config folder (`Glue.encodeBaseline`; the ladder is no entry); whether the coverage marks are shown; and the severity
- * of a failure's diagnostic (`Glue.FAILURE_SEVERITIES`).
+ * the failures (`file`, `cluster`, `owner` or `flat`); the baseline chosen with **Compare with…** for each Playwright
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry); the runs' MCP server's port; and the options the
+ * settings registry scopes to a project (`project`): the severity of a failure's diagnostic
+ * (`Glue.FAILURE_SEVERITIES`) and whether the runs are served to agents.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -101,21 +100,8 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordStartUrl: String = "",
         var recordPage: String = "",
         var failuresGrouping: String = "file",
-        var breakpoints: Boolean = true,
-        var playwrightRunner: Boolean = false,
-        var runHeaded: Boolean = false,
-        var runHoldFailures: String = "auto",
-        var runNotifications: String = "failures",
-        var runNotificationsScope: String = "mineAndCi",
-        var statusBarAlert: String = "new",
         var baselines: MutableMap<String, String> = mutableMapOf(),
-        var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
-        var codeLens: String = "all",
-        var locatorWarnings: Boolean = true,
-        var failingTestTint: Boolean = true,
-        var ciPositions: Boolean = true,
-        var mcpAuthorization: String = "key",
         var serveRunsToAgents: Boolean = true,
         var agentsPort: Int = 0,
     )
@@ -126,6 +112,55 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
 
     override fun loadState(state: State) {
         this.state = state
+    }
+}
+
+/**
+ * Each person's own options, the settings registry's `user` scope: one value in every project of the IDE, as VS Code
+ * keeps them in the user settings, in the IDE's options folder (`options/piwi.xml`), never in a project's files. When a
+ * run started from the IDE says what it changed and for whose runs, which failures turn the status item red, whether
+ * the runs Piwi starts pause at the IDE's breakpoints, run headed, hold their failures from their start
+ * (`Glue.HOLD_FAILURES_CHOICES`) and run in the IDE's Playwright runner; the lines above the code
+ * (`Glue.CODE_LENS_CHOICES`), the coverage marks, the brittle locators' warnings, the failing tests' tint and the CI
+ * positions; and how the agent signs in to Piwi's MCP server.
+ */
+@Service(Service.Level.APP)
+@State(name = "PiwiUserSettings", storages = [Storage("piwi.xml")])
+class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
+    data class State(
+        var runNotifications: String = "failures",
+        var runNotificationsScope: String = "mineAndCi",
+        var statusBarAlert: String = "new",
+        var breakpoints: Boolean = true,
+        var runHeaded: Boolean = false,
+        var runHoldFailures: String = "auto",
+        var playwrightRunner: Boolean = false,
+        var codeLens: String = "all",
+        var coverageMarks: Boolean = true,
+        var locatorWarnings: Boolean = true,
+        var failingTestTint: Boolean = true,
+        var ciPositions: Boolean = true,
+        var mcpAuthorization: String = "key",
+    )
+
+    private var state = State()
+
+    override fun getState(): State = state
+
+    override fun loadState(state: State) {
+        this.state = state
+    }
+
+    companion object {
+        fun state(): State = ApplicationManager.getApplication().getService(PiwiUserSettings::class.java).state
+
+        /** Hand again and draw again, in every open project, what changed of these options since `before`. */
+        fun changed(before: State) {
+            val now = state().copy()
+            for (project in ProjectManager.getInstance().openProjects) {
+                if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.userSettingsChanged(before, now)
+            }
+        }
     }
 }
 
@@ -522,13 +557,31 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     fun local(): PiwiLocalSettings.State = project.getService(PiwiLocalSettings::class.java).state
 
+    fun user(): PiwiUserSettings.State = PiwiUserSettings.state()
+
+    /**
+     * What a change of the person's own options changes in this project, `PiwiUserSettings.changed` telling every open
+     * one: the credentials the service is handed, then the files drawn again, and the runs going on.
+     */
+    fun userSettingsChanged(before: PiwiUserSettings.State, now: PiwiUserSettings.State) {
+        val handed = { s: PiwiUserSettings.State -> listOf(s.codeLens, s.locatorWarnings, s.statusBarAlert, s.mcpAuthorization) }
+        if (handed(now) != handed(before)) sendCredentials()
+        ApplicationManager.getApplication().invokeLater({
+            if (now.failingTestTint != before.failingTestTint) testsShownAgain()
+            if (now.codeLens != before.codeLens) lensesShownAgain()
+            if (now.ciPositions != before.ciPositions) project.getServiceIfCreated(PiwiCiRuns::class.java)?.positionsSwitched()
+            if (now.coverageMarks != before.coverageMarks) project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.shownAgain()
+        }, gone)
+        if (now.breakpoints != before.breakpoints) project.getServiceIfCreated(PiwiRunSessions::class.java)?.breakpointsChanged()
+    }
+
     /**
      * The IDE's enabled line breakpoints in JavaScript or TypeScript files under a Playwright config's folder, which a
      * run started from Piwi pauses at; none when **Settings → Tools → Piwi** turns them off. Reads the breakpoints in a
      * read action: call it off the event thread.
      */
     fun breakpoints(): List<Glue.RunBreakpoint> {
-        if (!local().breakpoints) return emptyList()
+        if (!user().breakpoints) return emptyList()
         val roots = status?.contexts.orEmpty().mapNotNull { it.root }
         if (roots.isEmpty()) return emptyList()
         val found = ApplicationManager.getApplication().runReadAction(
@@ -556,6 +609,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         forgetSharedKey()
         val settings = settings()
         val local = local()
+        val user = user()
         val url = settings.serverUrl.ifBlank { null }
         return EditorCredentials(
             serverUrl = url,
@@ -565,10 +619,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
-            codeLens = local.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES },
-            locatorWarnings = local.locatorWarnings,
-            mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
-            statusBarAlert = local.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
+            codeLens = user.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES },
+            locatorWarnings = user.locatorWarnings,
+            mcpAuthorization = user.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
+            statusBarAlert = user.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
         )
     }
 

@@ -334,7 +334,10 @@ export const referenceSidebar: SidebarGroup[] = [
   },
   {
     text: 'Editors',
-    items: [{ text: 'Editor commands', link: '/reference/editor-commands' }],
+    items: [
+      { text: 'Editor commands', link: '/reference/editor-commands' },
+      { text: 'Editor settings', link: '/reference/editor-settings' },
+    ],
   },
   {
     text: 'Automation',

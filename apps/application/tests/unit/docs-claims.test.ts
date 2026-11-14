@@ -19,6 +19,8 @@ import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { piwiActionTitle } from '../../../../packages/editor/src/analysis';
+import { EDITOR_SETTINGS, SETTING_GROUPS, settingsDocsUrl } from '../../../../packages/editor/src/settings';
+import { headingAnchor } from '../../../docs/.vitepress/navigation';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
 
 // The agent guide of a directory and the file that loads it for Claude Code: not docs pages.
@@ -360,6 +362,26 @@ describe('quoted editor commands', () => {
       missing,
       'apps/docs/reference/editor-commands.md leaves out these actions of packages/editor/src/actions.ts',
     ).toEqual([]);
+  });
+
+  test('the Editor settings page names every VS Code setting under its group, at the address the editors link', () => {
+    const page = read('apps/docs/reference/editor-settings.md');
+    const sections = new Map(
+      page
+        .split(/^## /m)
+        .slice(1)
+        .map((section) => [section.slice(0, section.indexOf('\n')).trim(), section]),
+    );
+    for (const group of SETTING_GROUPS) {
+      const section = sections.get(group.title);
+      expect(section, `apps/docs/reference/editor-settings.md has no "## ${group.title}"`).toBeDefined();
+      expect(settingsDocsUrl(group.id)).toBe(
+        `https://piwitests.dev/reference/editor-settings#${headingAnchor(group.title)}`,
+      );
+      const named = new Set([...section!.matchAll(/^\| `(piwi\.[^`]+)`/gm)].map((m) => m[1]));
+      const keys = EDITOR_SETTINGS.filter((s) => s.group === group.id && s.key !== null).map((s) => s.key);
+      expect([...named], `the ${group.title} rows of apps/docs/reference/editor-settings.md`).toEqual(keys);
+    }
   });
 
   test.each(handWrittenPages)('%s quotes only commands the editors have', (page) => {

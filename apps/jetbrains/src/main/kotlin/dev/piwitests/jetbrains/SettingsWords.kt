@@ -24,6 +24,16 @@ object SettingsWords {
         "mcpAuthorization" to linkedMapOf("key" to "The IDE's API key", "sign-in" to "A sign-in in the browser"),
     )
 
+    /** The docs' Editor settings page, which lists every option of both editors by group. */
+    const val DOCS_URL = "https://piwitests.dev/reference/editor-settings"
+
+    /**
+     * The address of a group's section on the Editor settings page: its heading's anchor as the docs site writes it, as
+     * the editor service's `settingsDocsUrl` gives it to VS Code.
+     */
+    fun docsUrl(group: String): String =
+        DOCS_URL + "#" + (GROUPS[group] ?: group).lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+
     /** The label of `value`, a choice of the option `field`; the value itself when the registry names none. */
     fun choice(field: String, value: String?): String = value?.let { CHOICES[field]?.get(it) ?: it } ?: ""
 }

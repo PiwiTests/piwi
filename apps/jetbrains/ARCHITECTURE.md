@@ -163,7 +163,7 @@ With the result icon off, its list of the test's actions goes with it.
 
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
-then that run's result. `PiwiLocalSettings.failingTestTint` off leaves both backgrounds out, and a change of it draws
+then that run's result. `PiwiUserSettings.failingTestTint` off leaves both backgrounds out, and a change of it draws
 the files with tests again (`testsShownAgain`); `codeLens`, which the service applies, asks every open file's summary
 again once the credentials carry it (`lensesShownAgain`). Code Vision (`PiwiCodeVisionProvider.kt`) draws the
 summary's other lines and skips the test lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
@@ -222,7 +222,7 @@ service's hover names the tests behind a line; the lines on a function come in `
   URI. A deleted file is forgotten.
 
 **Show or hide the coverage marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
-`PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks. A file
+`PiwiUserSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks. A file
 without line coverage draws nothing.
 
 ## Native views and pushes
@@ -368,7 +368,7 @@ platform's text presentations take no color. It shows:
   the passed icon), marked with a dot (`ExecutionUtil.getIndicator`) while a stop waits for the person
   (`RunLine.calls`);
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the service's alarm
-  (`RunStatus.alarm`, `StatusView.error`), as `PiwiLocalSettings.statusBarAlert` chooses it on Settings → Tools →
+  (`RunStatus.alarm`, `StatusView.error`), as `PiwiUserSettings.statusBarAlert` chooses it on Settings → Tools →
   Piwi, sent in the credentials: `new`, the default, only for a test a run this project started failed that the
   baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a
   recording or the runs' line; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
@@ -422,7 +422,7 @@ opens the run the status bar shows.
 
 ### Playwright runner
 
-The **Run the tests in the IDE's Playwright runner** setting (`PiwiLocalSettings.playwrightRunner`) is off by default.
+The **Run the tests in the IDE's Playwright runner** setting (`PiwiUserSettings.playwrightRunner`) is off by default.
 When it is on, a test run whose command is `npx playwright test …` (`Glue.playwrightTestArgs`) starts as a temporary
 Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
 
@@ -472,9 +472,9 @@ platform's, which says how serious it is. D25 lists the five group ids, which us
 `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded` (`PiwiCommands.runEnded`,
 `Glue.runVerdict`), in the service's words (`RunEnded.verdict`), with **Open the failures**, **Open in dashboard**, and **Re-run failing** when something fails, or
 **Only on failure** when nothing does while the setting is `always`. The run's balloon follows
-`PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, the default, `never`; in
-`.idea/workspace.xml`, on this machine only), and a CI run of the branch's (`RunEnded.origin`) only while
-`PiwiLocalSettings.runNotificationsScope` is `mineAndCi`, the default (`Glue.RUN_NOTIFICATION_SCOPES`). A run with
+`PiwiUserSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, the default, `never`; each
+person's own, in every project), and a CI run of the branch's (`RunEnded.origin`) only while
+`PiwiUserSettings.runNotificationsScope` is `mineAndCi`, the default (`Glue.RUN_NOTIFICATION_SCOPES`). A run with
 `repeat` (**Verify ×3**) is reported whatever the setting, as `Failed 1 of 3`, a warning when one of the runs failed.
 The balloon is titled by the run the service names, `Piwi: run #124`, `Piwi: CI run #130 on feature-x`
 (`Glue.RunVerdict.title`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
@@ -511,7 +511,7 @@ actions.
 ### How a run starts
 
 Every test run takes the person's start options (`Glue.withRunStart`, `RunStartOptions` in the protocol), kept in
-`PiwiLocalSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run headed**
+`PiwiUserSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run headed**
 is on, nothing otherwise (the service runs it headless but for a spec with a `page.pause()`, and for a run with
 breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
 `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
@@ -529,7 +529,7 @@ and **Run a saved selection…**. The breakpoints come from `PiwiProjectService.
    local files, in a read action;
 2. then `Glue.runBreakpoints`, keeping those in script files under a Playwright config's folder.
 
-The checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`, on this machine only) turns them off.
+The checkbox under **Settings → Tools → Piwi** (`PiwiUserSettings.breakpoints`, each person's own in every project) turns them off.
 
 When the command carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or says the
 run pauses at a `page.pause()` (`RunCommand.pauses`), `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing
@@ -1051,16 +1051,22 @@ file is opened.
 
 ## Settings and secrets
 
-| What                                               | Where                                           |
-| -------------------------------------------------- | ----------------------------------------------- |
-| The instance URL and the project (`PiwiSettings`)  | `.idea/piwi.xml`, which a repository may commit |
-| The API key, **per instance** (`Glue.apiKeyEntry`) | the IDE's `PasswordSafe`                        |
-| Choices made on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
+| What                                                                | Where                                           |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| The instance URL and the project (`PiwiSettings`)                   | `.idea/piwi.xml`, which a repository may commit |
+| The API key, **per instance** (`Glue.apiKeyEntry`)                  | the IDE's `PasswordSafe`                        |
+| Choices made for this project on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
+| Each person's own options (`PiwiUserSettings`), in every project    | the IDE's `options/piwi.xml`                    |
 
-`PiwiLocalSettings` holds the choice of the desktop app and its project, a recording's choices, the failures'
-grouping, the breakpoints setting, the Playwright runner setting, how a run starts (headed, Hold failures), the run
-notifications, the coverage marks, the failure severity, how the agent signs in to Piwi's MCP server, whether the runs
-are served to agents and the port they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
+The settings registry's scope says where an option goes: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`,
+`user` in `PiwiUserSettings`, an application-level service, as VS Code keeps a person's own options in the user settings
+(`GlueTest` checks each). `PiwiLocalSettings` also holds the choice of the desktop app and its project, a recording's
+choices, the failures' grouping, the baselines and the port the runs were last served to agents at. A change of a
+person's own option, from the settings page or an action, is handed and drawn again in every open project
+(`PiwiUserSettings.changed`, `PiwiProjectService.userSettingsChanged`). In Rider, the project's files sit under
+`.idea/.idea.<Name>/.idea/`, as the settings page's comments say (`Glue.storeFolder`). Each group of the page opens with one comment
+saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
+(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
@@ -1073,7 +1079,7 @@ entry runs one exact release, `Glue.MCP_REMOTE` (`npx -y mcp-remote@<version>`, 
 CVE-2025-6514), over streamable HTTP alone (`--transport http-only`): `npx` with no version runs whatever npm serves
 that day, with the key or the token in its environment.
 
-With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the Agents (MCP) group of the
+With `PiwiUserSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the Agents (MCP) group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
 in through the instance's OAuth. The notification says which (`Glue.mcpAuthorizationNote`).
 
@@ -1097,7 +1103,8 @@ Claude Code or Cursor** (`CopyRunsMcpHttpConfigurationAction`) writes the `mcpSe
 of the repository. The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
 an MCP server, and the MCP Server plugin's `mcpServer.mcpToolset` extension point, which adds tools to the IDE's own
 server, starts at 2025.2 (the plugin compiles against 2024.1, [Platform compatibility](#platform-compatibility)), so
-the person pastes the entry.
+the person pastes the entry. The notices name the agent's MCP settings, and the AI Assistant's page only while that
+plugin is enabled (`Glue.mcpPasteWhere`, `CopyMcpConfigurationAction.aiAssistantEnabled`).
 
 **Share with Playwright tools** (`ShareWithPlaywrightAction`, `Piwi.ShareWithPlaywright`, and the last item of a stop's
 gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (`MessageDialogBuilder.yesNo`,

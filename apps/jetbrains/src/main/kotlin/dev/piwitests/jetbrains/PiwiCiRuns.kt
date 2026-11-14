@@ -199,7 +199,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
     private fun drawMarks(now: Collection<CiSession>) {
         for (inlays in drawn.values) inlays.forEach { if (it.isValid) Disposer.dispose(it) }
         drawn.clear()
-        if (!project.service<PiwiProjectService>().local().ciPositions || Glue.ciMarkedFiles(now).isEmpty()) return
+        if (!PiwiUserSettings.state().ciPositions || Glue.ciMarkedFiles(now).isEmpty()) return
         for (editor in EditorFactory.getInstance().allEditors) {
             if (editor.project.let { it != null && it != project }) continue
             val document = editor.document

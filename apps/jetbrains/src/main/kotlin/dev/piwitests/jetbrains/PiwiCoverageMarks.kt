@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap
  * the marks it placed again (`piwi/coverageChanged`); the service's hover names the tests behind a line, and a mark's
  * tooltip, in the gutter and the scroll bar, says what the marks mean. Only the marks a new answer changes are taken
  * off or drawn. A renamed or moved file is asked again under its new URI. A file without line coverage shows none.
- * **Tools → Piwi → Show or hide the coverage marks** hides them, on this machine only (`PiwiLocalSettings.coverageMarks`), and is
+ * **Tools → Piwi → Show or hide the coverage marks** hides them, in every project (`PiwiUserSettings.coverageMarks`), and is
  * offered once a file showed some.
  */
 @Service(Service.Level.PROJECT)
@@ -67,13 +67,17 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
 
     private val gone = Condition<Any?> { disposed || project.isDisposed }
 
-    /** Whether the marks are drawn; kept in `.idea/workspace.xml`. */
+    /** Whether the marks are drawn: each person's own, the same in every project (`PiwiUserSettings`). */
     var shown: Boolean
-        get() = project.service<PiwiProjectService>().local().coverageMarks
+        get() = PiwiUserSettings.state().coverageMarks
         set(value) {
-            project.service<PiwiProjectService>().local().coverageMarks = value
-            ApplicationManager.getApplication().invokeLater({ files.keys.forEach(::draw) }, gone)
+            val before = PiwiUserSettings.state().copy()
+            PiwiUserSettings.state().coverageMarks = value
+            PiwiUserSettings.changed(before)
         }
+
+    /** Every file's marks drawn again, as `shown` says. On the event thread. */
+    fun shownAgain() = files.keys.forEach(::draw)
 
     /**
      * Ask the coverage of each file opened from now on, and of those open now; a file renamed or moved, itself or with
