@@ -77,6 +77,11 @@ export default {
       env: { ...stock, BENCH_DIFFERENTIAL_SNAPSHOTS: '1' },
     },
     {
+      name: 'light-traces+differential',
+      description: 'lightTraces (DOM snapshots only), with the experimental differentialSnapshots hook.',
+      env: { ...stock, BENCH_LIGHT_TRACES: '1', BENCH_DIFFERENTIAL_SNAPSHOTS: '1' },
+    },
+    {
       name: 'failure-screenshots',
       description: 'failureScreenshots: screenshots of failed tests only, in place of only-on-failure.',
       env: { ...stock, BENCH_FAILURE_SCREENSHOTS: '1' },
