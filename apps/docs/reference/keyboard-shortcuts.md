@@ -121,7 +121,7 @@ dashboard's **Pick from snapshot** and the failure-time picker of a local run:
 |---|---|
 | `↑` | Select the parent of the highlighted element |
 | `↓` | Go back down to the child |
-| `Enter` | Pick the highlighted element |
+| `Enter` | Pick the highlighted element, else the focused one |
 | `Esc` | Skip picking, without choosing an element |
 
 ## Permission grid

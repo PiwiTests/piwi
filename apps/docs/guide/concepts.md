@@ -344,7 +344,7 @@ it, snooze it, dismiss it with a reason, or mark it covered by an existing test 
 
 How serious a gap is: **blind-spot** (nothing exercises it), **false-comfort** (the tests pass without checking it)
 or **fragile** (what reaches it could stop at any time). Server probes report **findings** instead, **unhandled** or
-**degraded**. What each class covers: [What a gap is](/features/scenario-gaps#what-a-gap-is).
+**degraded**. What each class covers: [Detectors](/reference/gap-detectors#detectors).
 
 ### Detector
 

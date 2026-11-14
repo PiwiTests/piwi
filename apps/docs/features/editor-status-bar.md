@@ -14,7 +14,8 @@ how far a run in progress is, for the Playwright config of the file you are edit
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
 is in progress, the item counts it instead (`run #124 · 4 of 9 · 1 failed`) and returns to the latest run when it
-ends. The editor follows the two newest CI runs of the branch, through the connection to the instance it already
+ends. A run you started keeps the item whichever Playwright config the active file belongs to, and VS Code's Testing
+view shows a run that is not yours with its tests' results as they end, never as your tests running. The editor follows the two newest CI runs of the branch, through the connection to the instance it already
 holds, and while it follows one, the run's reporter streams the call each test is at.
 
 With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder

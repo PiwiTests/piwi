@@ -52,7 +52,7 @@ wrong, not only the first rule to trip. The rules bound:
 - **Flakiness** (`--fail-on-flaky`): any test of the run that passed after an earlier attempt failed.
 - **New failure clusters** (`--fail-on-new-cluster`): a [cluster](/features/failure-clusters) first seen in this run.
 - **Quarantine debt** (`--max-quarantined`): how many tests the project holds in quarantine, whatever this run did.
-- **Leaks** (`--max-leaks`, `--max-new-leaks`): the browsers, contexts and pages the run left open, counted per
+- **Leaks** (`--max-leaks`, `--max-new-leaks`): the browsers, contexts, pages and API request contexts the run left open, counted per
   opening line (never a server or a process left running), and those no earlier run of the base branch showed ([leak history](/features/leak-history)). A run
   that sent no resource report (the capture fixtures missing, `captureResources` off, or a reporter older than 0.45)
   fails a leak rule rather than passing on silence, and so does a run of a project that

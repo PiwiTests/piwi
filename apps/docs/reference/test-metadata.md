@@ -325,7 +325,8 @@ test counts by its last attempt, so one whose retry passed names nothing:
 
 ### External test IDs
 
-Piwi recognizes a test by its file, its describe blocks and its title. Renaming a test, or moving it to another file or
+Piwi recognizes a test by its file (its path relative to the folder holding your Playwright config, whatever directory
+Playwright runs from), its describe blocks and its title. Renaming a test, or moving it to another file or
 describe block, would otherwise start a new test with no history: no flakiness stats, failure clusters, quarantine or
 trends. When your tests already have an ID in a test management tool, give it to Piwi: a test with an **external ID**
 is matched on that ID first, and a renamed or moved test keeps its history, under its new title and place.

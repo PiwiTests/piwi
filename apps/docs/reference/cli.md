@@ -106,7 +106,7 @@ Fail a CI job on the dashboard's analysis of a run: the [CI merge gate](/feature
 npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 ```
 
-**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate: bad arguments, an unreachable dashboard, or a run that has not finished or that the key cannot see · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
+**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate: bad arguments, an unreachable dashboard, or a run still running or in its global setup, or one the key cannot see · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
 
 | Flag | Description |
 |---|---|
