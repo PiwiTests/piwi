@@ -8,40 +8,21 @@
  * select stands in, grouped the same way.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
+import {
+  PROJECT_SETTINGS_GROUPS,
+  PROJECT_SETTINGS_SECTIONS,
+  type ProjectSettingsSection,
+  type ProjectSettingsSectionId,
+} from '#shared/app-places';
 
 const props = defineProps<{ project: ProjectWithTestRuns }>();
 const emit = defineEmits<{ saved: [] }>();
 
-const SECTION_IDS = [
-  'general',
-  'status',
-  'members',
-  'source-control',
-  'ai',
-  'live-view',
-  'capabilities',
-  'coverage',
-  'targets',
-  'issue-tracker',
-  'ci',
-  'tag-keys',
-  'test-management',
-  'browser-extension',
-  'local-folder',
-] as const;
-type SectionId = (typeof SECTION_IDS)[number];
+type SectionId = ProjectSettingsSectionId;
+const SECTION_IDS: readonly SectionId[] = PROJECT_SETTINGS_SECTIONS.map((section) => section.id);
 
-const GROUPS = [
-  { id: 'project', label: 'Project' },
-  { id: 'analysis', label: 'Analysis' },
-  { id: 'integrations', label: 'Integrations' },
-] as const;
-
-interface Section {
+interface Section extends ProjectSettingsSection {
   id: SectionId;
-  label: string;
-  icon: string;
-  group: (typeof GROUPS)[number]['id'];
   visible: boolean;
 }
 
@@ -65,77 +46,27 @@ onMounted(() => {
 const showOpenApi = computed(() => !isHidden('test-map'));
 const showServerProbes = computed(() => !isHidden('server-probes'));
 
-const sections = computed<Section[]>(() => [
-  { id: 'general', label: 'General', icon: 'i-lucide-settings', group: 'project', visible: true },
-  { id: 'status', label: 'Status', icon: 'i-lucide-circle-check-big', group: 'project', visible: canManage.value },
-  { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: canSeeMembers.value },
-  { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project', visible: true },
-  { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project', visible: true },
-  {
-    id: 'live-view',
-    label: 'Live view',
-    icon: 'i-lucide-monitor-play',
-    group: 'project',
-    visible: canManage.value && !isDesktop,
-  },
-  {
-    id: 'capabilities',
-    label: 'Capabilities',
-    icon: 'i-lucide-toggle-right',
-    group: 'analysis',
-    visible: canDecide.value || showOpenApi.value || showServerProbes.value,
-  },
-  {
-    id: 'coverage',
-    label: 'Coverage',
-    icon: 'i-lucide-scan-line',
-    group: 'analysis',
-    visible: canManage.value && !isHidden('coverage'),
-  },
-  { id: 'targets', label: 'Targets', icon: 'i-lucide-target', group: 'analysis', visible: canManage.value },
-  {
-    id: 'issue-tracker',
-    label: 'Issue tracker',
-    icon: 'i-lucide-ticket',
-    group: 'integrations',
-    visible: canManage.value,
-  },
-  {
-    id: 'ci',
-    label: 'CI',
-    icon: 'i-lucide-workflow',
-    group: 'integrations',
-    visible: canManage.value,
-  },
-  {
-    id: 'tag-keys',
-    label: 'Keys in test tags',
-    icon: 'i-lucide-tags',
-    group: 'integrations',
-    visible: canManage.value,
-  },
-  {
-    id: 'test-management',
-    label: 'Test management',
-    icon: 'i-lucide-list-checks',
-    group: 'integrations',
-    visible: canManage.value,
-  },
-  {
-    id: 'browser-extension',
-    label: 'Browser extension',
-    icon: 'i-lucide-link',
-    group: 'integrations',
-    visible: canManage.value,
-  },
-  {
-    id: 'local-folder',
-    label: 'Local folder',
-    icon: 'i-lucide-folder-symlink',
-    group: 'integrations',
-    visible: isDesktop || hasBridge.value,
-  },
-]);
+// Which sections this viewer sees; the list and its order are the places registry's.
+const sectionVisible = computed<Record<SectionId, boolean>>(() => ({
+  general: true,
+  status: canManage.value,
+  members: canSeeMembers.value,
+  'source-control': true,
+  ai: true,
+  'live-view': canManage.value && !isDesktop,
+  capabilities: canDecide.value,
+  coverage: canManage.value && (!isHidden('coverage') || showOpenApi.value || showServerProbes.value),
+  targets: canManage.value,
+  'issue-tracker': canManage.value,
+  ci: canManage.value,
+  'tag-keys': canManage.value,
+  'test-management': canManage.value,
+  'browser-extension': canManage.value,
+  'local-folder': isDesktop || hasBridge.value,
+}));
+const sections = computed<Section[]>(() =>
+  PROJECT_SETTINGS_SECTIONS.map((section) => ({ ...section, visible: sectionVisible.value[section.id] })),
+);
 const visibleSections = computed(() => sections.value.filter((s) => s.visible));
 
 const route = useRoute();
@@ -166,9 +97,10 @@ function select(id: SectionId) {
 
 /** The visible sections under their group, empty groups left out — the source of both menus. */
 const groupedSections = computed(() =>
-  GROUPS.map((group) => ({ ...group, items: visibleSections.value.filter((s) => s.group === group.id) })).filter(
-    (group) => group.items.length > 0,
-  ),
+  PROJECT_SETTINGS_GROUPS.map((group) => ({
+    ...group,
+    items: visibleSections.value.filter((s) => s.group === group.id),
+  })).filter((group) => group.items.length > 0),
 );
 
 const navItems = computed(() =>
@@ -260,12 +192,16 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         @saved="emit('saved')"
       />
 
-      <div v-else-if="active === 'capabilities'" class="space-y-4" data-tour="project-settings-capabilities">
+      <div v-else-if="active === 'capabilities'" data-tour="project-settings-capabilities">
         <ProjectCapabilityDecisions
           :project-id="project.id"
           :initial="project.capabilities ?? null"
           @changed="emit('saved')"
         />
+      </div>
+
+      <div v-else-if="active === 'coverage'" class="space-y-4" data-tour="project-settings-coverage">
+        <ProjectCoverageSettings v-if="!isHidden('coverage')" :project="project" @saved="emit('saved')" />
         <ProjectGapsSettings
           :project="project"
           :show-open-api="showOpenApi"
@@ -273,13 +209,6 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
           @saved="emit('saved')"
         />
       </div>
-
-      <ProjectCoverageSettings
-        v-else-if="active === 'coverage'"
-        :project="project"
-        data-tour="project-settings-coverage"
-        @saved="emit('saved')"
-      />
 
       <ProjectTargetsForm
         v-else-if="active === 'targets'"

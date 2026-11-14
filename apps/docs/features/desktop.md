@@ -82,8 +82,8 @@ page there, starting the app if needed (macOS: from Applications; Linux: after o
 ## Projects from local folders
 
 **Projects → New project → Choose folder…** creates a project from a checkout on this machine, named as it would
-report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` in the
-folder fixes what is missing. The link stays on this machine, under **project page → Settings → Local folder**, with
+report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` there
+fixes what is missing. The link stays on this machine, under **Project → Settings → Local folder**, with
 the same checks and **Change** and **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/`;
 [Open in editor](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
 serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
@@ -97,7 +97,7 @@ A run, an execution, a cluster or a test runs again here with the folder's own P
   options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
   options…**), stopping at the first failing repetition, and [**Hold failures**](/features/watch-a-run#hold-failures).
   The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
-  **Settings → Local folder**.
+  **Project → Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with
   **Compare with run #N**. A [bug report](/features/replay-a-bug-report#running-it-with-playwright)

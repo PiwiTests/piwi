@@ -21,7 +21,7 @@ import { refetchKeeping } from '~/utils/refetch-keeping';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
-import { projectTabHidden } from '~/utils/project-tabs';
+import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 import {
   PROJECT_FAILURE_VIEWS,
   PROJECT_MENU_PAGES,
@@ -889,7 +889,7 @@ const moreMenuItems = computed(() => {
   if (canEditSettings.value)
     items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
   for (const menuPage of PROJECT_MENU_PAGES) {
-    if (menuPage.path === 'bug-reports' && projCapHidden('bug-reports')) continue;
+    if (projectMenuPageHidden(menuPage.path, projCapHidden)) continue;
     items.push({
       label: menuPage.label,
       icon: menuPage.icon,
@@ -943,7 +943,7 @@ const moreMenuItems = computed(() => {
             />
             <UButton
               v-if="!projCapHidden('quality-reports')"
-              label="Export"
+              label="Quality report"
               icon="i-lucide-file-down"
               size="sm"
               color="neutral"

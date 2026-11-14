@@ -6,7 +6,15 @@ import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { MAX_CONTROLS_PER_PAGE } from '#shared/graph';
 import { exposureFactorsFor, type DetectedGap } from '#shared/handlers/scenario-gaps';
 import { PIWI_ENV_VARS, type PiwiEnvVarMeta } from '#shared/piwi-env-vars';
-import { PROJECT_COVERAGE_VIEWS, PROJECT_MENU_PAGES, PROJECT_TABS, RUN_TABS, type PlaceTab } from '#shared/app-places';
+import {
+  PROJECT_COVERAGE_VIEWS,
+  PROJECT_MENU_PAGES,
+  PROJECT_SETTINGS_SECTIONS,
+  PROJECT_TABS,
+  RUN_TABS,
+  SETTINGS_PAGE_PLACES,
+  type PlaceTab,
+} from '#shared/app-places';
 import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { piwiActionTitle } from '../../../../packages/editor/src/analysis';
@@ -451,16 +459,36 @@ describe('a shared rule has one owner', () => {
 describe('a place named in the docs is a place of the dashboard', () => {
   // A path such as "Project → Coverage → Gaps" or "Test run → Changes" names a tab the page has, by the label it has
   // in shared/app-places.ts, which the pages and the command palette read too. After a tab with views comes one of
-  // its views; after the More actions menu, one of its pages; after any other tab, what the tab holds.
+  // its views; after the Settings tab, one of its sections; after the More actions menu, one of its pages; after any
+  // other tab, what the tab holds.
   const MENU = 'More actions';
   // The controls of the project page that sit outside its tabs.
-  const PROJECT_CONTROLS = ['Filters', 'Export', 'Import'];
+  const PROJECT_CONTROLS = ['Filters', 'Quality report', 'Import'];
   const PATH = /\b(Project|Test run|Run) → ([A-Z][A-Za-z -]*[A-Za-z])(?: → ([A-Z][A-Za-z -]*[A-Za-z]))?/g;
+  // A path into Settings has one form for each place: "Project → Settings → Members" for a section of a project's
+  // Settings tab (read by PATH), "Settings → Source control" for a page of Settings. Another product's settings (an
+  // editor's, a Git host's, an agent's, Piwi Picker's) start at the first step of its own path, listed here, or follow
+  // another step ("Appearance & Behavior → System Settings → HTTP Proxy").
+  const OTHER_SETTINGS = [
+    'Tools',
+    'Keymap',
+    'Editor',
+    'Plugins',
+    'Appearance',
+    'Languages',
+    'Build',
+    'Developer',
+    'System',
+    'Connectors',
+    'Sites',
+  ];
+  const SETTINGS_PATH =
+    /(\b[A-Za-z]+['’]s |\b[A-Z][a-z]+ |→ )?(?:\*\*)?\bSettings → (?:\*\*)?([A-Z][A-Za-z -]*[A-Za-z])/g;
 
   const names = (segment: string, labels: readonly string[]) =>
     labels.some((label) => segment === label || segment.startsWith(`${label} `));
 
-  const problemsOf = (text: string): string[] =>
+  const tabProblemsOf = (text: string): string[] =>
     [...text.matchAll(PATH)].flatMap(([path, page, first, second]) => {
       if (page !== 'Project') {
         const tabs = RUN_TABS.map((tab) => tab.label);
@@ -476,11 +504,32 @@ describe('a place named in the docs is a place of the dashboard', () => {
         const tabs = PROJECT_TABS.map((projectTab) => projectTab.label);
         return [`"${path}": a project's tabs are ${tabs.join(', ')}, and its other pages open from ${MENU}`];
       }
+      if (tab.value === 'settings') {
+        const sections = PROJECT_SETTINGS_SECTIONS.map((section) => section.label);
+        return !second || names(second, sections)
+          ? []
+          : [`"${path}": the sections of a project's Settings are ${sections.join(', ')}`];
+      }
       const views = (tab.views ?? []).map((view) => view.label);
       return !second || views.length === 0 || names(second, views)
         ? []
         : [`"${path}": the views of ${tab.label} are ${views.join(', ')}`];
     });
+
+  // A path that follows another step, or "System Settings", is not the dashboard's; "the project's Settings → X" is
+  // refused for the project form.
+  const settingsProblemsOf = (text: string): string[] =>
+    [...text.matchAll(SETTINGS_PATH)].flatMap(([path, before, first]) => {
+      if (before === '→ ' || (before && /^[A-Z]/.test(before) && !/['’]s $/.test(before))) return [];
+      if (names(first!, OTHER_SETTINGS)) return [];
+      if (before && /^project['’]s $/i.test(before)) {
+        return [`"${path}": write a section of a project's Settings as "Project → Settings → ${first}"`];
+      }
+      const pages = SETTINGS_PAGE_PLACES.map((place) => place.label);
+      return names(first!, pages) ? [] : [`"${path}": the pages of Settings are ${pages.join(', ')}`];
+    });
+
+  const problemsOf = (text: string): string[] => [...tabProblemsOf(text), ...settingsProblemsOf(text)];
 
   test('a path is read to its tab, its view or its menu page', () => {
     expect(problemsOf('**Project → Coverage → Gaps**, then Test run → Changes.')).toEqual([]);
@@ -488,6 +537,15 @@ describe('a place named in the docs is a place of the dashboard', () => {
     expect(problemsOf('Project → Timeline')).toHaveLength(1);
     expect(problemsOf('Project → Failures → Gaps')).toHaveLength(1);
     expect(problemsOf('Test run → Failures')).toHaveLength(1);
+  });
+
+  test('a path into Settings is read to a page of Settings or a section of a project’s Settings', () => {
+    expect(problemsOf('In **Settings → Source control**, then Project → Settings → Members.')).toEqual([]);
+    expect(problemsOf('under Settings → Tools → Piwi in a JetBrains IDE')).toEqual([]);
+    expect(problemsOf('Appearance & Behavior → System Settings → HTTP Proxy')).toEqual([]);
+    expect(problemsOf('in Settings → Repository')).toHaveLength(1);
+    expect(problemsOf('Project → Settings → Repository')).toHaveLength(1);
+    expect(problemsOf("the project's Settings → Source control")).toHaveLength(1);
   });
 
   const entries = PIWI_FEATURE_GROUPS.flatMap((group) => group.features).map(

@@ -90,7 +90,7 @@ Roles are granted from four places, which all edit the same grants:
 - **Settings → Permissions**, the [permission grid](#permission-grid): every group and user against every project.
 - **Settings → Users → Project roles**, the action next to a user: their role on All projects and on each project,
   with the groups that add to them.
-- A project's **Settings → Members**: the users and groups with a role on that project. Project admins see it for
+- **Project → Settings → Members**: the users and groups with a role on that project. Project admins see it for
   their own projects. Their picker lists the users who share a project with them; anyone else, such as a new account,
   is found by their whole username.
 - **Settings → Groups** for who belongs to each group; its roles are set on the grid or in a project's Members.
