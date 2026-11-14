@@ -944,6 +944,24 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * gutter and Code Vision of one highlighting pass, and asked again once the text or anything the service pushes
      * changed, or after [SUMMARY_TTL_MILLIS]. Null while the service does not run, and for a file that is not on disk.
      */
+    /** The last answer of `piwi/recordPlace`, with the file, the document's stamp and the line it answered. */
+    @Volatile
+    private var recordPlaceAnswer: Pair<Triple<String, Long, Int>, RecordPlaceResult>? = null
+
+    /**
+     * What Record here writes at a line of a file (`piwi/recordPlace`), waited for off the event thread; on it, only the
+     * last answer, when it is for the same file, stamp and line. Null when the service gives none in time.
+     */
+    fun recordPlace(file: VirtualFile, stamp: Long, line: Int): RecordPlaceResult? {
+        val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
+        val key = Triple(uri, stamp, line)
+        recordPlaceAnswer?.let { (asked, answer) -> if (asked == key) return answer }
+        if (ApplicationManager.getApplication().isDispatchThread) return null
+        val answer = server()?.recordPlace(RecordPlaceParams(uri, line))?.awaitCancellably(RECORD_PLACE_MILLIS) ?: return null
+        recordPlaceAnswer = key to answer
+        return answer
+    }
+
     fun fileSummary(file: VirtualFile, stamp: Long): CompletableFuture<FileSummary?>? {
         val server = server() ?: return null
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
@@ -995,6 +1013,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     companion object {
         const val TIMEOUT_SECONDS = 20L
+
+        /** How long Alt+Enter's list waits for where Record here writes. */
+        private const val RECORD_PLACE_MILLIS = 1_000L
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
 
         /** Whether the first-run notification was shown on this installation: an application-level property. */

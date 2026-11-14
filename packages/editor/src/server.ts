@@ -172,7 +172,13 @@ import { RunStreams } from './run-stream.js';
 import { CiSessions } from './ci-sessions.js';
 import { CiWatch } from './ci-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
-import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
+import {
+  breakpointLines,
+  declaredNamesAt,
+  fileFixtures,
+  pageCandidates,
+  recordPlace,
+} from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
@@ -220,6 +226,7 @@ import {
   MCP_REQUEST,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
+  RECORD_PLACE_REQUEST,
   RECORD_REQUEST,
   NEW_TEST_FILE_REQUEST,
   RECORDING_COMMAND_REQUEST,
@@ -343,6 +350,8 @@ import {
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
   type PageCandidatesResult,
+  type RecordPlaceParams,
+  type RecordPlaceResult,
   type RecordParams,
   type NewTestFileParams,
   type NewTestFileResult,
@@ -429,6 +438,8 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
+/** A JavaScript or TypeScript file, where Record here writes. */
+const SCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 /** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
 const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
 /** The commands whose runs the hub names to Piwi Picker, at most. */
@@ -4289,6 +4300,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onRequest(PAGE_CANDIDATES_REQUEST, (params: PageCandidatesParams): PageCandidatesResult => {
     const file = uriToPath(params.uri);
     return pageCandidates((file ? readText(file) : null) ?? '', params.line);
+  });
+
+  connection.onRequest(RECORD_PLACE_REQUEST, (params: RecordPlaceParams): RecordPlaceResult => {
+    const file = uriToPath(params?.uri);
+    const text = file && SCRIPT_FILE.test(file) && contextFor(file) ? readText(file) : null;
+    const place = text !== null && Number.isSafeInteger(params.line) ? recordPlace(text, params.line) : null;
+    if (place === 'test') return { place, title: 'Piwi: record a test here…' };
+    if (place === 'steps') return { place, title: 'Piwi: record steps here…' };
+    return { place: null, title: null };
   });
 
   connection.onRequest(RECORD_REQUEST, async (params: RecordParams): Promise<RecordResult> => {

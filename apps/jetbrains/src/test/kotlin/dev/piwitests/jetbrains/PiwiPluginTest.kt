@@ -1565,6 +1565,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     ),
                     specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
                 )
+                // Record here in Alt+Enter: steps in the test's body, nothing on the imports.
+                assertEquals(RecordPlaceResult("steps", "Piwi: record steps here…"), server.recordPlace(RecordPlaceParams(spec, 4)).get(5, TimeUnit.SECONDS))
+                assertEquals(RecordPlaceResult(null, null), server.recordPlace(RecordPlaceParams(spec, 0)).get(5, TimeUnit.SECONDS))
                 // The service answers a flaky test of the catalog as flaky on its line, which the result icon draws as the flaky mark.
                 val catalog = File(dir, "tests/catalog.spec.ts").toURI().toString().replace("file:/", "file:///")
                 val flaky = server.fileSummary(UriParams(catalog)).get(5, TimeUnit.SECONDS)?.lines.orEmpty().single { it.status != null }

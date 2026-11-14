@@ -812,7 +812,9 @@ service's reference.
 `src/recording.ts` records a test from the editor.
 
 - **Piwi: Record here…** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
-  test, function and class it records a new `test`; anywhere else, `steps` there.
+  test, function and class it records a new `test`; anywhere else, `steps` there. Ctrl+. and the Refactor… menu offer
+  it as a code action (kind `refactor.piwi`) where `piwi/recordPlace` says it writes, under the service's title
+  (**Piwi: record a test here…**, **Piwi: record steps here…**); the light bulb, asked on every cursor move, does not.
 - **Piwi: Record a new test file…** creates a spec first (`file`), next to the active test file or in the config's
   `testDir`.
 
