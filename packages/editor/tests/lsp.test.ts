@@ -929,7 +929,7 @@ describe('the Piwi language server', () => {
       title: string;
       edit: { changes: Record<string, Array<{ newText: string; range: { start: { line: number } } }>> };
     }>;
-    expect(actions.map((a) => a.title)).toEqual(['Update 1 locator in checkout.page.ts']);
+    expect(actions.map((a) => a.title)).toEqual(['Piwi: update 1 locator in checkout.page.ts']);
     const edits = actions[0]!.edit.changes[uri('tests/pages/checkout.page.ts')]!;
     expect(edits).toEqual([
       expect.objectContaining({
@@ -962,7 +962,7 @@ describe('the Piwi language server', () => {
       range: brittle.range,
       context: { diagnostics: [brittle] },
     })) as Array<{ title: string; edit: { changes: Record<string, Array<{ newText: string }>> } }>;
-    expect(actions[0]!.title).toBe("Use getByRole('row', { name: /Mug/ }) (as of the last passing run)");
+    expect(actions[0]!.title).toBe("Piwi: use getByRole('row', { name: /Mug/ }) (as of the last passing run)");
     expect(actions[0]!.edit.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
@@ -995,12 +995,12 @@ describe('the Piwi language server', () => {
       command?: { command: string; arguments: unknown[] };
     }>;
     expect(actions.map((a) => a.title)).toEqual([
-      "Heal: use getByRole('row', { name: /Mug/ })",
-      'Run this test',
-      'Open the trace',
-      'Apply the fix plan (1 file), then run its verification',
-      'Copy context for agent',
-      'Open the failure in the dashboard',
+      "Piwi: heal with getByRole('row', { name: /Mug/ })",
+      'Piwi: run this test',
+      'Piwi: open the trace',
+      'Piwi: apply the fix plan (1 file), then run its verification',
+      'Piwi: copy context for agent',
+      'Piwi: open the failure in the dashboard',
     ]);
     expect(actions[1]!.command).toEqual({
       title: 'Run this test',
@@ -1132,6 +1132,15 @@ describe('the Piwi language server', () => {
           clusterTitle: null,
           owner: null,
           isNew: false,
+          // Its test's line and Verify ×3, by the one test of its spec titled as it failed.
+          test: { uri: uri('tests/rows.spec.ts'), line: 3 },
+          verify: {
+            uri: uri('tests/rows.spec.ts'),
+            root: dir,
+            testIds: [],
+            locations: ['tests/rows.spec.ts:4'],
+            repeat: 3,
+          },
           // Debug this failure: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
           debug: {
             uri: uri('tests/rows.spec.ts'),
@@ -1355,7 +1364,7 @@ describe('the Piwi language server', () => {
         changes: Record<string, Array<{ newText: string; range: { start: { line: number }; end: { line: number } } }>>;
       };
     }>;
-    expect(actions[0]!.title).toBe('Remove test.slow()');
+    expect(actions[0]!.title).toBe('Piwi: remove test.slow()');
     expect(actions[0]!.edit.changes[uri('tests/checkout.spec.ts')]).toEqual([
       { range: { start: { line: 3, character: 0 }, end: { line: 4, character: 0 } }, newText: '' },
     ]);
@@ -2369,7 +2378,7 @@ describe('failures follow the edits', () => {
       context: { diagnostics: [edited] },
     })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
     expect(actions[0]).toMatchObject({
-      title: 'Run this test',
+      title: 'Piwi: run this test',
       command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
     });
     // The healing replaces a line the buffer does not hold.
@@ -4254,7 +4263,7 @@ describe('what keeps a context from the instance’s data', () => {
             context: { diagnostics: [failure] },
           })) as Array<{ title: string }>
         ).map((a) => a.title);
-      const heal = "Heal: use getByRole('row', { name: /Mug/ })";
+      const heal = "Piwi: heal with getByRole('row', { name: /Mug/ })";
 
       expect(await titles()).not.toContain(heal);
       // What failed is asked again, and waited for a while at most.
@@ -4592,10 +4601,10 @@ describe('jobs for the desktop app running beside a team instance', () => {
       })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
       const jobs = actions.filter((a) => a.command?.command === 'piwi.desktopJob');
       expect(jobs.map((a) => [a.title, a.command!.arguments[0]])).toEqual([
-        ['Reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
-        ['Find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
+        ['Piwi: reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
+        ['Piwi: find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
         [
-          'Run Flake Lab on its untested suspects in the desktop app',
+          'Piwi: run Flake Lab on its untested suspects in the desktop app',
           { root: dir, executionId: 900, testCaseId: 3, kind: 'flake-lab' },
         ],
       ]);

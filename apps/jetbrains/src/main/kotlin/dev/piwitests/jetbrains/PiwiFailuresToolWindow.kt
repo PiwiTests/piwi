@@ -426,7 +426,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             *registered("Piwi.OpenInDashboard"),
             FlakeActions(project, selected),
             Separator.getInstance(),
-            *registered("Piwi.Failure.RunTest", "Piwi.Failure.Debug"),
+            *registered("Piwi.Failure.GoToTest"),
+            *registered("Piwi.Failure.RunTest", "Piwi.Failure.Debug", "Piwi.Failure.Verify"),
             Separator.getInstance(),
             *registered("Piwi.Failure.OpenTrace", "Piwi.Failure.OpenScreenshot"),
             Separator.getInstance(),
@@ -563,6 +564,28 @@ class DebugFailureAction : FailureNodeAction(AllIcons.Actions.StartDebugger) {
         FileDocumentManager.getInstance().saveAllDocuments()
         // Quietly: the service says itself why it refuses a debug run.
         PiwiCommands.runTests(project, debug, quiet = true)
+    }
+}
+
+/** **Verify the test ×3**: the selected failure's test by its location, three times (`WorkspaceFailure.verify`). */
+class VerifyFailureAction : FailureNodeAction(AllIcons.Actions.Rerun) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.verify != null
+
+    override fun perform(project: Project, failure: WorkspaceFailure) {
+        val verify = failure.verify ?: return
+        FileDocumentManager.getInstance().saveAllDocuments()
+        PiwiCommands.runTests(project, verify)
+    }
+}
+
+/** **Go to the test**: the selected failure's `test(…)` line in its spec (`WorkspaceFailure.test`). */
+class GoToFailureTestAction : FailureNodeAction(AllIcons.Nodes.Test) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.test != null
+
+    override fun perform(project: Project, failure: WorkspaceFailure) {
+        val test = failure.test ?: return
+        val file = com.intellij.openapi.vfs.VfsUtil.findFileByURL(java.net.URI(test.uri).toURL()) ?: return
+        OpenFileDescriptor(project, file, test.line, 0).navigate(true)
     }
 }
 

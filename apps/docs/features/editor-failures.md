@@ -22,9 +22,9 @@ is in your workspace (often a page object), else the `test(…)` line, with the 
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
 reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
-On a failure, the quick fixes are:
+On a failure, Piwi's quick fixes are:
 
-- **Heal: use …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
+- **heal with …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
   [locator healing](/features/locator-healing) has a recommendation for the failing locator.
 - **Run this test** runs the failing test; it comes first once you rewrote the line it failed at.
 - **Open the trace** opens it in `npx playwright show-trace`.
@@ -101,10 +101,9 @@ editors, re-run that config's failing tests (**Re-run the failing tests**) and o
 context menu adds **Compare with…** for that config. With one config, the run is the first node.
 
 Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
-**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**,
-**Copy context for agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs,
-**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
-line.
+**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Go to the test**,
+**Debug this failure**, **Verify the test ×3**, the screenshot, **Copy context for agent**, and, on a CI failure while
+the [desktop app](/features/desktop#jobs-from-your-editor) runs, its two jobs. **Heal** stays a quick fix.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
 run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),

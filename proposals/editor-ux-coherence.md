@@ -113,7 +113,11 @@ session: in each test's action list, the dashboard's Debug in my editor run for 
 line, with no consent prompt) and a headed run holding its failures otherwise; VS Code's Debug profile in the Testing
 view; and **Debug this failure** on the failure nodes of both editors, from the run the service builds
 (`WorkspaceFailure.debug`) (TL17 in part: the IDE run icon waits on M9, and whether a plain Run still stops at
-breakpoints stays open). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+breakpoints stays open). M7 continued: the failure nodes of both editors gain **Verify the test ×3** and **Go to the
+test**, from what the service finds of the failure's test (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11),
+and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and the clients' recorded-locator ones alike
+(TL7 in part: that a quick fix only edits, Record here in both editors' actions (TL9), and the IDE run icon (M9)
+remain). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which

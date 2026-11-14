@@ -108,7 +108,7 @@ describe("a spec's editor title", () => {
     ]);
   });
 
-  test('draws each button with a glyph of its own: no other command has it, but Record’s', () => {
+  test('draws each button with a glyph of its own: no other command has it, but Record’s and Verify ×3’s', () => {
     const shown = [
       ...menus['editor/title']!.filter((e) => e.group?.startsWith('navigation')),
       ...menus['editor/title/run']!,
@@ -118,8 +118,12 @@ describe("a spec's editor title", () => {
       const icon = iconOf(command);
       expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
       const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
-      // Record, Resume recording and Record at the stop are one concept, with one glyph.
-      expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording', 'piwi.recordAtStop'] : []);
+      // Record, Resume recording and Record at the stop are one concept, with one glyph, as are the Verify ×3s.
+      const concept: Record<string, string[]> = {
+        'piwi.record': ['piwi.resumeRecording', 'piwi.recordAtStop'],
+        'piwi.verifyTestAtCursor': ['piwi.verifyFailure'],
+      };
+      expect(sharing, command).toEqual(concept[command] ?? []);
     }
   });
 });
@@ -175,6 +179,7 @@ describe("the commands' glyphs", () => {
       ['piwi.openTrace', 'piwi.openTraceSoFar'],
       ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
       ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
+      ['piwi.verifyTestAtCursor', 'piwi.verifyFailure'],
       ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
       // Follow the active editor and Watch a worker's test, still to settle.
       ['piwi.stopFollowingEditor', 'piwi.watchWorker'],

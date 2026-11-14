@@ -318,7 +318,9 @@ that each of Piwi's resolves to a file, and lists the actions that share a glyph
 (`WorkspaceFailure.root`). **Debug this failure** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
 built for it (`WorkspaceFailure.debug`) once the files are saved, quietly (the service says why it refuses a debug
 run); so does **Debug with Piwi** among a test's actions on the result icon (`TestAction.kind` `debug`,
-`PiwiCommands.debug`). A run that names its own start keeps it (`Glue.withRunStart`).
+`PiwiCommands.debug`). **Verify the test ×3** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
+the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. A run that names its own start keeps it
+(`Glue.withRunStart`).
 
 ### Compare with
 

@@ -128,11 +128,11 @@ const tests = {
       return found?.some((a) => a.title.startsWith('Heal')) ? found : null;
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
-    assert.ok(titles.includes("Heal: use getByRole('row', { name: /Mug/ })"), titles.join(' | '));
-    assert.ok(titles.includes('Open the trace'), titles.join(' | '));
-    assert.ok(titles.includes('Open the failure in the dashboard'), titles.join(' | '));
-    assert.ok(titles.includes('Copy context for agent'), titles.join(' | '));
-    const copy = actions.find((a) => a.title === 'Copy context for agent');
+    assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the trace'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the failure in the dashboard'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: copy context for agent'), titles.join(' | '));
+    const copy = actions.find((a) => a.title === 'Piwi: copy context for agent');
     await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
