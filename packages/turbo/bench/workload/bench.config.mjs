@@ -79,6 +79,16 @@ export default {
     { name: 'preset-safe', description: "preset: 'safe'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'safe' } },
     { name: 'preset-fast', description: "preset: 'fast'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast' } },
     { name: 'preset-experimental', description: "preset: 'experimental'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'experimental' } },
+    {
+      name: 'stock-red',
+      description: 'stock, with six failing tests.',
+      env: { ...stock, BENCH_FAILING: '1' },
+    },
+    {
+      name: 'stock-red+fail-fast',
+      description: 'stock with six failing tests, plus the experimental failFast hook.',
+      env: { ...stock, BENCH_FAILING: '1', BENCH_FAIL_FAST: '1' },
+    },
     { name: 'tuned', description: 'Every public lever above together.', env: tuned },
     {
       name: 'tuned+fast-png',
@@ -94,6 +104,12 @@ export default {
       name: 'tuned+hooks',
       description: 'tuned, plus both experimental hooks.',
       env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1', BENCH_RETRY_INTERVALS: fastRetry },
+    },
+    { name: 'tuned-red', description: 'tuned, with six failing tests.', env: { ...tuned, BENCH_FAILING: '1' } },
+    {
+      name: 'tuned-red+fail-fast',
+      description: 'tuned with six failing tests, plus the experimental failFast hook.',
+      env: { ...tuned, BENCH_FAILING: '1', BENCH_FAIL_FAST: '1' },
     },
   ],
 };

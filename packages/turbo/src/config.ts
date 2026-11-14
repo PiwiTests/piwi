@@ -45,6 +45,12 @@ export interface Optimizations {
     fastScreenshots?: boolean;
     /** The backoff of Playwright's retry loop in milliseconds, e.g. `[10, 20, 40, 50]`. Stock: `[20, 50, 100, 100, 500]`. */
     retryIntervals?: number[];
+    /**
+     * A failing web-first assertion ends as soon as nothing can change the page before its timeout: no request, timer,
+     * animation frame, interval, socket, worker, running animation or playing media. A test that changes the page from
+     * its own Node code while an assertion waits must leave it off.
+     */
+    failFast?: boolean;
   };
 }
 
@@ -123,5 +129,6 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   const experimental = options.experimental ?? {};
   if (experimental.fastScreenshots) use.fastScreenshots = true;
   if (experimental.retryIntervals) use.retryIntervals = experimental.retryIntervals;
+  if (experimental.failFast) use.failFast = true;
   return result as T;
 }

@@ -3,6 +3,7 @@
 //   fast screenshots  adds CDP's `optimizeForSpeed` to Chromium's `Page.captureScreenshot` for PNGs (same pixels,
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
+//   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
 //
 // Both wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
@@ -13,7 +14,7 @@ const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Playwright's server classes have no public types. */
 type ServerPage = any;
-type Progress = { timeout?: number };
+type Progress = { timeout?: number; log?: (message: string) => void };
 type RetryAction = (...args: any[]) => Promise<unknown>;
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -22,13 +23,14 @@ export const state = {
   installed: false,
   fastScreenshots: false,
   retryIntervals: undefined as number[] | undefined,
+  failFast: false,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
   pagesSeen: 0,
   /** The first internal that did not have the expected shape. */
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
-  counters: { optimizedScreenshots: 0, shortenedRetries: 0 },
+  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0 },
 };
 
 class IncompatibleError extends Error {
@@ -72,6 +74,82 @@ function loadCore(): { version: string; core: ServerPage } {
   return { version, core: fromPlaywright('playwright-core/lib/coreBundle') };
 }
 
+/** Thrown inside the retry loop to end an assertion the page can no longer satisfy. */
+class FailFastError extends Error {
+  constructor() {
+    super('@piwitests/turbo: nothing can change the page before the timeout');
+    this.name = 'FailFastError';
+  }
+}
+
+const IDLE_CHECK_MS = 250;
+
+/** Whether nothing in `frame`'s page can change it within `remaining` milliseconds. */
+async function pageIsIdle(frame: ServerPage, remaining: number): Promise<boolean> {
+  const frames: ServerPage[] = frame._page.frames();
+  if (frames.some((each) => each._inflightRequests?.size)) return false;
+  const checks = frames.map(async (each) => {
+    const context = await each.context('main');
+    const injected = await context.injectedScript();
+    return await injected.evaluate(
+      (_: unknown, ms: number) => (globalThis as { __piwiTurboIdle?: (ms: number) => boolean }).__piwiTurboIdle?.(ms) === true,
+      remaining,
+    );
+  });
+  const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), IDLE_CHECK_MS));
+  try {
+    return await Promise.race([Promise.all(checks).then((results) => results.every(Boolean)), timeout]);
+  } catch {
+    return false;
+  }
+}
+
+function hookFailFast(proto: ServerPage): void {
+  const { expect, _expectInternal: expectInternal, isNonRetriableError } = proto;
+  if (typeof expect !== 'function' || typeof expectInternal !== 'function' || typeof isNonRetriableError !== 'function') {
+    throw new IncompatibleError("Playwright's frame has no expect/_expectInternal/isNonRetriableError");
+  }
+  const source = String(expect);
+  if (!source.includes('retryWithProgressAndBackoff') || !source.includes('_expectInternal')) {
+    throw new IncompatibleError("Playwright's frame.expect no longer polls through _expectInternal");
+  }
+  const startedAt = new WeakMap<object, number>();
+  const idleStreak = new WeakMap<object, number>();
+  proto.expect = function (this: ServerPage, progress: Progress, ...rest: unknown[]) {
+    startedAt.set(progress, Date.now());
+    return expect.call(this, progress, ...rest);
+  };
+  proto._expectInternal = async function (
+    this: ServerPage,
+    progress: Progress,
+    selector: unknown,
+    options: { isNot: boolean },
+    lastIntermediateResult: unknown,
+    noAbort: boolean,
+  ) {
+    const result = await expectInternal.call(this, progress, selector, options, lastIntermediateResult, noAbort);
+    if (!state.failFast || noAbort || result.matches !== options.isNot) return result;
+    const started = startedAt.get(progress);
+    const remaining = progress.timeout && started !== undefined ? started + progress.timeout - Date.now() : Infinity;
+    if (!(await pageIsIdle(this, remaining))) {
+      idleStreak.set(progress, 0);
+      return result;
+    }
+    // Idle on two polls in a row: an event that was on its way has had a poll to land.
+    const streak = (idleStreak.get(progress) ?? 0) + 1;
+    idleStreak.set(progress, streak);
+    if (streak < 2) return result;
+    state.counters.failedFast++;
+    (progress as { log?: (message: string) => void }).log?.(
+      '  @piwitests/turbo: nothing can change the page before the timeout, failing now',
+    );
+    throw new FailFastError();
+  };
+  proto.isNonRetriableError = function (this: ServerPage, error: unknown) {
+    return error instanceof FailFastError || isNonRetriableError.call(this, error);
+  };
+}
+
 function hookFrame(frame: ServerPage): void {
   const proto = Object.getPrototypeOf(frame);
   const original = proto.retryWithProgressAndBackoff as
@@ -96,6 +174,7 @@ function hookFrame(frame: ServerPage): void {
     }
     return this.retryWithProgressAndTimeouts(progress, intervals, action);
   };
+  hookFailFast(proto);
   state.frameHooked = true;
 }
 

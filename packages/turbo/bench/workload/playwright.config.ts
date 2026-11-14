@@ -11,6 +11,8 @@ import { withOptimizations } from '../../src/index';
 //   BENCH_INSTANT_ANIMATIONS 1: @piwitests/turbo's instantAnimations
 //   BENCH_BLOCK_RESOURCES    comma-separated resource types: @piwitests/turbo's blockResources
 //   BENCH_PRESET             safe | fast | experimental: @piwitests/turbo's preset (BENCH_TRACE would win over it)
+//   BENCH_FAIL_FAST          1: the experimental failFast hook
+//   BENCH_FAILING            1: also run the failing tests (tests/failing.spec.ts), to measure a red run
 //   BENCH_FAST_SCREENSHOTS   1: the experimental fastScreenshots hook
 //   BENCH_RETRY_INTERVALS    comma-separated milliseconds: the experimental retryIntervals hook
 //   BENCH_WORKERS            worker count or percentage (default: Playwright's)
@@ -45,7 +47,13 @@ const config = defineConfig({
   expect: {
     toHaveScreenshot: { stylePath: './tests/screenshot.css', maxDiffPixelRatio: 0.002 },
   },
-  projects: [{ name: 'chromium', use: devices['Desktop Chrome'], testIgnore: /auth\.setup\.ts/ }],
+  projects: [
+    {
+      name: 'chromium',
+      use: devices['Desktop Chrome'],
+      testIgnore: env.BENCH_FAILING === '1' ? /auth\.setup\.ts/ : [/auth\.setup\.ts/, /failing\.spec\.ts/],
+    },
+  ],
   webServer: {
     command: 'node app/server.mjs',
     url: `http://localhost:${PORT}/login`,
@@ -65,6 +73,7 @@ export default withOptimizations(config, {
   blockRequests: env.BENCH_BLOCK_THIRD_PARTY === '1' ? [(url) => url.port === VENDOR_PORT] : undefined,
   experimental: {
     fastScreenshots: env.BENCH_FAST_SCREENSHOTS === '1' || undefined,
+    failFast: env.BENCH_FAIL_FAST === '1' || undefined,
     retryIntervals: env.BENCH_RETRY_INTERVALS ? env.BENCH_RETRY_INTERVALS.split(',').map(Number) : undefined,
   },
 });
