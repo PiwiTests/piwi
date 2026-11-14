@@ -6,7 +6,7 @@ import { clusterValue, loadClusters, type ClusterRow } from './metric-values';
 import { percentile } from '../../utils/stats';
 
 /**
- * The age buckets of open failure causes, youngest first; `maxDays` is
+ * The age buckets of open failure clusters, youngest first; `maxDays` is
  * exclusive, null for the last group. A report translates their labels.
  */
 export const AGE_GROUPS: Array<{ label: string; maxDays: number | null }> = [
@@ -26,10 +26,10 @@ function ms(value: Date | number | string | null | undefined): number | null {
 const toDays = (value: number | null) => (value === null ? null : Math.round((value / DAY_MS) * 10) / 10);
 
 /**
- * How fast failures get fixed: failure causes opened and fixed per bucket, the
- * median and 90th percentile time to fix over the causes fixed in the period
+ * How fast failures get fixed: failure clusters opened and fixed per bucket, the
+ * median and 90th percentile time to fix over the clusters fixed in the period
  * (with the comparison period's median), the share of fixes that held, and
- * the open causes by age. Failure clusters outlive run retention, so this
+ * the open clusters by age. Failure clusters outlive run retention, so this
  * reaches as far back as the clusters do.
  */
 export async function getAnalyticsTimeToFix(

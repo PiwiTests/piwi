@@ -106,7 +106,7 @@ It needs:
   `PIWI_SERVER_PROBES=true`. Both apply faults only in development and test environments by default. The ASP.NET Core package applies throw,
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
-- **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,
+- **Server probes** turned on under **Scenario gaps** in **Project → Settings → Coverage**,
   where the fault classes and routes are allow-listed. A test gets the first class in the list that its route allows,
   `dependency` aside, so list first the class that matters most; a dependency fault goes to a test the other classes
   left, on a route whose handler calls a dependency. Dependency faults on state-changing routes (`POST`, `PUT`,

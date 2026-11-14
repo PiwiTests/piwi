@@ -177,7 +177,7 @@ Piwi keeps no hit counts and no branches.
 A project's coverage scope decides which files count: include and exclude patterns over repository-relative paths, in
 the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
 build output (`bin/`, `obj/`, `dist/`, `.next/`, `.nuxt/`, `.output/`, `.svelte-kit/`) and generated sources; a folder
-pattern matches at any depth. Set it in the project's **Settings › Coverage**, or with the
+pattern matches at any depth. Set it in **Project → Settings → Coverage**, or with the
 [API](https://piwitests.dev/demo/settings/api) (`coverageScope`). The upload sends only the files in scope, and the commit's
 inventory: its tracked files in scope and their blob ids.
 

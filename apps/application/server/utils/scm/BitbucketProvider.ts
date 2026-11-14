@@ -439,7 +439,7 @@ export class BitbucketProvider extends ScmProvider {
         if (res.status === 404)
           return 'Repository not found on Bitbucket. Check the remote URL in your test run metadata.';
         if (res.status === 401 || res.status === 403)
-          return 'Bitbucket API authentication failed. Check your SCM token in Settings → AI.';
+          return 'Bitbucket API authentication failed. Check your SCM token in Settings → Source control.';
         return `Bitbucket API returned ${res.status}.`;
       }
       return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;

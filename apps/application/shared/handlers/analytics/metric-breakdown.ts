@@ -1,6 +1,6 @@
 /**
  * One metric cut by a dimension of the catalog: "wasted CI minutes by
- * browser", "pass rate by project tag", "open failure causes by assignee".
+ * browser", "pass rate by project tag", "open failure clusters by assignee".
  *
  * Each source is read once for the range and partitioned in memory: the
  * rollup cells (run dimensions, no test filter), the executions (test

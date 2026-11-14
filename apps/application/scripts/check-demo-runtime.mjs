@@ -1049,18 +1049,18 @@ async function checkDemoFlows(page) {
   check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
   check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
 
-  // The analytics page is the Overview dashboard; its Export previews a quality
-  // report built in the service worker and downloads it as a PDF.
+  // The analytics page's Quality report previews a quality report built in the
+  // service worker and downloads it as a PDF.
   await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
   const tile = page.getByTestId('stat-test-pass-rate');
   await tile.waitFor({ timeout: 60000 }).catch(() => {});
   check(await tile.isVisible(), 'the analytics page shows the headline tiles');
   const preview = page.getByTestId('report-view');
   for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
-    await page.getByRole('button', { name: 'Export', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Quality report', exact: true }).first().click();
     await preview.waitFor({ timeout: 3000 }).catch(() => {});
   }
-  check(await preview.isVisible(), 'Export previews the quality report');
+  check(await preview.isVisible(), 'Quality report previews the quality report');
   await page.getByTestId('report-download').click();
   const [reportPdf] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }),

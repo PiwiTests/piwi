@@ -24,7 +24,7 @@ A comment and a commit status get posted when a run finishes, unless it is one o
 - **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
   list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
-  the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
+  the commit status** under **Project → Settings → Source control** to fail it on any failure. **Only comment on
   failures** follows the same rule: such a run gets no comment, unless it fixed a failure cluster, left a new leak,
   closed one, or its change left a file no test reached, which the [uncovered changes](./uncovered-changes) section
   names. When the run has a
@@ -75,7 +75,7 @@ rewritten locator.
 
 ## The gate verdict
 
-With **Gate status** on under the project's **Settings → Source control**, each verdict of the
+With **Gate status** on under **Project → Settings → Source control**, each verdict of the
 [CI merge gate](./merge-gate) made with the CI key is also posted as your status context plus `/gate`
 (`piwi/tests/gate`), so a branch rule can require the gate rather than the run. It needs **Set a commit status** on.
 What is stored, and how merges past a failed gate are counted:

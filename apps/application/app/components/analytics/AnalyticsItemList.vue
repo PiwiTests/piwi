@@ -11,7 +11,7 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsList
 
 const SOURCE_TITLES: Record<AnalyticsList['source'], string> = {
   runs: 'Latest runs',
-  'failure-clusters': 'Open failure causes',
+  'failure-clusters': 'Open failure clusters',
   'flaky-tests': 'Flakiest tests',
   'scenario-gaps': 'Open scenario gaps',
 };

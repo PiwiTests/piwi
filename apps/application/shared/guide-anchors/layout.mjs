@@ -146,7 +146,7 @@ export const LAYOUT_ANCHORS = [
     kind: 'action',
     pages: ['*'],
     describes:
-      'The user menu at the foot of the sidebar: the settings pages, the theme, Open in editor and the Piwi tools to install.',
+      'The user menu at the foot of the sidebar: the settings pages, the theme, Open in editor and the companion tools to install.',
     doc: 'features/ui-overview#settings',
     sample: { route: '/projects' },
   },

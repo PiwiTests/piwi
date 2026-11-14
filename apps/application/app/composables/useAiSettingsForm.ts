@@ -83,8 +83,6 @@ export function createAiSettingsForm(
   const autoDiagnose = ref(false);
   const language = ref('');
   const instructions = ref('');
-  const scmToken = ref('');
-  const removeScmToken = ref(false);
   const limits = reactive<Partial<Record<keyof ContextLimits, number | ''>>>({});
 
   const tests = reactive<Record<AiModelRole, AiTestState>>(perRole(idleTest));
@@ -109,8 +107,6 @@ export function createAiSettingsForm(
     autoDiagnose.value = s.autoDiagnose;
     language.value = s.language || '';
     instructions.value = s.customInstructions || '';
-    scmToken.value = '';
-    removeScmToken.value = false;
     loadLimits();
     saveError.value = '';
   }
@@ -188,8 +184,6 @@ export function createAiSettingsForm(
     language: string;
     instructions: string;
     limits: Partial<Record<keyof ContextLimits, number | ''>>;
-    scmToken: string;
-    removeScmToken: boolean;
   }) {
     return {
       provider: JSON.stringify(connectionPart(state.roles.diagnosis)),
@@ -201,7 +195,6 @@ export function createAiSettingsForm(
       limits: JSON.stringify(
         CONTEXT_LIMIT_FIELDS.map((f) => (state.limits[f.key] === '' ? null : (state.limits[f.key] ?? null))),
       ),
-      scm: JSON.stringify([state.scmToken.trim(), state.removeScmToken]),
     };
   }
 
@@ -219,8 +212,6 @@ export function createAiSettingsForm(
       language: s?.language || '',
       instructions: s?.customInstructions || '',
       limits: { ...(limitsData.value?.limits ?? {}) },
-      scmToken: '',
-      removeScmToken: false,
     });
   });
 
@@ -231,8 +222,6 @@ export function createAiSettingsForm(
       language: language.value,
       instructions: instructions.value,
       limits,
-      scmToken: scmToken.value,
-      removeScmToken: removeScmToken.value,
     }),
   );
 
@@ -242,7 +231,7 @@ export function createAiSettingsForm(
     { label: 'Provider', parts: ['provider'] },
     { label: 'Features', parts: ['features'] },
     { label: 'How the AI writes', parts: ['writing'] },
-    { label: 'What the model receives', parts: ['limits', 'scm'] },
+    { label: 'What the model receives', parts: ['limits'] },
   ];
   /** Whether the provider section differs from what was saved. */
   const providerChanged = computed(() => changed('provider'));
@@ -436,9 +425,6 @@ export function createAiSettingsForm(
         body.customInstructions = instructions.value.trim() || null;
         if (!languageEnvManaged.value) body.language = language.value.trim() || null;
       }
-      // An absent `scmToken` keeps the stored one; `null` removes it.
-      if (scmToken.value.trim()) body.scmToken = scmToken.value.trim();
-      else if (removeScmToken.value) body.scmToken = null;
       if (Object.keys(body).length) await $fetch('/api/settings/ai', { method: 'PUT', body });
 
       if (changed('limits')) {
@@ -484,8 +470,6 @@ export function createAiSettingsForm(
     autoDiagnose,
     language,
     instructions,
-    scmToken,
-    removeScmToken,
     limits,
     tests,
     models,

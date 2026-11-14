@@ -289,7 +289,7 @@ describe('the hand-back lines', () => {
       },
       {
         label: 'AI diagnoses',
-        text: '44 written · rated helpful 12 of 17 (71%) · the fix touched the diagnosed files in 19 of 25 fixed causes (76%) · 1 failed again after the fix.',
+        text: '44 written · rated helpful 12 of 17 (71%) · the fix touched the diagnosed files in 19 of 25 fixed clusters (76%) · 1 failed again after the fix.',
       },
       { label: 'CI gate', text: 'blocked 6 merges · 1 merged anyway, 1 then failed again on the default branch.' },
       { label: 'Flaky tests', text: '5 verified fixed with Flake Lab · 2 flaked again.' },
