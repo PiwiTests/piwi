@@ -1,5 +1,5 @@
 {
-  "name": "suitetune",
+  "name": "playwright-turbo",
   "version": "0.1.0",
   "description": "Make a Playwright suite faster without forking Playwright: public levers for your config, and experimental, version-pinned hooks, with the benchmark to judge them",
   "license": "MIT",

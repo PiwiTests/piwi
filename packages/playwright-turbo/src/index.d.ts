@@ -8,14 +8,14 @@ export interface Optimizations {
   trace?: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries' | 'retain-on-first-failure';
   /** Emulates `prefers-reduced-motion: reduce`. Changes what the app does when it honors the preference. */
   reducedMotion?: boolean;
-  /** Requests every test aborts, typically third-party scripts. Needs `test` from `suitetune/test`. */
+  /** Requests every test aborts, typically third-party scripts. Needs `test` from `playwright-turbo/test`. */
   blockRequests?: BlockRule[];
   /**
    * Signs in once: adds a setup project that runs the files matching `setup` and saves `storageState`, which every
    * other project then loads into each fresh context.
    */
   signIn?: { storageState: string; setup?: string | RegExp | Array<string | RegExp>; project?: string };
-  /** Node's compile cache for the runner and the workers; `true` caches in `node_modules/.cache/suitetune-compile`. */
+  /** Node's compile cache for the runner and the workers; `true` caches in `node_modules/.cache/playwright-turbo-compile`. */
   compileCache?: boolean | string;
   /** Hooks into Playwright's internals. Pinned to tested versions; they throw rather than fall back. */
   experimental?: {

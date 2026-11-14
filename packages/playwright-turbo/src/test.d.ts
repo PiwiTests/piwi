@@ -1,7 +1,7 @@
 import type { PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWorkerArgs, PlaywrightWorkerOptions, TestType } from '@playwright/test';
 import type { BlockRule } from './index.js';
 
-export interface SuitetuneOptions {
+export interface TurboOptions {
   /** Requests to abort in every context of the test. */
   blockRequests: BlockRule[];
   /** Experimental, Chromium only: encode PNG screenshots for speed. */
@@ -11,7 +11,7 @@ export interface SuitetuneOptions {
 }
 
 export declare const test: TestType<
-  PlaywrightTestArgs & PlaywrightTestOptions & SuitetuneOptions,
+  PlaywrightTestArgs & PlaywrightTestOptions & TurboOptions,
   PlaywrightWorkerArgs & PlaywrightWorkerOptions
 >;
 export { expect } from '@playwright/test';

@@ -1,4 +1,4 @@
-// `test` with suitetune's fixtures: request blocking, and the experimental hooks, each off until enabled in `use`.
+// `test` with playwright-turbo's fixtures: request blocking, and the experimental hooks, each off until enabled in `use`.
 import { test as base, expect } from '@playwright/test';
 import { assertHooksWork, installHooks, state, validIntervals } from './hooks.mjs';
 
@@ -14,7 +14,7 @@ export const test = base.extend({
 
   // Turns the hooks on for this test only. A worker runs one test at a time, so the toggle covers every page of the
   // test, including the ones it opens itself, and no other test.
-  _suitetuneHooks: [
+  _turboHooks: [
     async ({ fastScreenshots, retryIntervals, connectOptions }, use, testInfo) => {
       const intervals = validIntervals(retryIntervals);
       // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
@@ -22,7 +22,7 @@ export const test = base.extend({
       const fast = fastScreenshots && !updating;
       if (fast || intervals) {
         if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
-          throw new Error('suitetune: the experimental hooks need a browser launched by the test worker, not a connected one');
+          throw new Error('playwright-turbo: the experimental hooks need a browser launched by the test worker, not a connected one');
         }
         installHooks();
       }
@@ -38,15 +38,15 @@ export const test = base.extend({
     { auto: true },
   ],
 
-  context: async ({ context, blockRequests, _suitetuneHooks }, use) => {
-    void _suitetuneHooks;
+  context: async ({ context, blockRequests, _turboHooks }, use) => {
+    void _turboHooks;
     for (const rule of blockRequests) await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
     await use(context);
   },
 
-  page: async ({ page, _suitetuneHooks }, use) => {
-    if (_suitetuneHooks.fastScreenshots || _suitetuneHooks.retryIntervals) {
-      assertHooksWork({ needsChromium: _suitetuneHooks.fastScreenshots });
+  page: async ({ page, _turboHooks }, use) => {
+    if (_turboHooks.fastScreenshots || _turboHooks.retryIntervals) {
+      assertHooksWork({ needsChromium: _turboHooks.fastScreenshots });
     }
     await use(page);
   },

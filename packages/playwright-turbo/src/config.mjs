@@ -6,9 +6,9 @@ const DEFAULT_SETUP = /.*\.setup\.[cm]?[jt]sx?$/;
 
 function applySignIn(config, signIn) {
   const { storageState, setup = DEFAULT_SETUP, project = 'setup' } = signIn;
-  if (typeof storageState !== 'string' || !storageState) throw new Error('suitetune: signIn.storageState must be the path the setup project saves to');
+  if (typeof storageState !== 'string' || !storageState) throw new Error('playwright-turbo: signIn.storageState must be the path the setup project saves to');
   const projects = config.projects?.length ? config.projects : [{ name: 'tests' }];
-  if (projects.some((item) => item.name === project)) throw new Error(`suitetune: a project is already named "${project}"; pass signIn.project to name the setup project`);
+  if (projects.some((item) => item.name === project)) throw new Error(`playwright-turbo: a project is already named "${project}"; pass signIn.project to name the setup project`);
   config.projects = [
     { name: project, testMatch: setup },
     ...projects.map((item) => ({
@@ -42,7 +42,7 @@ export function withOptimizations(config, options = {}) {
   if (options.reducedMotion) result.use.contextOptions = { ...result.use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) result.use.blockRequests = options.blockRequests;
   if (options.signIn) applySignIn(result, options.signIn);
-  if (options.compileCache) enableCompileCache(options.compileCache === true ? 'node_modules/.cache/suitetune-compile' : options.compileCache);
+  if (options.compileCache) enableCompileCache(options.compileCache === true ? 'node_modules/.cache/playwright-turbo-compile' : options.compileCache);
   const experimental = options.experimental ?? {};
   if (experimental.fastScreenshots) result.use.fastScreenshots = true;
   if (experimental.retryIntervals) result.use.retryIntervals = experimental.retryIntervals;

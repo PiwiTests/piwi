@@ -29,8 +29,8 @@ export const state = {
 
 class IncompatibleError extends Error {
   constructor(message) {
-    super(`suitetune: ${message}. Turn the experimental hooks off (fastScreenshots, retryIntervals) to run on stock Playwright.`);
-    this.name = 'SuitetuneIncompatibleError';
+    super(`playwright-turbo: ${message}. Turn the experimental hooks off (fastScreenshots, retryIntervals) to run on stock Playwright.`);
+    this.name = 'PlaywrightTurboIncompatibleError';
   }
 }
 
@@ -93,7 +93,7 @@ function isChromium(page) {
 export function validIntervals(intervals) {
   if (intervals === undefined) return undefined;
   if (!Array.isArray(intervals) || !intervals.length || intervals.some((value) => !Number.isFinite(value) || value < 0)) {
-    throw new Error(`suitetune: retryIntervals must be a non-empty list of milliseconds, got ${JSON.stringify(intervals)}`);
+    throw new Error(`playwright-turbo: retryIntervals must be a non-empty list of milliseconds, got ${JSON.stringify(intervals)}`);
   }
   return intervals;
 }
@@ -103,7 +103,7 @@ export function checkVersion(version, allowUntested = false) {
   if (TESTED_VERSIONS.includes(version) || allowUntested) return;
   throw new IncompatibleError(
     `the experimental hooks are tested with playwright-core ${TESTED_VERSIONS.join(', ')}, and ${version} is installed. ` +
-      'Run the compatibility tests and the benchmark with SUITETUNE_ALLOW_UNTESTED=1 before using this version',
+      'Run the compatibility tests and the benchmark with PLAYWRIGHT_TURBO_ALLOW_UNTESTED=1 before using this version',
   );
 }
 
@@ -111,7 +111,7 @@ export function checkVersion(version, allowUntested = false) {
  * Installs the hooks in this process. They stay inert until `state.fastScreenshots` or `state.retryIntervals` is set.
  * Throws when the installed Playwright is not a tested version, unless `allowUntested` (for compatibility testing).
  */
-export function installHooks({ allowUntested = process.env.SUITETUNE_ALLOW_UNTESTED === '1' } = {}) {
+export function installHooks({ allowUntested = process.env.PLAYWRIGHT_TURBO_ALLOW_UNTESTED === '1' } = {}) {
   if (state.installed) return;
   const { version, core } = loadCore();
   checkVersion(version, allowUntested);
