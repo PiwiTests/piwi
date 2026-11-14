@@ -794,7 +794,7 @@
     "message": "Adresse de l’application de bureau"
   },
   "options_desktopUrlHint": {
-    "message": "Affichée sur la page Configuration de l’application, sous « Pair with Piwi Picker ». Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
+    "message": "Affichée dans l’application, dans Settings → Desktop app, sous « Pair with Piwi Picker ». Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Associer"
@@ -806,7 +806,7 @@
     "message": "Jeton"
   },
   "options_desktopManualHint": {
-    "message": "Le jeton se trouve sur la page Configuration de l’application, sous « Pair with Piwi Picker », à côté de son adresse."
+    "message": "Le jeton se trouve dans l’application, dans Settings → Desktop app, sous « Pair with Piwi Picker », à côté de son adresse."
   },
   "options_desktopSave": {
     "message": "Enregistrer et tester"
@@ -848,7 +848,7 @@
     "message": "Association annulée."
   },
   "options_desktopPairUnreachable": {
-    "message": "Rien ne répond à $url$. L’application de bureau est-elle lancée ? Sa page Configuration affiche son adresse.",
+    "message": "Rien ne répond à $url$. L’application de bureau est-elle lancée ? Son adresse est affichée dans Settings → Desktop app.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -857,7 +857,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "Ce qui répond à $url$ ne peut pas s’associer en une étape : vérifiez l’adresse sur la page Configuration de l’application de bureau, mettez l’application à jour, ou associez-la à la main.",
+    "message": "Ce qui répond à $url$ ne peut pas s’associer en une étape : vérifiez l’adresse dans l’application de bureau, dans Settings → Desktop app, mettez l’application à jour, ou associez-la à la main.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -875,7 +875,7 @@
     "message": "Saisissez l’adresse de l’application de bureau, comme http://127.0.0.1:3000."
   },
   "options_desktopNeedsToken": {
-    "message": "Collez d’abord le jeton affiché sur la page Configuration de l’application."
+    "message": "Collez d’abord le jeton affiché dans l’application, dans Settings → Desktop app."
   },
   "options_desktopNeedsAccess": {
     "message": "Autorisez l’accès à l’adresse de l’application de bureau pour l’associer."

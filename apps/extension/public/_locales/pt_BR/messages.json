@@ -794,7 +794,7 @@
     "message": "Endereço do aplicativo de desktop"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece na página Configuração do aplicativo, em “Pair with Piwi Picker”. Parear pede à janela do aplicativo que autorize o Piwi Picker."
+    "message": "Aparece no aplicativo, em Settings → Desktop app, em “Pair with Piwi Picker”. Parear pede à janela do aplicativo que autorize o Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Parear"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "O token está na página Configuração do aplicativo, em “Pair with Piwi Picker”, ao lado do endereço."
+    "message": "O token está no aplicativo, em Settings → Desktop app, em “Pair with Piwi Picker”, ao lado do endereço."
   },
   "options_desktopSave": {
     "message": "Salvar e testar"
@@ -848,7 +848,7 @@
     "message": "O pareamento foi cancelado."
   },
   "options_desktopPairUnreachable": {
-    "message": "Nada responde em $url$. O aplicativo de desktop está aberto? A página Configuração dele mostra o endereço.",
+    "message": "Nada responde em $url$. O aplicativo de desktop está aberto? O endereço dele aparece em Settings → Desktop app.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -857,7 +857,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "O que responde em $url$ não pode parear em uma etapa: confira o endereço na página Configuração do aplicativo de desktop, atualize o aplicativo ou pareie manualmente.",
+    "message": "O que responde em $url$ não pode parear em uma etapa: confira o endereço no aplicativo de desktop, em Settings → Desktop app, atualize o aplicativo ou pareie manualmente.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -875,7 +875,7 @@
     "message": "Informe o endereço do aplicativo de desktop, como http://127.0.0.1:3000."
   },
   "options_desktopNeedsToken": {
-    "message": "Cole primeiro o token da página Configuração do aplicativo."
+    "message": "Cole primeiro o token do aplicativo, em Settings → Desktop app."
   },
   "options_desktopNeedsAccess": {
     "message": "Permita o acesso ao endereço do aplicativo de desktop para pareá-lo."

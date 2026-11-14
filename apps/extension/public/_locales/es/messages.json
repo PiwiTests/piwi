@@ -794,7 +794,7 @@
     "message": "Dirección de la aplicación de escritorio"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece en la página Configuración de la aplicación, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
+    "message": "Aparece en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Vincular"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "El token está en la página Configuración de la aplicación, en «Pair with Piwi Picker», junto a su dirección."
+    "message": "El token está en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker», junto a su dirección."
   },
   "options_desktopSave": {
     "message": "Guardar y probar"
@@ -848,7 +848,7 @@
     "message": "Se canceló la vinculación."
   },
   "options_desktopPairUnreachable": {
-    "message": "Nada responde en $url$. ¿Está abierta la aplicación de escritorio? Su página Configuración muestra su dirección.",
+    "message": "Nada responde en $url$. ¿Está abierta la aplicación de escritorio? Su dirección aparece en Settings → Desktop app.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -857,7 +857,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "Lo que responde en $url$ no puede vincularse en un paso: comprueba la dirección en la página Configuración de la aplicación de escritorio, actualiza la aplicación o vincúlala a mano.",
+    "message": "Lo que responde en $url$ no puede vincularse en un paso: comprueba la dirección en la aplicación de escritorio, en Settings → Desktop app, actualiza la aplicación o vincúlala a mano.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -875,7 +875,7 @@
     "message": "Introduce la dirección de la aplicación de escritorio, como http://127.0.0.1:3000."
   },
   "options_desktopNeedsToken": {
-    "message": "Pega primero el token de la página Configuración de la aplicación."
+    "message": "Pega primero el token de la aplicación, en Settings → Desktop app."
   },
   "options_desktopNeedsAccess": {
     "message": "Permite el acceso a la dirección de la aplicación de escritorio para vincularla."

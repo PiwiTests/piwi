@@ -978,8 +978,8 @@
     "description": "Options: label of the desktop app's address field."
   },
   "options_desktopUrlHint": {
-    "message": "Shown on the app’s Setup page, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
-    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Pair with Piwi Picker” name the desktop app’s page and card, which is in English: keep the card’s name in English; “Pair” is options_desktopPair."
+    "message": "Shown in the app’s Settings → Desktop app, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
+    "description": "Settings page, Desktop app card: under the address field. “Settings → Desktop app” and “Pair with Piwi Picker” name the desktop app’s page and card, which are in English: keep both in English; “Pair” is options_desktopPair."
   },
   "options_desktopPair": {
     "message": "Pair",
@@ -994,7 +994,7 @@
     "description": "Options: label of the desktop app's token field."
   },
   "options_desktopManualHint": {
-    "message": "The token is on the app’s Setup page, under Pair with Piwi Picker, beside its address.",
+    "message": "The token is in the app’s Settings → Desktop app, under Pair with Piwi Picker, beside its address.",
     "description": "Settings page, Desktop app card, Pair by hand: where the token comes from."
   },
   "options_desktopSave": {
@@ -1046,7 +1046,7 @@
     "description": "Settings page, Desktop app card: Cancel was clicked while waiting."
   },
   "options_desktopPairUnreachable": {
-    "message": "Nothing answers at $url$. Is the desktop app running? Its Setup page shows its address.",
+    "message": "Nothing answers at $url$. Is the desktop app running? It shows its address in Settings → Desktop app.",
     "description": "Settings page, Desktop app card: the address did not answer. $url$ is the address typed.",
     "placeholders": {
       "url": {
@@ -1056,7 +1056,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "What answers at $url$ cannot pair in one step: check the address on the desktop app’s Setup page, update the app, or pair by hand.",
+    "message": "What answers at $url$ cannot pair in one step: check the address in the desktop app’s Settings → Desktop app, update the app, or pair by hand.",
     "description": "Settings page, Desktop app card: the address answered, but not as a desktop app that pairs (another server, or an older app). $url$ is the address typed.",
     "placeholders": {
       "url": {
@@ -1078,7 +1078,7 @@
     "description": "Options: the address is not the desktop app's own loopback address, or the token is empty."
   },
   "options_desktopNeedsToken": {
-    "message": "Paste the token from the app’s Setup page first.",
+    "message": "Paste the token first: the app shows it in Settings → Desktop app.",
     "description": "Settings page, Desktop app card: Save and test was clicked with no token."
   },
   "options_desktopNeedsAccess": {

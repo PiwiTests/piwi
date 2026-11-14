@@ -794,7 +794,7 @@
     "message": "Adresse der Desktop-App"
   },
   "options_desktopUrlHint": {
-    "message": "Steht auf der Einrichtungsseite der App, unter „Pair with Piwi Picker“. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
+    "message": "Steht in der App unter Settings → Desktop app, unter „Pair with Piwi Picker“. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
   },
   "options_desktopPair": {
     "message": "Koppeln"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "Das Token steht auf der Einrichtungsseite der App, unter „Pair with Piwi Picker“, neben ihrer Adresse."
+    "message": "Das Token steht in der App unter Settings → Desktop app, unter „Pair with Piwi Picker“, neben ihrer Adresse."
   },
   "options_desktopSave": {
     "message": "Speichern und testen"
@@ -848,7 +848,7 @@
     "message": "Koppeln abgebrochen."
   },
   "options_desktopPairUnreachable": {
-    "message": "Unter $url$ antwortet nichts. Läuft die Desktop-App? Ihre Einrichtungsseite zeigt ihre Adresse.",
+    "message": "Unter $url$ antwortet nichts. Läuft die Desktop-App? Ihre Adresse steht unter Settings → Desktop app.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -857,7 +857,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "Was unter $url$ antwortet, kann nicht in einem Schritt koppeln: Prüfen Sie die Adresse auf der Einrichtungsseite der Desktop-App, aktualisieren Sie die App oder koppeln Sie von Hand.",
+    "message": "Was unter $url$ antwortet, kann nicht in einem Schritt koppeln: Prüfen Sie die Adresse in der Desktop-App unter Settings → Desktop app, aktualisieren Sie die App oder koppeln Sie von Hand.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -875,7 +875,7 @@
     "message": "Geben Sie die Adresse der Desktop-App ein, etwa http://127.0.0.1:3000."
   },
   "options_desktopNeedsToken": {
-    "message": "Fügen Sie zuerst das Token von der Einrichtungsseite der App ein."
+    "message": "Fügen Sie zuerst das Token aus der App ein (Settings → Desktop app)."
   },
   "options_desktopNeedsAccess": {
     "message": "Erlauben Sie den Zugriff auf die Adresse der Desktop-App, um sie zu koppeln."
