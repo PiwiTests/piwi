@@ -119,7 +119,11 @@ and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and t
 (TL7 in part: that a quick fix only edits remains). M9: the IDE run icon's menu on a test offers Run with Piwi and
 Verify ×3 with Piwi on its line (`JSTestRunLineMarkersAdditionalActionGroup`, TL3), Piwi test results on the Gutter
 Icons page switches Piwi's result icon (TL4), and the editor fixture carries this repository's Playwright; TL3's check
-in Rider and every IDE of `verifyIdes` remains. Record here is a code action where the
+in Rider and every IDE of `verifyIdes` remains. M22: the words both clients write themselves are one table
+(`packages/editor/src/words.json`, `@piwitests/editor/words`), which VS Code reads and JetBrains' `EditorWords.WORDS`
+restates under `GlueTest`: a stop's controls and code actions with their short labels (AC9, AC11), a recording's
+states, whose JetBrains banner now reads as VS Code's lens, a worker's and a CI lane's name (NF3), and the choices of
+Hold failures, short and whole (NF3); the pausing line's call and time come from the service's run line (LR18). Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),

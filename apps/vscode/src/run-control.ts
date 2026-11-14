@@ -43,6 +43,7 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 import { RUN_STOP_WORDS } from '@piwitests/editor/protocol';
+import { editorWords } from '@piwitests/editor/words';
 
 /**
  * A change of a document's lines: its old lines `start` to `oldEnd` became the lines `start` to `newEnd`. `first`
@@ -829,7 +830,7 @@ export interface WatchTarget {
 
 /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
 export function workerName(lane: number): string {
-  return `Worker ${lane + 1}`;
+  return editorWords('worker', { n: lane + 1 });
 }
 
 /**
@@ -1400,14 +1401,14 @@ export interface StopControl {
  * End do the same).
  */
 export function stopControls(stop: ShownStop): StopControl[] {
-  const resume = { title: 'Resume', command: RUN_COMMANDS.resume };
+  const resume = { title: editorWords('stop.resume'), command: RUN_COMMANDS.resume };
   if (stop.stop.reason === 'failure') return [resume];
   return [
     resume,
-    { title: 'Step', command: RUN_COMMANDS.step },
-    { title: 'Run to the cursor', command: RUN_COMMANDS.runTo },
-    { title: 'Finish', command: RUN_COMMANDS.finish },
-    ...(canEnd(stop) ? [{ title: 'End the test', command: RUN_COMMANDS.end }] : []),
+    { title: editorWords('stop.step'), command: RUN_COMMANDS.step },
+    { title: editorWords('stop.run-to', { cursor: 'cursor' }), command: RUN_COMMANDS.runTo },
+    { title: editorWords('stop.finish'), command: RUN_COMMANDS.finish },
+    ...(canEnd(stop) ? [{ title: editorWords('stop.end'), command: RUN_COMMANDS.end }] : []),
   ];
 }
 
@@ -1418,7 +1419,10 @@ export function stopControls(stop: ShownStop): StopControl[] {
  */
 export function stopLensControls(stop: ShownStop): StopControl[] {
   const lens = stopControls(stop).filter((c) => c.command !== RUN_COMMANDS.runTo && c.command !== RUN_COMMANDS.end);
-  return [...lens, ...(stopActions(stop).length ? [{ title: 'Write code…', command: RUN_COMMANDS.code }] : [])];
+  return [
+    ...lens,
+    ...(stopActions(stop).length ? [{ title: editorWords('stop.write-code'), command: RUN_COMMANDS.code }] : []),
+  ];
 }
 
 /**
@@ -1452,7 +1456,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'pick',
     icon: '$(target)',
-    title: 'Pick a locator',
+    title: editorWords('action.pick'),
     command: RUN_COMMANDS.pick,
     key: 'piwi.runCanPick',
     detail: "Pick an element in the test's window: its locator replaces the one on the stopped line",
@@ -1460,7 +1464,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'record',
     icon: '$(record)',
-    title: 'Record',
+    title: editorWords('action.record'),
     command: RUN_COMMANDS.record,
     key: 'piwi.runCanRecord',
     detail: "Record what you do in the test's window above the stopped line",
@@ -1468,7 +1472,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'assert',
     icon: '$(pass)',
-    title: 'Assert',
+    title: editorWords('action.assert'),
     command: RUN_COMMANDS.assert,
     key: 'piwi.runCanAssert',
     detail: "Check an element in the test's window: the expect() goes above the stopped line",
@@ -1476,7 +1480,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'assert-region',
     icon: '$(screen-full)',
-    title: 'Assert a region',
+    title: editorWords('action.assert-region'),
     command: RUN_COMMANDS.assertRegion,
     key: 'piwi.runCanAssertRegion',
     detail: "Pick a region in the test's window: its ARIA snapshot goes above the stopped line",
@@ -1484,7 +1488,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'mock',
     icon: '$(arrow-swap)',
-    title: 'Mock a request',
+    title: editorWords('action.mock'),
     command: RUN_COMMANDS.mock,
     key: 'piwi.runCanMock',
     detail: 'Answer a request the test made as the server did: page.route() goes above the stopped line',
@@ -2291,7 +2295,9 @@ export function ciLaneArg(arg: unknown): CiLane | null {
 /** `worker 2`, or `shard 1, worker 2`: a CI lane in words. */
 function ciLaneName(lane: Pick<CiTest, 'lane' | 'shard'>): string {
   if (lane.lane === null) return '';
-  return lane.shard !== null ? `shard ${lane.shard}, worker ${lane.lane}` : `worker ${lane.lane}`;
+  return lane.shard !== null
+    ? editorWords('ci-lane.shard', { shard: lane.shard, lane: lane.lane })
+    : editorWords('ci-lane', { lane: lane.lane });
 }
 
 /** The worker panel's title while it watches a CI lane: `Piwi: CI run #78 · worker 2`. */

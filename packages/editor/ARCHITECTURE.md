@@ -128,6 +128,10 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/workspace.ts`: the configs the workspace holds and the git reads (`committedTextAt`, `mergeBase`, `headFiles`).
 - `src/actions.ts`: the editors' action catalog: each action's VS Code command id, JetBrains action ids and title,
   which `tests/actions.test.ts` holds both manifests to.
+- `src/words.ts`, `src/words.json`: the words both clients write themselves (a stop's controls and code actions with
+  their short labels, a recording's states and controls, a worker's and a CI lane's name, the choices of Hold failures),
+  `{name}` for a value the client fills in; VS Code reads them, and the JetBrains plugin's `EditorWords.WORDS` restates
+  them, held to the file by `GlueTest`.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).

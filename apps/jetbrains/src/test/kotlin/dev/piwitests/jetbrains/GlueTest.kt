@@ -2271,6 +2271,20 @@ class GlueTest {
     }
 
     @Test
+    fun `the words both editors write are the editor service's, which VS Code reads`() {
+        val file = java.io.File("../../packages/editor/src/words.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val table = com.google.gson.Gson().fromJson(file.readText(), Map::class.java)
+        assertEquals(table, EditorWords.WORDS)
+        assertEquals(table.keys.toList(), EditorWords.WORDS.keys.toList())
+        // A stop's controls, its code actions and a worker read from the table, the caret for the cursor.
+        assertEquals("Run to the caret", Glue.StopControl.RUN_TO_CARET.label)
+        assertEquals("Assert region", Glue.StopAction.ASSERT_REGION.inlayLabel)
+        assertEquals("Worker 2", Glue.workerName(1))
+        assertEquals("Piwi decides: on with a breakpoint or a page.pause()", Glue.holdFailuresLabel("auto"))
+    }
+
+    @Test
     fun `an instance on this machine is tried on every loopback address`() {
         assertEquals(
             listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),
@@ -2776,15 +2790,15 @@ class GlueTest {
     @Test
     fun `the banner says what the recording does and offers what applies`() {
         assertEquals(
-            Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Opening the browser", listOf(Glue.RecordingAction.STOP)),
             Glue.recordingBanner("starting", 0, edited = false, stopping = false, message = null),
         )
         assertEquals(
-            Glue.RecordingBanner("Piwi is recording what you do in the browser · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Recording · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
             Glue.recordingBanner("recording", 1, edited = false, stopping = false, message = " "),
         )
         assertEquals(
-            Glue.RecordingBanner("Piwi: recording paused · 3 steps · Paused in the browser.", listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Paused · 3 steps · Paused in the browser.", listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.STOP)),
             Glue.recordingBanner("paused", 3, edited = false, stopping = false, message = "Paused in the browser."),
         )
         assertEquals(
@@ -2792,7 +2806,7 @@ class GlueTest {
             Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).actions,
         )
         assertEquals(
-            Glue.RecordingBanner("Piwi: stopping the recording…", emptyList()),
+            Glue.RecordingBanner("Piwi: stopping the recording", emptyList()),
             Glue.recordingBanner("recording", 3, edited = true, stopping = true, message = "ignored"),
         )
     }

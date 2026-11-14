@@ -49,6 +49,7 @@ import type {
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
+import { editorWords } from '@piwitests/editor/words';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 import { countWords, waitedFor } from './run-control';
@@ -1438,36 +1439,37 @@ export function recordingView(
   file: string,
 ): RecordingView {
   const count = plural(steps, 'step');
-  const stop: RecordingAction = { title: 'Stop', command: 'piwi.stopRecording' };
-  const resume: RecordingAction = { title: 'Resume', command: 'piwi.resumeRecording' };
+  const stop: RecordingAction = { title: editorWords('recording.stop'), command: 'piwi.stopRecording' };
+  const resume: RecordingAction = { title: editorWords('recording.resume'), command: 'piwi.resumeRecording' };
+  const words = { steps: count };
   if (edited) {
     return {
-      title: `$(circle-large-outline) Paused while you edit · ${count}`,
-      actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
+      title: `$(circle-large-outline) ${editorWords('recording.block.edited', words)}`,
+      actions: [resume, { title: editorWords('recording.keep-edits'), command: 'piwi.stopRecording' }],
+      status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
   if (state === 'paused') {
     return {
-      title: `$(circle-large-outline) Paused · ${count}`,
+      title: `$(circle-large-outline) ${editorWords('recording.block.paused', words)}`,
       actions: [stop, resume],
-      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
+      status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }
   if (state === 'starting') {
     return {
-      title: '$(loading~spin) Opening the browser',
+      title: `$(loading~spin) ${editorWords('recording.block.starting')}`,
       actions: [stop],
-      status: '$(loading~spin) Piwi: opening the browser',
+      status: `$(loading~spin) ${editorWords('recording.status.starting')}`,
       tooltip: `Recording into ${file}. Click to stop.`,
     };
   }
   return {
-    title: `$(record) Recording · ${count}`,
-    actions: [stop, { title: 'Pause', command: 'piwi.pauseRecording' }],
-    status: `$(record) Piwi: recording · ${count}`,
+    title: `$(record) ${editorWords('recording.block.recording', words)}`,
+    actions: [stop, { title: editorWords('recording.pause'), command: 'piwi.pauseRecording' }],
+    status: `$(record) ${editorWords('recording.status.recording', words)}`,
     tooltip: `Recording into ${file}. Click to stop.`,
   };
 }
@@ -2077,11 +2079,19 @@ export interface RunStartChoices {
   holdFailures: HoldFailuresChoice;
 }
 
-/** The choices of `piwi.runHoldFailures`, as **Piwi: Run options…** offers them. */
+/** The choices of `piwi.runHoldFailures` in the editors' words, short as a line names them, whole in their detail. */
 export const HOLD_FAILURES_CHOICES: Array<{ choice: HoldFailuresChoice; label: string; detail: string }> = [
-  { choice: 'auto', label: 'Auto', detail: 'On for a run with a breakpoint or a page.pause(), off otherwise' },
-  { choice: 'on', label: 'On', detail: 'From each run’s start: a failed test waits at its line for an answer' },
-  { choice: 'off', label: 'Off', detail: 'From each run’s start: a failed test fails as it would without Piwi' },
+  { choice: 'auto', label: editorWords('hold.auto.short'), detail: `${editorWords('hold.auto')}, off otherwise` },
+  {
+    choice: 'on',
+    label: editorWords('hold.on.short'),
+    detail: `${editorWords('hold.on')}: a failed test waits at its line for an answer`,
+  },
+  {
+    choice: 'off',
+    label: editorWords('hold.off.short'),
+    detail: `${editorWords('hold.off')}: a failed test fails as it would without Piwi`,
+  },
 ];
 
 /** The settings' values as choices: a value of another type or outside the enum reads as its default. */

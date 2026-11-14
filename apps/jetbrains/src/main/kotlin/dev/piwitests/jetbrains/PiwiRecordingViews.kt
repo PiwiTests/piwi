@@ -33,10 +33,10 @@ class PiwiRecordingNotificationProvider : EditorNotificationProvider, DumbAware 
                 text(view.text)
                 for (action in view.actions) {
                     when (action) {
-                        Glue.RecordingAction.STOP -> createActionLabel("Stop") { recordings.stop(session) }
-                        Glue.RecordingAction.PAUSE -> createActionLabel("Pause") { recordings.pause(session) }
-                        Glue.RecordingAction.RESUME -> createActionLabel("Resume") { recordings.resume(session) }
-                        Glue.RecordingAction.KEEP_EDITS -> createActionLabel("Keep my edits") { recordings.stop(session) }
+                        Glue.RecordingAction.STOP -> createActionLabel(EditorWords.words("recording.stop")) { recordings.stop(session) }
+                        Glue.RecordingAction.PAUSE -> createActionLabel(EditorWords.words("recording.pause")) { recordings.pause(session) }
+                        Glue.RecordingAction.RESUME -> createActionLabel(EditorWords.words("recording.resume")) { recordings.resume(session) }
+                        Glue.RecordingAction.KEEP_EDITS -> createActionLabel(EditorWords.words("recording.keep-edits")) { recordings.stop(session) }
                     }
                 }
                 val title = command?.title

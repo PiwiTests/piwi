@@ -39,6 +39,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
   `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **A word both editors write themselves comes from `packages/editor/src/words.json`, restated in `EditorWords.WORDS`**
+  (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
+  to the file updates the copy in the same change; `GlueTest` holds the two equal.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the

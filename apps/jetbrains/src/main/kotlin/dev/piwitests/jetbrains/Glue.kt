@@ -65,9 +65,9 @@ object Glue {
 
     /** A choice of [HOLD_FAILURES_CHOICES] in words, for a menu or a setting. */
     fun holdFailuresLabel(choice: String): String = when (choice) {
-        "on" -> "On from each run's start"
-        "off" -> "Off from each run's start"
-        else -> "Auto: on with a breakpoint or a page.pause()"
+        "on" -> EditorWords.words("hold.on")
+        "off" -> EditorWords.words("hold.off")
+        else -> EditorWords.words("hold.auto")
     }
 
     /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
@@ -2353,7 +2353,7 @@ object Glue {
     data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
-    fun workerName(lane: Int): String = "Worker ${lane + 1}"
+    fun workerName(lane: Int): String = EditorWords.words("worker", "n" to lane + 1)
 
     /** The accessible name of the Paused Page tab's image, in the VS Code extension's words. */
     const val PAUSED_PAGE_NAME = "The page of the paused test"
@@ -2840,11 +2840,11 @@ object Glue {
 
     /** The controls offered above a stop, in order. */
     enum class StopControl(override val label: String, val action: String) : StopLink {
-        RESUME("Resume", "resume"),
-        STEP("Step", "step"),
-        RUN_TO_CARET("Run to the caret", "run-to"),
-        FINISH("Finish", "finish"),
-        END("End the test", "end"),
+        RESUME(EditorWords.words("stop.resume"), "resume"),
+        STEP(EditorWords.words("stop.step"), "step"),
+        RUN_TO_CARET(EditorWords.words("stop.run-to"), "run-to"),
+        FINISH(EditorWords.words("stop.finish"), "finish"),
+        END(EditorWords.words("stop.end"), "end"),
     }
 
     /**
@@ -2871,11 +2871,17 @@ object Glue {
         val takes: List<String>,
         val inPage: Boolean,
     ) : StopLink {
-        PICK("Pick a locator", "Pick", "pick", listOf("pick"), true),
-        RECORD("Record", "Record", "record", listOf("record"), true),
-        ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
-        ASSERT_REGION("Assert a region", "Assert region", "assert-region", listOf("assert-region"), true),
-        MOCK("Mock a request", "Mock", "mock", listOf("requests", "mock"), false),
+        PICK(EditorWords.words("action.pick"), EditorWords.words("action.pick.short"), "pick", listOf("pick"), true),
+        RECORD(EditorWords.words("action.record"), EditorWords.words("action.record.short"), "record", listOf("record"), true),
+        ASSERT(EditorWords.words("action.assert"), EditorWords.words("action.assert.short"), "assert", listOf("assert"), true),
+        ASSERT_REGION(
+            EditorWords.words("action.assert-region"),
+            EditorWords.words("action.assert-region.short"),
+            "assert-region",
+            listOf("assert-region"),
+            true,
+        ),
+        MOCK(EditorWords.words("action.mock"), EditorWords.words("action.mock.short"), "mock", listOf("requests", "mock"), false),
     }
 
     /** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */
@@ -3519,14 +3525,13 @@ object Glue {
      * if any, follows.
      */
     fun recordingBanner(state: String?, steps: Int, edited: Boolean, stopping: Boolean, message: String?): RecordingBanner {
+        val count = "steps" to stepCount(steps)
         val (text, actions) = when {
-            stopping -> "Piwi: stopping the recording…" to emptyList()
-            edited -> "Piwi: recording paused, since you changed the recorded lines. Resume writes them again from the browser." to
-                listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
-            state == "starting" -> "Piwi: opening the browser to record into this file…" to listOf(RecordingAction.STOP)
-            state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}" to listOf(RecordingAction.RESUME, RecordingAction.STOP)
-            else -> "Piwi is recording what you do in the browser · ${stepCount(steps)}" to
-                listOf(RecordingAction.PAUSE, RecordingAction.STOP)
+            stopping -> EditorWords.words("recording.status.stopping") to emptyList()
+            edited -> EditorWords.words("recording.block.edited", count) to listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
+            state == "starting" -> EditorWords.words("recording.block.starting") to listOf(RecordingAction.STOP)
+            state == "paused" -> EditorWords.words("recording.block.paused", count) to listOf(RecordingAction.RESUME, RecordingAction.STOP)
+            else -> EditorWords.words("recording.block.recording", count) to listOf(RecordingAction.PAUSE, RecordingAction.STOP)
         }
         val note = message?.trim()?.ifEmpty { null }?.takeUnless { stopping }
         return RecordingBanner(if (note == null) text else "$text · $note", actions)
@@ -3534,10 +3539,10 @@ object Glue {
 
     /** The status bar while a recording runs: its state and its step count. */
     fun recordingStatus(state: String?, steps: Int, edited: Boolean, stopping: Boolean): String = when {
-        stopping -> "Piwi: stopping the recording"
-        state == "starting" -> "Piwi: opening the browser"
-        edited || state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}"
-        else -> "Piwi: recording · ${stepCount(steps)}"
+        stopping -> EditorWords.words("recording.status.stopping")
+        state == "starting" -> EditorWords.words("recording.status.starting")
+        edited || state == "paused" -> EditorWords.words("recording.status.paused", "steps" to stepCount(steps))
+        else -> EditorWords.words("recording.status.recording", "steps" to stepCount(steps))
     }
 
     /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */
@@ -3636,8 +3641,8 @@ object Glue {
     /** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
     private fun ciLane(lane: Int?, shard: Int?): String = when {
         lane == null -> ""
-        shard != null -> "shard $shard, worker $lane"
-        else -> "worker $lane"
+        shard != null -> EditorWords.words("ci-lane.shard", "shard" to shard, "lane" to lane)
+        else -> EditorWords.words("ci-lane", "lane" to lane)
     }
 
     private fun ciLane(test: CiTest): String = ciLane(test.lane, test.shard)

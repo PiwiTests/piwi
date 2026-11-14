@@ -18,8 +18,10 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
+import { EDITOR_WORDS } from '@piwitests/editor/words';
 import {
   DONT_SHOW_AGAIN,
+  HOLD_FAILURES_CHOICES,
   noticeShown,
   withHiddenMessage,
   OwnRunCounts,
@@ -2629,6 +2631,17 @@ describe('how every run of the window starts', () => {
     expect(runStartLine({ headed: false, holdFailures: 'off' })).toBe(
       'Run headed: off · Hold failures: Off · [Run options…](command:piwi.runOptions)',
     );
+  });
+
+  test('word Hold failures as the editors’ words table does, in the setting too', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: { configuration: { properties: Record<string, { enumDescriptions?: string[] }> } };
+    };
+    const described = manifest.contributes.configuration.properties['piwi.runHoldFailures']!.enumDescriptions!;
+    expect(
+      described.map((d, i) => d.startsWith(EDITOR_WORDS[(['hold.auto', 'hold.on', 'hold.off'] as const)[i]!])),
+    ).toEqual([true, true, true]);
+    expect(HOLD_FAILURES_CHOICES.map((c) => c.label)).toEqual(['Auto', 'On', 'Off']);
   });
 
   test('Run options… offers both, with the current choice', () => {
