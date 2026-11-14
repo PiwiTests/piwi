@@ -81,4 +81,4 @@ and the payload carries a sample error excerpt and how many tests it affects.
 - [Failure clusters](/features/failure-clusters): how failures are grouped, and whether the fix worked
 - [AI diagnosis](/features/ai-diagnosis): semantic merging and the explanation of a cluster
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
-- [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*
+- [Core concepts](/guide/core-concepts) — *cluster*, *fingerprint*, *baseline*

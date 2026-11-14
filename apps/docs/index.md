@@ -112,7 +112,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 ### I write Playwright tests
 
 - [Your first failure, explained](/guide/first-failure): one failing test, from its headline to its evidence
-- [Core concepts](/guide/concepts): run, test case, execution, failure cluster, baseline
+- [Core concepts](/guide/core-concepts): run, test case, execution, failure cluster, baseline
 - [Capture fixtures](/guide/capture-fixtures): the one file behind locator healing, network timing and console capture
 - [CI & sharding](/guide/ci): two environment variables, and every shard merged into one run
 - [Browser extension](/features/extension) and [Editor extensions](/features/editors): Piwi where you write the tests

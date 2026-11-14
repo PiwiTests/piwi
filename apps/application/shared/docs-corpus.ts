@@ -33,12 +33,12 @@ export const DOCS_GROUPS = [
   {
     id: 'operate',
     title: 'Self-hosting',
-    intro: 'Running your own instance: install, configure, keep the data, upgrade.',
+    intro: 'Running your own instance: install, configure, connect trackers, keep the data, observe it, upgrade.',
   },
   {
     id: 'reference',
     title: 'Reference',
-    intro: 'Lookups: all features, configuration, the CLI, file formats and rules.',
+    intro: 'Lookups: all features, the glossary, configuration, the CLI, file formats and rules.',
   },
 ] as const;
 

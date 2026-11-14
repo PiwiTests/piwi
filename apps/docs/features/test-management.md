@@ -111,4 +111,4 @@ among its links, as the key, and removing the link there does not delete anythin
 - [Zephyr Scale Cloud](/operate/zephyr-scale): connect it, bind a project and read the test case catalog
 - [Test metadata](/reference/test-metadata): the tags and external IDs a test carries its case key in
 - [Issue tracking (Jira)](./issue-tracking): the other integration that writes to an external tool
-- [Integrations](/operate/integrations): how connections are managed
+- [Jira Cloud](/operate/integrations): how connections are managed

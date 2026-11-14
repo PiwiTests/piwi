@@ -1,10 +1,10 @@
 ---
-title: Watch a running test
+title: Watch a local test
 description: "Watch the page of a Playwright test while it runs on your machine, from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app: up to ten images a second, through its next tests and stops."
 lang: en-US
 ---
 
-# Watch a running test
+# Watch a local test
 
 <Needs reporter fixtures />
 

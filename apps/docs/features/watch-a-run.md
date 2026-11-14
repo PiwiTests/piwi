@@ -1,16 +1,16 @@
 ---
-title: Watch a Playwright run
+title: Follow a Playwright run
 description: "Follow a Playwright run while it goes, in the same words in every Piwi tool: its number and page on the instance, where a test stopped and why, and how far it is in the editors and the Runs window."
 lang: en-US
 ---
 
-# Watch a run
+# Follow a run
 
 <Needs reporter />
 
 This page follows a run while it goes, in the same words in every tool: its number and page on the instance, how far
 it is, where a test stopped and why, and when a failing test is held. To see a test's page:
-[Watch a running test](./watch-running-test) in your tools, [Live view of a run](./live-view) on the team instance.
+[Watch a local test](./watch-running-test) in your tools, [Live view of a run](./live-view) on the team instance.
 
 ## The run's number and page
 
@@ -125,8 +125,8 @@ What the editor says of a run it started that sent nothing: [Runs from the edito
 
 ## Related
 
-- [Watch a running test](./watch-running-test): a test's page, in your tools
+- [Watch a local test](./watch-running-test): a test's page, in your tools
 - [Live view of a run](./live-view): a test's page, on the team instance
-- [Share a run live](./share-live): let a teammate watch a run on your machine
+- [Share a local run live](./share-live): let a teammate watch a run on your machine
 - [Runs window](./runs-window): follow and steer your runs from Piwi Picker
 - [Pause and step from the editor](./editor-run-control): the controls at a stop

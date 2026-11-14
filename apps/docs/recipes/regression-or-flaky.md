@@ -84,5 +84,5 @@ narrows it.
 
 ## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
-- [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
+- [Core concepts](/guide/core-concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

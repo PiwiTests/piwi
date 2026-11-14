@@ -159,7 +159,7 @@ restores the sample data. With no model,
 
 ## Related
 
-- [Core concepts](/guide/concepts): the words this map uses
+- [Core concepts](/guide/core-concepts): the words this map uses
 - [Your first failure, explained](/guide/first-failure): the page you open most, read top to bottom
 - [All features](/reference/features): every feature and where it lives
 - [Keyboard shortcuts](/reference/keyboard-shortcuts): the command palette and the go-to keys

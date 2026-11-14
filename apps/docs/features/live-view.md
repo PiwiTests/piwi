@@ -17,7 +17,7 @@ paused test. Nothing you do in the view reaches the test.
 
 A CI run, or a shared run, is watched here. A run you start yourself shows in its browser when headed, and in your
 editor, Piwi Picker's Runs window and the desktop app's tray, running or stopped:
-[Watch a running test](./watch-running-test). A run that reports to the desktop app gets no live view key, so no team
+[Watch a local test](./watch-running-test). A run that reports to the desktop app gets no live view key, so no team
 **Watch**.
 
 ## Turn it on
@@ -122,7 +122,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
-- [Share a run live](./share-live): let a teammate watch a run on your machine
+- [Share a local run live](./share-live): let a teammate watch a run on your machine
 - [Runs window](./runs-window): the live view of a test your editor runs, with its controls
 - [Desktop app runs](./desktop-runs): the desktop app's runs, and Share live from its tray
 - [Failure evidence](./evidence): what a finished test keeps

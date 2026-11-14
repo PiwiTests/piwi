@@ -94,4 +94,4 @@ This execution is one member of a **[failure cluster](/features/failure-clusters
 - [Clue rules](/reference/clues): every rule behind the **Most likely** line
 - [Failure clusters](/features/failure-clusters): triaging failures as groups
 - [Capture fixtures](./capture-fixtures): the one file that unlocks the richer evidence
-- [Core concepts](./concepts): run, execution, cluster, fingerprint, baseline
+- [Core concepts](./core-concepts): run, execution, cluster, fingerprint, baseline

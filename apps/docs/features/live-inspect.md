@@ -1,10 +1,10 @@
 ---
-title: Inspect a running test's page
+title: Inspect a worker's page
 description: "In the live view of a running Playwright test, Inspect shows the page at each call as a document, before it, at its action and after it, with the locator picker; sent only while open, and never stored."
 lang: en-US
 ---
 
-# Inspect a running test's page
+# Inspect a worker's page
 
 <Needs reporter fixtures />
 
@@ -26,7 +26,7 @@ In the lane panel of a running test, open **Inspect** under the image.
   action) and after it. A moment the worker sent no page of stays greyed out.
 - **The calls.** Under the page, each call whose page came, the latest last. Choosing an older one turns following
   off, so the view stays on it as the test goes on; tick **Follow the latest call** to go back to the newest.
-- **Pick a locator** opens the [snapshot picker](./evidence#one-execution-diagnosis-first) on the page shown: click an
+- **Pick a locator** opens the [locator picker](./evidence#one-execution-diagnosis-first) on the page shown: click an
   element to get the locators that target it, ranked, to copy. Picking turns following off. Nothing is saved: the
   test is still running.
 
@@ -115,4 +115,4 @@ The live demo runs no browser, and Inspect needs a running test: [Watch all](./w
 - [Live view of a run](./live-view): turning it on, and the image and call of one worker
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Failure evidence](./evidence): the DOM snapshot and the picker of a finished test
-- [Share a run live](./share-live): a run on your machine, watched from the dashboard
+- [Share a local run live](./share-live): a run on your machine, watched from the dashboard

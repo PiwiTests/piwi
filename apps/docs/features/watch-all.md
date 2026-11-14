@@ -67,5 +67,5 @@ Inspect.
 
 - [Live view of a run](./live-view): turning it on, and the full view of one worker
 - [Stuck tests](./stuck-tests): when a test is marked **Stuck?**
-- [Share a run live](./share-live): let a teammate watch a run on your machine
-- [Watch a run](./watch-a-run): where a run is followed, on every tool
+- [Share a local run live](./share-live): let a teammate watch a run on your machine
+- [Follow a run](./watch-a-run): where a run is followed, on every tool

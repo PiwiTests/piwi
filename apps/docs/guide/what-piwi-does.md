@@ -53,7 +53,7 @@ Piwi is Playwright-only by design, pre-1.0, and not an "ask AI" button. [Why Piw
 ## Related
 
 - [Getting started](./getting-started) — pick a path and land your first run
-- [Core concepts](./concepts) — the vocabulary (run, execution, cluster, fingerprint, baseline)
+- [Core concepts](./core-concepts) — the vocabulary (run, execution, cluster, fingerprint, baseline)
 - [All features](/reference/features) — everything Piwi does, what each thing needs, and where it lives
 - [Why Piwi? (comparison & FAQ)](./comparison) — how it compares, and whether it's the right tool for you
 - [Live demo](https://piwitests.dev/demo/) — the real app on seeded data, entirely in your browser

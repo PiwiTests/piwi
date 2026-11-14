@@ -76,4 +76,4 @@ Notification subscriptions can filter by branch and alert only on the default br
 - [CI & sharding](/guide/ci) — how the branch and PR number are detected on each provider
 - [Flaky tests](./flaky-tests) — the leaderboard and regression signals the branch filter scopes
 - [Analytics](./analytics) — trends you can read one branch at a time
-- [Core concepts](/guide/concepts) — where branch sits among run, execution and baseline
+- [Glossary](/guide/concepts) — where branch sits among run, execution and baseline

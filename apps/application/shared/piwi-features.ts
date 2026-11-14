@@ -72,6 +72,8 @@ export interface PiwiFeature {
   doc: string;
   /** In a tool group, the labeled part of the sidebar it sits under ("Set up"); entries that share one are consecutive. */
   part?: string;
+  /** In a Features group, the title of the entry of the same group it is nested under in the sidebar; it follows that entry. */
+  parent?: string;
 }
 
 export interface FeatureGroup {
@@ -80,9 +82,10 @@ export interface FeatureGroup {
   /**
    * `'tools'` for a tool the reader installs: the group goes in the Tools
    * sidebar, and its first entry, when it carries the group's title, is the
-   * tool's own page. Absent for a group of the Features sidebar.
+   * tool's own page. `'self-hosting'` for the operator's features, whose pages
+   * are in the Self-hosting sidebar. Absent for a group of the Features sidebar.
    */
-  section?: 'tools';
+  section?: 'tools' | 'self-hosting';
   /** `false` for a group with no card of its own on the landing page. */
   card?: false;
   /** One line describing it, shown under its heading on the All features page and on its landing card. */
@@ -94,7 +97,7 @@ export interface FeatureGroup {
 export const TOOLS_SECTION = {
   title: 'Tools',
   intro:
-    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, and the MCP server and skills for coding agents.',
+    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, the MCP server and skills for coding agents, and the `piwi` command line.',
 };
 
 export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
@@ -259,7 +262,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       'Follow a run while it goes: how far it is, in the same words in every tool, the page each worker is on, and the test that has run far longer than its passing runs took.',
     features: [
       {
-        title: 'Watch a run',
+        title: 'Follow a run',
         summary:
           'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
         needs: [],
@@ -281,6 +284,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch all',
         doc: 'features/watch-all',
+        parent: 'Live view of a run',
       },
       {
         title: 'Page events, text and filmstrip',
@@ -289,17 +293,19 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch → Page events, Page text',
         doc: 'features/live-view-layers',
+        parent: 'Live view of a run',
       },
       {
-        title: "Inspect a running test's page",
+        title: "Inspect a worker's page",
         summary:
           'In a worker’s live view, the page at each call of its running test as a document, before it, at its action and after it, rendered without its scripts, with the locator picker on it: sent only while open, its secret fields removed in the worker, never stored.',
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch → Inspect',
         doc: 'features/live-inspect',
+        parent: 'Live view of a run',
       },
       {
-        title: 'Share a run live',
+        title: 'Share a local run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',
         needs: ['fixtures'],
@@ -345,6 +351,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Run → Resources; `piwi gate`; pull-request comment; MCP',
         doc: 'features/leak-history',
+        parent: 'Resource leaks',
       },
       {
         title: 'CPU, memory & disk',
@@ -629,7 +636,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/write-run-fix',
       },
       {
-        title: 'Watch a running test',
+        title: 'Watch a local test',
         summary:
           "The page of a test running on your machine, up to ten images a second, through its next tests and stops: from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app, with Pause and watch to stop it there.",
         needs: ['fixtures'],
@@ -912,7 +919,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'Bugs',
       },
       {
-        title: 'Bug reports',
+        title: 'Bug reports on your instance',
         summary:
           'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
         needs: ['extension'],
@@ -1017,7 +1024,24 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     ],
   },
   {
+    title: 'Command line',
+    section: 'tools',
+    intro:
+      'The `piwi` command the reporter package installs: wire a project up, gate a CI job, run a saved selection, reproduce a flaky test, write a spec from a recording.',
+    features: [
+      {
+        title: 'Command line',
+        summary:
+          'What each `piwi` command is for, by the moment you reach for it: setting up, in CI, choosing the tests, chasing a flake, writing a test.',
+        needs: [],
+        where: 'Terminal (`npx @piwitests/reporter <command>`)',
+        doc: 'features/command-line',
+      },
+    ],
+  },
+  {
     title: 'Self-hosting',
+    section: 'self-hosting',
     intro: 'Operate a shared, self-hosted instance for a team.',
     features: [
       {
@@ -1045,6 +1069,21 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'operate/api-keys',
       },
       {
+        title: 'Choose what you use',
+        summary:
+          'Turn on the capabilities the instance and each project use and decline the rest, so the dashboard stops showing what nobody set up.',
+        needs: ['admin'],
+        where: 'Settings → Capabilities; Project → Settings → Capabilities',
+        doc: 'operate/capabilities',
+      },
+      {
+        title: 'Localization',
+        summary: 'Each viewer’s date and time format and time zone, and the instance default an administrator sets.',
+        needs: [],
+        where: 'Settings → Localization',
+        doc: 'operate/localization',
+      },
+      {
         title: 'Data retention & cleanup',
         summary: 'Cap how much run history you keep, with a nightly sweep and manual bulk cleanup.',
         needs: ['admin'],
@@ -1065,6 +1104,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['admin'],
         where: '`/api/metrics`; rollup export',
         doc: 'operate/metrics',
+      },
+      {
+        title: 'Tracing with OpenTelemetry',
+        summary:
+          'A trace of every request the server serves, with each SQL statement it ran, sent to an OpenTelemetry collector you run.',
+        needs: ['admin'],
+        where: 'operator (`OTEL_EXPORTER_OTLP_ENDPOINT`)',
+        doc: 'operate/tracing',
       },
     ],
   },
