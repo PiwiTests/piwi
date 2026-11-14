@@ -96,5 +96,5 @@ not shuffled, or the other way round, the Changes tab lists the **Test order** u
 - [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
-- [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause
+- [Failure clusters](./failure-clusters) — the failures grouped by cause
 - [Timeline markers](./timeline-markers) — annotate the trend charts with real-world events

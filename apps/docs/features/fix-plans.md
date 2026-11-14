@@ -90,7 +90,7 @@ A match is scored deterministically (the same fingerprint family: error kind, ma
 ## Related
 
 - [AI diagnosis](./ai-diagnosis): the diagnosis and validated patch a fix plan wraps
-- [Failure clusters & the inbox](./failure-clusters) — the clusters a fix plan is attached to
+- [Failure clusters](./failure-clusters) — the clusters a fix plan is attached to
 - [Auto-heal PRs](./auto-heal) — when Piwi opens the locator fix as a pull request itself
 - [MCP server](/features/mcp) — the `get_fix_plan` tool
 - [Desktop app](/features/desktop#reproducing-a-failure-and-finding-the-breaking-commit) — run the recipe and drive the bisect locally

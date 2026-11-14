@@ -185,7 +185,7 @@ the others stream a simulated one.
 ## Related
 
 - [Triage a run gone red](/recipes/mass-failure): clusters first, then a diagnosis
-- [Failure clusters & the inbox](./failure-clusters): grouping, and whether the fix worked
+- [Failure clusters](./failure-clusters): grouping, and whether the fix worked
 - [Privacy & data flow](/guide/privacy): what a diagnosis sends, and where
 - [Notifications & alerts](./notifications): `diagnosis.completed` and the cluster events
 - [MCP server](/features/mcp): clusters and diagnoses for agents

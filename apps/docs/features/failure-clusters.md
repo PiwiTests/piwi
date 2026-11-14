@@ -1,16 +1,16 @@
 ---
-title: Failure clusters & the inbox
-description: "Failures that share an error fingerprint grouped into one cluster, triaged once from the failure inbox with an owner, a known issue and snoozing."
+title: Failure clusters
+description: "Failures that share an error fingerprint grouped into one cluster, with an owner, a known issue, snoozing, and a verdict on whether its fix worked."
 lang: en-US
 ---
 
-# Failure clusters & the inbox
+# Failure clusters
 
 <Needs reporter />
 
-How Piwi groups failures by root cause into **failure clusters**, where a cluster stands, whether its fix worked,
-and the **failure inbox** on Home. A model's explanation is on [AI diagnosis](./ai-diagnosis), fixing on
-[Fix plans](./fix-plans).
+How Piwi groups failures by root cause into **failure clusters**, where a cluster stands and whether its fix worked.
+Triaging the open ones from Home is on [Failure inbox](./failure-inbox), a model's explanation on
+[AI diagnosis](./ai-diagnosis), fixing on [Fix plans](./fix-plans).
 
 ## How failures are grouped
 
@@ -52,30 +52,16 @@ line naming the move, their later failures with that error join the new one, and
 
 ## The failure inbox
 
-The **Failure inbox** on Home lists up to 50 open clusters you can see, most recently seen first: **headline**, **top
-clue**, **owner or assignee**, **affected tests**, **last seen**, and exceptional **badges** (a regression on the
-default branch). A cluster seen only in local runs, in a project that runs in CI, stays out; **Show them** lists them.
+Home's failure inbox lists the open clusters you still owe a decision, in queues: [Failure inbox](./failure-inbox).
 
 ### Queues
 
-Each queue has a live count and is shareable as `?queue=`:
-
-- **All open**: every open cluster not snoozed.
-- **New**: first seen, or seen again, since your previous browser session (kept per browser).
-- **Mine**: [yours](#owners-and-assignees).
-- **Needs ticket**: untracked default-branch clusters older than the binding's age (2 days by default; see
-  [issue tracking](./issue-tracking)).
-- **Regressions**: regressed on the default branch, failing there still.
-- **Fix didn't hold**: a fix landed, then regressed.
-- **Quarantine ready**: [quarantined](./flaky-tests#quarantine-with-a-way-out), and the tests stopped failing.
-- **Merge suggestions**: in a pending [merge suggestion](./ai-diagnosis#semantic-merging-optional).
+What puts a cluster in each queue of the inbox: [Failure inbox → Queues](./failure-inbox#queues).
 
 ### Triage from the row or the keyboard
 
-Open, resolve, ignore, quarantine, assign, snooze, link a known issue or create a tracker issue from the row, by mouse
-or [key](/reference/keyboard-shortcuts#failure-inbox); `x` selects rows for a **bulk bar**.
-Resolve, ignore, snooze and assign on one row can be undone for a few seconds. A known issue pins a URL; with an
-[issue tracker](/operate/integrations) bound, Jira links unfurl and stay in sync ([issue tracking](./issue-tracking)).
+The inbox's row actions, keys and bulk bar:
+[Failure inbox → Triage from the row or the keyboard](./failure-inbox#triage-from-the-row-or-the-keyboard).
 
 ## Owners and assignees
 
@@ -90,8 +76,8 @@ Top to bottom:
 1. The [situation block](/guide/first-failure) across every test sharing the failure, headed by the latest failure's
    headline when it says more than the cluster's name. Its own lines:
    - **the state line**, right above **Next**;
-   - **the occurrence sparkline**: *N occurrences in M tests over D · last X ago*, naming a single test, *quarantined*
-     if it is;
+   - **the occurrence sparkline**: *N occurrences in M tests over D · last X ago*, naming a single test,
+     *quarantined* if it is ([quarantine](./flaky-tests#quarantine-with-a-way-out));
    - **What changed**: commits and files since the last passing run (or your baseline), the diff, and with
      [coverage](./server-coverage) the first [suspect line](/guide/concepts#suspect-lines). Missing setup shows what to
      set up ([troubleshooting](/guide/source-control#troubleshooting)); **Browse commits** picks a baseline when none
@@ -153,14 +139,16 @@ comment gains **Fixed by this change**, even with *only comment on failures*.
 
 ## Snoozing
 
-**Snoozing** hides a cluster from every queue, status untouched. **1 day** and **1 week** return it then; **Until it
-recurs** returns it to **New** when a run fails it, badged **snoozed, back** until your next visit.
+**Snoozing** hides a cluster from every [inbox queue](./failure-inbox#queues), status untouched. **1 day** and
+**1 week** return it then; **Until it recurs** returns it to **New** when a run fails it, badged **snoozed, back**
+until your next visit.
 
 ## From an AI agent
 
-Over the [MCP server](/features/mcp), `list_open_clusters` takes the same `queue`, and each action above has a
-[tool](/reference/mcp-tools): `triage_cluster`, `decide_merge_suggestion`, `move_tests_to_new_cluster`,
-`rerun_cluster_in_ci`, `link_issue` and `unlink_issue`.
+Over the [MCP server](/features/mcp), `list_open_clusters` lists the open clusters by
+[inbox queue](./failure-inbox#from-an-ai-agent), and each action above has a [tool](/reference/mcp-tools):
+`triage_cluster`, `decide_merge_suggestion`, `move_tests_to_new_cluster`, `rerun_cluster_in_ci`, `link_issue` and
+`unlink_issue`.
 
 ## Try it in the demo
 
@@ -168,6 +156,7 @@ Over the [MCP server](/features/mcp), `list_open_clusters` takes the same `queue
 
 ## Related
 
+- [Failure inbox](./failure-inbox): the open clusters, triaged from Home
 - [Triage a run gone red](/recipes/mass-failure): a red run collapsed into causes
 - [AI diagnosis](./ai-diagnosis): a cluster explained against your diff
 - [Failure evidence](./evidence): one execution's evidence

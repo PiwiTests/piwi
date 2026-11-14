@@ -43,7 +43,7 @@ lands at the cursor the same way through **Send to editor**: at the top level of
 
 A run Piwi starts reports to the instance like any other, with the run's origin. In a project that runs in CI, a
 failure seen only in developers' own runs stays out of the team's inbox until someone shows it; one that fingerprints
-like a failure CI saw joins that cluster ([Failure clusters & the inbox](./failure-clusters)). A run you start in a
+like a failure CI saw joins that cluster ([Failure clusters](./failure-clusters)). A run you start in a
 terminal is followed too, when the editor is open: [Runs started outside Piwi](./terminal-runs).
 
 ## Stop it and write the fix there
@@ -64,5 +64,5 @@ instance explains it: the clues rank the likely cause, and the Locator fix panel
 ## Related
 
 - [Editor extensions](./editors): what the editor shows from your suite.
-- [Failure clusters & the inbox](./failure-clusters): where failures land once they reach the team's runs.
+- [Failure clusters](./failure-clusters): where failures land once they reach the team's runs.
 - [Run control for agents](./agent-run-control): the same stops, steered by an agent.

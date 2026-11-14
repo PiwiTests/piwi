@@ -86,7 +86,7 @@ Both status policies act on a **move** of the ticket, so a person's reopen or re
 Every comment is written in the [ticket's language](#language); [Issue automation](./issue-automation) adds diagnosis
 comments, description updates and [the runs that write](./issue-automation#the-runs-that-write). An optional
 [inbound webhook](/operate/integrations#registering-the-inbound-webhook) shows a close or reopen at once. The failure
-inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
+inbox gains a [**Needs ticket**](./failure-inbox#queues) queue.
 
 ## The project binding
 
@@ -175,4 +175,4 @@ prose follows the separate [AI response-language setting](/features/ai-diagnosis
 ## Related
 
 - [Issue automation](./issue-automation): tickets filed by rule
-- [Failure clusters & the inbox](./failure-clusters): what a ticket tracks
+- [Failure clusters](./failure-clusters): what a ticket tracks

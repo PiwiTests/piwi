@@ -179,12 +179,20 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-video',
       },
       {
-        title: 'Failure clusters & the inbox',
+        title: 'Failure clusters',
         summary:
-          'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
+          'Failures sharing an error fingerprint collapsed into one cluster, with an owner, a known-issue link and a verdict on whether its fix worked.',
         needs: [],
-        where: 'Test run → Tests → Group by: Cluster; Project → Failures → Clusters; Home',
+        where: 'Test run → Tests → Group by: Cluster; Project → Failures → Clusters',
         doc: 'features/failure-clusters',
+      },
+      {
+        title: 'Failure inbox',
+        summary:
+          'The open clusters you still owe a decision, in queues such as New, Mine or Regressions, triaged from the row, the keyboard or a bulk bar.',
+        needs: [],
+        where: 'Home → Failure inbox',
+        doc: 'features/failure-inbox',
       },
       {
         title: 'Environment incidents',

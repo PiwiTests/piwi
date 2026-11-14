@@ -76,7 +76,7 @@ In the [assistant](/features/assistant#asking-a-question)'s question field:
 
 ## Failure inbox
 
-On the [failure inbox](/features/failure-clusters#triage-from-the-row-or-the-keyboard), the keys act on the selected
+On the [failure inbox](/features/failure-inbox#triage-from-the-row-or-the-keyboard), the keys act on the selected
 row. The triage actions need the Maintainer role or above on the project.
 
 | Keys | Action |
@@ -133,5 +133,5 @@ jump to the first / last column of the row. `Space` or `Enter` opens the focused
 
 - [UI overview](/features/ui-overview): the pages these keys move between
 - [Test search](/reference/test-search): the language of the Tests tabs' search box
-- [Failure clusters & the inbox](/features/failure-clusters): the triage actions
+- [Failure inbox](/features/failure-inbox): the triage actions
 - [Access, roles and groups](/operate/project-access#permission-grid): the permission grid

@@ -80,7 +80,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         anchor: 'failure-inbox-row',
         side: 'bottom',
         align: 'start',
-        doc: 'features/failure-clusters#the-failure-inbox',
+        doc: 'features/failure-inbox',
       },
       {
         id: 'flaky',

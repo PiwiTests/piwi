@@ -258,6 +258,6 @@ files.
 
 - [Pull-request feedback](./pr-feedback): the result posted on the pull request
 - [Source control](/guide/source-control): the SCM token and its scopes
-- [Failure clusters & the inbox](./failure-clusters): the clusters a re-run acts on
+- [Failure clusters](./failure-clusters): the clusters a re-run acts on
 - [Flake Lab](./flake-lab): the experiment a Flake Lab action runs in CI
 - [CLI](/reference/cli#rerun): the `rerun` command a pipeline runs

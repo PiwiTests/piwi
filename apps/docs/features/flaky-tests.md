@@ -172,4 +172,4 @@ With **Group by: File** on the project's **Tests** tab, each spec file's header 
 - [Cut costly flakiness](/recipes/flaky-cleanup): the costliest flaky tests first
 - [What changed in a run](./run-changes): the Changes tab against a baseline
 - [Slow tests & wasted time](./slow-tests): where the suite's time goes
-- [Failure clusters & the inbox](./failure-clusters): the failures grouped by cause
+- [Failure clusters](./failure-clusters): the failures grouped by cause
