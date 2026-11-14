@@ -81,13 +81,14 @@ describe('the run line both status items show', () => {
       workers: [
         worker({
           pausing: true,
-          waiting: { title: 'waitForResponse', uri: null, line: null, since: null, endable: true },
+          waiting: { title: 'waitForResponse', uri: null, line: null, since: '2026-11-14T09:00:00Z', endable: true },
         }),
       ],
     });
     expect(runLine([waits], false)).toMatchObject({
       text: 'Piwi: pausing… · waits in waitForResponse',
       state: 'pausing',
+      since: '2026-11-14T09:00:00Z',
     });
   });
 

@@ -57,8 +57,6 @@ import {
   canShare,
   canShowBrowser,
   caretText,
-  accessibleLabel,
-  controlItems,
   controlState,
   stoppableRuns,
   giveBackParams,
@@ -69,7 +67,6 @@ import {
   lineEditOf,
   linesAbove,
   liveInstance,
-  liveItem,
   liveMenu,
   testsBegun,
   PageLog,
@@ -338,13 +335,12 @@ describe('what the controls offer', () => {
       shareable: false,
       browserShowable: false,
       liveShared: false,
+      liveOffered: false,
       holdable: false,
       watchable: false,
       waiting: null,
       failed: false,
     });
-    expect(controlItems(controlState(new Map()))).toEqual([]);
-    expect(liveItem(new Map())).toBeNull();
   });
 
   test('no Stop for a job the desktop app runs in a throwaway checkout: the app stops it', () => {
@@ -400,12 +396,12 @@ describe('what the controls offer', () => {
         shareable: false,
         browserShowable: false,
         liveShared: false,
+        liveOffered: false,
         holdable: false,
         watchable: false,
         waiting: null,
         failed: false,
       });
-      expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
   });
 
@@ -422,15 +418,12 @@ describe('what the controls offer', () => {
       shareable: false,
       browserShowable: false,
       liveShared: false,
+      liveOffered: false,
       holdable: false,
       watchable: false,
       waiting: null,
       failed: false,
     });
-    expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
-      ['$(loading~spin) Pausing…', null],
-      ['$(debug-stop)', 'piwi.stopRun'],
-    ]);
     // While it waits in a call it can end at: how long it has waited, and End the test.
     const waiting = {
       title: "Click getByRole('button', { name: 'Pay' })",
@@ -441,46 +434,15 @@ describe('what the controls offer', () => {
     };
     const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
     expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, slot: 0, waiting });
-    expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
-      {
-        name: 'Piwi: Pausing',
-        text: '$(loading~spin) Pausing… 1 min 5 s',
-        tooltip:
-          "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
-        command: null,
-      },
-      {
-        key: 'give-up',
-        name: 'Piwi: End the test',
-        text: '$(circle-slash)',
-        tooltip:
-          "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
-        command: 'piwi.endTest',
-      },
-      { name: 'Piwi: Stop', text: '$(debug-stop)', tooltip: 'Piwi: Stop the run', command: 'piwi.stopRun' },
-    ]);
-    const unknown = controlState(
-      sessionsOf(
-        session('ed-1', [
-          worker(0, 'running', { pausing: true, waiting: { ...waiting, since: null, endable: false } }),
-        ]),
-      ),
+    // Beside Pause for another worker, and beside a stop that cannot end.
+    const beside = controlState(
+      sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')])),
     );
-    expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
-      "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
-      "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
-      'Piwi: Stop the run',
-    ]);
-    // Beside Pause for another worker, and in place of End at a stop that cannot end.
-    const keys = (sessions: ReturnType<typeof sessionsOf>) =>
-      controlItems(controlState(sessions)).map((i) => i.key ?? i.command);
-    expect(
-      keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')]))),
-    ).toEqual(['piwi.pauseRun', null, 'give-up', 'piwi.stopRun']);
+    expect(beside).toMatchObject({ pausable: true, pausing: true, waiting: { worker: 0 } });
     const failed = worker(1, 'stopped', { stop: { ...stopAt(spec, 5), reason: 'failure' } });
-    expect(keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed])))).toContain(
-      'give-up',
-    );
+    expect(
+      controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed]))).waiting,
+    ).not.toBeNull();
     const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
     expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
     // A worker Playwright started again in its slot is named by the slot, as the worker views name it.
@@ -501,7 +463,6 @@ describe('what the controls offer', () => {
       sessionsOf(session('ed-1', [worker(0, 'running', { test: runTest(0, 'running under CI') })])),
     );
     expect(ci.pausable).toBe(false);
-    expect(controlItems(ci).map((i) => i.command)).toEqual(['piwi.stopRun']);
   });
 
   test('Resume, Step, Finish and Stop while a worker is stopped, with their keys', () => {
@@ -519,53 +480,18 @@ describe('what the controls offer', () => {
       shareable: false,
       browserShowable: false,
       liveShared: false,
+      liveOffered: false,
       holdable: false,
       watchable: false,
       waiting: null,
       failed: false,
     });
-    expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
-      ['piwi.resumeRun', 'Piwi: Resume'],
-      ['piwi.stepRun', 'Piwi: Step to the next call'],
-      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again'],
-      ['piwi.stopRun', 'Piwi: Stop the run'],
-    ]);
   });
 
-  test('names each item for a screen reader, without its icon, and a held failure goes on with Resume alone', () => {
+  test('a held failure goes on with Resume alone', () => {
     const failure = { ...stopAt(spec, 5), reason: 'failure' as const, title: 'Failed: Timed out 5000ms' };
     const held = controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: failure })])));
     expect(held.failed).toBe(true);
-    expect(controlItems(held).map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Stop']);
-    const items = controlItems(
-      controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]))),
-    );
-    expect(items.map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Step', 'Piwi: Finish', 'Piwi: Stop']);
-    expect(items.map(accessibleLabel)).toEqual([
-      'Piwi: Resume',
-      'Piwi: Step to the next call',
-      'Piwi: Finish the test without stopping at a breakpoint again',
-      'Piwi: Stop the run',
-    ]);
-    expect(
-      accessibleLabel({
-        name: 'Piwi: Run progress',
-        text: '$(sync~spin) Piwi: 3 of 9',
-        tooltip:
-          "Piwi: [run #78](command:piwi.openRunPage) ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
-        markdown: true,
-        command: null,
-      }),
-    ).toBe('Piwi: run #78 ran 3 of 9 tests.');
-    // A plain tooltip holds the test's own words, read as they are.
-    expect(
-      accessibleLabel({
-        name: 'Piwi: Pausing',
-        text: '$(loading~spin) Pausing…',
-        tooltip: "Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns",
-        command: null,
-      }),
-    ).toBe("Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns");
   });
 
   test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {
@@ -573,10 +499,6 @@ describe('what the controls offer', () => {
       sessionsOf(session('ed-1', [worker(0, 'stopped', { stop, takes })]));
     const ending = controlState(at(stopAt(spec, 5)));
     expect(ending.endable).toBe(true);
-    expect(controlItems(ending).map((i) => [i.command, i.tooltip])).toContainEqual([
-      'piwi.endTest',
-      'Piwi: End the test here: the rest of it is skipped',
-    ]);
     const [stop] = stopsOf(at(stopAt(spec, 5)));
     expect(canEnd(stop!)).toBe(true);
     expect(stopControls(stop!).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish', 'End test']);
@@ -588,7 +510,6 @@ describe('what the controls offer', () => {
     const terminal = { ...session('terminal-41-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]), terminal: true };
     const state = controlState(sessionsOf(terminal));
     expect(state.stoppable).toBe(false);
-    expect(controlItems(state).map((i) => i.command)).not.toContain('piwi.stopRun');
     const [stop] = stopsOf(sessionsOf(terminal));
     expect(stop!.terminal).toBe(true);
     expect(pausedText(stop!.stop, stop!.test, stop!.terminal)).toBe(
@@ -596,8 +517,7 @@ describe('what the controls offer', () => {
     );
     expect(stopPick(stop!).label).toContain('· run in a terminal');
     // A run of this window's beside it can be stopped.
-    const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
-    expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
+    expect(controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')]))).stoppable).toBe(true);
   });
 
   test('no Stop for a run the editor’s own test runner started, which says so where it stops', () => {
@@ -855,48 +775,20 @@ describe('Share live', () => {
     expect(frameIsCurrent({ worker: 5, test, since: null }, null)).toBe(false);
   });
 
-  test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
-    expect(liveItem(sessionsOf(live('ed-1')))).toEqual({
-      name: 'Piwi: Share live',
-      text: '$(broadcast)',
-      tooltip: 'Piwi: Share the run live on piwi.example.com, for a teammate to watch from its page',
-      command: 'piwi.shareRunLive',
-    });
+  test('offers Share live in the status menu for a run that can be shared, and none that cannot, whose command says why', () => {
     const refused = live('ed-2', { refused: "This run cannot be shared live: its project's live view is off." });
-    expect(liveItem(sessionsOf(refused))).toBeNull();
-    expect(liveItem(sessionsOf(session('ed-3', [worker(0, 'running')])))).toBeNull();
+    expect(controlState(sessionsOf(live('ed-1'))).liveOffered).toBe(true);
+    expect(controlState(sessionsOf(refused)).liveOffered).toBe(false);
+    expect(controlState(sessionsOf(live('ed-1', { shared: true }))).liveOffered).toBe(false);
     // The command asks the service anyway, which says why.
     expect(liveTarget(sessionsOf(refused), true)).toEqual({ ref: 'ed-2' });
     expect(liveTarget(new Map(), true)).toEqual({ none: 'no run started from the editor is running.' });
-    // A run whose sharing stopped though nobody asked is offered again, saying why it stopped.
-    const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
-    expect(liveItem(sessionsOf(live('ed-1', { stopped: lost })))).toEqual({
-      name: 'Piwi: Share live',
-      text: '$(broadcast)',
-      tooltip: `Piwi: ${lost} Share the run live on piwi.example.com, for a teammate to watch from its page.`,
-      command: 'piwi.shareRunLive',
-    });
   });
 
-  test('says how a shared run stands, and opens its menu from the status bar', () => {
+  test('says how a shared run stands, and opens its menu from the status menu', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
-    expect(liveItem(shared)).toEqual({
-      name: 'Piwi: Share live',
-      text: '$(broadcast) Live · 2 views',
-      tooltip:
-        'Piwi: Shared live on piwi.example.com: 2 views open. Click to open the run page, copy its link or stop sharing.',
-      command: 'piwi.liveMenu',
-    });
     // Two runs shared: the views open of both, as JetBrains counts them.
-    expect(
-      liveItem(sessionsOf(live('ed-1', { shared: true, viewers: 2 }), live('ed-2', { shared: true, viewers: 1 }))),
-    ).toEqual({
-      name: 'Piwi: Share live',
-      text: '$(broadcast) Live · 3 views',
-      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to open a run page, copy its link or stop sharing.',
-      command: 'piwi.liveMenu',
-    });
     expect(liveText({ shared: true, refused: null, stopped: null, page, viewers: 0 })).toBe(
       'Shared live on piwi.example.com: nobody watches yet',
     );
@@ -2119,19 +2011,16 @@ describe('the code actions at a stop', () => {
     expect(stopActions(shown(stopAt(spec, 5), []))).toEqual([]);
   });
 
-  test('set the context keys and the status bar’s menu while a stop offers one', () => {
+  test('set the context keys while a stop offers one', () => {
     const state = controlState(
       sessionsOf(
         session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5, false), takes: ['requests', 'mock'] })]),
       ),
     );
     expect(state.actions).toEqual(['mock']);
-    expect(controlItems(state).map((i) => [i.command, i.tooltip])).toContainEqual([
-      'piwi.codeAtStop',
-      'Piwi: Write code at the stop: Mock a request',
-    ]);
-    const none = controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })])));
-    expect(controlItems(none).map((i) => i.command)).not.toContain('piwi.codeAtStop');
+    expect(
+      controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]))).actions,
+    ).toEqual([]);
   });
 });
 
@@ -2346,11 +2235,7 @@ describe('a run another tool asks the extension to stop', () => {
 });
 
 describe("this window's runs shared live, and a teammate's ask", () => {
-  test('says the window is shared, with or without a run, and stops it on a click', () => {
-    expect(liveItem(new Map(), true)).toMatchObject({
-      text: '$(broadcast) Live · this window',
-      command: 'piwi.liveMenu',
-    });
+  test('asks before sharing the window’s runs live', () => {
     expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
       /^Share this window's runs live, each run this window follows from now on \(those you start here, and those of a terminal it follows\) until you stop or close the window, on piwi\.example\.com\?/,
     );

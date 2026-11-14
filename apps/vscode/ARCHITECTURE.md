@@ -404,13 +404,12 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
 - **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`), else,
   while no stop can end and the command names none, where a Pause waits for the call a test runs (`give-up`, to the
   worker `endChoice` gives, naming no stop); the `piwi.runCanEnd` context key holds in both cases; with no key. The
-  status bar shows the call a Pause waits in beside Pause and Stop, with how long it has run, and End the test there.
+  Piwi item names the call a Pause waits in, with how long it has run, and its menu offers End the test there.
 
 All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows as
-an information message. The commands show in the status bar beside the run's progress (`controlItems`), each item with
-its own name (`Piwi: Resume`) and a screen reader's label from its tooltip without the icon (`accessibleLabel`), no
-tooltip naming a key, and a held failure offering Resume without Step or Finish (`ControlState.failed`); and in the
-palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
+an information message. The commands show in the Piwi item's menu (`statusMenu`), after **Go to the stopped line**
+(`piwi.showStop`, the stop `chooseStop` gives, its file shown with the focus), a held failure offering Resume without
+Step or Finish (`ControlState.failed`); and in the palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows Resume at a stop while no
 recording runs, and its `…` menu every other control as the palette offers it ([Running the test at the
 cursor](#running-the-test-at-the-cursor)). The keys: [Keybindings](#keybindings).
@@ -560,19 +559,19 @@ run on the team instance its reporter reports to (`piwi/shareRun`, `RunSession.l
 the run page: the command's run, else the only one it fits, else the one chosen (`liveTarget`). The first share in the
 window warns, in a modal, what goes out and to whom (`shareLiveWarning`), and only a yes sends it, a run its workers
 have not said anything of yet included; a run known not to be shareable is asked without it, and the service says why.
-Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
-Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
-counts the views open of every shared run (`$(broadcast) Live · 3 views`, the `piwi.runSharedLive` context key), whose
-click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Copy the run page's link** and **Stop
+Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status menu offers Share live to a run
+that can be shared (the `piwi.runLiveOffered` context key), and the Live menu while one is (`piwi.runSharedLive`,
+`piwi.windowSharedLive`; `piwi.liveMenu`, `liveMenu`): **Open the run page**, **Copy the run page's link** and **Stop
 sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
 asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
-`piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself counts the window's runs while one says
-(`progressItem`): the tests they ran out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of
-9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`, the pass or error glyph
-once they ended), from `RunSession.progress`, which the run's own process tells the service: so it counts offline and
-with the desktop app, one count of a run, as the JetBrains plugin's single item does. Its tooltip leads the item's, and
-its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label
+`piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself shows the service's line of the window's runs
+(`piwi/runLineChanged`, `runLineText`): where a test stands stopped, or the call a pausing test waits in and for how
+long, the share and the views open of it, and how far the runs are (`$(error) Piwi: held at its failure ·
+checkout.page.ts:12 · run #78 · 3 of 9 · 1 failed`), one glyph per state (`RUN_LINE_GLYPHS`), the warning background
+while a stop waits for the person (`RunLine.calls`), from `RunSession.progress`, which the run's own process tells the
+service: so it counts offline and with the desktop app, the line the JetBrains plugin's item shows. The runs' count
+leads its tooltip (`progressItem`), and its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label
 (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
@@ -665,16 +664,16 @@ control's sessions, `withOwnProgress`) when its run session says them, before th
 in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
 told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
 the run is finalizing or another run takes the ref, so the count never goes back. While the window's runs count from
-their own events, with or without an instance, the item shows that count instead (`progressItem`).
+their own events, with or without an instance, the item shows the service's line of them instead (`runLineText`).
 
 **A click** opens the status menu (`piwi.statusMenu`, `statusMenu` in `src/glue.ts`): a quick pick in the JetBrains
 popup's sections, each row titled by the action catalog and offered only where its command acts, from the context keys
 this extension last set (`src/context-keys.ts`, since VS Code reads none back). Its first row, which Enter picks, is
 the item's own action (a recording's controls follow it), which depends on the state:
 
-- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
-  a run started here holds a stop, the run's count shows the pause's icon, or the error's at a held failure, not the
-  spinner (`heldText`, the run control's `changed`);
+- a test is stopped: **Go to the stopped line** (`piwi.showStop`), then the connected state's action;
+- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`) unless
+  it shows the runs' line;
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
   linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the

@@ -57,11 +57,13 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
   const viewers = shared.reduce((sum, s) => sum + (s.live?.viewers ?? 0), 0);
   const told = sessions.filter((s) => s.progress);
   const parts: string[] = [];
+  let since: string | null = null;
   if (stops.length === 1) parts.push(`${stopWhy(stops[0]!)} · ${stopPlace(stops[0]!)}`);
   else if (stops.length > 1) parts.push(`${stops.length} tests stopped`);
   else if (pausing.length) {
     const waiting = pausing.find((w) => w.waiting)?.waiting;
     parts.push(waiting ? `pausing… · waits in ${clipped(waiting.title)}` : 'pausing…');
+    since = waiting?.since ?? null;
   }
   if (sharingWindow) parts.push(`each run shared live${viewers ? ` · ${views(viewers)}` : ''}`);
   else if (shared.length) parts.push(`shared live${viewers ? ` · ${views(viewers)}` : ''}`);
@@ -96,5 +98,10 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
             : told.every((s) => s.progress!.status === 'passed')
               ? 'passed'
               : 'interrupted';
-  return { text: `Piwi: ${parts.join(' · ')}`, state, calls: stops.filter((s) => s.calls).length };
+  return {
+    text: `Piwi: ${parts.join(' · ')}`,
+    state,
+    calls: stops.filter((s) => s.calls).length,
+    ...(since ? { since } : {}),
+  };
 }

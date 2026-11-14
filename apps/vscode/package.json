@@ -542,6 +542,12 @@
         "icon": "$(circle-slash)"
       },
       {
+        "command": "piwi.showStop",
+        "title": "Go to the stopped line",
+        "icon": "$(debug-stackframe)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.showPausedPage",
         "title": "Show the paused page",
         "icon": "$(preview)",
@@ -823,6 +829,10 @@
         {
           "command": "piwi.endTest",
           "when": "piwi.runCanEnd"
+        },
+        {
+          "command": "piwi.showStop",
+          "when": "piwi.runStopped"
         },
         {
           "command": "piwi.showPausedPage",

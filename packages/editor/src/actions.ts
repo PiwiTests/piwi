@@ -154,7 +154,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
     jetbrains: ['Piwi.CopyRunsMcpHttpConfiguration'],
   },
   { title: 'Documentation', jetbrains: ['Piwi.OpenDocumentation'] },
-  { title: 'Go to the stopped line', jetbrains: ['Piwi.ShowStop'] },
+  { title: 'Go to the stopped line', vscode: 'piwi.showStop', jetbrains: ['Piwi.ShowStop'] },
   { title: 'Open the failures', jetbrains: ['Piwi.OpenFailures'] },
   { title: 'Node.js settings…', jetbrains: ['Piwi.NodeSettings'] },
   { title: 'Go to the recorded lines', jetbrains: ['Piwi.GoToRecordedLines'] },

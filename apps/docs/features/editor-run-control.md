@@ -32,13 +32,12 @@ applies and the debugger does not take them. On macOS, `Cmd+F10` runs to the cur
 test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Within two seconds
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
-- **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
-  test stops), in the palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under
-  `…`).
+- **In VS Code**, the controls are in the Piwi item's menu while they apply, after **Go to the stopped line**, in the
+  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under `…`).
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
   whose text says why and where a test stopped.
 
-The progress beside them comes from the run, so it counts offline and with the desktop app
+The item's line comes from the run, so it counts offline and with the desktop app
 ([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next

@@ -115,8 +115,8 @@ line where the error entered the test's code, or at the call a test timeout cut 
 
 `Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
 
-Its line is marked in red. **Resume** lets the test end as it failed (**Step** and **Finish** do the same, so VS Code's
-status bar offers Resume alone); **Pick** replaces the failing locator, **Record** writes the steps that were missing
+Its line is marked in red. **Resume** lets the test end as it failed (**Step** and **Finish** do the same, so the status
+menu offers Resume alone); **Pick** replaces the failing locator, **Record** writes the steps that were missing
 above the failing line, and the code actions work as at any stop. Every attempt that fails is held, never an expected
 failure. A headless failure in any other run, such as a plain **Run**, goes on at once, and the editor shows nothing of
 it.

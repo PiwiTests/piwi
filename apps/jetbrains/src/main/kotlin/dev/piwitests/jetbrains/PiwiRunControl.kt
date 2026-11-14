@@ -1819,6 +1819,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         changed()
     }
 
+    /** The line of the runs the status bar item shows, as the service composes it (`piwi/runLineChanged`). */
+    @Volatile internal var line: RunLine? = null
+        private set
+
+    fun lineChanged(line: RunLine?) {
+        this.line = line
+        changed()
+    }
+
     /** A teammate asks to watch a run of this project: Share live shares it, Not now tells them. */
     fun askedToWatch(ask: AskToWatchParams) {
         val ref = ask.ref ?: return

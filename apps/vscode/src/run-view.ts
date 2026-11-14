@@ -95,8 +95,6 @@ import {
   canShare,
   canShowBrowser,
   type CodeActionKind,
-  accessibleLabel,
-  controlItems,
   controlState,
   giveBackParams,
   heardSession,
@@ -104,7 +102,6 @@ import {
   keepsInteract,
   lineEditOf,
   linesAbove,
-  liveItem,
   liveMenu,
   RunningLines,
   liveTarget,
@@ -210,20 +207,6 @@ export interface RunControl extends vscode.Disposable {
   caretCount(): CaretShown | null;
 }
 
-/** The order of the run controls in the status bar, left to right, by command (`pausing` for the item without one). */
-const ITEM_ORDER = [
-  RUN_COMMANDS.resume,
-  RUN_COMMANDS.step,
-  RUN_COMMANDS.finish,
-  RUN_COMMANDS.end,
-  RUN_COMMANDS.code,
-  RUN_COMMANDS.pause,
-  'pausing',
-  'give-up',
-  RUN_COMMANDS.stop,
-  'live',
-];
-
 /** The commands the lens's and the hover's links run. */
 const STOP_COMMANDS = [
   RUN_COMMANDS.resume,
@@ -261,7 +244,6 @@ export function registerRunControl(
   /** The lines drawn as an execution point, by file. */
   const drawn = new Map<string, number[]>();
   const lensesChanged = new vscode.EventEmitter<void>();
-  const items = new Map<string, vscode.StatusBarItem>();
   const executionPoint = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.executionPointBackground'),
@@ -364,30 +346,9 @@ export function registerRunControl(
     if (running.tells(uri)) drawRunning();
   };
 
-  const item = (key: string) => {
-    let found = items.get(key);
-    if (!found) {
-      found = vscode.window.createStatusBarItem(
-        `piwi.runControl.${key}`,
-        vscode.StatusBarAlignment.Left,
-        49.99 - ITEM_ORDER.indexOf(key) * 0.001,
-      );
-      items.set(key, found);
-    }
-    return found;
-  };
-
-  /** The context keys of the menus and keys, and the status bar items, for the sessions kept. */
-  /** Draws the controls again each second while a pausing test waits in a call, for how long it has. */
-  let ticking: ReturnType<typeof setInterval> | null = null;
-
+  /** The context keys of the menus and keys, for the sessions kept; the Piwi item shows the service's run line. */
   const drawControls = () => {
     const state = controlState(sessions);
-    if (state.waiting?.waiting.since && !ticking) ticking = setInterval(drawControls, 1000);
-    if (!state.waiting?.waiting.since && ticking) {
-      clearInterval(ticking);
-      ticking = null;
-    }
     setContextKey('piwi.runActive', state.active);
     setContextKey('piwi.runStoppable', state.stoppable);
     setContextKey('piwi.runPausable', state.pausable);
@@ -402,27 +363,8 @@ export function registerRunControl(
     setContextKey('piwi.runCanShowBrowser', state.browserShowable);
     setContextKey('piwi.runHoldable', state.holdable);
     setContextKey('piwi.runSharedLive', state.liveShared);
+    setContextKey('piwi.runLiveOffered', state.liveOffered);
     setContextKey('piwi.runWatchable', state.watchable);
-    const shown = new Set<string>();
-    const live = liveItem(sessions, windowShared);
-    for (const control of [...controlItems(state), ...(live ? [{ ...live, key: 'live' }] : [])]) {
-      const key = control.key ?? control.command ?? 'pausing';
-      shown.add(key);
-      const i = item(key);
-      i.name = control.name;
-      i.accessibilityInformation = { label: accessibleLabel(control) };
-      i.text = control.text;
-      if (control.markdown) {
-        const tooltip = new vscode.MarkdownString(control.tooltip);
-        tooltip.isTrusted = {
-          enabledCommands: [RUN_COMMANDS.openPage, RUN_COMMANDS.watch, RUN_COMMANDS.holdFailures],
-        };
-        i.tooltip = tooltip;
-      } else i.tooltip = control.tooltip;
-      i.command = control.command ?? undefined;
-      i.show();
-    }
-    for (const [key, i] of items) if (!shown.has(key)) i.hide();
     options.changed?.();
   };
 
@@ -541,10 +483,7 @@ export function registerRunControl(
     const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout ?? null);
     const picked = await vscode.window.showWarningMessage(`Piwi: ${said}`, resume, go);
     if (picked === resume) await answerStop('resume', targetOf(stop));
-    else if (picked === go) {
-      const now = stops().find((s) => stopKey(s) === stopKey(stop));
-      if (now && (await reveal(now, true, () => false))) stopsShown.opened(now, true);
-    }
+    else if (picked === go) await vscode.commands.executeCommand(RUN_COMMANDS.showStop, targetOf(stop));
   };
   /**
    * Open a stop's file in its turn, unless it went on meanwhile, with the focus as `StopsShown` decides then. The next
@@ -1472,6 +1411,13 @@ export function registerRunControl(
           : { uri, line };
       });
     }),
+    // Go to the stopped line: the command's stop, the caret's or the one chosen, its file shown with the focus.
+    vscode.commands.registerCommand(RUN_COMMANDS.showStop, async (arg?: unknown) => {
+      const stop = await chooseStop(arg);
+      if (stop === 'went-on') say('the test went on.');
+      else if (!stop) say('no test is stopped.');
+      else if (await reveal(stop, true, () => false)) stopsShown.opened(stop, true);
+    }),
     vscode.commands.registerCommand(RUN_COMMANDS.showPage, async (arg?: unknown) => {
       const stop = await chooseStop(arg);
       if (stop === 'went-on') say('the test went on.');
@@ -1517,8 +1463,6 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.holdFailures, (arg?: unknown) => holdFailures(arg)),
     {
       dispose: () => {
-        items.forEach((i) => i.dispose());
-        if (ticking) clearInterval(ticking);
         panel?.dispose();
         if (resumed) clearTimeout(resumed);
         if (waking) clearTimeout(waking);

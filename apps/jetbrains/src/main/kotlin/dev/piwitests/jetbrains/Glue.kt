@@ -1109,9 +1109,6 @@ object Glue {
      */
     fun lineEndWithBreak(lineEnd: Int, textLength: Int): Int = if (lineEnd < textLength) lineEnd + 1 else lineEnd
 
-    /** Whether every stop held is a failure: the status item shows the error's icon, not the pause's. */
-    fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
-
     /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
     const val SERVICE_NOT_RUNNING =
         "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Restart the editor service."
@@ -2324,48 +2321,24 @@ object Glue {
     }
 
     /**
-     * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, how many failed, were flaky and were ended at a stop, then who started the one run that says
-     * when a person did not (`RunSession.label`); null while no run says.
-     */
-    fun runProgressText(sessions: Map<String, RunSession>): String? {
-        val told = sessions.values.filter { it.progress != null }
-        if (told.isEmpty()) return null
-        val progress = told.mapNotNull { it.progress }
-        val number = told.singleOrNull()?.page?.takeIf { it.id > 0 }?.let { "run #${it.id} · " }.orEmpty()
-        val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
-        val counts = countWords(
-            progress.sumOf { it.done },
-            progress.sumOf { it.total },
-            progress.sumOf { it.failed },
-            progress.sumOf { it.flaky },
-            progress.sumOf { it.endedAtStop ?: 0 },
-        )
-        return "Piwi: $number$counts$by"
-    }
-
-    /**
-     * The status bar's icon while it counts the runs as their own processes say: the spinner while one goes on, else
-     * how they ended, passed, failed (a failed test, a failure of its own, a timeout) or stopped short (VS Code's
-     * `progressItem` glyph); null while no run says.
-     */
-    fun runProgressIcon(sessions: Map<String, RunSession>): StatusIcon? {
-        val told = sessions.values.mapNotNull { it.progress }
-        if (told.isEmpty()) return null
-        return when {
-            told.any { it.status == "running" } -> StatusIcon.RUNNING
-            told.any { it.failed > 0 || it.status == "failed" || it.status == "timedout" } -> StatusIcon.FAILING
-            told.all { it.status == "passed" } -> StatusIcon.PASSED
-            else -> StatusIcon.WARNING
-        }
-    }
-
-    /**
      * A stop's or a share's status with how far the runs are after it, so neither hides the other:
      * `Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9`.
      */
-    fun withProgress(status: String, progress: String?): String =
-        if (progress == null) status else "$status · ${progress.removePrefix("Piwi: ")}"
+    /**
+     * The status bar item's text while runs are followed: the service's line, and, while a pausing test waits in a call,
+     * how long it has (`waits in waitForResponse · 12 s`).
+     */
+    fun runLineText(line: RunLine, now: Long): String {
+        val waited = line.since?.let { waitedFor(it, now) }
+        return if (waited == null) line.text else "${line.text} · $waited"
+    }
+
+    /** How long a test has waited since `since`: `12 s`, `2 min 5 s`; null for a time it cannot read. */
+    fun waitedFor(since: String, now: Long): String? {
+        val began = runCatching { java.time.Instant.parse(since).toEpochMilli() }.getOrNull() ?: return null
+        val seconds = maxOf(0L, (now - began) / 1000)
+        return if (seconds < 60) "$seconds s" else "${seconds / 60} min ${seconds % 60} s"
+    }
 
     /** The runs whose own process named their page on the instance, in their order: `Run #78` and the address. */
     fun runPages(sessions: Map<String, RunSession>): List<Pair<String, RunPage>> =
@@ -2818,23 +2791,6 @@ object Glue {
         }
     }
 
-    /**
-     * The status bar's text while a run is stopped or pausing, saying when it is shared live; null otherwise, the run's
-     * progress showing (`liveStatus` for a shared run).
-     */
-    fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? {
-        val shared = controls.liveViewers?.let { " · ${liveCount(it)}" }.orEmpty()
-        return when {
-            stops.size == 1 -> stops.single().stop.let { stop ->
-                "Piwi: ${stopWhy(stop).replaceFirstChar { it.lowercaseChar() }} · ${stopPlace(stop)}$shared"
-            }
-            stops.size > 1 -> "Piwi: ${stops.size} tests stopped$shared"
-            controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
-            controls.pausing -> "Piwi: pausing…$shared"
-            else -> null
-        }
-    }
-
     /** The longest call the status bar names before it cuts it, in characters. */
     private const val STATUS_CALL_MAX = 60
 
@@ -2842,19 +2798,8 @@ object Glue {
     private fun clipped(title: String): String =
         if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
-    /**
-     * The status bar's text while a run is shared live and none is stopped: the views open of the shared runs; while the
-     * project's runs are shared (`windowShared`), that they are, with or without a run.
-     */
-    fun liveStatus(controls: RunControls, windowShared: Boolean = false): String? = when {
-        windowShared -> "Piwi: this project's runs ${liveCount(controls.liveViewers ?: 0)}"
-        else -> controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
-    }
-
     /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
     fun askToWatchText(by: String, run: Int?): String = "$by asks to watch ${run?.let { "run #$it" } ?: "this run"} live."
-
-    private fun liveCount(viewers: Int): String = if (viewers > 0) "shared live · ${views(viewers)}" else "shared live"
 
     private fun views(count: Int): String = if (count == 1) "1 view" else "$count views"
 

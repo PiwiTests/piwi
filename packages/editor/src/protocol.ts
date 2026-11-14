@@ -2171,7 +2171,9 @@ export const SHARE_RUN_REQUEST = 'piwi/shareRun';
  * editor follows (`runLine` in `src/run-line.ts`), null once none is left: where a test stands stopped, or the call a
  * pausing test waits in, the share and how far the runs are, `Piwi: held at its failure · checkout.page.ts:12 · run
  * #78 · 3 of 9 · 1 failed`. `state` chooses the item's glyph, one per state; `calls` counts the stops that wait for the
- * person (`RunStop.calls`), which the item marks until they are answered. Sent only when it changed.
+ * person (`RunStop.calls`), which the item marks until they are answered; `since`, while a pausing test waits in a
+ * call, is when it began, which the clients count after the call (`waits in waitForResponse · 12 s`). Sent only when
+ * it changed.
  */
 export interface RunLineParams {
   line: RunLine | null;
@@ -2181,6 +2183,7 @@ export interface RunLine {
   text: string;
   state: RunLineState;
   calls: number;
+  since?: string;
 }
 
 /**
