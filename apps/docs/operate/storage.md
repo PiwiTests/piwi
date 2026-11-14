@@ -11,7 +11,7 @@ two backends. Runs, test cases and settings live in the [database](./database) i
 long runs are kept: [retention](#data-retention), [runs kept forever](#keeping-runs-forever) and manual cleanup.
 
 Every variable below is an ordinary environment variable: pass it to the container, put it in your
-`.env`, or set it in your host's dashboard. The
+`.env`, or set it in your host's console. The
 [configuration generator](/reference/configuration/generator) will write the block for you.
 
 ## Local storage (default)

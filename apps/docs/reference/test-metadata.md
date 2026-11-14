@@ -122,9 +122,9 @@ A complete `local` or `desktop` run, a `preflight` run and a `piwi bug` run send
 The reporter also records browser project configs, worker count, the global timeout, and parallel settings. A sharded
 run keeps the configuration of the shard that began it, and each shard's own worker count under `shards`.
 
-### Browser configuration per test case
+### Browser configuration per execution {#browser-configuration-per-test-case}
 
-The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName` (a `devices` preset's `defaultBrowserType` when the project sets none), `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
+The reporter automatically captures each execution's Playwright project configuration — `projectName` (the Playwright project's name, not the reporter's `projectName` option, which names the Piwi project), `browserName` (a `devices` preset's `defaultBrowserType` when the project sets none), `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every execution and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
 
 In the dashboard UI, every row of a run's Tests tab shows the browser icon (from the channel, else the engine, else the project name), and `browser:<project name>` in its [search](/reference/test-search) narrows the list to one project.
 
@@ -136,7 +136,7 @@ In the dashboard UI, **Group by: File + Describe** on a run's Tests tab groups t
 
 ### Test annotations (Playwright marks)
 
-The reporter captures Playwright test marks set via `test.info().annotations` (e.g. `@fixme`, `@slow`, `@skip`) and sends them as `testAnnotations` in every test case payload. These are stored per-run on the `test_runs_cases` table and rendered as badges on the test case row and test case detail page. A `@slow` mark combined with a test's duration history powers the **stale `test.slow()`** detection in [Timeout opportunities](/features/slow-tests#timeout-opportunities).
+The reporter captures Playwright test marks set via `test.info().annotations` (e.g. `@fixme`, `@slow`, `@skip`) and sends them as `testAnnotations` with every execution. These are stored per run on the `test_runs_cases` table and rendered as badges on the execution's row in the run and on the execution page. A `@slow` mark combined with a test's duration history powers the **stale `test.slow()`** detection in [Timeout opportunities](/features/slow-tests#timeout-opportunities).
 
 ### Test tags
 
@@ -389,7 +389,7 @@ where it passes. A test that runs in several browser projects looks fixed only w
 
 ### Per-test timeout
 
-The reporter records each test's effective per-test timeout (`TestCase.timeout`) and sends it as `timeout` (milliseconds) on every test case payload, stored on `test_runs_cases.timeout`. `0` means the test has no timeout (unbounded); runs reported by an older reporter that predates this field store `null`.
+The reporter records each test's effective per-test timeout (`TestCase.timeout`) and sends it as `timeout` (milliseconds) with every execution, stored on `test_runs_cases.timeout`. `0` means the test has no timeout (unbounded); runs reported by an older reporter that predates this field store `null`.
 
 Together with the test's duration history this drives the **Timeout opportunities** analysis (see [Slow tests & wasted time](/features/slow-tests#timeout-opportunities)), which flags tests whose timeout far exceeds their real p95 duration so failures and hangs stop wasting time waiting.
 
@@ -397,7 +397,7 @@ Together with the test's duration history this drives the **Timeout opportunitie
 
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
-- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
+- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the execution. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
 - **`didnotrun`** — a test that never actually executed. This covers three cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
   - a test of a project whose **[project dependency](https://playwright.dev/docs/test-projects#dependencies) failed**, such as the tests that need a `setup` project's login (Playwright runs none of them);
@@ -559,4 +559,4 @@ export default defineConfig({
 
 - [Reporter](/guide/reporter): install and configure the reporter
 - [Reporter options](/reference/reporter-options): every option and its `PIWI_*` variable
-- [Core concepts](/guide/concepts): test case, execution and the other terms these fields attach to
+- [Glossary](/guide/concepts): test case, execution and the other terms these fields attach to
