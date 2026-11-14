@@ -140,11 +140,13 @@ tells the views, starts the service for the open files and offers the first-run 
 latest result from `piwi/fileSummary`:
 
 - a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); either click opens the
-  service's list of the test's actions (`SummaryLine.actions`, `TestResultGutter`), a separator between its groups:
-  **Run with Piwi** and **Verify ×3 with Piwi**, the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor`
-  acting on the test's line (`TEST_LINE`) rather than the caret's, at the line a range marker follows through edits,
-  then its evidence, its context for an agent and its Flake Lab commands through `PiwiCommands.execute`, each with the
-  Piwi tool window's glyph (`testActionIcon`); without a list, the click runs what the line names (Open in dashboard);
+  service's list of the test's actions (`SummaryLine.actions`, `TestResultGutter`, a `DumbAwareAction`), a separator
+  with the service's words between its groups (`TestAction.section`): **Run with Piwi** and **Verify ×3 with Piwi**,
+  the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather
+  than the caret's, at the line a range marker follows through edits, **Open in dashboard** the registered
+  `Piwi.OpenInDashboard` with the test's page (`DASHBOARD_URL`), then its trace and screenshot, its context for an
+  agent and its Flake Lab commands through `PiwiCommands.execute`, each with the Piwi tool window's glyph
+  (`testActionIcon`); without a list, the click runs what the line names (Open in dashboard);
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
   why. The test's background goes around that line, since two backgrounds on one line have no set order.

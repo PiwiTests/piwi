@@ -1540,20 +1540,15 @@ export function testLineAt(summary: FileSummary, line: number): SummaryLine | nu
   );
 }
 
-/** The groups of a test's actions as the quick pick names them, the first one unnamed. */
-const TEST_ACTION_GROUPS: Record<TestAction['group'], string> = {
-  run: '',
-  evidence: 'Evidence',
-  agent: 'Agent',
-  lab: 'Flake Lab',
-};
-
-/** A test's actions as the quick pick lists them: each group after a separator naming it, in the service's order. */
+/**
+ * A test's actions as the quick pick lists them: each group after a separator with the service's words for it
+ * (`TestAction.section`), in the service's order.
+ */
 export function testActionPicks(actions: readonly TestAction[]): Array<{ action: TestAction } | { separator: string }> {
   const picks: Array<{ action: TestAction } | { separator: string }> = [];
   let group: TestAction['group'] | null = null;
   for (const action of actions) {
-    if (action.group !== group && group !== null) picks.push({ separator: TEST_ACTION_GROUPS[action.group] });
+    if (action.group !== group && group !== null) picks.push({ separator: action.section });
     group = action.group;
     picks.push({ action });
   }

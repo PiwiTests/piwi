@@ -1534,6 +1534,7 @@ describe('the Piwi language server', () => {
       ['lab', 'Reproduce this flake', undefined],
       ['lab', 'Verify the flake fix', undefined],
     ]);
+    expect(actions.map((a) => a.section)).toEqual(['', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
     expect(actions[1]!.command.arguments).toEqual([
       { uri: uri('tests/checkout.spec.ts'), testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 },
     ]);

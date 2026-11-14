@@ -110,7 +110,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         override fun getClickAction(): AnAction? {
             val actions = getPopupMenuActions()
             if (!line.actions.isNullOrEmpty() && actions != null) {
-                return object : AnAction() {
+                return object : DumbAwareAction() {
                     override fun actionPerformed(e: AnActionEvent) {
                         val popup = JBPopupFactory.getInstance().createActionGroupPopup(
                             null,
@@ -125,7 +125,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 }
             }
             return line.command?.let { command ->
-                object : AnAction() {
+                object : DumbAwareAction() {
                     override fun actionPerformed(e: AnActionEvent) {
                         PiwiCommands.execute(project, command.command, command.arguments.orEmpty())
                     }
@@ -148,10 +148,15 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             if (listed.isEmpty()) return DefaultActionGroup(listOfNotNull(run, verify))
             val group = DefaultActionGroup()
             listed.forEachIndexed { i, action ->
-                if (i > 0 && listed[i - 1].group != action.group) group.addSeparator()
-                val entry = when (action.kind) {
-                    "run" -> run
-                    "verify" -> verify
+                if (i > 0 && listed[i - 1].group != action.group) group.addSeparator(action.section.ifEmpty { null })
+                val url = action.command?.takeIf { it.command == "piwi.openInDashboard" }?.arguments?.firstOrNull() as? String
+                val entry = when {
+                    action.kind == "run" -> run
+                    action.kind == "verify" -> verify
+                    // Open in dashboard is the registered action, opening the test's page.
+                    url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
+                        it.add(DASHBOARD_URL, url)
+                    }
                     else -> action.command?.let { command ->
                         object : DumbAwareAction(action.title, null, testActionIcon(command.command)) {
                             override fun actionPerformed(e: AnActionEvent) {

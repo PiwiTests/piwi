@@ -190,6 +190,32 @@ describe("the commands' glyphs", () => {
   });
 });
 
+describe("a test's actions", () => {
+  const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
+
+  test('open from a test of the Testing view, its gutter and its messages, and the line numbers with the view off', () => {
+    const only = (menu: string) => menus[menu]!.filter((e) => e.command === 'piwi.testActions');
+    const item = only('testing/item/gutter')[0]!.when!;
+    expect(only('testing/item/context')[0]!.when).toBe(item);
+    expect(only('testing/message/context')[0]!.when).toBe('controllerId == piwi');
+    expect(only('editor/lineNumber/context')[0]!.when).toBe(`piwi.active && !config.piwi.testExplorer && ${spec}`);
+    // A test's item, never a config's, a folder's, a spec's or a describe block's (`testTree` in src/glue.ts).
+    const pattern = /testId =~ \/(.+)\/$/.exec(item)![1]!;
+    const matches = (id: string) => new RegExp(pattern).test(id);
+    expect(item.startsWith('controllerId == piwi && ')).toBe(true);
+    expect(matches('file:///w/a.spec.ts\x1fcheckout\x1fpays')).toBe(true);
+    expect(matches('file:///w/a.spec.ts\x1fpays\x1f2')).toBe(true);
+    for (const id of [
+      'config\x1f/w',
+      'folder\x1f/w\x1ftests',
+      'file:///w/a.spec.ts',
+      'file:///w/a.spec.ts\x1echeckout\x1fcart',
+    ]) {
+      expect(matches(id), id).toBe(false);
+    }
+  });
+});
+
 describe('Open the trace so far', () => {
   test('is offered while the worker panel is the active editor and its slot can open its trace, with its glyph', () => {
     const commands = manifest.contributes.commands as Array<{ command: string; title: string; icon?: string }>;

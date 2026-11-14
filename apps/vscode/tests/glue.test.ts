@@ -1047,6 +1047,7 @@ describe('the tests of a file', () => {
         actions: [
           {
             group: 'run',
+            section: '',
             kind: 'run',
             title: 'Run with Piwi',
             command: { title: 'Run', command: 'piwi.runTests', arguments: [] },
@@ -2051,8 +2052,10 @@ describe('the verdict of a run started from the editor', () => {
 });
 
 describe('a test’s actions from its gutter', () => {
+  const SECTIONS = { run: '', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
   const action = (group: TestAction['group'], title: string): TestAction => ({
     group,
+    section: SECTIONS[group],
     title,
     command: { title, command: 'piwi.openInDashboard', arguments: [] },
   });
@@ -2067,6 +2070,8 @@ describe('a test’s actions from its gutter', () => {
     });
     expect(testActionsAt({ uri: 'file:///w/a.spec.ts', line: 2 })).toEqual({ uri: 'file:///w/a.spec.ts', line: 2 });
     expect(testActionsAt(undefined)).toBeNull();
+    // A spec's or a describe block's item has no range: it names no test.
+    expect(testActionsAt({ uri: { toString: () => 'file:///w/a.spec.ts' }, range: undefined })).toBeNull();
   });
 
   test('are the test’s whose call is at the line, or whose body holds it', () => {
@@ -2083,7 +2088,10 @@ describe('a test’s actions from its gutter', () => {
     expect(testLineAt(summary, 9)).toBeNull();
   });
 
-  test('list each group after a separator naming it, the first unnamed', () => {
+  test('list each group after a separator with the service’s words, none before the first whatever its group', () => {
+    expect(testActionPicks([action('evidence', 'Open in dashboard')])).toEqual([
+      { action: action('evidence', 'Open in dashboard') },
+    ]);
     const picks = testActionPicks([
       action('run', 'Run with Piwi'),
       action('run', 'Verify ×3 with Piwi'),

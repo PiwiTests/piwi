@@ -971,7 +971,7 @@ apart. Step [Q27](#q27).
 
 ### LI7. One test line: one action list, Debug with Piwi, and a test card
 
-The service sends each test line one grouped action list (`piwi/testActions`): Run with Piwi, Debug with Piwi and Verify
+The service sends each test line one grouped action list (`SummaryLine.actions`, with the file's summary): Run with Piwi, Debug with Piwi and Verify
 ×3; Trace, Screenshot and Open in dashboard; Copy context for agent; Record here; the desktop jobs. JetBrains draws it
 on the result icon's either click and on the IDE run icon (`JSTestRunLineMarkersAdditionalActionGroup`); VS Code in its
 Testing menus and the hover. The gutter acts, the hover explains, the lens informs, quick fixes only edit. Debug with
@@ -1210,7 +1210,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): the glyphs Appendix A still marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **The running ring animated in JetBrains** ([LI3](#li3)), if its gutter allows it (§13, question 3) | `ide` | [TL5](#tl5) |
-| <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
+| <a id="m7"></a>M7 | **One action list per test line, from the service** (`SummaryLine.actions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8), [NF3](#nf3) |
@@ -1376,6 +1376,7 @@ such action.
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
+| A test's actions | – | – | `$(list-selection)` | the result icon itself (its click) |
 | Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |

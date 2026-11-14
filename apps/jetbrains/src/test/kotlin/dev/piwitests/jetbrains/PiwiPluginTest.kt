@@ -1409,28 +1409,44 @@ class PiwiPluginTest : BasePlatformTestCase() {
             "failed",
             testCaseId = 1,
             actions = listOf(
-                TestAction("run", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
-                TestAction("run", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
-                TestAction("evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
-                TestAction("evidence", null, "Open in dashboard", command("Open in dashboard", "piwi.openInDashboard")),
-                TestAction("agent", null, "Copy context for agent", command("Copy context for agent", "piwi.copyAgentContext")),
+                TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
+                TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
+                TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
+                TestAction(
+                    "evidence",
+                    "Evidence",
+                    null,
+                    "Open in dashboard",
+                    PiwiCommand("Open in dashboard", "piwi.openInDashboard", listOf("http://piwi/test-cases/1")),
+                ),
+                TestAction("agent", "Agent", null, "Copy context for agent", command("Copy context for agent", "piwi.copyAgentContext")),
             ),
         )
         val gutter = PiwiTestAnnotator.TestResultGutter(project, line, "file:///w/cart.spec.ts", at)
-        val entries = gutter.popupMenuActions!!.getChildren(null).map {
-            if (it is com.intellij.openapi.actionSystem.Separator) "—" else it.templatePresentation.text
+        val children = gutter.popupMenuActions!!.getChildren(null)
+        val entries = children.map {
+            if (it is com.intellij.openapi.actionSystem.Separator) "— ${it.text.orEmpty()}" else it.templatePresentation.text
         }
+        // Each group after a separator with the service's words.
         assertEquals(
-            listOf("Run with Piwi", "Verify ×3 with Piwi", "—", "Open the trace", "Open in dashboard", "—", "Copy context for agent"),
+            listOf(
+                "Run with Piwi",
+                "Verify ×3 with Piwi",
+                "— Evidence",
+                "Open the trace",
+                "Open in dashboard",
+                "— Agent",
+                "Copy context for agent",
+            ),
             entries,
         )
-        // Run and Verify ×3 are the registered actions, their keys shown.
+        // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
         val manager = ActionManager.getInstance()
-        val run = gutter.popupMenuActions!!.getChildren(null).first() as com.intellij.openapi.actionSystem.AnActionWrapper
-        assertEquals("Piwi.RunTestAtCursor", manager.getId(run.delegate))
-        // A left click opens the same list, never the browser.
+        fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
+        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(1), registered(4)))
+        // A left click opens the same list, never the browser, while the IDE indexes too.
         assertTrue(gutter.isNavigateAction)
-        assertNotNull(gutter.clickAction)
+        assertTrue(gutter.clickAction is com.intellij.openapi.project.DumbAware)
         assertEquals(PiwiIcons.TRACE, PiwiTestAnnotator.testActionIcon("piwi.openTrace"))
     }
 

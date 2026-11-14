@@ -1222,14 +1222,14 @@
       "testing/item/gutter": [
         {
           "command": "piwi.testActions",
-          "when": "controllerId == piwi"
+          "when": "controllerId == piwi && testId =~ /^[a-z][a-z0-9+.-]*:[^\\x1f\\x1e]*\\x1f/"
         }
       ],
       "testing/item/context": [
         {
           "command": "piwi.testActions",
           "group": "piwi@1",
-          "when": "controllerId == piwi"
+          "when": "controllerId == piwi && testId =~ /^[a-z][a-z0-9+.-]*:[^\\x1f\\x1e]*\\x1f/"
         }
       ],
       "testing/message/context": [

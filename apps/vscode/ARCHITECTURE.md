@@ -81,8 +81,10 @@ files (`summaryOf`), and draws it in two places:
   `testHoverMarkdown`, `TEST_HOVER_COMMANDS` in `src/glue.ts`). **More…**, the Testing view's gutter and item menus,
   its message menu, and the line number's menu with the view off (`editor/lineNumber/context`) open **Piwi: Show the
   test's actions…** (`piwi.testActions`): a quick pick of the service's list (`SummaryLine.actions`, `testLineAt`,
-  `testActionPicks`), Run and Verify ×3 through `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at the test's
-  line, every other action its command. A failing test gets the `piwi.failingTestBackground` color, and the line it
+  `testActionPicks`, a separator with the service's words before each group), Run and Verify ×3 through
+  `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at the test's line, every other action its command. The Testing
+  view's menus offer it on a test's item alone (`testId` names a spec's URI, then `\x1f`), and a menu's item is never
+  replaced by the cursor's test (`testActionsAt`). A failing test gets the `piwi.failingTestBackground` color, and the line it
   failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
   service's summary says so. Each tint has a scrollbar mark of its own, opaque as the JetBrains schemes' error stripes
   (`piwi.*OverviewRuler`), and so do a recording's block, the execution point and a held failure.

@@ -65,11 +65,14 @@ export interface SummaryLine {
 }
 
 /**
- * An action on a test from its gutter mark. `kind` names the client's own action that does it, which the client runs at
- * the test's line instead (`run`: Run the test at the cursor; `verify`: Verify ×3); every other action runs `command`.
+ * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
+ * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
+ * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
+ * Verify ×3); every other action runs `command`.
  */
 export interface TestAction {
   group: 'run' | 'evidence' | 'agent' | 'lab';
+  section: string;
   kind?: 'run' | 'verify';
   title: string;
   command: PiwiCommand;

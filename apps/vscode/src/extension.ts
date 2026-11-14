@@ -1533,10 +1533,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // A test's actions from its gutter (the Testing view's, or the line number's with the view off), in the service's
     // order: Run and Verify ×3 as the commands at the cursor run them, at the test's line; every other its command.
     vscode.commands.registerCommand('piwi.testActions', async (arg?: unknown) => {
+      // A menu's item is the test the command acts on; the palette's, the cursor's.
       const editor = vscode.window.activeTextEditor;
       const at =
-        testActionsAt(arg) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
-      if (!at) return;
+        arg === undefined
+          ? editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line }
+          : testActionsAt(arg);
+      if (!at) {
+        void vscode.window.showInformationMessage('Piwi: choose a test to act on.');
+        return;
+      }
       const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(at.uri)).then(
         (d) => d,
         () => null,
