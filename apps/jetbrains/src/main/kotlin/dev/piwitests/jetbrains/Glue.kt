@@ -918,7 +918,7 @@ object Glue {
      * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
      * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
      */
-    val RUN_NOTIFICATION_SCOPES = listOf("mineAndCi", "mine")
+    val RUN_NOTIFICATION_SCOPES = listOf("mine", "mineAndCi")
 
     /**
      * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,

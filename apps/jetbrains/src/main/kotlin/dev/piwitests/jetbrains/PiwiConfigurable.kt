@@ -67,7 +67,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     nodeButton = button("Node.js settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
-            group("Instance") {
+            group(SettingsWords.GROUPS.getValue("connection")) {
                 row {
                     overridden = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
@@ -126,9 +126,9 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .component
                 }
             }
-            group("Runs") {
+            group(SettingsWords.GROUPS.getValue("runs")) {
                 row {
-                    comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
+                    comboBox(Glue.RUN_NOTIFICATIONS, ChoiceRenderer("runNotifications"))
                         .label("When a run started here ends:", LabelPosition.TOP)
                         .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "failures" })
                         .comment(
@@ -137,19 +137,19 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
-                    comboBox(Glue.RUN_NOTIFICATION_SCOPES, RunNotificationScopeRenderer())
+                    comboBox(Glue.RUN_NOTIFICATION_SCOPES, ChoiceRenderer("runNotificationsScope"))
                         .label("The runs it says it for:", LabelPosition.TOP)
                         .bindItem({ local.runNotificationsScope }, { local.runNotificationsScope = it ?: "mineAndCi" })
                         .comment("A CI run of the branch says what it fixed and its new failures against the run it replaced")
                 }
                 row {
-                    comboBox(Glue.STATUS_BAR_ALERTS, StatusBarAlertRenderer())
+                    comboBox(Glue.STATUS_BAR_ALERTS, ChoiceRenderer("statusBarAlert"))
                         .label("The status bar item's text turns red:", LabelPosition.TOP)
                         .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
                         .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
                 }
                 row {
-                    comboBox(Glue.FAILURE_SEVERITIES, FailureSeverityRenderer())
+                    comboBox(Glue.FAILURE_SEVERITIES, ChoiceRenderer("failureSeverity"))
                         .label("A failing test's line in the editor:", LabelPosition.TOP)
                         .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
                         .comment(
@@ -204,9 +204,9 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
             }
-            group("AI Assistant") {
+            group(SettingsWords.GROUPS.getValue("agents")) {
                 row {
-                    comboBox(Glue.MCP_AUTHORIZATIONS, McpAuthorizationRenderer())
+                    comboBox(Glue.MCP_AUTHORIZATIONS, ChoiceRenderer("mcpAuthorization"))
                         .label("Piwi's MCP server signs the agent in with:", LabelPosition.TOP)
                         .bindItem({ local.mcpAuthorization }, { local.mcpAuthorization = it ?: "key" })
                         .comment(
@@ -356,64 +356,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 }
 
-/** A choice of `PiwiLocalSettings.statusBarAlert`, in words. */
-private class StatusBarAlertRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = when (value) {
-            "any" -> "For any failing test"
-            "never" -> "Never"
-            else -> "For a new failure a run started here caused"
-        }
-    }
-}
-
-/** A choice of `PiwiLocalSettings.runNotifications`, in words. */
-private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = when (value) {
-            "failures" -> "Say what it changed when something fails"
-            "never" -> "Say nothing"
-            else -> "Say what it changed"
-        }
-    }
-}
-
-/** A choice of `PiwiLocalSettings.runNotificationsScope`, in words. */
-private class RunNotificationScopeRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = when (value) {
-            "mine" -> "The runs started here"
-            else -> "The runs started here and the branch's CI runs"
-        }
-    }
-}
-
-/** A choice of `PiwiLocalSettings.runHoldFailures`, in words. */
-private class HoldFailuresRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = Glue.holdFailuresLabel(value ?: "auto")
-    }
-}
-
-/** A choice of `PiwiLocalSettings.mcpAuthorization`, in words. */
-private class McpAuthorizationRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = if (value == "sign-in") "A sign-in in the browser" else "The IDE's API key"
-    }
-}
-
-/** A choice of `PiwiLocalSettings.failureSeverity`, in words. */
-private class FailureSeverityRenderer : SimpleListCellRenderer<String>() {
-    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        text = when (value) {
-            "warning" -> "A warning"
-            "information" -> "A weak warning"
-            "off" -> "Nothing in the editor's problems"
-            else -> "An error"
-        }
-    }
-}
-
 /**
  * The words Settings search finds **Settings → Tools → Piwi** by beyond its labels, which the release's searchable
  * options index holds: what a developer looking for the page types.
@@ -431,5 +373,19 @@ class PiwiSearchableOptions : SearchableOptionContributor() {
             "Playwright", "dashboard", "test results", "flaky", "failures", "coverage", "reporter", "breakpoints",
             "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js", "headed", "hold failures",
         )
+    }
+}
+
+/** A choice of the option `field` of `PiwiLocalSettings`, in the settings registry's words (`SettingsWords`). */
+private class ChoiceRenderer(private val field: String) : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = SettingsWords.choice(field, value)
+    }
+}
+
+/** A choice of `PiwiLocalSettings.runHoldFailures`, whole, in the editors' words: the short label says too little alone. */
+private class HoldFailuresRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = Glue.holdFailuresLabel(value ?: "auto")
     }
 }

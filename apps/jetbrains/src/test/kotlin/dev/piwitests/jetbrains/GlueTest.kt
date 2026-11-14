@@ -2271,6 +2271,38 @@ class GlueTest {
     }
 
     @Test
+    fun `the settings page's groups, choices and defaults are the editor service's registry`() {
+        val file = java.io.File("../../packages/editor/src/settings.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val registry = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        val groups = registry.getAsJsonArray("groups").associate { it.asJsonObject.let { g -> g["id"].asString to g["title"].asString } }
+        assertEquals(groups.entries.toList(), SettingsWords.GROUPS.entries.toList())
+        val settings = registry.getAsJsonArray("settings").map { it.asJsonObject }.filter { !it["jetbrains"].isJsonNull }
+        val choices = settings.filter { it.has("choices") }.associate { setting ->
+            setting["jetbrains"].asString to setting.getAsJsonArray("choices").map { it.asJsonObject }.associate { choice ->
+                val label = choice["label"]
+                choice["value"].asString to if (label.isJsonPrimitive) label.asString else label.asJsonObject["jetbrains"].asString
+            }
+        }
+        assertEquals(choices.mapValues { it.value.entries.toList() }.entries.toList(), SettingsWords.CHOICES.mapValues { it.value.entries.toList() }.entries.toList())
+        // The combos list each option's choices in the registry's order.
+        val lists = mapOf(
+            "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
+            "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
+            "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
+        )
+        assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
+        // A team's option is the project's shared setting, any other one the person's (`PiwiLocalSettings`), with its default.
+        for (setting in settings) {
+            val field = setting["jetbrains"].asString
+            val state: Any = if (setting["scope"].asString == "team") PiwiSettings.State() else PiwiLocalSettings.State()
+            val value = state.javaClass.getMethod("get" + field.replaceFirstChar(Char::uppercase)).invoke(state)
+            val expected = setting["default"].let { if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asString }
+            assertEquals(field, expected, value)
+        }
+    }
+
+    @Test
     fun `the words both editors write are the editor service's, which VS Code reads`() {
         val file = java.io.File("../../packages/editor/src/words.json")
         assertTrue(file.absolutePath, file.isFile)

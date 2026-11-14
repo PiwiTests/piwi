@@ -2147,11 +2147,3 @@ export function runOptionPicks(
     { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
   ];
 }
-
-/**
- * Where **Piwi: Run options…** writes a setting: the workspace's settings when they hold a value for it, which would
- * win over the user's, else the user's.
- */
-export function runOptionTarget(inspected: { workspaceValue?: unknown } | undefined): 'workspace' | 'global' {
-  return inspected?.workspaceValue === undefined ? 'global' : 'workspace';
-}

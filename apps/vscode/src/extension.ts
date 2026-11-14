@@ -190,7 +190,6 @@ import {
   HOLD_FAILURES_CHOICES,
   type RunStartChoices,
   runOptionPicks,
-  runOptionTarget,
   runStartChoices,
   runStartLine,
   withRunStart,
@@ -718,14 +717,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return runStartChoices(settings.get('runHeaded'), settings.get('runHoldFailures'));
   };
 
-  /** Save a run setting where its value comes from: the workspace's settings when they hold one, else the user's. */
+  /** Save a run setting in the user's settings: each person's own, which no workspace's settings override. */
   const saveRunOption = async (key: 'runHeaded' | 'runHoldFailures', value: unknown) => {
-    const settings = vscode.workspace.getConfiguration('piwi');
-    const target =
-      runOptionTarget(settings.inspect(key)) === 'workspace'
-        ? vscode.ConfigurationTarget.Workspace
-        : vscode.ConfigurationTarget.Global;
-    await settings.update(key, value, target);
+    await vscode.workspace.getConfiguration('piwi').update(key, value, vscode.ConfigurationTarget.Global);
   };
 
   const mcpChanged = new vscode.EventEmitter<void>();
@@ -1992,13 +1986,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       else if (picked === VERDICT_ACTIONS.settings) {
         await vscode.commands.executeCommand('workbench.action.openSettings', 'piwi.runNotifications');
       } else if (picked === VERDICT_ACTIONS.onlyOnFailure) {
-        // Where the setting is set: the workspace's value when it has one, else the user's.
         const config = vscode.workspace.getConfiguration('piwi');
-        const target =
-          config.inspect('runNotifications')?.workspaceValue === undefined
-            ? vscode.ConfigurationTarget.Global
-            : vscode.ConfigurationTarget.Workspace;
-        await config.update('runNotifications', 'failures' satisfies RunNotifications, target);
+        await config.update(
+          'runNotifications',
+          'failures' satisfies RunNotifications,
+          vscode.ConfigurationTarget.Global,
+        );
         vscode.window.setStatusBarMessage(
           "Piwi: a run's notice now comes only when a test fails; a verification still says how it went",
           5000,

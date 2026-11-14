@@ -99,7 +99,7 @@ connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration*
 running `mcp-remote`. It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
-to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
+to `sign-in` (**Settings → Tools → Piwi → Agents (MCP)** in a JetBrains IDE): the server comes without a key, and the
 agent [signs in](/features/mcp#authentication) in your browser when it first connects. You revoke that token with
 your API keys. The desktop app keeps its own token. For the runs the editor starts:
 [Run control for agents](./agent-run-control).
@@ -119,6 +119,11 @@ recorded and the stopped line under **Settings → Editor → Color Scheme → P
 `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the
 window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing`
 (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
+
+VS Code's Piwi settings come in four groups, Connection, Runs, Agents (MCP) and Advanced, as JetBrains' settings page
+does. Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
+every workspace: a repository's `.vscode/settings.json` sets only the instance and the project, the failure severity,
+serving runs to agents and Piwi's tests in the Testing view.
 
 ## Commands
 
