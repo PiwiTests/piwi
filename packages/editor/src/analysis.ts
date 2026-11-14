@@ -968,19 +968,40 @@ export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLab
 }
 
 /**
- * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run and Verify ×3 at the test's line; the
- * failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context for an agent;
- * the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run, Debug with Piwi and Verify ×3 at the
+ * test's line; the failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context
+ * for an agent; the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ * Debug with Piwi runs a failed test as the dashboard's Debug in my editor does, stopping once at the line of this file
+ * it failed through (`failed.line`) on the project it failed in; any other test headed, holding its failures.
  */
 export function testActions(
   uri: string,
   relative: string,
   line: number,
-  testCaseId: number,
+  test: { id: number; title: string },
   open: PiwiCommand,
-  failed: { executionId: number; screenshot: unknown; traces: unknown[] } | null,
+  failed: {
+    executionId: number;
+    screenshot: unknown;
+    traces: unknown[];
+    browserName?: string | null;
+    line: number;
+  } | null,
   lab: SummaryLine[],
 ): TestAction[] {
+  const testCaseId = test.id;
+  const debug: RunTestsArgs = failed
+    ? {
+        uri,
+        testIds: [],
+        debug: {
+          stop: { uri, line: failed.line },
+          title: test.title,
+          project: failed.browserName ?? null,
+          execution: failed.executionId,
+        },
+      }
+    : { uri, testIds: [testCaseId], headed: true, holdFailures: true };
   const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
   const actions: Array<Omit<TestAction, 'section'>> = [
     {
@@ -992,6 +1013,12 @@ export function testActions(
         command: 'piwi.runTests',
         arguments: [{ uri, testIds: [testCaseId] } satisfies RunTestsArgs],
       },
+    },
+    {
+      group: 'run',
+      kind: 'debug',
+      title: 'Debug with Piwi',
+      command: { title: 'Debug with Piwi', command: 'piwi.runTests', arguments: [debug] },
     },
     {
       group: 'run',

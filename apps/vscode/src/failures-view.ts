@@ -64,6 +64,7 @@ function contextValue(node: FailureNode, desktop: boolean, result: FailuresResul
     f.hasTrace ? 'trace' : null,
     f.hasScreenshot ? 'screenshot' : null,
     f.state !== 'fixed-locally' ? 'agent' : null,
+    f.debug ? 'debug' : null,
     desktop && f.source === 'ci' && f.state !== 'fixed-locally' ? 'desktop' : null,
   ]
     .filter(Boolean)

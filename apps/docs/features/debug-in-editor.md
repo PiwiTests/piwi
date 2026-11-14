@@ -26,6 +26,12 @@ the failure enters your code (a page object's line included), in the captured fr
    **Piwi's suggested locator: getByTestId('pay') (outlined on the page).** While the cursor stays on the stopped line,
    its end says the same, and the outline stays. Without an instance, or a recommendation, the run only stops.
 
+## From the editor
+
+The same run starts from the editor, with no question: **Debug this failure** on a failure of the Piwi panel's
+failures (its context menu in VS Code, the tool window's in a JetBrains IDE), and **Debug with Piwi** among a failed
+test's actions in its gutter ([Runs from the editor](./editor-runs)).
+
 ## The stop is the run's alone
 
 The failing line is a breakpoint of that one run, never one of your editor's: your breakpoint list stays as it was.

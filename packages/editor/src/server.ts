@@ -1305,9 +1305,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
         const at = pass.place(context, f);
         if (!at || at.state === 'gone') return [];
+        const spec = specOf(context, f);
+        const failingUri = pathToFileURL(at.file).href;
         return [
           {
-            uri: pathToFileURL(at.file).href,
+            uri: failingUri,
             root: context.root,
             line: at.line - 1,
             title: f.title,
@@ -1319,7 +1321,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             source: failureSource(context, f.runId ?? context.failures?.run?.id),
             state: at.state === 'edited' ? 'edited' : 'failing',
             browserName: f.browserName ?? null,
-            file: specOf(context, f),
+            file: spec,
             status: f.status === 'timedOut' ? 'timedOut' : 'failed',
             testCaseId: f.testCaseId,
             clusterId: f.clusterId ?? null,
@@ -1328,6 +1330,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
+            // Debug this failure: the dashboard's Debug in my editor run, stopping once at the line it failed through.
+            ...(spec
+              ? {
+                  debug: {
+                    uri: pathToFileURL(path.join(context.root, spec)).href,
+                    root: context.root,
+                    testIds: [],
+                    debug: {
+                      stop: { uri: failingUri, line: at.line - 1 },
+                      title: f.title,
+                      project: f.browserName ?? null,
+                      execution: f.executionId,
+                    },
+                  },
+                }
+              : {}),
           },
         ];
       });
@@ -3351,7 +3369,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
-          actions: testActions(params.uri, relative!, i, found.id, open, failed && failure ? failed : null, lab),
+          actions: testActions(
+            params.uri,
+            relative!,
+            i,
+            { id: found.id, title: found.title },
+            open,
+            failed && failure ? { ...failed, line: failure.line } : null,
+            lab,
+          ),
         });
         out.push(...lab);
         if (!failed || !failure) continue;

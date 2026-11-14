@@ -1410,6 +1410,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             testCaseId = 1,
             actions = listOf(
                 TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
+                TestAction("run", "", "debug", "Debug with Piwi", command("Debug with Piwi", "piwi.runTests")),
                 TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
                 TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
                 TestAction(
@@ -1431,6 +1432,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(
             listOf(
                 "Run with Piwi",
+                "Debug with Piwi",
                 "Verify ×3 with Piwi",
                 "— Evidence",
                 "Open the trace",
@@ -1443,7 +1445,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
         val manager = ActionManager.getInstance()
         fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
-        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(1), registered(4)))
+        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(2), registered(5)))
+        assertEquals(AllIcons.Actions.StartDebugger, children[1].templatePresentation.icon)
         // A left click opens the same list, never the browser, while the IDE indexes too.
         assertTrue(gutter.isNavigateAction)
         assertTrue(gutter.clickAction is com.intellij.openapi.project.DumbAware)

@@ -392,6 +392,12 @@
         "icon": "$(play)"
       },
       {
+        "command": "piwi.debugFailure",
+        "title": "Debug this failure",
+        "category": "Piwi",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "piwi.rerunFailing",
         "title": "Re-run the failing tests",
         "category": "Piwi",
@@ -911,6 +917,10 @@
         {
           "command": "piwi.testActions",
           "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.debugFailure",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -1111,6 +1121,11 @@
           "command": "piwi.runTest",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
           "group": "1_run@1"
+        },
+        {
+          "command": "piwi.debugFailure",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdebug\\b/",
+          "group": "1_run@2"
         },
         {
           "command": "piwi.openTrace",

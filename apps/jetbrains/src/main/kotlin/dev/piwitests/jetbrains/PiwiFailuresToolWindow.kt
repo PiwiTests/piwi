@@ -16,6 +16,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
@@ -425,7 +426,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             *registered("Piwi.OpenInDashboard"),
             FlakeActions(project, selected),
             Separator.getInstance(),
-            *registered("Piwi.Failure.RunTest"),
+            *registered("Piwi.Failure.RunTest", "Piwi.Failure.Debug"),
             Separator.getInstance(),
             *registered("Piwi.Failure.OpenTrace", "Piwi.Failure.OpenScreenshot"),
             Separator.getInstance(),
@@ -547,6 +548,20 @@ class RunFailureTestAction : FailureNodeAction(AllIcons.Actions.Execute) {
 
     override fun perform(project: Project, failure: WorkspaceFailure) {
         Glue.failureRunArgs(failure)?.let { PiwiCommands.runTests(project, it) }
+    }
+}
+
+/**
+ * **Debug this failure**: the run the service built for it (`WorkspaceFailure.debug`), stopping once at the line it
+ * failed through, once the files are saved.
+ */
+class DebugFailureAction : FailureNodeAction(AllIcons.Actions.StartDebugger) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.debug != null
+
+    override fun perform(project: Project, failure: WorkspaceFailure) {
+        val debug = failure.debug ?: return
+        FileDocumentManager.getInstance().saveAllDocuments()
+        PiwiCommands.runTests(project, debug)
     }
 }
 

@@ -13,6 +13,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.markup.GutterIconRenderer
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
@@ -153,6 +154,15 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 val entry = when {
                     action.kind == "run" -> run
                     action.kind == "verify" -> verify
+                    // Debug with Piwi reads the spec as saved.
+                    action.kind == "debug" -> action.command?.let { command ->
+                        object : DumbAwareAction(action.title, null, AllIcons.Actions.StartDebugger) {
+                            override fun actionPerformed(e: AnActionEvent) {
+                                FileDocumentManager.getInstance().saveAllDocuments()
+                                PiwiCommands.execute(project, command.command, command.arguments.orEmpty())
+                            }
+                        }
+                    }
                     // Open in dashboard is the registered action, opening the test's page.
                     url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
                         it.add(DASHBOARD_URL, url)

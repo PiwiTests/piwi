@@ -2449,6 +2449,16 @@ describe('the Testing view', () => {
         locations: ['tests/cart/checkout.spec.ts:4', 'tests/cart/checkout.spec.ts:8', 'tests/cart/checkout.spec.ts:13'],
       },
     ]);
+    // Debug with Piwi: headed, holding the failures.
+    expect(testRunsOf(tests.slice(0, 2), undefined, true)).toEqual([
+      {
+        uri: 'file:///w/tests/cart/checkout.spec.ts',
+        root: '/w',
+        testIds: [1, 2],
+        headed: true,
+        holdFailures: true,
+      },
+    ]);
     expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([
       {
         uri: 'file:///w/tests/cart/checkout.spec.ts',
@@ -2601,6 +2611,9 @@ describe('how every run of the window starts', () => {
       headed: true,
       holdFailures: false,
     });
+    // Debug with Piwi names its own start: headed, holding its failures, whatever the choices.
+    const debugging = { uri: 'file:///w/a.spec.ts', testIds: [1], headed: true, holdFailures: true };
+    expect(withRunStart(debugging, { headed: false, holdFailures: 'off' })).toEqual(debugging);
     const debug = {
       uri: 'file:///w/a.spec.ts',
       testIds: [],

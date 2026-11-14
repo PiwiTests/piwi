@@ -1412,6 +1412,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.runTests', async (args: RunTestsArgs) => {
       await runTests(args);
     }),
+    // Debug this failure: the run the service built for it (`WorkspaceFailure.debug`), once its spec is saved.
+    vscode.commands.registerCommand('piwi.debugFailure', async (target: FailureNode) => {
+      const debug = failureOf(target)?.debug;
+      if (!debug) {
+        void vscode.window.showInformationMessage('Piwi: this failure has no test to debug.');
+        return;
+      }
+      if (await saveSpec(debug.uri)) await runTests(debug);
+    }),
     // From the failures view, a failure; from elsewhere, the tests to run.
     vscode.commands.registerCommand('piwi.runTest', async (target: FailureNode | RunTestsArgs) => {
       const failure = failureOf(target);
@@ -1565,7 +1574,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const here = { uri: at.uri, line: line.line };
       if (action.kind === 'run') await vscode.commands.executeCommand('piwi.runTestAtCursor', here);
       else if (action.kind === 'verify') await vscode.commands.executeCommand('piwi.verifyTestAtCursor', here);
-      else await vscode.commands.executeCommand(action.command.command, ...action.command.arguments);
+      else if (action.kind === 'debug') {
+        // Debug with Piwi reads the spec as saved.
+        if (await saveSpec(at.uri)) await runTests(action.command.arguments[0] as RunTestsArgs);
+      } else await vscode.commands.executeCommand(action.command.command, ...action.command.arguments);
     }),
     vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runSpec(target)),
     vscode.commands.registerCommand('piwi.openInDashboard', async (target?: string | FailureNode) => {
