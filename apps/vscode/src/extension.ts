@@ -1412,14 +1412,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.runTests', async (args: RunTestsArgs) => {
       await runTests(args);
     }),
-    // Debug this failure: the run the service built for it (`WorkspaceFailure.debug`), once its spec is saved.
+    // Debug this failure: the run the service built for it (`WorkspaceFailure.debug`), once every file is saved.
     vscode.commands.registerCommand('piwi.debugFailure', async (target: FailureNode) => {
       const debug = failureOf(target)?.debug;
       if (!debug) {
         void vscode.window.showInformationMessage('Piwi: this failure has no test to debug.');
         return;
       }
-      if (await saveSpec(debug.uri)) await runTests(debug);
+      // Every file as saved, a page object's stop included; the service says why it refuses.
+      if (await vscode.workspace.saveAll(false)) await runTests(debug, true);
     }),
     // From the failures view, a failure; from elsewhere, the tests to run.
     vscode.commands.registerCommand('piwi.runTest', async (target: FailureNode | RunTestsArgs) => {
@@ -1575,8 +1576,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (action.kind === 'run') await vscode.commands.executeCommand('piwi.runTestAtCursor', here);
       else if (action.kind === 'verify') await vscode.commands.executeCommand('piwi.verifyTestAtCursor', here);
       else if (action.kind === 'debug') {
-        // Debug with Piwi reads the spec as saved.
-        if (await saveSpec(at.uri)) await runTests(action.command.arguments[0] as RunTestsArgs);
+        // Debug with Piwi reads every file as saved, a page object's stop included; the service says why it refuses.
+        if (await vscode.workspace.saveAll(false)) await runTests(action.command.arguments[0] as RunTestsArgs, true);
       } else await vscode.commands.executeCommand(action.command.command, ...action.command.arguments);
     }),
     vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runSpec(target)),

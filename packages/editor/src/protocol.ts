@@ -1243,8 +1243,10 @@ export interface WorkspaceFailure {
   hasScreenshot?: boolean;
   /**
    * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
-   * Debug in my editor does (`RunTestsArgs.debug`), for `piwi/runArgs`. Absent for a failure fixed since, or one whose
-   * spec is not known.
+   * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
+   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, and where the run would be refused: its
+   * spec holds no one test of its title, the title or project is not one Piwi takes, or it stops on the test's own
+   * `test(…)` line.
    */
   debug?: RunTestsArgs;
 }

@@ -57,8 +57,8 @@ filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@pi
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
 Each test's actions are one list in both editors: **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi**,
-a failure's trace and
-screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab commands. In VS Code, **Piwi:
+a failure's trace and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab
+commands. In VS Code, **Piwi:
 Show the test's actions…** opens them from the Testing view's gutter and its menus, the line number's menu with the
 view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon.
 
@@ -73,7 +73,7 @@ Playwright config with your breakpoints, **Debug with Piwi** runs them headed, h
 [Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
 they begin, offline too. A test the run gave Piwi no
 result for, such as one the instance does not know yet, passes when the command exited with 0 and is an error
-otherwise. The view shows results; it does not discover tests nor debug them: a spec the instance has not seen joins
+otherwise. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins
 the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests

@@ -195,7 +195,7 @@ import { RunHub } from './run-hub.js';
 import { StopActions, checkoutCopyWhy, checkoutRecordWhy } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
 import { RunAgent, type AgentRunStart } from './run-agent.js';
-import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
+import { DebugRuns, checkedDebugRun, debugArgs, debugRunOf, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -1298,6 +1298,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * latest complete run, the runs laid over it and its baseline: one context's as the answer's, several under a node
    * each (`failuresAnswer`).
    */
+  /**
+   * Debug this failure (`WorkspaceFailure.debug`): the dashboard's Debug in my editor run of its test, the one test of
+   * its spec, as it stands, titled as it failed, stopping once at the line it failed through (`debugRunOf`); null when
+   * the spec holds no such test or several.
+   */
+  const failureDebugRun = (
+    context: PiwiContext,
+    spec: string,
+    f: BranchFailure,
+    stop: EditorBreakpoint,
+  ): RunTestsArgs | null => {
+    const file = path.join(context.root, spec);
+    const text = readText(file);
+    if (text === null) return null;
+    const titled = testCalls(text.split(/\r?\n/)).filter((c) => c.title === f.title);
+    if (titled.length !== 1) return null;
+    const uri = pathToFileURL(file).href;
+    return debugRunOf(
+      { uri, root: context.root, text, name: spec },
+      titled[0]!,
+      stop,
+      f.browserName ?? null,
+      f.executionId,
+    );
+  };
+
   const failuresResult = (pass: Placer): FailuresResult => {
     const views = contexts.flatMap((context): ContextFailures[] => {
       const client = context.client;
@@ -1307,6 +1333,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!at || at.state === 'gone') return [];
         const spec = specOf(context, f);
         const failingUri = pathToFileURL(at.file).href;
+        const debug = failureDebugRun(context, spec, f, { uri: failingUri, line: at.line - 1 });
         return [
           {
             uri: failingUri,
@@ -1330,22 +1357,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
-            // Debug this failure: the dashboard's Debug in my editor run, stopping once at the line it failed through.
-            ...(spec
-              ? {
-                  debug: {
-                    uri: pathToFileURL(path.join(context.root, spec)).href,
-                    root: context.root,
-                    testIds: [],
-                    debug: {
-                      stop: { uri: failingUri, line: at.line - 1 },
-                      title: f.title,
-                      project: f.browserName ?? null,
-                      execution: f.executionId,
-                    },
-                  },
-                }
-              : {}),
+            ...(debug ? { debug } : {}),
           },
         ];
       });
@@ -3373,10 +3385,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             params.uri,
             relative!,
             i,
-            { id: found.id, title: found.title },
+            found.id,
             open,
-            failed && failure ? { ...failed, line: failure.line } : null,
+            failed && failure ? failed : null,
             lab,
+            failed && failure
+              ? debugRunOf(
+                  { uri: params.uri, text: lines.join('\n'), name: relative! },
+                  call,
+                  { uri: params.uri, line: failure.line },
+                  failed.browserName ?? null,
+                  failed.executionId,
+                )
+              : null,
           ),
         });
         out.push(...lab);

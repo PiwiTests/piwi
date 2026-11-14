@@ -1394,6 +1394,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
+    /** **Debug this failure** is offered on a failure the service built a debug run for, and only there. */
+    fun testDebugThisFailureAppliesToAFailureWithADebugRun() {
+        val failure = WorkspaceFailure(uri = "file:///w/tests/a.spec.ts", line = 3, title = "pays", executionId = 9)
+        val debug = RunTestsArgs("file:///w/tests/a.spec.ts", emptyList())
+        val action = ActionManager.getInstance().getAction("Piwi.Failure.Debug") as DebugFailureAction
+        assertTrue(action.applies(project, failure.copy(debug = debug)))
+        assertFalse(action.applies(project, failure))
+        assertNotNull(action.templatePresentation.icon)
+    }
+
     /**
      * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
      * actions, then its evidence and its context for an agent, a separator between groups; either click opens them.

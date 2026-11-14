@@ -1382,6 +1382,7 @@ such action.
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
 | A test's actions | – | – | `$(list-selection)` | the result icon itself (its click) |
+| Debug a test or a failure | – | – | `$(debug-alt)` | `AllIcons.Actions.StartDebugger` |
 | Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |

@@ -270,8 +270,8 @@ reference.
 **Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
 (`root`). **Debug this failure** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
-service built for it (`WorkspaceFailure.debug`) once its spec is saved; so does **Debug with Piwi** among a test's
-actions (`TestAction.kind` `debug`).
+service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
+debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`).
 
 **The rest of the view.**
 

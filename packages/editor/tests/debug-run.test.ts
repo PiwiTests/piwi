@@ -12,7 +12,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { checkedDebugRun, debugArgs, debugTest } from '../src/debug-run';
+import { testCalls } from '../src/analysis';
+import { checkedDebugRun, debugArgs, debugRunOf, debugTest } from '../src/debug-run';
 import type { LocatorAtCaretResult, RunCommand } from '../src/protocol';
 import { FakeWorker, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
@@ -48,6 +49,66 @@ const PAGE_OBJECT = [
 ].join('\n');
 
 const SUGGESTED = "getByTestId('add-to-cart')";
+
+describe('the debug run the editor builds itself', () => {
+  const uri = 'file:///w/tests/auth.spec.ts';
+  const text = [
+    "test('logs in', async () => {});", // 0
+    "test.describe('admin', () => {", // 1
+    "  test('logs in', async () => {", // 2
+    '    await page.click();', // 3
+    '  });', // 4
+    '});', // 5
+    "test('parses [1,2]', async () => {", // 6
+    '  await page.click();', // 7
+    '});', // 8
+  ].join('\n');
+  const calls = testCalls(text.split('\n'));
+  const spec = { uri, root: '/w', text, name: 'tests/auth.spec.ts' };
+
+  test('names a test inside a describe block by the block’s title and its own, so it runs that test alone', () => {
+    const nested = calls.find((c) => c.line === 2)!;
+    expect(debugRunOf(spec, nested, { uri, line: 3 }, 'chromium', 900)).toEqual({
+      uri,
+      root: '/w',
+      testIds: [],
+      debug: { stop: { uri, line: 3 }, title: 'admin › logs in', project: 'chromium', execution: 900 },
+    });
+  });
+
+  test('builds none the service would refuse, nor one stopping on the test’s own line', () => {
+    // A title Piwi does not take as plain text.
+    expect(
+      debugRunOf(
+        spec,
+        calls.find((c) => c.line === 6)!,
+        { uri, line: 7 },
+        null,
+        900,
+      ),
+    ).toBeNull();
+    // The top-level test of the same title as the nested one: the full title names the top-level one alone.
+    expect(
+      debugRunOf(
+        spec,
+        calls.find((c) => c.line === 0)!,
+        { uri, line: 0 },
+        null,
+        900,
+      ),
+    ).toBeNull();
+    // A stop in another file is that file's line, whatever the spec's.
+    expect(
+      debugRunOf(
+        spec,
+        calls.find((c) => c.line === 0)!,
+        { uri: 'file:///w/pages/a.ts', line: 0 },
+        null,
+        900,
+      ),
+    ).toMatchObject({ debug: { title: 'logs in' } });
+  });
+});
 
 describe('the debug run’s pure half', () => {
   test('finds the test by its describe blocks’ titles and its own, else by its own alone when it is the only one', () => {

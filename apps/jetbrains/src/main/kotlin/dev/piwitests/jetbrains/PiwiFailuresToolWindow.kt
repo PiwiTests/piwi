@@ -561,7 +561,8 @@ class DebugFailureAction : FailureNodeAction(AllIcons.Actions.StartDebugger) {
     override fun perform(project: Project, failure: WorkspaceFailure) {
         val debug = failure.debug ?: return
         FileDocumentManager.getInstance().saveAllDocuments()
-        PiwiCommands.runTests(project, debug)
+        // Quietly: the service says itself why it refuses a debug run.
+        PiwiCommands.runTests(project, debug, quiet = true)
     }
 }
 
