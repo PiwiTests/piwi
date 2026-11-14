@@ -212,7 +212,7 @@ const TEST_LOGS_DISABLED =
 /** The shared secret a probe run signs the `X-Piwi-Probe` header with. */
 const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
 
-/** The declared-surface route path the plugin serves outside production. */
+/** The declared-surface route path the plugin serves while capture is on (`NODE_ENV` `development` or `test`). */
 const MANIFEST_PATH = '/__piwi/manifest';
 
 /** The runtime facts of the server process, served beside the manifest. */
@@ -378,8 +378,10 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     // there — reach the request store through the event context instead.
     event.context._piwiStore = store;
 
-    // Verify a signed probe header, honored only outside production (under the
-    // same guard as log capture) and only when a shared secret is configured.
+    // Verify a signed probe header, honored only while capture is on (the same
+    // guard as log capture: NODE_ENV `development` or `test`, unless
+    // PIWI_TEST_LOGS_DISABLED says otherwise) and only when a shared secret is
+    // configured.
     // The spec is recorded on the request scope, and a fault is applied only when
     // server probes are turned on for the project and this is the Nth match.
     const probe = verifyProbeHeader(event.node.req.headers['x-piwi-probe'], PROBE_SECRET, Date.now(), undefined, probeNonces);
