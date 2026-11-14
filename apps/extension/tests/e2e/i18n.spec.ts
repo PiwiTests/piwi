@@ -293,11 +293,16 @@ test.describe('in a German browser', () => {
     for (const width of [1321, 1320]) {
       await panel.setViewportSize({ width, height: 300 });
       await expect(pick).toBeVisible();
-      const fits = await panel.evaluate(() => {
+      const { fits, labelShown } = await panel.evaluate(() => {
         const bar = document.querySelector<HTMLElement>('.toolbar')!;
-        return bar.scrollWidth <= bar.clientWidth && bar.offsetHeight < 40;
+        const label = document.querySelector<HTMLElement>('#pick > .piwi-label')!;
+        return {
+          fits: bar.scrollWidth <= bar.clientWidth && bar.offsetHeight < 40,
+          labelShown: label.getBoundingClientRect().width > 1,
+        };
       });
       expect(fits, `${width} pixels wide`).toBe(true);
+      expect(labelShown, `${width} pixels wide: labels shown`).toBe(width > 1320);
     }
   });
 

@@ -828,7 +828,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
         needs: ['extension', 'editor'],
-        where: 'Browser extension → Settings → Send to editor',
+        where: 'Browser extension → Settings → Editor',
         doc: 'features/editor-pairing',
         part: 'Set up',
       },
