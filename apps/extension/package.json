@@ -26,10 +26,10 @@
     "@piwitests/run-model": "*"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
-    "@types/chrome": "^0.3.6",
+    "@playwright/test": "^1.65.0",
+    "@types/chrome": "^0.3.7",
     "archiver": "^8.0.0",
     "sharp": "^0.35.5",
-    "vite": "^8.0.16"
+    "vite": "^8.3.8"
   }
 }
