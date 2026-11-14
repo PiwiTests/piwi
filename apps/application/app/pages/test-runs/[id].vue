@@ -32,6 +32,7 @@ import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
 import { summarizeRunCases } from '#shared/utils/test-counts';
+import { RUN_TABS, type RunTabValue } from '#shared/app-places';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
@@ -1342,43 +1343,34 @@ const timelineLanes = computed(() => timelineLaneCount(timelineCases.value));
 /** The run's final attempts with a video: the Video tab's count, and it stays off when there are none. */
 const videoCount = computed(() => testRun.value?.videoCount ?? 0);
 
-const tabItems = computed(() => [
-  {
-    label: `Tests (${dedupedDisplayCases.value.length})`,
-    icon: 'i-lucide-beaker',
-    value: 'test-cases',
-    slot: 'test-cases',
-  },
-  {
-    label: 'Changes',
-    icon: 'i-lucide-git-compare-arrows',
-    value: 'changes',
-    slot: 'changes',
-    disabled: isLive.value,
-    disabledReason: isLive.value ? 'available once the run finishes' : undefined,
-  },
-  {
-    label: `Timeline${timelineLanes.value > 0 ? ` (${timelineLanes.value})` : ''}`,
-    icon: 'i-lucide-timeline',
-    value: 'workers',
-    slot: 'workers',
-  },
-  {
-    label: !isLive.value && videoCount.value > 0 ? `Video (${videoCount.value})` : 'Video',
-    icon: 'i-lucide-video',
-    value: 'video',
-    slot: 'video',
-    disabled: isLive.value || videoCount.value === 0,
-    disabledReason: isLive.value
-      ? 'available once the run finishes'
-      : videoCount.value === 0
-        ? 'no videos in this run'
-        : undefined,
-  },
-  ...(testRun.value?.hasResources
-    ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
-    : []),
-]);
+/** The count a tab's label carries, for the tabs that show one. */
+const tabCounts = computed<Partial<Record<RunTabValue, number>>>(() => ({
+  'test-cases': dedupedDisplayCases.value.length,
+  workers: timelineLanes.value > 0 ? timelineLanes.value : undefined,
+  video: !isLive.value && videoCount.value > 0 ? videoCount.value : undefined,
+}));
+
+/** Why a tab cannot open now: Changes and Video wait for the run to finish, and Video needs a video. */
+const tabDisabledReasons = computed<Partial<Record<RunTabValue, string>>>(() => {
+  const live = isLive.value ? 'available once the run finishes' : undefined;
+  return { changes: live, video: live ?? (videoCount.value === 0 ? 'no videos in this run' : undefined) };
+});
+
+// The Resources tab shows for a run that reported its resources.
+const tabItems = computed(() =>
+  RUN_TABS.filter((tab) => tab.value !== 'resources' || testRun.value?.hasResources).map((tab) => {
+    const count = tabCounts.value[tab.value];
+    const disabledReason = tabDisabledReasons.value[tab.value];
+    return {
+      label: count === undefined ? tab.label : `${tab.label} (${count})`,
+      icon: tab.icon,
+      value: tab.value,
+      slot: tab.value,
+      disabled: disabledReason !== undefined,
+      disabledReason,
+    };
+  }),
+);
 
 const tabPanelClass: Record<string, string> = {
   'test-cases': 'overflow-hidden flex flex-col',
@@ -1422,7 +1414,7 @@ if (typeof route.query.tab === 'string' && LEGACY_TAB_REDIRECTS[route.query.tab]
 // Deep-link the active tab via ?tab= so run views can be shared and cross-page
 // links land on the right tab. The Changes tab is disabled while a run is live,
 // so validate against the currently *enabled* tabs.
-const runTabValues = computed(() => tabItems.value.filter((t) => !t.disabled).map((t) => t.value));
+const runTabValues = computed<string[]>(() => tabItems.value.filter((t) => !t.disabled).map((t) => t.value));
 if (typeof route.query.tab === 'string' && runTabValues.value.includes(route.query.tab)) {
   activeTab.value = route.query.tab;
 }

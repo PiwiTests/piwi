@@ -1,6 +1,9 @@
 import { capabilityHidden, type CapabilityId, type CapabilityState, type ProjectDecision } from '#shared/capabilities';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
 
+/** The `useAsyncData` key that holds one project's capability states. */
+const projectCapabilitiesKey = (projectId: number) => `capabilities-project-${projectId}`;
+
 /**
  * The resolved state of every optional capability for one project: the
  * project's evidence and decision over the instance's.
@@ -27,7 +30,7 @@ export async function useProjectCapabilities(projectId: number) {
 
   let shown: Ref<CapabilityStateItem[]> | null = null;
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
-    `capabilities-project-${projectId}`,
+    projectCapabilitiesKey(projectId),
     () =>
       requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
         .then((r) => r.items)
@@ -58,4 +61,33 @@ export async function useProjectCapabilities(projectId: number) {
   const canDecide = computed(() => can('project:manage', projectId));
 
   return { capabilities: items, state, isHidden, canDecide, decide, decideMany };
+}
+
+/**
+ * What a project hides, from the states a page of that project has read, for
+ * a caller that outlives one project such as the layout. It makes no request:
+ * `isHidden(id)` is null while no states are held for the project (a page that
+ * never calls `useProjectCapabilities`, a first read still running).
+ */
+export function useLoadedProjectCapabilities(projectId: () => number | null) {
+  const nuxtApp = useNuxtApp();
+  const isDesktop = useIsDesktop();
+
+  // What `useNuxtData` reads for one key, for a key that follows the route.
+  const stateMap = computed(() => {
+    const id = projectId();
+    if (id === null) return null;
+    const key = projectCapabilitiesKey(id);
+    const items = (nuxtApp._asyncData[key]?.data.value ?? nuxtApp.payload.data[key]) as
+      | CapabilityStateItem[]
+      | undefined;
+    return items?.length ? new Map(items.map((item) => [item.id, item.state])) : null;
+  });
+
+  const isHidden = (id: CapabilityId): boolean | null => {
+    const states = stateMap.value;
+    return states ? capabilityHidden(id, states.get(id) ?? 'undecided', isDesktop) : null;
+  };
+
+  return { isHidden };
 }
