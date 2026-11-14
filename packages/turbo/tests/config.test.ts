@@ -120,6 +120,14 @@ describe('presets', () => {
     expect(result.use).not.toHaveProperty('failureScreenshots');
   });
 
+  test('keeps the preset where an option is left undefined', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      { use: { trace: 'on' } },
+      { preset: 'experimental', trace: undefined, instantAnimations: undefined, experimental: { failFast: undefined } },
+    );
+    expect(result.use).toMatchObject({ trace: 'retain-on-failure', instantAnimations: true, fastScreenshots: true });
+  });
+
   test('refuses an unknown preset', () => {
     expect(() => withOptimizations({}, { preset: 'turbo' as 'safe' })).toThrow(/unknown preset "turbo"/);
   });

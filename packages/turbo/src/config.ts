@@ -101,6 +101,10 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
 
 const EXPERIMENTAL_RETRY_INTERVALS = [10, 20, 40, 50];
 
+function defined<T extends object>(options: T): Partial<T> {
+  return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 /** The options a preset stands for, given the config it applies to. */
 export function presetOptions(preset: Preset, config: AnyConfig): Optimizations {
   const retries = typeof config.retries === 'number' && config.retries > 0;
@@ -122,10 +126,11 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
 /** Returns `config` with the given optimizations applied. Every one is off unless named, or part of the preset. */
 export function withOptimizations<T extends AnyConfig>(config: T, given: Optimizations = {}): T {
   const preset = given.preset ? presetOptions(given.preset, config) : {};
+  // An option left undefined keeps the preset's value: only the options given a value win over it.
   const options: Optimizations = {
     ...preset,
-    ...given,
-    experimental: { ...preset.experimental, ...given.experimental },
+    ...defined(given),
+    experimental: { ...preset.experimental, ...defined(given.experimental ?? {}) },
   };
   const result: AnyConfig = { ...config, use: { ...config.use } };
   const use = result.use as Record<string, unknown> & { contextOptions?: Record<string, unknown> };
