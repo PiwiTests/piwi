@@ -39,9 +39,9 @@ Shared by the two editor scripts:
   with a page object whose line 15 holds a brittle locator (`locator('.btn-primary').nth(1)`), two tests failing on
   the latest CI run, a local run since that fixed a third, a flaky catalog test, a service the tests reach, and two
   Nitro server routes, one the checkout tests request and one none does (the `uncovered` scene changes it). It is
-  a git repository with one commit, so the branch and commit the service reports exist. It carries type stubs for
-  `@playwright/test` and `@piwitests/reporter` under `node_modules/` and a `tsconfig.json`, so neither editor's
-  TypeScript service reports errors of its own.
+  a git repository with one commit, so the branch and commit the service reports exist. It carries this repository's
+  Playwright and type stubs for `@piwitests/reporter` under `node_modules/`, and a `tsconfig.json`, so neither
+  editor's TypeScript service reports errors of its own and a JetBrains IDE draws its run icon on each test.
 - **The stub instance**, served by the same module: the routes the editor service reads (the project menu, the locator
   and code indexes, the test cases, the locator alternatives, the branch failures, the test functions, the healing of
   the failed cases, the run, the links, the screenshots) with answers consistent with the fixture.

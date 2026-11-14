@@ -61,7 +61,9 @@ Each test's actions are one list in both editors: **Run with Piwi**, **Debug wit
 a failure's trace and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab
 commands. In VS Code, **Piwi:
 Show the test's actions…** opens them from the Testing view's gutter and its menus, the line number's menu with the
-view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon.
+view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon. The IDE's own run
+icon offers **Run with Piwi** and **Verify ×3 with Piwi** too; turning off **Piwi test results** under **Gutter Icons**
+hides the result icon and its list.
 
 <figure>
   <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">
@@ -114,15 +116,6 @@ says how many passed, whatever the setting: `Piwi: run #124 · Passed 3 of 3`, o
 failures** and **Open in dashboard**, counted from the results the run streams (`Failed at least 1 of 3` when some
 were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times). Like a fix plan's verification and a
 Flake Lab line, it is listed, paused and stopped as any run.
-
-## A test that waits for you
-
-A test held at its failure, or stopped at `page.pause()`, while the editor is in the background, calls you once: a
-notification with **Resume** and **Go to the stopped line** in VS Code, the system's attention request (a bouncing or
-flashing icon) in a JetBrains IDE, which also comes to the front while you are in another application and the
-debugger's **Focus application on breakpoint** is on, as it is by default. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does, nor
-one an agent drives or a desktop app's job, which calls from its own window.
-[A paused run](./editor-run-control) has the controls.
 
 ## Related
 

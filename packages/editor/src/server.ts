@@ -192,7 +192,7 @@ import {
   siblingSpecs,
   type LauncherFactory,
 } from './recorder/sessions.js';
-import { expectModuleOf, importInsertion } from './recorder/imports.js';
+import { expectModuleOf, importInsertion, testImportOf } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
@@ -438,6 +438,8 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
+/** The modules other test runners give `test` from. */
+const OTHER_TEST_MODULES = new Set(['vitest', '@jest/globals', 'node:test', 'bun:test']);
 /** A JavaScript or TypeScript file, where Record here writes. */
 const SCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 /** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
@@ -3602,7 +3604,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
-    const lines = (readText(file) ?? '').split(/\r?\n/);
+    const text = readText(file) ?? '';
+    // A spec whose `test` another runner gives (a Vitest or Jest file beside the suite) is none of Playwright's.
+    if (OTHER_TEST_MODULES.has(testImportOf(text) ?? '')) return none;
+    const lines = text.split(/\r?\n/);
     const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
