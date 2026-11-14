@@ -16,6 +16,7 @@ import {
   type PlaceTab,
 } from '#shared/app-places';
 import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
+import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { piwiActionTitle } from '../../../../packages/editor/src/analysis';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
@@ -224,6 +225,64 @@ describe('counts in prose', () => {
       count(),
       `COUNTS cannot read ${list}: it counts ${count()}, so the declaration is no longer written as the row's reader expects; read it another way`,
     ).toBeGreaterThan(1);
+  });
+
+  // Piwi's jobs are the numbered list under the jobs' heading of What Piwi does. A count of them is a number after
+  // "its", "the", "those", "of" or "serves" and before "jobs" ("serves five jobs:", "the five jobs", "those five
+  // jobs"), so a count of CI jobs ("splits a suite across three jobs") is not one. It is read on the docs pages, the
+  // repository files that name the jobs, the All features intro and describe_piwi's topics.
+  const JOBS_COUNT = new RegExp(
+    `\\b(?:its|the|those|of|serves)\\s+\\**(\\d+|${NUMBER_WORDS.join('|')})\\s+jobs\\b`,
+    'gi',
+  );
+  const jobCounts = (text: string) =>
+    [...text.matchAll(JOBS_COUNT)].map((m) => m[0].toLowerCase().replace(/[\s*]+/g, ' '));
+  const JOB_SOURCES = [
+    ...[...handWrittenPages, 'README.md', 'ROADMAP.md', 'DOCKER_HUB.md'].map((page) => ({
+      page,
+      text: () => proseOf(page),
+    })),
+    ...['apps/docs/scripts/generate-features.mjs', 'apps/application/shared/piwi-ecosystem.ts'].map((page) => ({
+      page,
+      text: () => read(page),
+    })),
+  ];
+  const jobsListed = () => {
+    const page = read('apps/docs/guide/what-piwi-does.md');
+    const anchor = `{#${QUOTED_DOCS_SECTIONS.jobs.split('#')[1]}}`;
+    const start = page.indexOf(anchor);
+    expect(
+      start,
+      `What Piwi does declares no ${anchor} on the jobs' heading, which QUOTED_DOCS_SECTIONS.jobs names`,
+    ).not.toBe(-1);
+    return [
+      ...page
+        .slice(start)
+        .split('\n## ')[0]!
+        .matchAll(/^\d+\. \*\*/gm),
+    ].length;
+  };
+
+  test("a count of Piwi's jobs is read where the jobs are named, and not where CI jobs are", () => {
+    expect(
+      jobCounts(
+        'It serves five jobs: one. Its five jobs, the five jobs, in service of **five jobs**, for those five jobs.',
+      ),
+    ).toEqual(['serves five jobs', 'its five jobs', 'the five jobs', 'of five jobs', 'those five jobs']);
+    expect(jobCounts('Sharding splits a suite across three jobs, and two matrix jobs report to one run.')).toEqual([]);
+  });
+
+  test('a count of the jobs is the length of their list on What Piwi does', () => {
+    const listed = jobsListed();
+    expect(listed, 'the jobs are no longer a numbered list under their heading: read them another way').toBeGreaterThan(
+      1,
+    );
+    const wrong = JOB_SOURCES.flatMap(({ page, text }) =>
+      jobCounts(text())
+        .filter((phrase) => numberOf(phrase.split(' ').slice(1).join(' ')) !== listed)
+        .map((phrase) => `${page}: "${phrase}"`),
+    );
+    expect(wrong, `What Piwi does lists ${listed} jobs: correct the number`).toEqual([]);
   });
 });
 

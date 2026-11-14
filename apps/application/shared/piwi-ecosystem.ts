@@ -432,7 +432,9 @@ export const FEEDBACK_CHANNELS = {
 
 /**
  * The docs sections the tool quotes verbatim (as plain-text list items) rather
- * than restating: the four jobs, the two rules and the stated limits.
+ * than restating: the jobs, the two rules and the stated limits. The jobs'
+ * anchor is the one their heading declares (`{#the-four-jobs}`), an address
+ * agents store: keep it.
  */
 export const QUOTED_DOCS_SECTIONS = {
   jobs: 'guide/what-piwi-does#the-four-jobs',
@@ -442,7 +444,7 @@ export const QUOTED_DOCS_SECTIONS = {
 
 /** The topics the MCP `describe_piwi` tool answers, with what each returns. */
 export const DESCRIBE_PIWI_TOPICS = {
-  overview: 'What Piwi is and is not (its four jobs, two rules and limits), its pieces, and this instance.',
+  overview: 'What Piwi is and is not (its five jobs, two rules and limits), its pieces, and this instance.',
   ecosystem: 'Every piece — what it is, how to get it, when you need it.',
   choices: 'The setup decisions, their options and defaults (and, for administrators, what this instance chose).',
   features:
