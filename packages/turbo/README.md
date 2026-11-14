@@ -1,9 +1,9 @@
-# playwright-turbo
+# @piwitests/turbo
 
 Make a Playwright suite faster without forking Playwright: you keep `@playwright/test`, its browsers and its upgrades,
 and every test still gets its own fresh browser context.
 
-playwright-turbo has two layers:
+@piwitests/turbo has two layers:
 
 - **Public levers**, applied to your config: sign in once and reuse the saved state, block third-party requests,
   keep traces only for failures, emulate reduced motion, Node's compile cache. Supported Playwright features, safe
@@ -18,7 +18,7 @@ yours.
 ## Install
 
 ```sh
-npm install --save-dev playwright-turbo
+npm install --save-dev @piwitests/turbo
 ```
 
 ## Public levers
@@ -26,7 +26,7 @@ npm install --save-dev playwright-turbo
 ```ts
 // playwright.config.ts
 import { defineConfig, devices } from '@playwright/test';
-import { withOptimizations } from 'playwright-turbo';
+import { withOptimizations } from '@piwitests/turbo';
 
 export default withOptimizations(
   defineConfig({
@@ -44,10 +44,10 @@ export default withOptimizations(
 );
 ```
 
-Then import `test` from `playwright-turbo/test` in your tests (it is `@playwright/test`'s `test` with the fixtures below):
+Then import `test` from `@piwitests/turbo/test` in your tests (it is `@playwright/test`'s `test` with the fixtures below):
 
 ```ts
-import { test, expect } from 'playwright-turbo/test';
+import { test, expect } from '@piwitests/turbo/test';
 ```
 
 | Option          | What it does                                                                                                                                                                                                        | Trade-off                                                                                                                       |
@@ -56,7 +56,7 @@ import { test, expect } from 'playwright-turbo/test';
 | `blockRequests` | Aborts requests matching a glob, a regular expression or a predicate, in every context of every test.                                                                                                              | Any route turns on request interception for the whole context. A script the app depends on must not be blocked.                 |
 | `trace`         | Sets the trace mode, e.g. `retain-on-failure` or `on-first-retry`.                                                                                                                                                  | `on-first-retry` records nothing without retries.                                                                               |
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`.                                                                                                                                                                          | Changes the app's behavior when it honors the preference: do not use it for tests of animations.                                |
-| `compileCache`  | Turns on Node's compile cache for the runner and the workers (`true` caches in `node_modules/.cache/playwright-turbo-compile`). Skipped when `NODE_V8_COVERAGE` is set.                                                    | Pays off on repeated local runs; in CI only if the cache directory is restored.                                                 |
+| `compileCache`  | Turns on Node's compile cache for the runner and the workers (`true` caches in `node_modules/.cache/piwi-turbo-compile`). Skipped when `NODE_V8_COVERAGE` is set.                                                    | Pays off on repeated local runs; in CI only if the cache directory is restored.                                                 |
 
 Each option is off unless named, and a project's own settings win over them (`use.storageState` set on a project
 stays).
@@ -83,7 +83,7 @@ or for one file: `test.use({ fastScreenshots: true })`.
   checks every 50 ms. Each check costs a round trip to the page, so the gain shows only where UI settles between stock
   checks, and the extra checks cost CPU.
 
-How they work: Playwright's server runs inside each test worker for a browser the worker launches. playwright-turbo wraps
+How they work: Playwright's server runs inside each test worker for a browser the worker launches. @piwitests/turbo wraps
 the server `Page.prototype.reportAsNew`, and from the first page it reaches the frame class
 (`retryWithProgressAndBackoff`) and Chromium's CDP session (`send`) and wraps those. A worker runs one test at a time,
 so a test that enables a hook gets it on every page it opens, and no other test does.
@@ -95,11 +95,11 @@ They refuse to run, with an error that names the reason, when:
 - the browser runs elsewhere (`connectOptions`, a remote endpoint), or `fastScreenshots` meets a browser other than
   Chromium.
 
-Upgrading Playwright: run the compatibility suite and the benchmark with `PLAYWRIGHT_TURBO_ALLOW_UNTESTED=1`, then add the
+Upgrading Playwright: run the compatibility suite and the benchmark with `PIWI_TURBO_ALLOW_UNTESTED=1`, then add the
 version to `TESTED_VERSIONS`.
 
 ```sh
-npm run test:e2e
+npm run turbo:test:e2e
 ```
 
 ## The benchmark
@@ -108,24 +108,25 @@ npm run test:e2e
 each against a baseline round by round with an interval, along with CPU (every process, Chromium included), peak
 memory (PSS of the process tree), artifact size, failures and where the test time went. It ships a realistic
 workload: an orders console with a slow API, third-party scripts, animations and a large table, tested by a 43-test
-suite that uses playwright-turbo for every lever.
+suite that uses @piwitests/turbo for every lever.
 
 ```sh
-npm run bench:profile   # where the workload's test time goes
-npm run bench           # every variant in bench/workload/bench.config.mjs
+npm run turbo:bench:profile # where the workload's test time goes
+npm run turbo:bench         # every variant in bench/workload/bench.config.mjs
 ```
 
-See [`bench/README.md`](bench/README.md) to run it on your own suite.
+See [`bench/README.md`](https://github.com/PiwiTests/piwi/blob/main/packages/turbo/bench/README.md) to run it on your
+own suite. The benchmark lives in the repository and is not part of the npm package.
 
 ## Credits
 
 The experimental hooks follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a fork of
 Playwright that makes them its defaults: faster PNG encoding with the same pixels, and less waiting between the checks
-of actions and assertions. playwright-turbo applies a subset of them to stock Playwright at runtime instead of forking
+of actions and assertions. @piwitests/turbo applies a subset of them to stock Playwright at runtime instead of forking
 it. It contains no Flashwright or Playwright code; both are Apache-2.0.
 
-playwright-turbo is an independent project, not affiliated with or endorsed by Microsoft or the Flashwright project.
-Playwright is a trademark of Microsoft Corporation.
+@piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by
+Microsoft or the Flashwright project. Playwright is a trademark of Microsoft Corporation.
 
 ## License
 

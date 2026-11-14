@@ -342,6 +342,7 @@ jobs:
           npm run editor:format:check -w packages/editor
           npm run run-ui:format:check -w packages/run-ui
           npm run run-model:format:check -w packages/run-model
+          npm run turbo:format:check -w packages/turbo
           npm run runner:format:check -w apps/runner
           npm run reporter:format:check -w packages/reporter
           npm run showcase:format:check --prefix apps/showcase
@@ -355,6 +356,7 @@ jobs:
           npm run editor:lint -w packages/editor
           npm run run-ui:lint -w packages/run-ui
           npm run run-model:lint -w packages/run-model
+          npm run turbo:lint -w packages/turbo
           npm run runner:lint -w apps/runner
           npm run vscode:lint -w apps/vscode
           npm run extension:lint -w apps/extension
@@ -390,6 +392,7 @@ jobs:
           npm run editor:typecheck -w packages/editor
           npm run run-ui:typecheck -w packages/run-ui
           npm run run-model:typecheck -w packages/run-model
+          npm run turbo:typecheck -w packages/turbo
           npm run runner:typecheck -w apps/runner
           npm run vscode:typecheck -w apps/vscode
           npm run extension:typecheck -w apps/extension
@@ -562,6 +565,13 @@ jobs:
       - name: Test run-model
         working-directory: packages/run-model
         run: npm run run-model:test
+
+      # The unit tests, and the experimental hooks against the installed Playwright (their compatibility suite).
+      - name: Test turbo
+        working-directory: packages/turbo
+        run: |
+          npm run turbo:test
+          npm run turbo:test:e2e
 
       - name: Test picker-dom
         working-directory: packages/picker-dom

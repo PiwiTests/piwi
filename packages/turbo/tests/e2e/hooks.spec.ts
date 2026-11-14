@@ -1,5 +1,5 @@
-import { test, expect } from '../../src/test.mjs';
-import { state } from '../../src/hooks.mjs';
+import { test, expect } from '../../src/test';
+import { state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
 
 const STATIC_PAGE = `
@@ -77,7 +77,9 @@ test.describe('retry intervals', () => {
   test.use({ retryIntervals: [10, 20, 40, 50] });
 
   async function timeToSee(page: Page, delay: number) {
-    await page.setContent(`<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">ready</p>'), ${delay})</script>`);
+    await page.setContent(
+      `<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">ready</p>'), ${delay})</script>`,
+    );
     const started = Date.now();
     await expect(page.locator('#late')).toBeVisible();
     return Date.now() - started;
@@ -97,7 +99,9 @@ test.describe('retry intervals', () => {
 
   test('keep timeouts, failures and navigation working', async ({ page }) => {
     await page.setContent('<p>never changes</p>');
-    const error = await expect(page.locator('#missing')).toBeVisible({ timeout: 300 }).catch((e: Error) => e);
+    const error = await expect(page.locator('#missing'))
+      .toBeVisible({ timeout: 300 })
+      .catch((e: Error) => e);
     expect(String(error)).toContain('toBeVisible');
     await expect(page.locator('p')).toHaveText('never changes');
     await page.route('https://hooks.test/**', (route) =>
@@ -112,10 +116,11 @@ test.describe('retry intervals', () => {
   });
 
   test('wait inside frames', async ({ page }) => {
-    await page.setContent(`<iframe srcdoc="<script>setTimeout(()=>document.body.innerHTML='<b>inner</b>',300)</script>"></iframe>`);
+    await page.setContent(
+      `<iframe srcdoc="<script>setTimeout(()=>document.body.innerHTML='<b>inner</b>',300)</script>"></iframe>`,
+    );
     await expect(page.frameLocator('iframe').locator('b')).toHaveText('inner');
   });
-
 });
 
 test.describe('without options', () => {
@@ -140,8 +145,16 @@ test.describe('blockRequests', () => {
     await page.route('**/allowed/**', (route) => route.fulfill({ body: 'ok' }));
     await page.goto('data:text/html,<p>blocking</p>');
     const results = await page.evaluate(async () => {
-      const attempt = (url: string) => fetch(url).then(() => 'loaded', () => 'blocked');
-      return Promise.all([attempt('https://example.test/blocked/a'), attempt('https://example.test/tracker.js'), attempt('https://example.test/allowed/b')]);
+      const attempt = (url: string) =>
+        fetch(url).then(
+          () => 'loaded',
+          () => 'blocked',
+        );
+      return Promise.all([
+        attempt('https://example.test/blocked/a'),
+        attempt('https://example.test/tracker.js'),
+        attempt('https://example.test/allowed/b'),
+      ]);
     });
     expect(results).toEqual(['blocked', 'blocked', 'loaded']);
   });

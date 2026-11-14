@@ -1,39 +1,68 @@
 {
-  "name": "playwright-turbo",
-  "version": "0.1.0",
-  "description": "Make a Playwright suite faster without forking Playwright: public levers for your config, and experimental, version-pinned hooks, with the benchmark to judge them",
-  "license": "MIT",
-  "type": "module",
+  "name": "@piwitests/turbo",
+  "version": "0.69.0",
+  "description": "Make a Playwright suite faster without forking Playwright: public levers for your config, experimental version-pinned hooks, and the benchmark to judge them",
+  "homepage": "https://piwitests.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PiwiTests/piwi"
+  },
+  "bugs": {
+    "url": "https://github.com/PiwiTests/piwi/issues"
+  },
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "default": "./src/index.mjs"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./test": {
-      "types": "./src/test.d.ts",
-      "default": "./src/test.mjs"
-    }
-  },
-  "files": [
-    "src"
-  ],
-  "scripts": {
-    "test": "node --test tests/unit.test.mjs bench/tests/*.test.mjs",
-    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
-    "bench": "node bench/cli.mjs run --config bench/workload/bench.config.mjs",
-    "bench:profile": "node bench/cli.mjs profile --config bench/workload/bench.config.mjs"
+      "types": "./dist/test.d.ts",
+      "default": "./dist/test.js"
+    },
+    "./package.json": "./package.json"
   },
   "keywords": [
     "playwright",
     "performance",
+    "speed",
     "e2e",
     "testing",
     "benchmark"
+  ],
+  "author": "piwitests",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "turbo:build": "tsup",
+    "turbo:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "turbo:lint": "oxlint --config oxlint.config.mts .",
+    "turbo:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "turbo:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" \"bench/\"",
+    "turbo:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"bench/\"",
+    "turbo:test": "vitest run",
+    "turbo:test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
+    "turbo:bench": "node bench/cli.mjs run --config bench/workload/bench.config.mjs",
+    "turbo:bench:profile": "node bench/cli.mjs profile --config bench/workload/bench.config.mjs",
+    "test": "npm run turbo:test",
+    "prepublishOnly": "npm run turbo:build"
+  },
+  "files": [
+    "dist/"
   ],
   "engines": {
     "node": ">=22.1.0"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.50.0 <2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "tsup": "^8.5.0"
   }
 }

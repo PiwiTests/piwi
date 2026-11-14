@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       npm:
-        description: npm packages (reporter, server, instrumentation-nitro)
+        description: npm packages (reporter, server, turbo, instrumentation-nitro)
         type: boolean
         default: true
       container:

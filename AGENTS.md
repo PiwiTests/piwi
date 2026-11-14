@@ -18,7 +18,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `apps/runner/`: Piwi Runner, the window and Node host that run a team instance's requests | [`apps/runner/AGENTS.md`](apps/runner/AGENTS.md) |
 | `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
 | `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
-| `packages/suitebench/`: the suite benchmark | [`packages/suitebench/AGENTS.md`](packages/suitebench/AGENTS.md) |
+| `packages/turbo/`: faster Playwright suites | [`packages/turbo/AGENTS.md`](packages/turbo/AGENTS.md) |
 | `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
 | `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/`: the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
@@ -63,9 +63,8 @@ plans/                The maintainer's local planning folder: gitignored, absent
 
 - **A new workspace goes where its kind is**: `apps/*` for a deployable surface, `packages/*` for a package consumed by
   name (published, or imported or bundled by another workspace), `integrations/*` for a framework adapter. Every JS
-  workspace is listed in the root `package.json` `workspaces`. `apps/desktop`, `apps/docs`, `examples/sample-app` and
-  `packages/suitebench` are **intentionally not workspaces** (own toolchains or releases; the example must resolve
-  `@piwitests/*` from npm), and
+  workspace is listed in the root `package.json` `workspaces`. `apps/desktop`, `apps/docs` and `examples/sample-app`
+  are **intentionally not workspaces** (own toolchains; the example must resolve `@piwitests/*` from npm), and
   `apps/showcase` is scripts run on the root's `node_modules`, read by knip from the root.
 - **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**: its
   `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please bumps only
@@ -112,10 +111,10 @@ edit.
 
 ### Licensing (MUST follow)
 
-`packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else
-is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other way: app, server,
-desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new package or
-integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
+`packages/reporter`, `packages/core`, `packages/picker-dom`, `packages/turbo`, `integrations/` and `examples/` are MIT;
+everything else is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other
+way: app, server, desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new
+package or integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
 
 ### Comments
 

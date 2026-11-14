@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rootDir": "src",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"],
+    // tsup's dts build injects `baseUrl: "."`, which TypeScript 6 flags as a deprecated option unless this is set.
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}
