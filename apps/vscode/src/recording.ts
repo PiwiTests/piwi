@@ -15,6 +15,7 @@ import { State, type LanguageClient } from 'vscode-languageclient/node';
 import {
   PAGE_CANDIDATES_REQUEST,
   NEW_TEST_FILE_REQUEST,
+  RECORD_PLACE_REQUEST,
   RECORD_REQUEST,
   RECORD_REQUESTED_NOTIFICATION,
   DECLINE_RECORD_NOTIFICATION,
@@ -31,6 +32,8 @@ import {
   type PiwiCommand,
   type RecordInto,
   type RecordParams,
+  type RecordPlaceParams,
+  type RecordPlaceResult,
   type RecordRequested,
   type RecordResult,
   type RecordingCommandParams,
@@ -133,6 +136,9 @@ async function applyChanges(
   for (const change of changes) edit.replace(document.uri, toRange(change.range), change.text);
   return vscode.workspace.applyEdit(edit);
 }
+
+/** The kind of Record here's code action: a refactor of Piwi's, listed by Ctrl+. and the Refactor… menu. */
+const RECORD_HERE_KIND = vscode.CodeActionKind.Refactor.append('piwi');
 
 export function registerRecording(context: vscode.ExtensionContext, lc: LanguageClient): Recording {
   const sessions = new Map<string, Session>();
@@ -743,7 +749,13 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     }
   };
 
-  const recordHere = async () => {
+  /** Record here at the cursor, or at the line a code action names (`uri`, `line`), the one its title was asked for. */
+  const recordHere = async (uri?: unknown, line?: unknown) => {
+    if (typeof uri === 'string' && typeof line === 'number') {
+      const editor = await vscode.window.showTextDocument(vscode.Uri.parse(uri));
+      await start(editor.document, new vscode.Position(line, 0), null, 'Piwi: Record here');
+      return;
+    }
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document.uri.scheme !== 'file') {
       void vscode.window.showInformationMessage('Piwi: open a test file to record into.');
@@ -817,7 +829,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     blockBackground,
     recordingMark,
     pausedMark,
-    vscode.commands.registerCommand('piwi.record', () => recordHere()),
+    vscode.commands.registerCommand('piwi.record', (uri?: unknown, line?: unknown) => recordHere(uri, line)),
     vscode.commands.registerCommand('piwi.recordFile', (file?: unknown) =>
       recordNewFile(file instanceof vscode.Uri ? file : undefined),
     ),
@@ -848,6 +860,26 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       { scheme: 'file', pattern: DOCUMENT_PATTERN },
       { provideCodeActions: (document, _range, { diagnostics: shown }) => locatorFixes(document, shown) },
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+    // Record here in Ctrl+., where the service says a recording writes (`piwi/recordPlace`), under its title.
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file', pattern: DOCUMENT_PATTERN },
+      {
+        provideCodeActions: async (document, range, { only, triggerKind }, token) => {
+          if (triggerKind !== vscode.CodeActionTriggerKind.Invoke || (only && !RECORD_HERE_KIND.intersects(only))) {
+            return [];
+          }
+          const uri = document.uri.toString();
+          if (runningIn(uri)) return [];
+          const params: RecordPlaceParams = { uri, line: range.start.line };
+          const answer = await lc.sendRequest<RecordPlaceResult>(RECORD_PLACE_REQUEST, params, token).catch(() => null);
+          if (!answer?.title || token.isCancellationRequested) return [];
+          const action = new vscode.CodeAction(answer.title, RECORD_HERE_KIND);
+          action.command = { title: answer.title, command: 'piwi.record', arguments: [uri, params.line] };
+          return [action];
+        },
+      },
+      { providedCodeActionKinds: [RECORD_HERE_KIND] },
     ),
     lc.onNotification(RECORDING_NOTIFICATION, (update: RecordingUpdate) => receive(update)),
     lc.onNotification(RECORD_REQUESTED_NOTIFICATION, (asked: RecordRequested) => void recordFromTest(asked)),

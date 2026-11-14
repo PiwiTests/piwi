@@ -742,6 +742,23 @@ const tests = {
     await waitFor(() => !sessionOf(), 'the end of the shared run');
   },
 
+  async 'Ctrl+. offers Record here where the service says it writes'() {
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts'));
+    await vscode.window.showTextDocument(spec);
+    const titles = async (line) => {
+      const found = await vscode.commands.executeCommand(
+        'vscode.executeCodeActionProvider',
+        spec,
+        new vscode.Range(line, 0, line, 0),
+        'refactor.piwi',
+      );
+      return (found ?? []).map((a) => a.title);
+    };
+    await waitFor(async () => ((await titles(3)).includes('Piwi: record steps here…') ? true : null), 'Record here');
+    assert.deepEqual(await titles(1), ['Piwi: record a test here…']);
+    assert.deepEqual(await titles(0), []);
+  },
+
   async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const run = api.lastRun();

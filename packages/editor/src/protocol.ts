@@ -1716,6 +1716,26 @@ export interface PageCandidatesResult {
 
 export const PAGE_CANDIDATES_REQUEST = 'piwi/pageCandidates';
 
+/** `piwi/recordPlace`: what Record here writes at a line of a file, for the code action that offers it there. */
+export interface RecordPlaceParams {
+  uri: string;
+  /** 0-based. */
+  line: number;
+}
+
+export interface RecordPlaceResult {
+  /**
+   * `test`, a new test, at the top level or between a describe's tests, past the file's imports; `steps`, in the body
+   * of a test, a hook or another function. Null where no code action offers Record here: a file that is not a script
+   * under a Playwright config's folder, a class body between its members, and the lines down to the last import.
+   */
+  place: 'test' | 'steps' | null;
+  /** The code action's title, `Piwi: record a test here…` or `Piwi: record steps here…`; null with `place`. */
+  title: string | null;
+}
+
+export const RECORD_PLACE_REQUEST = 'piwi/recordPlace';
+
 /**
  * What the desktop app is asked to do with a failure or a flaky test from the team instance: reproduce the failure,
  * bisect it, or run the test's Flake Lab experiment.

@@ -4,6 +4,7 @@ import {
   declaredNamesAt,
   pageCandidates,
   placementBefore,
+  recordPlace,
   recordingPlacement,
   runToLine,
 } from '../src/recorder/page-candidates';
@@ -892,5 +893,55 @@ describe('the lines a breakpoint stops at', () => {
     expect(runToLine(spec, 9)).toBe(8);
     expect(runToLine(spec, 1)).toBe(1);
     expect(runToLine(spec, 12)).toBe(12);
+  });
+});
+
+describe('recordPlace', () => {
+  const spec = [
+    "import { test, expect } from '@playwright/test';", // 0
+    "import { CartPage } from './pages/cart.page';", // 1
+    '', // 2
+    "test.describe('cart', () => {", // 3
+    "  test('adds a row', async ({ page }) => {", // 4
+    "    await page.goto('/');", // 5
+    '  });', // 6
+    '', // 7
+    '});', // 8
+    '', // 9
+    'class Helper {', // 10
+    '  ', // 11
+    '  open(page) {', // 12
+    "    return page.goto('/');", // 13
+    '  }', // 14
+    '}', // 15
+  ].join('\n');
+
+  test('writes a new test past the imports, at the top level and between tests', () => {
+    expect(recordPlace(spec, 2)).toBe('test');
+    expect(recordPlace(spec, 7)).toBe('test');
+    expect(recordPlace(spec, 9)).toBe('test');
+  });
+
+  test('writes steps in a test or a function', () => {
+    expect(recordPlace(spec, 5)).toBe('steps');
+    expect(recordPlace(spec, 13)).toBe('steps');
+  });
+
+  test('writes nothing on the imports or in a class body between its members', () => {
+    expect(recordPlace(spec, 0)).toBeNull();
+    expect(recordPlace(spec, 1)).toBeNull();
+    expect(recordPlace(spec, 11)).toBeNull();
+  });
+
+  test('takes a require declaration as an import', () => {
+    const text =
+      "const { test } = require('@playwright/test');\nconst x = require('./x');\n\ntest('a', async () => {});";
+    expect(recordPlace(text, 1)).toBeNull();
+    expect(recordPlace(text, 2)).toBe('test');
+  });
+
+  test('takes an import over several lines as one', () => {
+    expect(recordPlace("import {\n  test,\n} from '@playwright/test';\n\ntest('a', async () => {});", 1)).toBeNull();
+    expect(recordPlace("import {\n  test,\n} from '@playwright/test';\n\ntest('a', async () => {});", 3)).toBe('test');
   });
 });

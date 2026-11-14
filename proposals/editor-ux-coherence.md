@@ -116,8 +116,10 @@ view; and **Debug this failure** on the failure nodes of both editors, from the 
 breakpoints stays open). M7 continued: the failure nodes of both editors gain **Verify the test ×3** and **Go to the
 test**, from what the service finds of the failure's test (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11),
 and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and the clients' recorded-locator ones alike
-(TL7 in part: that a quick fix only edits, Record here in both editors' actions (TL9), and the IDE run icon (M9)
-remain). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+(TL7 in part: that a quick fix only edits and the IDE run icon (M9) remain). Record here is a code action where the
+service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
+body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
+(TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which

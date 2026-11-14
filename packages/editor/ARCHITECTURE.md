@@ -217,8 +217,8 @@ the custom messages of `src/protocol.ts`:
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
-  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`,
-    `piwi/newTestFile`.
+  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/recordPlace`,
+    `piwi/renderSteps`, `piwi/newTestFile`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
@@ -1822,6 +1822,9 @@ It finds:
   fixture named like a page that no page call of the test runs on (`todoPage`) is offered after `page`, as one that
   `may be a page object`;
 - the context there: `test`, `function`, `class` or `file`, which `piwi/record` checks against `into`;
+- what Record here writes at a line (`recordPlace`, `piwi/recordPlace`), for both editors' code action: a new test past
+  the last import outside every test, function and class, steps in a test's or a function's body, and nothing in a class
+  body between its members or on the imports, with the action's title (`Piwi: record a test here…`);
 - the names declared before the caret: a page object already declared is not instantiated again;
 - where the block goes and how it is indented: the caret's line when it is blank, else a new line after it, or after
   the statement whose brackets the caret is in (a multi-line `expect(`). A caret inside a bracket the file never closes

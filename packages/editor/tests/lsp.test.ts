@@ -30,6 +30,7 @@ import type {
   McpServersResult,
   Notice,
   PageCandidatesResult,
+  RecordPlaceResult,
   RecordRequested,
   RecordResult,
   RecordingUpdate,
@@ -4745,6 +4746,24 @@ describe('recording from the editor', () => {
       character: 0,
     })) as PageCandidatesResult;
     expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
+  });
+
+  test('answers what Record here writes at a line, for the code action that offers it there', async () => {
+    const text = [
+      "import { test } from '@playwright/test';",
+      "test('approves', async ({ page }) => {",
+      "  await page.goto('/inbox');",
+      '});',
+      '',
+    ].join('\n');
+    await openHere('tests/place.spec.ts', text);
+    const at = (file: string, line: number) =>
+      recorder.sendRequest('piwi/recordPlace', { uri: uri(file), line }) as Promise<RecordPlaceResult>;
+    expect(await at('tests/place.spec.ts', 2)).toEqual({ place: 'steps', title: 'Piwi: record steps here…' });
+    expect(await at('tests/place.spec.ts', 4)).toEqual({ place: 'test', title: 'Piwi: record a test here…' });
+    // The imports, and a file that is no script, take no code action.
+    expect(await at('tests/place.spec.ts', 0)).toEqual({ place: null, title: null });
+    expect(await at('playwright.config.json', 0)).toEqual({ place: null, title: null });
   });
 
   test('answers where Record a new test file creates its spec, in the projects’ test folder as Playwright reads it', async () => {
