@@ -354,7 +354,7 @@ export interface PiwiDashboardOptions {
    * Enable live streaming of results (falls back to batch if unsupported). An
    * interrupted stream is retried until it catches up. Live events the
    * dashboard refuses, or has not taken two and a half minutes after they first
-   * failed, leave the live view so the later ones flow; when test results are
+   * failed, leave the live stream so the later ones flow; when test results are
    * among the events the dashboard never took, the run is sent again as a batch
    * at its end. Defaults to `true`.
    */
