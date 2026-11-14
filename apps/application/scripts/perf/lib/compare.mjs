@@ -1,11 +1,13 @@
 /**
  * Turns the suite's raw samples into verdicts. A timing regresses when the
- * head's median is slower by more than both a relative and an absolute floor
- * and the Mann–Whitney test says the two sets differ (p < 0.01); a count (SQL
- * statements, bytes, requests) is deterministic, so it regresses as soon as it
- * grows past its floors. Improvements mirror regressions.
+ * head's median is slower by more than both a relative and an absolute floor,
+ * the Mann–Whitney test says the two sets differ (p < 0.01), and the change
+ * holds past both floors in every session on its own, each session having
+ * samples on both sides (a session runs every build on server processes of its
+ * own). A count (SQL statements, bytes, requests) is deterministic, so it
+ * regresses as soon as it grows past its floors. Improvements mirror regressions.
  */
-import { median, mannWhitneyP, mode } from './stats.mjs';
+import { bySession, median, mannWhitneyP, mode } from './stats.mjs';
 
 export const SIGNIFICANCE = 0.01;
 
@@ -29,25 +31,55 @@ export const METRICS = {
 const finite = (values) => (values ?? []).filter(Number.isFinite);
 
 /**
- * Compare one metric's samples. Returns the two central values, the change,
- * and a verdict: `regression`, `improvement`, `unchanged`, or `missing` when a
- * side has no data (a build that cannot report it).
+ * Compare one metric's samples, taken in `sessions` sessions of contiguous
+ * rounds. Returns the two central values, the change, a timing's change in
+ * each session (`bySession`, the ratio, null for a session without samples on
+ * a side), and a verdict: `regression`, `improvement`, `unchanged`, or
+ * `missing` when a side has no data (a build that cannot report it).
  */
-export function compareMetric(key, baseSamples, headSamples) {
+export function compareMetric(key, baseSamples, headSamples, { sessions = 1 } = {}) {
   const def = METRICS[key];
   const a = finite(baseSamples);
   const b = finite(headSamples);
   const central = def.kind === 'timing' ? median : mode;
   const base = a.length ? central(a) : null;
   const head = b.length ? central(b) : null;
-  if (base === null || head === null) return { key, base, head, delta: null, ratio: null, p: null, verdict: 'missing' };
+  if (base === null || head === null)
+    return { key, base, head, delta: null, ratio: null, p: null, bySession: null, verdict: 'missing' };
   const delta = head - base;
   const ratio = base === 0 ? (head === 0 ? 0 : Infinity) : delta / base;
   const p = def.kind === 'timing' ? mannWhitneyP(a, b) : 0;
-  const large = Math.abs(delta) >= def.abs && Math.abs(ratio) >= def.rel;
+  const large = (d, r) => Math.abs(d) >= def.abs && Math.abs(r) >= def.rel;
   const significant = p < SIGNIFICANCE;
-  const verdict = large && significant ? (delta > 0 ? 'regression' : 'improvement') : 'unchanged';
-  return { key, base, head, delta, ratio, p: def.kind === 'timing' ? p : null, verdict };
+  const split = def.kind === 'timing' && sessions > 1 ? sessionChanges(baseSamples, headSamples, sessions) : null;
+  // Every session has samples on both sides and shows the change past both floors, in the same direction.
+  const holds = (split ?? []).every((s) => s && Math.sign(s.delta) === Math.sign(delta) && large(s.delta, s.ratio));
+  const verdict =
+    large(delta, ratio) && significant && holds ? (delta > 0 ? 'regression' : 'improvement') : 'unchanged';
+  return {
+    key,
+    base,
+    head,
+    delta,
+    ratio,
+    p: def.kind === 'timing' ? p : null,
+    bySession: split?.map((s) => s?.ratio ?? null) ?? null,
+    verdict,
+  };
+}
+
+/** The change of the medians in each session, or null for a session without samples on a side. */
+function sessionChanges(baseSamples, headSamples, sessions) {
+  const a = bySession(baseSamples ?? [], sessions);
+  const b = bySession(headSamples ?? [], sessions);
+  return a.map((chunk, s) => {
+    const x = finite(chunk);
+    const y = finite(b[s]);
+    if (!x.length || !y.length) return null;
+    const base = median(x);
+    const delta = median(y) - base;
+    return { delta, ratio: base === 0 ? (delta === 0 ? 0 : Infinity) : delta / base };
+  });
 }
 
 /** A single side's central value, for a report with one target. */
@@ -62,6 +94,8 @@ export function single(key, samples) {
  * row per page and per API call, each metric compared, and the tallies.
  */
 export function compareResults(results, base, head) {
+  const options = { sessions: results.meta?.samples?.sessions ?? 1 };
+  const metric = (key, a, b) => compareMetric(key, a, b, options);
   const pages = results.pages.map((page) => {
     const a = page.targets[base] ?? {};
     const b = page.targets[head] ?? {};
@@ -70,16 +104,16 @@ export function compareResults(results, base, head) {
       label: page.label,
       path: page.path,
       metrics: {
-        ssrMs: compareMetric('ssrMs', a.ssr?.ms, b.ssr?.ms),
-        ssrStatements: compareMetric('ssrStatements', a.ssr?.statements, b.ssr?.statements),
-        ssrBlocks: compareMetric('ssrBlocks', a.ssr?.blocks, b.ssr?.blocks),
-        htmlBytes: compareMetric('htmlBytes', a.ssr?.bytes, b.ssr?.bytes),
-        lcpMs: compareMetric('lcpMs', a.load?.lcpMs, b.load?.lcpMs),
-        loadMs: compareMetric('loadMs', a.load?.ms, b.load?.ms),
-        loadStatements: compareMetric('loadStatements', a.load?.statements, b.load?.statements),
-        apiRequests: compareMetric('apiRequests', a.load?.apiRequests, b.load?.apiRequests),
-        blockingMs: compareMetric('blockingMs', a.load?.blockingMs, b.load?.blockingMs),
-        domNodes: compareMetric('domNodes', a.load?.domNodes, b.load?.domNodes),
+        ssrMs: metric('ssrMs', a.ssr?.ms, b.ssr?.ms),
+        ssrStatements: metric('ssrStatements', a.ssr?.statements, b.ssr?.statements),
+        ssrBlocks: metric('ssrBlocks', a.ssr?.blocks, b.ssr?.blocks),
+        htmlBytes: metric('htmlBytes', a.ssr?.bytes, b.ssr?.bytes),
+        lcpMs: metric('lcpMs', a.load?.lcpMs, b.load?.lcpMs),
+        loadMs: metric('loadMs', a.load?.ms, b.load?.ms),
+        loadStatements: metric('loadStatements', a.load?.statements, b.load?.statements),
+        apiRequests: metric('apiRequests', a.load?.apiRequests, b.load?.apiRequests),
+        blockingMs: metric('blockingMs', a.load?.blockingMs, b.load?.blockingMs),
+        domNodes: metric('domNodes', a.load?.domNodes, b.load?.domNodes),
       },
       sql: { render: [a.ssr?.sql ?? null, b.ssr?.sql ?? null], load: [a.load?.sql ?? null, b.load?.sql ?? null] },
       status: [a.ssr?.status ?? null, b.ssr?.status ?? null],
@@ -91,9 +125,9 @@ export function compareResults(results, base, head) {
     return {
       path: api.path,
       metrics: {
-        apiMs: compareMetric('apiMs', a.ms, b.ms),
-        apiStatements: compareMetric('apiStatements', a.statements, b.statements),
-        apiBytes: compareMetric('apiBytes', a.bytes, b.bytes),
+        apiMs: metric('apiMs', a.ms, b.ms),
+        apiStatements: metric('apiStatements', a.statements, b.statements),
+        apiBytes: metric('apiBytes', a.bytes, b.bytes),
       },
       sql: [a.sql ?? null, b.sql ?? null],
       status: [a.status ?? null, b.status ?? null],
