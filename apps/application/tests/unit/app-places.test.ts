@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   PROJECT_COVERAGE_VIEWS,
   PROJECT_FAILURE_VIEWS,
@@ -10,6 +13,19 @@ import {
 import type { CapabilityId } from '#shared/capabilities';
 import { projectTabHidden } from '../../app/utils/project-tabs';
 import { SETUP_CAPABILITIES } from '../../app/utils/setup-capabilities';
+
+const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app');
+const source = (file: string) => readFileSync(join(APP_ROOT, file), 'utf8');
+
+/** The names a source file imports from `#shared/app-places`. */
+function placesImports(text: string): string[] {
+  const imports = [...text.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*'#shared\/app-places'/g)];
+  return imports.flatMap((match) => match[1]!.split(',').map((name) => name.trim()));
+}
+
+/** Whether a source file builds something from the list: filters it, maps it or loops over it. */
+const buildsFrom = (text: string, list: string) =>
+  new RegExp(`\\b${list}\\s*\\.\\s*(?:filter|map)\\s*\\(|\\bof\\s+${list}\\b`).test(text);
 
 /** The tabs a project shows when it hides `hidden`. */
 function shownTabs(hidden: CapabilityId[]): ProjectTabValue[] {
@@ -46,6 +62,24 @@ describe('the places registry', () => {
     );
     expect(views.failures).toEqual(['Clusters', 'Flaky', 'Quarantine']);
     expect(views.coverage).toEqual(['Gaps', 'Map', 'Code']);
+  });
+});
+
+describe('the readers of the registry', () => {
+  test.each([
+    ['pages/projects/[id]/index.vue', ['PROJECT_TABS', 'PROJECT_FAILURE_VIEWS', 'PROJECT_MENU_PAGES']],
+    ['pages/test-runs/[id].vue', ['RUN_TABS']],
+    ['components/project/ProjectCoverageTab.vue', ['PROJECT_COVERAGE_VIEWS']],
+  ])('%s builds its places from the lists', (file, lists) => {
+    const text = source(file);
+    for (const list of lists) {
+      expect(placesImports(text), list).toContain(list);
+      expect(buildsFrom(text, list), list).toBe(true);
+    }
+  });
+
+  test('the project page hides a tab by the rule the command palette follows', () => {
+    expect(source('pages/projects/[id]/index.vue')).toMatch(/\bprojectTabHidden\s*\(/);
   });
 });
 
