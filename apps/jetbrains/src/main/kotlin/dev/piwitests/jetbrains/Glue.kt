@@ -1291,12 +1291,13 @@ object Glue {
 
     /** The desktop app's project list's first choice: the project linked there to this folder, by name when one is. */
     fun linkedProjectLabel(linked: String?): String =
-        linked?.let { "$it, linked to this folder" } ?: "The one linked to this folder in the desktop app"
+        linked?.let { "$it, linked to this folder" } ?: "The one linked to this folder in the desktop app, none yet"
 
-    /** Whether the desktop app runs, and the project it links to this folder. */
-    fun desktopStateText(url: String?, linked: String?): String = when {
+    /** Whether the desktop app runs, the project it links to this folder, and whether it has a project at all. */
+    fun desktopStateText(url: String?, linked: String?, projects: Int): String = when {
         url == null -> "Not running on this machine: the instance below is read until it runs."
         linked != null -> "Running at $url; this folder is linked there to $linked."
+        projects == 0 -> "Running at $url, with no project yet: import or send a run to it, then link this folder there."
         else -> "Running at $url: no address or key needed."
     }
 
@@ -1325,6 +1326,7 @@ object Glue {
     const val SIGN_IN_WAITING = "Allow the request in your browser, which shows this code. No browser opened? Copy the link."
     const val SIGN_IN_CANCELLED = "Sign-in cancelled."
     const val SIGN_IN_TOO_OLD = "This instance predates the browser sign-in: paste an API key instead."
+    const val SIGN_IN_PENDING = "A sign-in waits in the browser: allow it, or cancel it, then connect."
 
     /** What the browser answered the sign-in: a key, saved on Apply; a denial; or the request expired. */
     fun signInAnswerText(url: String, status: String, hasKey: Boolean): String = when {

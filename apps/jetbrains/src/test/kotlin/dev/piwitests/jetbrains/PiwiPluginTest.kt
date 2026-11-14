@@ -483,8 +483,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * The Connect panel: the settings as saved, the desktop app or an instance chosen with one radio button of two, a key
-     * pasted saved only on Apply, and Apply saving the source, the instance, its project and the desktop app's project.
+     * The Connect panel: the settings as saved, the desktop app or an instance chosen with one radio button of two, and
+     * Apply saving the source, the instance, its project and the desktop app's project.
      */
     fun testTheConnectPanelSavesTheConnectionOnApply() {
         val service = project.getService(PiwiProjectService::class.java)
@@ -493,8 +493,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val panel = PiwiConnectPanel(project, testRootDisposable)
         try {
             assertEquals(local.desktop, panel.desktopRadio.isSelected)
-            assertEquals(!local.desktop, panel.instanceRadio.isSelected)
             assertFalse(panel.isModified())
+            panel.desktopRadio.isSelected = true
+            assertFalse("one of the two", panel.instanceRadio.isSelected)
             panel.instanceRadio.isSelected = true
             assertFalse("one of the two", panel.desktopRadio.isSelected)
             panel.urlField.text = "https://panel.example/"
@@ -504,7 +505,6 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals("https://panel.example" to "Shop", settings.serverUrl to settings.project)
             assertFalse(local.desktop)
             assertFalse(panel.isModified())
-            assertEquals(PiwiProjectService.KeyChange.Keep, panel.key)
             // The desktop app read first, on its project.
             panel.desktopRadio.isSelected = true
             panel.desktopProject.addItem("Mugs")
@@ -520,14 +520,46 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
-    /** Connect is one dialog holding the panel, an address given to it in its field, the instance chosen. */
-    fun testConnectIsOneDialogWithTheAddressItWasGiven() {
-        val dialog = PiwiConnectFlow.ConnectDialog(project, "https://given.example")
+    /**
+     * A key change belongs to the address it was made for: an edit of the address drops it, and Apply saves or removes
+     * the key of that address alone.
+     */
+    fun testAKeyChangeBelongsToItsAddress() {
+        val service = project.getService(PiwiProjectService::class.java)
         try {
-            assertEquals("https://given.example", dialog.panel.urlField.text)
-            assertTrue(dialog.panel.instanceRadio.isSelected)
+            service.saveCredentials("https://a.example", "Shop", "pd_saved")
+            val panel = PiwiConnectPanel(project, testRootDisposable)
+            val remove = PiwiConnectPanel::class.java.getDeclaredMethod("removeKey").apply { isAccessible = true }
+            remove.invoke(panel)
+            assertEquals(PiwiProjectService.KeyChange.Remove, panel.key)
+            // Another address: the change was not made for it.
+            panel.urlField.text = "https://b.example"
+            assertEquals(PiwiProjectService.KeyChange.Keep, panel.key)
+            panel.urlField.text = "https://a.example"
+            assertEquals("an edit dropped it", PiwiProjectService.KeyChange.Keep, panel.key)
+            remove.invoke(panel)
+            panel.apply()
+            assertFalse(service.hasApiKey("https://a.example"))
         } finally {
-            Disposer.dispose(dialog.disposable)
+            service.disconnect()
+        }
+    }
+
+    /** Connect is one dialog holding the panel, on the settings as saved. */
+    fun testConnectIsOneDialogHoldingThePanel() {
+        val service = project.getService(PiwiProjectService::class.java)
+        try {
+            service.saveCredentials("https://given.example", "Shop", null)
+            val dialog = PiwiConnectFlow.ConnectDialog(project)
+            try {
+                assertEquals("https://given.example", dialog.panel.urlField.text)
+                assertTrue(dialog.panel.instanceRadio.isSelected)
+                assertFalse(dialog.panel.signingIn())
+            } finally {
+                Disposer.dispose(dialog.disposable)
+            }
+        } finally {
+            service.disconnect()
         }
     }
 

@@ -131,10 +131,10 @@ object PiwiInstance {
 object PiwiConnectFlow {
     private const val TITLE = "Piwi: Connect"
 
-    fun run(project: Project, presetUrl: String? = null): Boolean {
+    fun run(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         service.local().desktopOffered = true
-        if (!ConnectDialog(project, presetUrl).showAndGet()) return false
+        if (!ConnectDialog(project).showAndGet()) return false
         confirm(project)
         return true
     }
@@ -146,7 +146,7 @@ object PiwiConnectFlow {
     fun useDesktop(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         val local = service.local()
-        val dialog = ConnectDialog(project, null)
+        val dialog = ConnectDialog(project)
         dialog.panel.desktopRadio.isSelected = true
         if (!dialog.showAndGet()) return false
         if (local.desktop) PiwiNotifier.confirm(project, Glue.desktopConnectedText(local.desktopProject))
@@ -189,9 +189,12 @@ object PiwiConnectFlow {
         return true
     }
 
-    /** The Connect panel as one dialog, `presetUrl` in its address field; OK saves it. */
-    internal class ConnectDialog(project: Project, presetUrl: String?) : DialogWrapper(project) {
-        internal val panel = PiwiConnectPanel(project, disposable, presetUrl)
+    /**
+     * The Connect panel as one dialog. Connect reaches the instance chosen first, and waits for a sign-in in progress to
+     * end or be cancelled; then it saves the panel.
+     */
+    internal class ConnectDialog(project: Project) : DialogWrapper(project) {
+        internal val panel = PiwiConnectPanel(project, disposable, dialog = true)
 
         init {
             title = TITLE
@@ -202,6 +205,11 @@ object PiwiConnectFlow {
         override fun createCenterPanel(): JComponent = panel.component
 
         override fun doOKAction() {
+            if (panel.signingIn()) {
+                Messages.showInfoMessage(panel.component, Glue.SIGN_IN_PENDING, TITLE)
+                return
+            }
+            if (!panel.reachBeforeSaving()) return
             try {
                 panel.apply()
             } catch (e: com.intellij.openapi.options.ConfigurationException) {

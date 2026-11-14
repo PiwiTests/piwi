@@ -128,8 +128,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the instance's servers and the runs' alike. Checked by `GlueTest`.
 - **An instance on this machine is never reached through the IDE's proxy.** Test connection tries every loopback
   address (`Glue.loopbackAlternatives`) and keeps the one that answered. ([Connect](ARCHITECTURE.md#connect))
-- **The Connect panel saves nothing before Apply or Connect, and asks the instance and the desktop app off the event
-  thread**, its sign-in included (`PiwiConnectPanel`); `PiwiPluginTest` checks what Apply saves.
+- **The Connect panel saves nothing before Apply or Connect, a key change only for the address it was made for, and asks
+  the instance and the desktop app off the event thread**, its sign-in included (`PiwiConnectPanel`); `PiwiPluginTest`
+  checks what Apply saves and that an edit of the address drops a key change.
 
 ### Features
 

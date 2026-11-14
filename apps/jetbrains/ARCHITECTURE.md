@@ -1035,16 +1035,19 @@ group, saved with Apply (`onApply`, `onReset`, `onIsModified`), and as Connect's
   (`PiwiProjectService.KeyChange`, `Glue.keyStateText`);
 - the project, an editable list of the instance's projects, asked with the key Apply would save.
 
-`saveConnection` saves it all and hands it to the service. The instance and the desktop app are asked off the event
-thread, and an answer for an address the field no longer holds is dropped. The browser sign-in (the device
+`saveConnection` saves it all, when the panel changed, and hands it to the service. A key change belongs to the address
+it was made for: an edit of the address drops it, the project list and a sign-in in progress, and nothing picks a
+project for the person but Connect's dialog on the desktop app, with none linked. The instance and the desktop app are
+asked off the event thread, and an answer older than the panel's last change is dropped (`generation`). Connect's OK
+reaches the instance first, with modal progress (`reachBeforeSaving`), and waits for a sign-in to end. The browser sign-in (the device
 authorization Piwi Picker uses, `/api/extension/connect`) shows in the panel, never in a modal progress: its code, with
 **Copy code**, **Copy link**, **Open browser again** and **Cancel**, while `PiwiInstance.awaitSignIn` waits off the
 event thread; the key the browser allows becomes the key Apply saves (`Glue.signInAnswerText`). An instance that
-predates the sign-in asks for a pasted key. The offer to use the desktop app opens the dialog on the app.
+predates the sign-in says to paste a key. The offer to use the desktop app opens the dialog on the app.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one Test connection puts in the field. The page opens on the connection in use (`Glue.connectionSummary`) with
+one Test connection and Connect put in the field, the key moving with it (`moveTo`). The page opens on the connection in use (`Glue.connectionSummary`) with
 **Reconnect** (`sendCredentials`) and, while the service cannot start, **Node.js settings…**, which selects the Node.js
 page of the open Settings dialog and starts the service again as the dialog closes; then the Connect panel. When the
 environment or a `.env` names another instance than the saved one (`Glue.overriding`, the first config that does), the

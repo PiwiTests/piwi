@@ -77,9 +77,10 @@ class GlueTest {
     @Test
     fun `the Connect panel says where the project reads from, the key Apply saves, and what the browser answered`() {
         assertEquals("Mugs, linked to this folder", Glue.linkedProjectLabel("Mugs"))
-        assertEquals("The one linked to this folder in the desktop app", Glue.linkedProjectLabel(null))
-        assertEquals("Not running on this machine: the instance below is read until it runs.", Glue.desktopStateText(null, null))
-        assertEquals("Running at http://127.0.0.1:3000; this folder is linked there to Mugs.", Glue.desktopStateText("http://127.0.0.1:3000", "Mugs"))
+        assertEquals("The one linked to this folder in the desktop app, none yet", Glue.linkedProjectLabel(null))
+        assertEquals("Not running on this machine: the instance below is read until it runs.", Glue.desktopStateText(null, null, 0))
+        assertEquals("Running at http://127.0.0.1:3000; this folder is linked there to Mugs.", Glue.desktopStateText("http://127.0.0.1:3000", "Mugs", 1))
+        assertTrue(Glue.desktopStateText("http://127.0.0.1:3000", null, 0).contains("no project yet"))
         assertEquals("keep", Glue.keyChangeKind(PiwiProjectService.KeyChange.Keep))
         assertEquals("set", Glue.keyChangeKind(PiwiProjectService.KeyChange.Set("pd_1")))
         assertEquals("remove", Glue.keyChangeKind(PiwiProjectService.KeyChange.Remove))
