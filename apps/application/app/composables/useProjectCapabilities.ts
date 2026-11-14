@@ -1,30 +1,29 @@
 import { capabilityHidden, type CapabilityId, type CapabilityState, type ProjectDecision } from '#shared/capabilities';
+import { defineComponent } from 'vue';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
 
-/** The `useAsyncData` key that holds one project's capability states, or no project's. */
-const projectCapabilitiesKey = (projectId: number | null) =>
-  projectId === null ? 'capabilities-project-none' : `capabilities-project-${projectId}`;
+/** The `useAsyncData` key that holds one project's capability states. */
+const projectCapabilitiesKey = (projectId: number) => `capabilities-project-${projectId}`;
 
 /**
  * One project's capability states under its key, which every caller for the project shares: a caller asking while a
- * read is running joins it. No project reads an empty list. A read that fails keeps the states last read or written
- * for the project; the first one resolves to an empty list.
+ * read is running joins it. A read that fails keeps the states last read or written for the project; with none, it
+ * fails, and the payload holds no states for the project.
  */
-function useProjectCapabilityStates(
-  projectId: () => number | null,
-  options: { lazy?: boolean; server?: boolean } = {},
-) {
+function useProjectCapabilityStates(projectId: number, options: { lazy?: boolean; server?: boolean } = {}) {
   const nuxtApp = useNuxtApp();
   const requestFetch = useRequestFetch();
+  const key = projectCapabilitiesKey(projectId);
   return useAsyncData<CapabilityStateItem[]>(
-    () => projectCapabilitiesKey(projectId()),
-    () => {
-      const id = projectId();
-      if (id === null) return Promise.resolve([]);
-      return requestFetch<CapabilityStates>(`/api/projects/${id}/capabilities`)
+    key,
+    () =>
+      requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
         .then((r) => r.items)
-        .catch(() => (nuxtApp.payload.data[projectCapabilitiesKey(id)] as CapabilityStateItem[] | undefined) ?? []);
-    },
+        .catch((error: unknown) => {
+          const kept = nuxtApp.payload.data[key] as CapabilityStateItem[] | undefined;
+          if (kept) return kept;
+          throw error;
+        }),
     { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender, ...options },
   );
 }
@@ -45,15 +44,15 @@ function useProjectCapabilityStates(
  * applicable or never offered by the desktop build, `canDecide` gates the controls to holders of `project:manage` on
  * the project, `decide` writes one decision and `decideMany` writes several at
  * once (`enabled` overrides an instance decline; `null` clears a decision). A
- * read that fails keeps the states last read or written; the first one resolves
- * to an empty list.
+ * read that fails keeps the states last read or written; a first one that fails
+ * reads every capability as undecided.
  */
 export async function useProjectCapabilities(projectId: number) {
   const { can } = useAuth();
   const nuxtApp = useNuxtApp();
   const isDesktop = useIsDesktop();
 
-  const { data: items } = await useProjectCapabilityStates(() => projectId);
+  const { data: items } = await useProjectCapabilityStates(projectId);
 
   const stateMap = computed(() => {
     const map = new Map<CapabilityId, CapabilityState>();
@@ -80,33 +79,37 @@ export async function useProjectCapabilities(projectId: number) {
   return { capabilities: items, state, isHidden, canDecide, decide, decideMany };
 }
 
+/** Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads. Renders nothing. */
+const ProjectCapabilitiesRead = defineComponent({
+  props: { projectId: { type: Number, required: true } },
+  setup(props) {
+    void useProjectCapabilityStates(props.projectId, { lazy: true, server: false });
+    return () => null;
+  },
+});
+
 /**
- * What the project the route names hides, for the layout. Its states load in the browser, without holding up a
- * navigation, once per visit to the project, under the key `useProjectCapabilities` reads: a page that loads them
- * joins the same read, and a decision a page writes reaches this reader. `isHidden(projectId, id)` is null until the
- * states of that project have arrived.
+ * What a project hides, for the layout, from the states held for it: those a page read or wrote, or those
+ * `ProjectCapabilitiesRead` read. The layout renders `ProjectCapabilitiesRead` keyed by `routeProjectId`, the project
+ * the router's route names, which changes as a navigation is confirmed, before the next page's setup: a page that
+ * loads the states joins the same read. `isHidden(projectId, id)` is null until the project's states have been read
+ * once; a refresh, or a later read that fails, keeps them.
  */
-export function useRouteProjectCapabilities() {
+export function useLoadedProjectCapabilities() {
+  const nuxtApp = useNuxtApp();
   const router = useRouter();
   const isDesktop = useIsDesktop();
 
-  // The router's route changes as a navigation is confirmed, before the next page's setup, so the read starts
-  // before a page that loads the states asks for them.
-  const projectId = computed(() => {
+  const routeProjectId = computed(() => {
     const match = router.currentRoute.value.path.match(/^\/projects\/(\d+)/);
     return match?.[1] ? parseInt(match[1], 10) : null;
   });
-  const { data, status } = useProjectCapabilityStates(() => projectId.value, { lazy: true, server: false });
 
-  const stateMap = computed(() =>
-    status.value === 'success' ? new Map(data.value.map((item) => [item.id, item.state])) : null,
-  );
-
-  const isHidden = (forProject: number, id: CapabilityId): boolean | null => {
-    const states = stateMap.value;
-    if (!states || projectId.value !== forProject) return null;
-    return capabilityHidden(id, states.get(id) ?? 'undecided', isDesktop);
+  const isHidden = (projectId: number, id: CapabilityId): boolean | null => {
+    const items = nuxtApp.payload.data[projectCapabilitiesKey(projectId)] as CapabilityStateItem[] | undefined;
+    if (!items) return null;
+    return capabilityHidden(id, items.find((item) => item.id === id)?.state ?? 'undecided', isDesktop);
   };
 
-  return { isHidden };
+  return { isHidden, routeProjectId, ProjectCapabilitiesRead };
 }

@@ -123,10 +123,11 @@ const currentProjectId = computed(() => {
 });
 
 // What the current project hides: its own capability states once they have
-// arrived, the instance's until then.
-const routeProjectCapabilities = useRouteProjectCapabilities();
+// been read, the instance's until then.
+const loadedProjectCapabilities = useLoadedProjectCapabilities();
+const { routeProjectId, ProjectCapabilitiesRead } = loadedProjectCapabilities;
 const projectCapHidden = (projectId: number, id: CapabilityId) =>
-  routeProjectCapabilities.isHidden(projectId, id) ?? capHidden(id);
+  loadedProjectCapabilities.isHidden(projectId, id) ?? capHidden(id);
 
 // Generate project navigation items with children
 const ACTIVE_WINDOW_DAYS = 10;
@@ -593,6 +594,8 @@ onMounted(async () => {
         </div>
       </template>
     </UDashboardSidebar>
+
+    <ProjectCapabilitiesRead v-if="routeProjectId !== null" :key="routeProjectId" :project-id="routeProjectId" />
 
     <UDashboardSearch
       v-model:search-term="searchTerm"
