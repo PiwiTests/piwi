@@ -16,10 +16,10 @@ function ownerKey(value: string | null | undefined): string {
 }
 
 /**
- * One row per owner: the open failure causes assigned to them
+ * One row per owner: the open failure clusters assigned to them
  * (`failure_clusters.assignee`), the flaky tests and the wasted CI minutes of
  * the tests they own (`test_cases.owner`) in the period, and the median time
- * to fix over the causes they fixed, with an *Unowned* row for everything no
+ * to fix over the clusters they fixed, with an *Unowned* row for everything no
  * one holds. Test counts read the stored runs, so they reach back only as far
  * as retention keeps them.
  */

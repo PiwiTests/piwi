@@ -596,6 +596,29 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/performance' },
   },
 
+  // Source control
+  {
+    id: 'source-control-page',
+    kind: 'page',
+    pages: ['/settings/source-control'],
+    describes:
+      'Settings → Source control: the instance-wide SCM token the features that read or write a repository use for a project without its own.',
+    requires: { permission: 'settings:manage' },
+    doc: 'guide/source-control#set-the-token',
+    sample: { route: '/settings/source-control' },
+  },
+  {
+    id: 'source-control-token',
+    kind: 'field',
+    pages: ['/settings/source-control'],
+    describes:
+      'The SCM token: the GitHub, GitLab or Bitbucket token a project without its own reads its repository with and posts pull-request feedback with.',
+    requires: { permission: 'settings:manage' },
+    help: 'project.scm-token',
+    doc: 'guide/source-control#set-the-token',
+    sample: { route: '/settings/source-control' },
+  },
+
   // Pull requests
   {
     id: 'pr-feedback-page',
@@ -801,12 +824,11 @@ export const SETTINGS_ANCHORS = [
   },
   {
     id: 'ai-repository-access',
-    kind: 'field',
+    kind: 'block',
     pages: ['/settings/ai'],
     describes:
-      'The Repository access token: the GitHub, GitLab or Bitbucket token diagnosis reads commit diffs with, which a project’s own token overrides.',
+      'Where the repository token diagnosis reads commit diffs with is set: Settings → Source control, or the project’s Source control settings.',
     requires: { capability: 'ai', permission: 'settings:manage' },
-    help: 'project.scm-token',
     doc: 'guide/source-control',
     sample: { route: '/settings/ai' },
   },
@@ -847,7 +869,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The What the model receives card: where the evidence of a diagnosis goes, the repository token, and the context limits.',
+      'The What the model receives card: where the evidence of a diagnosis goes, where the repository token is set, and the context limits.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.privacy',
     doc: 'features/ai-diagnosis#what-a-diagnosis-contains',

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
+import { PROJECT_MENU_PAGES, PROJECT_TABS } from '#shared/app-places';
+import type { CapabilityId } from '#shared/capabilities';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
 import { starredFirst } from '~/utils/project-stars';
+import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 
 const route = useRoute();
 const toast = useToast();
@@ -118,6 +121,13 @@ const currentProjectId = computed(() => {
   const match = route.path.match(/^\/projects\/(\d+)/);
   return match?.[1] ? parseInt(match[1], 10) : null;
 });
+
+// What the current project hides: its own capability states once they have
+// been read, the instance's until then.
+const loadedProjectCapabilities = useLoadedProjectCapabilities();
+const { routeProjectId, ProjectCapabilitiesRead } = loadedProjectCapabilities;
+const projectCapHidden = (projectId: number, id: CapabilityId) =>
+  loadedProjectCapabilities.isHidden(projectId, id) ?? capHidden(id);
 
 // Generate project navigation items with children
 const ACTIVE_WINDOW_DAYS = 10;
@@ -368,31 +378,34 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     },
   ];
 
-  // On a project page, surface its tab panels in the palette — the fastest
-  // keyboard path to each. The project page tolerates an unknown ?tab= by
-  // falling back to Runs.
+  // On a project page, the palette lists the tabs the project page's strip
+  // shows, then the pages its More actions menu opens, in their order: the
+  // fastest keyboard path to each.
   if (currentProjectId.value) {
     const pid = currentProjectId.value;
-    // Same order as the project page's tab strip.
-    const projectTabs: [value: string, label: string, icon: string][] = [
-      ['runs', 'Runs', 'i-lucide-play-circle'],
-      ['tests', 'Tests', 'i-lucide-flask-conical'],
-      ['failures', 'Failures', 'i-lucide-layers'],
-      ['performance', 'Performance', 'i-lucide-trending-up'],
-      ['settings', 'Settings', 'i-lucide-settings'],
-    ];
+    const hidden = (id: CapabilityId) => projectCapHidden(pid, id);
+    const close = () => {
+      open.value = false;
+    };
     staticGroups.unshift({
       id: 'project-tabs',
       label: 'This project',
-      items: projectTabs.map(([value, label, icon]) => ({
-        id: `project-tab-${value}`,
-        label,
-        icon,
-        to: `/projects/${pid}?tab=${value}`,
-        onSelect: () => {
-          open.value = false;
-        },
-      })),
+      items: [
+        ...PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, hidden)).map((tab) => ({
+          id: `project-tab-${tab.value}`,
+          label: tab.label,
+          icon: tab.icon,
+          to: `/projects/${pid}?tab=${tab.value}`,
+          onSelect: close,
+        })),
+        ...PROJECT_MENU_PAGES.filter((menuPage) => !projectMenuPageHidden(menuPage.path, hidden)).map((menuPage) => ({
+          id: `project-page-${menuPage.path}`,
+          label: menuPage.label,
+          icon: menuPage.icon,
+          to: `/projects/${pid}/${menuPage.path}`,
+          onSelect: close,
+        })),
+      ],
     });
   }
 
@@ -591,6 +604,8 @@ onMounted(async () => {
         </div>
       </template>
     </UDashboardSidebar>
+
+    <ProjectCapabilitiesRead v-if="routeProjectId !== null" :key="routeProjectId" :project-id="routeProjectId" />
 
     <UDashboardSearch
       v-model:search-term="searchTerm"

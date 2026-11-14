@@ -222,7 +222,7 @@ test('picker-popup', async ({ context, extensionId }) => {
 });
 
 // The pause bar of a test paused at a breakpoint in a run the editor started: the reporter's, on the shop page, with
-// the element of the paused action highlighted as Playwright highlights it, and Record here offered.
+// the element of the paused action highlighted as Playwright highlights it, and Record offered.
 test('picker-pause', async ({ context }) => {
   const page = await shopPage(context);
   await page.getByRole('button', { name: 'Checkout' }).highlight();
@@ -234,7 +234,7 @@ test('picker-pause', async ({ context }) => {
     record: true,
   });
   const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
-  await bar.getByRole('button', { name: 'Record here' }).hover();
+  await bar.getByRole('button', { name: 'Record' }).hover();
   await page.waitForTimeout(500);
   await shoot(page, 'picker-pause');
 });

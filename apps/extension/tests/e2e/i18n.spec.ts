@@ -6,6 +6,7 @@ import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.js';
 import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { openDevtoolsPage } from './devtools-stub.js';
 import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 import {
   answerNext,
@@ -222,7 +223,7 @@ test.describe('in a French browser', () => {
       'Español',
       'Português (Brasil)',
     ]);
-    await expect(page.getByRole('heading', { name: 'Projets par site' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Motifs d’adresse' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
     await expect(page.locator('#instance-pill')).toHaveText('Non connecté');
     await expect(page.locator('#desktop-pill')).toHaveText('Non associé');
@@ -275,6 +276,47 @@ test.describe('in a German browser', () => {
     await expect(page.getByRole('button', { name: /Element wählen/ })).toBeVisible();
     expect(await untranslated(page)).toEqual([]);
     expect(await clipped(page)).toEqual([]);
+  });
+
+  test('the DevTools toolbar shows its labels where they fit, its icons alone where not, and never overflows', async ({
+    context,
+    page,
+    extensionId,
+  }) => {
+    await page.route('https://shop.example/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<p>Shop</p>' }),
+    );
+    await page.goto('https://shop.example/');
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', page);
+    await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+    await expect(panel.getByRole('button', { name: 'Element wählen', exact: true })).toBeAttached();
+    const toolbar = () =>
+      panel.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('.toolbar')!;
+        const labels = Array.from(document.querySelectorAll<HTMLElement>('.tools button > .piwi-label'));
+        const shown = labels.filter((label) => label.getBoundingClientRect().width > 1).length;
+        return {
+          overflows: bar.scrollWidth > bar.clientWidth,
+          labels: shown === labels.length ? 'shown' : shown === 0 ? 'hidden' : 'some',
+        };
+      });
+    // Wider letters stand in for a system whose fonts are wider than this one's.
+    for (const spacing of ['normal', '1px']) {
+      await panel.evaluate((value) => {
+        const style = document.getElementById('spacing') ?? document.head.appendChild(document.createElement('style'));
+        style.id = 'spacing';
+        style.textContent = `.toolbar button { letter-spacing: ${value}; }`;
+      }, spacing);
+      const where = (width: number) => `${width} pixels wide, letter spacing ${spacing}`;
+      await panel.setViewportSize({ width: 1600, height: 300 });
+      await expect.poll(toolbar, where(1600)).toEqual({ overflows: false, labels: 'shown' });
+      await panel.setViewportSize({ width: 1000, height: 300 });
+      await expect.poll(toolbar, where(1000)).toEqual({ overflows: false, labels: 'hidden' });
+      for (let width = 1000; width <= 1600; width += 40) {
+        await panel.setViewportSize({ width, height: 300 });
+        await expect.poll(async () => (await toolbar()).overflows, where(width)).toBe(false);
+      }
+    }
   });
 
   test('the settings say German is a draft, and where to suggest a correction', async ({ context, extensionId }) => {

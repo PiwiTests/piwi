@@ -168,10 +168,11 @@ export interface PiwiDashboardOptions {
     browser?: 'off' | 'files' | 'functions' | 'lines';
     /**
      * What the server side records, from a backend built with Piwi's coverage
-     * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`), which names each
-     * request's coverage on its response: `'files'` sends the backend files
-     * each test ran, `'functions'` adds the start and end line of each function
-     * that ran, `'lines'` adds the executed lines. The reporter collects a
+     * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`; Nitro:
+     * `PIWI_COVERAGE_BUILD=true`), which names each request's coverage on its
+     * response: `'files'` sends the backend files each test ran, `'functions'`
+     * adds the start and end line of each function that ran, `'lines'` adds the
+     * executed lines. The reporter collects a
      * test's coverage from the backend after the test ends, never in the test,
      * and at the end of the run sends the run's coverage of the backend too.
      * Line numbers are sent with `'functions'` and `'lines'` only, never source
@@ -353,7 +354,7 @@ export interface PiwiDashboardOptions {
    * Enable live streaming of results (falls back to batch if unsupported). An
    * interrupted stream is retried until it catches up. Live events the
    * dashboard refuses, or has not taken two and a half minutes after they first
-   * failed, leave the live view so the later ones flow; when test results are
+   * failed, leave the live stream so the later ones flow; when test results are
    * among the events the dashboard never took, the run is sent again as a batch
    * at its end. Defaults to `true`.
    */

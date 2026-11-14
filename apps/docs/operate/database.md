@@ -36,8 +36,8 @@ PIWI_DATABASE_PATH=/custom/path/database.db
 
 SQLite allows one writer at a time. Piwi queues its own writes, and waits up to 5 seconds for a lock
 held by another process (a script, a second server). That is ample for a team's test volume — a run
-submission is a short burst of writes — but if you run several dashboard replicas against one
-database, or see `database is locked` under load, move to PostgreSQL.
+submission is a short burst of writes — but if you see `database is locked` under load, move to PostgreSQL. Run one dashboard
+replica with either database: the SSE event bus is in-process ([Deployment](./deployment#resource-requirements)).
 
 ## PostgreSQL
 

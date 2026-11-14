@@ -119,7 +119,7 @@ export const FR_COPY = {
         },
         analytics: {
           title: 'La qualité au fil du temps',
-          body: 'Les **Headline numbers** de tous les projets sur les 30 derniers jours, comparés aux 30 précédents : taux de réussite, tests instables, minutes de CI gaspillées, causes d’échec ouvertes, délai de correction. Quand un projet fixe un objectif, la tuile indique combien de projets l’atteignent.',
+          body: 'Les **Headline numbers** de tous les projets sur les 30 derniers jours, comparés aux 30 précédents : taux de réussite, tests instables, minutes de CI gaspillées, groupes d’échecs ouverts, délai de correction. Quand un projet fixe un objectif, la tuile indique combien de projets l’atteignent.',
         },
         dashboards: {
           title: 'Un tableau de bord par équipe',

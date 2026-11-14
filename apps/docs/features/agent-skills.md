@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs reporter />
 
-The [MCP server](/features/mcp) gives an agent read access to your results; **skills** tell it what to *do* with them.
+The [MCP server](/features/mcp) gives an agent tools over your results, mostly read-only; **skills** tell it what to *do* with them.
 A skill is a single `SKILL.md` file, the portable open format (front matter plus Markdown instructions) that Claude
 Code and other coding agents read from a project's skills directory. Piwi ships seven, and the reporter's CLI installs
 them into your test project.
@@ -18,19 +18,20 @@ them into your test project.
 | Skill | What it does |
 |------|--------------|
 | `setup-piwi` | Wire a Playwright project up to a dashboard: the same work `npx @piwitests/reporter init` does, driven by an agent. |
-| `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence: error, steps, console, network, and the diff since the last green run. |
-| `apply-locator-healing` | Replace a brittle locator with Piwi's ranked [healed locator](/features/locator-healing) at its call site, then re-run to confirm. |
+| `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence: error, steps, console, network, and the diff since the [last green run](/features/run-changes#the-baseline). |
+| `apply-locator-healing` | Replace a [brittle locator](/reference/locator-stability) with Piwi's ranked [healed locator](/features/locator-healing) at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Reproduce the highest-impact [flaky tests](/features/flaky-tests) with the [Flake Lab](/features/flake-lab), fix what the reproducing condition points at (never by adding retries), then prove it with `piwi flake verify`. |
 | `run-the-right-tests` | After a UI change, fix the locators it breaks with [preflight](/features/preflight); run the tests a change [impacts](/features/change-impact), down to those that ran the changed lines; or pick and run the right [selection](/features/test-selection) for the task (smoke, recently broken, a time budget) instead of the whole suite. |
 | `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and add it in the same change. |
 | `fix-a-reported-bug` | Take a [bug report](/features/bug-reports), write its failing test with `piwi bug <id> --write`, reproduce, fix, then remove `test.fail()` and run the spec and the tests that visit the page. |
 
-Each skill prefers a connected Piwi [MCP tool](/reference/mcp-tools) and falls back to the dashboard UI when MCP is
-not connected, so a skill works before the MCP server is set up, only more slowly.
+Each skill but `setup-piwi`, which uses no MCP tool, prefers a connected Piwi [MCP tool](/reference/mcp-tools). When
+MCP is not connected it falls back to the dashboard UI (`run-the-right-tests` and `fix-a-reported-bug` to the
+reporter's CLI), so a skill works before the MCP server is set up, only more slowly.
 
 ## What agents report back
 
-Each workflow skill ends by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
+These workflow skills end by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
 detectors learn from it:
 
 | Skill | Reports back with |
@@ -80,11 +81,9 @@ we're missing for this change". The agent picks the skill whose description matc
 
 ## Prompts, the no-install alternative
 
-The MCP server also serves every workflow skill as a **prompt**, which a client shows as a slash command with nothing
-to install: `investigate_failure`, `apply_locator_healing` and the rest, each with an optional `focus` (a run, a
-cluster, a test). The text is the skill shipped with the server's own version. A `setup_piwi` prompt knows this
-instance's URL, whether it requires an API key and its existing projects, which a static skill cannot. Prompts need
-MCP; installed skills work offline. See [MCP server](/features/mcp#prompts).
+The MCP server also serves every workflow skill as a **prompt**, a slash command with nothing to install, in the
+server's own version, plus a `setup_piwi` prompt that knows this instance; installed skills work offline. See
+[Prompts](/features/mcp#prompts).
 
 ## Limits
 

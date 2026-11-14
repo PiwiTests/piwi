@@ -117,7 +117,7 @@ export const DE_COPY = {
         },
         analytics: {
           title: 'Qualität im Zeitverlauf',
-          body: 'Die **Headline numbers** aller Projekte über die letzten 30 Tage, verglichen mit den 30 Tagen davor: Erfolgsquoten, instabile Tests, verschwendete CI-Minuten, offene Fehlerursachen, Zeit bis zum Fix. Setzt ein Projekt einen Zielwert, zeigt die Kachel, wie viele Projekte ihn erreichen.',
+          body: 'Die **Headline numbers** aller Projekte über die letzten 30 Tage, verglichen mit den 30 Tagen davor: Erfolgsquoten, instabile Tests, verschwendete CI-Minuten, offene Fehlercluster, Zeit bis zum Fix. Setzt ein Projekt einen Zielwert, zeigt die Kachel, wie viele Projekte ihn erreichen.',
         },
         dashboards: {
           title: 'Ein Dashboard pro Team',

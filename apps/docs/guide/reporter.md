@@ -21,7 +21,7 @@ version on its page.
 
 ### Try it without editing your config
 
-Playwright's `--add-reporter` (1.63 or later; older versions refuse it) appends this reporter to your config's reporters (unlike `--reporter`, which replaces them), so one run can go to a dashboard without a config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options):
+Playwright's `--add-reporter` (1.63 or later) appends this reporter to your config's reporters, where `--reporter` replaces them, so one run can go to a dashboard without a config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options):
 
 ::: code-group
 
@@ -67,7 +67,9 @@ CI job that sets the variable reports there. `wrapConfig` also:
 
 ## Basic configuration
 
-When a config cannot be wrapped, add the reporter entry and the capture options `wrapConfig` would set:
+When a config cannot be wrapped, add the bare reporter entry and the capture options `wrapConfig` would set. It
+gives up the rest of `wrapConfig`: the run appears only when the first test starts unless you add the
+[global setup](#global-setup-phase) yourself, and `failOnFlakyTests` does not reach Playwright.
 
 ```typescript
 import { defineConfig } from '@playwright/test'
@@ -83,7 +85,7 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'retain-on-failure', // optional: wrapConfig does not set it
   },
 })
 ```
@@ -105,8 +107,8 @@ capture, failure-time ARIA snapshots and the locator snapshots behind [locator h
 ## Configuration options
 
 Options go in the reporter's entry in `playwright.config.ts` or `wrapConfig`'s second argument. Most can also be
-set with a `PIWI_*` environment variable, which an option in the config overrides, except `PIWI_VERBOSE`, which
-overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
+set with a `PIWI_*` environment variable, which an option in the config overrides, except `PIWI_DESKTOP_APP` and,
+outside `wrapConfig`, `PIWI_VERBOSE`, which override the option. `PIWI_DASHBOARD_URL`,
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
 [`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and variable, and [Test metadata](/reference/test-metadata) what the reporter
@@ -206,11 +208,9 @@ tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted
 
 ## With authentication enabled
 
-With authentication enabled, pass an **API key**: create one ([API keys](/operate/api-keys); **Connect a suite**
-creates one in place); keep it in a CI secret (locally, `.env`), and pass it as `PIWI_API_KEY` or the `apiKey` option.
-
-The key is sent as an `Authorization: Bearer` header. `username` (or the account's email) and `password`
-(`PIWI_USERNAME`, `PIWI_PASSWORD`) work too, signing in once per run; prefer an API key in CI.
+With authentication on, the reporter needs a credential: an API key in `PIWI_API_KEY` or the `apiKey` option, or a
+username and password. [API keys → Using the API key in the reporter](/operate/api-keys#using-the-api-key-in-the-reporter)
+covers both, and where to keep them.
 
 ## Troubleshooting
 
@@ -227,7 +227,7 @@ is saved locally, owner-only, and sent to the same `serverUrl` on the project's 
 attachments; it never fails the Playwright run. A stream that cannot start while the dashboard is down or busy retries
 for the run's life, its events kept within
 [`maxStreamBufferBytes`](/reference/reporter-options#maxstreambufferbytes); one starting late says how late. Live events the
-dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live view so the later
+dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live stream so the later
 ones flow; if test results are among them, the run is sent again as a batch at its end.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so an
 unresponsive dashboard cannot hold the CI job.

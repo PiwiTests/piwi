@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs extension />
 
-**Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices, drags, the
+**Record actions** asks for access to the site you are on, then captures clicks, double clicks, fills, checks, choices, drags, the
 names of chosen files (never their content), the keys that submit, close or move through a list, a click on what a
 hover shows, and the browser's **Back**, **Forward** and reload as a step to the page they reach, across pages. Each
 element is recorded with up to five locators that find it alone, ranked, so a replay has others to try when one no
@@ -22,7 +22,7 @@ TypeScript** for a runnable spec that waits for each page it opens,
 **Download steps** for a [steps file](/reference/steps-format) to share or render with
 [`piwi codegen`](/reference/cli#codegen), [**Send to editor**](./editor-recording#send-from-piwi-picker),
 [**Replay**](./replay-a-bug-report) to play the steps again in the tab and see that each still finds its element, or
-**Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose
+**Discard**. [Report a bug](./report-a-bug) records with the same recorder. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose
 `autocomplete` names it: the spec reads them from `process.env`.
 
 <figure>

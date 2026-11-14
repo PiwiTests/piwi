@@ -28,7 +28,7 @@ function listing(file: string): string {
 
 /** The sentences every listing holds, read without their markup. */
 const SAID = [
-  'You need a Piwi instance: the desktop app, npx @piwitests/server or the Docker image. Recording needs none.',
+  'You need a Piwi instance: the desktop app, npx @piwitests/server or the Docker image. Recording, running a test by its line, and pausing and stepping through it need none.',
   'Piwi reads Playwright Test suites in JavaScript and TypeScript.',
   'Self-hosted, zero telemetry. No file of your workspace is sent to the instance',
 ];

@@ -52,7 +52,7 @@ const user = computed<{
     };
   }
   return {
-    name: 'Configuration',
+    name: 'Settings',
     icon: 'i-lucide-cog',
   };
 });
@@ -63,16 +63,18 @@ const items = computed<DropdownMenuItem[][]>(() => {
   // API keys, Notifications… Nav items are reused as dropdown items (both are
   // link items); the cast bridges the slightly different `type` union between
   // the two Nuxt UI types. `settingsNav` is grouped into sections — this menu
-  // wants one flat list, with the Setup section folded into one submenu.
-  const configurationMenuItems: DropdownMenuItem[] = [];
+  // wants one flat list, with the Setup section folded into one submenu. When
+  // the button names the signed-in user, a Settings heading names the list, so
+  // the menu says Settings whether authentication is on or off.
+  const settingsMenuItems: DropdownMenuItem[] = user.value.account ? [{ type: 'label', label: 'Settings' }] : [];
   for (const section of settingsNav.value as unknown as DropdownMenuItem[][]) {
     const group = SETTINGS_PAGES.find((page) => page.to === section[0]?.to)?.group;
-    if (group === 'setup') configurationMenuItems.push({ label: 'Setup', icon: 'i-lucide-rocket', children: section });
-    else configurationMenuItems.push(...section);
+    if (group === 'setup') settingsMenuItems.push({ label: 'Setup', icon: 'i-lucide-rocket', children: section });
+    else settingsMenuItems.push(...section);
   }
 
   const baseItems: DropdownMenuItem[][] = [
-    configurationMenuItems,
+    settingsMenuItems,
     [
       {
         label: 'Theme',
@@ -151,7 +153,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       {
         // The tools that install outside the dashboard, as Settings → Companion
         // tools lists them, one click away.
-        label: 'Piwi tools',
+        label: 'Companion tools',
         icon: 'i-lucide-blocks',
         ui: { content: 'w-80' },
         children: [
@@ -191,6 +193,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
                     label: 'Desktop app',
                     description: 'Installers · GitHub Releases',
                     icon: 'i-lucide-monitor',
+                    to: DESKTOP_DOWNLOAD_URL,
+                    target: '_blank',
+                  },
+                  {
+                    label: 'Piwi Runner',
+                    description: 'Installers · GitHub Releases',
+                    icon: 'i-lucide-play',
                     to: DESKTOP_DOWNLOAD_URL,
                     target: '_blank',
                   },

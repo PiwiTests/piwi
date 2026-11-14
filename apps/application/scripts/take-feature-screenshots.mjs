@@ -1857,14 +1857,30 @@ async function prepareTeamSlackChannel({ base, request }) {
   });
 }
 
+/** A variable's value in `apps/application/.env`, the file `nuxt dev` reads, or undefined when the file sets none. */
+function appEnvFileValue(name) {
+  const file = join(APP_DIR, '.env');
+  if (!existsSync(file)) return undefined;
+  const line = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.*?)\\s*$`, 'm').exec(readFileSync(file, 'utf8'));
+  return line ? line[1].replace(/^(['"])(.*)\1$/, '$2') : undefined;
+}
+
 /**
- * The server the harness boots runs as a configured instance: a public address,
- * so no screen shows the missing-PIWI_SITE_URL warnings, and share links on, so
- * the pages show their Share button (the caller's own value wins for both), and
- * never the caller's own Jira: the scenes connect their own.
+ * The server the harness boots runs as a configured instance, on the local dev
+ * database: a public address, so no screen shows the missing-PIWI_SITE_URL
+ * warnings, share links on, so the pages show their Share button (the caller's
+ * own value wins for both), never the caller's own Jira (the scenes connect
+ * their own), and a secret key, so a scene can store a connection's
+ * credentials. The key is the one the dev server would use: the environment's,
+ * else the one `apps/application/.env` sets, so the secrets the dev database
+ * holds still open; else one fixed string, the same on every run.
  */
 const SCENE_SERVER_ENV = {
   PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
+  PIWI_SECRET_KEY:
+    process.env.PIWI_SECRET_KEY ||
+    appEnvFileValue('PIWI_SECRET_KEY') ||
+    createHash('sha256').update('piwi feature screenshots').digest('hex'),
   PIWI_SHARE_LINKS_ENABLED: process.env.PIWI_SHARE_LINKS_ENABLED ?? 'true',
   PIWI_JIRA_BASE_URL: '',
   PIWI_JIRA_EMAIL: '',
@@ -1889,6 +1905,9 @@ async function prepareJiraSceneConnection({ base, request }) {
       credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
     },
   });
+  if (!created.ok()) {
+    throw new Error(`the scene Jira connection was refused (${created.status()}): ${await created.text()}`);
+  }
   jiraSceneConnectionId = (await created.json()).connection.id;
 }
 
@@ -2227,7 +2246,7 @@ function pausedTestScene(width, colorScheme, suffix) {
       await page.locator('[data-shot="evidence-card"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
       await settle();
       await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
-      await goto(`/test-runs/${PAUSED_SCENE_RUN}?tab=workers`);
+      await goto(`/test-runs/${PAUSED_SCENE_RUN}?tab=timeline`);
       await page.locator('[data-shot="run-timeline"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
       await settle();
       await shoot('workers', { of: '[data-shot="run-timeline"]', pad: 12 });
@@ -2256,7 +2275,7 @@ function runTimelineLeaksScene(colorScheme, suffix) {
     name: `run-timeline-leaks${suffix}`,
     description: `Run timeline of the leaky run: leak tails under each worker, the lingering popup hovered (${colorScheme})`,
     // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
-    route: '/test-runs/62?tab=workers',
+    route: '/test-runs/62?tab=timeline',
     viewport: { width: 1400, height: 1000 },
     colorScheme,
     ...docs,
@@ -3135,11 +3154,11 @@ const SCENES = [
   {
     name: 'user-menu-piwi-tools',
     description:
-      "The user menu's Piwi tools submenu: where to get Piwi Picker, the VS Code extension, the JetBrains plugin, the desktop app and the reporter, and the docs",
+      "The user menu's Companion tools submenu: where to get Piwi Picker, the VS Code extension, the JetBrains plugin, the desktop app, Piwi Runner and the reporter, and the docs",
     route: '/',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
-      const tools = page.getByRole('menuitem', { name: 'Piwi tools' });
+      const tools = page.getByRole('menuitem', { name: 'Companion tools', exact: true });
       await settle();
       // Hydration can lag the first paint on a dev server; retry the click until the menu opens.
       for (let attempt = 0; attempt < 20 && !(await tools.isVisible()); attempt++) {
@@ -3298,7 +3317,7 @@ const SCENES = [
     { name: 'quality-report-preview-mobile', width: 375, height: 1400 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Export on the analytics page: the executive quality report previewed, at ${width} px`,
+    description: `Quality report on the analytics page: the executive quality report previewed, at ${width} px`,
     route: '/analytics',
     viewport: { width, height },
     async run({ page, shoot, settle }) {
@@ -3307,7 +3326,7 @@ const SCENES = [
       await settle();
       // Hydration can lag the first paint on a dev server; retry the click until the dialog opens.
       for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
-        await page.getByRole('button', { name: 'Export' }).first().click();
+        await page.getByRole('button', { name: 'Quality report', exact: true }).first().click();
         await preview.waitFor({ timeout: 3000 }).catch(() => {});
       }
       await preview.locator('svg').first().waitFor({ timeout: 60000 });
@@ -3328,7 +3347,7 @@ const SCENES = [
       await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
       await settle();
       for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
-        await page.getByRole('button', { name: 'Export' }).first().click();
+        await page.getByRole('button', { name: 'Quality report', exact: true }).first().click();
         await preview.waitFor({ timeout: 3000 }).catch(() => {});
       }
       await preview.locator('[data-testid^="report-section-xlsx-"]').first().waitFor({ timeout: 60000 });
@@ -3641,7 +3660,7 @@ const SCENES = [
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({
     name,
-    description: `The browser extension URLs of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
+    description: `The URL patterns of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
     route: '/projects/2?tab=settings&section=browser-extension',
     viewport: { width, height: 1000 },
     of: '[data-shot="project-url-patterns"]',
@@ -4455,7 +4474,6 @@ const SCENES = [
       'Settings → Integrations: the Jira connect form with a pasted board URL, scoped-token steps and a sign-in check',
     tags: ['docs'],
     out: 'docs',
-    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
     // The check endpoint would call the typed site, so the scene answers it with a
     // canned Cloud site and sign-in; no Atlassian host is contacted.
     route: '/settings/integrations',
@@ -4548,7 +4566,6 @@ const SCENES = [
     route: '/settings/integrations',
     viewport: { width: 1280, height: 1100 },
     colorScheme: 'light',
-    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
     async run({ page, shoot, settle }) {
       await page.route('**/api/integrations/connections/check', async (route) => {
         const body = route.request().postDataJSON();
@@ -4769,7 +4786,7 @@ const SCENES = [
     // answered as bound to CHK / Bug, with its sync policies, a default assignee and an owner route.
     prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 2300 },
+    viewport: { width: 1280, height: 2500 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
     async run({ page, goto, shoot, settle }) {
@@ -5190,7 +5207,7 @@ const SCENES = [
     description: 'Per-worker run timeline: hook sections over each test, wasted waits switched on (dark)',
     tags: ['docs'],
     out: 'docs',
-    route: '/test-runs/2?tab=workers',
+    route: '/test-runs/2?tab=timeline',
     viewport: { width: 1600, height: 1000 },
     of: '[data-shot="run-timeline"]',
     pad: 12,
@@ -5229,7 +5246,7 @@ const SCENES = [
       this.runId = await reportRetriedRun(request, base);
     },
     async run({ page, goto, settle, shoot }) {
-      await goto(`/test-runs/${this.runId}?tab=workers`);
+      await goto(`/test-runs/${this.runId}?tab=timeline`);
       const bars = page.locator('[data-shot="run-timeline"] [data-timeline-test]');
       await bars.first().waitFor({ timeout: 60000 });
       await settle();
@@ -5281,7 +5298,7 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
-    route: '/test-runs/62?tab=workers',
+    route: '/test-runs/62?tab=timeline',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="run-timeline"]',
     pad: 12,
@@ -5375,7 +5392,7 @@ const SCENES = [
       this.runId = await reportLiveRunWithResources(request, base);
     },
     async run({ page, goto, shoot, settle }) {
-      await goto(`/test-runs/${this.runId}?tab=workers`);
+      await goto(`/test-runs/${this.runId}?tab=timeline`);
       await page.getByTestId('timeline-resource-band').first().waitFor({ timeout: 60000 });
       await page.getByTestId('timeline-resources-menu').click();
       await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).last().click();
@@ -5396,7 +5413,7 @@ const SCENES = [
         [390, 'tests-narrow'],
       ]) {
         await page.setViewportSize({ width, height: 900 });
-        await goto(`/test-runs/${this.runId}?tab=test-cases`);
+        await goto(`/test-runs/${this.runId}?tab=tests`);
         await page.getByTestId('live-worker-resources').first().waitFor({ timeout: 60000 });
         // A wide list follows the live run to its newest rows; on a phone the
         // page scrolls instead, so the newest rows are put first there.
@@ -5437,7 +5454,7 @@ const SCENES = [
       await beat();
       const heartbeat = setInterval(beat, 20_000);
       try {
-        await goto(`/test-runs/${runId}?tab=workers`);
+        await goto(`/test-runs/${runId}?tab=timeline`);
         // The server checks its live runs for stuck tests every 15 seconds.
         await page.locator('[data-timeline-running][data-stuck]').first().waitFor({ timeout: 60_000 });
         await page.locator('[data-timeline-ghost]').first().waitFor({ timeout: 30_000 });
@@ -5452,7 +5469,7 @@ const SCENES = [
           [390, 'tests-narrow'],
         ]) {
           await page.setViewportSize({ width, height: 900 });
-          await goto(`/test-runs/${runId}?tab=test-cases&search=is%3Astuck`);
+          await goto(`/test-runs/${runId}?tab=tests&search=is%3Astuck`);
           await page.locator('[data-testid="stuck-time"]:visible').first().waitFor({ timeout: 60_000 });
           await settle();
           await shoot(label, { of: '[data-shot="failure-clusters"]' });
@@ -5471,7 +5488,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources-worker-strip',
     description: "The leaky run's timeline with each test's CPU under its worker's row, one test's strip hovered",
-    route: '/test-runs/62?tab=workers',
+    route: '/test-runs/62?tab=timeline',
     viewport: { width: 1280, height: 900 },
     // A whole-page capture: cropping to the timeline hides what is around it,
     // which moves the 10px strip out from under the pointer.
@@ -5497,7 +5514,7 @@ const SCENES = [
     description:
       "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the second shard's hovered",
     // The Web Dashboard run before the leaky one ran as two shards, each with its own resource report.
-    route: '/test-runs/63?tab=workers',
+    route: '/test-runs/63?tab=timeline',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="run-timeline"]',
     pad: 12,
@@ -8883,7 +8900,7 @@ const SCENES = [
     route: '/projects',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
-      await page.getByRole('button', { name: 'Configuration' }).click();
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Setup' }).hover();
       await page.getByRole('menuitem', { name: 'Connect a suite' }).waitFor({ timeout: 15_000 });
       await settle();

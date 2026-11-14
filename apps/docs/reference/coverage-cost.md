@@ -1,13 +1,15 @@
 ---
 title: Coverage cost
-description: "What each coverage mode records, what leaves the machine, and what it costs in test time and CPU, measured on a large ASP.NET Core and Vue application and on synthetic pages."
+description: "What each coverage mode records, what leaves the machine, and what it costs in test time and CPU, measured on a large ASP.NET Core and Vue application, the sample application and synthetic pages."
 lang: en-US
 ---
 
 # Coverage cost
 
 Coverage has two sides, each opt-in: the browser's, [code reach](/features/code-reach), and the backend's,
-[server coverage](/features/server-coverage). Each mode below records more than the one above it on its side.
+[server coverage](/features/server-coverage), with the style sheets' [CSS coverage](/features/css-coverage) a choice
+of its own in the browser. This page owns what each mode records and costs; each feature page says how to turn its
+mode on. Each mode below records more than the one above it on its side.
 
 ## The modes
 
@@ -22,8 +24,8 @@ Coverage has two sides, each opt-in: the browser's, [code reach](/features/code-
 | CSS rules | `coverage.css: 'rules'`, on its own | the start and end line of each style rule a page matched, and every rule of each sheet | paths, line numbers, git blob ids |
 
 Never source code, never hit counts. Each variable form (`PIWI_COVERAGE_BROWSER`, `PIWI_COVERAGE_SERVER`,
-`PIWI_COVERAGE_CSS`) fills the option the Playwright config leaves unset. [CSS coverage](/features/css-coverage#cost)
-measures its own cost.
+`PIWI_COVERAGE_CSS`) fills the option the Playwright config leaves unset. Code reach and CSS coverage need the
+[capture fixtures](/guide/capture-fixtures) and Chromium; server coverage needs a backend built for coverage.
 
 ## On a large ASP.NET Core and Vue application
 
@@ -57,7 +59,7 @@ to five times.
 reads the source of each application script its worker has not seen yet, and V8's precise coverage keeps a record of
 every function the page runs; as the test leaves the document, the reporter stops the page to read that record and
 resolves it to files. Each of these works on every module of every document, so the cost grows with the modules a page
-loads and with the full page loads a test makes: an application that loads its modules once, then navigates on the
+loads and with the full page loads a test makes, beside a CDP session on each page the test has: an application that loads its modules once, then navigates on the
 client, pays far less, as the synthetic pages below show. Files and functions cost about the same: both read the same
 record, functions only keep more of it. Lines cost more: V8 counts every block a function runs, not only the call.
 
@@ -84,6 +86,12 @@ change in test duration (72.8 s of tests without coverage, 72.2 s with, medians 
 a server bundle 7.8% larger. On the same suite, the ASP.NET Core coverage build costs 12.5% more server CPU, and no
 measurable test time either. Per call, the Nitro recorder costs 5 to 13 ns, about what the .NET one costs.
 
+## CSS rules
+
+The cost of CSS coverage is Chromium's style recalculation, not the reads: about 10% more per test on the sample
+application, close to what function coverage costs there, and up to 57% on a page with 2,000 rules and frequent
+re-renders, where function coverage costs 4%.
+
 ## Choosing
 
 - **Server coverage** can stay on in every run: against a backend that is not a coverage build, it collects nothing
@@ -93,6 +101,7 @@ measurable test time either. Per call, the Nitro recorder costs 5 to 13 ns, abou
   50% to the UI tests. Files and functions cost about the same, so a scheduled run may as well record functions. On an
   application that loads its modules once, it costs little enough to stay on. Record lines where the front end's
   line ratio in the [combined coverage](/features/combined-coverage) is worth the slower scripts.
+- **CSS coverage** belongs where style changes are frequent, or in a scheduled run.
 
 ## Related
 

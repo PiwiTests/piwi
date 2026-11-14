@@ -533,7 +533,7 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
     const [channel, hub] = await Promise.all([
       RecordChannel.open({
         onAttach: (handoff) =>
-          this.channel?.refuse(handoff.id, words.declined.record ?? 'Record here records into an editor.'),
+          this.channel?.refuse(handoff.id, words.declined.record ?? 'Record writes into an editor.'),
         onRun: (socket, attach) => this.sessions.attach(socket, attach),
         onRunMain: (socket, begin) => this.sessions.attachMain(socket, begin),
         folderPrefix: options.folderPrefix,

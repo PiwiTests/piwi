@@ -10,7 +10,7 @@ import { parseRunToHub, type HubToRun, type RunIntent, type RunToHub } from '@pi
 import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
- * Pick a locator and Record here started from outside the page, as Piwi Picker starts them through the editor's hub:
+ * Pick a locator and Record started from outside the page, as Piwi Picker starts them through the editor's hub:
  * a real Playwright run through the built package, a fake editor service on the socket the run names (the run channel
  * and the record channel, as the editor names both), and a fake Send to editor endpoint. At a stop the pause bar shows,
  * the editor asks the worker to pick, then to record; the page plays the person's clicks in the picker, and the fake
@@ -251,7 +251,7 @@ beforeAll(async () => {
             first = false;
             const attach = parseHandoffToEditor(line);
             if (attach?.type === 'attach') {
-              // A hand-off from Record here: this editor takes no recording.
+              // A hand-off from Record: this editor takes no recording.
               handoffs.push(attach);
               socket.end(`${JSON.stringify({ type: 'refused', message: 'this editor records nothing.' })}\n`);
               return;
@@ -417,7 +417,7 @@ describe('Pick and Record started from outside the page', () => {
     expect(output).toContain("[piwi] Locator picked at tests/headed.spec.cjs:4: getByTestId('go')");
   });
 
-  it('hands the page to the editor’s recorder as the bar’s Record here does, and shows the bar again after', () => {
+  it('hands the page to the editor’s recorder as the bar’s Record does, and shows the bar again after', () => {
     expect(answered['recorded from outside']).toEqual([
       { ok: true, message: "Recording in the test's window: the editor writes the steps above the stopped line." },
     ]);
@@ -438,7 +438,7 @@ describe('Pick and Record started from outside the page', () => {
       `${name} needs the pause bar in the test's window, and this stop shows none: run the test headed.`;
     expect(answered.headless).toEqual([
       { ok: false, message: refusal('Pick a locator') },
-      { ok: false, message: refusal('Record here') },
+      { ok: false, message: refusal('Record') },
     ]);
   });
 
@@ -447,7 +447,7 @@ describe('Pick and Record started from outside the page', () => {
       `${name} needs the page the test stopped in, which this call does not name among its context's pages: use the pause bar in the test's window.`;
     expect(answered['a call on one of two pages']).toEqual([
       { ok: false, message: refusal('Pick a locator') },
-      { ok: false, message: refusal('Record here') },
+      { ok: false, message: refusal('Record') },
     ]);
   });
 

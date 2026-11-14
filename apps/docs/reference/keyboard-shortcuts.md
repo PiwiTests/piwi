@@ -21,8 +21,11 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 
 ## Desktop app
 
-In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, beside the
-docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
+In the [desktop app](/features/desktop)'s dashboard window. On macOS the menu bar holds the first four with `⌘`, and zoom
+takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in. The macOS menu bar adds Piwi's items to the
+system's: **Settings…** in the app menu, whose **Quit Piwi Desktop** asks first while tests run; **Import Playwright
+report…** in **File**; **Back** and **Forward** in **View**; and **Piwi documentation**, **Report an issue** and
+**Show logs** in **Help**.
 
 | Keys | Action |
 |---|---|
@@ -76,7 +79,7 @@ In the [assistant](/features/assistant#asking-a-question)'s question field:
 
 ## Failure inbox
 
-On the [failure inbox](/features/failure-clusters#triage-from-the-row-or-the-keyboard), the keys act on the selected
+On the [failure inbox](/features/failure-inbox#triage-from-the-row-or-the-keyboard), the keys act on the selected
 row. The triage actions need the Maintainer role or above on the project.
 
 | Keys | Action |
@@ -88,7 +91,7 @@ row. The triage actions need the Maintainer role or above on the project.
 | `o` | Open the cluster |
 | `r` | Resolve |
 | `i` | Ignore |
-| `q` | Quarantine the cluster's tests |
+| `q` | [Quarantine](/features/flaky-tests#quarantine-with-a-way-out) the cluster's tests |
 | `a` | Assign |
 | `s` | Snooze |
 | `l` | Link a known issue |
@@ -114,12 +117,14 @@ On a run's and a project's **Tests** tab ([test search](/reference/test-search))
 
 ## Element picker
 
-When you [pick a replacement locator](/features/locator-healing) on a captured page:
+In the pickers that pick a replacement locator for [locator healing](/features/locator-healing#use-it): the
+dashboard's **Pick from snapshot** and the failure-time picker of a local run:
 
 | Keys | Action |
 |---|---|
 | `↑` | Select the parent of the highlighted element |
 | `↓` | Go back down to the child |
+| `Enter` | Pick the highlighted element, else the focused one |
 | `Esc` | Skip picking, without choosing an element |
 
 ## Permission grid
@@ -131,5 +136,5 @@ jump to the first / last column of the row. `Space` or `Enter` opens the focused
 
 - [UI overview](/features/ui-overview): the pages these keys move between
 - [Test search](/reference/test-search): the language of the Tests tabs' search box
-- [Failure clusters & the inbox](/features/failure-clusters): the triage actions
+- [Failure inbox](/features/failure-inbox): the triage actions
 - [Access, roles and groups](/operate/project-access#permission-grid): the permission grid

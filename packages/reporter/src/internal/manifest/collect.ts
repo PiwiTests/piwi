@@ -42,7 +42,7 @@ export interface ReporterManifest {
 /** The committed manifest file the reporter looks for next to the Playwright config. */
 const COMMITTED_MANIFEST_FILE = 'piwi.manifest.json';
 
-/** The instrumentation route-manifest path, served outside production. */
+/** The instrumentation route-manifest path, served in development and test (each package's allow-list). */
 const INSTRUMENTATION_MANIFEST_PATH = '/__piwi/manifest';
 
 /**

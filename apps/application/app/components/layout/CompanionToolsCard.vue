@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * The tools that ship alongside the dashboard but install elsewhere — the
- * browser extension, the desktop app, the reporter CLI, MCP agent access, the
- * editor extensions and the IDE hand-off. Unlike the capability ladder, none of these leave
+ * browser extension, the desktop app, Piwi Runner, the reporter CLI, MCP agent
+ * access, the editor extensions and the IDE hand-off. Unlike the capability ladder, none of these leave
  * evidence on the instance, so the card is informative rather than detected.
  */
 import {
@@ -66,6 +66,26 @@ const isDesktop = useIsDesktop();
         </div>
       </li>
 
+      <li v-if="!isDesktop" class="flex gap-4 py-4 first:pt-0 last:pb-0">
+        <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-elevated text-dimmed">
+          <UIcon name="i-lucide-play" class="size-5" />
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="font-medium mb-1">Piwi Runner</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            A small app that takes Run on my machine requests from this instance without the dashboard: it asks before
+            every run, runs it in your folder and stays in the tray. Run on my machine is off until an administrator
+            turns it on in Capabilities.
+          </p>
+          <div class="flex items-center gap-3 mt-2 text-sm">
+            <UButton :to="DESKTOP_DOWNLOAD_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              GitHub Releases
+            </UButton>
+            <DocLink to="features/piwi-runner" class="text-sm">Docs</DocLink>
+          </div>
+        </div>
+      </li>
+
       <li class="flex gap-4 py-4 first:pt-0 last:pb-0">
         <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-elevated text-dimmed">
           <UIcon name="i-lucide-terminal" class="size-5" />
@@ -82,7 +102,7 @@ const isDesktop = useIsDesktop();
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
             <DocLink to="guide/getting-started#fast-path-one-command" class="text-sm">init</DocLink>
-            <DocLink to="guide/ci#blocking-a-merge" class="text-sm">gate</DocLink>
+            <DocLink to="features/merge-gate" class="text-sm">gate</DocLink>
             <DocLink to="features/test-selection" class="text-sm">run &amp; select</DocLink>
           </div>
         </div>

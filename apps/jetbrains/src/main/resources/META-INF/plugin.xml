@@ -12,8 +12,8 @@
     have used; this plugin brings that to WebStorm, IntelliJ IDEA Ultimate and Rider.</p>
 
     <p><b>You need a Piwi instance:</b> the <a href="https://piwitests.dev/features/desktop">desktop app</a>,
-    <code>npx @piwitests/server</code> or the Docker image. Recording needs none. Piwi reads Playwright Test suites in
-    JavaScript and TypeScript.</p>
+    <code>npx @piwitests/server</code> or the Docker image. Recording, running a test by its line, and pausing and
+    stepping through it need none. Piwi reads Playwright Test suites in JavaScript and TypeScript.</p>
 
     <p><b>What it shows</b></p>
     <ul>
@@ -126,7 +126,7 @@
                 <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                         text="Verify the test at the caret ×3"
                         icon="AllIcons.Actions.Rerun"
-                        description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless Run headed is on, and say how many runs passed">
+                        description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless headed runs are on, and say how many runs passed">
                 </action>
                 <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
                         icon="AllIcons.Actions.RunAll"
@@ -144,7 +144,7 @@
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
                     <synonym text="Rerun failed tests"/>
                 </action>
-                <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run headed"
+                <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
                         description="Run every test Piwi starts in this project headed, with its browser window shown"/>
                 <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
                         text="Hold failures from each run's start…"
@@ -275,12 +275,15 @@
                         text="Open the latest run" description="Open the run the status bar shows"/>
                 <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the latest run"
                         icon="AllIcons.Actions.Refresh"
-                        description="Read the latest run and its failures again, not the indexes Reload Piwi fetches"/>
+                        description="Read the latest run and its failures again, and none of the indexes"/>
                 <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
                         icon="AllIcons.Actions.Diff"
                         description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
+                <action id="Piwi.GroupFailuresBy" class="dev.piwitests.jetbrains.GroupFailuresByAction"
+                        text="Group the failures by…" icon="AllIcons.Actions.ShowAsTree"
+                        description="Group the failures of the Piwi tool window by file, cluster or owner, or list them flat"/>
                 <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
-                        text="Show coverage marks"
+                        text="Show or hide the coverage marks"
                         description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
             </group>
             <separator/>
@@ -308,7 +311,7 @@
                         description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
                 <action id="Piwi.Disconnect" icon="/icons/disconnect.svg" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
                         description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
-                <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload Piwi"
+                <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Read the instance and the configs again"
                         icon="/icons/reload.svg"
                         description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
                 <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
@@ -320,7 +323,7 @@
                 <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Open settings"
                         icon="AllIcons.General.Settings"
                         description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
-                <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"
+                <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Open the documentation"
                         icon="AllIcons.Actions.Help"
                         description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
             </group>
@@ -330,7 +333,7 @@
             <action id="Piwi.ShowStop" class="dev.piwitests.jetbrains.ShowStopAction" text="Go to the stopped line"
                     icon="AllIcons.Debugger.NextStatement" use-shortcut-of="ShowExecutionPoint"
                     description="Open the line a test of the run is stopped at"/>
-            <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the run page"
+            <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the page of a run of this project"
                     icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
             <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
                     icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>

@@ -10,7 +10,8 @@
  * `?commit=`, `?folder=` or `?area=` opens Code, and anything else the first
  * view the project has. A view's own keys leave the address when another opens.
  */
-import { COVERAGE_VIEW_KEYS, COVERAGE_VIEWS, type CoverageView } from '~/utils/coverage-tab';
+import { COVERAGE_VIEW_KEYS, type CoverageView } from '~/utils/coverage-tab';
+import { PROJECT_COVERAGE_VIEWS } from '#shared/app-places';
 import type { ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{ projectId: number; scope?: ProjectRunScope }>();
@@ -18,12 +19,10 @@ const route = useRoute();
 const router = useRouter();
 const { isHidden } = await useProjectCapabilities(props.projectId);
 
-const LABELS: Record<CoverageView, string> = { gaps: 'Gaps', map: 'Map', code: 'Code' };
-
 const views = computed(() =>
-  COVERAGE_VIEWS.filter((view) => !isHidden(view === 'code' ? 'coverage' : 'test-map')).map((view) => ({
-    key: view,
-    label: LABELS[view],
+  PROJECT_COVERAGE_VIEWS.filter((view) => !isHidden(view.value === 'code' ? 'coverage' : 'test-map')).map((view) => ({
+    key: view.value,
+    label: view.label,
   })),
 );
 
@@ -37,7 +36,7 @@ function impliedView(): CoverageView {
 const view = computed<CoverageView>({
   get() {
     const available = views.value.map((v) => v.key);
-    const asked = COVERAGE_VIEWS.find((v) => v === route.query.view) ?? impliedView();
+    const asked = PROJECT_COVERAGE_VIEWS.find((v) => v.value === route.query.view)?.value ?? impliedView();
     return available.includes(asked) ? asked : (available[0] ?? 'gaps');
   },
   set(next) {

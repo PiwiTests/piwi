@@ -30,7 +30,7 @@ export const HOME_ANCHORS = [
       'The Failure inbox: the open failure clusters you still owe a decision, in queues such as new, mine or regressions, triaged from the keyboard.',
     shownWhen: 'When the instance has at least one project.',
     help: 'home.failure-inbox',
-    doc: 'features/failure-clusters#the-failure-inbox',
+    doc: 'features/failure-inbox',
     sample: { route: '/' },
   },
   {
@@ -40,7 +40,7 @@ export const HOME_ANCHORS = [
     describes:
       'A row of the Failure inbox: one open failure cluster across the projects, however many tests it breaks, triaged from the keyboard.',
     shownWhen: 'When at least one failure cluster is open.',
-    doc: 'features/failure-clusters#the-failure-inbox',
+    doc: 'features/failure-inbox',
     sample: { route: '/' },
   },
   {
@@ -51,7 +51,7 @@ export const HOME_ANCHORS = [
       'The Failure inbox’s keyboard line: j and k move between rows, and one key resolves, ignores, quarantines, assigns, snoozes or links the selected cluster.',
     shownWhen: 'On a screen with a pointer, when you can triage a row of the inbox.',
     requires: { permission: 'triage:write' },
-    doc: 'features/failure-clusters#triage-from-the-row-or-the-keyboard',
+    doc: 'features/failure-inbox#triage-from-the-row-or-the-keyboard',
     sample: { route: '/' },
   },
   {

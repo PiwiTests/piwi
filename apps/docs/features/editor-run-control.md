@@ -6,14 +6,13 @@ lang: en-US
 
 # Pause and step from the editor
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
-A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's own
-commands: no debug session starts, and the IDE's debugger works as usual beside it; so can
-[one started outside Piwi](./terminal-runs). The editor marks the line the test stopped at, as a debugger does, and
-the breakpoints you set or remove reach the run while it goes on. The page's
-[pause bar](./editor-breakpoints#pause-a-run) and Piwi Picker's [Runs window](./runs-window) answer the same stops. At
-a stop, the editor also writes code from the page: [Code from a pause](./editor-stop-code).
+A test run the [editor extensions](./editors) start, or [one started outside Piwi](./terminal-runs), can be paused,
+stepped and resumed from the editor with Piwi's own commands: no debug session starts, and the IDE's debugger works
+as usual beside it. The editor marks the line the test stopped at, and the breakpoints you set or remove reach the run
+while it goes on. The [pause bar](./editor-breakpoints#pause-a-run) and Piwi Picker's [Runs window](./runs-window)
+answer the same stops; the code a stop writes is on [Code from a pause](./editor-stop-code).
 
 ## The controls
 
@@ -22,7 +21,7 @@ a stop, the editor also writes code from the page: [Code from a pause](./editor-
 | **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Pause Program's |
 | **Resume** | Runs the stopped test on to the next breakpoint | `F5` | Resume Program's, `F9` |
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
-| **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
+| **Run to the cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | **Stop the run**, or the Run tool window's Stop |
@@ -33,18 +32,18 @@ test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcut
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls are in the Piwi item's menu while they apply, after **Go to the stopped line**, in the
-  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under `…`).
+  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, others under `…`).
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
   whose text says why and where a test stopped.
 
 The item's line comes from the run, so it counts offline and with the desktop app
-([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
+([Follow a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
 
-**Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
+**Pause** stops every run Piwi started in this window (a JetBrains IDE's project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
-finishes first, unless you [end the test there](./end-the-test#while-a-pause-waits-for-a-call), and a worker between
-tests stops at the next test's first call. A test that never stops, under CI or
-Playwright's own debugger, says why.
+finishes first ([End the test](./end-the-test#while-a-pause-waits-for-a-call) gives up a locator call at once), and a
+worker between tests stops at the next test's first call. A test that never stops, under CI or
+Playwright's debugger, says why.
 
 ## Where the test stands
 
@@ -54,7 +53,7 @@ line, and marks it:
 an arrow in the gutter, the debugger's execution point color, and above it the call, as Playwright names it, with the
 controls:
 
-`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish  End test
+`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to the cursor  Finish  End the test
 
 It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. VS Code's CodeLens holds Resume, Step, Finish and **Write code…**, its hover all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
@@ -62,7 +61,7 @@ the arrow's click lists the controls, and the color is **Settings → Editor →
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, and Resume, Step and Finish above the line">
+  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to the cursor and Finish, and Resume, Step and Finish above the line">
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
@@ -73,14 +72,13 @@ cursor's line, else the only one shown, else it asks which. A control answers th
 went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
-**Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test
-has none.
+**Run to the cursor** in an edited file runs to the run's line for the cursor's, or says a line written since has none.
 
 ## A headless run
 
-A run Piwi starts follows your config, headless by default, unless you choose
-[**Run headed**](./editor-runs#how-a-run-starts) or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused page** in the JetBrains
-Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to cursor** from the editor
+A run Piwi starts follows your config, headless by default, unless you turn
+[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
+Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to the cursor** from the editor
 waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
 opens it at any stop.
 
@@ -92,15 +90,18 @@ opens it at any stop.
 Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: it replaces the
 stopped line's, and the tab shows the result or refusal.
 
-**Watch** updates the paused page until you hide or close the tab, resume or switch stops. Choose
-[**Interact**](./watch-running-test#interact) to click, scroll or type on it; your first one drives the stop.
-Interact stays on through the worker's stops, and goes off, giving the stop back, on Escape outside a pick or check,
-another
-[lane](/guide/concepts#worker)'s stop, a stop without input, **Watch** off or refused, the tab hidden or closed,
-or the run's end. The caption names who drives and watches the stop
-([driving a stop](/guide/concepts#presence-driving-a-stop)).
-The preview uses the editor's connection: no Picker, pairing, live-view setting or port forwarding. Older reporters
-keep the still image. To watch the test before it stops: [Watch a running test](./watch-running-test).
+**Watch** updates the paused page until you hide or close the tab, resume or switch stops, and
+[**Interact**](./watch-running-test#interact) plays your input on it, taking the stop.
+The preview uses the editor's connection: no Piwi Picker, pairing, live-view setting or port forwarding. Older reporters
+keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
+
+## Share with Playwright tools
+
+At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
+Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
+Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
+It is off until you ask, and asks first each time: any process of yours can then read the browser's pages and run code
+in them. It stays shared until the test ends; no agent can share it.
 
 ## Breakpoints while the run goes on
 
@@ -117,9 +118,8 @@ the test; a condition is not read, so a conditional breakpoint stops at each pas
   <img src="/diagrams/run-control.svg" alt="A test run's workers report to the editor service through the run channel, which the IDE and Piwi Picker (over a WebSocket) steer; the pause bar shows in the test's browser only at a stop">
 </figure>
 
-With a reporter newer than 0.59.0, each worker of a Piwi run stays connected to the editor service, through a socket on
-your machine only you can read (`PIWI_RUN_CHANNEL`): it says which test it runs and where it stops, and the editor
-answers. Closing the IDE closes the connections: a stop with no pause bar then goes on, one the bar shows waits there.
+With a reporter newer than 0.59.0, each worker of a Piwi run stays connected to the editor service through a socket
+only you can read (`PIWI_RUN_CHANNEL`), saying which test it runs and where it stops. Closing the IDE closes the connections: a stop with no pause bar then goes on, one the bar shows waits there.
 
 ## Limits
 
@@ -133,8 +133,8 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 ## Related
 
-- [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
-- [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
-- [Share a run live](./share-live): let a teammate watch a run Piwi started, from the editor.
-- [Debug in my editor](./debug-in-editor): such a run, started from a failure's page.
+- [Breakpoints in the browser](./editor-breakpoints): the breakpoints and the pause bar.
+- [Runs from the editor](./editor-runs): the commands that start a run.
+- [Share a local run live](./share-live): for a teammate.
+- [Debug in my editor](./debug-in-editor): a run started from a failure's page.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

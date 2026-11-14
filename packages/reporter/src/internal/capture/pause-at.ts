@@ -685,7 +685,7 @@ const MAX_NAVIGATED = 10;
 const HIGHLIGHT_MS = 2000;
 
 /**
- * The pause bar's Pick a locator and Record here, started from outside the page (the editor's hub, for Piwi Picker):
+ * The pause bar's Pick a locator and Record, started from outside the page (the editor's hub, for Piwi Picker):
  * the bar takes an intent while it waits for its answer, and one handed to it while it is about to (its highlight
  * still drawing) waits for it; while a pick or a recording runs, none is taken. Each action in the test's window that
  * takes Escape as its own (a pick, a check, a region's pick: `RunActing`), the bar's own or an intent, is said to `said`
@@ -896,7 +896,7 @@ export function highlightAtStop(page: Page, locator: Locator, what: 'call' | 'co
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
- * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended; with
+ * the run can record), **Record** hands the page to it and shows the bar again once the recording ended; with
  * `point.end`, **End the test** answers `end`. An intent handed to `intents` while the bar waits is taken as its own
  * button's click, the bar's own answer first, with the test's window brought to the front; `assert` and
  * `assert-region`, which no button starts, run `onIntent` with the bar down and show it again after. Returns the answer
@@ -940,10 +940,10 @@ export async function pauseHere(
     console.log(
       point.failure
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
-            `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
+            `${onRecord ? ' or Record' : ''} in the browser (Esc resumes, and the test ends as it failed).`
         : `[piwi] Paused at ${callSiteLine(point.location)} before ${call}` +
             `: Resume, Step, Finish${point.end ? ', End the test' : ''}, then Pick a locator` +
-            `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes).`,
+            `${onRecord ? ' or Record' : ''} in the browser (Esc resumes).`,
     );
     // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
     // one, a few times in a row at most. A closed page, or anything else, resumes.

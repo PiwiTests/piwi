@@ -79,7 +79,7 @@ async function removeToken() {
           :description="
             hasToken
               ? 'Leave empty to keep the stored token, or enter a new value to replace it.'
-              : 'For GitHub, GitLab, or Bitbucket. Falls back to the global SCM token if not set.'
+              : 'For GitHub, GitLab, or Bitbucket. Without one, the project uses the token of Settings → Source control.'
           "
         >
           <template #label>

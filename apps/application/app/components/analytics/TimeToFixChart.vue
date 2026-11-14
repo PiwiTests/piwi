@@ -27,7 +27,7 @@ const lines = computed<TrendLine[]>(() => [
   },
 ]);
 const legend = [
-  { color: OPENED_COLOR, label: 'Failure causes opened' },
+  { color: OPENED_COLOR, label: 'Failure clusters opened' },
   { color: FIXED_COLOR, label: 'Fixed' },
 ];
 
@@ -55,7 +55,7 @@ const exportData = computed(() =>
   ttf.value
     ? {
         name: 'time-to-fix',
-        header: ['date', 'failure causes opened', 'failure causes fixed'],
+        header: ['date', 'failure clusters opened', 'failure clusters fixed'],
         rows: ttf.value.points.map((p) => [p.date, p.opened, p.fixed]),
       }
     : null,
@@ -84,7 +84,7 @@ const exportData = computed(() =>
         </UButton>
       </template>
     </ErrorState>
-    <EmptyState v-else-if="!hasData || !ttf" icon="i-lucide-shield-check" text="No failure cause in this period." />
+    <EmptyState v-else-if="!hasData || !ttf" icon="i-lucide-shield-check" text="No failure cluster in this period." />
     <div v-else class="space-y-3">
       <StatTileGrid>
         <StatTile label="Median time to fix" :value="days(ttf.medianDays)" data-testid="ttf-median" />
@@ -94,7 +94,7 @@ const exportData = computed(() =>
       </StatTileGrid>
       <TrendLinesChart :series="lines" :height="150" :bucket-href="bucketDrill(query, ttf.bucketDays, 'clusters')" />
       <div v-if="openTotal > 0" class="space-y-1">
-        <p class="text-xs font-medium text-muted">Open failure causes by age</p>
+        <p class="text-xs font-medium text-muted">Open failure clusters by age</p>
         <ul class="space-y-1">
           <li v-for="group in ttf.openByAge" :key="group.label" class="flex items-center gap-2 text-xs">
             <span class="w-24 shrink-0 text-muted">{{ group.label }}</span>

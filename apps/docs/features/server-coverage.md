@@ -6,6 +6,8 @@ lang: en-US
 
 # Server coverage
 
+<Needs reporter fixtures backend />
+
 With an ASP.NET Core or a Nitro backend built for coverage, each test records the backend code it ran: its files, the
 functions that ran in them and, at the finest granularity, the executed lines. Requests are told apart, so tests running in
 parallel against one shared backend each keep their own. The browser side is [code reach](./code-reach); both feed
@@ -65,6 +67,18 @@ The backend names the checksum of the source each file was built from. When the 
 differs (the backend was built from another commit), the reporter keeps the file's path but drops its line numbers,
 which would point at the wrong lines, and marks the test incomplete; the run-level coverage drops them the same way.
 
+### Suspect lines
+
+A failure's **suspect lines** are the lines changed since its last passing run that the failing tests executed, read
+from their coverage, browser or server, and the diff of the source control range: each changed hunk they executed,
+ranked by how many passing tests of the same run executed it too (the Ochiai score of spectrum-based fault
+localization, 1 when only failing tests did). Line coverage names the executed lines, function coverage the changed
+lines inside a function that ran, and file coverage the whole hunk. When the host names the file's version at the
+head (GitHub, or a local clone in the desktop app), coverage of another version counts as file coverage. The failure
+pages' **What changed** line names the first, the cluster's diff marks them, the
+[AI diagnosis](./ai-diagnosis#scm-grounded-context) lists them and sends their files' patches first, and the
+[fix plan](./fix-plans) carries the top five.
+
 ## How it is collected
 
 Each response names its request's coverage in an `X-Piwi-Coverage` header. Once the test ends, outside its time, the
@@ -116,12 +130,9 @@ answers it is the one that served the run's first requests.
 
 ## Cost
 
-On a large ASP.NET Core and Vue application, the coverage build alone ran within 1% of a normal build, and per-test
-line coverage added under 10% to its UI tests, with no measurable change in its CPU. The build records the same way
-at every granularity, so files and functions cost what lines cost.
-On the sample application, whose suite runs against either backend, a coverage build cost no measurable test time
-on either, and 5.6% more server CPU on Nitro, 12.5% on ASP.NET Core. [Coverage cost](/reference/coverage-cost) has every
-mode, how it was measured, and the prototype figures.
+The coverage build alone runs within 1% of a normal build, and per-test coverage stayed under 10% of the UI tests' time on a large
+application, at every granularity alike: [Coverage cost](/reference/coverage-cost) has the figures for both backends
+and how they were measured.
 
 ## Try it in the demo
 

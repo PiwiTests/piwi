@@ -4,7 +4,7 @@
  * it stands stopped. The record channel's socket (`recorder/handoff.ts`) hands each worker's run connection here. The
  * client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
  * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`); both can start an intent at a stop (`intent`:
- * the pause bar's Pick a locator and Record here, the check panel's Check an element, a region's ARIA snapshot) and ask
+ * the pause bar's Pick a locator and Record, the check panel's Check an element, a region's ARIA snapshot) and ask
  * the stopped worker what it holds (`requests`, `mock`, `locator`: the responses its test kept, the one to mock, a
  * locator's matches), which `stop-actions.ts` turns into code. A viewer outside the page (a Piwi Picker connection of
  * the hub) watches a stopped page's live view (`view`): the worker starts it with the first viewer of a stop and stops
@@ -1567,7 +1567,7 @@ export class RunSessions {
 
   /**
    * At the stop `since` names (of the run's one stopped worker, or the one named), start an intent in the test's
-   * window: the pause bar's Pick a locator or Record here as its button does, the check panel's Check an element
+   * window: the pause bar's Pick a locator or Record as its button does, the check panel's Check an element
    * (`assert`) or the picker for a region (`assert-region`). At a stop no bar shows, only for a viewer of its live
    * view, which drives it there. Refused without the stop, at a stop no bar shows for anyone else, for a reporter that
    * does not take it, and, for `assert` and `assert-region`, when the client writes no code. Answers once the worker

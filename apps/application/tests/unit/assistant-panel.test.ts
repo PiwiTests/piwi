@@ -441,7 +441,7 @@ describe('display', () => {
   });
 
   test('opens app routes in place only', () => {
-    expect(isAppRoute('/test-runs/12?tab=workers')).toBe(true);
+    expect(isAppRoute('/test-runs/12?tab=timeline')).toBe(true);
     for (const route of ['//evil.example', 'https://evil.example', 'javascript:alert(1)', '/\\evil', '/a b']) {
       expect(isAppRoute(route), route).toBe(false);
     }

@@ -30,11 +30,11 @@ last fields of each row (after the semicolon) change by nature between runs and 
   clock is more than 2 s off the runner's, enough to break token expiry and "created just now" checks.
 - **Changes tab**: the runner, browser and server fields that changed against the baseline run, grouped, with every
   value of a field the shards disagree on.
-- **Test page**: the environment diff of the **State** tab, against the test's last pass. A browser time zone or
+- **Execution page**: the environment diff of the **State** tab, against the test's last pass. A browser time zone or
   locale the page did not report is _inferred_ from the declared value, else the runner's, and labeled so.
 - **Trend charts**: an automatic marker on the run where the runner, a browser or a server changed, against the
   previous run on the same branch and environment label.
-- **Flakiness tab**: the runner's time zone and locale become [flake suspects](/features/flake-lab) when the failures
+- **Flakiness tab**: the runner's time zone and locale become [flake suspects](/features/flaky-tests#suspects) when the failures
   share one and the passes another; the [Flake Lab](/features/flake-lab) runs the browser in it to confirm. The runner
   image and the browser version are listed as context.
 - **MCP**: `get_run` returns the run's `environments`.

@@ -22,7 +22,7 @@ async function projectNames(db: DrizzleDB, ids: number[]): Promise<Map<number, s
 
 /**
  * The top items matching the scope: the latest runs of the period, the open
- * failure causes with the most occurrences, the flakiest tests, or the
+ * failure clusters with the most occurrences, the flakiest tests, or the
  * highest-scored open scenario gaps (in projects that keep the Test Map).
  */
 export async function getAnalyticsList(
@@ -102,7 +102,7 @@ export async function getAnalyticsList(
       ...empty,
       items: rows.map((r) => ({
         id: r.id,
-        title: r.title || `Failure cause #${r.id}`,
+        title: r.title || `Failure cluster #${r.id}`,
         detail: [
           `${r.occurrences ?? 0} occurrences`,
           r.errorType ?? null,

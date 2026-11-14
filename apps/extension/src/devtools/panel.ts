@@ -23,6 +23,7 @@ import { setUpViewportRow } from './panel-viewport.js';
 import { SESSION_KEY } from '../shared/session-storage.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { decorateIcons } from '../shared/icons.js';
+import { keepToolbarFitted } from './toolbar-fit.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS } from '../shared/pattern-view.js';
 import { button, iconLine, noAccessText } from './ui.js';
@@ -234,6 +235,9 @@ async function start(): Promise<void> {
   style.textContent = `${LOCATOR_SYNTAX_CSS}${STEP_CSS}${PATTERN_CSS}`;
   document.head.appendChild(style);
   decorateIcons();
+  keepToolbarFitted(document.querySelector<HTMLElement>('.toolbar')!, [
+    document.querySelector<HTMLElement>('[role="tablist"]')!,
+  ]);
 
   for (const [id, file] of [
     ['pick', 'pick.js'],

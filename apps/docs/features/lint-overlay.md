@@ -20,9 +20,9 @@ button for each and **Copy as a Markdown checklist** for all of them:
 - **A test id on the repeated container** when the element sits in a row, a card or a list item whose copies hold the
   same element: named after the text that tells this copy apart (`data-testid="blue-mug"`), with the locator a test
   then uses, `getByTestId('blue-mug').getByRole('button', { name: 'Add to cart' })`. The container and the text are
-  the ones [Pick an element](./pick-an-element) narrows by: the nearest container whose copies hold the other
-  elements, and a text no other copy contains, a heading first, then a name rather than a price or a count, a
-  visible text before a hidden one. The container is outlined in amber.
+  chosen as [Pick an element narrows a locator](./pick-an-element#narrowing-a-locator-that-finds-several), and the
+  overlay also counts copies that share only their tag, which no locator tells apart until they get a test id. The
+  container is outlined in amber.
 - **A scope** when those copies already share a test id: no attribute to add, the locator filters by the copy's text,
   `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`.
 

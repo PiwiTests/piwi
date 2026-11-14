@@ -1,10 +1,11 @@
 /**
- * The project page's Coverage tab: its views, in the order the switch shows
- * them, and the address keys each view owns (`?tab=coverage&view=…`).
+ * The project page's Coverage tab: the address keys each of its views owns
+ * (`?tab=coverage&view=…`) and the link to one view. The views themselves are
+ * `PROJECT_COVERAGE_VIEWS` (`#shared/app-places`).
  */
+import type { ProjectCoverageView } from '#shared/app-places';
 
-export const COVERAGE_VIEWS = ['gaps', 'map', 'code'] as const;
-export type CoverageView = (typeof COVERAGE_VIEWS)[number];
+export type CoverageView = ProjectCoverageView;
 
 /** The query keys a view reads; they leave the address when another view opens. */
 export const COVERAGE_VIEW_KEYS: Record<CoverageView, string[]> = {

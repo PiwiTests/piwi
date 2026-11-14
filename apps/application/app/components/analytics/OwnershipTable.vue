@@ -33,7 +33,7 @@ function share(row: AnalyticsOwnershipRow): string | null {
     icon="i-lucide-users"
     :title="title ?? 'Ownership'"
     :count="rows.length || undefined"
-    subtitle="Open failure causes by assignee; flaky tests and wasted time by test owner"
+    subtitle="Open failure clusters by assignee; flaky tests and wasted time by test owner"
     help="analytics.ownership"
     data-tour="analytics-ownership"
     data-shot="analytics-ownership"
@@ -53,7 +53,7 @@ function share(row: AnalyticsOwnershipRow): string | null {
         <li v-for="row in rows" :key="row.owner ?? ''" class="py-2 space-y-0.5" data-testid="ownership-row">
           <p class="text-sm text-highlighted" :class="row.owner ? '' : 'text-muted'">{{ ownerName(row) }}</p>
           <p class="text-xs text-muted">
-            {{ row.openClusters }} open failure causes<template v-if="share(row)"> ({{ share(row) }})</template> ·
+            {{ row.openClusters }} open failure clusters<template v-if="share(row)"> ({{ share(row) }})</template> ·
             {{ row.flakyTests }} flaky tests · {{ f.minutes(row.wastedMinutes) }} wasted · median time to fix
             {{ f.value(row.medianTimeToFixDays, 'days', 1) }}
           </p>
@@ -67,7 +67,7 @@ function share(row: AnalyticsOwnershipRow): string | null {
             <thead>
               <tr class="text-left text-xs text-muted border-b border-default">
                 <th class="py-2 pr-4 font-medium">Owner</th>
-                <th class="py-2 pr-4 font-medium text-right">Open failure causes</th>
+                <th class="py-2 pr-4 font-medium text-right">Open failure clusters</th>
                 <th class="py-2 pr-4 font-medium text-right">Flaky tests</th>
                 <th class="py-2 pr-4 font-medium text-right">Wasted CI minutes</th>
                 <th class="py-2 font-medium text-right">Median time to fix</th>

@@ -35,7 +35,7 @@ const WORDS: ShellRunsWords = {
   surfaces: "the test host's window",
   client: 'Test host',
   presence: { kind: 'desktop', name: 'the test host' },
-  declined: { record: 'Record here records into an editor, and the test host has none.' },
+  declined: { record: 'Record writes into an editor, and the test host has none.' },
   picked: (locator) => `${locator}: copy it in the test host's window.`,
   codeSent: (what, at) => `Piwi made ${what} to write ${at}: copy it in the test host's window.`,
   outside: (file) => `${file} is not in a linked folder.`,

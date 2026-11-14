@@ -225,11 +225,17 @@ export interface TabList {
   page: string;
   file: string;
   marker: string;
-  /** `strings`: each string of the array; `values`: each `value: '…'` of its items; `keys`: the object's keys. */
-  pick: 'strings' | 'values' | 'keys';
+  /**
+   * `strings`: each string of the array; `values`: each `value: '…'` of its items; `ids`: each `id: '…'` of its items;
+   * `keys`: the object's keys.
+   */
+  pick: 'strings' | 'values' | 'ids' | 'keys';
   /** The query that selects the tab of `value`. */
   query: (value: string) => Record<string, string>;
 }
+
+/** The registry of the places several files name (`shared/app-places.ts`), by its path from `app/`. */
+const PLACES_FILE = '../shared/app-places.ts';
 
 /**
  * Every tab list of the dashboard that the URL selects. Tabs that live only in
@@ -240,9 +246,9 @@ export interface TabList {
 export const TAB_LISTS: readonly TabList[] = [
   {
     page: '/projects/[id]',
-    file: 'pages/projects/[id]/index.vue',
-    marker: 'const TABS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_TABS =',
+    pick: 'values',
     query: (tab) => ({ tab }),
   },
   // The Failures tab's segments, each selected by the alias that opens it.
@@ -256,22 +262,22 @@ export const TAB_LISTS: readonly TabList[] = [
   // The Coverage tab's views.
   {
     page: '/projects/[id]',
-    file: 'utils/coverage-tab.ts',
-    marker: 'export const COVERAGE_VIEWS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_COVERAGE_VIEWS =',
+    pick: 'values',
     query: (view) => ({ tab: 'coverage', view }),
   },
   {
     page: '/projects/[id]',
-    file: 'components/project/ProjectSettingsPanel.vue',
-    marker: 'const SECTION_IDS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_SETTINGS_SECTIONS =',
+    pick: 'ids',
     query: (section) => ({ tab: 'settings', section }),
   },
   {
     page: '/test-runs/[id]',
-    file: 'pages/test-runs/[id].vue',
-    marker: 'const tabItems = computed(() =>',
+    file: PLACES_FILE,
+    marker: 'export const RUN_TABS =',
     pick: 'values',
     query: (tab) => ({ tab }),
   },
@@ -320,6 +326,7 @@ export function tabValues(list: TabList): string[] {
   const pattern = {
     strings: /'([^']+)'/g,
     values: /\bvalue: '([^']+)'/g,
+    ids: /\bid: '([^']+)'/g,
     keys: /^\s*'?([\w-]+)'?\s*:/gm,
   }[list.pick];
   return [...new Set([...literal.matchAll(pattern)].map((match) => match[1]!))];

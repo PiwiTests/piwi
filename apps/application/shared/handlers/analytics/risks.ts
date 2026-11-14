@@ -34,7 +34,7 @@ function daysSince(at: Date | string | number, now: number): number {
 /**
  * What could go wrong next: metrics moving the wrong way against the
  * comparison period, projects failing run after run, the oldest open failure
- * causes and the quarantine debt.
+ * clusters and the quarantine debt.
  */
 export async function getAnalyticsRisks(
   db: DrizzleDB,

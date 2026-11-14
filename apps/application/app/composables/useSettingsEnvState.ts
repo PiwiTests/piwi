@@ -43,6 +43,7 @@ export function useSettingsEnvState() {
     storage: false,
     performance: false,
     'pr-feedback': false,
+    'source-control': false,
     'auto-heal': false,
     integrations: false,
     ai: false,
