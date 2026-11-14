@@ -71,7 +71,10 @@ function linuxMemoryKb(rootPid) {
 function psMemoryKb(rootPid) {
   try {
     const output = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,rss='], { encoding: 'utf8' });
-    const rows = output.trim().split('\n').map((line) => line.trim().split(/\s+/).map(Number));
+    const rows = output
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).map(Number));
     const children = new Map();
     for (const [pid, ppid] of rows) {
       if (!children.has(ppid)) children.set(ppid, []);
@@ -103,7 +106,12 @@ export function measure({ command, args, cwd, env, logFile, sampleMs = 200 }) {
     const log = createWriteStream(logFile);
     const cpuBefore = childrenCpuMs();
     const started = process.hrtime.bigint();
-    const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     let peakKb = 0;

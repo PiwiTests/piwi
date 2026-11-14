@@ -8,7 +8,10 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const date = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
 
 const escape = (value) =>
-  String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  String(value).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -66,12 +69,17 @@ async function route() {
   }
   if (token !== renderToken) return;
   const page =
-    path === '/' ? renderDashboard
-    : path === '/orders' ? renderOrders
-    : path === '/orders/new' ? renderNewOrder
-    : /^\/orders\/\d+$/.test(path) ? renderOrder
-    : path === '/settings' ? renderSettings
-    : renderNotFound;
+    path === '/'
+      ? renderDashboard
+      : path === '/orders'
+        ? renderOrders
+        : path === '/orders/new'
+          ? renderNewOrder
+          : /^\/orders\/\d+$/.test(path)
+            ? renderOrder
+            : path === '/settings'
+              ? renderSettings
+              : renderNotFound;
   shell(path);
   await page(document.getElementById('view'), token);
 }
@@ -152,14 +160,21 @@ async function renderDashboard(view, token) {
     </div>`;
   const [stats, activity] = await Promise.all([api('/api/stats'), api('/api/activity')]);
   if (token !== renderToken) return;
-  const values = [stats.orders.toLocaleString('en-US'), money.format(stats.revenue), money.format(stats.average), String(stats.pending)];
+  const values = [
+    stats.orders.toLocaleString('en-US'),
+    money.format(stats.revenue),
+    money.format(stats.average),
+    String(stats.pending),
+  ];
   view.querySelectorAll('.kpi strong').forEach((element, index) => {
     element.classList.remove('skeleton');
     element.textContent = values[index];
   });
   const list = document.getElementById('activity');
   list.removeAttribute('aria-busy');
-  list.innerHTML = activity.map((item) => `<li><time>${date.format(new Date(item.at))}</time> ${escape(item.text)}</li>`).join('');
+  list.innerHTML = activity
+    .map((item) => `<li><time>${date.format(new Date(item.at))}</time> ${escape(item.text)}</li>`)
+    .join('');
   drawChart(document.getElementById('chart'), stats.byStatus);
 }
 
@@ -198,7 +213,8 @@ async function renderOrders(view, token) {
     page: Number(params.get('page') ?? 1),
     size: params.get('size') ?? '25',
   };
-  const column = (key, label) => `<th scope="col" data-key="${key}"><button type="button" class="sort" data-sort="${key}">${label}</button></th>`;
+  const column = (key, label) =>
+    `<th scope="col" data-key="${key}"><button type="button" class="sort" data-sort="${key}">${label}</button></th>`;
   view.innerHTML = `
     <div class="title-row">
       <h1>Orders</h1>
@@ -262,11 +278,15 @@ async function renderOrders(view, token) {
           )
           .join('')
       : '<tr><td colspan="6" class="empty">No orders match these filters</td></tr>';
-    document.getElementById('page-label').textContent = `Page ${result.page} of ${result.pages} · ${result.total} orders`;
+    document.getElementById('page-label').textContent =
+      `Page ${result.page} of ${result.pages} · ${result.total} orders`;
     document.getElementById('prev').disabled = result.page <= 1;
     document.getElementById('next').disabled = result.page >= result.pages;
     table.querySelectorAll('th[data-key]').forEach((th) => {
-      th.setAttribute('aria-sort', th.dataset.key === state.sort ? (state.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+      th.setAttribute(
+        'aria-sort',
+        th.dataset.key === state.sort ? (state.dir === 'asc' ? 'ascending' : 'descending') : 'none',
+      );
     });
     table.removeAttribute('aria-busy');
   }
@@ -354,7 +374,8 @@ function clientErrors(data) {
   const errors = {};
   if (!String(data.customer ?? '').trim()) errors.customer = 'Customer is required';
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(data.email ?? ''))) errors.email = 'Enter a valid email address';
-  if (!Number.isInteger(data.items) || data.items < 1 || data.items > 999) errors.items = 'Quantity must be between 1 and 999';
+  if (!Number.isInteger(data.items) || data.items < 1 || data.items > 999)
+    errors.items = 'Quantity must be between 1 and 999';
   return errors;
 }
 
@@ -489,7 +510,11 @@ async function renderSettings(view, token) {
     button.disabled = true;
     await api('/api/settings', {
       method: 'PUT',
-      body: { notifications: form.elements.notifications.checked, digest: form.elements.digest.checked, currency: form.elements.currency.value },
+      body: {
+        notifications: form.elements.notifications.checked,
+        digest: form.elements.digest.checked,
+        currency: form.elements.currency.value,
+      },
     });
     button.disabled = false;
     toast('Settings saved');

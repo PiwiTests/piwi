@@ -6,8 +6,7 @@ and every test still gets its own fresh browser context.
 @piwitests/turbo has two layers:
 
 - **Public levers**, applied to your config: sign in once and reuse the saved state, block third-party requests,
-  keep traces only for failures, emulate reduced motion, Node's compile cache. Supported Playwright features, safe
-  across upgrades.
+  keep traces only for failures, emulate reduced motion. Supported Playwright features, safe across upgrades.
 - **Experimental hooks** into Playwright's internals: faster PNG encoding for Chromium screenshots, and a shorter
   backoff for Playwright's retry loop. Off by default, pinned to the Playwright versions they were tested with, and
   they throw instead of falling back when anything differs.
@@ -39,7 +38,6 @@ export default withOptimizations(
     blockRequests: ['https://www.googletagmanager.com/**', /\/\/widget\.example\.com\//],
     trace: 'retain-on-failure',
     reducedMotion: true,
-    compileCache: true,
   },
 );
 ```
@@ -56,7 +54,6 @@ import { test, expect } from '@piwitests/turbo/test';
 | `blockRequests` | Aborts requests matching a glob, a regular expression or a predicate, in every context of every test.                                                                                                              | Any route turns on request interception for the whole context. A script the app depends on must not be blocked.                 |
 | `trace`         | Sets the trace mode, e.g. `retain-on-failure` or `on-first-retry`.                                                                                                                                                  | `on-first-retry` records nothing without retries.                                                                               |
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`.                                                                                                                                                                          | Changes the app's behavior when it honors the preference: do not use it for tests of animations.                                |
-| `compileCache`  | Turns on Node's compile cache for the runner and the workers (`true` caches in `node_modules/.cache/piwi-turbo-compile`). Skipped when `NODE_V8_COVERAGE` is set.                                                    | Pays off on repeated local runs; in CI only if the cache directory is restored.                                                 |
 
 Each option is off unless named, and a project's own settings win over them (`use.storageState` set on a project
 stays).

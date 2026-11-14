@@ -76,8 +76,14 @@ export function formatMarkdown(results, summary = summarize(results)) {
   for (const metric of METRICS) {
     if (!baseline.metrics[metric.key]) continue;
     const spread = baseline.metrics[metric.key].spread;
-    lines.push(`## ${metric.label}${metric.key === 'peakMemoryMb' && results.memoryMetric ? ` (${results.memoryMetric}, sampled)` : ''}`, '');
-    lines.push('| Variant | Median | Noise | Change | 95% interval | Rounds lower | Verdict |', '| --- | ---: | ---: | ---: | ---: | ---: | --- |');
+    lines.push(
+      `## ${metric.label}${metric.key === 'peakMemoryMb' && results.memoryMetric ? ` (${results.memoryMetric}, sampled)` : ''}`,
+      '',
+    );
+    lines.push(
+      '| Variant | Median | Noise | Change | 95% interval | Rounds lower | Verdict |',
+      '| --- | ---: | ---: | ---: | ---: | ---: | --- |',
+    );
     for (const variant of summary) {
       const entry = variant.metrics[metric.key];
       if (!entry) continue;
@@ -93,20 +99,34 @@ export function formatMarkdown(results, summary = summarize(results)) {
     }
     if (!Number.isNaN(spread)) lines.push('');
   }
-  lines.push('## Correctness', '', '| Variant | Failed runs | Failed tests | Flaky tests | Retries |', '| --- | ---: | ---: | ---: | ---: |');
+  lines.push(
+    '## Correctness',
+    '',
+    '| Variant | Failed runs | Failed tests | Flaky tests | Retries |',
+    '| --- | ---: | ---: | ---: | ---: |',
+  );
   for (const variant of summary) {
-    lines.push(`| ${variant.name} | ${variant.failedRuns}/${variant.runs} | ${variant.failedTests} | ${variant.flakyTests} | ${variant.retries} |`);
+    lines.push(
+      `| ${variant.name} | ${variant.failedRuns}/${variant.runs} | ${variant.failedTests} | ${variant.flakyTests} | ${variant.retries} |`,
+    );
   }
   const names = [...new Set(summary.flatMap((variant) => Object.keys(variant.categories)))].toSorted(
     (a, b) => (baseline.categories[b] ?? 0) - (baseline.categories[a] ?? 0),
   );
   if (names.length) {
     lines.push('', '## Where the test time went (median seconds, summed across workers)', '');
-    lines.push(`| Category | ${summary.map((variant) => variant.name).join(' | ')} |`, `| --- | ${summary.map(() => '---:').join(' | ')} |`);
+    lines.push(
+      `| Category | ${summary.map((variant) => variant.name).join(' | ')} |`,
+      `| --- | ${summary.map(() => '---:').join(' | ')} |`,
+    );
     for (const name of names) {
-      lines.push(`| ${name} | ${summary.map((variant) => (variant.categories[name] === undefined ? '–' : (variant.categories[name] / 1000).toFixed(1))).join(' | ')} |`);
+      lines.push(
+        `| ${name} | ${summary.map((variant) => (variant.categories[name] === undefined ? '–' : (variant.categories[name] / 1000).toFixed(1))).join(' | ')} |`,
+      );
     }
-    lines.push(`| **total test time** | ${summary.map((variant) => (variant.testTimeMs / 1000).toFixed(1)).join(' | ')} |`);
+    lines.push(
+      `| **total test time** | ${summary.map((variant) => (variant.testTimeMs / 1000).toFixed(1)).join(' | ')} |`,
+    );
   }
   const described = summary.filter((variant) => variant.description);
   if (described.length) {

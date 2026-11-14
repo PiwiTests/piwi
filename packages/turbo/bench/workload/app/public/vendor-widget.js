@@ -11,7 +11,9 @@
     'color:#fff;font:600 18px system-ui;box-shadow:0 6px 18px rgba(0,0,0,.25);z-index:5;cursor:pointer;' +
     'transition:transform .3s ease;transform:scale(.6)';
   document.body.appendChild(button);
-  requestAnimationFrame(function () { button.style.transform = 'scale(1)'; });
+  requestAnimationFrame(function () {
+    button.style.transform = 'scale(1)';
+  });
   setInterval(function () {
     fetch(origin + '/beacon?presence=1', { mode: 'no-cors' }).catch(function () {});
   }, 2000);

@@ -118,6 +118,7 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'Reporter', link: '/guide/reporter' },
       { text: 'Capture fixtures', link: '/guide/capture-fixtures' },
       { text: 'CI & sharding', link: '/guide/ci' },
+      { text: 'Faster test runs', link: '/guide/turbo' },
       { text: 'Source control', link: '/guide/source-control' },
       { text: 'AI provider', link: '/guide/ai-provider' },
       { text: 'Codex CLI', link: '/guide/codex-cli' },

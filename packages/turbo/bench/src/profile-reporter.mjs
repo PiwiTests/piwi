@@ -1,7 +1,7 @@
 // A Playwright reporter that splits test time by what it was spent on (navigation, actions, assertions,
 // screenshots, API requests, browser start-up, fixtures and test code) and records every test's outcome.
 //
-// With SUITEBENCH_PROFILE set, it writes the profile there as JSON; without it, it prints the breakdown.
+// With BENCH_PROFILE set, it writes the profile there as JSON; without it, it prints the breakdown.
 import { writeFileSync } from 'node:fs';
 
 /** The category a step's own time counts toward. */
@@ -11,8 +11,10 @@ export function categorize(step) {
     return /toHaveScreenshot|toMatchSnapshot|toMatchAriaSnapshot/.test(title) ? 'screenshots' : 'assertions';
   }
   if (step.category === 'pw:api') {
-    if (/^(Launch browser|Create context|Create page|Close context|Close browser|Close page)\b/.test(title)) return 'browser & context';
-    if (/^(Navigate|Reload|Go back|Go forward|Wait for (navigation|load|URL|event "load"))/i.test(title)) return 'navigation';
+    if (/^(Launch browser|Create context|Create page|Close context|Close browser|Close page)\b/.test(title))
+      return 'browser & context';
+    if (/^(Navigate|Reload|Go back|Go forward|Wait for (navigation|load|URL|event "load"))/i.test(title))
+      return 'navigation';
     if (/^(Screenshot|Take screenshot)/i.test(title)) return 'screenshots';
     if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|FETCH)\b/.test(title)) return 'API requests';
     if (/^(Wait for timeout)/i.test(title)) return 'fixed waits';
@@ -36,9 +38,9 @@ export function accumulate(steps, totals) {
   return covered;
 }
 
-export default class SuitebenchProfileReporter {
+export default class BenchProfileReporter {
   constructor(options = {}) {
-    this.output = options.outputFile ?? process.env.SUITEBENCH_PROFILE;
+    this.output = options.outputFile ?? process.env.BENCH_PROFILE;
     this.tests = new Map();
     this.categories = {};
     this.startedAt = 0;
@@ -77,7 +79,10 @@ export default class SuitebenchProfileReporter {
       status: result.status,
       wallMs: Date.now() - this.startedAt,
       workers: this.workers,
-      testTimeMs: tests.reduce((sum, test) => sum + test.attempts.reduce((total, attempt) => total + attempt.duration, 0), 0),
+      testTimeMs: tests.reduce(
+        (sum, test) => sum + test.attempts.reduce((total, attempt) => total + attempt.duration, 0),
+        0,
+      ),
       retries: tests.reduce((sum, test) => sum + test.attempts.length - 1, 0),
       counts,
       categories: this.categories,
@@ -96,7 +101,10 @@ export function formatProfile(profile) {
   const total = Object.values(profile.categories).reduce((sum, value) => sum + value, 0) || 1;
   const lines = Object.entries(profile.categories)
     .toSorted((a, b) => b[1] - a[1])
-    .map(([name, ms]) => `  ${name.padEnd(18)} ${(ms / 1000).toFixed(1).padStart(7)}s  ${((ms / total) * 100).toFixed(0).padStart(3)}%`);
+    .map(
+      ([name, ms]) =>
+        `  ${name.padEnd(18)} ${(ms / 1000).toFixed(1).padStart(7)}s  ${((ms / total) * 100).toFixed(0).padStart(3)}%`,
+    );
   const slowest = profile.tests
     .map((test) => ({ title: test.title, ms: test.attempts.reduce((sum, attempt) => sum + attempt.duration, 0) }))
     .toSorted((a, b) => b.ms - a.ms)

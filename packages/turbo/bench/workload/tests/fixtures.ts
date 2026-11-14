@@ -1,7 +1,7 @@
-import { test as base, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test as base, expect } from '../../../src/test';
 
 export const USER = { email: 'qa@example.com', password: 'bench-password' };
-const VENDOR_PORT = String(Number(process.env.BENCH_PORT ?? 4310) + 1);
 
 /** Signs in through the form, as a user does. */
 export async function signIn(page: Page) {
@@ -36,20 +36,18 @@ type Fixtures = {
 
 export const test = base.extend<Fixtures>({
   signedIn: [true, { option: true }],
-  context: async ({ context }, use) => {
-    if (process.env.BENCH_BLOCK_THIRD_PARTY === '1') {
-      await context.route((url) => url.port === VENDOR_PORT, (route) => route.abort());
-    }
-    await use(context);
-  },
   page: async ({ page, signedIn }, use) => {
-    if (signedIn && process.env.BENCH_AUTH === 'ui') await signIn(page);
+    if (signedIn && process.env.BENCH_AUTH !== 'state') await signIn(page);
     await use(page);
   },
   evidence: async ({ page }, use, testInfo) => {
     const jpeg = process.env.BENCH_EVIDENCE === 'jpeg';
     await use(async (name, options = {}) => {
-      const body = await page.screenshot({ fullPage: options.fullPage ?? true, type: jpeg ? 'jpeg' : 'png', quality: jpeg ? 80 : undefined });
+      const body = await page.screenshot({
+        fullPage: options.fullPage ?? true,
+        type: jpeg ? 'jpeg' : 'png',
+        quality: jpeg ? 80 : undefined,
+      });
       await testInfo.attach(name, { body, contentType: jpeg ? 'image/jpeg' : 'image/png' });
     });
   },

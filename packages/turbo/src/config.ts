@@ -1,6 +1,4 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
-import module from 'node:module';
-import { resolve } from 'node:path';
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
 import type { BlockRule } from './types';
 
@@ -19,8 +17,6 @@ export interface Optimizations {
    * `storageState`, which every other project then loads into each fresh context.
    */
   signIn?: { storageState: string; setup?: Matcher; project?: string };
-  /** Node's compile cache for the runner and the workers; `true` caches in `node_modules/.cache/piwi-turbo-compile`. */
-  compileCache?: boolean | string;
   /** Hooks into Playwright's internals, pinned to tested versions. They throw rather than fall back. */
   experimental?: {
     /** Chromium only: encode PNG screenshots for speed. Same pixels, larger files. Off while snapshots are written. */
@@ -59,16 +55,6 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
   ];
 }
 
-function enableCompileCache(directory: string): void {
-  if (process.env.NODE_COMPILE_CACHE || process.env.NODE_DISABLE_COMPILE_CACHE) return;
-  // Precise V8 coverage needs functions compiled fresh.
-  if (process.env.NODE_V8_COVERAGE) return;
-  const path = resolve(directory);
-  // The runner caches from here on; workers inherit the variable and cache from their start.
-  module.enableCompileCache?.(path);
-  process.env.NODE_COMPILE_CACHE = path;
-}
-
 /** Returns `config` with the given optimizations applied. Every one is off unless named. */
 export function withOptimizations<T extends AnyConfig>(config: T, options: Optimizations = {}): T {
   const result: AnyConfig = { ...config, use: { ...config.use } };
@@ -78,8 +64,6 @@ export function withOptimizations<T extends AnyConfig>(config: T, options: Optim
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
   if (options.signIn) applySignIn(result, options.signIn);
-  if (options.compileCache)
-    enableCompileCache(options.compileCache === true ? 'node_modules/.cache/piwi-turbo-compile' : options.compileCache);
   const experimental = options.experimental ?? {};
   if (experimental.fastScreenshots) use.fastScreenshots = true;
   if (experimental.retryIntervals) use.retryIntervals = experimental.retryIntervals;

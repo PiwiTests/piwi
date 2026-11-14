@@ -58,7 +58,10 @@ test.describe('order detail', () => {
 
   test('deletes the order after confirmation', async ({ page }) => {
     await page.getByRole('button', { name: 'Delete' }).click();
-    await page.getByRole('dialog', { name: `Delete ${order.number}?` }).getByRole('button', { name: 'Delete order' }).click();
+    await page
+      .getByRole('dialog', { name: `Delete ${order.number}?` })
+      .getByRole('button', { name: 'Delete order' })
+      .click();
     await expect(page).toHaveURL(/\/orders\?/);
     await expect(page.getByRole('status')).toContainText(`Order ${order.number} deleted`);
     expect((await page.request.get(`/api/orders/${order.id}`)).status()).toBe(404);

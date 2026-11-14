@@ -8,14 +8,25 @@
   }
   function flush() {
     var batch = queue.splice(0);
-    if (batch.length) fetch(origin + '/beacon', { method: 'POST', body: JSON.stringify(batch), mode: 'no-cors' }).catch(function () {});
+    if (batch.length)
+      fetch(origin + '/beacon', { method: 'POST', body: JSON.stringify(batch), mode: 'no-cors' }).catch(function () {});
   }
   // Busy work the size of a real tag's start-up.
   var table = [];
   for (var i = 0; i < 40000; i++) table.push((i * 2654435761) % 4093);
-  table.sort(function (a, b) { return a - b; });
-  window.addEventListener('popstate', function () { track('route'); });
-  document.addEventListener('click', function () { track('click'); }, true);
+  table.sort(function (a, b) {
+    return a - b;
+  });
+  window.addEventListener('popstate', function () {
+    track('route');
+  });
+  document.addEventListener(
+    'click',
+    function () {
+      track('click');
+    },
+    true,
+  );
   window.addEventListener('pagehide', flush);
   track('view');
   setTimeout(flush, 1500);

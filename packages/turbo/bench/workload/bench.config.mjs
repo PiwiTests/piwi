@@ -1,42 +1,57 @@
-// The reference benchmark: one realistic suite, a typical unoptimized setup as the baseline, and one variant per
-// public lever, then all of them together. Run it with `npx suitebench run --config workload/suitebench.config.mjs`.
+// The reference benchmark: a typical unoptimized setup as the baseline, one variant per @piwitests/turbo lever, all public
+// levers together ("tuned"), then the experimental hooks on top of them.
 //
-// A private hook is one more variant: load it into every Playwright process with NODE_OPTIONS, e.g.
-//   { name: 'fast-png', env: { ...stock, NODE_OPTIONS: '--import ./hooks/fast-png.mjs' } }
+//   npm run turbo:bench                                            every variant against stock
+//   npm run turbo:bench -- --only tuned,tuned+fast-png,tuned+retry,tuned+hooks --runs 8
+//                                                            the hooks against the tuned suite
+// A variant's order in this list decides the baseline: the first variant of a run.
+import { createRequire } from 'node:module';
+
 const stock = { BENCH_AUTH: 'ui', BENCH_TRACE: 'on' };
+const tuned = {
+  BENCH_AUTH: 'state',
+  BENCH_TRACE: 'retain-on-failure',
+  BENCH_BLOCK_THIRD_PARTY: '1',
+  BENCH_REDUCED_MOTION: '1',
+  BENCH_WORKERS: '4',
+};
+const fastRetry = '10,20,40,50';
+// Playwright's CLI by path: `npx` inside a workspace runs from the workspace's root, not from this folder.
+const playwright = [process.execPath, createRequire(import.meta.url).resolve('@playwright/test/cli')];
 
 export default {
-  command: ['npx', 'playwright', 'test'],
+  command: [...playwright, 'test'],
   runs: 5,
   warmup: 1,
   // Visual baselines come from the stock configuration, once, before any measured run.
-  prepare: [['npx', 'playwright', 'test', '--grep', '@visual', '--update-snapshots', '--reporter=dot']],
+  prepare: [[...playwright, 'test', '--grep', '@visual', '--update-snapshots', '--reporter=dot']],
   clean: ['test-results'],
   artifacts: ['test-results'],
   variants: [
     {
       name: 'stock',
-      description: 'A typical unoptimized setup: every test signs in through the form, trace on for every test, Playwright\'s default worker count, third-party scripts load.',
+      description:
+        "A typical unoptimized setup: every test signs in through the form, trace on for every test, Playwright's default worker count, third-party scripts load.",
       env: stock,
     },
     {
       name: 'storage-state',
-      description: 'Sign in once in a setup project and load the saved storageState into each fresh context.',
+      description: 'signIn: sign in once in a setup project, load the saved state into each fresh context.',
       env: { ...stock, BENCH_AUTH: 'state' },
     },
     {
       name: 'trace-on-failure',
-      description: 'Record traces for every test but keep them only for failures (retain-on-failure).',
+      description: 'trace: retain-on-failure.',
       env: { ...stock, BENCH_TRACE: 'retain-on-failure' },
     },
     {
       name: 'block-third-party',
-      description: 'Abort requests to the third-party origin (analytics, chat widget) with context.route.',
+      description: 'blockRequests: abort the third-party origin (analytics, chat widget).',
       env: { ...stock, BENCH_BLOCK_THIRD_PARTY: '1' },
     },
     {
       name: 'reduced-motion',
-      description: 'Emulate prefers-reduced-motion: reduce; the app then skips its transitions.',
+      description: 'reducedMotion: emulate prefers-reduced-motion; the app skips its transitions.',
       env: { ...stock, BENCH_REDUCED_MOTION: '1' },
     },
     {
@@ -44,22 +59,21 @@ export default {
       description: 'Four workers instead of the default (half the CPUs).',
       env: { ...stock, BENCH_WORKERS: '4' },
     },
+    { name: 'tuned', description: 'Every public lever above together.', env: tuned },
     {
-      name: 'compile-cache',
-      description: 'Node\'s compile cache (NODE_COMPILE_CACHE), warm: the warm-up round fills it.',
-      env: { ...stock, NODE_COMPILE_CACHE: '.cache/node-compile' },
+      name: 'tuned+fast-png',
+      description: 'tuned, plus the experimental fastScreenshots hook.',
+      env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1' },
     },
     {
-      name: 'all-public',
-      description: 'Every public lever above together.',
-      env: {
-        BENCH_AUTH: 'state',
-        BENCH_TRACE: 'retain-on-failure',
-        BENCH_BLOCK_THIRD_PARTY: '1',
-        BENCH_REDUCED_MOTION: '1',
-        BENCH_WORKERS: '4',
-        NODE_COMPILE_CACHE: '.cache/node-compile',
-      },
+      name: 'tuned+retry',
+      description: `tuned, plus the experimental retryIntervals hook at [${fastRetry}] ms.`,
+      env: { ...tuned, BENCH_RETRY_INTERVALS: fastRetry },
+    },
+    {
+      name: 'tuned+hooks',
+      description: 'tuned, plus both experimental hooks.',
+      env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1', BENCH_RETRY_INTERVALS: fastRetry },
     },
   ],
 };

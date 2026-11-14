@@ -37,12 +37,48 @@ function mulberry32(seed) {
 }
 
 const COMPANIES = [
-  'Acme Corp', 'Globex', 'Initech', 'Umbrella Supply', 'Stark Industrial', 'Wayne Logistics', 'Hooli', 'Vandelay Imports',
-  'Soylent Foods', 'Tyrell Systems', 'Cyberdyne', 'Wonka Confectionery', 'Gringotts Holdings', 'Oceanic Freight',
-  'Monarch Labs', 'Pied Piper', 'Massive Dynamic', 'Aperture Science', 'Black Mesa', 'Nakatomi Trading', 'Dunder Paper',
-  'Prestige Worldwide', 'Bluth Company', 'Sterling Cooper', 'Kramerica', 'Los Pollos', 'Gekko & Co', 'Virtucon',
-  'Duff Brewing', 'Krusty Foods', 'Planet Express', 'Mom Corp', 'Spacely Sprockets', 'Cogswell Cogs', 'Oscorp',
-  'Wernham Hogg', 'Paddy\'s Pub', 'Strickland Propane', 'Big Kahuna', 'Ollivanders', 'Zorg Industries', 'Weyland Corp',
+  'Acme Corp',
+  'Globex',
+  'Initech',
+  'Umbrella Supply',
+  'Stark Industrial',
+  'Wayne Logistics',
+  'Hooli',
+  'Vandelay Imports',
+  'Soylent Foods',
+  'Tyrell Systems',
+  'Cyberdyne',
+  'Wonka Confectionery',
+  'Gringotts Holdings',
+  'Oceanic Freight',
+  'Monarch Labs',
+  'Pied Piper',
+  'Massive Dynamic',
+  'Aperture Science',
+  'Black Mesa',
+  'Nakatomi Trading',
+  'Dunder Paper',
+  'Prestige Worldwide',
+  'Bluth Company',
+  'Sterling Cooper',
+  'Kramerica',
+  'Los Pollos',
+  'Gekko & Co',
+  'Virtucon',
+  'Duff Brewing',
+  'Krusty Foods',
+  'Planet Express',
+  'Mom Corp',
+  'Spacely Sprockets',
+  'Cogswell Cogs',
+  'Oscorp',
+  'Wernham Hogg',
+  "Paddy's Pub",
+  'Strickland Propane',
+  'Big Kahuna',
+  'Ollivanders',
+  'Zorg Industries',
+  'Weyland Corp',
 ];
 const STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
 const STATUS_WEIGHTS = [0.12, 0.18, 0.2, 0.42, 0.08];
@@ -216,7 +252,10 @@ async function api(req, res, url) {
     const startedAt = exportJobs.get(exportMatch[1]);
     if (!startedAt) return send(res, 404, { error: 'Unknown export' });
     const ready = Date.now() - startedAt > 1600 * LATENCY;
-    return send(res, 200, { status: ready ? 'ready' : 'running', url: ready ? `/exports/${exportMatch[1]}.csv` : null });
+    return send(res, 200, {
+      status: ready ? 'ready' : 'running',
+      url: ready ? `/exports/${exportMatch[1]}.csv` : null,
+    });
   }
   if (path === '/api/orders' && req.method === 'GET') {
     await sleep(110, 140);
@@ -282,7 +321,10 @@ async function serveFile(res, file, delay) {
   try {
     const body = await readFile(join(PUBLIC_DIR, file));
     await sleep(delay, delay / 2);
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+    res.writeHead(200, {
+      'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+      'cache-control': 'no-cache',
+    });
     res.end(body);
   } catch {
     res.writeHead(404);
@@ -301,7 +343,10 @@ const app = http.createServer(async (req, res) => {
   const file = url.pathname.slice(1);
   if (/^[\w-]+\.(js|css|svg)$/.test(file)) return serveFile(res, file, 25);
   // Every other path is a client-side route.
-  const html = (await readFile(join(PUBLIC_DIR, 'index.html'), 'utf8')).replaceAll('__VENDOR_ORIGIN__', vendorOrigin(req));
+  const html = (await readFile(join(PUBLIC_DIR, 'index.html'), 'utf8')).replaceAll(
+    '__VENDOR_ORIGIN__',
+    vendorOrigin(req),
+  );
   await sleep(40, 20);
   res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' });
   res.end(html);

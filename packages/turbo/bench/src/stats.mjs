@@ -43,7 +43,9 @@ export function seededRandom(seed = 1) {
  *   the median ratio, its 95% bootstrap interval, and how many rounds the candidate came out lower
  */
 export function compareRounds(pairs, { iterations = 4000, seed = 7 } = {}) {
-  const ratios = pairs.filter(([base, candidate]) => base > 0 && Number.isFinite(candidate)).map(([base, candidate]) => candidate / base);
+  const ratios = pairs
+    .filter(([base, candidate]) => base > 0 && Number.isFinite(candidate))
+    .map(([base, candidate]) => candidate / base);
   if (!ratios.length) return { ratio: NaN, low: NaN, high: NaN, better: 0, rounds: 0 };
   const random = seededRandom(seed);
   const medians = [];

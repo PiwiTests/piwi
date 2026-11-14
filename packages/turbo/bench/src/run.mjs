@@ -85,12 +85,17 @@ export async function runBenchmark(config, { outDir, only, log = console.log }) 
   }
 
   const results = {
-    tool: 'suitebench',
+    tool: 'piwi-turbo-bench',
     startedAt: new Date().toISOString(),
     machine: machineInfo(),
     memoryMetric,
     config: { command: config.command, runs: config.runs, warmup: config.warmup, cwd: config.cwd },
-    variants: variants.map((variant) => ({ name: variant.name, description: variant.description ?? '', env: variant.env ?? {}, args: variant.args ?? [] })),
+    variants: variants.map((variant) => ({
+      name: variant.name,
+      description: variant.description ?? '',
+      env: variant.env ?? {},
+      args: variant.args ?? [],
+    })),
     runs: [],
   };
   const rounds = schedule(variants.length, config.warmup + config.runs);
@@ -101,7 +106,8 @@ export async function runBenchmark(config, { outDir, only, log = console.log }) 
     for (const variantIndex of order) {
       index++;
       const variant = variants[variantIndex];
-      for (const path of [...config.clean, ...(variant.remove ?? [])]) rmSync(resolve(config.cwd, path), { recursive: true, force: true });
+      for (const path of [...config.clean, ...(variant.remove ?? [])])
+        rmSync(resolve(config.cwd, path), { recursive: true, force: true });
       const label = `${warmup ? 'w' : 'r'}${warmup ? round + 1 : round - config.warmup + 1}-${variant.name}`;
       const profileFile = join(outDir, 'profiles', `${label}.json`);
       const [command, ...args] = config.command;
@@ -110,7 +116,7 @@ export async function runBenchmark(config, { outDir, only, log = console.log }) 
         command,
         args: [...args, ...(variant.args ?? []), ...reporterArgs],
         cwd: config.cwd,
-        env: { ...baseEnv, ...variant.env, SUITEBENCH_PROFILE: profileFile },
+        env: { ...baseEnv, ...variant.env, BENCH_PROFILE: profileFile },
         logFile: join(outDir, 'logs', `${label}.log`),
         sampleMs: config.sampleMs,
       });

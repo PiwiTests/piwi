@@ -110,6 +110,7 @@ just not aggregated across the suite.
 [notification](/features/notifications) event and let it tell you when a duration trend breaks.
 
 ## Related
+- [Faster test runs](/guide/turbo) — the config changes that cut the harness's own time, and a benchmark to check them
 - [Slow tests & wasted time](/features/slow-tests) — the full reference for trends, slowest
   tests and timeout hygiene
 - [Cut the flakiness that costs the most](./flaky-cleanup) — step 4 in full

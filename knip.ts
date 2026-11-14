@@ -24,9 +24,8 @@ const config: KnipConfig = {
       // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root. The showcase's
       // stage page loads its own script.
       entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs', 'apps/showcase/*.mts', 'apps/showcase/stage/*.js'],
-      // Not workspaces: built on their own toolchains (Tauri, VitePress), resolved from the npm registry, or released on
-      // their own (suitebench).
-      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**', 'packages/suitebench/**', 'packages/turbo/**'],
+      // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
+      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
       // The showcase runs Playwright from the workspaces' install.
       ignoreDependencies: ['playwright'],
     },
@@ -102,6 +101,11 @@ const config: KnipConfig = {
       entry: ['app/**/*.{ts,vue}'],
     },
     'packages/run-model': {},
+    'packages/turbo': {
+      // The benchmark: its CLI, the reference workload's server, browser scripts and suite.
+      entry: ['bench/cli.mjs', 'bench/workload/app/server.mjs', 'bench/workload/app/public/*.js', 'bench/workload/bench.config.mjs'],
+      playwright: { config: ['tests/e2e/playwright.config.ts', 'bench/workload/playwright.config.ts'] },
+    },
     'apps/runner': {
       // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
       entry: ['server/main.ts', 'app/**/*.{ts,vue}'],

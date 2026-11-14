@@ -2,5 +2,4 @@ test-results/
 .auth/
 tests/__screenshots__/
 playwright-report/
-.cache/
-.suitebench/
+.bench-results/
