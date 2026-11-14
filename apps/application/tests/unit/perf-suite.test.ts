@@ -4,7 +4,7 @@ import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import * as sqliteSchema from '../../server/database/schema.sqlite';
 import { datasetBatches } from '../../scripts/perf/lib/dataset.mjs';
 import { SQLITE_MS_TIMESTAMP_COLUMNS } from '../../scripts/perf/lib/seed-writer.mjs';
-import { mannWhitneyP, median, mode, quantile } from '../../scripts/perf/lib/stats.mjs';
+import { bySession, mannWhitneyP, median, mode, quantile, sessionRange } from '../../scripts/perf/lib/stats.mjs';
 import { compareMetric, compareResults, sqlDiff } from '../../scripts/perf/lib/compare.mjs';
 import { COMMENT_MARKER, renderComparison } from '../../scripts/perf/lib/markdown.mjs';
 import { startOtlpReceiver, traceIdFromServerTiming } from '../../scripts/perf/lib/otlp-receiver.mjs';
@@ -111,6 +111,23 @@ describe('performance statistics', () => {
     ).toBeLessThan(0.001);
     expect(mannWhitneyP([1, 2], [3, 4])).toBe(1);
   });
+
+  it('splits the rounds into sessions of contiguous rounds, each round in one', () => {
+    for (const total of [0, 1, 5, 6, 8, 12]) {
+      for (const sessions of [1, 2, 3]) {
+        const ranges = Array.from({ length: sessions }, (_, s) => sessionRange(total, s, sessions));
+        expect(ranges[0]![0]).toBe(0);
+        expect(ranges.at(-1)![1]).toBe(total);
+        for (let s = 1; s < sessions; s++) expect(ranges[s]![0]).toBe(ranges[s - 1]![1]);
+        const sizes = ranges.map((range) => range[1]! - range[0]!);
+        expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+      }
+    }
+    expect(bySession([1, 2, 3, 4, 5, 6], 2)).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+    ]);
+  });
 });
 
 describe('performance verdicts', () => {
@@ -130,6 +147,45 @@ describe('performance verdicts', () => {
         fast.map((v) => v + 5),
       ).verdict,
     ).toBe('unchanged');
+  });
+
+  // Twelve renders in two sessions of six, each session on server processes of its own.
+  const base = [200, 203, 198, 201, 199, 202, 200, 197, 201, 203, 199, 200];
+  const slowProcess = [251, 248, 253, 250, 249, 252, 204, 201, 206, 203, 205, 202];
+  const slowBuild = [231, 228, 233, 230, 229, 232, 226, 229, 227, 231, 228, 230];
+
+  it('flags a time only when every session shows the change past both floors', () => {
+    expect(compareMetric('ssrMs', base, slowProcess).verdict).toBe('regression');
+    const once = compareMetric('ssrMs', base, slowProcess, { sessions: 2 });
+    expect(once.p).toBeLessThan(0.01);
+    expect(once.verdict).toBe('unchanged');
+    expect(compareMetric('ssrMs', slowProcess, base, { sessions: 2 }).verdict).toBe('unchanged');
+    const both = compareMetric('ssrMs', base, slowBuild, { sessions: 2 });
+    expect(both.verdict).toBe('regression');
+    expect(both.bySession).toHaveLength(2);
+    expect(compareMetric('ssrMs', slowBuild, base, { sessions: 2 }).verdict).toBe('improvement');
+  });
+
+  it('reads the sessions of a run from its metadata, and counts whatever the sessions', () => {
+    const run = (sessions?: number) => ({
+      meta: sessions ? { samples: { sessions } } : {},
+      pages: [
+        {
+          id: 'p',
+          label: 'P',
+          path: '/p',
+          targets: {
+            base: { ssr: { ms: base, statements: [26] }, load: {} },
+            head: { ssr: { ms: slowProcess, statements: Array(12).fill(40) }, load: {} },
+          },
+        },
+      ],
+      apis: [],
+    });
+    expect(compareResults(run(), 'base', 'head').pages[0].metrics.ssrMs.verdict).toBe('regression');
+    const split = compareResults(run(2), 'base', 'head').pages[0].metrics;
+    expect(split.ssrMs.verdict).toBe('unchanged');
+    expect(split.ssrStatements.verdict).toBe('regression');
   });
 
   it('compares counts without a significance test', () => {
@@ -225,6 +281,22 @@ describe('performance report', () => {
     expect(md).toContain('### Regressions');
     expect(md).toContain('Project › Runs');
     expect(md).toContain('163 → 24');
+  });
+
+  it('gives a regression measured in sessions the change of each, and says how a time is flagged', () => {
+    const split = { ...meta, samples: { ...meta.samples, sessions: 2 } };
+    const md = renderComparison(
+      split,
+      compareResults(
+        { ...results([100, 101, 99, 100, 102, 98, 101, 100], [200, 198, 205, 201, 230, 232, 228, 231]), meta: split },
+        'base',
+        'head',
+      ),
+    );
+    expect(md).toContain('server render 100 ms → 217 ms (+117 %, p < 0.001, by session +100 % / +129 %)');
+    expect(md).toContain('split into 2 sessions, each starting every server afresh after 2 warm-up rounds');
+    expect(md).toContain('the median of each session grows past both floors too');
+    expect(md).toContain('Every copy carries the same planner statistics');
   });
 
   it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {

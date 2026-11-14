@@ -27,6 +27,7 @@ export function formatValue(key, value) {
 }
 
 function percent(ratio) {
+  if (ratio === null || ratio === undefined) return '—';
   if (!Number.isFinite(ratio)) return 'new';
   const p = Math.round(ratio * 100);
   return `${p > 0 ? '+' : p < 0 ? '−' : '±'}${Math.abs(p)} %`;
@@ -52,7 +53,8 @@ function regressionLines(comparison) {
   const lines = [];
   const describe = (m) => {
     const p = m.p === null ? '' : `, p ${m.p < 0.001 ? '< 0.001' : `= ${m.p.toFixed(3)}`}`;
-    return `${METRICS[m.key].label.toLowerCase()} ${formatValue(m.key, m.base)} → ${formatValue(m.key, m.head)} (${percent(m.ratio)}${p})`;
+    const sessions = m.bySession?.length > 1 ? `, by session ${m.bySession.map(percent).join(' / ')}` : '';
+    return `${METRICS[m.key].label.toLowerCase()} ${formatValue(m.key, m.base)} → ${formatValue(m.key, m.head)} (${percent(m.ratio)}${p}${sessions})`;
   };
   for (const page of comparison.pages) {
     const regressed = Object.values(page.metrics).filter((m) => m.verdict === 'regression');
@@ -133,6 +135,7 @@ function sqlSection(comparison, budget) {
  */
 export function renderComparison(meta, comparison, { links = {} } = {}) {
   const { tally } = comparison;
+  const sessions = meta.samples.sessions ?? 1;
   const head = [
     COMMENT_MARKER,
     '## Performance',
@@ -180,9 +183,9 @@ export function renderComparison(meta, comparison, { links = {} } = {}) {
     '',
     '<details><summary>How this is measured</summary>',
     '',
-    `Each build ran as its own production server (\`node .output/server/index.mjs\`) on its own copy of the same dataset, signed in as an administrator. Servers were measured in turn, alternating order, after ${meta.samples.warmup} warm-up rounds: ${meta.samples.ssr} server renders and ${meta.samples.load} browser loads (Chromium, warm cache, until the page's own requests stop) per page, and ${meta.samples.api} calls per API request. Times are medians. *Largest paint* is when the page's main content first shows (LCP); *full load* is when its last request ends; *blocking* is main-thread time past 50 ms per task.${meta.shards?.length > 1 ? ` The pages were split across ${meta.shards.length} machines, each measuring both builds on its own pages and the API calls they make, so every row compares two builds measured on the same machine.` : ''}`,
+    `Each build ran as its own production server (\`node .output/server/index.mjs\`) on its own copy of the same dataset, signed in as an administrator. Servers were measured in turn, alternating order: ${meta.samples.ssr} server renders and ${meta.samples.load} browser loads (Chromium, warm cache, until the page's own requests stop) per page, and ${meta.samples.api} calls per API request, ${sessions > 1 ? `split into ${sessions} sessions, each starting every server afresh after ${meta.samples.warmup} warm-up rounds` : `after ${meta.samples.warmup} warm-up rounds`}.${meta.database === 'postgres' ? " Every copy carries the same planner statistics (the dataset's, analyzed once)." : ''} Times are medians. *Largest paint* is when the page's main content first shows (LCP); *full load* is when its last request ends; *blocking* is main-thread time past 50 ms per task.${meta.shards?.length > 1 ? ` The pages were split across ${meta.shards.length} machines, each measuring both builds on its own pages and the API calls they make, so every row compares two builds measured on the same machine.` : ''}`,
     '',
-    `A time is a regression when the median grows past both floors and the Mann–Whitney test gives p < 0.01 (which takes at least six samples a side); a count (SQL statements, bytes, requests) when it grows past both floors. Floors: ${Object.values(
+    `A time is a regression when the median grows past both floors and the Mann–Whitney test gives p < 0.01 (which takes at least six samples a side)${sessions > 1 ? ", and the median of each session grows past both floors too: a server process can run a page slower than another process of the same build for as long as it lives, so a change one session shows alone is not the build's" : ''}; a count (SQL statements, bytes, requests) when it grows past both floors. Floors: ${Object.values(
       METRICS,
     )
       .map(

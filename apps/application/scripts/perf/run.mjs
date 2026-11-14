@@ -9,11 +9,18 @@
  * fresh database and the dataset is written into it (`lib/dataset.mjs`), then
  * every target runs as its own server on a copy, signed in as an
  * administrator, so a newer build migrates the copy the way an upgrade would.
- * On PostgreSQL each copy is then vacuumed and analyzed, once its build's
- * startup work is done. For each page it measures the server render over HTTP and the full load in
+ * On PostgreSQL the seed is analyzed once and every copy inherits its planner
+ * statistics; each copy is vacuumed once its build's startup work is done. For
+ * each page it measures the server render over HTTP and the full load in
  * Chromium, then replays every API call the pages made. On PostgreSQL every
  * request's SQL is read from `pg_stat_statements`; a last pass with
  * OpenTelemetry on lists the SQL each request ran, on builds that trace.
+ *
+ * The measuring rounds are split into sessions (`--sessions`, 2 by default):
+ * each starts every target's server afresh, warms it up and takes its share of
+ * the rounds, so a time that one server process happens to run slower for as
+ * long as it lives shows in one session only, and the comparison flags a time
+ * only when every session shows the change (`lib/compare.mjs`).
  *
  * `--shard 2/3` measures the second third of the pages, and only the API calls
  * they make (the first shard adds the ones no page makes in the browser), so
@@ -26,7 +33,7 @@
  *   node scripts/perf/run.mjs --scale small --pages projects,project-runs --no-browser
  *
  * Options: --scale small|medium|large (default large) · --warmup N · --ssr-samples N ·
- * --load-samples N · --api-samples N · --pages id,id · --shard k/n · --no-browser · --no-trace ·
+ * --load-samples N · --api-samples N · --sessions N · --pages id,id · --shard k/n · --no-browser · --no-trace ·
  * --label name=text · --out results.json · --report report.md · --work-dir dir · --reuse-seed
  *
  * PostgreSQL needs pg_stat_statements loaded at startup (see lib/pg.mjs).
@@ -58,7 +65,7 @@ import {
 import { startOtlpReceiver } from './lib/otlp-receiver.mjs';
 import { fetchTimed, loadPage, signedInContext } from './lib/measure.mjs';
 import { knownApiPaths, pageScenarios, shardPages } from './lib/scenarios.mjs';
-import { mode } from './lib/stats.mjs';
+import { mode, sessionRange } from './lib/stats.mjs';
 import { compareResults } from './lib/compare.mjs';
 import { renderComparison, renderSingle } from './lib/markdown.mjs';
 
@@ -78,6 +85,7 @@ const { values: opts } = parseArgs({
     'ssr-samples': { type: 'string', default: '12' },
     'load-samples': { type: 'string', default: '6' },
     'api-samples': { type: 'string', default: '8' },
+    sessions: { type: 'string', default: '2' },
     pages: { type: 'string' },
     shard: { type: 'string' },
     'no-browser': { type: 'boolean', default: false },
@@ -99,7 +107,9 @@ const samples = {
   ssr: intOpt('ssr-samples'),
   load: intOpt('load-samples'),
   api: intOpt('api-samples'),
+  sessions: intOpt('sessions'),
 };
+if (samples.sessions < 1) throw new Error('--sessions needs at least 1');
 const dialect = opts.database;
 if (!['sqlite', 'postgres'].includes(dialect)) throw new Error('--database is sqlite or postgres');
 const shard = opts.shard ? parseShard(opts.shard) : null;
@@ -155,6 +165,7 @@ async function prepareSeed() {
     scale: opts.scale,
     dialect,
     build: buildStamp(reference.outputDir),
+    analyzed: dialect === 'postgres',
   });
   const keyPath = join(workDir, `seed-${dialect}.json`);
   const seedDb =
@@ -223,6 +234,11 @@ async function prepareSeed() {
     await server.stop();
   }
   if (dialect === 'sqlite') await checkpointSqlite(seedDb.path);
+  else {
+    // The one ANALYZE of the run: every copy inherits these planner statistics (see vacuumDatabase).
+    await vacuumDatabase(opts['pg-url'], pgDatabase('seed'), { analyze: true });
+    log('  seed vacuumed and analyzed');
+  }
   writeFileSync(keyPath, JSON.stringify({ key: seedKey, manifest, createdAt: new Date().toISOString() }, null, 2));
   log(`  seed ready in ${Math.round((Date.now() - started) / 1000)} s`);
   return manifest;
@@ -316,7 +332,8 @@ function typicalSql(deltas) {
 
 /**
  * Start every target and wait until its startup work is done. With `vacuum`, each target's PostgreSQL database is
- * then vacuumed and analyzed, so every build is measured on tables in the state autovacuum leaves them.
+ * then vacuumed, so every build is measured on tables in the state autovacuum leaves them. A copy is never analyzed:
+ * it keeps the seed's planner statistics, so every build plans its queries on the same ones.
  */
 async function startTargets({ otel, vacuum = false }) {
   const servers = [];
@@ -405,115 +422,132 @@ async function main() {
     browser = await chromium.launch(provided && existsSync(provided) ? { executablePath: provided } : {});
   }
 
-  // Pass 1: timings and, on PostgreSQL, statement counts — tracing off, so it costs nothing.
-  log('Starting the targets…');
-  let servers = await startTargets({ otel: null, vacuum: true });
-  const contexts = {};
-  if (browser) for (const t of targets) contexts[t.name] = await signedInContext(browser, servers[t.name]);
+  // Pass 1: timings and, on PostgreSQL, statement counts — tracing off, so it costs nothing. Each session starts
+  // every target afresh, warms it up, and takes its share of each kind of round.
   // The calls no page makes in the browser are measured once, by the first shard.
   const known = !shard || shard.index === 1 ? knownApiPaths(manifest) : [];
   const discovered = new Map(known.map((p) => [p, new Set()]));
+  /** The rounds of `total` this session takes, numbered across the run so the order keeps alternating. */
+  const roundsOf = (total, session) => {
+    const [from, to] = sessionRange(total, session, samples.sessions);
+    return Array.from({ length: to - from }, (_, i) => from + i);
+  };
 
-  try {
-    log(`Warming up (${samples.warmup} rounds)…`);
-    for (let round = 0; round < samples.warmup; round++) {
-      for (const page of pages) {
-        for (const t of inTurn(round)) {
-          await fetchTimed(servers[t.name], page.path, 'text/html');
-          if (browser && round === 0) await loadPage(contexts[t.name], servers[t.name], page.path).catch(() => {});
-        }
-      }
-    }
+  for (let session = 0; session < samples.sessions; session++) {
+    log(`Session ${session + 1} of ${samples.sessions}: starting the targets…`);
+    // The copies are vacuumed once, after the startup work of each build's first start.
+    const servers = await startTargets({ otel: null, vacuum: session === 0 });
+    const contexts = {};
+    try {
+      if (browser) for (const t of targets) contexts[t.name] = await signedInContext(browser, servers[t.name]);
 
-    log(`Server renders (${samples.ssr} per page)…`);
-    for (let round = 0; round < samples.ssr; round++) {
-      for (const page of results.pages) {
-        for (const t of inTurn(round)) {
-          const { result, db } = await withStatements(t, () => fetchTimed(servers[t.name], page.path, 'text/html'));
-          const s = page.targets[t.name].ssr;
-          s.ms.push(result.ms);
-          s.ttfb.push(result.ttfb);
-          s.bytes.push(result.bytes);
-          s.status = result.status;
-          if (db) {
-            s.statements.push(db.statements);
-            s.blocks.push(db.blocks);
-            s.dbMs.push(db.ms);
-            s.deltas.push(db);
+      log(`Warming up (${samples.warmup} rounds)…`);
+      for (let round = 0; round < samples.warmup; round++) {
+        for (const page of pages) {
+          for (const t of inTurn(round)) {
+            await fetchTimed(servers[t.name], page.path, 'text/html');
+            if (browser && round === 0) await loadPage(contexts[t.name], servers[t.name], page.path).catch(() => {});
           }
         }
       }
-      process.stdout.write('.');
-    }
-    process.stdout.write('\n');
 
-    if (browser && samples.load > 0) {
-      log(`Browser loads (${samples.load} per page)…`);
-      for (let round = 0; round < samples.load; round++) {
+      const ssrRounds = roundsOf(samples.ssr, session);
+      log(`Server renders (${ssrRounds.length} of ${samples.ssr} per page)…`);
+      for (const round of ssrRounds) {
         for (const page of results.pages) {
           for (const t of inTurn(round)) {
-            const { result, db } = await withStatements(t, () =>
-              loadPage(contexts[t.name], servers[t.name], page.path),
-            );
-            const l = page.targets[t.name].load;
-            l.ms.push(result.ms);
-            l.apiRequests.push(result.apiRequests);
-            l.blockingMs.push(result.blockingMs);
-            l.domNodes.push(result.domNodes);
-            l.lcpMs.push(result.lcpMs);
-            l.requests = result.requests.map(({ method, url, status, ms }) => ({ method, url, status, ms }));
+            const { result, db } = await withStatements(t, () => fetchTimed(servers[t.name], page.path, 'text/html'));
+            const s = page.targets[t.name].ssr;
+            s.ms.push(result.ms);
+            s.ttfb.push(result.ttfb);
+            s.bytes.push(result.bytes);
+            s.status = result.status;
             if (db) {
-              l.statements.push(db.statements);
-              l.deltas.push(db);
-            }
-            for (const r of result.requests) {
-              if (!r.api) continue;
-              if (!discovered.has(r.url)) discovered.set(r.url, new Set());
-              discovered.get(r.url).add(page.id);
+              s.statements.push(db.statements);
+              s.blocks.push(db.blocks);
+              s.dbMs.push(db.ms);
+              s.deltas.push(db);
             }
           }
         }
         process.stdout.write('.');
       }
       process.stdout.write('\n');
-    }
 
-    results.apis = [...discovered.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([path, calledBy]) => ({
-        path,
-        calledBy: [...calledBy],
-        targets: Object.fromEntries(
-          targets.map((t) => [t.name, { ms: [], bytes: [], statements: [], blocks: [], deltas: [], status: null }]),
-        ),
-      }));
-    if (samples.api > 0) {
-      log(`API calls (${results.apis.length} requests × ${samples.api})…`);
-      for (let round = 0; round < samples.api; round++) {
-        for (const api of results.apis) {
-          for (const t of inTurn(round)) {
-            const { result, db } = await withStatements(t, () =>
-              fetchTimed(servers[t.name], api.path, 'application/json'),
-            );
-            const a = api.targets[t.name];
-            a.ms.push(result.ms);
-            a.bytes.push(result.bytes);
-            a.status = result.status;
-            if (db) {
-              a.statements.push(db.statements);
-              a.blocks.push(db.blocks);
-              a.deltas.push(db);
+      const loadRounds = browser ? roundsOf(samples.load, session) : [];
+      if (loadRounds.length) {
+        log(`Browser loads (${loadRounds.length} of ${samples.load} per page)…`);
+        for (const round of loadRounds) {
+          for (const page of results.pages) {
+            for (const t of inTurn(round)) {
+              const { result, db } = await withStatements(t, () =>
+                loadPage(contexts[t.name], servers[t.name], page.path),
+              );
+              const l = page.targets[t.name].load;
+              l.ms.push(result.ms);
+              l.apiRequests.push(result.apiRequests);
+              l.blockingMs.push(result.blockingMs);
+              l.domNodes.push(result.domNodes);
+              l.lcpMs.push(result.lcpMs);
+              l.requests = result.requests.map(({ method, url, status, ms }) => ({ method, url, status, ms }));
+              if (db) {
+                l.statements.push(db.statements);
+                l.deltas.push(db);
+              }
+              for (const r of result.requests) {
+                if (!r.api) continue;
+                if (!discovered.has(r.url)) discovered.set(r.url, new Set());
+                discovered.get(r.url).add(page.id);
+              }
             }
           }
+          process.stdout.write('.');
         }
-        process.stdout.write('.');
+        process.stdout.write('\n');
       }
-      process.stdout.write('\n');
+
+      // The API calls are the ones known once the first session's loads are done: every session measures that list.
+      if (session === 0) {
+        results.apis = [...discovered.keys()]
+          .sort((a, b) => a.localeCompare(b))
+          .map((path) => ({
+            path,
+            calledBy: [],
+            targets: Object.fromEntries(
+              targets.map((t) => [t.name, { ms: [], bytes: [], statements: [], blocks: [], deltas: [], status: null }]),
+            ),
+          }));
+      }
+      const apiRounds = roundsOf(samples.api, session);
+      if (apiRounds.length) {
+        log(`API calls (${results.apis.length} requests × ${apiRounds.length} of ${samples.api})…`);
+        for (const round of apiRounds) {
+          for (const api of results.apis) {
+            for (const t of inTurn(round)) {
+              const { result, db } = await withStatements(t, () =>
+                fetchTimed(servers[t.name], api.path, 'application/json'),
+              );
+              const a = api.targets[t.name];
+              a.ms.push(result.ms);
+              a.bytes.push(result.bytes);
+              a.status = result.status;
+              if (db) {
+                a.statements.push(db.statements);
+                a.blocks.push(db.blocks);
+                a.deltas.push(db);
+              }
+            }
+          }
+          process.stdout.write('.');
+        }
+        process.stdout.write('\n');
+      }
+    } finally {
+      for (const c of Object.values(contexts)) await c.close();
+      await Promise.all(Object.values(servers).map((s) => s.stop()));
     }
-  } finally {
-    for (const c of Object.values(contexts)) await c.close();
-    await Promise.all(Object.values(servers).map((s) => s.stop()));
   }
+  for (const api of results.apis) api.calledBy = [...discovered.get(api.path)];
 
   // Each request's SQL from pass 1, on PostgreSQL.
   for (const page of results.pages) {
@@ -552,7 +586,7 @@ async function main() {
   if (!opts['no-trace']) {
     log('Tracing pass (OpenTelemetry)…');
     const receiver = await startOtlpReceiver();
-    servers = await startTargets({ otel: receiver });
+    const servers = await startTargets({ otel: receiver });
     const traceContexts = {};
     if (browser) for (const t of targets) traceContexts[t.name] = await signedInContext(browser, servers[t.name]);
     const traced = Object.fromEntries(targets.map((t) => [t.name, { pages: {}, apis: {} }]));

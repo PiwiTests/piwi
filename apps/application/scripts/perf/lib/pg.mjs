@@ -52,15 +52,17 @@ export async function dropDatabase(sql, name) {
 }
 
 /**
- * Vacuum and analyze database `name`, as autovacuum would in its own time: the dead rows a build's startup work
- * left (a migration's or a backfill's rewrites) are cleared and the planner's statistics read the data as it is.
- * `pg_stat_statements.track_utility=off` keeps it out of the counted statements.
+ * Vacuum database `name`, as autovacuum would in its own time: the dead rows a build's startup work left (a
+ * migration's or a backfill's rewrites) are cleared. With `analyze`, the planner's statistics are read again too.
+ * ANALYZE reads a random sample of each large table, so two databases analyzed apart get different statistics, and
+ * the planner can pick a different plan in each: the suite analyzes the seed once, and every copy inherits its
+ * statistics. `pg_stat_statements.track_utility=off` keeps both out of the counted statements.
  */
-export async function vacuumDatabase(adminUrl, name) {
+export async function vacuumDatabase(adminUrl, name, { analyze = false } = {}) {
   const { default: postgres } = await import('postgres');
   const sql = postgres(databaseUrl(adminUrl, name), { max: 1, onnotice: () => {} });
   try {
-    await sql.unsafe('VACUUM (ANALYZE)');
+    await sql.unsafe(analyze ? 'VACUUM (ANALYZE)' : 'VACUUM');
   } finally {
     await sql.end();
   }

@@ -73,6 +73,12 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 
 - **PostgreSQL must load `pg_stat_statements`** (`scripts/perf/lib/pg.mjs` has the `docker run` line); with it every
   request's statements are counted on any build.
+- **Every copy of the dataset plans on the seed's statistics.** `prepareSeed` analyzes the seed once and a copy is
+  vacuumed, never analyzed (`vacuumDatabase` in `scripts/perf/lib/pg.mjs`): ANALYZE samples rows at random, and two
+  copies analyzed apart can plan the execution page's history queries differently, a tenth of its render time.
+- **A time is flagged only when every session shows the change** (`--sessions`, 2 by default; `compareMetric` in
+  `scripts/perf/lib/compare.mjs`). Each session restarts every server, since one process can run a page slower than
+  another of the same build for as long as it lives; `tests/unit/perf-suite.test.ts` holds the rule.
 - **The suite also runs each build with OpenTelemetry on** (`server/plugins/opentelemetry.ts`, `server/utils/otel.ts`)
   to list the SQL of each request, and of the requests the server makes to itself while rendering a page. Set
   `OTEL_EXPORTER_OTLP_ENDPOINT` to see the same traces in a collector of your own (`apps/docs/operate/tracing.md`).
