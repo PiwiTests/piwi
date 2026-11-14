@@ -3280,6 +3280,9 @@ class GlueTest {
         assertEquals(verify.copy(headed = true, holdFailures = true), Glue.withRunStart(verify, headed = true, holdFailures = "on"))
         val selection = RunSelectionParams(uri, "smoke")
         assertEquals(selection.copy(headed = true, holdFailures = false), Glue.withRunStart(selection, headed = true, holdFailures = "off"))
+        // Debug with Piwi names its own start: headed, holding its failures, whatever the choices.
+        val debugging = args.copy(headed = true, holdFailures = true)
+        assertEquals(debugging, Glue.withRunStart(debugging, headed = false, holdFailures = "off"))
         assertEquals(selection, Glue.withRunStart(selection, headed = false, holdFailures = "auto"))
         val debug = Glue.debugRunArgs(uri, uri, 4, Glue.DebugRequest(spec = "tests/checkout.spec.ts", title = "pays", project = null, execution = null))
         assertSame(debug, Glue.withRunStart(debug, headed = true, holdFailures = "off"))

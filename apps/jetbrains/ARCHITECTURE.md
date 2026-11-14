@@ -315,7 +315,10 @@ that each of Piwi's resolves to a file, and lists the actions that share a glyph
 **Re-run the failing tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
 (`Glue.failingRuns`). **Run this test** runs `Glue.failureRunArgs`. Both name the failure's config
-(`WorkspaceFailure.root`).
+(`WorkspaceFailure.root`). **Debug this failure** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
+built for it (`WorkspaceFailure.debug`) once the files are saved, quietly (the service says why it refuses a debug
+run); so does **Debug with Piwi** among a test's actions on the result icon (`TestAction.kind` `debug`,
+`PiwiCommands.debug`). A run that names its own start keeps it (`Glue.withRunStart`).
 
 ### Compare with
 

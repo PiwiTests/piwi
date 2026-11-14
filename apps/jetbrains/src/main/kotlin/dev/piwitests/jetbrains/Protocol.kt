@@ -34,7 +34,7 @@ data class SummaryLine(
 /**
  * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
  * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
- * it at the test's line; any other runs `command`.
+ * it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
  */
 data class TestAction(
     val group: String = "run",
@@ -569,6 +569,8 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
+    val debug: RunTestsArgs? = null,
 )
 
 /**

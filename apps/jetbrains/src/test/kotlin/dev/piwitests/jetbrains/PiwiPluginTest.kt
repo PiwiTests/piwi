@@ -1394,6 +1394,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
+    /** **Debug this failure** is offered on a failure the service built a debug run for, and only there. */
+    fun testDebugThisFailureAppliesToAFailureWithADebugRun() {
+        val failure = WorkspaceFailure(uri = "file:///w/tests/a.spec.ts", line = 3, title = "pays", executionId = 9)
+        val debug = RunTestsArgs("file:///w/tests/a.spec.ts", emptyList())
+        val action = ActionManager.getInstance().getAction("Piwi.Failure.Debug") as DebugFailureAction
+        assertTrue(action.applies(project, failure.copy(debug = debug)))
+        assertFalse(action.applies(project, failure))
+        assertNotNull(action.templatePresentation.icon)
+    }
+
     /**
      * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
      * actions, then its evidence and its context for an agent, a separator between groups; either click opens them.
@@ -1410,6 +1420,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             testCaseId = 1,
             actions = listOf(
                 TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
+                TestAction("run", "", "debug", "Debug with Piwi", command("Debug with Piwi", "piwi.runTests")),
                 TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
                 TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
                 TestAction(
@@ -1431,6 +1442,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(
             listOf(
                 "Run with Piwi",
+                "Debug with Piwi",
                 "Verify ×3 with Piwi",
                 "— Evidence",
                 "Open the trace",
@@ -1443,7 +1455,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
         val manager = ActionManager.getInstance()
         fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
-        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(1), registered(4)))
+        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(2), registered(5)))
+        assertEquals(AllIcons.Actions.StartDebugger, children[1].templatePresentation.icon)
         // A left click opens the same list, never the browser, while the IDE indexes too.
         assertTrue(gutter.isNavigateAction)
         assertTrue(gutter.clickAction is com.intellij.openapi.project.DumbAware)

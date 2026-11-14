@@ -216,6 +216,19 @@ describe("a test's actions", () => {
   });
 });
 
+describe('Debug this failure', () => {
+  test('is offered on a failure the service built a debug run for, never in the palette', () => {
+    const entry = menus['view/item/context']!.find((e) => e.command === 'piwi.debugFailure')!;
+    const offered = (contextValue: string) =>
+      new RegExp(/viewItem =~ \/(.+)\/$/.exec(entry.when!)![1]!).test(contextValue);
+    expect(entry.when!.startsWith('view == piwi.failures && ')).toBe(true);
+    expect(offered('piwi.failure.failing.trace.agent.debug')).toBe(true);
+    expect(offered('piwi.failure.failing.trace.agent')).toBe(false);
+    expect(offered('piwi.failure.fixed-locally')).toBe(false);
+    expect(menus.commandPalette!.find((e) => e.command === 'piwi.debugFailure')!.when).toBe('false');
+  });
+});
+
 describe('Open the trace so far', () => {
   test('is offered while the worker panel is the active editor and its slot can open its trace, with its glyph', () => {
     const commands = manifest.contributes.commands as Array<{ command: string; title: string; icon?: string }>;
