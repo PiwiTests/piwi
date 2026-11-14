@@ -4,8 +4,8 @@
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
 //   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
-//   fast reset        before Playwright resets a reused context, clears the storage of the origins the test visited
-//                     from the frames still on them and through CDP, so the reset has nothing to navigate to
+//   fast reset        when Playwright resets a reused context, clears the storage of the origins the test visited
+//                     from the frames still on them and through CDP, so the reset has no origin to load
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //
@@ -182,45 +182,56 @@ async function sealStorage(frames: ServerPage[], progress: unknown): Promise<boo
   }
 }
 
+/** Contexts whose next storage reset clears their visited origins through CDP. */
+const sealedContexts = new WeakSet<object>();
+
 function hookContextReset(core: ServerPage): void {
   const proto = core.server?.BrowserContext?.prototype;
   const resetForReuse = proto?.resetForReuse as ((progress: unknown, params: unknown) => Promise<unknown>) | undefined;
-  if (typeof resetForReuse !== 'function')
-    throw new IncompatibleError("Playwright's server BrowserContext has no resetForReuse()");
-  const source = String(resetForReuse);
+  const setStorageState = proto?.setStorageState as
+    | ((progress: unknown, storageState: unknown, mode: string) => Promise<unknown>)
+    | undefined;
+  if (typeof resetForReuse !== 'function' || typeof setStorageState !== 'function')
+    throw new IncompatibleError("Playwright's server BrowserContext has no resetForReuse()/setStorageState()");
   const steps = [
-    'isClosedOrClosingOrCrashed()',
     'gotoImpl(progress2, "about:blank", {})',
     'setStorageState(progress2, this._options.storageState, "resetForReuse")',
   ];
-  if (!steps.every((step) => source.includes(step))) {
+  if (
+    !steps.every((step) => String(resetForReuse).includes(step)) ||
+    !String(setStorageState).includes('this._origins')
+  ) {
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
   }
+  // Before Playwright's reset: the frames still on the visited origins clear their session storage, which belongs to
+  // the tab, and stop writing to storage until the reset navigates them away.
   proto.resetForReuse = async function (this: ServerPage, progress: unknown, params: unknown) {
+    sealedContexts.delete(this);
     const origins = this._origins as Set<string> | undefined;
     const page = this.pages?.()[0];
-    const session = page?.delegate?._mainFrameSession?._client;
-    if (state.fastReset && origins instanceof Set && session && !page.isClosedOrClosingOrCrashed()) {
-      // The first step of Playwright's reset: the test's other pages close.
-      for (const open of this.possiblyUninitializedPages()) if (open !== page) await open.close(progress);
+    if (state.fastReset && origins instanceof Set && page?.delegate?._mainFrameSession?._client) {
       const frames = page.frames() as ServerPage[];
       if (frames.some((frame) => typeof frame.origin !== 'function' || typeof frame.evaluateExpression !== 'function'))
         throw new IncompatibleError("Playwright's server frame has no origin()/evaluateExpression()");
       const kept = frames.filter((frame) => origins.has(frame.origin()));
-      // Session storage belongs to the tab and is reached from a frame of its origin. An origin the test left has
-      // none, so Playwright's reset loads it, and every other one.
+      // An origin the test left has no frame to reach its session storage from: Playwright's reset loads it.
       const reachable = [...origins].every((origin) => kept.some((frame) => frame.origin() === origin));
-      if (reachable && (await sealStorage(kept, progress))) {
-        state.counters.fastResets++;
-        await page.mainFrame().gotoImpl(progress, 'about:blank', {});
-        // With no page of the test left to write to it, the rest of the origin's storage is cleared.
-        for (const origin of origins)
-          await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
-        // With no visited origin left, Playwright restores only the configured storage state's origins.
-        origins.clear();
-      }
+      if (reachable && (await sealStorage(kept, progress))) sealedContexts.add(this);
     }
     return resetForReuse.call(this, progress, params);
+  };
+  // Playwright's reset restores the storage once no page of the test is left on a visited origin: the rest of their
+  // storage is cleared through CDP, so only the configured storage state's origins are loaded.
+  proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
+    const session = this.pages?.()[0]?.delegate?._mainFrameSession?._client;
+    if (mode === 'resetForReuse' && sealedContexts.delete(this) && session) {
+      state.counters.fastResets++;
+      const origins = this._origins as Set<string>;
+      for (const origin of origins)
+        await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
+      origins.clear();
+    }
+    return setStorageState.call(this, progress, storageState, mode);
   };
 }
 
