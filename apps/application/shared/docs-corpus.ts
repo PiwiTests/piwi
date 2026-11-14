@@ -306,8 +306,12 @@ const TOOL_PAGES = new Set(
   ),
 );
 
+/** The glossary keeps its path under guide/, where pages link its anchors, and belongs to Reference. */
+const GLOSSARY_PAGE = 'guide/concepts';
+
 function groupOf(path: string): DocsGroupId {
   if (TOOL_PAGES.has(path)) return 'tools';
+  if (path === GLOSSARY_PAGE) return 'reference';
   const prefix = path.split('/')[0];
   return DOCS_GROUPS.find((g) => g.id === prefix)?.id ?? 'home';
 }

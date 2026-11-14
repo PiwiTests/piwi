@@ -152,34 +152,40 @@ export function toolPages(): string[] {
 /**
  * The landing page's cards, in catalog order: one per group that takes a card,
  * linking to that group on the All features page with the count of its
- * features; one for the Tools section, linking to its first page with the
- * count of every tool's features; and one for the Self-hosting section, linking
- * to its first page with the count of its pages.
+ * features and of the `card: false` groups that follow it; one for the Tools
+ * section, linking to its first page with the count of every tool's features;
+ * and one for the Self-hosting section, linking to its first page with the
+ * count of its pages.
  */
 export function landingCards(): LandingCard[] {
   const tools = PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools');
-  return PIWI_FEATURE_GROUPS.flatMap((group): LandingCard[] => {
+  const cards: LandingCard[] = [];
+  let featureCard: { card: LandingCard; count: number } | undefined;
+  for (const group of PIWI_FEATURE_GROUPS) {
     if (group.section === 'tools') {
-      if (group !== tools[0]) return [];
+      featureCard = undefined;
+      if (group !== tools[0]) continue;
       const features = tools.reduce((count, tool) => count + tool.features.length, 0);
-      return [
-        { title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` },
-      ];
-    }
-    if (group.section === 'self-hosting') {
+      cards.push({ title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` });
+    } else if (group.section === 'self-hosting') {
+      featureCard = undefined;
       const pages = sidebarEntries(selfHostingSidebar);
-      return [{ title: group.title, details: group.intro, link: pages[0]!.link, linkText: `${pages.length} pages` }];
-    }
-    if (group.card === false) return [];
-    return [
-      {
+      cards.push({ title: group.title, details: group.intro, link: pages[0]!.link, linkText: `${pages.length} pages` });
+    } else if (group.card === false && featureCard) {
+      featureCard.count += group.features.length;
+      featureCard.card.linkText = `${featureCard.count} features`;
+    } else {
+      const card = {
         title: group.title,
         details: group.intro,
         link: `/reference/features#${headingAnchor(group.title)}`,
         linkText: `${group.features.length} features`,
-      },
-    ];
-  });
+      };
+      featureCard = { card, count: group.features.length };
+      cards.push(card);
+    }
+  }
+  return cards;
 }
 
 /** The glossary's page: under /guide/, listed in the Reference sidebar. */

@@ -208,6 +208,15 @@ describe('counts in prose', () => {
       `COUNTS ties "${phrase}" to a list and ${page} does not say it: remove the row, or correct its phrase`,
     ).toContain(phrase);
   });
+
+  // A list read from source text, such as a union of string literals, reads as empty once its declaration is written
+  // another way.
+  test.each(COUNTS)('$list is read', ({ list, count }) => {
+    expect(
+      count(),
+      `COUNTS cannot read ${list}: it counts ${count()}, so the declaration is no longer written as the row's reader expects; read it another way`,
+    ).toBeGreaterThan(1);
+  });
 });
 
 describe('quoted editor commands', () => {
@@ -331,23 +340,30 @@ describe('recipes state no figure', () => {
 
   /** The text with each step's number taken out, and a number out of its step's sequence left in. */
   const withoutStepNumbers = (markdown: string) => {
-    let heading = 0;
-    // The last number of the open ordered list at each indentation.
+    // The last number of the numbered headings at each level, and of the open ordered list at each indentation.
+    const headings = new Map<number, number>();
     const items = new Map<number, number>();
+    /** A heading of a level closes the lists and the numbering of the deeper headings. */
+    const enterHeading = (level: number) => {
+      items.clear();
+      for (const deeper of [...headings.keys()]) if (deeper > level) headings.delete(deeper);
+    };
     return markdown
       .split('\n')
       .map((line) => {
         const step = STEP_NUMBER.exec(line);
         if (!step) {
-          if (/^#{1,6}\s/.test(line)) items.clear();
+          const heading = /^(#{1,6})\s/.exec(line);
+          if (heading) enterHeading(heading[1]!.length);
           return line;
         }
         const [numbered, indent, hashes, digits] = step;
         const number = Number(digits);
         if (hashes) {
-          if (number !== heading + 1) return line;
-          heading = number;
-          items.clear();
+          const level = hashes.trim().length;
+          enterHeading(level);
+          if (number !== (headings.get(level) ?? 0) + 1) return line;
+          headings.set(level, number);
         } else {
           if (number !== 1 && number !== (items.get(indent!.length) ?? 0) + 1) return line;
           items.set(indent!.length, number);
@@ -475,6 +491,10 @@ describe('the privacy page lists every destination', () => {
   // are libraries this pattern does not see: their rows come from the registry and UNREGISTERED. A new call in a file
   // already listed is not seen either.
   const CALL = /\bfetch\(|\$fetch\b|\bofetch\b|\bsafeFetch\(|\bfetchPublicImage\(|\bcreateTransport\(/;
+  // A comment names calls it does not make, and a `$fetch` of a path that starts with `/` is the server calling itself.
+  const COMMENT = /\/\*[\s\S]*?\*\/|(^|[^:'"`\\])\/\/.*$/gm;
+  const INTERNAL_CALL = /\$fetch(?:<[^>]*>)?\(\s*['"`]\//g;
+  const sendsRequest = (source: string) => CALL.test(source.replace(COMMENT, '$1').replace(INTERNAL_CALL, ' '));
   const OUTBOUND: Record<string, string> = {
     'server/api/settings/ai/models.post.ts': 'Your AI provider',
     'server/utils/ai-embeddings.ts': 'Your AI provider',
@@ -504,21 +524,23 @@ describe('the privacy page lists every destination', () => {
       const path = posix.join(dir, entry.name);
       if (entry.isDirectory()) return walk(path);
       if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return [];
-      return CALL.test(read(`apps/application/${path}`)) ? [path] : [];
+      return sendsRequest(read(`apps/application/${path}`)) ? [path] : [];
     });
   })('server');
 
   test('the calls of the server are found', () => {
     expect(callers).toContain('server/utils/scm/GitHubProvider.ts');
-    expect(CALL.test('await $fetch<Answer>(url)')).toBe(true);
-    expect(CALL.test('const prefetch = 1')).toBe(false);
+    expect(sendsRequest('await $fetch<Answer>(url)')).toBe(true);
+    expect(sendsRequest('const prefetch = 1')).toBe(false);
+    expect(sendsRequest('// a fetch( in a comment\nconst url = "https://example.com";')).toBe(false);
+    expect(sendsRequest("await $fetch<Run>('/api/test-runs/1')")).toBe(false);
   });
 
   test.each(callers)('%s names the destination it calls', (file) => {
     if (HELPERS.includes(file)) return;
     expect(
       OUTBOUND[file],
-      `apps/application/${file} sends a request: add it to OUTBOUND (tests/unit/docs-claims.test.ts) with the row of the table "${HEADING}" of ${PAGE} that lists its destination, adding the row when none does`,
+      `apps/application/${file} sends a request: add it to OUTBOUND (tests/unit/docs-claims.test.ts) with the row of the table "${HEADING}" of ${PAGE} that lists its destination, adding the row when none does, or to HELPERS when it only sends what its callers give it`,
     ).toBeDefined();
     expect(listed, `apps/application/${file} reaches "${OUTBOUND[file]}", which the table does not list`).toContain(
       OUTBOUND[file],

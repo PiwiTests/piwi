@@ -18,6 +18,7 @@ import {
   featuresSidebar,
   guideSidebar,
   headingAnchor,
+  landingCards,
   referenceSidebar,
   selfHostingSidebar,
   sidebarEntries,
@@ -647,6 +648,46 @@ describe('docs site structure', () => {
       const parts = group.features.map((feature) => feature.part).filter((part, i, all) => part !== all[i - 1]);
       const labels = parts.filter((part) => part !== undefined);
       expect(labels, `put the entries of a part next to each other`).toEqual([...new Set(labels)]);
+    },
+  );
+
+  // An entry nested in the Features sidebar names its parent: an entry of the same Features group, before it, and not
+  // nested itself. featuresSidebar() would put an entry whose parent it cannot find at the top of its group.
+  const nestedEntries = PIWI_FEATURE_GROUPS.flatMap((group) =>
+    group.features.flatMap((feature, index) =>
+      feature.parent ? [[`${group.title} → ${feature.title}`, group, index] as const] : [],
+    ),
+  );
+
+  // Every feature is counted on one landing card: a group with `card: false` on the card before it.
+  test('the landing cards count every feature once', () => {
+    const counted = landingCards()
+      .filter((card) => card.linkText.endsWith(' features'))
+      .reduce((total, card) => total + Number.parseInt(card.linkText, 10), 0);
+    const features = PIWI_FEATURE_GROUPS.filter((group) => group.section !== 'self-hosting').reduce(
+      (total, group) => total + group.features.length,
+      0,
+    );
+    expect(counted, 'apps/docs/.vitepress/navigation.ts: landingCards() leaves a group out of the counts').toBe(
+      features,
+    );
+  });
+
+  test('the nested entries are read', () => {
+    expect(nestedEntries.map(([entry]) => entry)).toContain('Watch a run → Watch all workers');
+  });
+
+  test.each(nestedEntries)(
+    '%s is nested under an earlier top-level entry of its Features group',
+    (entry, group, index) => {
+      const feature = group.features[index]!;
+      expect(group.section, `${entry}: only an entry of a Features group takes a parent`).toBeUndefined();
+      const parent = group.features.slice(0, index).find((earlier) => earlier.title === feature.parent);
+      expect(
+        parent,
+        `${entry}: its parent "${feature.parent}" is no earlier entry of the group "${group.title}" in shared/piwi-features.ts`,
+      ).toBeDefined();
+      expect(parent!.parent, `${entry}: its parent "${feature.parent}" is nested itself`).toBeUndefined();
     },
   );
 

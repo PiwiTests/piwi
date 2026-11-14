@@ -97,7 +97,7 @@ export interface FeatureGroup {
 export const TOOLS_SECTION = {
   title: 'Tools',
   intro:
-    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, the MCP server and skills for coding agents, and the `piwi` command line.',
+    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, the MCP server and skills for coding agents, and the piwi command line.',
 };
 
 export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
