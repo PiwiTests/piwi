@@ -112,7 +112,7 @@ The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failin
 latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected
 failure or run),
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
-menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
+menu, selects the first failure of the file you switch to until **Stop following the active editor**, and the badge counts the failing tests, as the tool window's
 title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP
 configurations, **Reload everything from the instance**, the settings and **Open the documentation**. The tree is read again when a run ends or an edit
 moves a failure.

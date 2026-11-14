@@ -232,6 +232,19 @@ describe('quoted editor commands', () => {
     expect(isQuickFix(piwiActionTitle("Use getByTestId('pay')").replace(/^Piwi: /, ''))).toBe(true);
   });
 
+  test('the Editor commands page names every action of both editors', () => {
+    const page = normalize(read('apps/docs/reference/editor-commands.md').replace(/\*\*/g, ''));
+    const missing = EDITOR_ACTIONS.filter(
+      (action) =>
+        !page.includes(normalize(actionTitle(action, 'vscode'))) &&
+        !page.includes(normalize(actionTitle(action, 'jetbrains'))),
+    ).map((action) => action.title);
+    expect(
+      missing,
+      'apps/docs/reference/editor-commands.md leaves out these actions of packages/editor/src/actions.ts',
+    ).toEqual([]);
+  });
+
   test.each(handWrittenPages)('%s quotes only commands the editors have', (page) => {
     const quoted = [
       ...read(page)

@@ -39,10 +39,11 @@ once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** 
 
 Where its data lives, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
-Closing the window quits the app unless **Run in background** is on in the system tray menu; **Start on login**
-launches it hidden in the system tray. The windows open where you left them. The app has its own
-[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The system tray menu lists the tests running from the app, each with **Stop**, the machine kept awake meanwhile, and
-**Show the stopped test** opens the window on one waiting for you. **Open in a
+The system tray menu holds **Open Piwi Desktop**, each test running from the app with **Stop** (the machine kept
+awake meanwhile), **Open data folder**, **Show logs**, **Run in background** (off, closing the window quits), **Start
+on login** (hidden in the tray), **Quit Piwi Desktop**, and first **Show the stopped test**, opening the window on one
+waiting for you. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
+and macOS menu items. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
 the Dock icon and in the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)

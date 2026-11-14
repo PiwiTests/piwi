@@ -30,11 +30,12 @@ From the editor, the first four need the pause bar, so a headed browser: choose 
 headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
-  in the palette while a stop offers them (**Piwi: Assert at the stop**, **Piwi: Mock a request at the
-  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
+  in the palette while a stop offers them (**Piwi: Pick a locator at the stop**, **Piwi: Record at the stop**,
+  **Piwi: Assert at the stop**, **Piwi: Assert a region at the stop**, **Piwi: Mock a request at the stop…**), and
+  behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
 - **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
-  bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**).
+  bar item's menu, and under **Tools → Piwi** with the same titles as VS Code's palette.
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search
 `piwi`). A stop offers only the actions its reporter takes: with one that predates them, none.
