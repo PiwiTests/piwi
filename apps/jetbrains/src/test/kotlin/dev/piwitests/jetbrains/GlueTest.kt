@@ -264,14 +264,12 @@ class GlueTest {
     }
 
     @Test
-    fun `a run's count and its status are worded as VS Code words them`() {
+    fun `a run's count is worded as VS Code words it, and its status as the service writes it`() {
         assertEquals("3 of 9", Glue.countWords(3, 9))
         assertEquals("4 of 10 · 1 failed · 1 flaky · 1 ended at a stop", Glue.countWords(4, 10, 1, 1, 1))
         assertEquals("2 of 2 · 1 ended at a stop", Glue.countWords(2, 2, 0, 0, 1))
-        assertEquals("timed out", Glue.statusWords("timedout"))
-        assertEquals("didn't run", Glue.statusWords("didnotrun"))
-        assertEquals("interrupted", Glue.statusWords("interrupted"))
-        assertEquals("Piwi: timed out", Glue.statusView(connected, runs(passed.copy(status = "timedout"))).text)
+        // A run's status in the dashboard's words, as the service writes them.
+        assertEquals("Piwi: timed out", Glue.statusView(connected, runs(passed.copy(status = "timedout", statusText = "timed out"))).text)
     }
 
     @Test
@@ -415,35 +413,30 @@ class GlueTest {
     }
 
     @Test
-    fun `the icon follows what the text counts, and the error color the alarm the setting asks for`() {
+    fun `the icon follows what the text counts, and the error color the alarm the service decides`() {
         fun look(view: Glue.StatusView) = view.icon to view.error
         val failed = passed.copy(status = "failed", failedTests = 3)
-        fun failing(new: Int) = RunStatusResult(listOf(RunStatus(root = "/w", run = failed, newFailingTests = new)))
+        fun failing(alarm: Boolean) = RunStatusResult(listOf(RunStatus(root = "/w", run = failed, alarm = alarm)))
         assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, runs(passed))))
-        // CI failures the developer did not cause: counted, never the alarm; a new one a run of this machine failed is.
-        assertEquals(Glue.StatusIcon.FAILING to false, look(Glue.statusView(connected, failing(0))))
-        assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, failing(1))))
-        assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, failing(0), alert = "any")))
-        assertEquals(Glue.StatusIcon.FAILING to false, look(Glue.statusView(connected, failing(1), alert = "never")))
+        // CI failures the developer did not cause: counted, never the alarm; the service's alarm is.
+        assertEquals(Glue.StatusIcon.FAILING to false, look(Glue.statusView(connected, failing(false))))
+        assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, failing(true))))
         assertEquals(Glue.StatusIcon.WARNING to false, look(Glue.statusView(connected, runs(passed.copy(status = "interrupted")))))
-        val running = runs(passed.copy(status = "running", failedTests = 1))
+        // A run in progress is never the alarm.
+        val running = RunStatusResult(listOf(RunStatus(root = "/w", run = passed.copy(status = "running", failedTests = 1), alarm = true)))
         assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, running)))
-        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, running, alert = "any")))
         assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, runs(passed.copy(status = "running")))))
         assertEquals(Glue.StatusIcon.PIWI to false, look(Glue.statusView(connected, runs(null))))
-        // A run in progress: by its own failures, whatever the latest run's, and only for any failing test.
         fun live(run: RunInfo?, failing: Int) = RunStatusResult(
-            listOf(RunStatus(root = "/w", run = run, live = LiveRun(runId = 124, done = 4, total = 9, failed = failing))),
+            listOf(RunStatus(root = "/w", run = run, alarm = true, live = LiveRun(runId = 124, done = 4, total = 9, failed = failing))),
         )
-        assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, live(failed, 0), alert = "any")))
-        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, live(passed, 1), alert = "any")))
-        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, live(null, 2), alert = "any")))
+        assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, live(failed, 0))))
         assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, live(passed, 1))))
         // Every failing test fixed by a local run.
         val fixed = RunStatusResult(listOf(RunStatus(root = "/w", run = failed, failingTests = 0, resolved = 3, overlays = 1)))
         assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, fixed)))
         // A developer's own runs alone.
-        fun local(failing: Int) = RunStatusResult(listOf(RunStatus(root = "/w", failingTests = failing, newFailingTests = failing, overlays = 1)))
+        fun local(failing: Int) = RunStatusResult(listOf(RunStatus(root = "/w", failingTests = failing, alarm = failing > 0, overlays = 1)))
         assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, local(2))))
         assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, local(0))))
         // The service and the connection.
@@ -887,12 +880,17 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // The flaky of every run, summed.
+        val flaky = failing.copy(ref = "ed-4", progress = RunProgress(total = 2, done = 2, flaky = 1, status = "passed"))
+        assertEquals("Piwi: 6 of 12 · 1 failed · 1 flaky", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing, "ed-4" to flaky)))
+        // The icon: the spinner while one goes on, then how they ended.
+        assertEquals(null, Glue.runProgressIcon(mapOf("ed-1" to ready)))
+        assertEquals(Glue.StatusIcon.RUNNING, Glue.runProgressIcon(mapOf("ed-1" to counted, "ed-2" to failing)))
+        assertEquals(Glue.StatusIcon.FAILING, Glue.runProgressIcon(mapOf("ed-2" to failing, "ed-4" to flaky)))
+        assertEquals(Glue.StatusIcon.PASSED, Glue.runProgressIcon(mapOf("ed-4" to flaky)))
         // An agent's run says so, never reading as the person's own.
         val agents = counted.copy(label = "Started by Claude Code")
         assertEquals("Piwi: 3 of 9 · Started by Claude Code", Glue.runProgressText(mapOf("ed-1" to agents)))
-        // A failure so far takes the error color, as the hub counts it.
-        assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
-        assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))
         // A test ended at a stop is marked so, not counted as a plain pass.
         val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
         assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))

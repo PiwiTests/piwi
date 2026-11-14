@@ -225,10 +225,13 @@ the custom messages of `src/protocol.ts`:
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
   `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
-  `piwi/askToWatch`. `RunStatus.newFailingTests` counts the failing tests new against the baseline that a run of this
-  machine failed (`isNew`, a source other than `ci`): the clients' status alarm. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
+  `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
   desktop app and Piwi Runner hear no key.
+- **The status item's alarm** is the service's (`RunStatus.alarm`, `statusAlarm`), as the credentials'
+  `statusBarAlert` chooses: with `new`, the default, a test a run of this editor failed (an overlay of `ownRuns`) that
+  did not fail on that project in the baseline (`isNew`) and that the baseline fails on no other project, until a run
+  fixes it; with `any`, any failing test; never with `never`. A teammate's run and a CI run never raise it.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it

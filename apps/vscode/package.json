@@ -1322,7 +1322,7 @@
             "never"
           ],
           "enumDescriptions": [
-            "Only for failures new against the baseline that a run of this machine failed, until a run fixes them: a CI failure you did not cause never does.",
+            "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it: a CI failure or a teammate's never does.",
             "For any failing test, CI failures included.",
             "Never: the item still counts the failing tests."
           ],

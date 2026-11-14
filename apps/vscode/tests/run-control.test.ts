@@ -725,7 +725,19 @@ describe('Share live', () => {
       progress: { total: 2, done: 2, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1, status: 'passed', failure: null },
     };
     expect(progressItem(sessionsOf(ended))?.tooltip).toMatch(/^Piwi: the run ran 2 of 2 tests: 1 ended at a stop\./);
-    expect(progressItem(sessionsOf(ended))?.text).toBe('$(sync~spin) Piwi: 2 of 2 · 1 ended at a stop');
+    // A run that ended says how it ended, not a spinner, until its session goes.
+    expect(progressItem(sessionsOf(ended))?.text).toBe('$(pass) Piwi: 2 of 2 · 1 ended at a stop');
+    const failedRun: RunSession = {
+      ...ended,
+      progress: { ...ended.progress!, failed: 1, status: 'failed' },
+    };
+    expect(progressItem(sessionsOf(failedRun))?.text).toBe('$(error) Piwi: 2 of 2 · 1 failed · 1 ended at a stop');
+    // The number of the run that counts, never another run's.
+    const paged: RunSession = {
+      ...session('ed-2', [worker(0, 'running')]),
+      page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
+    };
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(sync~spin) Piwi: 3 of 9');
     // An agent's run says who started it, never reading as the person's own.
     const agents = progressItem(sessionsOf({ ...counted('ed-1', 3, 9), label: 'Started by Claude Code' }))!;
     expect(agents.text).toBe('$(sync~spin) Piwi: 3 of 9 · Started by Claude Code');

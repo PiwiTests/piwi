@@ -140,7 +140,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     comboBox(Glue.STATUS_BAR_ALERTS, StatusBarAlertRenderer())
                         .label("The status bar item's text turns red:", LabelPosition.TOP)
                         .bindItem({ local.statusBarAlert }, { local.statusBarAlert = it ?: "new" })
-                        .comment("A CI failure you did not cause never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
+                        .comment("A CI failure or a teammate's never turns it red unless you choose any. Kept for you only, in .idea/workspace.xml")
                 }
                 row {
                     comboBox(Glue.FAILURE_SEVERITIES, FailureSeverityRenderer())
@@ -247,9 +247,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val before = connection()
         val breakpoints = service.local().breakpoints
         val agents = service.local().serveRunsToAgents
-        val alert = service.local().statusBarAlert
         super.apply()
-        if (service.local().statusBarAlert != alert) service.drawAgain()
         // The service serves the runs to agents, or stops, at once.
         if (service.local().serveRunsToAgents != agents) {
             ApplicationManager.getApplication().executeOnPooledThread { service.agentsChanged() }
@@ -270,6 +268,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             local.desktop,
             local.desktopProject,
             local.failureSeverity,
+            local.statusBarAlert,
             local.mcpAuthorization,
         )
     }
@@ -357,7 +356,7 @@ private class StatusBarAlertRenderer : SimpleListCellRenderer<String>() {
         text = when (value) {
             "any" -> "For any failing test"
             "never" -> "Never"
-            else -> "For a new failure from a run on this machine"
+            else -> "For a new failure a run started here caused"
         }
     }
 }

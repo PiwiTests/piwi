@@ -20,7 +20,6 @@ import type {
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
 import {
   DONT_SHOW_AGAIN,
-  statusWords,
   noticeShown,
   withHiddenMessage,
   OwnRunCounts,
@@ -151,7 +150,15 @@ describe('statusMenu', () => {
   const idle = {
     action: 'refresh' as const,
     recording: null,
-    run: { active: false, stopped: false, failed: false, pausable: false, stoppable: false, page: false },
+    run: {
+      active: false,
+      stopped: false,
+      failed: false,
+      pausable: false,
+      stoppable: false,
+      page: false,
+      watchable: false,
+    },
     failing: false,
     flakyRoot: null,
     connected: true,
@@ -192,13 +199,22 @@ describe('statusMenu', () => {
   });
 
   test('offers the run’s controls while a run is live, each where its command acts', () => {
-    const run = { active: true, stopped: true, failed: false, pausable: false, stoppable: true, page: true };
+    const run = {
+      active: true,
+      stopped: true,
+      failed: false,
+      pausable: false,
+      stoppable: true,
+      page: true,
+      watchable: true,
+    };
     expect(commands(statusMenu({ ...idle, run, failing: true, flakyRoot: '/ws/app' }))).toEqual([
       'piwi.refreshRun',
       '— Run control',
       'piwi.resumeRun',
       'piwi.stepRun',
       'piwi.showPausedPage',
+      'piwi.watchWorker',
       'piwi.openRunPage',
       'piwi.stopRun',
       '— Dashboard',
@@ -356,23 +372,29 @@ describe('statusBarView', () => {
     expect(statusBarView(named, run({})).tooltip).toMatch(/^Run #41 of Shop\\_\\\*Web\\\* on feature\/pay: /);
   });
 
-  test('a failing run is an alarm only for failures new against the baseline that a run of this machine failed', () => {
-    const failing = (newFailingTests: number) => {
-      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115 });
-      return { contexts: [{ ...runs.contexts[0]!, newFailingTests }] };
+  test('says a run’s status in the dashboard’s words, as the service writes them', () => {
+    const timedOut = run({ status: 'timedout' });
+    const shown = {
+      contexts: [{ ...timedOut.contexts[0]!, run: { ...timedOut.contexts[0]!.run!, statusText: 'timed out' } }],
     };
-    const args = [false, Date.now(), null, () => undefined, () => 0] as const;
+    expect(statusBarView(connected, shown).text).toBe('$(warning) Piwi: timed out');
+  });
+
+  test('a failing run is the alarm only when the service says so', () => {
+    const failing = (alarm: boolean) => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115 });
+      return { contexts: [{ ...runs.contexts[0]!, alarm }] };
+    };
     // CI failures the developer did not cause: counted, never the alarm.
-    expect(statusBarView(connected, failing(0))).toMatchObject({
+    expect(statusBarView(connected, failing(false))).toMatchObject({
       text: '$(error) Piwi: 3 failing · 2 flaky',
       action: 'refresh',
       error: false,
     });
-    expect(statusBarView(connected, failing(1)).error).toBe(true);
-    expect(statusBarView(connected, failing(0), ...args, 'any').error).toBe(true);
-    expect(statusBarView(connected, failing(1), ...args, 'never').error).toBe(false);
-    // A passing run is no alarm, whatever the setting.
-    expect(statusBarView(connected, run({}), ...args, 'any').error).toBe(false);
+    expect(statusBarView(connected, failing(true)).error).toBe(true);
+    // A run in progress is never the alarm.
+    const running = run({ status: 'running', failedTests: 1, passedTests: 40 });
+    expect(statusBarView(connected, { contexts: [{ ...running.contexts[0]!, alarm: true }] }).error).toBe(false);
   });
 
   test('counts the tests still failing after the local runs, and those they fixed', () => {
@@ -1141,7 +1163,7 @@ describe('Compare with…', () => {
           branch: 'main',
           failures: 2,
           failingTests: 1,
-          newFailingTests: 1,
+          alarm: true,
           overlays: 2,
           run: null,
           baseline: { choice: { kind: 'local' }, label: 'your local runs only' },
@@ -1186,14 +1208,6 @@ describe('a notice of the service', () => {
     expect(setting.items.enum).toEqual([...NOTICE_KEYS]);
     expect(setting.items.enumDescriptions).toHaveLength(NOTICE_KEYS.length);
     expect(setting.scope).toBe('application');
-  });
-});
-
-describe('a run’s status', () => {
-  test('is said in the dashboard’s words, as the JetBrains plugin says it', () => {
-    expect(statusWords('timedout')).toBe('timed out');
-    expect(statusWords('didnotrun')).toBe("didn't run");
-    expect(statusWords('interrupted')).toBe('interrupted');
   });
 });
 

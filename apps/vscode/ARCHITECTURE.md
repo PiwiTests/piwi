@@ -560,10 +560,13 @@ click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Cop
 sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
 asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
-`piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
-out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of 9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`), from `RunSession.progress`, which the
-run's own process tells the service: so it counts offline and with the desktop app. An agent's run ends it with its
-label (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
+`piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself counts the window's runs while one says
+(`progressItem`): the tests they ran out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of
+9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`, the pass or error glyph
+once they ended), from `RunSession.progress`, which the run's own process tells the service: so it counts offline and
+with the desktop app, one count of a run, as the JetBrains plugin's single item does. Its tooltip leads the item's, and
+its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label
+(`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
@@ -644,10 +647,10 @@ The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
 
-**The alarm**, `statusBarItem.errorBackground`, follows `piwi.statusBarAlert` (`alarmed`): `new`, the default, only for
-a failing test new against the baseline that a run of this machine failed (`RunStatus.newFailingTests`), until a run
-fixes it, so a CI failure the developer did not cause is counted but never red; `any`, for any failing test of the run
-it counts once it ended; `never`. A run in progress is never the alarm.
+**The alarm**, `statusBarItem.errorBackground`, is the service's (`RunStatus.alarm`), as `piwi.statusBarAlert`, sent in
+the credentials, chooses: `new`, the default, only for a test a run this window started failed that the baseline does
+not fail, until a run fixes it, so a CI failure or a teammate's is counted but never red; `any`, any failing test;
+`never`. A run in progress is never the alarm.
 
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
@@ -662,7 +665,7 @@ this extension last set (`src/context-keys.ts`, since VS Code reads none back). 
 the item's own action (a recording's controls follow it), which depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
-  a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
+  a run started here holds a stop, the run's count shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
   linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;

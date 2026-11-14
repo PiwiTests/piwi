@@ -600,7 +600,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: "The editor's status bar",
         summary:
-          "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run on your machine produced.",
+          "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",
         needs: [],
         where: 'The status bar of VS Code or a JetBrains IDE; piwi.statusBarAlert',
         doc: 'features/editor-status-bar',

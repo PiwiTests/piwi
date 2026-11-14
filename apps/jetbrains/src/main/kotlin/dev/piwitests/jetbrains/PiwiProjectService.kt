@@ -560,6 +560,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
             mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
+            statusBarAlert = local.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
         )
     }
 
@@ -866,9 +867,6 @@ class PiwiProjectService(private val project: Project) : Disposable {
         changed()
         offerDesktop(status)
     }
-
-    /** A setting of this machine that only changes what is drawn (`statusBarAlert`): the listeners draw again. */
-    fun drawAgain() = changed()
 
     /**
      * Tell the listeners on the event thread, once for every change made until then, and draw the open files again as

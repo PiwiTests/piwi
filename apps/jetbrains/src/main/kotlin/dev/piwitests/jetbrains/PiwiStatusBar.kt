@@ -112,7 +112,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             file = shownFile(project),
             trusted = it.trusted(),
             stopped = it.serviceStopped,
-            alert = it.local().statusBarAlert,
         )
     }
 
@@ -146,19 +145,17 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             else -> view.text
         }
         label.icon = when {
+            recording != null && (recording.state == "starting" || recording.stopping) -> AnimatedIcon.Default.INSTANCE
             recording != null -> PiwiIcons.recording(recording.state, recording.edited)
             // A held failure shows the error's icon, any other stop the pause's.
             stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
             shared != null -> PiwiIcons.LIVE
-            progress != null -> AnimatedIcon.Default.INSTANCE
+            progress != null -> icon(runs()?.let { Glue.runProgressIcon(it.sessions) } ?: Glue.StatusIcon.RUNNING)
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
         }
-        label.error = when {
-            recording != null || stopped != null || shared != null -> false
-            progress != null -> service().local().statusBarAlert == "any" && runs()?.let { Glue.runsFailing(it.sessions) } == true
-            else -> !refreshing && view.error
-        }
+        // The alarm is the service's (`RunStatus.alarm`), never a recording's, a stop's, a share's or a run in progress's.
+        label.error = recording == null && stopped == null && shared == null && progress == null && !refreshing && view.error
         label.toolTipText = Glue.htmlTooltip(
             recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
                 ?: stopped?.let { "$it$present\nClick for the run's controls." }

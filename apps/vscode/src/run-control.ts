@@ -1057,7 +1057,11 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     .join(', ');
   const watchable = watchableWorkers(sessions).length > 0;
   const pages = runPagesOf(sessions);
-  const one = told.length === 1 && pages.length === 1 ? pages[0]! : null;
+  // The run's number when one run counts, from that run's own page.
+  const teller = told.length === 1 ? [...sessions.values()].find((s) => s.progress) : undefined;
+  const one = teller?.page && teller.page.id > 0 ? teller.page : null;
+  // A spinner while a run goes on; once every run that counts ended, how they ended.
+  const glyph = told.some((p) => p.status === 'running') ? '$(sync~spin)' : failed ? '$(error)' : '$(pass)';
   const links = [
     ...pages.map(
       (p) =>
@@ -1086,7 +1090,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const by = told.length === 1 ? [...sessions.values()].find((s) => s.progress)?.label : undefined;
   return {
     name: 'Piwi: Run progress',
-    text: `$(sync~spin) Piwi: ${one ? `run #${one.id} · ` : ''}${countWords(done, total, failed, flaky, endedAtStop)}${by ? ` · ${by}` : ''}`,
+    text: `${glyph} Piwi: ${one ? `run #${one.id} · ` : ''}${countWords(done, total, failed, flaky, endedAtStop)}${by ? ` · ${by}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
       `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${by ? ` ${escapedMarkdown(by)}.` : ''}` +

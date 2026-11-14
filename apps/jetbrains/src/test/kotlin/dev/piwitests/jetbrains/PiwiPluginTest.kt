@@ -410,25 +410,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val service = project.getService(PiwiProjectService::class.java)
         try {
             service.saveCredentials("https://a.example/", "Shop", "pd_a")
-            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             service.settings().serverUrl = "https://b.example"
             assertEquals(null, service.credentials().apiKey)
             service.saveCredentials("https://b.example", "Shop", "pd_b")
             service.settings().serverUrl = "https://a.example"
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
-            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             // The desktop app, chosen on this machine: what is saved for the instance stays.
             service.useDesktop("Mugs")
-            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             service.useInstance()
-            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             service.useDesktop(null)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key"), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new"), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
             // The agent signing in to Piwi's MCP server through the instance, chosen on this machine.
@@ -899,7 +899,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.runStatusChanged(
                 RunStatusResult(
                     listOf(
-                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2), newFailingTests = 1),
+                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2), alarm = true),
                         RunStatus(root = admin.path, run = RunInfo(id = 12, status = "passed", totalTests = 5, passedTests = 5)),
                     ),
                 ),

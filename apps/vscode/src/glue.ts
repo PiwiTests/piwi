@@ -117,7 +117,15 @@ export interface StatusMenuState {
   /** The item's own action, the menu's first row, so Enter does what a click on the item did. */
   action: StatusBarView['action'];
   recording: 'recording' | 'paused' | null;
-  run: { active: boolean; stopped: boolean; failed: boolean; pausable: boolean; stoppable: boolean; page: boolean };
+  run: {
+    active: boolean;
+    stopped: boolean;
+    failed: boolean;
+    pausable: boolean;
+    stoppable: boolean;
+    page: boolean;
+    watchable: boolean;
+  };
   failing: boolean;
   /** The config whose flaky tests the failures view lists, for the item's config. */
   flakyRoot: string | null;
@@ -167,6 +175,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
             state.run.stopped && !state.run.failed && 'piwi.stepRun',
             state.run.stopped && 'piwi.showPausedPage',
             state.run.pausable && 'piwi.pauseRun',
+            state.run.watchable && 'piwi.watchWorker',
             state.run.page && 'piwi.openRunPage',
             state.run.stoppable && 'piwi.stopRun',
           ]
@@ -211,6 +220,10 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.restartService',
   'piwi.openLog',
   'piwi.showFlakyTests',
+  // The window's runs' count leads the tooltip (`progressItem`).
+  'piwi.openRunPage',
+  'piwi.watchWorker',
+  'piwi.holdFailures',
 ];
 
 /** The tooltip's link to a config's flaky tests, which the failures tree lists; null while it lists none. */
@@ -256,7 +269,7 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the
+ * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
  * editor's own.
  */
 function liveText(live: LiveRun): string {
@@ -268,13 +281,6 @@ function liveText(live: LiveRun): string {
 function liveLine(live: LiveRun): string {
   const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
   return `${run} #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}`;
-}
-
-/** A run's status in the dashboard's words: `timed out` for `timedout`. */
-export function statusWords(status: string): string {
-  if (status === 'timedout' || status === 'timedOut') return 'timed out';
-  if (status === 'didnotrun') return "didn't run";
-  return status;
 }
 
 /** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
@@ -459,19 +465,6 @@ function withOwnProgress(
 }
 
 /**
- * Which failures turn the status item to its alarm (`piwi.statusBarAlert`): `new`, those new against the baseline that
- * a run of this machine failed (`RunStatus.newFailingTests`); `any` failing test; `never`.
- */
-export type StatusBarAlert = 'new' | 'any' | 'never';
-
-/** Whether the status item shows its alarm for `run`, `failing` of whose tests fail, as `alert` says. */
-export function alarmed(run: RunStatus | undefined, failing: number, alert: StatusBarAlert): boolean {
-  if (alert === 'never') return false;
-  if (alert === 'any') return failing > 0;
-  return (run?.newFailingTests ?? 0) > 0;
-}
-
-/**
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
@@ -486,7 +479,6 @@ export function statusBarView(
   activeFile: string | null = null,
   progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined = () => undefined,
   flakyListed: (root: string) => number = () => 0,
-  alert: StatusBarAlert = 'new',
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
@@ -583,7 +575,7 @@ export function statusBarView(
         action: 'refresh',
         url: null,
         liveUrl,
-        error: !live && alarmed(run, failing, alert),
+        error: !live && !!run?.alarm,
       };
     }
     return {
@@ -635,7 +627,7 @@ export function statusBarView(
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests)}`,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
       ownLive: !!live?.own,
     };
   }
@@ -645,11 +637,11 @@ export function statusBarView(
     return {
       ...view,
       text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
-      error: alarmed(run, failing, alert),
+      error: !!run?.alarm,
     };
   }
   if (r.status !== 'passed' && r.status !== 'failed') {
-    return { ...view, text: `$(warning) Piwi: ${statusWords(r.status)}` };
+    return { ...view, text: `$(warning) Piwi: ${r.statusText ?? r.status}` };
   }
   if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
   return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
@@ -750,7 +742,7 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
 /**
  * The failures view's nodes, from the tree the service grouped: a run's age after its description (`4 min ago`), and,
  * while the editor's own run is `live`, that run on the node of the run of its Playwright config (`liveRoot`; any run's
- * node when either does not say which: `running 4/9`), whose tooltip says it too.
+ * node when either does not say which: `running 4 of 9 · 1 failed`), whose tooltip says it too.
  */
 export function failureNodes(
   result: FailuresResult | null,

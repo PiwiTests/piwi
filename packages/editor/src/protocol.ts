@@ -587,6 +587,8 @@ export interface EditorCredentials {
    * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
    */
   failureSeverity?: FailureSeverity | null;
+  /** Which failures turn the status item to its alarm (`RunStatus.alarm`): `new` when absent, `any` or `never`. */
+  statusBarAlert?: StatusBarAlert | null;
   /**
    * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
    * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
@@ -739,6 +741,8 @@ export interface RunStatus {
   run: {
     id: number;
     status: string;
+    /** `status` in the dashboard's words (`statusWords`): `timed out` for `timedout`. */
+    statusText?: string;
     /** ISO 8601. */
     startTime: string;
     totalTests: number;
@@ -754,11 +758,11 @@ export interface RunStatus {
   /** The tests among those failures: a test failing on several Playwright projects counts once. */
   failingTests?: number;
   /**
-   * The tests among those failures that are new against the baseline and failed in a run of this machine (the
-   * editor's own, a terminal's, any run that is not CI's): what turns the status item to its alarm
-   * (`piwi.statusBarAlert`, `new`), until a run fixes them.
+   * Whether the status item shows its alarm, as the credentials' `statusBarAlert` chooses (`statusAlarm`): with `new`,
+   * a test the editor's own run failed and the baseline does not fail on any Playwright project, until a run fixes it;
+   * with `any`, any failing test; never with `never`.
    */
-  newFailingTests?: number;
+  alarm?: boolean;
   /** The tests that failed in `run` and passed since in a run laid over it, on every project they failed on. */
   resolved?: number;
   /** The runs of the branch since `run` that the service lays over it. */
@@ -827,6 +831,9 @@ export interface LiveRun {
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
+/** Which failures turn the status item to its alarm: `new`, `any` or `never`. */
+export type StatusBarAlert = 'new' | 'any' | 'never';
+
 export interface RunStatusResult {
   contexts: RunStatus[];
 }

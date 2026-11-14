@@ -303,7 +303,7 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the editor's own. */
+    /** A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own. */
     private fun liveText(live: LiveRun): String {
         val run = if (live.ci) "CI run" else "run"
         return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
@@ -321,13 +321,6 @@ object Glue {
             if (endedAtStop > 0) "$endedAtStop ended at a stop" else null,
         ).joinToString(" · ")
 
-    /** A run's status in the dashboard's words: `timed out` for `timedout` (VS Code's `statusWords`). */
-    fun statusWords(status: String): String = when (status) {
-        "timedout", "timedOut" -> "timed out"
-        "didnotrun" -> "didn't run"
-        else -> status
-    }
-
     /**
      * The run in progress the status bar counts for the context of `file`, as `statusView` picks it: that context's
      * (the only one's, with one), else the editor's own run of another context, which stays in view whichever config
@@ -341,7 +334,7 @@ object Glue {
         return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
-    /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+    /** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
     private fun liveLine(live: LiveRun): String {
         val run = when {
             live.own -> "Your run"
@@ -400,7 +393,6 @@ object Glue {
         file: String? = null,
         trusted: Boolean = true,
         stopped: Boolean = false,
-        alert: String = "new",
     ): StatusView {
         if (status == null && !trusted) {
             return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
@@ -437,8 +429,7 @@ object Glue {
         val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
         // The editor's own run in progress stays in view whichever config the file belongs to.
         val live = run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
-        // A run in progress is the alarm only for any failing test: whether its failures are new is known once it ended.
-        val liveFailing = alert == "any" && (live?.failed ?: 0) > 0
+        val alarm = run?.alarm == true
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val overlays = run?.overlays ?: 0
@@ -449,14 +440,14 @@ object Glue {
             val text = live?.let { liveText(it) } ?: if (failing > 0) "Piwi: $failing failing" else "Piwi: no failure"
             val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$config$baseline$progress$from"
             return when {
-                live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
-                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, alarmed(run, failing, alert))
+                live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING)
+                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, alarm)
                 else -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.PASSED)
             }
         }
         if (r == null) {
             val tooltip = "No run of $where yet$config$baseline$progress$from"
-            if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
+            if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING)
             return StatusView("Piwi: no run", tooltip, null, StatusAction.REFRESH)
         }
         // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
@@ -468,16 +459,16 @@ object Glue {
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val refresh = StatusAction.REFRESH
         return when {
-            live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING, liveFailing)
+            live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
-                StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING, alert == "any" && r.failedTests > 0)
+                StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarmed(run, failing, alert))
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
             }
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${statusWords(r.status.orEmpty())}", tooltip, r.url, refresh, StatusIcon.WARNING)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.statusText ?: r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)
         }
@@ -608,7 +599,7 @@ object Glue {
     /**
      * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
      * description (`4 min ago`), and, while the editor's own run is `live` ([ownRunInProgress]), that run on the node of
-     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9 · 1
+     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4 of 9 · 1
      * failed`).
      */
     fun failureNodes(
@@ -916,17 +907,9 @@ object Glue {
 
     /**
      * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
-     * VS Code's `piwi.statusBarAlert`): `new`, those new against the baseline that a run of this machine failed
-     * (`RunStatus.newFailingTests`); `any` failing test, a run's in progress included; `never`.
+     * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
      */
     val STATUS_BAR_ALERTS = listOf("new", "any", "never")
-
-    /** Whether the status item shows its alarm for `run`, `failing` of whose tests fail, as `alert` says. */
-    fun alarmed(run: RunStatus?, failing: Int, alert: String): Boolean = when (alert) {
-        "never" -> false
-        "any" -> failing > 0
-        else -> (run?.newFailingTests ?: 0) > 0
-    }
 
     /**
      * The severity of a failure's diagnostic (`EditorCredentials.failureSeverity`): `error`, `warning`, `information`,
@@ -2386,8 +2369,19 @@ object Glue {
         return "Piwi: $number$counts$by"
     }
 
-    /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
-    fun runsFailing(sessions: Map<String, RunSession>): Boolean = sessions.values.any { (it.progress?.failed ?: 0) > 0 }
+    /**
+     * The status bar's icon while it counts the runs as their own processes say: the spinner while one goes on, else
+     * how they ended (VS Code's `progressItem` glyph); null while no run says.
+     */
+    fun runProgressIcon(sessions: Map<String, RunSession>): StatusIcon? {
+        val told = sessions.values.mapNotNull { it.progress }
+        if (told.isEmpty()) return null
+        return when {
+            told.any { it.status == "running" } -> StatusIcon.RUNNING
+            told.any { it.failed > 0 } -> StatusIcon.FAILING
+            else -> StatusIcon.PASSED
+        }
+    }
 
     /**
      * A stop's or a share's status with how far the runs are after it, so neither hides the other:
