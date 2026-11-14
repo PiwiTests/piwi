@@ -3,22 +3,15 @@ package dev.piwitests.jetbrains
 import com.intellij.ide.ui.search.SearchableOptionContributor
 import com.intellij.ide.ui.search.SearchableOptionProcessor
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
-import com.intellij.openapi.ui.Messages
 import com.intellij.ui.SimpleListCellRenderer
-import com.intellij.ui.components.JBCheckBox
-import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.LabelPosition
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import javax.swing.JButton
 import javax.swing.JEditorPane
@@ -37,17 +30,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
 
     /** The person's own options as the IDE holds them now: a reload of its settings replaces the object. */
     private val user: PiwiUserSettings.State get() = service.user()
-    private lateinit var key: JEditorPane
     private lateinit var inUse: JEditorPane
-    private lateinit var desktopState: JEditorPane
-    private lateinit var desktopCheck: JBCheckBox
-    private lateinit var desktopProjectField: JBTextField
-    private lateinit var urlField: JBTextField
-    private lateinit var projectField: JBTextField
+    private lateinit var connect: PiwiConnectPanel
     private lateinit var disconnectButton: JButton
     private lateinit var nodeButton: JButton
     private lateinit var overridden: JEditorPane
-    private lateinit var tested: JEditorPane
 
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
@@ -73,62 +60,22 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 }
             }
             group(SettingsWords.GROUPS.getValue("connection")) {
-                kept("Kept in ${files.shared}, which the team can share; the API key in the IDE's password safe, for its instance alone.", "connection")
+                kept(
+                    "The instance is kept in ${files.shared}, which the team can share; its API key in the IDE's password " +
+                        "safe, for that instance alone; the desktop app's choice for you only, in ${files.workspace}.",
+                    "connection",
+                )
                 row {
                     overridden = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
-                row("Server URL:") {
-                    urlField = textField()
-                        .bindText({ settings.serverUrl }, { settings.serverUrl = Glue.normalizeServerUrl(it) ?: it.trim() })
-                        .columns(COLUMNS_LARGE)
-                        .validationOnApply {
-                            if (it.text.isBlank() || Glue.normalizeServerUrl(it.text) != null) null
-                            else error("An http(s) URL, such as https://piwi.example.com")
-                        }
-                        .component
-                    button("Test connection") { testConnection() }
-                }
+                connect = PiwiConnectPanel(project, disposable!!)
+                row { cell(connect.component).align(AlignX.FILL) }
+                onApply { connect.apply() }
+                onReset { connect.reset() }
+                onIsModified { connect.isModified() }
                 row {
-                    tested = text("", maxLineLength = 90).align(AlignX.FILL).component
-                }
-                // What Test connection said is of the address it tried: an edit of the field takes it away.
-                urlField.document.addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
-                    override fun textChanged(e: javax.swing.event.DocumentEvent) {
-                        tested.text = ""
-                    }
-                })
-                row("Project:") {
-                    projectField = textField()
-                        .bindText({ settings.project }, { settings.project = it.trim() })
-                        .columns(COLUMNS_LARGE)
-                        .comment("The project's name on the instance")
-                        .component
-                }
-                row("API key:") {
-                    key = text("").component
-                }
-                row {
-                    button("Connect…") { connect() }
-                        .comment("Sign in with the browser, or paste a key, then pick the project")
-                    disconnectButton = button("Disconnect") { disconnect() }.component
-                }
-            }
-            group("Piwi desktop app") {
-                kept("Kept for you only, in ${files.workspace}.", "connection")
-                row {
-                    desktopState = text("").component
-                }
-                row {
-                    desktopCheck = checkBox("Read this project from the desktop app while it runs")
-                        .bindSelected({ local.desktop }, { local.desktop = it })
-                        .comment("Before the environment, the .env and the instance below")
-                        .component
-                }
-                row("Desktop app project:") {
-                    desktopProjectField = textField()
-                        .bindText({ local.desktopProject }, { local.desktopProject = it.trim() })
-                        .columns(COLUMNS_LARGE)
-                        .comment("The project's name in the desktop app; empty uses the one linked there to this folder")
+                    disconnectButton = button("Disconnect") { disconnect() }
+                        .comment("Forget the instance, its project and key, and the choice of the desktop app")
                         .component
                 }
             }
@@ -255,7 +202,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                                 "the stopped page, and has Piwi write the code there",
                         )
                 }
-                for (id in AGENT_ACTIONS) row { actionButton(id) { if (isModified) apply() } }
+                for (id in AGENT_ACTIONS) row { actionButton(id) { isModified } }
             }
             onReset { show() }
         }
@@ -296,88 +243,26 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
     }
 
     /**
-     * What this page changes of what the service is handed: the key is saved by Connect, never here.
+     * What this page changes of what the service is handed, beside the Connect panel, which hands what it saves itself.
      */
-    private fun connection(): List<Any> {
-        val settings = service.settings()
-        val local = service.local()
-        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject, local.failureSeverity) +
-            PiwiUserSettings.handed(user)
-    }
+    private fun connection(): List<Any> = listOf(service.local().failureSeverity) + PiwiUserSettings.handed(user)
 
     private fun show() {
         val url = service.settings().serverUrl
         disconnectButton.isEnabled = Glue.disconnectQuestion(url, service.settings().project, service.local().desktop) != null
-        if (url.isBlank()) key.text = "None: no instance saved"
         inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted(), service.serviceStopped))
         nodeButton.isVisible = service.startProblem != null
-        // The instance the environment or a .env names comes first: the page shows it, its own fields left as saved.
+        // The instance the environment or a .env names comes first: the page shows it, the panel's fields left as saved.
         val over = Glue.overriding(service.status, url)
         overridden.text = over?.let { Glue.escapeHtml(Glue.overriddenText(it)) } ?: ""
         overridden.isVisible = over != null
-        urlField.emptyText.text = over?.serverUrl ?: ""
-        projectField.emptyText.text = over?.project ?: ""
-        // The password safe and the discovery file: read off the event thread.
-        val keyLabel = key
-        val label = desktopState
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val saved = url.isNotBlank() && service.hasApiKey(url)
-            val running = service.desktopUrl()
-            ApplicationManager.getApplication().invokeLater(
-                {
-                    if (url.isNotBlank()) keyLabel.text = if (saved) "Saved for $url in the IDE's password safe" else "None saved for $url"
-                    label.text = running?.let { "Running on this machine at $it." } ?: "Not running on this machine."
-                },
-                ModalityState.any(),
-            )
-        }
+        connect.urlField.emptyText.text = over?.serverUrl ?: ""
     }
 
-    /**
-     * Test connection: whether the address typed in the field answers, before it is saved, said in Connect's words under
-     * the field. The request runs with modal progress, as Connect's do from this page.
-     */
-    private fun testConnection() {
-        val url = Glue.normalizeServerUrl(urlField.text)
-        if (url == null) {
-            tested.text = Glue.escapeHtml(Glue.TEST_CONNECTION_NO_URL)
-            return
-        }
-        tested.text = try {
-            val reached = com.intellij.openapi.progress.ProgressManager.getInstance().runProcessWithProgressSynchronously<PiwiInstance.Reached, Exception>(
-                { PiwiInstance.reach(url) }, "Piwi: Test connection", true, project,
-            )
-            reached?.let { Glue.escapeHtml(Glue.testConnectionText(it.url, it.needsKey)) } ?: return
-        } catch (_: com.intellij.openapi.progress.ProcessCanceledException) {
-            return
-        } catch (e: Exception) {
-            Glue.escapeHtml(Glue.testConnectionFailure(url, Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)))
-        }
-    }
-
-    /** Connect with the URL typed on this page, Apply or not; the page's other edits stay pending. */
-    private fun connect() {
-        val typed = urlField.text
-        val url = Glue.normalizeServerUrl(typed)
-        if (typed.isNotBlank() && url == null) {
-            Messages.showErrorDialog(project, "An http(s) URL, such as https://piwi.example.com", "Piwi")
-            return
-        }
-        if (PiwiConnectFlow.run(project, url)) showConnection()
-    }
-
+    /** Disconnect after asking; the panel then shows what is saved, the page's other edits left pending. */
     private fun disconnect() {
-        if (PiwiConnectFlow.disconnect(project)) showConnection()
-    }
-
-    /** The connection rows as Connect or Disconnect saved them, the page's other edits left pending. */
-    private fun showConnection() {
-        val settings = service.settings()
-        val local = service.local()
-        urlField.text = settings.serverUrl
-        projectField.text = settings.project
-        desktopCheck.isSelected = local.desktop
-        desktopProjectField.text = local.desktopProject
+        if (!PiwiConnectFlow.disconnect(project)) return
+        connect.reset()
         show()
     }
 }
@@ -398,15 +283,14 @@ private val AGENT_ACTIONS = listOf(
 )
 
 /**
- * A button that runs the registered action `id`, with its text, from the settings page, once `first` ran: the page's
- * changes applied, which the action reads.
+ * A button that runs the registered action `id`, with its text, from the settings page. The action reads the saved
+ * settings: while the page holds changes not applied (`pending`), it says to apply them first and runs nothing.
  */
-private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String, first: () -> Unit) {
+private fun com.intellij.ui.dsl.builder.Row.actionButton(id: String, pending: () -> Boolean) {
     val action = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return
     button(action.templatePresentation.text ?: id) { e ->
-        try {
-            first()
-        } catch (_: com.intellij.openapi.options.ConfigurationException) {
+        if (pending()) {
+            com.intellij.openapi.ui.Messages.showInfoMessage(e.source as java.awt.Component, Glue.APPLY_FIRST, "Piwi")
             return@button
         }
         com.intellij.openapi.actionSystem.ActionManager.getInstance()

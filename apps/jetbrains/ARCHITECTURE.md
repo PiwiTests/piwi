@@ -1024,32 +1024,39 @@ breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 ## Connect
 
-**Connect** (`PiwiConnect.kt`):
+**The Connect panel** (`PiwiConnectPanel.kt`) is the connection in one place: on the settings page, in the Connection
+group, saved with Apply (`onApply`, `onReset`, `onIsModified`), and as Connect's one dialog (`PiwiConnectFlow.run`,
+`ConnectDialog`), saved with its Connect button. It holds:
 
-1. When the desktop app runs, it first lists the app beside the instance the project names (`Glue.connectChoices`).
-2. It asks the instance whether it needs a key.
-3. A key comes from the browser sign-in (the device authorization Piwi Picker uses, `/api/extension/connect`) or is
-   pasted.
-4. Then it asks for the project.
+- **Read this project from**: the desktop app, while it runs, with its projects in a list whose first choice is the one
+  linked to this folder, or an instance (`PiwiLocalSettings.desktop`);
+- the instance's address, with **Test connection** (`PiwiInstance.reach`, `Glue.testConnectionText`);
+- its key, with **Sign in…**, **Paste key…** and **Remove**, a change saved on Apply alone
+  (`PiwiProjectService.KeyChange`, `Glue.keyStateText`);
+- the project, an editable list of the instance's projects, asked with the key Apply would save.
+
+`saveConnection` saves it all, when the panel changed, and hands it to the service. A key change belongs to the address
+it was made for: an edit of the address drops it, the project list and a sign-in in progress, and nothing picks a
+project for the person but Connect's dialog on the desktop app, with none linked. The instance and the desktop app are
+asked off the event thread, and an answer older than the panel's last change is dropped (`generation`). Connect's OK
+reaches the instance first, with modal progress (`reachBeforeSaving`), and waits for a sign-in to end. The browser sign-in (the device
+authorization Piwi Picker uses, `/api/extension/connect`) shows in the panel, never in a modal progress: its code, with
+**Copy code**, **Copy link**, **Open browser again** and **Cancel**, while `PiwiInstance.awaitSignIn` waits off the
+event thread; the key the browser allows becomes the key Apply saves (`Glue.signInAnswerText`). An instance that
+predates the sign-in says to paste a key. The offer to use the desktop app opens the dialog on the app.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and
-**Tools → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and
-Disconnect save the connection themselves, then the page shows the connection rows as saved, and its other edits stay
-pending until Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
-(`sendCredentials`) and, while the service cannot start, **Node.js settings…**, which selects the Node.js page of the
-open Settings dialog and starts the service again as the dialog closes; then the instance, whose **Test connection**
-reaches the URL in the field, saved or not, with Connect's `reach` and says the answer under it
-(`Glue.testConnectionText`, `Glue.testConnectionFailure`); then the desktop app, whose field reads **Desktop app
-project:**. When the environment or a `.env` names another instance than the saved one (`Glue.overriding`, the first
-config that does), the page says so above the fields (`Glue.overriddenText`), the desktop app's place before it
-included, and the empty fields show its address and, while it is read, its project. The page follows the status while
-the dialog shows (`PiwiProjectService.onChangeInDialogs`). The tool window's empty text links the Node.js settings while
-the service cannot start. Disconnect is enabled only while something is saved to forget, and says so from **Tools →
-Piwi** otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does
-not trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi
-instance.
+one Test connection and Connect put in the field, the key moving with it (`moveTo`). The page opens on the connection in use (`Glue.connectionSummary`) with
+**Reconnect** (`sendCredentials`) and, while the service cannot start, **Node.js settings…**, which selects the Node.js
+page of the open Settings dialog and starts the service again as the dialog closes; then the Connect panel. When the
+environment or a `.env` names another instance than the saved one (`Glue.overriding`, the first config that does), the
+page says so above the panel (`Glue.overriddenText`), and the empty address field shows its address. The page follows
+the status while the dialog shows (`PiwiProjectService.onChangeInDialogs`). The tool window's empty text links the
+Node.js settings while the service cannot start. Disconnect is enabled only while something is saved to forget, and
+says so from **Tools → Piwi** otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a
+certificate the IDE does not trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the
+address is not a Piwi instance.
 
 `PiwiProjectService.desktop()` asks the service (`piwi/desktop`). While the service has not started, it reads the app's
 discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`), so Connect finds the app before any
@@ -1073,8 +1080,7 @@ person's own option, from the settings page or an action, is handed and drawn ag
 (Settings Sync, Import Settings); a project whose service is not running is not started for it. In Rider, the project's files sit under
 `.idea/.idea.<Name>/.idea/`, as the settings page's comments say, and a project of one `.ipr` file keeps them in it and its `.iws` (`Glue.storeFiles`). Each group of the page opens with one comment
 saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
-(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The Agents (MCP) group holds the actions that copy the MCP servers'
-configurations and reset the runs' token as buttons, each running its registered action. The runs' MCP server's token is in the `PasswordSafe`.
+(`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The Agents (MCP) group holds the actions that copy the MCP servers' configurations and reset the runs' token as buttons, each running its registered action on the saved settings: while the page holds changes not applied, it says to apply them first (`Glue.APPLY_FIRST`). The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).

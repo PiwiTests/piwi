@@ -2498,22 +2498,51 @@ async function signIn(base: string): Promise<string | null> {
     void vscode.window.showInformationMessage('Piwi: this instance predates the browser sign-in; paste an API key.');
     return pasteKey();
   }
-  await vscode.env.openExternal(vscode.Uri.parse(started.verificationUrl));
-  const result = await vscode.window.withProgress(
+  const page = vscode.Uri.parse(started.verificationUrl);
+  await vscode.env.openExternal(page);
+  const cancel = new AbortController();
+  // While the browser decides, a picker holds the code and the link to copy; it closes with the sign-in, and closing it
+  // first cancels the sign-in.
+  const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { act: () => Thenable<unknown> }>();
+  pick.title = `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`;
+  pick.placeholder = 'Waiting for the browser. Escape cancels the sign-in.';
+  pick.busy = true;
+  pick.ignoreFocusOut = true;
+  pick.items = [
     {
-      location: vscode.ProgressLocation.Notification,
-      title: `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
-      cancellable: true,
+      label: '$(copy) Copy code',
+      description: started.userCode,
+      act: () => vscode.env.clipboard.writeText(started.userCode),
     },
-    async (_progress, token) => {
-      const cancel = new AbortController();
-      token.onCancellationRequested(() => cancel.abort());
-      return waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
-        if (cancel.signal.aborted) return null;
-        throw e;
-      });
+    {
+      label: '$(link) Copy link',
+      description: started.verificationUrl,
+      act: () => vscode.env.clipboard.writeText(started.verificationUrl),
     },
-  );
+    { label: '$(link-external) Open browser again', act: () => vscode.env.openExternal(page) },
+  ];
+  pick.onDidAccept(() => {
+    const chosen = pick.selectedItems[0];
+    pick.selectedItems = [];
+    if (chosen) void Promise.resolve(chosen.act()).catch(() => undefined);
+  });
+  let ended = false;
+  pick.onDidHide(() => {
+    if (!ended) cancel.abort();
+  });
+  pick.show();
+  let result: Awaited<ReturnType<typeof waitForSignIn>> | null;
+  try {
+    result = await waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
+      if (cancel.signal.aborted) return null;
+      throw e;
+    });
+  } finally {
+    ended = true;
+    pick.dispose();
+  }
+  // A sign-in closed while its last answer was on the way takes no key.
+  if (cancel.signal.aborted) return null;
   if (!result) return null;
   if (result.status === 'approved' && result.apiKey) return result.apiKey;
   void vscode.window.showInformationMessage(

@@ -36,18 +36,17 @@ started** opens it again.
 
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 
-**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then the instance saved for the project,
-then the desktop app. When the environment or the workspace `.env` names another instance, the page says so above the
-fields, and an empty **Server URL** shows its address. **Test connection** beside the URL says whether the address typed
-there answers and asks for a key, before you apply it. While the service cannot start, the page and the **Piwi** tool
+**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then where the project reads from: the
+desktop app, with its projects, or an instance, with its address and **Test connection**, its key with **Sign in…**,
+**Paste key…** and **Remove**, and the project, picked from the instance's list. **Connect…**, under **Tools → Piwi**
+and in the tool window's gear menu, is the same panel as one dialog. Nothing is saved before **Apply** or **Connect**, but **Disconnect**, which asks first.
+When the environment or the workspace `.env` names another instance, the page says so, and an empty **Server URL**
+shows its address. While the service cannot start, the page and the **Piwi** tool
 window offer **Node.js settings…**, and the service starts again once you close the settings.
 
 When the service stops, the **Piwi** tool window says so and offers **Restart the editor service** and **Open the log**, as
 does a balloon that says it is not running; both are also under **Tools → Piwi** and in the tool window's gear. The
 **Log** tab holds the service's starts and stops, why it could not start, its errors and the requests that failed.
-
-The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
-installation, with **Connect…**, **Open the failures** and **Learn more**.
 
 Piwi reads Playwright Test suites in JavaScript and TypeScript. A Rider solution whose Playwright tests are written in
 C# (a `.csproj` referencing `Microsoft.Playwright`) and that holds no Playwright config gets no tool window or status

@@ -75,6 +75,28 @@ class GlueTest {
     }
 
     @Test
+    fun `the Connect panel says where the project reads from, the key Apply saves, and what the browser answered`() {
+        assertEquals("Mugs, linked to this folder", Glue.linkedProjectLabel("Mugs"))
+        assertEquals("The one linked to this folder in the desktop app, none yet", Glue.linkedProjectLabel(null))
+        assertEquals("Not running on this machine: the instance below is read until it runs.", Glue.desktopStateText(null, null, 0))
+        assertEquals("Running at http://127.0.0.1:3000; this folder is linked there to Mugs.", Glue.desktopStateText("http://127.0.0.1:3000", "Mugs", 1))
+        assertTrue(Glue.desktopStateText("http://127.0.0.1:3000", null, 0).contains("no project yet"))
+        assertEquals("keep", Glue.keyChangeKind(PiwiProjectService.KeyChange.Keep))
+        assertEquals("set", Glue.keyChangeKind(PiwiProjectService.KeyChange.Set("pd_1")))
+        assertEquals("remove", Glue.keyChangeKind(PiwiProjectService.KeyChange.Remove))
+        assertEquals("Saved for https://p in the IDE's password safe", Glue.keyStateText("https://p", saved = true, change = "keep"))
+        assertEquals("None saved for https://p", Glue.keyStateText("https://p", saved = false, change = "keep"))
+        assertEquals("A new key for https://p, saved on Apply", Glue.keyStateText("https://p", saved = true, change = "set"))
+        assertEquals("Removed on Apply", Glue.keyStateText("https://p", saved = true, change = "remove"))
+        assertEquals("https://p lists 1 project.", Glue.projectsStateText("https://p", 1))
+        assertTrue(Glue.projectsStateText("https://p", 0).startsWith("https://p has no project yet"))
+        assertEquals("Signed in: a new key for https://p, saved on Apply.", Glue.signInAnswerText("https://p", "approved", hasKey = true))
+        assertEquals("The request was denied in the browser.", Glue.signInAnswerText("https://p", "denied", hasKey = false))
+        assertEquals("The request expired: sign in again.", Glue.signInAnswerText("https://p", "expired", hasKey = false))
+        assertEquals("Reading the desktop app while it runs, project Mugs.", Glue.desktopConnectedText("Mugs"))
+    }
+
+    @Test
     fun `the Get Started tab opens once, in a trusted project with a Playwright config, connected or not`() {
         val dirs = listOf(Path.of("/w/e2e"))
         assertEquals(true, Glue.showsGetStarted(shown = false, trusted = true, configDirs = dirs))
@@ -2406,34 +2428,6 @@ class GlueTest {
         listOf(connected.contexts!!.single().copy(instance = NamedInstance("http://piwi", "dotenv"))),
         desktopUrl = "http://127.0.0.1:3000",
     )
-
-    @Test
-    fun `Connect offers the desktop app, the instance the project names, and another one`() {
-        assertEquals(
-            listOf(
-                Glue.ConnectChoice(
-                    Glue.ConnectTarget.DESKTOP,
-                    "The Piwi desktop app, at http://127.0.0.1:3000",
-                    "Runs on this machine; this folder is linked there to the project Shop.",
-                    null,
-                    false,
-                ),
-                Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "http://piwi", "From the workspace .env.", "http://piwi", true),
-                Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
-            ),
-            Glue.connectChoices(team, desktop, ""),
-        )
-        // With the app in use, the instance is still one choice away; saved only in the settings, it comes from there.
-        val onDesktop = StatusResult(
-            listOf(team.contexts!!.single().copy(serverUrl = "http://127.0.0.1:3000", source = "desktop", instance = null)),
-            desktopUrl = "http://127.0.0.1:3000",
-        )
-        val choices = Glue.connectChoices(onDesktop, desktop, "https://piwi.corp/")
-        assertEquals(listOf(true, false, false), choices.map { it.inUse })
-        assertEquals("https://piwi.corp" to "From Settings → Tools → Piwi.", choices[1].serverUrl to choices[1].detail)
-        // Before the service starts: the app and the instance saved here.
-        assertEquals(3, Glue.connectChoices(null, desktop, "https://piwi.corp").size)
-    }
 
     @Test
     fun `the status says when the desktop app runs unused, or was chosen and does not run`() {
