@@ -117,15 +117,6 @@ failures** and **Open in dashboard**, counted from the results the run streams (
 were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times). Like a fix plan's verification and a
 Flake Lab line, it is listed, paused and stopped as any run.
 
-## A test that waits for you
-
-A test held at its failure, or stopped at `page.pause()`, while the editor is in the background, calls you once: a
-notification with **Resume** and **Go to the stopped line** in VS Code, the system's attention request (a bouncing or
-flashing icon) in a JetBrains IDE, which also comes to the front while you are in another application and the
-debugger's **Focus application on breakpoint** is on, as it is by default. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does, nor
-one an agent drives or a desktop app's job, which calls from its own window.
-[A paused run](./editor-run-control) has the controls.
-
 ## Related
 
 - [The editor's status bar](./editor-status-bar): the latest run, the run in progress, and when the item turns red.
