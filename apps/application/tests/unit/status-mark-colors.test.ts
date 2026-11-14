@@ -30,8 +30,16 @@ describe('the outcome marks', () => {
     expect(read('apps/jetbrains/src/main/resources/icons/testFlaky.svg')).toBe(
       read('apps/vscode/media/test-flaky.svg'),
     );
+    // VS Code's running ring is JetBrains' with the style that spins it, still when the system asks for less motion.
+    const running = read('apps/vscode/media/test-running.svg');
+    const spin = /<style>([\s\S]*?)<\/style>/.exec(running)?.[1] ?? '';
+    expect(spin).toBe(
+      '@keyframes spin{to{transform:rotate(360deg)}}' +
+        'path{transform-box:view-box;transform-origin:50% 50%;animation:spin 1s steps(12) infinite}' +
+        '@media (prefers-reduced-motion:reduce){path{animation:none}}',
+    );
     expect(read('apps/jetbrains/src/main/resources/icons/testRunning.svg')).toBe(
-      read('apps/vscode/media/test-running.svg'),
+      running.replace(`<style>${spin}</style>`, ''),
     );
   });
 
