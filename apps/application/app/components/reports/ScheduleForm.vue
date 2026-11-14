@@ -5,7 +5,7 @@
  * opened on (the analytics scope, or one project); the period comes from the
  * cadence. *Preview* shows the report as it would be sent now, before saving.
  * Opened from *Schedule…* on the analytics and project pages and from the
- * Reports page.
+ * Quality reports page.
  */
 import { offeredDashboards, type BuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { WEEKDAY_NAMES, type ReportCadence, type ScheduleComparison } from '#shared/reports/schedule';
@@ -361,7 +361,7 @@ async function save() {
       :description="
         previewing
           ? 'What its recipients would get if it were sent now.'
-          : 'A quality report delivered on a schedule, each one kept as a snapshot on the Reports page.'
+          : 'A quality report delivered on a schedule, each one kept as a snapshot on the Quality reports page.'
       "
       :ui="{ content: previewing ? 'sm:max-w-4xl' : 'sm:max-w-xl' }"
     >

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The report snapshots on the Reports page, newest first: what each quality
+ * The report snapshots on the Quality reports page, newest first: what each quality
  * report covers, when it was generated, and how it was delivered.
  */
 import type { ReportSnapshotSummary } from '#shared/handlers/reports';
