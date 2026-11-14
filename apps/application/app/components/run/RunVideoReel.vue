@@ -6,7 +6,8 @@
  *
  * On the Video tab (`searchable`) a box above the checklist searches the tests' titles the way the Tests tab does. It
  * only hides rows: each row keeps its index in the reel, so playing, the ticks and the bar never change with it. The
- * Video tab holds the search (`v-model:search`), so it stays when the tab shows another worker or groups by file.
+ * Video tab holds the search (`v-model:search`), so it stays when the tab shows another worker or groups by file. The
+ * `current` event reports the test the playhead is on, for the tab to hand to the reel it opens next.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
@@ -26,6 +27,9 @@ const props = defineProps<{
 
 const player = useReelPlayer(toRef(props, 'reel'), toRef(props, 'startIndex'));
 const { current, ticked, failed, playing } = player;
+/** The test the playhead is on, so a caller that shows this reel elsewhere (the maximised Video tab) can start there. */
+const emit = defineEmits<{ current: [index: number | null] }>();
+watch(current, (index) => emit('current', index));
 
 /** A test with no video takes this much of the bar, whatever its duration. */
 const STUB_WIDTH = '12px';

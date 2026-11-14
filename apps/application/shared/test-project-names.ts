@@ -231,6 +231,7 @@ export const PROJECT = {
   USER_PROJECT_ROLES: 'user-project-roles-test',
   VIDEO_ACTIONS: 'video-actions-test',
   VIDEO_CHECKLIST_SEARCH: 'video-checklist-search-test',
+  VIDEO_MAXIMISE: 'video-maximise-test',
   VIDEO_REVIEW_FIT: 'video-review-fit-test',
 } as const;
 
