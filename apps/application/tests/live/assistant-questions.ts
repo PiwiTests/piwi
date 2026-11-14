@@ -1088,15 +1088,16 @@ const piwi: LiveQuestion[] = [
     facts: [docs('guide/what-piwi-does', 'Playwright'), docs('guide/what-piwi-does', /history/i)],
   },
   {
-    id: 'four-jobs',
+    id: 'five-jobs',
     topic: 'piwi',
-    question: 'What are the four jobs Piwi does?',
+    question: 'What are the five jobs Piwi does?',
     tools: DOCS_TOOLS,
     facts: [
       docs('guide/what-piwi-does', /keep(s)? the history/i),
       docs('guide/what-piwi-does', /explain(s)? the failures/i),
       docs('guide/what-piwi-does', /hand(s)? back a fix/i),
       docs('guide/what-piwi-does', /what your tests miss/i),
+      docs('guide/what-piwi-does', /write and debug tests/i),
     ],
   },
   {

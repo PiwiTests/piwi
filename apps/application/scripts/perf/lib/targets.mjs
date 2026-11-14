@@ -143,7 +143,10 @@ export async function signIn(server) {
  * re-clustering): its CPU time stays flat for three seconds and, on
  * PostgreSQL, no statement of its database is running.
  */
-export async function waitForIdle(server, { activeStatements = null, timeoutMs = 600_000, log = console.log } = {}) {
+export async function waitForIdle(
+  server,
+  { activeStatements = null, timeoutMs = 600_000, strict = false, log = console.log } = {},
+) {
   const started = Date.now();
   let previous = server.cpuTimeMs();
   let quiet = 0;
@@ -155,6 +158,7 @@ export async function waitForIdle(server, { activeStatements = null, timeoutMs =
     previous = now;
     quiet = busyCpu || busyDb ? 0 : quiet + 1;
     if (Date.now() - started > timeoutMs) {
+      if (strict) throw new Error(`${server.name}: startup work still running after ${timeoutMs / 1000} s`);
       log(`  ${server.name}: still busy after ${timeoutMs / 1000} s — measuring anyway`);
       return;
     }

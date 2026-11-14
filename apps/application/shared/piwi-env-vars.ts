@@ -222,7 +222,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Ingest limits',
     order: 9,
     intro:
-      'Caps applied to per-execution payloads (console output, steps, ARIA snapshots, error text, source snippets) before they are stored. They bound database growth against verbose or hostile submitters; values above each limit are truncated with a visible marker. Distinct from the `PIWI_AI_MAX_*` limits, which bound what enters an AI diagnosis prompt — the storage defaults sit at or above the AI maxima so the AI limits stay the binding constraint for prompts. Environment-only (no settings UI).',
+      'Caps applied to per-execution payloads (console output, steps, ARIA snapshots, error text, source snippets) before they are stored. They bound database growth against verbose or hostile submitters; values above each limit are truncated with a visible marker. Distinct from the `PIWI_AI_MAX_*` limits, which bound what enters an AI diagnosis prompt — the storage defaults sit at or above the AI defaults, so at their defaults the AI limits stay the binding constraint for prompts. Environment-only (no settings UI).',
   },
   export: {
     title: 'Offline export',
@@ -278,7 +278,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      "When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, `localhost`, a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a name other than `localhost`, and list other names, a container's name included, in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)). A write from a page served over plain HTTP, whose browser sends no `Sec-Fetch-Site`, is then accepted only from the address the request names, the host and port of this URL or a name `PIWI_ALLOWED_HOSTS` lists. A reverse proxy in front must forward the `Host` header the browser sent (nginx `proxy_set_header Host $http_host;`, Apache `ProxyPreserveHost On`), since the host check reads that header alone.",
+      "When unset, links in emails point to http://localhost:3000 (on Fly.io, to `https://<app>.fly.dev`, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, `localhost`, a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a name other than `localhost`, and list other names, a container's name included, in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)). A write from a page served over plain HTTP, whose browser sends no `Sec-Fetch-Site`, is then accepted only from the address the request names, the host and port of this URL or a name `PIWI_ALLOWED_HOSTS` lists. A reverse proxy in front must forward the `Host` header the browser sent (nginx `proxy_set_header Host $http_host;`, Apache `ProxyPreserveHost On`), since the host check reads that header alone.",
   },
   PIWI_ALLOWED_HOSTS: {
     description:
@@ -388,7 +388,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_REPORT_DAYS: {
     description:
-      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+      'Days to keep report snapshots (the stored quality reports on the Quality reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
     category: 'database',
     type: 'number',
     default: '365',
@@ -1079,7 +1079,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_IMPORT_MAX_BYTES: {
     description:
-      'Max size of a single multipart upload, in bytes: one report or the files of one test, which the reporter sends in a request of their own, or a blob-report import. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it. An import reads its archive whole, so it takes archives under 2 GiB whatever this allows.',
+      'Max size of a single multipart upload, in bytes: one report or the files of one test, which the reporter sends in a request of their own, or an imported blob report or trace. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it. An import reads its archive whole, so it takes archives under 2 GiB whatever this allows.',
     category: 'ingest',
     type: 'number',
     default: String(500 * 1024 * 1024),
@@ -1239,7 +1239,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_AUTO_MARKERS: {
     description:
-      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment, and when a run is flagged as an environment incident (default: enabled). Set to false to disable.',
+      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment, when its runner, browser or a server under test differs from the previous run on the same branch and environment, and when a run is flagged as an environment incident (default: enabled). Set to false to disable.',
     category: 'markers',
     type: 'boolean',
     default: 'true',
@@ -1248,13 +1248,12 @@ export const PIWI_ENV_VARS = {
   },
 
   PIWI_TEST_LOGS_DISABLED: {
-    description:
-      'Disable X-Piwi-Logs response header emission (default: auto-disabled in production, enabled in development).',
+    description: 'Disable X-Piwi-Logs response header emission (default: on in development and test, off elsewhere).',
     category: 'testing',
     type: 'boolean',
     docs: 'guide/backend-logs',
     notes:
-      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production. Overrides every other environment setting.',
+      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and test (Nitro: `NODE_ENV` is `development` or `test`; ASP.NET Core: the environments the app or `PIWI_TEST_LOGS_ENVIRONMENTS` names, Development and Test by default); `true` forces it off everywhere, `false` forces it on in any environment. Overrides every other environment setting.',
   },
   PIWI_TEST_LOGS_ENVIRONMENTS: {
     description:

@@ -18,7 +18,8 @@ they now hold.
   editor's features; Getting started has a section on where the tests are written. Left out: the loop page's link on
   Desktop app, a page at its word budget.
 - **Step 2, the Tools section and the regrouping**, with every URL kept (decision 3) and the four jobs' wording left
-  as it is (decision 2, not taken). The catalog's groups are the nine of Features below, five tool groups marked
+  as it is (decision 2, not taken at that time; the later bullet on decision 2 records it). The catalog's groups are
+  the nine of Features below, five tool groups marked
   `section: 'tools'` and Self-hosting. `toolsSidebar()` renders the Tools sidebar: a tool's own page is its group's
   heading, and entries that share a `part` sit under its label. Each tool page is a sidebar key of its own, and the
   top navigation's patterns are built from the same list. The landing page shows seven cards: a job's card counts
@@ -44,13 +45,22 @@ they now hold.
   entry's `parent` nests Live view of a run's three pages under it, and Leak history in CI under Resource leaks. The
   Reference groups are collapsed until the reader is in one. L8: Follow a run, Watch a local test, Share a local run
   live, Inspect a worker's page and Bug reports on your instance, each page's H1 and label together, no URL changed.
-  L14: no file was renamed, since no page moved. Decision 2 is kept as it was: the four jobs stay four, and the Tools
-  section is where writing and debugging tests lives.
+  L14: no file was renamed, since no page moved. Decision 2 was still open then: the four jobs stayed four, and the
+  Tools section was where writing and debugging tests lived.
 - **CI runs in your editor** have a page of their own, `features/editor-ci-runs.md`, under Editor extensions, built by
   #1423 (the second half of [#1406](https://github.com/PiwiTests/piwi/issues/1406)).
+- **Decision 2, taken later by the maintainer (2026-11-14)**, and built by the pull request that closes
+  [#1413](https://github.com/PiwiTests/piwi/issues/1413): writing and debugging tests is the fifth job, **Write and
+  debug tests**, after the four. What Piwi does, `ROADMAP.md`, `README.md`, `DOCKER_HUB.md`, Getting started and the
+  All features intro list five jobs; the jobs' heading is "The five jobs" and keeps its anchor, `#the-four-jobs`,
+  which `describe_piwi` quotes. The job is the Tools section: its landing card carries the job's name
+  (`TOOLS_SECTION.job`), and the catalog puts the tool groups right after Find what your tests miss, so Trends and
+  reports and Self-hosting follow the five jobs on the landing page and All features. The Features and Tools
+  sidebars, every URL and every anchor are unchanged. `docs-claims.test.ts` ties a count of the jobs to the list on
+  What Piwi does. The canonical positioning line names no job, so it is unchanged.
 
-Every planned item is built. What was not done, and why, is under [Left for later](#left-for-later): a decision the
-maintainer keeps, a rule that applies only when a page moves, and labels no issue asked to change.
+Every planned item is built. What was not done, and why, is under [Left for later](#left-for-later): a rule that
+applies only when a page moves, and labels no issue asked to change.
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -363,7 +373,8 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
    the nesting and leaves 94 pages behind one top-navigation item.
 2. **Is writing and debugging tests a fifth job?** The docs already treat it as one. Saying so changes "the four
    jobs" in `ROADMAP.md`, What Piwi does and the positioning of the tools; the alternative words it as the first
-   group of Tools and leaves the four jobs alone.
+   group of Tools and leaves the four jobs alone. **Decided: a fifth job**, Write and debug tests, which the Tools
+   section holds (see the Status).
 3. **Keep every URL** (per-page sidebar keys) or move the tool pages to `/tools/`. Recommended: keep.
 4. **The budget stays at 1,500 words, with nesting as the way to split.** Recommended over raising it.
 5. **Core concepts as a short page plus a glossary.** Recommended; the anchors stay where the drift test finds them.
@@ -373,11 +384,9 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 
 ## Left for later
 
-The first two items are tracked by [#1413](https://github.com/PiwiTests/piwi/issues/1413); the third by no issue.
+Neither item is tracked by an open issue.
 
-- **File names that differ from their page's title** (L14, [#1413](https://github.com/PiwiTests/piwi/issues/1413)):
-  renamed only when the page moves anyway, with a redirect; none has moved.
-- **Decision 2** ([#1413](https://github.com/PiwiTests/piwi/issues/1413)): whether writing and debugging tests is a
-  fifth job in `ROADMAP.md` and What Piwi does. The four jobs are kept; the maintainer may decide otherwise.
+- **File names that differ from their page's title** (L14): a standing rule, with nothing to build. A file is renamed
+  only when its page moves anyway, with a redirect; none has moved.
 - **The other clusters of L8** (Runs, "Extension" and "editor", one word for two things), which no issue lists:
   nesting under the tool groups tells most of them apart.

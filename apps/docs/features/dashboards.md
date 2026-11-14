@@ -139,7 +139,7 @@ instead.
 *Quality report* renders the dashboard on screen as a [quality report](./quality-reports) (the saved dashboard
 is offered first), and *Schedule…* creates a [report schedule](./quality-reports#report-schedules) on
 it. Deleting a dashboard that schedules render names them first; they stop, shown as inactive with the
-reason on the Reports page, until their owner picks another dashboard.
+reason on the Quality reports page, until their owner picks another dashboard.
 
 ## From an agent
 

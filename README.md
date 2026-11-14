@@ -41,7 +41,7 @@
 
 Playwright's HTML report is excellent, and it lasts exactly until the next build. The questions that
 matter come later: *Has this test always been flaky? Did my fix hold? Which of these forty red tests
-are the same bug?* Piwi keeps the runs so you can answer them. Everything it does serves four jobs:
+are the same bug?* Piwi keeps the runs so you can answer them. Everything it does serves five jobs:
 
 1. **Keep the history.** Every run, trace and report, browsable long after CI deleted its artifacts.
 2. **Explain the failures.** An error fingerprint collapses forty red tests into the three root causes
@@ -52,6 +52,8 @@ are the same bug?* Piwi keeps the runs so you can answer them. Everything it doe
    actual git diff, and its patch is checked against your source before you see it. Off by default.
 4. **Find what your tests miss.** The routes, pages and controls no test reaches, from the runs you
    already have, each with a skeleton to start the missing test from.
+5. **Write and debug tests.** Record a test from VS Code, a JetBrains IDE or the browser, run it, stop
+   it at a breakpoint with the page still open, and write the fix where it stopped.
 
 Around them: live run streaming, cross-project analytics and scheduled quality reports, notifications
 (email, Slack, Teams, webhooks), a REST API with in-app OpenAPI docs, and an MCP server so your coding

@@ -153,7 +153,8 @@ export function toolPages(): string[] {
  * The landing page's cards, in catalog order: one per group that takes a card,
  * linking to that group on the All features page with the count of its
  * features and of the `card: false` groups that follow it; one for the Tools
- * section, linking to its first page with the count of every tool's features;
+ * section, titled with the job it serves, linking to its first page with the
+ * count of every tool's features;
  * and one for the Self-hosting section, linking to its first page with the
  * count of its pages.
  */
@@ -166,7 +167,7 @@ export function landingCards(): LandingCard[] {
       featureCard = undefined;
       if (group !== tools[0]) continue;
       const features = tools.reduce((count, tool) => count + tool.features.length, 0);
-      cards.push({ title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` });
+      cards.push({ title: TOOLS_SECTION.job, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` });
     } else if (group.section === 'self-hosting') {
       featureCard = undefined;
       const pages = sidebarEntries(selfHostingSidebar);

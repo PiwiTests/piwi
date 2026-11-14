@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The report schedules on the Reports page: when each fires, whose it is, who
+ * The report schedules on the Quality reports page: when each fires, whose it is, who
  * receives it through which channel, and its actions (run now, edit, mute,
  * pause, delete). A card list, so it reads the same at 375 px as on a wide screen.
  */
@@ -73,7 +73,7 @@ function patch(s: ReportScheduleView, body: Record<string, unknown>, done: strin
 }
 
 function remove(s: ReportScheduleView) {
-  if (!window.confirm(`Delete the schedule “${s.name}”? Its snapshots stay on the Reports page.`)) return;
+  if (!window.confirm(`Delete the schedule “${s.name}”? Its snapshots stay on the Quality reports page.`)) return;
   return act(s, () => $fetch(`/api/reports/schedules/${s.id}`, { method: 'DELETE' }), 'Report schedule deleted');
 }
 

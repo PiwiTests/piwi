@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Delete a saved dashboard',
     description:
-      'Deletes a saved dashboard. The report schedules rendering it are deactivated and returned in `deactivatedSchedules`; the Reports page shows them inactive until their owner picks another dashboard. Its owner or an administrator.',
+      'Deletes a saved dashboard. The report schedules rendering it are deactivated and returned in `deactivatedSchedules`; the Quality reports page shows them inactive until their owner picks another dashboard. Its owner or an administrator.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'signed-in',
   },
