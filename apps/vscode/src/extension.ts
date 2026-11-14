@@ -1415,7 +1415,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       pick.dispose();
       if (chosen?.command) await vscode.commands.executeCommand(chosen.command, ...(chosen.args ?? []));
     }),
-    // The latest run and its failures alone, not the indexes Reload everything from the instance reads.
+    // The latest run and its failures alone, none of the indexes.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
       if (refreshing || !connectedOrSay()) return;
       refreshing = true;
@@ -1690,7 +1690,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         picked.option === 'headed' ? 'piwi.toggleRunHeaded' : 'piwi.setRunHoldFailures',
       );
     }),
-    vscode.commands.registerCommand('piwi.toggleRunHeaded', () => saveRunOption('runHeaded', !runChoices().headed)),
+    vscode.commands.registerCommand('piwi.toggleRunHeaded', async () => {
+      const headed = !runChoices().headed;
+      await saveRunOption('runHeaded', headed);
+      vscode.window.setStatusBarMessage(`Piwi: the runs start ${headed ? 'headed' : 'headless'}`, 4000);
+    }),
     vscode.commands.registerCommand('piwi.setRunHoldFailures', async () => {
       const current = runChoices().holdFailures;
       const hold = await vscode.window.showQuickPick(

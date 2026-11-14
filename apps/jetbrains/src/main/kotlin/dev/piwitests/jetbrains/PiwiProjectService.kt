@@ -131,7 +131,8 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
  * and the failures tool window render. The service pushes each answer when it
  * changes (`piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`):
  * they are kept as they come, and read whole only when the plugin starts and
- * when it asks the service for something new (Reload everything from the instance, the credentials).
+ * when it asks the service for something new (Read the instance and the configs again,
+ * the credentials).
  */
 @Service(Service.Level.PROJECT)
 class PiwiProjectService(private val project: Project) : Disposable {
@@ -472,7 +473,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /**
      * Search for Playwright configs again a second after one is created, removed, renamed or moved, or a folder that may
      * hold one (a branch checked out): a project gains or loses the tool window, the status bar item and the service
-     * without **Reload everything from the instance**.
+     * without **Read the instance and the configs again**.
      */
     fun watchConfigs() {
         project.messageBus.connect(this).subscribe(
@@ -758,8 +759,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .firstOrNull()?.piwiServer()
 
     /**
-     * Read the latest run and its failures again, not the indexes **Reload everything from the instance** fetches (`piwi/refreshRun`), then the
-     * status, on a pooled thread: the status bar item's click and **Refresh the latest run**. `refreshing` is set
+     * Read the latest run and its failures again, and none of the indexes (`piwi/refreshRun`), then the status, on a
+     * pooled thread: the status bar item's click and **Refresh the latest run**. `refreshing` is set
      * meanwhile, and the listeners are told as it is.
      */
     fun refreshRun() {

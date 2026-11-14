@@ -78,7 +78,7 @@
         }
       },
       "piwi-reload": {
-        "description": "Reload everything from the instance: read the instance and the configs again",
+        "description": "Read the instance and the configs again",
         "default": {
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E004"
@@ -139,7 +139,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Reload everything from the instance](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Read the instance and the configs again](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {
@@ -267,7 +267,7 @@
       },
       {
         "command": "piwi.refresh",
-        "title": "Reload everything from the instance",
+        "title": "Read the instance and the configs again",
         "icon": "$(piwi-reload)",
         "category": "Piwi"
       },
@@ -357,7 +357,7 @@
       },
       {
         "command": "piwi.openRunPage",
-        "title": "Open a run started here",
+        "title": "Open the page of a run of this window",
         "category": "Piwi",
         "icon": "$(globe)"
       },

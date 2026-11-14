@@ -45,7 +45,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Disconnect', vscode: 'piwi.disconnect', jetbrains: ['Piwi.Disconnect'] },
   { title: 'Open settings', vscode: 'piwi.openSettings', jetbrains: ['Piwi.OpenSettings'] },
   { title: 'Open the log', vscode: 'piwi.openLog', jetbrains: ['Piwi.OpenLog'] },
-  { title: 'Reload everything from the instance', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
+  { title: 'Read the instance and the configs again', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
   { title: 'Restart the editor service', vscode: 'piwi.restartService', jetbrains: ['Piwi.RestartService'] },
   { title: 'Open the Piwi menu', vscode: 'piwi.statusMenu' },
   { title: 'Refresh the latest run', vscode: 'piwi.refreshRun', jetbrains: ['Piwi.RefreshRun'] },
@@ -61,7 +61,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Run a saved selection…', vscode: 'piwi.runSelection', jetbrains: ['Piwi.RunSelection'] },
   { title: 'Open in dashboard', vscode: 'piwi.openInDashboard', jetbrains: ['Piwi.OpenInDashboard'] },
   { title: 'Open the latest run', vscode: 'piwi.openRun', jetbrains: ['Piwi.OpenLatestRun'] },
-  { title: 'Open a run started here', vscode: 'piwi.openRunPage', jetbrains: ['Piwi.OpenRunPage'] },
+  { title: 'Open the page of a run of this {window}', vscode: 'piwi.openRunPage', jetbrains: ['Piwi.OpenRunPage'] },
   { title: 'Turn hold failures on or off for the run', vscode: 'piwi.holdFailures', jetbrains: ['Piwi.HoldFailures'] },
   {
     title: 'Copy the MCP server configuration',

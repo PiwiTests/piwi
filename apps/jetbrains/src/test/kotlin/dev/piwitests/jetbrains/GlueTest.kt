@@ -185,7 +185,7 @@ class GlueTest {
         assertEquals(
             Glue.StatusView(
                 "Piwi: unreachable",
-                "$problem\nPiwi reads it again on its own; Reload everything from the instance reads it now.",
+                "$problem\nPiwi reads it again on its own, and now on Read the instance and the configs again.",
                 null,
                 Glue.StatusAction.RETRY,
                 Glue.StatusIcon.UNREACHABLE,

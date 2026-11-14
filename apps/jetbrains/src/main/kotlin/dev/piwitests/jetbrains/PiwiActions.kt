@@ -330,8 +330,8 @@ class OpenLatestRunAction : AnAction(), DumbAware {
 val RUN_PAGE: DataKey<RunPage> = DataKey.create("piwi.runPage")
 
 /**
- * **Open a run started here**: the page of a run started or followed here, on the instance it reports to: the one a popup
- * names (`RUN_PAGE`, `Open run #78`), else the only run's with a page.
+ * **Open the page of a run of this project**: the page of a run started or followed here, on the instance it reports
+ * to: the one a popup names (`RUN_PAGE`, `Open run #78`), else the only run's with a page.
  */
 class OpenRunPageAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

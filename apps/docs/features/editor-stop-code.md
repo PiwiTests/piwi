@@ -24,7 +24,7 @@ are on [Pause and step from the editor](./editor-run-control).
 | **Assert a region** | `await expect(…).toMatchAriaSnapshot(…)` with the ARIA snapshot of the region you pick | The test's window |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
-From the editor, the first four need the pause bar, so a headed browser: choose **Turn headed runs on or off**
+From the editor, the first four need the pause bar, so a headed browser: turn headed runs on
 ([How a run starts](./editor-runs#how-a-run-starts)). At a headless stop, Piwi Picker's
 [Runs window](./runs-window#code-from-a-stop) runs them through the page it watches. **Mock a request** works
 headless too.

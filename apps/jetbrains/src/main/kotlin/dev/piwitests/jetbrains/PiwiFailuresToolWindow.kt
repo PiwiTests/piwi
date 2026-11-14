@@ -66,7 +66,7 @@ import javax.swing.tree.TreePath
  * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
  * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, Group
  * the failures by…, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the
- * MCP configurations, Reload everything from the instance, the settings and Open the documentation are in the gear
+ * MCP configurations, Read the instance and the configs again, the settings and Open the documentation are in the gear
  * menu. The tab is Failures, and the tool window's icon has a red dot while tests fail.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
@@ -600,13 +600,14 @@ class FindBreakingCommitAction : FailureNodeAction(PiwiIcons.BISECT) {
 
 /**
  * **Group the failures by…**: the groupings of the Piwi tool window's failures in a popup, the current one checked,
- * under its toolbar button or where the action was asked for (Tools → Piwi, Find Action, a key).
+ * under its toolbar button or where the action was asked for (Tools → Piwi, Find Action, a key). Enabled while
+ * connected, as Refresh the latest run is.
  */
 class GroupFailuresByAction : DumbAwareAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabledAndVisible = e.project != null
+        e.presentation.isEnabled = piwiConnected(e.project)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

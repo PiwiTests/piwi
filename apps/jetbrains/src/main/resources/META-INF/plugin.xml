@@ -309,7 +309,7 @@
                         description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
                 <action id="Piwi.Disconnect" icon="/icons/disconnect.svg" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
                         description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
-                <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload everything from the instance"
+                <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Read the instance and the configs again"
                         icon="/icons/reload.svg"
                         description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
                 <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
@@ -331,7 +331,7 @@
             <action id="Piwi.ShowStop" class="dev.piwitests.jetbrains.ShowStopAction" text="Go to the stopped line"
                     icon="AllIcons.Debugger.NextStatement" use-shortcut-of="ShowExecutionPoint"
                     description="Open the line a test of the run is stopped at"/>
-            <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open a run started here"
+            <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the page of a run of this project"
                     icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
             <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
                     icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>

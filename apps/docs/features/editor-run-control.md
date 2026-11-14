@@ -76,8 +76,8 @@ The run's code is your files as they stood when it started. The mark follows lin
 
 ## A headless run
 
-A run Piwi starts follows your config, headless by default, unless you choose
-[**Run headed**](./editor-runs#how-a-run-starts) or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
+A run Piwi starts follows your config, headless by default, unless you turn
+[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
 Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to the cursor** from the editor
 waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
 opens it at any stop.

@@ -19,13 +19,13 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 |---|---|
 | **Piwi: Connect…**, **Piwi: Disconnect** | Choose the desktop app or an instance and its project, or forget them: [Editor connection](/features/editor-connection) |
 | **Piwi: Open settings** | Piwi's settings: the instance and the project |
-| **Piwi: Reload everything from the instance** | Fetch the indexes and the latest run again; in a JetBrains IDE, start the editor service again when it stopped |
+| **Piwi: Read the instance and the configs again** | Fetch the indexes and the latest run again and read the Playwright configs; in a JetBrains IDE, search the project for configs again and start a stopped editor service |
 | **Piwi: Restart the editor service** | Stop the editor service and start it again |
 | **Piwi: Open the log** | The editor service's log: its starts and ends, its errors and the requests that failed |
 | **Piwi: Open the Piwi menu** | VS Code: the status bar item's menu, which a JetBrains IDE opens with a click on its item: [The editor's status bar](/features/editor-status-bar) |
 | **Piwi: Node.js settings…** | JetBrains: choose the Node.js the editor service starts with |
 | **Piwi: Get started** | VS Code: open the walkthrough |
-| **Piwi: Open the documentation** | Open the editors' page of this site in the browser |
+| **Piwi: Open the documentation** | Open this site in the browser: [Editor extensions](/features/editors) from VS Code, [JetBrains plugin](/features/jetbrains) from a JetBrains IDE |
 
 ## Runs
 
@@ -66,7 +66,7 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | Command | What it does |
 |---|---|
 | **Piwi: Record here…** | Record at the cursor, in a browser your project's Playwright opens: [Record tests from the editor](/features/editor-recording) |
-| **Piwi: Record a new test file…** | Create a spec and record into it; **New → Playwright test (recorded)…** in a JetBrains IDE |
+| **Piwi: Record a new test file…** | Create a spec and record into it; in a JetBrains IDE, the **New** menu's **Playwright test (recorded)…** too |
 | **Piwi: Stop recording**, **Piwi: Pause recording**, **Piwi: Resume recording** | Control the recording in progress |
 | **Piwi: Go to the recorded lines** | JetBrains: open the lines the recording in progress writes |
 | **Piwi: Pair with Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker) |
@@ -81,7 +81,7 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | **Piwi: Watch a worker's test**, **Piwi: Pause and watch a worker's test**, **Piwi: Open the trace so far** | [Watch a running test](/features/watch-running-test) |
 | **Piwi: Show the stopped test's browser** | Bring a headed run's browser window to the front |
 | **Piwi: Share the stopped test's browser with Playwright tools** | [Share with Playwright tools](/features/editor-run-control#share-with-playwright-tools) |
-| **Piwi: Open a run started here** | Open the page of a run this window started or follows |
+| **Piwi: Open the page of a run of this window** | The page of a run this window started or follows, on the instance or the desktop app |
 | **Piwi: Open the branch's run in progress** | VS Code: open the run of the branch the instance is receiving: [Watch a run](/features/watch-a-run) |
 
 ## Code at a stop

@@ -251,8 +251,9 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Reload everything from the instance), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
-     * `RESTART` starts a service that stopped again, with Open the log after it.
+     * reads the instance and the configs again (Read the instance and the configs again), `NODE_SETTINGS` opens the
+     * Node.js settings, then starts the service again, `RESTART` starts a service that stopped again, with Open the log
+     * after it.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
 
@@ -423,7 +424,7 @@ object Glue {
         }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
-            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload everything from the instance reads it now.$hint"
+            val tooltip = "$problem$config\nPiwi reads it again on its own, and now on Read the instance and the configs again.$hint"
             return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
         if (!shown.connected) {

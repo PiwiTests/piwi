@@ -26,9 +26,9 @@ Android Studio lack the LSP API the plugin needs.
 
 The plugin starts the editor service with the project's Node.js interpreter, 20 or later (**Settings → Languages &
 Frameworks → Node.js**, which the status bar opens when it is missing or older), once it finds a Playwright config
-within four folders of the project's (in Rider, the solution's) or of its Git root and you open a file, and looks again on **Tools → Piwi →
-Reload everything from the instance**. It reads the connection the reporter already uses; otherwise, **Settings → Tools → Piwi** signs you in
-with the browser: [Editor connection](./editor-connection).
+within four folders of the project's (in Rider, the solution's) or of its Git root and you open a file, and looks again
+on **Tools → Piwi → Read the instance and the configs again**. It reads the connection the reporter already uses;
+otherwise, **Settings → Tools → Piwi** signs you in with the browser: [Editor connection](./editor-connection).
 
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 

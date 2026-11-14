@@ -233,11 +233,15 @@ describe('quoted editor commands', () => {
   });
 
   test('the Editor commands page names every action of both editors', () => {
-    const page = normalize(read('apps/docs/reference/editor-commands.md').replace(/\*\*/g, ''));
+    // Each title is a bold span of its own, `**Piwi: X**` or `**X**`, so a title found inside another's words counts not.
+    const named = new Set(
+      [...read('apps/docs/reference/editor-commands.md').matchAll(/\*\*([^*]+)\*\*/g)].map((m) =>
+        normalize(m[1]!).replace(/^Piwi: /, ''),
+      ),
+    );
     const missing = EDITOR_ACTIONS.filter(
       (action) =>
-        !page.includes(normalize(actionTitle(action, 'vscode'))) &&
-        !page.includes(normalize(actionTitle(action, 'jetbrains'))),
+        !named.has(normalize(actionTitle(action, 'vscode'))) && !named.has(normalize(actionTitle(action, 'jetbrains'))),
     ).map((action) => action.title);
     expect(
       missing,
