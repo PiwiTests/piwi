@@ -47,7 +47,13 @@ const session = (extra: Partial<RunSession> = {}): RunSession =>
 describe('the run line both status items show', () => {
   test('is none without a stop, a Pause, a share or a count', () => {
     expect(runLine([], false)).toBeNull();
-    expect(runLine([session({ workers: [worker()] })], false)).toBeNull();
+    expect(runLine([session({ ended: true })], false)).toBeNull();
+    // A run that has not counted yet still says it runs.
+    expect(runLine([session({ workers: [worker()] })], false)).toEqual({
+      text: 'Piwi: running',
+      state: 'running',
+      calls: 0,
+    });
   });
 
   test('says where a stop stands, then the run and how far it is', () => {
@@ -100,7 +106,12 @@ describe('the run line both status items show', () => {
       state: 'live',
       calls: 0,
     });
-    expect(runLine([], true)).toMatchObject({ text: 'Piwi: each run shared live', state: 'live' });
+    // The window's share beside a run; without one, the item says the latest run.
+    expect(runLine([session({ progress: progress() })], true)).toMatchObject({
+      text: 'Piwi: each run shared live · 3 of 9 · 1 failed',
+      state: 'live',
+    });
+    expect(runLine([], true)).toBeNull();
   });
 
   test('takes the glyph of how the runs went once they ended, and names who started an agent’s run', () => {

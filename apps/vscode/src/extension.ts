@@ -217,7 +217,7 @@ import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
-import { progressItem, stopRunAnswer } from './run-control';
+import { escapedMarkdown, progressItem, STOP_ACTIONS, stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
 import { registerCiRuns } from './ci-view';
 import {
@@ -828,11 +828,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const line = serviceDown ? null : runLine;
     const text = line ? runLineText(line, Date.now()) : view.text;
     statusItem.text = refreshing && !line ? refreshingText(text) : text;
-    // How every run of the window starts, with the link that changes it, wherever a config is found.
-    const own = counted ? `${counted.tooltip}\n\n---\n\n${view.tooltip}` : view.tooltip;
+    // The runs' line and their count lead the tooltip; how every run of the window starts, with the link that changes
+    // it, ends it wherever a config is found.
+    const said = line ? `${escapedMarkdown(line.text)}${line.calls ? ' · a test waits for you' : ''}` : null;
+    const windowShared = contextKey('piwi.windowSharedLive') ? "This window's runs are shared live." : null;
+    const runsSaid = [said, counted?.tooltip, windowShared].filter(Boolean).join('\n\n');
+    const own = runsSaid ? `${runsSaid}\n\n---\n\n${view.tooltip}` : view.tooltip;
     const tooltip = new vscode.MarkdownString(view.action === 'none' ? own : `${own}\n\n${runStartLine(runChoices())}`);
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
+    // A screen reader hears the line, and a test that waits, which the background alone shows.
+    statusItem.accessibilityInformation = line
+      ? { label: `${line.text}${line.calls ? ', a test waits for you' : ''}` }
+      : undefined;
     statusUrl = view.url;
     liveUrl = view.liveUrl;
     setContextKey('piwi.liveRun', !!liveUrl);
@@ -1363,6 +1371,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           endable: !!contextKey('piwi.runCanEnd'),
           shared: !!contextKey('piwi.runSharedLive') || !!contextKey('piwi.windowSharedLive'),
           shareable: !!contextKey('piwi.runLiveOffered'),
+          code: STOP_ACTIONS.some((a) => !!contextKey(a.key)),
         },
         failing: contextKey('piwi.failuresView') === 'failures',
         flakyRoot: menuFlakyRoot,
@@ -1936,6 +1945,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) {
+        // A service started again sends its line once a run says one.
+        runLine = null;
+        if (ticking) clearInterval(ticking);
+        ticking = null;
+        render();
         runControl.clear();
         ciRuns.clear();
         runControl.ciChanged(ciRuns.sessions());

@@ -735,7 +735,7 @@ export function holdText(hold: NonNullable<RunSession['hold']>): string {
 }
 
 /** Text shown as itself in a Markdown tooltip: a folder's or a tool's name is never a link nor emphasis. */
-function escapedMarkdown(text: string): string {
+export function escapedMarkdown(text: string): string {
   return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
 }
 

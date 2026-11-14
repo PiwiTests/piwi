@@ -130,6 +130,8 @@ export interface StatusMenuState {
     shared: boolean;
     /** A live run can be shared and is not: Share live. */
     shareable: boolean;
+    /** A stop offers a code action: Write code at the stop. */
+    code: boolean;
   };
   failing: boolean;
   /** The config whose flaky tests the failures view lists, for the item's config. */
@@ -183,15 +185,17 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
             state.run.stopped && !state.run.failed && 'piwi.finishRun',
             state.run.endable && 'piwi.endTest',
             state.run.stopped && 'piwi.showPausedPage',
+            state.run.code && 'piwi.codeAtStop',
             state.run.pausable && 'piwi.pauseRun',
             state.run.watchable && 'piwi.watchWorker',
             state.run.page && 'piwi.openRunPage',
-            state.run.shared && 'piwi.liveMenu',
             !state.run.shared && state.run.shareable && 'piwi.shareRunLive',
             state.run.stoppable && 'piwi.stopRun',
           ]
         : [],
     ],
+    // The Live menu while a run, or the window's runs, are shared, with or without a run.
+    ['Share live', [state.run.shared && 'piwi.liveMenu']],
     [
       'Dashboard',
       [
@@ -349,7 +353,10 @@ export function failuresViewDescription(grouping: FailuresGrouping, baseline: st
   return [by, baselineLine(baseline)].filter(Boolean).join(' · ');
 }
 
-/** The glyph of each state of the run line (`RunLine.state`): one per state, from the outcome palette's codicons. */
+/**
+ * The glyph of each state of the run line (`RunLine.state`), from the outcome palette's codicons: the error glyph for a
+ * held failure and failed runs, the pause glyph for a stop and a Pause on its way.
+ */
 export const RUN_LINE_GLYPHS: Record<RunLineState, string> = {
   held: '$(error)',
   stopped: '$(debug-pause)',

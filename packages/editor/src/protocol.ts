@@ -2170,7 +2170,7 @@ export const SHARE_RUN_REQUEST = 'piwi/shareRun';
  * `piwi/runLineChanged` (notification, server to client): the line both clients' status items show of the runs the
  * editor follows (`runLine` in `src/run-line.ts`), null once none is left: where a test stands stopped, or the call a
  * pausing test waits in, the share and how far the runs are, `Piwi: held at its failure · checkout.page.ts:12 · run
- * #78 · 3 of 9 · 1 failed`. `state` chooses the item's glyph, one per state; `calls` counts the stops that wait for the
+ * #78 · 3 of 9 · 1 failed`. `state` chooses the item's glyph (a held failure's and failed runs' alike, a stop's and a Pause's alike); `calls` counts the stops that wait for the
  * person (`RunStop.calls`), which the item marks until they are answered; `since`, while a pausing test waits in a
  * call, is when it began, which the clients count after the call (`waits in waitForResponse · 12 s`). Sent only when
  * it changed.

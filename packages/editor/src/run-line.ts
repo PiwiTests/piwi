@@ -45,8 +45,8 @@ function views(count: number): string {
 
 /**
  * The one line both clients' status items show of the runs the editor follows (`piwi/runLineChanged`), else null:
- * where a test stands stopped, or the call a pausing test waits in, then the share, then how far the runs are, with the
- * state its glyph shows and how many stops wait for the person (`RunStop.calls`), the item's badge until answered.
+ * where a test stands stopped, or the call a pausing test waits in, then the share (the window's only beside a run: the
+ * item says the latest run without one), then how far the runs are, with the state its glyph shows and how many stops wait for the person (`RunStop.calls`), the item's badge until answered.
  * `Piwi: held at its failure · checkout.page.ts:12 · shared live · 2 views · run #78 · 3 of 9 · 1 failed`.
  */
 export function runLine(sessions: readonly RunSession[], sharingWindow: boolean): RunLine | null {
@@ -65,7 +65,7 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
     parts.push(waiting ? `pausing… · waits in ${clipped(waiting.title)}` : 'pausing…');
     since = waiting?.since ?? null;
   }
-  if (sharingWindow) parts.push(`each run shared live${viewers ? ` · ${views(viewers)}` : ''}`);
+  if (sharingWindow && sessions.length) parts.push(`each run shared live${viewers ? ` · ${views(viewers)}` : ''}`);
   else if (shared.length) parts.push(`shared live${viewers ? ` · ${views(viewers)}` : ''}`);
   if (told.length) {
     const progress = told.map((s) => s.progress!);
@@ -82,6 +82,8 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
       )}${one?.label ? ` · ${one.label}` : ''}`,
     );
   }
+  // A run that has not counted yet still shows it runs.
+  if (!parts.length && sessions.some((s) => !s.ended)) parts.push('running');
   if (!parts.length) return null;
   const state: RunLineState = stops.length
     ? stops.every((s) => s.reason === 'failure')
@@ -89,9 +91,9 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
       : 'stopped'
     : pausing.length
       ? 'pausing'
-      : sharingWindow || shared.length
+      : (sharingWindow && sessions.length) || shared.length
         ? 'live'
-        : told.some((s) => s.progress!.status === 'running')
+        : !told.length || told.some((s) => s.progress!.status === 'running')
           ? 'running'
           : told.some((s) => s.progress!.failed > 0 || ['failed', 'timedout'].includes(s.progress!.status))
             ? 'failed'

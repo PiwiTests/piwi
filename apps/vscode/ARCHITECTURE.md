@@ -568,7 +568,7 @@ whatever became of it while the menu was open; the palette's commands (`piwi.sto
 `piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself shows the service's line of the window's runs
 (`piwi/runLineChanged`, `runLineText`): where a test stands stopped, or the call a pausing test waits in and for how
 long, the share and the views open of it, and how far the runs are (`$(error) Piwi: held at its failure ·
-checkout.page.ts:12 · run #78 · 3 of 9 · 1 failed`), one glyph per state (`RUN_LINE_GLYPHS`), the warning background
+checkout.page.ts:12 · run #78 · 3 of 9 · 1 failed`), its state's glyph (`RUN_LINE_GLYPHS`), the warning background
 while a stop waits for the person (`RunLine.calls`), from `RunSession.progress`, which the run's own process tells the
 service: so it counts offline and with the desktop app, the line the JetBrains plugin's item shows. The runs' count
 leads its tooltip (`progressItem`), and its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label

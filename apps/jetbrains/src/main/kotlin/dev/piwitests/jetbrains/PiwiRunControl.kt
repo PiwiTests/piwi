@@ -615,6 +615,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         service.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
+                    // A service started again sends its line once a run says one.
+                    line = null
                     synchronized(lock) {
                         sessions = emptyMap()
                         // A service started again holds none of the IDE's breakpoints.

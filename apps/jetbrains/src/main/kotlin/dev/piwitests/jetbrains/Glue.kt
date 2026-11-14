@@ -2321,10 +2321,6 @@ object Glue {
     }
 
     /**
-     * A stop's or a share's status with how far the runs are after it, so neither hides the other:
-     * `Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9`.
-     */
-    /**
      * The status bar item's text while runs are followed: the service's line, and, while a pausing test waits in a call,
      * how long it has (`waits in waitForResponse · 12 s`).
      */

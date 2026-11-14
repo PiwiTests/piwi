@@ -154,7 +154,7 @@ async function startCouponRun(page, workspace) {
     retry: 1,
     cannotPause: null,
   });
-  await page.locator('.statusbar-item .codicon-debug-pause').first().waitFor({ timeout: 30_000 });
+  await page.locator('.statusbar-item', { hasText: 'Piwi: running' }).first().waitFor({ timeout: 30_000 });
   // The locator at the cursor matches one element on the paused page, and the test kept three answers to mock.
   worker.answers.locator = { ok: true, message: '1 element matches.', count: 1 };
   worker.answers.requests = { ok: true, message: 'The test kept 3 responses.', requests: KEPT_RESPONSES };
@@ -177,7 +177,7 @@ async function stopAt(page, workspace, at, image = null) {
     );
     worker.send({ type: 'running', stop: run.stop });
     run.at = null;
-    await page.locator('.statusbar-item .codicon-debug-pause').first().waitFor({ timeout: 30_000 });
+    await page.locator('.statusbar-item', { hasText: 'Piwi: running' }).first().waitFor({ timeout: 30_000 });
   }
   const from = worker.heard.length;
   await command(page, 'Piwi: Pause the run');
@@ -187,7 +187,7 @@ async function stopAt(page, workspace, at, image = null) {
   worker.send({ type: 'stopped', stop: run.stop, reason: 'pause', ...at });
   run.at = at;
   await page.locator('.codelens-decoration', { hasText: 'Paused · ' }).first().waitFor({ timeout: 30_000 });
-  await page.locator('.statusbar-item .codicon-debug-continue').first().waitFor({ timeout: 30_000 });
+  await page.locator('.statusbar-item', { hasText: 'Piwi: paused · ' }).first().waitFor({ timeout: 30_000 });
 }
 
 /** No notification left, toast or not: the startup ones whose toast hid on its own still mark the bell. */

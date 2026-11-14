@@ -170,7 +170,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         if (line?.since != null) tick.addRequest({ update() }, 1000)
     }
 
-    /** The icon of each state of the runs' line (`RunLine.state`): one per state. */
+    /** The icon of each state of the runs' line (`RunLine.state`), VS Code's glyphs' (`RUN_LINE_GLYPHS`). */
     private fun lineIcon(state: String): Icon = when (state) {
         "held", "failed" -> PiwiIcons.FAILED
         "stopped", "pausing" -> AllIcons.Actions.Pause

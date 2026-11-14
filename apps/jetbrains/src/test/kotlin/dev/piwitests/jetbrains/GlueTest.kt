@@ -852,7 +852,7 @@ class GlueTest {
         assertFalse(Glue.runControls(mapOf("ed-1" to ready)).liveShared)
         // The views open of every shared run, counted as views: one person may hold several.
         val two = Glue.runControls(mapOf("ed-1" to shared, "ed-3" to shared.copy(ref = "ed-3", live = RunLive(true, null, page, 1))))
-        // While the project's runs are shared, the status bar says so, with or without a shared run.
+        assertEquals(3, two.liveViewers)
         assertTrue(
             Glue.shareLiveWarning(page, window = true)
                 .startsWith(
@@ -865,18 +865,6 @@ class GlueTest {
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
-        // How far the runs are, as their own processes say: none from a reporter that predates it.
-        val counted = ready.copy(progress = RunProgress(total = 9, done = 3))
-        val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
-        // The flaky of every run, summed.
-        val flaky = failing.copy(ref = "ed-4", progress = RunProgress(total = 2, done = 2, flaky = 1, status = "passed"))
-        // The icon: the spinner while one goes on, then how they ended.
-        fun ending(status: String) = mapOf("ed-5" to flaky.copy(progress = flaky.progress!!.copy(flaky = 0, status = status)))
-        // An agent's run says so, never reading as the person's own.
-        val agents = counted.copy(label = "Started by Claude Code")
-        // A test ended at a stop is marked so, not counted as a plain pass.
-        val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
-        val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
     }
 
     @Test
@@ -1057,9 +1045,6 @@ class GlueTest {
             "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
             Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
         )
-        // A long call is cut in the status bar.
-        val long = waiting.copy(title = "Click " + "getByRole('row').".repeat(10))
-        val longSessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = long)))
         // A worker no Pause reached waits in nothing.
         val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
         assertNull(Glue.runControls(going).waiting)
@@ -2007,7 +1992,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the progress names the run's number, and a stop or a share keeps it beside them`() {
+    fun `the runs' pages are named by their runs`() {
         val page = RunPage(78, "https://piwi.example.com/test-runs/78")
         val run = RunSession("ed-1", "/w", emptyList(), false, progress = RunProgress(total = 9, done = 3), page = page)
         assertEquals(listOf("ed-1" to page), Glue.runPages(mapOf("ed-1" to run, "ed-2" to run.copy(ref = "ed-2", page = null))))
@@ -2163,10 +2148,13 @@ class GlueTest {
     }
 
     @Test
-    fun `the status item shows the error's icon while every stop held is a failure`() {
-        val stop = RunStop("pause", "Click", "file:///w/a.spec.ts", 3, 2, null, true, "2026-10-25T10:00:00.000Z")
-        val paused = Glue.ShownStop("ed-1", 0, stop, null)
-        val failed = Glue.ShownStop("ed-1", 1, stop.copy(reason = "failure"), null)
+    fun `the status item shows the service's line, and how long a pausing test has waited in its call`() {
+        assertEquals("Piwi: held at its failure · a.spec.ts:4", Glue.runLineText(RunLine("Piwi: held at its failure · a.spec.ts:4", "held", 1), 0))
+        val pausing = RunLine("Piwi: pausing… · waits in waitForResponse", "pausing", since = "2026-10-25T10:00:00Z")
+        val at = java.time.Instant.parse("2026-10-25T10:00:12.900Z").toEpochMilli()
+        assertEquals("Piwi: pausing… · waits in waitForResponse · 12 s", Glue.runLineText(pausing, at))
+        assertEquals("2 min 5 s", Glue.waitedFor("2026-10-25T10:00:00Z", at - 12_900 + 125_000))
+        assertEquals(null, Glue.waitedFor("not a time", at))
     }
 
     @Test

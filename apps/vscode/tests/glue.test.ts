@@ -160,6 +160,7 @@ describe('statusMenu', () => {
       endable: false,
       shared: false,
       shareable: false,
+      code: false,
     },
     failing: false,
     flakyRoot: null,
@@ -212,6 +213,7 @@ describe('statusMenu', () => {
       endable: true,
       shared: false,
       shareable: true,
+      code: true,
     };
     // Go to the stopped line first: the state's action, which Enter takes.
     expect(commands(statusMenu({ ...idle, run, failing: true, flakyRoot: '/ws/app' }))).toEqual([
@@ -223,6 +225,7 @@ describe('statusMenu', () => {
       'piwi.finishRun',
       'piwi.endTest',
       'piwi.showPausedPage',
+      'piwi.codeAtStop',
       'piwi.watchWorker',
       'piwi.openRunPage',
       'piwi.shareRunLive',
@@ -243,10 +246,11 @@ describe('statusMenu', () => {
     expect(held).not.toContain('piwi.stepRun');
     expect(held).not.toContain('piwi.finishRun');
     expect(held).not.toContain('piwi.stopRun');
-    // A shared run opens its Live menu in place of Share live.
+    // A shared run opens its Live menu in place of Share live, and the window's share has it with no run live.
     const shared = commands(statusMenu({ ...idle, run: { ...run, shared: true } }));
     expect(shared).toContain('piwi.liveMenu');
     expect(shared).not.toContain('piwi.shareRunLive');
+    expect(commands(statusMenu({ ...idle, run: { ...idle.run, shared: true } }))).toContain('piwi.liveMenu');
   });
 
   test('opens the flaky tests of the item’s config, and the latest run only while its page is known', () => {
@@ -2575,8 +2579,10 @@ describe('the status item while runs are followed', () => {
     );
   });
 
-  test('takes one glyph per state', () => {
-    expect(new Set(Object.values(RUN_LINE_GLYPHS)).size).toBe(Object.keys(RUN_LINE_GLYPHS).length - 2);
+  test('draws a failure with the error glyph and a stop or a Pause on its way with the pause glyph', () => {
+    expect(RUN_LINE_GLYPHS.held).toBe(RUN_LINE_GLYPHS.failed);
+    expect(RUN_LINE_GLYPHS.pausing).toBe(RUN_LINE_GLYPHS.stopped);
+    expect(new Set(Object.values(RUN_LINE_GLYPHS)).size).toBe(6);
   });
 });
 
