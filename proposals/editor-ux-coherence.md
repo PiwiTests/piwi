@@ -103,7 +103,12 @@ the runs' one line for both status items (`piwi/runLineChanged`: the stop, or th
 how long, the share, the count), its state's glyph, and marks the item while a stop waits for the person (VS Code's
 warning background, a dot on JetBrains' icon) until it is answered (LR2, HM17); VS Code's stop and share items fold
 into the Piwi item, whose menu leads with Go to the stopped line (`piwi.showStop`) and holds the controls, End the
-test and the share (LR1). The waiting line marked in the code with End test remains (LR18 in part). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+test and the share (LR1). The waiting line marked in the code with End test remains (LR18 in part). M7 in part: the service sends each test line one grouped action list
+(`SummaryLine.actions`: Run with Piwi and Verify ×3, the trace, the screenshot and the dashboard, Copy context for agent,
+the Flake Lab commands), which JetBrains' result icon opens on either click and VS Code from the Testing view's gutter,
+item and message menus, the line number's menu with the view off and the hover's **More…** (`piwi.testActions`) (TL2,
+TL6, TL7 in part: Record here and Debug with Piwi in the list, the IDE run icon (M9), the failure nodes' Verify ×3 and
+Jump to Source, and the quick fixes' titles remain). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which

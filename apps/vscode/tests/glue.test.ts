@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type {
+  TestAction,
   CoverageResult,
   DesktopJobUpdate,
   DesktopResult,
@@ -78,6 +79,9 @@ import {
   testDecorations,
   testHoverMarkdown,
   testLineArg,
+  testActionsAt,
+  testLineAt,
+  testActionPicks,
   TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
@@ -994,6 +998,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: failing in run #124 · passed 1 of 4 runs',
         dashboardUrl: 'http://piwi/test-cases/9',
         testCaseId: 9,
+        actions: false,
       },
       {
         status: 'passed',
@@ -1003,6 +1008,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: passed in its latest run · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
+        actions: false,
       },
     ]);
   });
@@ -1021,6 +1027,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: running in your run #130 · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
+        actions: false,
       },
     ]);
   });
@@ -1037,14 +1044,23 @@ describe('the tests of a file', () => {
           arguments: ['http://piwi/test-cases/9'],
         },
         testCaseId: 9,
+        actions: [
+          {
+            group: 'run',
+            kind: 'run',
+            title: 'Run with Piwi',
+            command: { title: 'Run', command: 'piwi.runTests', arguments: [] },
+          },
+        ],
       },
     ]);
     const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
     const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
+    const more = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', line: 3 }]));
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
-      `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+      `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
     );
-    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
+    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions']);
     // A service that gives neither: the result alone.
     const [bare] = testDecorations([{ line: 3, title: 'never run', status: 'unknown' }]);
     expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: never run');
@@ -2031,6 +2047,60 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(ci, 'always', 'mine')).toBeNull();
     // The editor's own runs whatever the scope.
     expect(runVerdict(ended, 'always', 'mine')).not.toBeNull();
+  });
+});
+
+describe('a test’s actions from its gutter', () => {
+  const action = (group: TestAction['group'], title: string): TestAction => ({
+    group,
+    title,
+    command: { title, command: 'piwi.openInDashboard', arguments: [] },
+  });
+
+  test('act on a Testing item, the test of a message, a line number clicked, or a test line', () => {
+    const item = { uri: { toString: () => 'file:///w/a.spec.ts' }, range: { start: { line: 4 } } };
+    expect(testActionsAt(item)).toEqual({ uri: 'file:///w/a.spec.ts', line: 4 });
+    expect(testActionsAt({ test: item, message: {} })).toEqual({ uri: 'file:///w/a.spec.ts', line: 4 });
+    expect(testActionsAt({ uri: { toString: () => 'file:///w/a.spec.ts' }, lineNumber: 7 })).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      line: 6,
+    });
+    expect(testActionsAt({ uri: 'file:///w/a.spec.ts', line: 2 })).toEqual({ uri: 'file:///w/a.spec.ts', line: 2 });
+    expect(testActionsAt(undefined)).toBeNull();
+  });
+
+  test('are the test’s whose call is at the line, or whose body holds it', () => {
+    const actions = [action('run', 'Run with Piwi')];
+    const summary = {
+      file: null,
+      lines: [
+        { line: 2, title: 'flaky 18%' },
+        { line: 2, title: 'passed', status: 'passed' as const, endLine: 6, actions },
+      ],
+    };
+    expect(testLineAt(summary, 2)?.title).toBe('passed');
+    expect(testLineAt(summary, 5)?.title).toBe('passed');
+    expect(testLineAt(summary, 9)).toBeNull();
+  });
+
+  test('list each group after a separator naming it, the first unnamed', () => {
+    const picks = testActionPicks([
+      action('run', 'Run with Piwi'),
+      action('run', 'Verify ×3 with Piwi'),
+      action('evidence', 'Open the trace'),
+      action('agent', 'Copy context for agent'),
+      action('lab', 'Reproduce this flake'),
+    ]);
+    expect(picks.map((p) => ('separator' in p ? `— ${p.separator}` : p.action.title))).toEqual([
+      'Run with Piwi',
+      'Verify ×3 with Piwi',
+      '— Evidence',
+      'Open the trace',
+      '— Agent',
+      'Copy context for agent',
+      '— Flake Lab',
+      'Reproduce this flake',
+    ]);
   });
 });
 

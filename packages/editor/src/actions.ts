@@ -52,6 +52,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
     jetbrains: ['Piwi.VerifyTestAtCursor'],
   },
   { title: 'Run this spec', vscode: 'piwi.runSpec', jetbrains: ['Piwi.RunSpec'] },
+  { title: "Show the test's actions", vscode: 'piwi.testActions', asksIn: 'vscode' },
   { title: 'Run a saved selection…', vscode: 'piwi.runSelection', jetbrains: ['Piwi.RunSelection'] },
   { title: 'Open in dashboard', vscode: 'piwi.openInDashboard', jetbrains: ['Piwi.OpenInDashboard'] },
   { title: 'Open the latest run', vscode: 'piwi.openRun', jetbrains: ['Piwi.OpenLatestRun'] },

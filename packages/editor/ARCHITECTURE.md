@@ -432,7 +432,10 @@ On a spec, `piwi/fileSummary` gives each test's line:
   `apps/application/tests/unit/status-words-drift.test.ts`), then the pass rate, quarantine, flaky score and selections;
 - the test's id (`testCaseId`), which VS Code's gutter hover runs;
 - the line its call ends on (`endLine`, found with `callEndLine`), for the background the clients draw over a failing
-  test.
+  test;
+- what its gutter offers (`actions`, `testActions`), in its groups: Run with Piwi and Verify ×3 with Piwi, which name
+  the client's own action at the test's line (`TestAction.kind`), the failure's trace and screenshot when it failed and
+  the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands.
 
 `piwi/testAt` answers, for a position of a spec:
 

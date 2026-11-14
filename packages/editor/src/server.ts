@@ -381,6 +381,8 @@ import {
   type SpecTests,
   type RunCommandArgs,
   type TraceParams,
+  type TestAction,
+  type PiwiCommand,
   type TraceResult,
   type WorkspaceFailure,
 } from './protocol.js';
@@ -830,6 +832,78 @@ export function editorRunEnv(ref?: string): Record<string, string> {
  */
 export function commandFolder(context: PiwiContext): string {
   return canonicalPath(context.root);
+}
+
+/**
+ * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run and Verify ×3 at the test's line; the
+ * failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context for an agent;
+ * the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ */
+export function testActions(
+  uri: string,
+  relative: string,
+  line: number,
+  testCaseId: number,
+  open: PiwiCommand,
+  failed: { executionId: number; screenshot: unknown; traces: unknown[] } | null,
+  lab: SummaryLine[],
+): TestAction[] {
+  const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
+  return [
+    {
+      group: 'run',
+      kind: 'run',
+      title: 'Run with Piwi',
+      command: {
+        title: 'Run with Piwi',
+        command: 'piwi.runTests',
+        arguments: [{ uri, testIds: [testCaseId] } satisfies RunTestsArgs],
+      },
+    },
+    {
+      group: 'run',
+      kind: 'verify',
+      title: 'Verify ×3 with Piwi',
+      command: {
+        title: 'Verify ×3 with Piwi',
+        command: 'piwi.runTests',
+        arguments: [{ uri, testIds: [], locations: [`${relative}:${line + 1}`], repeat: 3 } satisfies RunTestsArgs],
+      },
+    },
+    ...(evidence && failed?.traces.length
+      ? [
+          {
+            group: 'evidence' as const,
+            title: 'Open the trace',
+            command: { title: 'Open the trace', command: 'piwi.openTrace' as const, arguments: [evidence] },
+          },
+        ]
+      : []),
+    ...(evidence && failed?.screenshot
+      ? [
+          {
+            group: 'evidence' as const,
+            title: 'Open the screenshot',
+            command: { title: 'Open the screenshot', command: 'piwi.openScreenshot' as const, arguments: [evidence] },
+          },
+        ]
+      : []),
+    { group: 'evidence', title: 'Open in dashboard', command: open },
+    ...(evidence
+      ? [
+          {
+            group: 'agent' as const,
+            title: 'Copy context for agent',
+            command: {
+              title: 'Copy context for agent',
+              command: 'piwi.copyAgentContext' as const,
+              arguments: [evidence satisfies AgentContextParams],
+            },
+          },
+        ]
+      : []),
+    ...lab.slice(1).flatMap((l) => (l.command ? [{ group: 'lab' as const, title: l.title, command: l.command }] : [])),
+  ];
 }
 
 /**
@@ -3335,20 +3409,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ].join('')
           : '';
         const endLine = call.endLine;
+        const open: PiwiCommand = {
+          title: 'Open in dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: [context.client!.testUrl(found.id)],
+        };
+        const lab = flakeLabLines(context, found.id, i, env, desktopJobs.available(context));
         out.push({
           line: i,
           title: `${verdict}${passRate}${quarantine}${flakiness}${selectionsText}`,
-          command: {
-            title: 'Open in dashboard',
-            command: 'piwi.openInDashboard',
-            arguments: [context.client!.testUrl(found.id)],
-          },
+          command: open,
           status: testStatus!,
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
+          actions: testActions(params.uri, relative!, i, found.id, open, failed && failure ? failed : null, lab),
         });
-        out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
+        out.push(...lab);
         if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         // The failure's diagnostic says why it failed: the line above says so only where no diagnostic does.
