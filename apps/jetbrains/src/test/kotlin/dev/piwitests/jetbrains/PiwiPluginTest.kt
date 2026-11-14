@@ -599,25 +599,35 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
-    /** The IDE run icon's menu on a test runs it with Piwi from its line, in a spec under a config's folder alone. */
-    fun testTheIdeRunIconsMenuRunsTheTestWithPiwiInAConfigsFolder() {
+    /**
+     * The IDE run icon's menu runs a test with Piwi from its line, where the service finds one: in a spec under a
+     * config's folder, never on a describe's line.
+     */
+    fun testTheIdeRunIconsMenuRunsTheTestWithPiwiWhereTheServiceFindsOne() {
         val actions = ActionManager.getInstance()
         val additional = actions.getAction("JSTestRunLineMarkersAdditionalActionGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         assertTrue(additional.childActionsOrStubs.any { actions.getId(it) == "Piwi.RunLineMarker" })
         val service = project.getService(PiwiProjectService::class.java)
         val base = File(project.basePath!!)
-        val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
-        val inside = File(base, "e2e/icon.spec.ts")
-        val outside = File(base, "other/icon.spec.ts").apply { parentFile.mkdirs() }
+        val e2e = File(base, "e2e").apply { mkdirs() }
+        val other = File(base, "other").apply { mkdirs() }
+        val asked = mutableListOf<Int>()
+        val testAt = PiwiRunLineMarkerActions.testAt
+        PiwiRunLineMarkerActions.testAt = { _, _, line ->
+            asked += line
+            // The service's answer for the fixture's spec: a test on line 3, the describe's line 2 none.
+            TestAtResult(null, null, if (line == 3) "icon.spec.ts:4" else null)
+        }
         try {
-            config.writeText("export default {};\n")
-            for (spec in listOf(inside, outside)) spec.writeText("import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n")
+            File(e2e, "playwright.config.ts").writeText("export default {};\n")
+            val spec = "import { test } from '@playwright/test';\n\ntest.describe('cart', () => {\n  test('pays', async ({ page }) => {});\n});\n"
+            for (folder in listOf(e2e, other)) File(folder, "icon.spec.ts").writeText(spec)
             service.searchPlaywright()
-            val offered = { spec: File ->
-                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(spec)!!
+            val offered = { folder: File, at: String ->
+                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(File(folder, "icon.spec.ts"))!!
                 com.intellij.openapi.application.runReadAction {
                     val psi = com.intellij.psi.PsiManager.getInstance(project).findFile(file)!!
-                    val element = psi.findElementAt(psi.text.indexOf("test('pays'"))!!
+                    val element = psi.findElementAt(psi.text.indexOf(at))!!
                     val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
                         .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
                         .add(com.intellij.execution.Location.DATA_KEY, com.intellij.execution.PsiLocation(element))
@@ -626,21 +636,27 @@ class PiwiPluginTest : BasePlatformTestCase() {
                         .map { (it as? com.intellij.openapi.actionSystem.Separator)?.text ?: it.templatePresentation.text }
                 }
             }
-            assertEquals(listOf("Piwi", "Run with Piwi", "Verify ×3 with Piwi"), offered(inside))
-            assertEquals(emptyList<String>(), offered(outside))
+            assertEquals(listOf("Piwi", "Run with Piwi", "Verify ×3 with Piwi"), offered(e2e, "test('pays'"))
+            assertEquals(emptyList<String>(), offered(e2e, "test.describe"))
+            assertEquals(listOf(3, 2), asked)
+            assertEquals(emptyList<String>(), offered(other, "test('pays'"))
+            assertEquals("a file outside every config's folder asks nothing", listOf(3, 2), asked)
+            assertEquals(emptyList<com.intellij.openapi.actionSystem.AnAction>(), PiwiRunLineMarkerActions().getChildren(null).toList())
         } finally {
-            config.delete()
-            inside.delete()
-            outside.delete()
+            PiwiRunLineMarkerActions.testAt = testAt
+            FileUtil.delete(e2e)
+            FileUtil.delete(other)
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshIoFiles(listOf(e2e, other))
             service.searchPlaywright()
         }
     }
 
-    /** Piwi test results on the Gutter Icons page is the switch of Piwi's result icon. */
+    /** Piwi test results on the Gutter Icons page is the switch of Piwi's result icon, kept under its own id. */
     fun testPiwisResultIconIsSwitchedOnTheGutterIconsPage() {
         val providers = com.intellij.codeInsight.daemon.LineMarkerProviders.getInstance()
             .allForLanguage(com.intellij.lang.javascript.JavascriptLanguage.INSTANCE)
         assertTrue(providers.any { it is PiwiTestResultsGutter })
+        assertEquals("piwi.testResults", PiwiTestResultsGutter().id)
         val settings = com.intellij.codeInsight.daemon.LineMarkerSettings.getSettings()
         assertTrue(PiwiTestResultsGutter.shown())
         try {
@@ -649,6 +665,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             settings.setEnabled(PiwiTestResultsGutter(), true)
         }
+        assertTrue(PiwiTestResultsGutter.shown())
     }
 
     /** New offers a recorded Playwright test on a folder of a Playwright config, and on no other folder. */

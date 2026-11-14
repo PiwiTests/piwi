@@ -156,9 +156,10 @@ staying: `PiwiTestResultsGutter` (`PiwiRunLineMarker.kt`) is a `LineMarkerProvid
 registered for the page to list it, and the annotator reads its switch (`LineMarkerSettings`). The IDE's own run icon
 on a test (`JSTestRunLineMarkersProvider`) lists `Piwi.RunLineMarker` in its menu
 (`JSTestRunLineMarkersAdditionalActionGroup`): `PiwiRunLineMarkerActions` reads the test's element from
-`Location.DATA_KEY`, which the platform's `LineMarkerActionWrapper` sets for every action of that menu, and offers
-**Run with Piwi** and **Verify ×3 with Piwi** on its line (`TEST_LINE`) in a spec under a config's folder, so a test
-with no Piwi result yet runs with Piwi from its line too.
+`Location.DATA_KEY`, which the platform's `LineMarkerActionWrapper` sets for the group's `getChildren`, and offers
+**Run with Piwi** and **Verify ×3 with Piwi** on its line (`TEST_LINE`) in a spec under a config's folder, once
+`piwi/testAt` finds a test there (300 ms at most): the menu is every JS test runner's, and a describe's line holds none.
+With the result icon off, its list of the test's actions goes with it.
 
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,

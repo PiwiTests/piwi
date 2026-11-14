@@ -234,6 +234,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
   `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI run tab, the CI positions).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
+- `PiwiRunLineMarker.kt`: Piwi's entries in the IDE run icon's menu, and the Gutter Icons switch of the result icon.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
 - `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.

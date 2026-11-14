@@ -316,8 +316,8 @@ export function checkoutPage({ coupon = '' } = {}) {
 }
 
 /**
- * Writes the project as `acme-mugs` under `parent`, with this repository's Playwright, and commits it, so the run's commit names files the editor can
- * read. Returns the project's path and that commit.
+ * Writes the project as `acme-mugs` under `parent`, with this repository's Playwright, and commits it, so the run's
+ * commit names files the editor can read. Returns the project's path and that commit.
  */
 export function writeWorkspace(parent) {
   const workspace = path.join(parent, 'acme-mugs');
@@ -325,8 +325,7 @@ export function writeWorkspace(parent) {
     fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true });
     fs.writeFileSync(path.join(workspace, file), text);
   }
-  // This repository's Playwright, copied, not linked: the recorder takes only a Playwright whose real path is in the
-  // project's node_modules, and a JetBrains IDE draws its run icon on a test only with the real package.
+  // This repository's Playwright, copied, not linked: the project's own, as the recorder and the IDEs' run icons read it.
   for (const name of ['@playwright/test', 'playwright', 'playwright-core']) {
     fs.cpSync(path.join(repoRoot, 'node_modules', name), path.join(workspace, 'node_modules', name), {
       recursive: true,

@@ -12,14 +12,16 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import javax.swing.Icon
 
 /**
- * **Run with Piwi** and **Verify ×3 with Piwi** in the menu of the IDE's own run icon on a test
+ * **Run with Piwi** and **Verify ×3 with Piwi** in the menu of the IDE's own run icon
  * (`JSTestRunLineMarkersAdditionalActionGroup`), acting on the line the icon stands on (`Location.DATA_KEY`), in a spec
- * under one of the project's Playwright config folders: a test with no Piwi result yet runs with Piwi from its line too.
+ * under one of the project's Playwright config folders, on a line where the service finds a `test(…)` call of
+ * Playwright's (`piwi/testAt`): never on a describe's line nor in a spec another runner gives its `test`.
  */
 class PiwiRunLineMarkerActions : ActionGroup(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -30,10 +32,11 @@ class PiwiRunLineMarkerActions : ActionGroup(), DumbAware {
         val psiFile = element.containingFile ?: return EMPTY_ARRAY
         val file = psiFile.virtualFile ?: return EMPTY_ARRAY
         val service = project.service<PiwiProjectService>()
-        val path = runCatching { file.toNioPath() }.getOrNull()
+        val path = runCatching { file.toNioPath() }.getOrNull() ?: return EMPTY_ARRAY
         if (!Glue.isSpecFile(file.name) || !Glue.inConfigDirs(path, service.playwrightConfigDirs())) return EMPTY_ARRAY
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return EMPTY_ARRAY
         val line = document.getLineNumber(element.textRange.startOffset)
+        if (testAt(project, path.toUri().toString(), line)?.location == null) return EMPTY_ARRAY
         val onLine = { builder: com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder ->
             builder.add(TEST_LINE, line)
             Unit
@@ -45,6 +48,17 @@ class PiwiRunLineMarkerActions : ActionGroup(), DumbAware {
         if (actions.isEmpty()) return EMPTY_ARRAY
         return arrayOf(Separator.create("Piwi"), *actions.toTypedArray())
     }
+
+    companion object {
+        /** How long the run icon's menu waits for the service to say a line holds a test. */
+        private const val TEST_AT_MILLIS = 300L
+
+        /** `piwi/testAt` at the start of a line, which `PiwiPluginTest` replaces. */
+        @Volatile
+        internal var testAt: (Project, String, Int) -> TestAtResult? = { project, uri, line ->
+            project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, 0))?.awaitCancellably(TEST_AT_MILLIS)
+        }
+    }
 }
 
 /**
@@ -52,6 +66,9 @@ class PiwiRunLineMarkerActions : ActionGroup(), DumbAware {
  * `PiwiTestAnnotator` draws and reads it for. It marks nothing itself.
  */
 class PiwiTestResultsGutter : LineMarkerProviderDescriptor() {
+    /** The key the IDE keeps the switch under, whatever this class is called. */
+    override fun getId(): String = "piwi.testResults"
+
     override fun getName(): String = "Piwi test results"
 
     override fun getIcon(): Icon = PiwiIcons.outcome("passed")

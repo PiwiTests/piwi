@@ -1773,6 +1773,20 @@ describe('the Piwi language server', () => {
       fs.rmSync(path.join(dir, 'tests/unread.spec.ts'));
     }
   });
+
+  test('finds no test in a spec another runner gives its test, beside the suite', async () => {
+    write(
+      'tests/unit.test.ts',
+      "import { test, expect } from 'vitest';\n\ntest('adds', () => {\n  expect(1 + 1).toBe(2);\n});\n",
+    );
+    try {
+      expect(
+        await client.sendRequest('piwi/testAt', { uri: uri('tests/unit.test.ts'), line: 2, character: 2 }),
+      ).toEqual({ test: null, spec: null, location: null });
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/unit.test.ts'));
+    }
+  });
 });
 
 describe('the test tree', () => {
