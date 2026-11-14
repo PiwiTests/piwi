@@ -1394,6 +1394,62 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
+    /**
+     * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
+     * actions, then its evidence and its context for an agent, a separator between groups; either click opens them.
+     */
+    fun testATestsResultIconOffersTheServicesActionsInTheirGroups() {
+        myFixture.configureByText("cart.spec.ts", "test('adds', async () => {});\n")
+        val at = myFixture.editor.document.createRangeMarker(0, 0)
+        fun command(title: String, id: String) = PiwiCommand(title, id, emptyList())
+        val line = SummaryLine(
+            0,
+            "failing in run #124",
+            command("Open in dashboard", "piwi.openInDashboard"),
+            "failed",
+            testCaseId = 1,
+            actions = listOf(
+                TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
+                TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
+                TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
+                TestAction(
+                    "evidence",
+                    "Evidence",
+                    null,
+                    "Open in dashboard",
+                    PiwiCommand("Open in dashboard", "piwi.openInDashboard", listOf("http://piwi/test-cases/1")),
+                ),
+                TestAction("agent", "Agent", null, "Copy context for agent", command("Copy context for agent", "piwi.copyAgentContext")),
+            ),
+        )
+        val gutter = PiwiTestAnnotator.TestResultGutter(project, line, "file:///w/cart.spec.ts", at)
+        val children = gutter.popupMenuActions!!.getChildren(null)
+        val entries = children.map {
+            if (it is com.intellij.openapi.actionSystem.Separator) "— ${it.text.orEmpty()}" else it.templatePresentation.text
+        }
+        // Each group after a separator with the service's words.
+        assertEquals(
+            listOf(
+                "Run with Piwi",
+                "Verify ×3 with Piwi",
+                "— Evidence",
+                "Open the trace",
+                "Open in dashboard",
+                "— Agent",
+                "Copy context for agent",
+            ),
+            entries,
+        )
+        // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
+        val manager = ActionManager.getInstance()
+        fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
+        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(1), registered(4)))
+        // A left click opens the same list, never the browser, while the IDE indexes too.
+        assertTrue(gutter.isNavigateAction)
+        assertTrue(gutter.clickAction is com.intellij.openapi.project.DumbAware)
+        assertEquals(PiwiIcons.TRACE, PiwiTestAnnotator.testActionIcon("piwi.openTrace"))
+    }
+
     /** The service the plugin bundles, started with the descriptor's command line, answers in the protocol classes. */
     fun testTheBundledServiceAnswersThroughTheDescriptor() {
         val stub = StubInstance()

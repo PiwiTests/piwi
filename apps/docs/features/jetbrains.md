@@ -67,14 +67,13 @@ line** on the debugger's Show Execution Point key:
 - **Code Vision** shows the lines above files, locators and failing lines, a line's entries side by side (a failing
   line's reason, **Run this test**, **Screenshot** and **Trace**), up to the number the IDE's Code Vision settings show
   per line (five by default), in a group named Piwi under **Settings → Editor → Inlay Hints → Code Vision**, where they
-  can be moved or hidden; each test's result is in the gutter, and a click on its icon opens the test in the dashboard.
-  Its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own
-  runs do.
-- **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
-  icon for its state, and the error color for a new failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
+  can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
+  **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, a failure's trace
+  and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
+- **[The status bar](./editor-status-bar)** item has an icon for the run's state, and the error color for a new
+  failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
-  way. A click opens a menu of the actions, led by what the item calls for:
-  [the status bar](./editor-status-bar). While a run is [shared live](./share-live), the menu opens its page,
+  way. While a run is [shared live](./share-live), its menu opens the run's page,
   copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each

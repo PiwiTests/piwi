@@ -5,6 +5,14 @@
  * unsaved changes break. Pure: the language server turns these into
  * diagnostics, quick fixes, hovers and summary lines.
  */
+import type {
+  AgentContextParams,
+  PiwiCommand,
+  RunTestsArgs,
+  SummaryLine,
+  TestAction,
+  TraceParams,
+} from './protocol.js';
 import { extractDiffAnchors, type DiffAnchor, type DiffFile, type DiffHunk } from '@piwitests/core/diff-anchors';
 import {
   predictLocatorBreaks,
@@ -958,3 +966,84 @@ export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLab
     ],
   };
 }
+
+/**
+ * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run and Verify ×3 at the test's line; the
+ * failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context for an agent;
+ * the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ */
+export function testActions(
+  uri: string,
+  relative: string,
+  line: number,
+  testCaseId: number,
+  open: PiwiCommand,
+  failed: { executionId: number; screenshot: unknown; traces: unknown[] } | null,
+  lab: SummaryLine[],
+): TestAction[] {
+  const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
+  const actions: Array<Omit<TestAction, 'section'>> = [
+    {
+      group: 'run',
+      kind: 'run',
+      title: 'Run with Piwi',
+      command: {
+        title: 'Run with Piwi',
+        command: 'piwi.runTests',
+        arguments: [{ uri, testIds: [testCaseId] } satisfies RunTestsArgs],
+      },
+    },
+    {
+      group: 'run',
+      kind: 'verify',
+      title: 'Verify ×3 with Piwi',
+      command: {
+        title: 'Verify ×3 with Piwi',
+        command: 'piwi.runTests',
+        arguments: [{ uri, testIds: [], locations: [`${relative}:${line + 1}`], repeat: 3 } satisfies RunTestsArgs],
+      },
+    },
+    ...(evidence && failed?.traces.length
+      ? [
+          {
+            group: 'evidence' as const,
+            title: 'Open the trace',
+            command: { title: 'Open the trace', command: 'piwi.openTrace' as const, arguments: [evidence] },
+          },
+        ]
+      : []),
+    ...(evidence && failed?.screenshot
+      ? [
+          {
+            group: 'evidence' as const,
+            title: 'Open the screenshot',
+            command: { title: 'Open the screenshot', command: 'piwi.openScreenshot' as const, arguments: [evidence] },
+          },
+        ]
+      : []),
+    { group: 'evidence', title: 'Open in dashboard', command: open },
+    ...(evidence
+      ? [
+          {
+            group: 'agent' as const,
+            title: 'Copy context for agent',
+            command: {
+              title: 'Copy context for agent',
+              command: 'piwi.copyAgentContext' as const,
+              arguments: [evidence satisfies AgentContextParams],
+            },
+          },
+        ]
+      : []),
+    ...lab.slice(1).flatMap((l) => (l.command ? [{ group: 'lab' as const, title: l.title, command: l.command }] : [])),
+  ];
+  return actions.map((a) => ({ ...a, section: TEST_ACTION_SECTIONS[a.group] }));
+}
+
+/** The words of each group of a test's actions, on the separator before it (`TestAction.section`). */
+const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
+  run: '',
+  evidence: 'Evidence',
+  agent: 'Agent',
+  lab: 'Flake Lab',
+};

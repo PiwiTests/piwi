@@ -268,6 +268,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiCiRuns>().heard(session)
     }
 
+    /** The line of the runs the status bar item shows. */
+    @JsonNotification("piwi/runLineChanged")
+    fun runLineChanged(params: RunLineParams) {
+        project.service<PiwiRunSessions>().lineChanged(params.line)
+    }
+
     @JsonNotification("piwi/shareWindowChanged")
     fun shareWindowChanged(params: ShareWindowParams) {
         project.service<PiwiRunSessions>().windowSharedChanged(params.on)

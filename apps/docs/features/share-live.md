@@ -19,7 +19,7 @@ whose project enables live view, and connect to an editor or the desktop app for
 
 | Where | Share | Stop |
 |---|---|---|
-| VS Code | **Piwi: Share the run live on the team instance**, or the status bar's broadcast icon | **Piwi: Stop sharing the run live**, or **Stop sharing** in the menu of the status bar's **Live**, beside **Open the run page** and **Copy the run page's link**, after a confirmation |
+| VS Code | **Piwi: Share the run live on the team instance**, or the Piwi item's menu | **Piwi: Stop sharing the run live**, or **Stop sharing** in the Piwi item's menu under **Shared live**, beside **Open the run page** and **Copy the run page's link**, after a confirmation |
 | JetBrains IDEs | **Tools → Piwi → Share the run live on the team instance** | **Tools → Piwi → Stop sharing the run live**, or **Stop sharing the run** in the status bar item's menu, after a confirmation |
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing**, after a confirmation |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing…**, after a confirmation |
@@ -61,7 +61,7 @@ $env:PIWI_SHARE_LIVE='1'; npx playwright test
 **Piwi: Share this window's runs live until I stop** in VS Code, **Tools → Piwi → Share this project's runs live
 until I stop** in a JetBrains IDE, and **Share this editor window's runs** under an editor's run in Piwi Picker's Runs
 window share each run the window starts from then on, each one said as it is shared, until you stop (**…Stop sharing
-this window's runs live**, the menu of the status bar's **Live · this window**, or **Stop sharing this window's runs**
+this window's runs live**, **Shared live** in the Piwi item's menu, or **Stop sharing this window's runs**
 on the Runs window's line that says the window shares its runs, whatever runs it lists) or close the window. A run's
 own **Stop sharing** in the Runs window stops that run alone.
 

@@ -13,10 +13,13 @@ how far a run in progress is, for the Playwright config of the file you are edit
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
-is in progress, the item counts it instead (`run #124 · 4 of 9 · 1 failed`) and returns to the latest run when it
-ends. A run you started keeps the item whichever Playwright config the active file belongs to, and VS Code's Testing
-view shows a run that is not yours with its tests' results as they end, never as your tests running. The editor follows the two newest CI runs of the branch, through the connection to the instance it already
-holds, and while it follows one, the run's reporter streams the call each test is at.
+is in progress, the item says where its test stands stopped or the call a paused one waits in, that it is shared live,
+and how far it is (`Piwi: held at its failure · checkout.page.ts:12 · run #124 · 4 of 9 · 1 failed`), in the same
+words in both editors, and returns to the latest run when it ends. A test that waits for you marks the item until you
+answer it: its background turns yellow in VS Code, and its icon takes a dot in a JetBrains IDE. A run you started keeps the item whichever Playwright config the active file belongs to, and VS Code's Testing
+view shows a run that is not yours with its tests' results as they end, never as your tests running. The editor follows
+the two newest CI runs of the branch, through the connection to the instance it already holds, and while it follows
+one, the run's reporter streams the call each test is at.
 
 With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder
 that holds it, and follows you from file to file; outside every config folder, it shows the first connected config.
@@ -25,7 +28,9 @@ counts, the baseline, your local runs since, the run in progress, and when the r
 while the event stream is connected, `· read every minute` without it).
 
 In VS Code, a click opens **Piwi: Open the Piwi menu**, in the JetBrains menu's sections, the item's own action first:
-Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches.
+Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches,
+or goes to the stopped line while a test is stopped. The run's controls and its share are in the menu while a run is
+live.
 When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload Piwi** for an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 

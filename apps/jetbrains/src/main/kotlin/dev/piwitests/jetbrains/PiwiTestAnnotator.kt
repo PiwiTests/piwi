@@ -14,10 +14,13 @@ import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
+import com.intellij.ui.awt.RelativePoint
 import javax.swing.Icon
 
 /**
@@ -87,10 +90,12 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     }
 
     /**
-     * A test's latest result in the gutter; a click runs what its line names (it opens the test in the dashboard), and
-     * the right-click menu runs the test with Piwi, at the line its `test(…)` call stands on now (`at`).
+     * A test's latest result in the gutter; either click opens what the service lists for the test
+     * (`SummaryLine.actions`): Run and Verify ×3 as the registered actions, acting at the line its `test(…)` call stands
+     * on now (`at`), then its evidence, its context for an agent and its Flake Lab commands, a separator between groups.
+     * Without a list, a click runs what its line names (it opens the test in the dashboard).
      */
-    private class TestResultGutter(
+    internal class TestResultGutter(
         private val project: Project,
         private val line: SummaryLine,
         private val uri: String?,
@@ -100,12 +105,30 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
 
         override fun getTooltipText(): String = Glue.testResultTooltip(line.title)
 
-        override fun isNavigateAction(): Boolean = line.command != null
+        override fun isNavigateAction(): Boolean = line.command != null || !line.actions.isNullOrEmpty()
 
-        override fun getClickAction(): AnAction? = line.command?.let { command ->
-            object : AnAction() {
-                override fun actionPerformed(e: AnActionEvent) {
-                    PiwiCommands.execute(project, command.command, command.arguments.orEmpty())
+        override fun getClickAction(): AnAction? {
+            val actions = getPopupMenuActions()
+            if (!line.actions.isNullOrEmpty() && actions != null) {
+                return object : DumbAwareAction() {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+                            null,
+                            actions,
+                            e.dataContext,
+                            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                            true,
+                        )
+                        val mouse = e.inputEvent as? java.awt.event.MouseEvent
+                        if (mouse != null) popup.show(RelativePoint(mouse)) else popup.showInBestPositionFor(e.dataContext)
+                    }
+                }
+            }
+            return line.command?.let { command ->
+                object : DumbAwareAction() {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        PiwiCommands.execute(project, command.command, command.arguments.orEmpty())
+                    }
                 }
             }
         }
@@ -119,12 +142,32 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 builder.add(TEST_LINE, lineNow() ?: -1)
                 Unit
             }
-            return DefaultActionGroup(
-                listOfNotNull(
-                    registeredWith("Piwi.RunTestAtCursor", "Run with Piwi", AllIcons.Actions.Execute, data = onLine),
-                    registeredWith("Piwi.VerifyTestAtCursor", "Verify ×3 with Piwi", AllIcons.Actions.Rerun, data = onLine),
-                ),
-            )
+            val run = registeredWith("Piwi.RunTestAtCursor", "Run with Piwi", AllIcons.Actions.Execute, data = onLine)
+            val verify = registeredWith("Piwi.VerifyTestAtCursor", "Verify ×3 with Piwi", AllIcons.Actions.Rerun, data = onLine)
+            val listed = line.actions.orEmpty()
+            if (listed.isEmpty()) return DefaultActionGroup(listOfNotNull(run, verify))
+            val group = DefaultActionGroup()
+            listed.forEachIndexed { i, action ->
+                if (i > 0 && listed[i - 1].group != action.group) group.addSeparator(action.section.ifEmpty { null })
+                val url = action.command?.takeIf { it.command == "piwi.openInDashboard" }?.arguments?.firstOrNull() as? String
+                val entry = when {
+                    action.kind == "run" -> run
+                    action.kind == "verify" -> verify
+                    // Open in dashboard is the registered action, opening the test's page.
+                    url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
+                        it.add(DASHBOARD_URL, url)
+                    }
+                    else -> action.command?.let { command ->
+                        object : DumbAwareAction(action.title, null, testActionIcon(command.command)) {
+                            override fun actionPerformed(e: AnActionEvent) {
+                                PiwiCommands.execute(project, command.command, command.arguments.orEmpty())
+                            }
+                        }
+                    }
+                }
+                if (entry != null) group.add(entry)
+            }
+            return group
         }
 
         override fun equals(other: Any?): Boolean = other is TestResultGutter && other.line == line && other.uri == uri
@@ -133,6 +176,16 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     }
 
     companion object {
+        /** The glyph of a test action that runs a command, by its command, as the Piwi tool window draws each. */
+        fun testActionIcon(command: String?): Icon = when (command) {
+            "piwi.openInDashboard" -> PiwiIcons.OPEN_IN_DASHBOARD
+            "piwi.openTrace" -> PiwiIcons.TRACE
+            "piwi.openScreenshot" -> PiwiIcons.SCREENSHOT
+            "piwi.copyAgentContext" -> AllIcons.Actions.Copy
+            "piwi.desktopJob" -> PiwiIcons.REPRODUCE
+            else -> AllIcons.Actions.Execute
+        }
+
         /** The background of a failing test: **Settings → Editor → Color Scheme → Piwi**, light red by default. */
         val FAILING_TEST: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_FAILING_TEST")
 

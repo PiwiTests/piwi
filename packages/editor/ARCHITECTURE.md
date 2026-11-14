@@ -432,7 +432,11 @@ On a spec, `piwi/fileSummary` gives each test's line:
   `apps/application/tests/unit/status-words-drift.test.ts`), then the pass rate, quarantine, flaky score and selections;
 - the test's id (`testCaseId`), which VS Code's gutter hover runs;
 - the line its call ends on (`endLine`, found with `callEndLine`), for the background the clients draw over a failing
-  test.
+  test;
+- what its gutter offers (`actions`, `testActions` in `src/analysis.ts`), in its groups, each named for the separator
+  before it (`section`): Run with Piwi and Verify ×3 with Piwi, which name
+  the client's own action at the test's line (`TestAction.kind`), the failure's trace and screenshot when it failed and
+  the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands.
 
 `piwi/testAt` answers, for a position of a spec:
 
@@ -555,6 +559,14 @@ keeps that command (`RefWatch.carried`), the run's counts, and:
   notifications' scope is the editor's runs alone.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+
+Both clients' status items show one line of the runs the editor follows, composed here (`runLine` in
+`src/run-line.ts`, `piwi/runLineChanged`, sent after a session's change is heard and when the window's share changes,
+only when it differs): where a test stands stopped (`held at its failure · checkout.page.ts:12`, `2 tests stopped`), or
+the call a pausing test waits in, then the share and its views, then how far the runs are (`run #78 · 3 of 9 · 1
+failed`, `countWords`), with the state the client draws a glyph for, the stops that wait for the person
+(`RunLine.calls`), which the item marks until they are answered, and when a pausing test began waiting
+(`RunLine.since`), which the clients count.
 
 A stop calls for the person's attention (`RunStop.calls`, `RunSessions.view`) when it is a test held at its failure
 or stopped at `page.pause()` in a run launched here: never a desktop app's job in its own checkout (its window calls),

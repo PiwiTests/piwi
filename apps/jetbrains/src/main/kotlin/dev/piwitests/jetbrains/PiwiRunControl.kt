@@ -615,6 +615,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         service.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
+                    // A service started again sends its line once a run says one.
+                    line = null
                     synchronized(lock) {
                         sessions = emptyMap()
                         // A service started again holds none of the IDE's breakpoints.
@@ -1816,6 +1818,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The service says whether this project's runs are shared live: the status bar says so. */
     fun windowSharedChanged(on: Boolean) {
         windowShared = on
+        changed()
+    }
+
+    /** The line of the runs the status bar item shows, as the service composes it (`piwi/runLineChanged`). */
+    @Volatile internal var line: RunLine? = null
+        private set
+
+    fun lineChanged(line: RunLine?) {
+        this.line = line
         changed()
     }
 

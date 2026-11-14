@@ -36,6 +36,10 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  RUN_LINE_NOTIFICATION,
+  type RunLine,
+  type RunLineParams,
+  type TestAction,
   CI_SESSION_NOTIFICATION,
   STOP_CODE_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
@@ -168,8 +172,10 @@ import {
   refreshingText,
   OwnRunCounts,
   serviceDownView,
-  heldStops,
-  heldText,
+  runLineText,
+  testActionPicks,
+  testActionsAt,
+  testLineAt,
   failingRuns,
   failureRunArgs,
   runVerdict,
@@ -215,7 +221,7 @@ import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
-import { progressItem, stopRunAnswer } from './run-control';
+import { escapedMarkdown, progressItem, STOP_ACTIONS, stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
 import { registerCiRuns } from './ci-view';
 import {
@@ -794,6 +800,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
+  /** The line of the runs the service last sent (`piwi/runLineChanged`), which the item shows. */
+  let runLine: RunLine | null = null;
+  /** Draws the item again each second while a pausing test waits in a call, for how long it has. */
+  let ticking: ReturnType<typeof setInterval> | null = null;
+  context.subscriptions.push({ dispose: () => ticking && clearInterval(ticking) });
   const ownRunCounts = new OwnRunCounts();
   /** The flaky tests the failures view lists for a config, once the view exists. */
   let flakyListed: (root: string) => number = () => 0;
@@ -814,19 +825,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           (ref, instance) => ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
           (root) => flakyListed(root),
         );
-    // The window's runs, as their own processes count them, take the item's text and lead its tooltip: one count of
-    // a run, the JetBrains plugin's single item's.
+    // The service's line of the window's runs takes the item's text, and their count leads its tooltip: one line of
+    // the runs, the JetBrains plugin's single item's.
     const sessions = runSessions();
     const counted = serviceDown ? null : progressItem(new Map(sessions.map((s) => [s.ref, s])));
-    const text = counted ? counted.text : view.text;
-    statusItem.text = refreshing
-      ? refreshingText(text)
-      : heldText(text, counted || view.ownLive ? heldStops(sessions) : null);
-    // How every run of the window starts, with the link that changes it, wherever a config is found.
-    const own = counted ? `${counted.tooltip}\n\n---\n\n${view.tooltip}` : view.tooltip;
+    const line = serviceDown ? null : runLine;
+    const text = line ? runLineText(line, Date.now()) : view.text;
+    statusItem.text = refreshing && !line ? refreshingText(text) : text;
+    // The runs' line and their count lead the tooltip; how every run of the window starts, with the link that changes
+    // it, ends it wherever a config is found.
+    const said = line ? `${escapedMarkdown(line.text)}${line.calls ? ' · a test waits for you' : ''}` : null;
+    const windowShared = contextKey('piwi.windowSharedLive') ? "This window's runs are shared live." : null;
+    const runsSaid = [said, counted?.tooltip, windowShared].filter(Boolean).join('\n\n');
+    const own = runsSaid ? `${runsSaid}\n\n---\n\n${view.tooltip}` : view.tooltip;
     const tooltip = new vscode.MarkdownString(view.action === 'none' ? own : `${own}\n\n${runStartLine(runChoices())}`);
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
+    // A screen reader hears the line, and a test that waits, which the background alone shows.
+    statusItem.accessibilityInformation = line
+      ? { label: `${line.text}${line.calls ? ', a test waits for you' : ''}` }
+      : undefined;
     statusUrl = view.url;
     liveUrl = view.liveUrl;
     setContextKey('piwi.liveRun', !!liveUrl);
@@ -834,9 +852,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuFlakyRoot = view.flakyRoot ?? null;
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
-    // A run the item counts is never the alarm.
-    statusItem.backgroundColor =
-      view.error && !counted ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+    // A stop that waits for the person marks the item until it is answered; a run the item counts is never the alarm.
+    statusItem.backgroundColor = line?.calls
+      ? new vscode.ThemeColor('statusBarItem.warningBackground')
+      : view.error && !line
+        ? new vscode.ThemeColor('statusBarItem.errorBackground')
+        : undefined;
     statusItem.show();
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
@@ -1351,6 +1372,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           stoppable: !!contextKey('piwi.runStoppable'),
           page: !!contextKey('piwi.runPage'),
           watchable: !!contextKey('piwi.runWatchable'),
+          endable: !!contextKey('piwi.runCanEnd'),
+          shared: !!contextKey('piwi.runSharedLive') || !!contextKey('piwi.windowSharedLive'),
+          shareable: !!contextKey('piwi.runLiveOffered'),
+          code: STOP_ACTIONS.some((a) => !!contextKey(a.key)),
         },
         failing: contextKey('piwi.failuresView') === 'failures',
         flakyRoot: menuFlakyRoot,
@@ -1505,6 +1530,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     vscode.commands.registerCommand('piwi.runTestAtCursor', (at?: unknown) => runTestAt(at)),
     vscode.commands.registerCommand('piwi.verifyTestAtCursor', (at?: unknown) => runTestAt(at, VERIFY_REPEAT)),
+    // A test's actions from its gutter (the Testing view's, or the line number's with the view off), in the service's
+    // order: Run and Verify ×3 as the commands at the cursor run them, at the test's line; every other its command.
+    vscode.commands.registerCommand('piwi.testActions', async (arg?: unknown) => {
+      // A menu's item is the test the command acts on; the palette's, the cursor's.
+      const editor = vscode.window.activeTextEditor;
+      const at =
+        arg === undefined
+          ? editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line }
+          : testActionsAt(arg);
+      if (!at) {
+        void vscode.window.showInformationMessage('Piwi: choose a test to act on.');
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(at.uri)).then(
+        (d) => d,
+        () => null,
+      );
+      const summary = document ? await summaryOf(document) : null;
+      const line = summary ? testLineAt(summary, at.line) : null;
+      if (!line?.actions) {
+        void vscode.window.showInformationMessage('Piwi: no test Piwi knows is on this line.');
+        return;
+      }
+      type Item = vscode.QuickPickItem & { action?: TestAction };
+      const items: Item[] = testActionPicks(line.actions).map((p) =>
+        'separator' in p
+          ? { label: p.separator, kind: vscode.QuickPickItemKind.Separator }
+          : { label: p.action.title, action: p.action },
+      );
+      const picked = await vscode.window.showQuickPick(items, { title: 'Piwi', placeHolder: line.title });
+      const action = picked?.action;
+      if (!action) return;
+      const here = { uri: at.uri, line: line.line };
+      if (action.kind === 'run') await vscode.commands.executeCommand('piwi.runTestAtCursor', here);
+      else if (action.kind === 'verify') await vscode.commands.executeCommand('piwi.verifyTestAtCursor', here);
+      else await vscode.commands.executeCommand(action.command.command, ...action.command.arguments);
+    }),
     vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runSpec(target)),
     vscode.commands.registerCommand('piwi.openInDashboard', async (target?: string | FailureNode) => {
       const url = typeof target === 'string' ? target : target?.url;
@@ -1899,6 +1961,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         );
       }
     }),
+    // The line of the runs the item shows, drawn each second while a pausing test waits in a call.
+    lc.onNotification(RUN_LINE_NOTIFICATION, (params: RunLineParams) => {
+      runLine = params.line;
+      if (runLine?.since && !ticking) ticking = setInterval(render, 1000);
+      if (!runLine?.since && ticking) {
+        clearInterval(ticking);
+        ticking = null;
+      }
+      render();
+    }),
     // A run started here: a worker started or ended a test, stopped or went on.
     lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => {
       runControl.heard(session);
@@ -1914,6 +1986,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) {
+        // A service started again sends its line once a run says one.
+        runLine = null;
+        if (ticking) clearInterval(ticking);
+        ticking = null;
+        render();
         runControl.clear();
         ciRuns.clear();
         runControl.ciChanged(ciRuns.sessions());

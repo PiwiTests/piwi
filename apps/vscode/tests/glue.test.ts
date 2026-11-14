@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type {
+  TestAction,
   CoverageResult,
   DesktopJobUpdate,
   DesktopResult,
@@ -10,7 +11,6 @@ import type {
   FileEdit,
   LiveRun,
   RunEnded,
-  RunSession,
   RunStatusResult,
   SpecTest,
   StatusResult,
@@ -27,8 +27,8 @@ import {
   isFlakyGroup,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
-  heldStops,
-  heldText,
+  RUN_LINE_GLYPHS,
+  runLineText,
   NOT_CONNECTED,
   notConnectedNotice,
   DOCUMENT_PATTERN,
@@ -79,6 +79,9 @@ import {
   testDecorations,
   testHoverMarkdown,
   testLineArg,
+  testActionsAt,
+  testLineAt,
+  testActionPicks,
   TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
@@ -158,6 +161,10 @@ describe('statusMenu', () => {
       stoppable: false,
       page: false,
       watchable: false,
+      endable: false,
+      shared: false,
+      shareable: false,
+      code: false,
     },
     failing: false,
     flakyRoot: null,
@@ -207,15 +214,25 @@ describe('statusMenu', () => {
       stoppable: true,
       page: true,
       watchable: true,
+      endable: true,
+      shared: false,
+      shareable: true,
+      code: true,
     };
+    // Go to the stopped line first: the state's action, which Enter takes.
     expect(commands(statusMenu({ ...idle, run, failing: true, flakyRoot: '/ws/app' }))).toEqual([
+      'piwi.showStop',
       'piwi.refreshRun',
       '— Run control',
       'piwi.resumeRun',
       'piwi.stepRun',
+      'piwi.finishRun',
+      'piwi.endTest',
       'piwi.showPausedPage',
+      'piwi.codeAtStop',
       'piwi.watchWorker',
       'piwi.openRunPage',
+      'piwi.shareRunLive',
       'piwi.stopRun',
       '— Dashboard',
       'piwi.rerunFailing',
@@ -231,7 +248,13 @@ describe('statusMenu', () => {
     const held = commands(statusMenu({ ...idle, run: { ...run, failed: true, stoppable: false } }));
     expect(held).toContain('piwi.resumeRun');
     expect(held).not.toContain('piwi.stepRun');
+    expect(held).not.toContain('piwi.finishRun');
     expect(held).not.toContain('piwi.stopRun');
+    // A shared run opens its Live menu in place of Share live, and the window's share has it with no run live.
+    const shared = commands(statusMenu({ ...idle, run: { ...run, shared: true } }));
+    expect(shared).toContain('piwi.liveMenu');
+    expect(shared).not.toContain('piwi.shareRunLive');
+    expect(commands(statusMenu({ ...idle, run: { ...idle.run, shared: true } }))).toContain('piwi.liveMenu');
   });
 
   test('opens the flaky tests of the item’s config, and the latest run only while its page is known', () => {
@@ -975,6 +998,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: failing in run #124 · passed 1 of 4 runs',
         dashboardUrl: 'http://piwi/test-cases/9',
         testCaseId: 9,
+        actions: false,
       },
       {
         status: 'passed',
@@ -984,6 +1008,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: passed in its latest run · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
+        actions: false,
       },
     ]);
   });
@@ -1002,6 +1027,7 @@ describe('the tests of a file', () => {
         hover: '**Piwi**: running in your run #130 · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
+        actions: false,
       },
     ]);
   });
@@ -1018,14 +1044,24 @@ describe('the tests of a file', () => {
           arguments: ['http://piwi/test-cases/9'],
         },
         testCaseId: 9,
+        actions: [
+          {
+            group: 'run',
+            section: '',
+            kind: 'run',
+            title: 'Run with Piwi',
+            command: { title: 'Run', command: 'piwi.runTests', arguments: [] },
+          },
+        ],
       },
     ]);
     const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
     const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
+    const more = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', line: 3 }]));
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
-      `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+      `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
     );
-    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
+    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions']);
     // A service that gives neither: the result alone.
     const [bare] = testDecorations([{ line: 3, title: 'never run', status: 'unknown' }]);
     expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: never run');
@@ -2015,6 +2051,67 @@ describe('the verdict of a run started from the editor', () => {
   });
 });
 
+describe('a test’s actions from its gutter', () => {
+  const SECTIONS = { run: '', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
+  const action = (group: TestAction['group'], title: string): TestAction => ({
+    group,
+    section: SECTIONS[group],
+    title,
+    command: { title, command: 'piwi.openInDashboard', arguments: [] },
+  });
+
+  test('act on a Testing item, the test of a message, a line number clicked, or a test line', () => {
+    const item = { uri: { toString: () => 'file:///w/a.spec.ts' }, range: { start: { line: 4 } } };
+    expect(testActionsAt(item)).toEqual({ uri: 'file:///w/a.spec.ts', line: 4 });
+    expect(testActionsAt({ test: item, message: {} })).toEqual({ uri: 'file:///w/a.spec.ts', line: 4 });
+    expect(testActionsAt({ uri: { toString: () => 'file:///w/a.spec.ts' }, lineNumber: 7 })).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      line: 6,
+    });
+    expect(testActionsAt({ uri: 'file:///w/a.spec.ts', line: 2 })).toEqual({ uri: 'file:///w/a.spec.ts', line: 2 });
+    expect(testActionsAt(undefined)).toBeNull();
+    // A spec's or a describe block's item has no range: it names no test.
+    expect(testActionsAt({ uri: { toString: () => 'file:///w/a.spec.ts' }, range: undefined })).toBeNull();
+  });
+
+  test('are the test’s whose call is at the line, or whose body holds it', () => {
+    const actions = [action('run', 'Run with Piwi')];
+    const summary = {
+      file: null,
+      lines: [
+        { line: 2, title: 'flaky 18%' },
+        { line: 2, title: 'passed', status: 'passed' as const, endLine: 6, actions },
+      ],
+    };
+    expect(testLineAt(summary, 2)?.title).toBe('passed');
+    expect(testLineAt(summary, 5)?.title).toBe('passed');
+    expect(testLineAt(summary, 9)).toBeNull();
+  });
+
+  test('list each group after a separator with the service’s words, none before the first whatever its group', () => {
+    expect(testActionPicks([action('evidence', 'Open in dashboard')])).toEqual([
+      { action: action('evidence', 'Open in dashboard') },
+    ]);
+    const picks = testActionPicks([
+      action('run', 'Run with Piwi'),
+      action('run', 'Verify ×3 with Piwi'),
+      action('evidence', 'Open the trace'),
+      action('agent', 'Copy context for agent'),
+      action('lab', 'Reproduce this flake'),
+    ]);
+    expect(picks.map((p) => ('separator' in p ? `— ${p.separator}` : p.action.title))).toEqual([
+      'Run with Piwi',
+      'Verify ×3 with Piwi',
+      '— Evidence',
+      'Open the trace',
+      '— Agent',
+      'Copy context for agent',
+      '— Flake Lab',
+      'Reproduce this flake',
+    ]);
+  });
+});
+
 describe('a locator picked at a breakpoint', () => {
   const at = { file: 'tests/login.spec.ts', line: 42 };
 
@@ -2541,47 +2638,29 @@ describe('how every run of the window starts', () => {
   });
 });
 
-describe('the status item while a run holds a stop', () => {
-  const stopped = (reason: 'breakpoint' | 'failure'): RunSession => ({
-    ref: 'ed-1',
-    root: '/w',
-    ended: false,
-    workers: [
-      {
-        worker: 0,
-        parallelIndex: 0,
-        state: 'stopped',
-        test: null,
-        takes: [],
-        watchable: false,
-        layers: false,
-        showsWindow: false,
-        pausing: false,
-        waiting: null,
-        stop: {
-          reason,
-          title: 'Click',
-          uri: 'file:///w/a.spec.ts',
-          line: 3,
-          character: 2,
-          locator: null,
-          bar: true,
-          since: '2026-10-25T10:00:00.000Z',
-        },
-      },
-    ],
+describe('the status item while runs are followed', () => {
+  test('shows the service’s line after its state’s glyph, and how long a pausing test has waited in its call', () => {
+    expect(runLineText({ text: 'Piwi: held at its failure · a.spec.ts:4', state: 'held', calls: 1 }, 0)).toBe(
+      '$(error) Piwi: held at its failure · a.spec.ts:4',
+    );
+    expect(runLineText({ text: 'Piwi: run #124 · 4 of 9 · 1 failed', state: 'running', calls: 0 }, 0)).toBe(
+      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+    );
+    const pausing = {
+      text: 'Piwi: pausing… · waits in waitForResponse',
+      state: 'pausing' as const,
+      calls: 0,
+      since: '2026-10-25T10:00:00.000Z',
+    };
+    expect(runLineText(pausing, Date.parse('2026-10-25T10:00:12.900Z'))).toBe(
+      '$(debug-pause) Piwi: pausing… · waits in waitForResponse · 12 s',
+    );
   });
 
-  test('stops spinning: the pause icon at a stop, the error icon while every stop held is a failure', () => {
-    const live = '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours';
-    expect(heldStops([])).toBeNull();
-    expect(heldStops([stopped('breakpoint')])).toBe('stop');
-    expect(heldStops([stopped('failure')])).toBe('failure');
-    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
-    expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4 of 9 · 1 failed · yours');
-    expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4 of 9 · 1 failed · yours');
-    expect(heldText(live, null)).toBe(live);
-    expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
+  test('draws a failure with the error glyph and a stop or a Pause on its way with the pause glyph', () => {
+    expect(RUN_LINE_GLYPHS.held).toBe(RUN_LINE_GLYPHS.failed);
+    expect(RUN_LINE_GLYPHS.pausing).toBe(RUN_LINE_GLYPHS.stopped);
+    expect(new Set(Object.values(RUN_LINE_GLYPHS)).size).toBe(6);
   });
 });
 

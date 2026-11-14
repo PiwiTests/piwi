@@ -15,8 +15,8 @@ export interface PiwiCommand {
   /**
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
-   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`) or
-   * `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
+   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`),
+   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`) or `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
    */
   command:
     | 'piwi.openInDashboard'
@@ -25,6 +25,7 @@ export interface PiwiCommand {
     | 'piwi.openScreenshot'
     | 'piwi.runCommand'
     | 'piwi.copyText'
+    | 'piwi.copyAgentContext'
     | 'piwi.desktopJob';
   arguments: unknown[];
 }
@@ -56,6 +57,25 @@ export interface SummaryLine {
   failure?: TestFailure;
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
+  /**
+   * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
+   * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
+   */
+  actions?: TestAction[];
+}
+
+/**
+ * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
+ * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
+ * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
+ * Verify ×3); every other action runs `command`.
+ */
+export interface TestAction {
+  group: 'run' | 'evidence' | 'agent' | 'lab';
+  section: string;
+  kind?: 'run' | 'verify';
+  title: string;
+  command: PiwiCommand;
 }
 
 /**
@@ -2165,6 +2185,34 @@ export interface ShareRunParams {
 }
 
 export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+
+/**
+ * `piwi/runLineChanged` (notification, server to client): the line both clients' status items show of the runs the
+ * editor follows (`runLine` in `src/run-line.ts`), null once none is left: where a test stands stopped, or the call a
+ * pausing test waits in, the share and how far the runs are, `Piwi: held at its failure · checkout.page.ts:12 · run
+ * #78 · 3 of 9 · 1 failed`. `state` chooses the item's glyph (a held failure's and failed runs' alike, a stop's and a Pause's alike); `calls` counts the stops that wait for the
+ * person (`RunStop.calls`), which the item marks until they are answered; `since`, while a pausing test waits in a
+ * call, is when it began, which the clients count after the call (`waits in waitForResponse · 12 s`). Sent only when
+ * it changed.
+ */
+export interface RunLineParams {
+  line: RunLine | null;
+}
+
+export interface RunLine {
+  text: string;
+  state: RunLineState;
+  calls: number;
+  since?: string;
+}
+
+/**
+ * The glyph a run line takes: a stop (`held`, every stop a held failure), a Pause on its way, a share, then how the
+ * runs go or ended (`interrupted`: stopped short, or not every one passed).
+ */
+export type RunLineState = 'held' | 'stopped' | 'pausing' | 'live' | 'running' | 'passed' | 'failed' | 'interrupted';
+
+export const RUN_LINE_NOTIFICATION = 'piwi/runLineChanged';
 
 /** `piwi/shareWindowChanged` (notification, server to client): whether this window's runs are shared live. */
 export interface ShareWindowParams {

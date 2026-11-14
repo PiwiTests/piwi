@@ -674,6 +674,7 @@ export const RUN_COMMANDS = {
   finish: 'piwi.finishRun',
   end: 'piwi.endTest',
   showPage: 'piwi.showPausedPage',
+  showStop: 'piwi.showStop',
   showBrowser: 'piwi.showBrowser',
   pick: 'piwi.pickAtStop',
   record: 'piwi.recordAtStop',
@@ -734,7 +735,7 @@ export function holdText(hold: NonNullable<RunSession['hold']>): string {
 }
 
 /** Text shown as itself in a Markdown tooltip: a folder's or a tool's name is never a link nor emphasis. */
-function escapedMarkdown(text: string): string {
+export function escapedMarkdown(text: string): string {
   return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
 }
 
@@ -1117,51 +1118,6 @@ export function progressItem(sessions: Sessions): ControlItem | null {
       `${present.length ? `\n\n${present.join('\n\n')}` : ''}`,
     markdown: true,
     command: watchable ? RUN_COMMANDS.watch : pages.length ? RUN_COMMANDS.openPage : null,
-  };
-}
-
-/**
- * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
- * and open the Live menu on a click (`liveMenu`); else a run that can be shared offers it, saying why its sharing stopped when it
- * stopped though nobody asked. None while no run can be shared: the command says why.
- */
-export function liveItem(sessions: Sessions, windowShared = false): ControlItem | null {
-  const runs = liveRunsOf(sessions);
-  const shared = runs.filter((r) => r.live.shared);
-  // While this window's runs are shared, the item says so, with or without a run, and stops it on a click.
-  if (windowShared) {
-    const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
-    return {
-      name: 'Piwi: Share live',
-      text: viewers > 0 ? `$(broadcast) Live · this window · ${viewsText(viewers)}` : '$(broadcast) Live · this window',
-      tooltip:
-        "Piwi: this window's runs are shared live, each run you start, until you stop or close the window" +
-        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to open a run page, copy its link or stop sharing.`,
-      command: RUN_COMMANDS.liveMenu,
-    };
-  }
-  if (shared.length) {
-    const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
-    const what =
-      shared.length === 1
-        ? liveText(shared[0]!.live)
-        : `${shared.length} runs shared live: ${viewers ? `${viewsText(viewers)} open` : 'nobody watches yet'}`;
-    return {
-      name: 'Piwi: Share live',
-      text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
-      tooltip: `Piwi: ${what}. Click to open ${shared.length === 1 ? 'the' : 'a'} run page, copy its link or stop sharing.`,
-      command: RUN_COMMANDS.liveMenu,
-    };
-  }
-  const shareable = runs.find((r) => !r.live.refused);
-  if (!shareable) return null;
-  const instance = liveInstance(shareable.live);
-  const offer = `Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`;
-  return {
-    name: 'Piwi: Share live',
-    text: '$(broadcast)',
-    tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
-    command: RUN_COMMANDS.shareLive,
   };
 }
 
@@ -1579,6 +1535,8 @@ export interface ControlState {
   browserShowable: boolean;
   /** A run is shared live on the team instance: Stop sharing. */
   liveShared: boolean;
+  /** A live run can be shared on the team instance and is not: Share live. */
+  liveOffered: boolean;
   /** A live run has a Hold failures to turn over. */
   holdable: boolean;
   /** A worker's reporter shows its page while its test runs: Watch a worker. */
@@ -1652,6 +1610,7 @@ export function controlState(sessions: Sessions): ControlState {
     shareable: stopsOf(sessions).some(canShare),
     browserShowable: stopsOf(sessions).some(canShowBrowser),
     liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
+    liveOffered: liveRunsOf(sessions).some((r) => !r.live.shared && !r.live.refused),
     holdable: holdableRuns(sessions).length > 0,
     watchable: watchableWorkers(sessions).length > 0,
     waiting: waitingWorkers(sessions)[0] ?? null,
@@ -1673,111 +1632,6 @@ export interface ControlItem {
   /** The tooltip is Markdown whose links run the run controls' commands. */
   markdown?: boolean;
   command: string | null;
-}
-
-/**
- * The status bar items beside the run's progress: Resume, Step, Finish and End the test while a worker is stopped,
- * with the code actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run this
- * window started is live. None without one.
- */
-export function controlItems(state: ControlState, now: number = Date.now()): ControlItem[] {
-  if (!state.active) return [];
-  const stop = state.stoppable
-    ? [{ name: 'Piwi: Stop', text: '$(debug-stop)', tooltip: 'Piwi: Stop the run', command: RUN_COMMANDS.stop }]
-    : [];
-  // The call a pausing worker's test waits in, how long it has, and End the test there.
-  const waits: ControlItem[] = [];
-  if (state.pausing && state.waiting) {
-    const { title, since, endable } = state.waiting.waiting;
-    const waited = waitedFor(since, now);
-    waits.push(
-      {
-        name: 'Piwi: Pausing',
-        text: `$(loading~spin) Pausing…${waited ? ` ${waited}` : ''}`,
-        tooltip: `Piwi: the test waits in ${title}${waited ? ` for ${waited}` : ''}, and stops once it returns`,
-        command: null,
-      },
-      {
-        key: 'give-up',
-        name: 'Piwi: End the test',
-        text: '$(circle-slash)',
-        tooltip: endable
-          ? `Piwi: End the test now: ${title} is given up, and the rest of the test skipped`
-          : `Piwi: End the test as ${title} returns: the rest of it is skipped`,
-        command: RUN_COMMANDS.end,
-      },
-    );
-  }
-  if (state.stopped) {
-    const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
-    return [
-      { name: 'Piwi: Resume', text: '$(debug-continue)', tooltip: 'Piwi: Resume', command: RUN_COMMANDS.resume },
-      // A held failure has no call to step into or finish: it goes on with Resume.
-      ...(state.failed
-        ? []
-        : [
-            {
-              name: 'Piwi: Step',
-              text: '$(debug-step-over)',
-              tooltip: 'Piwi: Step to the next call',
-              command: RUN_COMMANDS.step,
-            },
-            {
-              name: 'Piwi: Finish',
-              text: '$(debug-step-out)',
-              tooltip: 'Piwi: Finish the test without stopping at a breakpoint again',
-              command: RUN_COMMANDS.finish,
-            },
-          ]),
-      // End the test answers a stop that can end, else a call a Pause waits in.
-      ...(state.endable
-        ? [
-            {
-              name: 'Piwi: End the test',
-              text: '$(circle-slash)',
-              tooltip: 'Piwi: End the test here: the rest of it is skipped',
-              command: RUN_COMMANDS.end,
-            },
-          ]
-        : waits),
-      ...(titles.length
-        ? [
-            {
-              name: 'Piwi: Write code at the stop',
-              text: '$(code)',
-              tooltip: `Piwi: Write code at the stop: ${titles.join(', ')}`,
-              command: RUN_COMMANDS.code,
-            },
-          ]
-        : []),
-      ...stop,
-    ];
-  }
-  if (state.pausable) {
-    return [
-      {
-        name: 'Piwi: Pause',
-        text: '$(debug-pause)',
-        tooltip: 'Piwi: Pause the run at its next call',
-        command: RUN_COMMANDS.pause,
-      },
-      ...waits,
-      ...stop,
-    ];
-  }
-  if (waits.length) return [...waits, ...stop];
-  if (state.pausing) {
-    return [
-      {
-        name: 'Piwi: Pausing',
-        text: '$(loading~spin) Pausing…',
-        tooltip: 'Piwi: the run stops at its next call',
-        command: null,
-      },
-      ...stop,
-    ];
-  }
-  return stop;
 }
 
 /** What a control names: a run, one of its workers, and the stop it was shown at (`RunStop.since`). */
@@ -2364,19 +2218,6 @@ function layersHtml(layers: LaneSections & { note: string | null; textAsking?: b
     `<details id="strip-section" class="layer"${layers.filmstrip ? ' open' : ''}><summary>Filmstrip</summary><p id="strip-empty" class="hint">One image for each call of the test that ended: click one to see it larger.</p><div id="strip" class="strip"></div><figure id="thumb" hidden><img id="thumb-image" alt=""><figcaption id="thumb-title"></figcaption></figure></details>`,
     '</section>',
   ].join('');
-}
-
-/**
- * What a screen reader says of a run control item: its tooltip's first paragraph as plain text (in a Markdown tooltip,
- * a link's words kept and its target dropped), never a codicon id.
- */
-export function accessibleLabel(item: ControlItem): string {
-  const first = item.tooltip.split('\n\n')[0] ?? item.name;
-  // Only a Markdown tooltip has links and escapes to read through; a plain one holds the test's own words as they are.
-  const plain = item.markdown
-    ? first.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\\([\\`*_[\]<>|])/g, '$1')
-    : first;
-  return plain.replace(/\$\([a-z0-9-~]+\)\s*/g, '').trim();
 }
 
 /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */

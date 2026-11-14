@@ -1484,6 +1484,7 @@ describe('the Piwi language server', () => {
         status: 'passed',
         endLine: 4,
         testCaseId: 1,
+        actions: expect.any(Array),
       },
       {
         line: 2,
@@ -1521,6 +1522,21 @@ describe('the Piwi language server', () => {
           ],
         },
       },
+    ]);
+
+    // The gutter's actions, in their groups: Run and Verify ×3 at the test's line, the test in the dashboard, then the
+    // Flake Lab commands of its line.
+    const actions = spec.lines[0]!.actions!;
+    expect(actions.map((a) => [a.group, a.title, a.kind])).toEqual([
+      ['run', 'Run with Piwi', 'run'],
+      ['run', 'Verify ×3 with Piwi', 'verify'],
+      ['evidence', 'Open in dashboard', undefined],
+      ['lab', 'Reproduce this flake', undefined],
+      ['lab', 'Verify the flake fix', undefined],
+    ]);
+    expect(actions.map((a) => a.section)).toEqual(['', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions[1]!.command.arguments).toEqual([
+      { uri: uri('tests/checkout.spec.ts'), testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 },
     ]);
 
     const app = (await client.sendRequest('piwi/fileSummary', {
@@ -1606,6 +1622,15 @@ describe('the Piwi language server', () => {
     const shot = (await client.sendRequest('piwi/screenshot', evidence)) as ScreenshotResult;
     expect(fs.readFileSync(shot.path, 'utf-8')).toBe('PK-stub');
     expect(await client.sendRequest('piwi/screenshot', { ...evidence, executionId: 1 })).toBeNull();
+    // A failed test's gutter offers its evidence and its context for an agent.
+    expect(spec.lines[0]!.actions!.map((a) => a.title)).toEqual(
+      expect.arrayContaining(['Open in dashboard', 'Copy context for agent']),
+    );
+    expect(spec.lines[0]!.actions!.find((a) => a.title === 'Copy context for agent')!.command).toEqual({
+      title: 'Copy context for agent',
+      command: 'piwi.copyAgentContext',
+      arguments: [evidence],
+    });
   });
 
   test('lists the tests of a file and the command that runs them', async () => {

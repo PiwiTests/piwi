@@ -34,9 +34,8 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 **Pause** stops a test before its next call, so a test inside a long one (a click that waits for a button, a
 `waitForTimeout`) stops only once it returns. Meanwhile, with a reporter newer than 0.67.0, the Runs window and the
 desktop app's tray say the call it waits in and, for a locator call, how long it has run, and offer **End the test**
-there. In VS Code, the status bar reads `Pausing… 12 s`, the call in its tooltip, with **End the test** beside it; in
-a JetBrains IDE, the status bar item reads `Piwi: pausing… · waits in` and the call, and **Tools → Piwi → End the
-test** ends it:
+there. The Piwi item reads `Piwi: pausing… · waits in` the call and how long it has waited, in both editors, and **End
+the test** in its menu (**Tools → Piwi → End the test** in a JetBrains IDE) ends it:
 
 - **A locator call or an assertion**, with Playwright 1.62 or later, is given up at once, and the test is skipped.
 - **Another call** (a `waitForTimeout`, a navigation) finishes first, and the test is skipped at its next locator

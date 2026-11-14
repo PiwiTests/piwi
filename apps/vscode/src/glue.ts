@@ -10,6 +10,9 @@
  * window starts.
  */
 import type {
+  TestAction,
+  RunLine,
+  RunLineState,
   BaselineChoice,
   PiwiCommand,
   ConnectionSource,
@@ -36,8 +39,8 @@ import type {
   RunStatusResult,
   RunTestsArgs,
   SpecTest,
-  RunSession,
   StatusResult,
+  FileSummary,
   SummaryLine,
   TestAtResult,
   TestFailure,
@@ -48,7 +51,7 @@ import type {
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
-import { countWords } from './run-control';
+import { countWords, waitedFor } from './run-control';
 
 /** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
@@ -104,8 +107,6 @@ export interface StatusBarView {
   liveUrl: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
-  /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
-  ownLive?: boolean;
   /** The config the item speaks for, while the failures view lists flaky tests for it. */
   flakyRoot?: string | null;
 }
@@ -125,6 +126,14 @@ export interface StatusMenuState {
     stoppable: boolean;
     page: boolean;
     watchable: boolean;
+    /** A stopped test can end, or a pausing one waits in a call: End the test. */
+    endable: boolean;
+    /** A run, or the window's runs, is shared live: the Live menu. */
+    shared: boolean;
+    /** A live run can be shared and is not: Share live. */
+    shareable: boolean;
+    /** A stop offers a code action: Write code at the stop. */
+    code: boolean;
   };
   failing: boolean;
   /** The config whose flaky tests the failures view lists, for the item's config. */
@@ -140,8 +149,9 @@ export interface StatusMenuState {
 export type StatusMenuEntry = { command: string; label: string; args?: unknown[] } | { separator: string };
 
 /**
- * The status menu, in the JetBrains plugin's status popup's sections: the item's action first (with Open the log beside
- * a restart, and a recording's controls after it while one runs), the run's controls while a run is live, the failures
+ * The status menu, in the JetBrains plugin's status popup's sections: the item's action first, Go to the stopped line
+ * while a test is stopped (with Open the log beside a restart, and a recording's controls after it while one runs), the
+ * run's controls and its share while a run is live, the failures
  * and the dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action
  * catalog, and offered only where its command acts.
  */
@@ -154,6 +164,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
     [
       '',
       [
+        state.run.active && state.run.stopped && 'piwi.showStop',
         {
           refresh: 'piwi.refreshRun',
           retry: 'piwi.refresh',
@@ -173,14 +184,20 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
         ? [
             state.run.stopped && 'piwi.resumeRun',
             state.run.stopped && !state.run.failed && 'piwi.stepRun',
+            state.run.stopped && !state.run.failed && 'piwi.finishRun',
+            state.run.endable && 'piwi.endTest',
             state.run.stopped && 'piwi.showPausedPage',
+            state.run.code && 'piwi.codeAtStop',
             state.run.pausable && 'piwi.pauseRun',
             state.run.watchable && 'piwi.watchWorker',
             state.run.page && 'piwi.openRunPage',
+            !state.run.shared && state.run.shareable && 'piwi.shareRunLive',
             state.run.stoppable && 'piwi.stopRun',
           ]
         : [],
     ],
+    // The Live menu while a run, or the window's runs, are shared, with or without a run.
+    ['Share live', [state.run.shared && 'piwi.liveMenu']],
     [
       'Dashboard',
       [
@@ -339,23 +356,27 @@ export function failuresViewDescription(grouping: FailuresGrouping, baseline: st
 }
 
 /**
- * The item's text while a run this editor started holds a stop and the item counts that run (`StatusBarView.ownLive`):
- * no spinner, as no test runs there, but the pause's icon, or the error's while every stop held is a failure. Any other
- * text is left as it is.
+ * The glyph of each state of the run line (`RunLine.state`), from the outcome palette's codicons: the error glyph for a
+ * held failure and failed runs, the pause glyph for a stop and a Pause on its way.
  */
-export function heldText(text: string, held: 'stop' | 'failure' | null): string {
-  if (!held) return text;
-  return text.replace(/^\$\(sync~spin\)/, held === 'failure' ? '$(error)' : '$(debug-pause)');
-}
+export const RUN_LINE_GLYPHS: Record<RunLineState, string> = {
+  held: '$(error)',
+  stopped: '$(debug-pause)',
+  pausing: '$(debug-pause)',
+  live: '$(broadcast)',
+  running: '$(sync~spin)',
+  passed: '$(pass)',
+  failed: '$(error)',
+  interrupted: '$(warning)',
+};
 
-/** What the runs this editor started hold: a stop, only failures, or nothing; a terminal's run is the terminal's. */
-export function heldStops(sessions: readonly RunSession[]): 'stop' | 'failure' | null {
-  const stops = sessions
-    .filter((s) => !s.terminal)
-    .flatMap((s) => s.workers ?? [])
-    .flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop] : []));
-  if (!stops.length) return null;
-  return stops.every((s) => s.reason === 'failure') ? 'failure' : 'stop';
+/**
+ * The Piwi item's text while runs are followed: the service's line after its state's glyph, and, while a pausing test
+ * waits in a call, how long it has (`waits in waitForResponse · 12 s`).
+ */
+export function runLineText(line: RunLine, now: number): string {
+  const waited = line.since ? waitedFor(line.since, now) : null;
+  return `${RUN_LINE_GLYPHS[line.state]} ${line.text}${waited ? ` · ${waited}` : ''}`;
 }
 
 /** The item's text while the latest run is read again: its icon spins. */
@@ -628,7 +649,6 @@ export function statusBarView(
     return {
       ...view,
       text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
-      ownLive: !!live?.own,
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
@@ -877,12 +897,17 @@ export interface TestDecoration {
   dashboardUrl: string | null;
   /** The test's id, which **Run** in its hover runs; null from a service that does not give it. */
   testCaseId: number | null;
+  /** The service lists the test's actions (`SummaryLine.actions`): **More…** opens them. */
+  actions: boolean;
 }
 
 /** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
-export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests'];
+export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions'];
 
-/** A test's gutter hover in the file at `uri`: its result, then **Run** and **Open in dashboard** when it has them. */
+/**
+ * A test's gutter hover in the file at `uri`: its result, then **Run**, **Open in dashboard** and **More…**, its
+ * actions (`piwi.testActions`), when it has them.
+ */
 export function testHoverMarkdown(test: TestDecoration, uri: string): string {
   const link = (title: string, command: string, args: unknown[]) =>
     `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
@@ -891,6 +916,7 @@ export function testHoverMarkdown(test: TestDecoration, uri: string): string {
       ? link('Run', 'piwi.runTests', [{ uri, testIds: [test.testCaseId] } satisfies RunTestsArgs])
       : '',
     test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
+    test.actions ? link('More…', 'piwi.testActions', [{ uri, line: test.line } satisfies TestLine]) : '',
   ].filter(Boolean);
   return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
 }
@@ -911,6 +937,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
                 ? (l.command.arguments[0] as string)
                 : null,
             testCaseId: l.testCaseId ?? null,
+            actions: !!l.actions?.length,
           },
         ]
       : [],
@@ -1485,6 +1512,47 @@ export interface TestLine {
   uri: string;
   /** 0-based. */
   line: number;
+}
+
+/**
+ * The test line `piwi.testActions` acts on: a Testing view item's (`testing/item/*`, or the test of a message,
+ * `testing/message/context`), the gutter line clicked with the Testing view off (`editor/lineNumber/context`, 1-based),
+ * or a `{ uri, line }`; null for anything else.
+ */
+export function testActionsAt(arg: unknown): TestLine | null {
+  const a = arg as {
+    test?: { uri?: unknown; range?: { start: { line: number } } };
+    uri?: unknown;
+    range?: { start: { line: number } };
+    lineNumber?: number;
+  } | null;
+  const item = a?.test ?? a;
+  if (item?.uri && item.range) return { uri: String(item.uri), line: item.range.start.line };
+  if (a?.uri && typeof a.lineNumber === 'number') return { uri: String(a.uri), line: a.lineNumber - 1 };
+  return testLineArg(arg);
+}
+
+/** The test a line of a spec's summary is in, with its actions: the test whose `test(…)` call is at `line`, or spans it. */
+export function testLineAt(summary: FileSummary, line: number): SummaryLine | null {
+  const tests = summary.lines.filter((l) => l.actions?.length);
+  return (
+    tests.find((l) => l.line === line) ?? tests.find((l) => l.line <= line && line <= (l.endLine ?? l.line)) ?? null
+  );
+}
+
+/**
+ * A test's actions as the quick pick lists them: each group after a separator with the service's words for it
+ * (`TestAction.section`), in the service's order.
+ */
+export function testActionPicks(actions: readonly TestAction[]): Array<{ action: TestAction } | { separator: string }> {
+  const picks: Array<{ action: TestAction } | { separator: string }> = [];
+  let group: TestAction['group'] | null = null;
+  for (const action of actions) {
+    if (action.group !== group && group !== null) picks.push({ separator: action.section });
+    group = action.group;
+    picks.push({ action });
+  }
+  return picks;
 }
 
 /** The line a run command's argument names; null for anything else, such as the file a context menu passes. */

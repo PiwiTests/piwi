@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.execution.runners.ExecutionUtil
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.DataManager
@@ -30,12 +31,13 @@ import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.ClickListener
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
+import com.intellij.util.Alarm
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.NamedColorUtil
+import com.intellij.xdebugger.XDebugSession
 import java.awt.Point
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseEvent
-import com.intellij.xdebugger.XDebugSession
 import javax.swing.Icon
 import javax.swing.JComponent
 
@@ -119,50 +121,63 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
     private fun runs() = project.getServiceIfCreated(PiwiRunSessions::class.java)
 
+    /** Draws the item again each second while a pausing test waits in a call, for how long it has. */
+    private val tick = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
     /**
-     * Draws the item again: the recording in progress, where a run started here is stopped or that it is pausing, that
-     * it is shared live and how many watch it, how far it is, `Piwi: refreshing…` while the latest run is read again,
+     * Draws the item again: the recording in progress, else the service's line of the runs started here
+     * (`piwi/runLineChanged`: where a test is stopped or the call a pausing one waits in, the share, how far the runs
+     * are), its icon badged while a stop waits for the person, `Piwi: refreshing…` while the latest run is read again,
      * else the view of the selected file's context, with its icon and, while its tests fail, the error color. A run's
      * tooltip says what each worker runs now (`Glue.workersNowText`) and who else has it open. On the event thread.
      */
     fun update() {
         val recording = recording()
-        val stopped = runs()?.let { Glue.runControlStatus(it.controls(), it.stops()) }
-        val shared = runs()?.let { Glue.liveStatus(it.controls(), it.windowShared) }
+        val line = runs()?.line
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
-        val progress = runs()?.let { Glue.runProgressText(it.sessions) }
         // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
         val workers = runs()?.let { Glue.workersNowText(it.sessions) }?.let { "\n$it" }.orEmpty()
         val present = workers + runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
         val refreshing = service().refreshing
         val view = view()
+        val lineText = line?.let { Glue.runLineText(it, System.currentTimeMillis()) }
         label.text = when {
             recording != null -> Glue.recordingStatus(recording.state, recording.steps, recording.edited, recording.stopping)
-            stopped != null -> Glue.withProgress(stopped, progress)
-            shared != null -> Glue.withProgress(shared, progress)
-            progress != null -> progress
+            lineText != null -> lineText
             refreshing -> Glue.REFRESHING
             else -> view.text
         }
         label.icon = when {
             recording != null && (recording.state == "starting" || recording.stopping) -> AnimatedIcon.Default.INSTANCE
             recording != null -> PiwiIcons.recording(recording.state, recording.edited)
-            // A held failure shows the error's icon, any other stop the pause's.
-            stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
-            shared != null -> PiwiIcons.LIVE
-            progress != null -> icon(runs()?.let { Glue.runProgressIcon(it.sessions) } ?: Glue.StatusIcon.RUNNING)
+            line != null -> lineIcon(line.state).let {
+                if (line.calls > 0) ExecutionUtil.getIndicator(it, it.iconWidth, it.iconHeight, JBUI.CurrentTheme.IconBadge.WARNING) else it
+            }
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
         }
-        // The alarm is the service's (`RunStatus.alarm`), never a recording's, a stop's, a share's or a run in progress's.
-        label.error = recording == null && stopped == null && shared == null && progress == null && !refreshing && view.error
+        // The alarm is the service's (`RunStatus.alarm`), never a recording's or the runs' line's.
+        label.error = recording == null && line == null && !refreshing && view.error
         label.toolTipText = Glue.htmlTooltip(
             recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
-                ?: stopped?.let { "$it$present\nClick for the run's controls." }
-                ?: sharedLive?.let { "${Glue.sharedLiveText(it)}$present\nClick for the run's controls." }
-                ?: progress?.let { "$it$present\nClick for the run's controls." }
+                ?: lineText?.let {
+                    val share = sharedLive?.let { live -> "\n${Glue.sharedLiveText(live)}" }.orEmpty()
+                    "$it$share$present\nClick for the run's controls."
+                }
                 ?: view.tooltip,
         )
+        tick.cancelAllRequests()
+        if (line?.since != null) tick.addRequest({ update() }, 1000)
+    }
+
+    /** The icon of each state of the runs' line (`RunLine.state`), VS Code's glyphs' (`RUN_LINE_GLYPHS`). */
+    private fun lineIcon(state: String): Icon = when (state) {
+        "held", "failed" -> PiwiIcons.FAILED
+        "stopped", "pausing" -> AllIcons.Actions.Pause
+        "live" -> PiwiIcons.LIVE
+        "passed" -> AllIcons.RunConfigurations.TestPassed
+        "interrupted" -> AllIcons.General.Warning
+        else -> AnimatedIcon.Default.INSTANCE
     }
 
     private fun icon(icon: Glue.StatusIcon): Icon = when (icon) {
@@ -203,7 +218,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val runs = runs()
         val live = runs?.let { Glue.liveMenu(it.sessions, it.windowShared) }.orEmpty()
         // The share leads while the item shows it: neither a recording nor a stop does.
-        val shareShown = recording() == null && runs?.let { Glue.runControlStatus(it.controls(), it.stops()) } == null
+        val shareShown = recording() == null && runs?.let { it.stops().isEmpty() && !it.controls().pausing } != false
         return DefaultActionGroup().apply {
             fun addLive() {
                 if (live.isEmpty()) return

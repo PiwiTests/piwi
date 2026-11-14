@@ -208,6 +208,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val documents = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
             documents.unsavedDocuments.forEach { documents.reloadFromDisk(it) }
             sessions.sessions.keys.forEach { sessions.heard(RunSession(it, ended = true)) }
+            sessions.lineChanged(null)
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             sessions.remote = remote
             FileEditorManager.getInstance(project).openFiles.forEach { FileEditorManager.getInstance(project).closeFile(it) }
@@ -348,6 +349,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        // The item shows the line the service composes (`piwi/runLineChanged`).
+        sessions.lineChanged(RunLine("Piwi: paused · checkout.page.ts:4", "stopped"))
         statusBar.update()
         assertEquals("Piwi: paused · checkout.page.ts:4", (statusBar.component as javax.swing.JLabel).text)
         val manager = ActionManager.getInstance()
@@ -559,7 +562,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             TestDialogManager.setTestDialog(TestDialog.DEFAULT)
         }
         hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
-        assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(sessions.controls()))
+        assertEquals(2, sessions.controls().liveViewers)
         // Stop sharing asks first, and a no keeps the share.
         val stopAsked = mutableListOf<String>()
         TestDialogManager.setTestDialog { message ->
@@ -746,18 +749,15 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * With no instance, the status bar counts the run as its own process tells the hub: done of total and the failed,
-     * never in the error color, until the run ends.
+     * With no instance, the status bar shows the service's line of the runs, counted as their own processes tell the
+     * hub, never in the error color, its icon badged while a stop waits for the person, until no run is left.
      */
-    fun testTheStatusBarCountsTheRunFromTheHubWithoutAnInstance() {
+    fun testTheStatusBarShowsTheServicesLineOfTheRuns() {
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
         val label = statusBar.component as StatusLabel
-        hear(running("ed-count").copy(progress = RunProgress(total = 9, done = 3)))
-        statusBar.update()
-        assertEquals("Piwi: 3 of 9", label.text)
-        assertFalse(label.error)
         hear(running("ed-count").copy(progress = RunProgress(total = 9, done = 4, failed = 1)))
+        sessions.lineChanged(RunLine("Piwi: 4 of 9 · 1 failed", "running"))
         statusBar.update()
         assertEquals("Piwi: 4 of 9 · 1 failed", label.text)
         // A run in progress is never the alarm.
@@ -766,8 +766,17 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             LiveRun(status = "running", done = 4, total = 9, failed = 1, own = true, ref = "ed-count") to base.path,
             Glue.ownRunInProgress(emptyList(), sessions.sessions),
         )
-        hear(running("ed-count").copy(ended = true, progress = RunProgress(total = 9, done = 9, failed = 1, status = "failed")))
+        // A held failure that calls for the person badges the failure's icon until it is answered.
+        sessions.lineChanged(RunLine("Piwi: held at its failure · cart.spec.ts:3", "held", calls = 1))
         statusBar.update()
+        assertEquals("Piwi: held at its failure · cart.spec.ts:3", label.text)
+        assertNotSame(PiwiIcons.FAILED, label.icon)
+        sessions.lineChanged(RunLine("Piwi: held at its failure · cart.spec.ts:3", "held"))
+        statusBar.update()
+        assertSame(PiwiIcons.FAILED, label.icon)
+        sessions.lineChanged(null)
+        statusBar.update()
+        assertFalse(label.text.startsWith("Piwi: held"))
         assertFalse(label.text.contains("of 9"))
     }
 
@@ -780,6 +789,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(running("ed-live").copy(live = RunLive(true, null, page, 1), page = RunPage(42, page)))
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        sessions.lineChanged(RunLine("Piwi: shared live · 1 view", "live"))
         statusBar.update()
         assertEquals("Piwi: shared live · 1 view", (statusBar.component as JLabel).text)
         fun entries() = statusBar.actions().getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }
@@ -886,8 +896,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        sessions.lineChanged(RunLine("Piwi: held at its failure · coupon.spec.ts:6", "held"))
         statusBar.update()
         assertEquals("Piwi: held at its failure · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
+        assertSame(PiwiIcons.FAILED, (statusBar.component as javax.swing.JLabel).icon)
     }
 
     /**

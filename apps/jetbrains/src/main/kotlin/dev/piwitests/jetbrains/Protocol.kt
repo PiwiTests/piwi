@@ -17,7 +17,8 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
  * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
- * tooltip, `endLine` where its call ends, `failure` where and why it failed, and `testCaseId` the test's id.
+ * tooltip, `endLine` where its call ends, `failure` where and why it failed, `testCaseId` the test's id, and
+ * `actions` what its gutter mark offers.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -27,6 +28,20 @@ data class SummaryLine(
     val endLine: Int? = null,
     val failure: TestFailure? = null,
     val testCaseId: Int? = null,
+    val actions: List<TestAction>? = null,
+)
+
+/**
+ * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
+ * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
+ * it at the test's line; any other runs `command`.
+ */
+data class TestAction(
+    val group: String = "run",
+    val section: String = "",
+    val kind: String? = null,
+    val title: String = "",
+    val command: PiwiCommand? = null,
 )
 
 /**
@@ -1086,6 +1101,21 @@ data class RunLive(
  * runs until the person stops or the project closes, the run of `ref` too when one is named; off, it stops them all.
  */
 data class ShareRunParams(val ref: String?, val on: Boolean, val scope: String? = null)
+
+/**
+ * `piwi/runLineChanged`: the line the status bar item shows of the runs the IDE follows, null once none is left: its
+ * words (`Piwi: held at its failure · checkout.page.ts:12 · run #78 · 3 of 9 · 1 failed`), the state its icon shows
+ * (`held`, `stopped`, `pausing`, `live`, `running`, `passed`, `failed`, `interrupted`), how many stops wait for the
+ * person (`calls`), and, while a pausing test waits in a call, when it began (`since`).
+ */
+data class RunLineParams(val line: RunLine? = null)
+
+data class RunLine(
+    val text: String = "",
+    val state: String = "running",
+    val calls: Int = 0,
+    val since: String? = null,
+)
 
 /** `piwi/shareWindowChanged`: whether this project's runs are shared live. */
 data class ShareWindowParams(val on: Boolean = false)

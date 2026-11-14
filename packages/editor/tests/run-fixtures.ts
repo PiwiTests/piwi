@@ -26,6 +26,8 @@ import type {
   Notice,
   RunCommand,
   RunControlResult,
+  RunLine,
+  RunLineParams,
   RunSession,
   StopCode,
   StopRunParams,
@@ -69,6 +71,8 @@ export interface Service {
   codes: StopCode[];
   /** What the service told of its MCP server for agents unasked (`piwi/agentsChanged`). */
   agents: AgentsResult[];
+  /** The lines of the runs the service sent (`piwi/runLineChanged`), in order. */
+  lines: Array<RunLine | null>;
   /** What the service published for its discovery file, last: null once it stopped. */
   published: Array<EditorDiscovery | null>;
   /**
@@ -106,6 +110,7 @@ export async function service(
   const notices: Notice[] = [];
   const codes: StopCode[] = [];
   const agents: AgentsResult[] = [];
+  const lines: Array<RunLine | null> = [];
   const stops: string[] = [];
   const answers = { stop: { ok: true, message: 'Test Editor stops the run.' } as RunControlResult };
   client.onRequest('piwi/stopRun', (params: StopRunParams) => {
@@ -114,6 +119,7 @@ export async function service(
   });
   client.onNotification('piwi/agentsChanged', (told: AgentsResult) => void agents.push(told));
   client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
+  client.onNotification('piwi/runLineChanged', (params: RunLineParams) => void lines.push(params.line));
   client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
   client.onNotification('piwi/stopCode', (code: StopCode) => void codes.push(code));
   client.listen();
@@ -149,6 +155,7 @@ export async function service(
     notices,
     codes,
     agents,
+    lines,
     published,
     stops,
     get stopAnswer() {
