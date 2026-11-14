@@ -4304,7 +4304,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RECORD_PLACE_REQUEST, (params: RecordPlaceParams): RecordPlaceResult => {
     const file = uriToPath(params?.uri);
-    const text = file && SCRIPT_FILE.test(file) && contextFor(file) ? readText(file) : null;
+    const context = file && SCRIPT_FILE.test(file) ? contextFor(file) : null;
+    // A file under the config's folder, not one of the rest of its repository.
+    const text = context && relativeTo(context.root, file!) ? readText(file!) : null;
     const place = text !== null && Number.isSafeInteger(params.line) ? recordPlace(text, params.line) : null;
     if (place === 'test') return { place, title: 'Piwi: record a test here…' };
     if (place === 'steps') return { place, title: 'Piwi: record steps here…' };
