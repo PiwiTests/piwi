@@ -777,6 +777,12 @@ worker of a run tells the service over the run channel what it runs and where it
 ### Run sessions
 
 `src/run-sessions.ts` (`RunSessions`) keeps one session per run, by the ref of its command (`PIWI_ORIGIN_REF`).
+A run the service built opens its session as the client says its command started (`piwi/commandStarted`,
+`RunSessions.commandStarted`), `starting` until its own process or a worker connects, so the clients list it and stop it
+while a web server or a global setup runs first; the run line says `starting <name>…`. A command whose terminal carries
+another ref is listed once it connects. Each run the service registers on the run channel is named after what it runs
+(`runName` in `src/commands.ts`: its first test file and how many more, the title it greps, else every test), as
+`RunCommand.name` and `RunSession.name`, which the clients use for its task or Run tab and wherever they name it.
 
 A run started in a terminal attaches the same way, its reporter having read the run channel from the discovery file
 ([The discovery file](#the-discovery-file)), under a ref of its own (`terminal-<pid>-<time>`, `TERMINAL_REF_PREFIX`)

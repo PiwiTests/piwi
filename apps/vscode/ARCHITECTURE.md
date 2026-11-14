@@ -440,8 +440,11 @@ All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`
 an information message. The commands show in the Piwi item's menu (`statusMenu`), after **Go to the stopped line**
 (`piwi.showStop`, the stop `chooseStop` gives, its file shown with the focus), a held failure offering Resume without
 Step or Finish (`ControlState.failed`); and in the palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
-`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows Resume at a stop while no
-recording runs, and its `…` menu every other control as the palette offers it ([Running the test at the
+`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows, while no recording runs,
+Pause or Resume, Step, Finish and Stop in the debug toolbar's order, and its `…` menu every other control as the
+palette offers it; the editor's context menu holds a stop's controls first while a test is stopped (`0_piwi_run`). A
+run's task is named after the run (`RunCommand.name`), and the choosers and the worker views name a run by `runTitle`
+(`Run #78 · checkout.spec.ts:12`), a worker's run only while several runs have workers to watch ([Running the test at the
 cursor](#running-the-test-at-the-cursor)). The keys: [Keybindings](#keybindings).
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
@@ -616,8 +619,8 @@ service's reference.
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
 `stopActions`): **Pick a locator**, **Record**, **Assert** and **Assert a region** at a stop the pause bar shows,
 **Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
-Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits beside the line's
-own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
+Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits; the line's own lenses
+give way while a stop shows (`executionPoints`, `stopsDrawn`). Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
 (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
 `piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
 (`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests` in a quick pick, the latest first

@@ -11,10 +11,22 @@ const menus = manifest.contributes.menus as Record<
 >;
 
 describe("the editor's context menu", () => {
-  test('holds one Piwi submenu, in the JetBrains plugin’s order: run, record, a recording’s controls', () => {
+  test('holds a stop’s controls first while a test is stopped, as the debugger’s, then one Piwi submenu: run, record, a recording’s controls', () => {
     expect(manifest.contributes.submenus).toContainEqual({ id: 'piwi.editorContext', label: 'Piwi' });
-    expect(menus['editor/context']!.filter((e) => (e.command ?? e.submenu)?.startsWith('piwi.'))).toEqual([
-      expect.objectContaining({ submenu: 'piwi.editorContext' }),
+    expect(
+      menus['editor/context']!.filter((e) => (e.command ?? e.submenu)?.startsWith('piwi.')).map((e) => [
+        e.group,
+        e.command ?? e.submenu,
+        e.when?.startsWith('piwi.runStopped') ?? false,
+      ]),
+    ).toEqual([
+      ['0_piwi_run@1', 'piwi.resumeRun', true],
+      ['0_piwi_run@2', 'piwi.stepRun', true],
+      ['0_piwi_run@3', 'piwi.runToCursor', true],
+      ['0_piwi_run@4', 'piwi.finishRun', true],
+      ['0_piwi_run@5', 'piwi.endTest', true],
+      ['0_piwi_run@6', 'piwi.showStop', true],
+      ['piwi@1', 'piwi.editorContext', false],
     ]);
     const entries = menus['piwi.editorContext']!.map((e) => [e.group!.split('@')[0], e.command]);
     expect(entries).toEqual([
@@ -71,26 +83,26 @@ describe("a spec's editor title", () => {
   const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
   const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
 
-  test('shows one Piwi button by state: Stop recording, else Resume at a stop, else Record on a spec', () => {
+  test('shows Stop recording while recording, a live run’s controls in the debug toolbar’s order, else Record on a spec', () => {
     const buttons = menus['editor/title']!.filter((e) => e.group?.startsWith('navigation'));
-    expect(buttons.map((e) => [e.command, e.when])).toEqual([
-      ['piwi.stopRecording', 'piwi.recording'],
-      ['piwi.resumeRun', '!piwi.recording && piwi.runStopped'],
-      ['piwi.record', `${spec} && !piwi.recording && !piwi.runStopped`],
+    expect(buttons.map((e) => [e.group, e.command, e.when])).toEqual([
+      ['navigation@1', 'piwi.stopRecording', 'piwi.recording'],
+      ['navigation@1', 'piwi.resumeRun', '!piwi.recording && piwi.runStopped'],
+      ['navigation@1', 'piwi.record', `${spec} && !piwi.recording && !piwi.runActive`],
+      ['navigation@1', 'piwi.pauseRun', '!piwi.recording && piwi.runPausable'],
+      ['navigation@2', 'piwi.stepRun', '!piwi.recording && piwi.runStopped && !piwi.runFailed'],
+      ['navigation@3', 'piwi.finishRun', '!piwi.recording && piwi.runStopped && !piwi.runFailed'],
+      ['navigation@4', 'piwi.stopRun', '!piwi.recording && piwi.runActive'],
     ]);
   });
 
-  test("keeps the other controls of a stop and of a recording in its '…' menu, as the palette offers each", () => {
+  test("keeps a stop's other controls and a recording's in its '…' menu, as the palette offers each", () => {
     const overflow = menus['editor/title']!.filter((e) => !e.group?.startsWith('navigation'));
     expect(overflow.map((e) => e.command)).toEqual([
-      'piwi.pauseRun',
-      'piwi.stepRun',
       'piwi.runToCursor',
-      'piwi.finishRun',
       'piwi.endTest',
       'piwi.showPausedPage',
       'piwi.codeAtStop',
-      'piwi.stopRun',
       'piwi.pauseRecording',
       'piwi.resumeRecording',
     ]);

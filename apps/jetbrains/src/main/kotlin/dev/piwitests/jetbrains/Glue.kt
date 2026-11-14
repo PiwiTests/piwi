@@ -2525,8 +2525,10 @@ object Glue {
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
      * their order; `pausable` keeps those a Pause can stop now (Pause and Watch).
      */
-    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> =
-        sessions.values.flatMap { session ->
+    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> {
+        // The run is named beside its worker only while workers of several runs can be watched.
+        val runs = sessions.values.count { s -> s.workers.orEmpty().any { it.watchable } }
+        return sessions.values.flatMap { session ->
             session.workers.orEmpty()
                 .filter { it.watchable && (!pausable || (it.state != "stopped" && !it.pausing && it.test?.cannotPause == null)) }
                 .map { w ->
@@ -2536,9 +2538,11 @@ object Glue {
                         w.state == "stopped" -> "stopped in $title"
                         else -> "running $title"
                     }
-                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $doing")
+                    val run = if (runs > 1) "${runTitle(session)} · " else ""
+                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $run$doing")
                 }
         }
+    }
 
     /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
     private fun listed(names: List<String>): String =
@@ -2746,11 +2750,24 @@ object Glue {
     fun holdableRuns(sessions: Map<String, RunSession>): List<RunSession> =
         sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
 
-    /** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
+    /**
+     * A run named apart from the others in a list: its page when it has one, else what it runs (`RunSession.name`), else
+     * its folder's name, else its ref.
+     */
     fun runLabel(session: RunSession): String {
         session.page?.let { return "Run #${it.id}" }
+        session.name?.let { return it }
         val folder = session.root?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
         return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
+    }
+
+    /**
+     * A run as a chooser and a worker view name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as VS
+     * Code's `runTitle`; else [runLabel].
+     */
+    fun runTitle(session: RunSession): String {
+        val name = session.name
+        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else runLabel(session)
     }
 
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
@@ -2919,6 +2936,20 @@ object Glue {
     fun stopControls(stop: ShownStop): List<StopControl> =
         if (isFailure(stop.stop)) listOf(StopControl.RESUME)
         else StopControl.entries.filter { it != StopControl.END || canEnd(stop) }
+
+    /** The inlay's link that opens a stop's code actions, as VS Code's row says it. */
+    object WriteCode : StopLink {
+        override val label: String = EditorWords.words("stop.write-code")
+    }
+
+    /**
+     * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
+     * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     */
+    fun stopInlayLinks(stop: ShownStop): List<StopLink> =
+        stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
+            (if (stopActions(stop).isNotEmpty()) listOf(WriteCode) else emptyList())
 
     /** Whether a stop can end its test (End the test, `end`): its reporter takes it, and it is no failure. */
     fun canEnd(stop: ShownStop): Boolean = !isFailure(stop.stop) && "end" in stop.takes

@@ -432,8 +432,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-7", file, 4, since))
         val inlay = sessions.shown().inlays.single()
         val renderer = inlay.renderer as StopInlay
-        assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
-        assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
+        // The inlay as VS Code's row: Resume, Step and Finish, then Write code…, which opens the code actions.
+        assertEquals(listOf(Glue.StopControl.RESUME, Glue.StopControl.STEP, Glue.StopControl.FINISH, Glue.WriteCode), renderer.links)
+        assertEquals(Glue.WriteCode, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
+        assertEquals(Glue.StopAction.entries, Glue.stopActions(sessions.stops().single()))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
         assertEquals(listOf("Resume", "Step", "Run to the caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
 
@@ -458,7 +460,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         // At a headless stop, Mock a request alone.
         val headless = taking("ed-7", file, 4, "2026-10-25T10:00:07.500Z")
         hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
-        assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
+        assertEquals(listOf(Glue.StopAction.MOCK), Glue.stopActions(sessions.stops().single()))
+        assertEquals(Glue.WriteCode, (sessions.shown().inlays.single().renderer as StopInlay).links.last())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
     }
 
@@ -892,7 +895,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val shown = sessions.shown()
         val renderer = shown.inlays.single().renderer as StopInlay
         assertEquals("Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
-        assertEquals(listOf(Glue.StopControl.RESUME) + Glue.StopAction.entries, renderer.links)
+        assertEquals(listOf(Glue.StopControl.RESUME, Glue.WriteCode), renderer.links)
         assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
@@ -1517,7 +1520,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("terminal-41-1", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("end"))), terminal = true))
             val renderer = sessions.shown().inlays.single().renderer as StopInlay
             assertEquals("Stopped at a breakpoint · Fill \"one\" locator('input') · run in a terminal", renderer.text)
-            assertEquals(Glue.StopControl.END, renderer.links.last())
+            assertTrue("End the test, in the inlay's menu", Glue.canEnd(sessions.stops().single()))
             myFixture.openFileInEditor(spec)
             val actions = ActionManager.getInstance()
             assertFalse("a terminal's run is the terminal's to stop", myFixture.testAction(actions.getAction("Piwi.StopRun")).isEnabled)

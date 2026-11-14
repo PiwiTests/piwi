@@ -723,11 +723,23 @@ export function holdableRuns(sessions: Sessions): RunSession[] {
   return [...sessions.values()].filter((s) => !s.ended && s.hold);
 }
 
-/** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
+/**
+ * A run named apart from the others in a list: its page when it has one, else what it runs (`RunSession.name`), else its
+ * folder's name, else its ref.
+ */
 export function runLabel(session: RunSession): string {
   if (session.page) return runName(session.page);
+  if (session.name) return session.name;
   const folder = session.root?.split(/[\\/]/).filter(Boolean).pop();
   return folder ? `Run in ${folder} (${session.ref})` : `Run ${session.ref}`;
+}
+
+/**
+ * A run as a chooser and a worker view name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), the same in
+ * the JetBrains plugin (`Glue.runTitle`); else `runLabel`.
+ */
+export function runTitle(session: RunSession): string {
+  return session.page && session.name ? `${runName(session.page)} · ${session.name}` : runLabel(session);
 }
 
 /** A run's **Hold failures** in words: whether a failed test waits at its line, and who said so when not its start. */
@@ -839,6 +851,8 @@ export function workerName(lane: number): string {
  * their order; `pausable` keeps those a Pause can stop now (Pause and watch).
  */
 export function watchableWorkers(sessions: Sessions, pausable = false): WatchTarget[] {
+  // The run is named beside its worker only while workers of several runs can be watched.
+  const runs = [...sessions.values()].filter((s) => s.workers.some((w) => w.watchable)).length;
   return [...sessions.values()].flatMap((s) =>
     s.workers
       .filter((w) => w.watchable && (!pausable || canPauseWorker(w)))
@@ -847,9 +861,9 @@ export function watchableWorkers(sessions: Sessions, pausable = false): WatchTar
         worker: w.worker,
         lane: w.parallelIndex,
         label: workerName(w.parallelIndex),
-        description: !w.test
-          ? 'between tests'
-          : `${w.state === 'stopped' ? 'stopped in' : 'running'} ${w.test.title.join(' › ')}`,
+        description: `${runs > 1 ? `${runTitle(s)} · ` : ''}${
+          !w.test ? 'between tests' : `${w.state === 'stopped' ? 'stopped in' : 'running'} ${w.test.title.join(' › ')}`
+        }`,
       })),
   );
 }

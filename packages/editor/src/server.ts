@@ -163,6 +163,7 @@ import {
   followableCommand,
   playwrightTestCommand,
   repeatArgs,
+  runName,
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
@@ -2072,6 +2073,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const watchedRuns = new Set<string>();
   /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
   const runLabels = new Map<string, string>();
+  /** What each registered run is called (`runName`) and where it runs, by its ref, kept as long as its command line. */
+  const runNames = new Map<string, { name: string; cwd: string }>();
   /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
   const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
@@ -2151,6 +2154,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
     holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
     labelOf: (ref) => runLabels.get(ref) ?? null,
+    nameOf: (ref) => runNames.get(ref)?.name ?? null,
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -3803,17 +3807,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * A run the service built on the run channel, kept by its ref: its command line, which the hub names to Piwi Picker,
    * and its code as it starts. The oldest are forgotten past `MAX_RUN_COMMANDS`, with what was kept of them.
    */
-  const registered = (run: RunCommand): RunCommand => {
-    if (!run.ref) return run;
-    runCommands.delete(run.ref);
-    runCommands.set(run.ref, run.command);
+  const registered = (command: RunCommand): RunCommand => {
+    if (!command.ref) return command;
+    const run: RunCommand = { ...command, name: runName(command.args) };
+    runCommands.delete(run.ref!);
+    runCommands.set(run.ref!, run.command);
+    runNames.set(run.ref!, { name: run.name!, cwd: run.cwd });
     for (const oldest of runCommands.keys()) {
       if (runCommands.size <= MAX_RUN_COMMANDS) break;
       runCommands.delete(oldest);
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
     for (const ref of runLabels.keys()) if (!runCommands.has(ref)) runLabels.delete(ref);
-    runLines.started(run.ref, unsavedFiles);
+    for (const ref of runNames.keys()) if (!runCommands.has(ref)) runNames.delete(ref);
+    runLines.started(run.ref!, unsavedFiles);
     return run;
   };
 
@@ -4416,7 +4423,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onNotification(COMMAND_STARTED_NOTIFICATION, (params: CommandStartedParams) => {
-    if (typeof params?.ref === 'string') runWatch.commandStarted(params.ref, params.terminalRef);
+    if (typeof params?.ref !== 'string') return;
+    runWatch.commandStarted(params.ref, params.terminalRef);
+    // A run that reports under the terminal's own ref is listed once it reaches the service, as a terminal's run is.
+    const registeredRun = runNames.get(params.ref);
+    if (registeredRun && (!params.terminalRef || params.terminalRef === params.ref)) {
+      runSessions.commandStarted(params.ref, registeredRun.cwd);
+    }
   });
 
   // A command that runs each test several times says how it went: from its run when the instance holds it

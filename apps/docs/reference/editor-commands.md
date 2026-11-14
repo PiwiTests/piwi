@@ -84,6 +84,17 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | **Piwi: Open the page of a run of this window** | The page of a run this window started or follows, on the instance or the desktop app |
 | **Piwi: Open the branch's run in progress** | VS Code: open the run of the branch the instance is receiving: [Follow a run](/features/watch-a-run) |
 
+### Where the run controls are
+
+- **In VS Code**: the Piwi item's menu while they apply, after **Go to the stopped line**; the command palette; the
+  editor title, Pause or Resume, Step, Finish and Stop in the debug toolbar's order, the others under `…`; and, while a
+  test is stopped, first in the editor's context menu.
+- **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
+  Run tab; the status bar item's menu; and, while a test is stopped, first in the editor's context menu.
+
+A run is named after what it runs (`checkout.spec.ts:12`, `a.spec.ts and 2 more`, the title it greps), with its number
+on the instance once it has one (`Run #78 · checkout.spec.ts:12`), in its terminal or Run tab and wherever you pick it.
+
 ## Code at a stop
 
 | Command | What it does |

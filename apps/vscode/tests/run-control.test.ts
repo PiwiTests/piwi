@@ -82,6 +82,7 @@ import {
   holdTarget,
   holdText,
   runLabel,
+  runTitle,
   runName,
   runPageTarget,
   sessionLines,
@@ -579,6 +580,11 @@ describe('Hold failures', () => {
     expect(tooltip).toContain('Run in shop (term-2): Hold failures off');
     expect(runLabel(held('ed-3', false))).toBe('Run in shop (ed-3)');
     expect(runLabel({ ...held('ed-3', false), root: null })).toBe('Run ed-3');
+    // Named by what it runs, with its number once it has one, as the JetBrains plugin names it.
+    const named = { ...held('ed-3', false), name: 'checkout.spec.ts:12' };
+    expect([runLabel(named), runTitle(named)]).toEqual(['checkout.spec.ts:12', 'checkout.spec.ts:12']);
+    const numbered = { ...named, page: { id: 78, url: 'http://piwi/runs/78' } };
+    expect([runLabel(numbered), runTitle(numbered)]).toEqual(['Run #78', 'Run #78 · checkout.spec.ts:12']);
   });
 
   test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {

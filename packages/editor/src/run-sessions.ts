@@ -475,6 +475,8 @@ export interface RunSessionsOptions {
   holdsFailures?(ref: string): boolean;
   /** Who started the run of `ref` when a person did not (`Started by Claude Code`, an agent's); null for a person. */
   labelOf?(ref: string): string | null;
+  /** What the run of `ref` is called (`RunCommand.name`); null for a run the service did not build. */
+  nameOf?(ref: string): string | null;
   /**
    * A session starts: a run's first connection opened, its own process's or a worker's, the run's command being one
    * the service built or one it did not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
@@ -602,6 +604,8 @@ type HubLaneEvent = LaneEvent<RunTest, HeldStop, RunWaiting>;
 interface Session {
   ref: string;
   root: string | null;
+  /** Opened as its command started (`commandStarted`), before the run reached the service. */
+  starting: boolean;
   workers: Map<number, Worker>;
   /** Who was present on the run when it was last told (`presentKey`). */
   present: string;
@@ -857,6 +861,7 @@ export class RunSessions {
       main: null,
       progress: null,
       page: null,
+      starting: false,
     };
     this.sessions.set(ref, session);
     // A terminal's run a person attends starts with the editor's breakpoints, as lines of its code: the files as they
@@ -2379,6 +2384,19 @@ export class RunSessions {
   }
 
   /**
+   * The client started the command of a run the service built, which reports under `ref`, in `cwd`: its session opens
+   * at once, `starting` until the run's own process or a worker reaches the service (a web server or a global setup can
+   * take a minute), so the run is listed and stopped from its first second.
+   */
+  commandStarted(ref: string, cwd: string): void {
+    const running = this.sessions.get(ref);
+    if (running && !running.ended) return;
+    const session = this.open(ref, cwd, false);
+    session.starting = true;
+    this.changed(session, true);
+  }
+
+  /**
    * The client said the command of `ref` ended: its run ended with it. The connections of its workers, whose process
    * is ending, are closed, which lets a stop no pause bar shows go on at once.
    */
@@ -2756,6 +2774,9 @@ export class RunSessions {
     };
     const label = this.options.labelOf?.(session.ref);
     if (label) view.label = label;
+    if (session.starting && !session.workersSeen && !session.main && !this.heard.has(session.ref)) view.starting = true;
+    const name = this.options.nameOf?.(session.ref);
+    if (name) view.name = name;
     const commit = checkoutCommitOf(session.ref);
     if (commit) view.checkout = { commit };
     const live = this.liveOf(session);

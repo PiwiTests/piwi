@@ -123,7 +123,7 @@ import {
   askToWatchText,
   holdTarget,
   holdText,
-  runLabel,
+  runTitle,
   sharedText,
   spelledSession,
   stopActions,
@@ -164,6 +164,8 @@ export interface RunControlOptions {
   terminate(ref: string): boolean;
   /** The sessions changed, once their controls are drawn: the status item says what they hold. */
   changed?(): void;
+  /** The stops were drawn again (`executionPoints`): the lenses of a stopped line give way to the stop's row. */
+  stopsDrawn?(): void;
 }
 
 /** How long a run started here is waited for, its edits kept, before its first worker connects. */
@@ -443,6 +445,7 @@ export function registerRunControl(
         );
     }
     lensesChanged.fire();
+    options.stopsDrawn?.();
   };
 
   /**
@@ -982,7 +985,7 @@ export function registerRunControl(
         target.candidates.map((ref) => {
           const session = sessions.get(ref);
           return {
-            label: session ? runLabel(session) : ref,
+            label: session ? runTitle(session) : ref,
             description: session?.root ?? undefined,
             detail: session?.hold ? holdText(session.hold) : undefined,
             ref,
@@ -1012,11 +1015,14 @@ export function registerRunControl(
     let ref = 'ref' in target ? target.ref : null;
     if (!ref && 'candidates' in target) {
       const picked = await vscode.window.showQuickPick(
-        target.candidates.map((candidate) => ({
-          label: sessions.get(candidate)?.root ?? candidate,
-          description: candidate,
-          ref: candidate,
-        })),
+        target.candidates.map((candidate) => {
+          const session = sessions.get(candidate);
+          return {
+            label: session ? runTitle(session) : candidate,
+            description: session?.root ?? undefined,
+            ref: candidate,
+          };
+        }),
         { placeHolder: on ? 'Share which run live?' : 'Stop sharing which run?' },
       );
       ref = picked?.ref ?? null;
@@ -1253,12 +1259,13 @@ export function registerRunControl(
     if (live.length < 2) return live[0]?.ref ?? null;
     const picked = await vscode.window.showQuickPick(
       live.map((s) => ({
-        label:
+        label: runTitle(s),
+        description: s.starting ? 'starting' : (s.root ?? undefined),
+        detail:
           s.workers
             .map((w) => w.test?.title.join(' › '))
             .filter(Boolean)
-            .join(', ') || s.ref,
-        description: s.root ?? undefined,
+            .join(', ') || undefined,
         ref: s.ref,
       })),
       { placeHolder: 'Stop which run?' },

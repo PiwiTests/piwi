@@ -580,10 +580,19 @@ with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
   the registered `Piwi.ResumeRun` to `Piwi.EndTest`, the code actions and the browser's, each acting on that stop
   (`STOP`, `registeredWith`) with its key shown;
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
-  `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
-  **Resume**, **Step**, **Run to the caret** and **Finish** as links, and **End the test** at a stop whose worker takes `end`
-  and is no failure (`Glue.canEnd`, `Glue.stopControls`). An `EditorMouseListener` on the multicaster clicks
-  them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
+  `EditorFactoryListener`): the gutter's mark, `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a
+  retry only), then VS Code's row as links (`Glue.stopInlayLinks`): **Resume**, **Step** and **Finish** (Resume alone at
+  a failure), and **Write code…** while the stop offers a code action, which opens them in a popup (`writeCode`), in an
+  inlay hint's font, a size under the editor's. Run to the caret, End the test and each action are in the inlay's
+  context menu and the gutter's. An `EditorMouseListener` on the multicaster clicks them in the editors of its own
+  project (`StopInlay.controlAt`, the hand cursor over one).
+
+While a run is live, a stop's controls come first in the editor's context menu (`Piwi.EditorRunControl`, while a test
+is stopped) and the run controls in the Run menu (`Piwi.RunMenu`), each a `PiwiLiveRunGroup` hidden otherwise. A run
+started in the console has a Run tab built as the platform's `RunContentExecutor` builds one, with `Piwi.RunControl`
+in its toolbar between Rerun and Stop and Close (`PiwiRunTab`), titled after the run's name (`RunCommand.name`); the
+plugin tells the service as its command starts (`piwi/commandStarted`). The choosers and the Worker tab's name a run by
+`Glue.runTitle` (`Run #78 · checkout.spec.ts:12`), its worker's run only while several runs have workers to watch.
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
 (`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; the Paused page

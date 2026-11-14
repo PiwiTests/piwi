@@ -75,6 +75,17 @@ class GlueTest {
     }
 
     @Test
+    fun `a run is named by what it runs, with its number once it has one, as VS Code names it`() {
+        val named = RunSession(ref = "ed-1", root = "/w/shop", name = "checkout.spec.ts:12")
+        assertEquals("checkout.spec.ts:12", Glue.runLabel(named))
+        assertEquals("checkout.spec.ts:12", Glue.runTitle(named))
+        val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
+        assertEquals("Run #78", Glue.runLabel(numbered))
+        assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
+    }
+
+    @Test
     fun `the Connect panel says where the project reads from, the key Apply saves, and what the browser answered`() {
         assertEquals("Mugs, linked to this folder", Glue.linkedProjectLabel("Mugs"))
         assertEquals("The one linked to this folder in the desktop app, none yet", Glue.linkedProjectLabel(null))

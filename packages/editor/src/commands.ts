@@ -168,3 +168,18 @@ export function flakeCommand(testCaseId: number, kind: 'reproduce' | 'verify'): 
     ? `npx @piwitests/reporter flake verify ${testCaseId}`
     : `npx @piwitests/reporter flake ${testCaseId}`;
 }
+
+/** A test file among a run's arguments, with the line and column it may name: `tests/a.spec.ts:3`. */
+const TEST_FILE_ARG = /^[^-\s]\S*\.[cm]?[jt]sx?(:\d+){0,2}$/;
+
+/**
+ * What a run is called wherever a person sees or picks it, from its arguments after `playwright test`: its first test
+ * file with the line it names (`checkout.spec.ts:12`) and how many more, else the title it greps, else every test.
+ */
+export function runName(args: readonly string[]): string {
+  const files = args.filter((arg) => TEST_FILE_ARG.test(arg)).map((arg) => arg.split(/[\\/]/).pop()!);
+  if (files.length) return files.length > 1 ? `${files[0]} and ${files.length - 1} more` : files[0]!;
+  const grep = args.findIndex((arg) => arg === '-g' || arg === '--grep');
+  if (grep >= 0 && args[grep + 1]) return args[grep + 1]!;
+  return 'every test';
+}

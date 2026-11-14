@@ -7,6 +7,7 @@ import {
   playwrightArgsOf,
   playwrightTestCommand,
   repeatArgs,
+  runName,
   shellWord,
   verificationCommand,
 } from '../src/commands';
@@ -166,5 +167,14 @@ describe('flakeCommand', () => {
     expect(flakeCommand(12, 'verify')).toBe('npx @piwitests/reporter flake verify 12');
     expect(flakeCommand(-1, 'reproduce')).toBeNull();
     expect(flakeCommand(1.5, 'verify')).toBeNull();
+  });
+});
+
+describe('runName', () => {
+  test('names a run by its first test file and how many more, else the title it greps, else every test', () => {
+    expect(runName(['tests/checkout.spec.ts:12'])).toBe('checkout.spec.ts:12');
+    expect(runName(['tests/a.spec.ts', 'tests/b.spec.ts', 'tests/c.spec.ts', '--headed'])).toBe('a.spec.ts and 2 more');
+    expect(runName(['-g', 'pays by card', '--workers=1'])).toBe('pays by card');
+    expect(runName(['--project=chromium'])).toBe('every test');
   });
 });

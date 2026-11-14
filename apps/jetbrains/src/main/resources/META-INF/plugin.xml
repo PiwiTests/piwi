@@ -376,6 +376,25 @@
                     description="Find the commit that broke the selected CI failure's test, in the desktop app"/>
         </group>
         <!--
+          While a run is live, its controls where the debugger keeps its own: a stop's first in the editor's context
+          menu, as VS Code's, and the run's in the Run menu.
+        -->
+        <group id="Piwi.EditorRunControl" class="dev.piwitests.jetbrains.PiwiLiveRunGroup">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <reference ref="Piwi.ResumeRun"/>
+            <reference ref="Piwi.StepRun"/>
+            <reference ref="Piwi.RunToCaret"/>
+            <reference ref="Piwi.FinishRun"/>
+            <reference ref="Piwi.EndTest"/>
+            <reference ref="Piwi.ShowStop"/>
+            <separator/>
+        </group>
+        <group id="Piwi.RunMenu" class="dev.piwitests.jetbrains.PiwiLiveRunGroup">
+            <add-to-group group-id="RunMenu" anchor="last"/>
+            <separator/>
+            <reference ref="Piwi.RunControl"/>
+        </group>
+        <!--
           Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS
           Code extension's (run, record, a recording's controls), each entry shown only where it applies.
         -->

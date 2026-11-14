@@ -976,9 +976,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
+      // The run's name (`RunCommand.name`), as its other places say it; a command the service did not register, its line.
       command.label
-        ? `${runTaskName(command.args, command.command)} · ${command.label}`
-        : runTaskName(command.args, command.command),
+        ? `${command.name ?? runTaskName(command.args, command.command)} · ${command.label}`
+        : (command.name ?? runTaskName(command.args, command.command)),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -1198,6 +1199,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     changed: () => {
       if (status || runs) render();
     },
+    stopsDrawn: () => lensesChanged.fire(),
   });
   context.subscriptions.push(runControl);
   runSessions = () => runControl.sessions();
@@ -1803,8 +1805,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         async provideCodeLenses(document) {
           const summary = await summaryOf(document);
           if (!summary) return [];
-          // A test's line is drawn in the gutter and its hover, not as a lens above it.
-          return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
+          // A test's line is drawn in the gutter and its hover, not as a lens above it; a stopped line, by its stop's row.
+          const stopped = new Set(runControl.executionPoints(document.uri.toString()));
+          const lines = summary.lines.filter((l) => !l.status && !stopped.has(l.line));
+          return [...(summary.file ? [summary.file] : []), ...lines].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
