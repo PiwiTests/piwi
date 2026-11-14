@@ -81,11 +81,9 @@ we're missing for this change". The agent picks the skill whose description matc
 
 ## Prompts, the no-install alternative
 
-The MCP server also serves every workflow skill as a **prompt**, which a client shows as a slash command with nothing
-to install: `investigate_failure`, `apply_locator_healing` and the rest, each with an optional `focus` (a run, a
-cluster, a test). The text is the skill shipped with the server's own version. A `setup_piwi` prompt knows this
-instance's URL, whether it requires an API key and its existing projects, which a static skill cannot. Prompts need
-MCP; installed skills work offline. See [MCP server](/features/mcp#prompts).
+The MCP server also serves every workflow skill as a **prompt**, a slash command with nothing to install, in the
+server's own version, plus a `setup_piwi` prompt that knows this instance; installed skills work offline. See
+[Prompts](/features/mcp#prompts).
 
 ## Limits
 

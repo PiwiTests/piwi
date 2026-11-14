@@ -114,7 +114,8 @@ On a run's and a project's **Tests** tab ([test search](/reference/test-search))
 
 ## Element picker
 
-When you [pick a replacement locator](/features/locator-healing) on a captured page:
+In the pickers that pick a replacement locator for [locator healing](/features/locator-healing#use-it): the
+dashboard's **Pick from snapshot** and the failure-time picker of a local run:
 
 | Keys | Action |
 |---|---|

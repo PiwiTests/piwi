@@ -62,16 +62,16 @@ Picking an element with the extension, while connected, gives the same answer wi
 the overlay: under its ranked locators, the tests that reach the element itself, those that
 reach only something inside it, and those that reach only a container around it, each with
 the actions they run. **Show tested elements inside it** opens the overlay limited to that
-element. **Copy all** copies every ranked locator, one per line, for the
-[Locators page](./locator-usage#the-locators-page) of the dashboard.
+element. [**Copy all**](./pick-an-element#copy-as-a-locator-an-action-or-an-assertion) copies every ranked
+locator for the [Locators page](./locator-usage#the-locators-page) of the dashboard.
 
 ## This page
 
-When the tests run with the [capture fixtures](/guide/capture-fixtures), Piwi records the
-[page](/guide/concepts#page-key) each locator call ran on, and the panel opens on **This page**: what tests do on the
-page you are on, `/checkout` or `/orders/:id`, plus the uses whose page no run recorded. A **Save** button a test
-clicks on `/settings` no longer lights up a lookalike on `/profile`; its row under **Not tested** says which locator
-matches it and where tests use it. **All pages** counts every locator that matches here, as without the fixtures.
+When the index knows the [page each locator ran on](./locator-usage#pages), which the capture fixtures record, the
+panel opens on **This page**: what tests do on the page you are on, `/checkout` or `/orders/:id`, plus the uses whose
+page no run recorded. A **Save** button a test clicks on `/settings` does not light up a lookalike on `/profile`; its
+row under **Not tested** says which locator matches it and where tests use it. **All pages** counts every locator that
+matches here, as without the fixtures.
 A site served under a path the tests never saw (`/app/checkout` for `/checkout`) needs the
 [path prefix](./extension-connection#url-patterns) on its URL pattern, and a suite that ran under a path the site does
 not use needs the tests' path prefix; the panel's subtitle then names the prefix removed or added.
@@ -89,22 +89,20 @@ branch's tests will not find, before the branch's suite runs. The lists follow t
 
 ## Brittle locators
 
-A **brittle locator** breaks on a change unrelated to what its test checks: `locator('.btn-primary').nth(1)` breaks
-when the button is restyled or another button appears before it. Piwi judges every locator with the
-[locator stability rules](/reference/locator-stability), and marks an element a brittle locator finds with an orange
-corner; **Brittle**, in the panel, hides the marks.
+The overlay marks an element a [brittle locator](/reference/locator-stability#levels) finds with an orange corner;
+**Brittle**, in the panel, hides the marks. A locator at the *Watch* level reads **Could break** on the element's card.
 
 The **At risk** tab lists the brittle locators finding something on the page, those used by a failing or flaky test
-first, with their tests and call sites. For one that finds a single element, it offers a replacement: a locator for
-that element that the same rules call stable and that finds only it on this page, in the test's own style when that
-style is stable. **Copy the change** copies each call site with the old and the new locator. When no stable locator finds
-only the element, the row says to give it a test id. The element's card says the same next to the locator, and picking
-the element with the extension names the brittle locators finding it.
+first, then those shared by the most tests, with their tests and call sites. For one that finds a single element, it
+offers a replacement, or says to give the element a test id, as
+[Replacements](/reference/locator-stability#replacements) explains. **Copy the change** copies each call site with the
+old and the new locator. The element's card says the same next to the locator, and picking the element with the
+extension names the brittle locators finding it.
 
 ## Setting it up
 
 1. Connect the extension to your instance and map the application's URLs to its project: see
-   [Connecting to a Piwi instance](./extension#connecting-to-a-piwi-instance). A mapping can
+   [Extension connection](./extension-connection). A mapping can
    name the branch deployed at those URLs, a staging site on `develop` for instance: the
    overlay then shows what that branch's tests reach, as the [Locators page](./locator-usage#branches)
    reads a branch. The branch select in the panel changes it for the rest of the browser session.
@@ -139,4 +137,5 @@ it to find what nothing reaches, and to see which tests to read before changing 
 
 - [Who uses a locator](./locator-usage): the same index, read from a locator rather than a page
 - [Browser extension](./extension): install Piwi Picker and connect it
-- [Locator stability rules](/reference/locator-stability): what makes a locator brittle
+- [Locator stability rules](/reference/locator-stability): what makes a locator brittle, and how its replacement is
+  chosen

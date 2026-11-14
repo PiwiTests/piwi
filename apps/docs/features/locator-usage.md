@@ -54,10 +54,9 @@ extension's **Find these locators in Piwi ↗** opens it that way.
 
 **Locators your tests use** lists every chain of the index, the ones shared by the most tests
 first, with a filter. Each count opens **Who uses this?**. A chain the
-[locator stability rules](/reference/locator-stability) flag says why: *brittle* when it breaks on changes unrelated
-to what its test checks, such as a position or a styling class, *watch* when it is only worth a look. The
-**Stability** select lists only those; the extension's [Tested elements](./tested-elements#brittle-locators) offers
-a replacement for them on a live page.
+[locator stability rules](/reference/locator-stability#levels) call *brittle* or *watch* says which and why, such as
+a position or a styling class. The **Stability** select lists only those; the extension's
+[Tested elements](./tested-elements#brittle-locators) offers a replacement for them on a live page.
 
 The index behind this page is also what the extension's [Tested elements](./tested-elements)
 overlay evaluates on a live page.
@@ -90,7 +89,9 @@ With the [capture fixtures](/guide/capture-fixtures), each use also records the
 [page](/guide/concepts#page-key) its call ran on, `/checkout` or `/orders/:id`, and whether it ran as the page loaded,
 before any locator interaction there. The Locators page says where each chain is used and filters by page, **Who
 uses this?** gives the pages of each call site, and the extension's [Tested elements](./tested-elements#this-page)
-shows only what tests do on the page you are on. Without the fixtures a use has no page, and counts on every page.
+shows only what tests do on the page you are on, plus the uses whose page no run recorded, with the
+[path prefixes](./extension-connection#url-patterns) of the site's URL pattern applied. Without the fixtures a use
+has no page, and counts on every page.
 
 ## Requirements and limits
 

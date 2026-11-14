@@ -118,7 +118,7 @@ An entry is **data, never code**: an allowlisted locator program plus, for a flo
 
 Each test's replayed AI steps are reported to the dashboard as a small usage manifest: the committed artifacts it exercised (powering the project's **AI steps** liveness tab) plus **intent mappings** — each compiled locator paired with the prompt it came from. Two places use them:
 
-- **Locator healing**: when the failing locator was compiled from a prompt, the healing panel shows it — *"Compiled from prompt: 'the email address field'"* — so you fix the intent, not just the selector.
+- **Locator healing**: when the failing locator was compiled from a prompt, the **Locator fix** panel shows it — *"Compiled from prompt: 'the email address field'"* — so you fix the intent, not just the selector.
 - **AI diagnosis**: the diagnosis context includes an *AI Steps* section listing the prompts behind the test's locators, so a root cause can be phrased in intent terms ("the element the test calls *the email address field* was renamed"). Capped by `PIWI_AI_MAX_STEP_INTENTS` (default 20, `0` disables).
 
 Intent mappings keep `{param}` placeholders and `{{param}}` markers: parameter values never appear.

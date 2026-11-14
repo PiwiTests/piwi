@@ -21,12 +21,12 @@ ranked by stability, with one marked as the recommended fix.
 
 <figure>
   <img src="/screenshots/locator-healing.png" alt="Locator fix panel with ranked replacement locators and a recommended fix">
-  <figcaption>Ranked replacements captured from the last passing run — the recommendation favours locators that match the conventions already in your suite.</figcaption>
+  <figcaption>Ranked replacements captured from the last passing run, with the recommended fix highlighted.</figcaption>
 </figure>
 
-The ranking prefers what Playwright itself prefers — role and test-id over structural CSS — and leans
-toward the style your existing specs already use, so the suggestion doesn't drag a second convention
-into the codebase.
+The ranking prefers what Playwright itself prefers — role and test-id over structural CSS — and the recommendation
+keeps the style of the locator that broke when that style is stable enough:
+[how the recommended fix is chosen](/features/locator-healing#the-recommended-fix).
 
 ## 2. Jump to the line and change it
 
@@ -43,7 +43,7 @@ Everything above assumes the failure is already in the dashboard. When you're ru
 a faster path — pause on the failing page and pick the replacement from the live DOM, while the app is
 still in the state that broke it.
 
-Two reporter options, both off by default, do it: `pickLocatorOnFailure` opens Piwi's picker aimed at the locator
+Two reporter options, both off by default, do it: `pickLocatorOnFailure` opens Piwi's failure-time picker aimed at the locator
 that just broke, and `inspectOnFailure` opens the same overlay free to inspect any element. The run pauses with the
 failing page still open, you click the element you meant, and the candidate you confirm comes back in the dashboard
 with a **Your pick** badge as the recommended fix. It never rewrites your test.
@@ -56,7 +56,9 @@ and the commands.
 
 Locator healing needs the [capture fixtures](/guide/capture-fixtures) in your test setup. The reporter alone
 uploads results without touching your test code, but it cannot see the DOM — the ranked alternatives
-come from [locator snapshots](/guide/concepts#locator-snapshot) the fixtures record while the test runs.
+come from [locator snapshots](/guide/concepts#locator-snapshot) the fixtures record while the test runs. The one
+exception is a rename the run's own diff made, which needs no snapshot: see
+[Limits](/features/locator-healing#limits).
 
 It is one file:
 
@@ -81,13 +83,13 @@ Some suites can't take the code change — a vendored test pack, a repo you don'
 don't want mid-release. These routes don't need it, except the last, for an agent, which still does:
 
 **Pick from the trace, after the fact.** When the failing execution has an uploaded trace, the
-alternative-locators panel offers **Pick from trace**: it opens the trace in the dashboard's bundled
+**Locator fix** panel offers **Pick from trace**: it opens the trace in the dashboard's bundled
 [trace viewer](/features/evidence#trace-viewer), whose *Pick locator* tool works on the recorded page
 snapshots. So a CI failure nobody watched live can still be picked visually, days later, from the page
 as it actually was.
 
-**Pick against the live page.** The [browser extension](/features/extension) scores locators with the same
-engine the dashboard uses, directly on the page you're looking at. Picking and recording are fully
+**Pick against the live page.** Piwi Picker's [Pick an element](/features/pick-an-element) scores locators with the
+same engine the dashboard uses, directly on the page you're looking at. Picking and recording are fully
 standalone — nothing is sent anywhere, and it works without a Piwi instance at all. The cost: one
 click from the [Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe),
 which is also how you install it in Edge, or from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/piwi-picker/).

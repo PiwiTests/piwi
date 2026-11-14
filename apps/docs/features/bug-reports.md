@@ -11,7 +11,10 @@ lang: en-US
 A tester who [reports a bug](./report-a-bug) in Piwi Picker can send it to your Piwi instance. Piwi keeps it with its
 steps and the evidence the tester chose to send; writes it as a failing Playwright test for
 your project; and follows that test's runs: from the test being committed, to the bug looking fixed, to the report
-closing when the fix holds.
+closing when the fix holds. This page covers what needs an instance: sending a report, the failing test (the one
+Piwi Picker copies too), and following it to the fix. Recording a report is on
+[Report a bug](./report-a-bug), and playing one again, in the browser or with Playwright, on
+[Replay a bug report](./replay-a-bug-report).
 
 ## Sending a report
 
@@ -61,14 +64,21 @@ page ([exposure](/reference/gap-detectors#exposure)).
 
 ## The failing test
 
-The **Spec** tab renders the steps as a Playwright spec with the same converter as Piwi Picker and
-[`piwi codegen`](/reference/cli#codegen), with what Piwi knows about your project: calls to your
-[test functions](./test-functions) where the steps match one, and for each element the locator your tests already use
-when it is not brittle. Two versions:
+A report's failing test, the one Piwi Picker's **Copy failing test** gives and the one the **Spec** tab shows, is
+written by one converter, also [`piwi codegen`](/reference/cli#codegen)'s: the `@bug` tag, paths instead of the
+recorded site's URLs so your `baseURL` applies, the most stable locator recorded for each element, a URL check after
+each step that leads to another page, the recorded viewport sizes, and the value the page showed beside the marked
+assertion, as a comment. Marked `test.fail()`, it passes while the bug exists and keeps your CI green; once the bug is
+fixed, Playwright reports the expected failure as a failure: remove `test.fail()` and the test guards the fix.
 
-- **To commit**: marked `test.fail()`, so it keeps your CI green while the bug exists, with the `@bug` tag and a
-  `piwi:bug` annotation naming the report.
-- **To run**: the same test without `test.fail()`, which fails on the expected result while the bug is there.
+The **Spec** tab adds what Piwi knows about your project: calls to your [test functions](./test-functions) where the
+steps match one, and for each element the locator your tests already use when it is not brittle, which is why its
+`getByLabel('Coupon')` below reads `getByRole('textbox', { name: 'Coupon' })` in the copy Piwi Picker makes alone. Two
+versions:
+
+- **To commit**: marked `test.fail()`, with a `piwi:bug` annotation naming the report.
+- **To run**: the same test without `test.fail()` or the annotation, which fails on the expected result while the bug
+  is there.
 
 ```ts
 test('bug: coupon not applied to the total', {
@@ -133,22 +143,9 @@ reopens as its ticket moves into and out of Done.
 
 ## Running it with Playwright in the desktop app
 
-For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
-Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
-which shows the same code. The address is in the app's **Settings → Desktop app**, under **Pair with Piwi Picker**
-(`http://127.0.0.1:3000` by default); **Pair by hand** takes the token shown there.
-The token goes only to an app that proves it holds it.
-
-**Run with Playwright…**, in Replay's chooser or on a finished replay, shows what it sends (the title and the steps,
-with the values typed in them) and sends it on **Send**. The request holds steps, never code. The app's window shows
-it with the steps in words, the linked project to run it in, and the flags (headed and a trace by default, a
-Playwright project, a repeat count). Nothing runs before **Run with Playwright**; **Decline** drops it, and a request
-left unanswered expires after ten minutes.
-
-The app writes the spec to run, with the project's settings, to `piwi-repro/bug-<id>.spec.ts` under the test directory
-your Playwright config names, runs it in the **Local runs** tray with the project's own config, and deletes it when the
-run ends. The verdict, read from where the test failed, goes back to Piwi Picker: **reproduced** when an expected
-result does not hold, **not reproduced** when the test passes, or **diverged** at the step that failed first.
+Piwi Picker sends a report's steps to the [desktop app](./desktop), once
+[paired with it](./extension-connection#pair-with-the-desktop-app), which runs them with Playwright in your project for
+the exact verdict and a trace: see [Running it with Playwright](./replay-a-bug-report#running-it-with-playwright).
 
 ## Replaying a report from Piwi
 

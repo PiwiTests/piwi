@@ -11,7 +11,8 @@ lang: en-US
 **Replay** plays a [bug report](./report-a-bug)'s steps again in a tab, with a cursor that moves to each element and a
 caption saying what it does, then says whether the bug shows there. It suits the developer who receives the report:
 open the app on your own dev server, and the steps run there, with your session and your browser's developer tools at
-hand.
+hand, or [with Playwright](#running-it-with-playwright) in the desktop app. Recording a report is on
+[Report a bug](./report-a-bug), and what an instance keeps on [Bug reports](./bug-reports).
 
 <figure>
   <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
@@ -44,7 +45,7 @@ a few seconds more, up to a minute. The replay ends with one of four answers:
 - **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 40.00", and the panel says
   whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
-- **Could not reach the bug**: a step could not be played (it found no element, several, or a disabled one, or the
+- **Could not reach the bug** (the dashboard's *diverged*): a step could not be played (it found no element, several, or a disabled one, or the
   flow ended on another page) and you stopped there. The data, the login or a flag differ here.
 - **Failed at step 4, as in the test run**: in a report made from a test run, the step that could not be played is
   the one the test failed at.
@@ -77,13 +78,10 @@ Under the answer, the panel lists the steps played by hand.
 
 ## A report made from a test run
 
-A `.piwibug` exported from a failed execution holds the test's steps up to the failure, setup hooks included, and its
-failing assertion with what it expected and what the run received. What the run did not keep enough of to play
-becomes a **manual step**, which Replay hands to you as above, with the line of the test it stands for: a click at a
-point of the page, a value the run kept only in part, a file choice, an option chosen by its index or several options
-chosen at once, a check with a regular expression. Replay writes it in Piwi Picker's language. API requests,
-scripts run in the page, route mocks and checks on values are not steps at all: the report's Markdown lists them under
-**Not replayed**, with why.
+A `.piwibug` exported from a failed execution holds the test's steps up to the failure and its failing assertion;
+what the run did not keep enough of to play becomes a [manual step](/reference/steps-format#manual-steps), which Replay
+hands to you as above, with the line of the test it stands for, in Piwi Picker's language. Calls that are not steps at
+all are listed in the report's Markdown under **Not replayed**.
 
 When the test failed on an action rather than on an assertion, the report says which step; reaching it and failing
 there answers **Failed at step N, as in the test run**, and playing it answers **Not reproduced**. A typed password is
@@ -100,10 +98,11 @@ to you.
 
 ## Trusted input
 
-In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page
-cannot tell from a person's. Chrome shows its debugging bar until the replay ends. In Firefox, when the browser refuses
-the session, once the bar is cancelled, or once the browser refuses one of its commands (the bar then closes), Replay
-goes on with the page's own events; the panel says which, step by step.
+In Chrome and Edge, Replay sends trusted input as Playwright does, through the
+[debugging protocol](./extension#the-debugging-bar): a real hover, clicks, keys and drags that the page cannot tell
+from a person's, under Chrome's debugging bar until the replay ends. In Firefox, when the browser refuses the session,
+once the bar is cancelled, or once the browser refuses one of its commands (the bar then closes), Replay goes on with
+the page's own events; the panel says which, step by step.
 
 A report names the files a step chose but never carries them: Replay asks you to choose them, or to skip the step.
 
@@ -112,9 +111,18 @@ tab gets its own size back when the replay ends. Otherwise the panel says when t
 
 ## Running it with Playwright
 
-**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the paired
-[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), which runs them in your project once you
-confirm it there.
+For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project,
+once Piwi Picker is [paired with it](./extension-connection#pair-with-the-desktop-app). **Run with Playwright…**, in
+Replay's chooser beside **Start** or on a finished replay, shows what it sends (the title and the steps, with the
+values typed in them) and sends it on **Send**. The request holds steps, never code. The app's window shows it with
+the steps in words, the linked project to run it in, and the flags (headed and a trace by default, a Playwright
+project, a repeat count). Nothing runs before **Run with Playwright**; **Decline** drops it, and a request left
+unanswered expires after ten minutes.
+
+The app writes the spec to run, with the project's settings, to `piwi-repro/bug-<id>.spec.ts` under the test directory
+your Playwright config names, runs it in the **Local runs** tray with the project's own config, and deletes it when the
+run ends. The verdict, read from where the test failed, goes back to Piwi Picker: **reproduced** when an expected
+result does not hold, **not reproduced** when the test passes, or **diverged** at the step that failed first.
 
 ## Limits
 

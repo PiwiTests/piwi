@@ -95,9 +95,14 @@ locator finds, and `toBeChecked` checks a checkbox, a radio or an element with `
 
 ## Manual steps
 
-A `manual` step is one nothing can play: a person does it by hand. Piwi writes one when it makes steps from a test run
-and the run did not keep enough to play a call, such as a click at a point of the page, a value it kept only in part,
-or a check with a regular expression.
+A `manual` step is one nothing can play: a person does it by hand. Piwi writes one when it makes steps from a test run,
+as a failed execution's [Export](/reference/bug-report-file#a-report-made-from-a-test-run) does. Those steps hold the
+test's steps up to the failure, setup hooks included, and its failing assertion with what it expected and what the
+run received; a call the run did not keep enough of to play becomes a manual step naming the line of the test it
+stands for: a click at a point of the page, a value the run kept only in part, a file choice, an option chosen by its
+index or several options chosen at once, a check with a regular expression. API requests, scripts run in the page,
+route mocks and checks on values are not steps at all: the report's Markdown lists them under **Not replayed**, with
+why.
 
 ```json
 {

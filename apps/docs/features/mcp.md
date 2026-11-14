@@ -217,12 +217,14 @@ Windsurf reads `~/.codeium/windsurf/mcp_config.json`; Continue reads `~/.continu
 
 ## Prompts
 
-The server also exposes MCP **prompts**, which a client offers as slash commands. `setup_piwi` generates the setup
-for a Playwright project that does not report here yet. It fills in this instance's URL, whether it requires a key
-and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and a first run.
-The six workflow [agent skills](/features/agent-skills) are prompts too (`investigate_failure`,
+The server also exposes MCP **prompts**, which a client offers as slash commands, with nothing to install.
+`setup_piwi` sets up a Playwright project that does not report here yet, with this instance's URL, whether it
+requires a key and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and
+a first run; an optional `projectName` names the project. Each workflow [agent skill](/features/agent-skills) is a prompt too (`investigate_failure`,
 `apply_locator_healing`, `stabilize_flaky_tests`, `run_the_right_tests`, `write_the_missing_test`,
-`fix_a_reported_bug`), each with an optional `focus` argument, in the version this server ships.
+`fix_a_reported_bug`), in the version this server ships, with an optional `focus` (a run, a cluster, a test, a gap or a
+bug report, as an id or a URL). Prompts need the MCP connection; installed skills work
+offline.
 
 ## Related
 
