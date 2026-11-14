@@ -9,4 +9,5 @@ defineIsolationTests(test);
 test('resets through the fast path', async ({ page }) => {
   await page.goto('about:blank');
   expect(state.counters.fastResets).toBeGreaterThan(0);
+  expect(state.counters.skippedPointerResets).toBeGreaterThan(0);
 });

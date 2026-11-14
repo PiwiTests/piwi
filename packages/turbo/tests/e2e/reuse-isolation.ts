@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { Page } from '@playwright/test';
 import type { test as turboTest } from '../../src/test';
 import { expect } from '../../src/test';
 
@@ -178,15 +179,57 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(idOf(context)).toBe(previous);
   });
 
+  const animated = `<style>#box{width:10px;transition:width 20s linear}#box.wide{width:300px}</style><div id="box"></div>
+    <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('wide')))</script>`;
+
   test.describe('with instantAnimations', () => {
     test.use({ instantAnimations: true });
-    const animated = `<style>#box{width:10px;transition:width 20s linear}#box.wide{width:300px}</style><div id="box"></div>
-      <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('wide')))</script>`;
 
     for (const which of ['the first test', 'the next test on the same tab']) {
       test(`runs a long transition at once in ${which}`, async ({ page }) => {
         await page.setContent(animated);
         await expect(page.locator('#box')).toHaveCSS('width', '300px', { timeout: 2000 });
+      });
+    }
+  });
+
+  test('runs animations at their own speed after a test that sped them up', async ({ page }) => {
+    await page.setContent(animated);
+    await page.waitForTimeout(300);
+    expect(await page.locator('#box').evaluate((box) => box.getBoundingClientRect().width)).toBeLessThan(100);
+  });
+
+  const covered =
+    '<style>#cover:hover{color:rgb(255, 0, 0)}</style><div id="cover" style="position:fixed;inset:0">x</div>';
+  const hovered = (page: Page) =>
+    page.locator('#cover').evaluate((cover) => getComputedStyle(cover).color === 'rgb(255, 0, 0)');
+
+  test('leaves the mouse over the page', async ({ page }) => {
+    await page.setContent(covered);
+    await page.mouse.move(200, 200);
+    await expect.poll(() => hovered(page)).toBe(true);
+  });
+
+  test('starts with the mouse away from the page', async ({ page }) => {
+    await page.setContent(covered);
+    // Chromium updates the hover state of a new layout a few frames later.
+    await page.waitForTimeout(300);
+    expect(await hovered(page)).toBe(false);
+  });
+
+  test.describe('with failFast', () => {
+    test.use({ failFast: true });
+
+    for (const which of ['the first test', 'the next test on the same context']) {
+      test(`ends a failing assertion on an idle page in ${which}`, async ({ page }) => {
+        await page.route('https://idle.test/', (route) => route.fulfill({ contentType: 'text/html', body: '<p>idle' }));
+        await page.goto('https://idle.test/');
+        const started = Date.now();
+        const error = await expect(page.locator('#missing'))
+          .toBeVisible({ timeout: 5000 })
+          .catch((caught: Error) => caught);
+        expect(error).toBeTruthy();
+        expect(Date.now() - started).toBeLessThan(2000);
       });
     }
   });

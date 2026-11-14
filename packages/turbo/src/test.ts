@@ -1,7 +1,14 @@
 // `test` with @piwitests/turbo's fixtures: request blocking, failure screenshots, instant animations, and
 // the experimental hooks, each off until enabled in `use`.
 import { test as base, expect, type BrowserContext, type Page, type Request, type TestInfo } from '@playwright/test';
-import { assertHooksWork, installFastStackTraces, installHooks, state, validIntervals } from './hooks';
+import {
+  assertHooksWork,
+  hookExistingPage,
+  installFastStackTraces,
+  installHooks,
+  state,
+  validIntervals,
+} from './hooks';
 import { IDLE_TRACKER } from './idle-tracker';
 import type { BlockRule, TurboOptions } from './types';
 
@@ -9,12 +16,28 @@ function routeMatcher(rule: BlockRule): string | RegExp | ((url: URL) => boolean
   return typeof rule === 'function' ? (url: URL) => rule(url) : rule;
 }
 
-/** Runs the page's document timeline 1000 times faster: CSS transitions and animations, and Web Animations. */
+/** The guid of a page or context, which stays the same across the tests of a reused context. */
+function guidOf(object: Page | BrowserContext): string {
+  return (object as unknown as { _guid: string })._guid;
+}
+
+/** The contexts that have the idle tracker, by guid: the hooks keep it for the context's life. */
+const trackedContexts = new Set<string>();
+
+/** The tabs whose animations run faster, by guid: a reused context keeps its tab, and the tab its playback rate. */
+const fastTabs = new Set<string>();
+
+/**
+ * Runs the page's document timeline 1000 times faster: CSS transitions and animations, and Web Animations. The rate
+ * holds while the CDP session that set it stays attached, for the tab's life: across navigations and, on a reused
+ * context, the next tests. The Animation domain stays disabled, so the session receives no events.
+ */
 async function speedUpAnimations(context: BrowserContext, page: Page): Promise<void> {
+  if (fastTabs.has(guidOf(page))) return;
   try {
     const session = await context.newCDPSession(page);
-    await session.send('Animation.enable');
     await session.send('Animation.setPlaybackRate', { playbackRate: 1000 });
+    fastTabs.add(guidOf(page));
   } catch (error) {
     // A page the test already closed has nothing left to speed up.
     if (!page.isClosed()) throw error;
@@ -174,7 +197,7 @@ export const test = base.extend<
     // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
     const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
-    const hooks = fast || !!intervals || failFast || skipStabilityWait;
+    const hooks = fast || !!intervals || failFast || skipStabilityWait || (reuseContextWithReset && fastReset);
     if (hooks) {
       if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
@@ -182,21 +205,33 @@ export const test = base.extend<
         );
       }
       installHooks();
+      // A reused context's tab may predate the hooks: they reach Playwright's classes through it.
+      const pages = context.pages();
+      for (const page of pages) hookExistingPage(page);
+      if (pages.length) assertHooksWork({ needsChromium: fast });
     }
     state.fastScreenshots = fast;
     state.retryIntervals = intervals;
     state.failFast = failFast;
     state.skipStabilityWait = skipStabilityWait;
     try {
-      if (failFast) await context.addInitScript(IDLE_TRACKER);
+      if (failFast && !trackedContexts.has(guidOf(context))) {
+        await context.addInitScript(IDLE_TRACKER);
+        trackedContexts.add(guidOf(context));
+      }
       for (const rule of blockRequests)
         await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
       // A reused context comes back for the next test: whatever this test adds to it is removed when it ends.
       const listeners: Array<() => void> = [];
       const speedUps = new Map<Page, Promise<void>>();
+      // A reused context starts the test with the last test's tab, which the test gets without newPage. A tab an
+      // earlier test sped up is closed for a test without instant animations, which gets a new one.
+      for (const page of context.pages()) {
+        if (instantAnimations || !fastTabs.delete(guidOf(page))) continue;
+        await page.close();
+      }
       if (instantAnimations && browserName === 'chromium') {
         const onPage = (page: Page) => speedUps.set(page, speedUpAnimations(context, page));
-        // A reused context starts the test with the last test's tab, which the test gets without newPage.
         for (const page of context.pages()) onPage(page);
         await Promise.all(speedUps.values());
         context.on('page', onPage);

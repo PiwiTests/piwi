@@ -3,9 +3,11 @@
 //   fast screenshots  adds CDP's `optimizeForSpeed` to Chromium's `Page.captureScreenshot` for PNGs (same pixels,
 //                     faster encoding, larger files)
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
-//   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
+//   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout; its idle
+//                     tracker, an init script, stays in a reused context for its life
 //   fast reset        when Playwright resets a reused context, clears the storage of the origins the test visited
-//                     from the frames still on them and through CDP, so the reset has no origin to load
+//                     from the frames still on them and through CDP, so the reset has no origin to load, and moves
+//                     the mouse away only from a tab a pointer acted in
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
@@ -14,6 +16,7 @@
 // They wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
 import { createRequire } from 'node:module';
+import { IDLE_TRACKER } from './idle-tracker';
 import { TESTED_VERSIONS } from './versions';
 
 const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
@@ -40,7 +43,14 @@ export const state = {
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
-  counters: { optimizedScreenshots: 0, shortenedRetries: 0, failedFast: 0, skippedStabilityWaits: 0, fastResets: 0 },
+  counters: {
+    optimizedScreenshots: 0,
+    shortenedRetries: 0,
+    failedFast: 0,
+    skippedStabilityWaits: 0,
+    fastResets: 0,
+    skippedPointerResets: 0,
+  },
   elementHooked: false,
 };
 
@@ -193,6 +203,23 @@ async function sealStorage(frames: ServerPage[], progress: unknown): Promise<boo
 /** Contexts whose next storage reset clears their visited origins through CDP. */
 const sealedContexts = new WeakSet<object>();
 
+/** The idle tracker stays in the context it is added to for the context's life, across a reused context's tests. */
+function hookIdleTracker(core: ServerPage): void {
+  const proto = core.server?.BrowserContext?.prototype;
+  const addInitScript = proto?.addInitScript as ((progress: unknown, source: string) => Promise<unknown>) | undefined;
+  if (typeof addInitScript !== 'function')
+    throw new IncompatibleError("Playwright's server BrowserContext has no addInitScript()");
+  proto.addInitScript = async function (this: ServerPage, progress: unknown, source: string) {
+    const script = (await addInitScript.call(this, progress, source)) as { dispose?: unknown };
+    if (source !== IDLE_TRACKER) return script;
+    if (typeof script?.dispose !== 'function')
+      throw new IncompatibleError("Playwright's init scripts have no dispose()");
+    // The reset of a reused context disposes what the test's client added: the tracker is kept.
+    script.dispose = async () => {};
+    return script;
+  };
+}
+
 function hookContextReset(core: ServerPage): void {
   const proto = core.server?.BrowserContext?.prototype;
   const resetForReuse = proto?.resetForReuse as ((progress: unknown, params: unknown) => Promise<unknown>) | undefined;
@@ -343,7 +370,48 @@ function hookChromiumSession(page: ServerPage): void {
     }
     return original.call(this, method, params);
   };
+  hookPointerReset(delegate);
   state.sessionHooked = true;
+}
+
+/** The CDP clients of the Chromium tabs a pointer acted in since their last reset. */
+const pointerUsed = new WeakSet<object>();
+
+/** With fastReset, the reset of a tab no pointer acted in since its last one skips moving the mouse away. */
+function hookPointerReset(delegate: ServerPage): void {
+  const client = delegate._mainFrameSession._client;
+  const mouse = delegate.rawMouse;
+  const touchscreen = delegate.rawTouchscreen;
+  if (mouse?._client !== client || touchscreen?._client !== client)
+    throw new IncompatibleError("Chromium's raw mouse and touchscreen no longer use the page's CDP session");
+  const reset = Object.getPrototypeOf(delegate).resetForReuse as ((progress: unknown) => Promise<void>) | undefined;
+  const source = String(reset);
+  if (!source.includes('this.rawMouse.move(progress2, -1, -1') || source.split('await ').length !== 2)
+    throw new IncompatibleError("Chromium's page reset no longer only moves the mouse away");
+  const inputs: Array<[object, string[]]> = [
+    [Object.getPrototypeOf(mouse), ['move', 'down', 'up', 'wheel']],
+    [Object.getPrototypeOf(touchscreen), ['tap']],
+  ];
+  for (const [proto, names] of inputs) {
+    for (const name of names) {
+      const original = (proto as Record<string, (...args: unknown[]) => unknown>)[name];
+      if (typeof original !== 'function') throw new IncompatibleError(`Chromium's raw input has no ${name}()`);
+      (proto as Record<string, unknown>)[name] = function (this: ServerPage, ...args: unknown[]) {
+        pointerUsed.add(this._client);
+        return original.apply(this, args);
+      };
+    }
+  }
+  Object.getPrototypeOf(delegate).resetForReuse = async function (this: ServerPage, progress: unknown) {
+    const tab = this._mainFrameSession?._client;
+    // The mouse was never over this tab's content since its last reset: no hover state to clear.
+    if (state.fastReset && tab && !pointerUsed.has(tab)) {
+      state.counters.skippedPointerResets++;
+      return;
+    }
+    await reset!.call(this, progress);
+    pointerUsed.delete(tab);
+  };
 }
 
 function isChromium(page: ServerPage): boolean {
@@ -362,19 +430,36 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
   hookContextReset(core);
+  hookIdleTracker(core);
   const reportAsNew = Page.prototype.reportAsNew;
   // Every new page passes through reportAsNew: the first one gives access to the classes to wrap.
   Page.prototype.reportAsNew = function (this: ServerPage, ...args: unknown[]) {
-    state.pagesSeen++;
-    try {
-      if (!state.frameHooked) hookFrame(this.mainFrame());
-      if (!state.sessionHooked && isChromium(this)) hookChromiumSession(this);
-    } catch (error) {
-      state.error ??= error as Error;
-    }
+    hookClassesOf(this);
     return reportAsNew.apply(this, args);
   };
   state.installed = true;
+}
+
+/** Wraps the frame class and, on Chromium, the CDP session class, reached through a server page. */
+function hookClassesOf(page: ServerPage): void {
+  state.pagesSeen++;
+  try {
+    if (!state.frameHooked) hookFrame(page.mainFrame());
+    if (!state.sessionHooked && isChromium(page)) hookChromiumSession(page);
+  } catch (error) {
+    state.error ??= error as Error;
+  }
+}
+
+/**
+ * Hooks the classes through a page created before the hooks were installed, such as the tab a reused context keeps,
+ * which never passes through reportAsNew again. Only a browser running in this process has a server page to reach.
+ */
+export function hookExistingPage(page: unknown): void {
+  if (state.frameHooked && state.sessionHooked) return;
+  const connection = (page as { _connection?: { toImpl?: (object: unknown) => ServerPage } })._connection;
+  const server = connection?.toImpl?.(page);
+  if (server) hookClassesOf(server);
 }
 
 /** Throws the first incompatibility a hook ran into, and checks that the browser runs in this process. */

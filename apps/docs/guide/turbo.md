@@ -113,7 +113,8 @@ name them under `experimental` to pick some.
   and hit-target checks stay. Leave it off for apps that ignore input while they animate.
 - `fastReset` (Chromium, with context reuse): between tests, the storage of the origins the test visited is cleared
   from the frames still on them and through CDP, where Playwright's reset loads each origin again. After a test that
-  left an origin it visited, Playwright's reset runs as it is.
+  left an origin it visited, Playwright's reset runs as it is. The mouse is moved away from the tab only after a test
+  that used Playwright's mouse or touchscreen.
 - `fastStackTraces`: Playwright captures a stack for every API call, and looks up a source map for each of its
   frames. The frames of Node and of `node_modules`, which have none, skip the lookup; stack traces read the same.
 

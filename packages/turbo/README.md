@@ -114,7 +114,9 @@ withOptimizations(config, {
   enabled and hit-target checks stay. Leave it off for apps that ignore input while they animate.
 - **`fastReset`** (Chromium, with `reuseContext`): between tests, the storage of the origins the test visited is
   cleared from the frames still on them and through CDP, where Playwright's reset loads each origin again to clear
-  it. After a test that left an origin it visited, Playwright's reset runs as it is.
+  it. After a test that left an origin it visited, Playwright's reset runs as it is. The mouse is moved away from the
+  tab only after a test that used Playwright's mouse or touchscreen: input a test sends through its own CDP session is
+  not seen.
 - **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
   a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
   lookup; stack traces read the same.
