@@ -6,15 +6,28 @@ catalog that renders one of them, and where a reader of each tool finds its page
 [`docs-revamp.md`](../adr/docs-revamp.md) (v0.39.0), whose mechanisms shipped and are measured here against the site
 they now hold.
 
-**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit: step 1 of [the plan](#the-plan),
-all six items but one link. The Features groups are collapsed; the loop page is linked from the landing page, Getting started,
-Editor extensions and Browser extension, Tracing from Metrics and the Production checklist, What Piwi does from
-Getting started; the Reference sidebar has six groups; Codex CLI and DeepSeek CLI are nested under AI provider
-(`SidebarItem` has `items`, and `sidebarEntries()` flattens a sidebar for the drift test and `llms.txt`); `FeatureNeed`
-has `editor`, on 13 catalog entries and their pages; Getting started has a section on where the tests are written.
-Left out: the loop page's link on Desktop app, a page at its word budget whose Related list would lose Desktop app
-runs to make room. Steps 2 and 3 wait for the [decisions](#decisions-for-you). What the pages say, as opposed to
-where they are, is audited in [`docs-content-audit.md`](docs-content-audit.md).
+**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit:
+
+- **Step 1 of [the plan](#the-plan)**, all six items but one link. The Features groups are collapsed; the loop page
+  is linked from the landing page, Getting started, Editor extensions and Browser extension, Tracing from Metrics and
+  the Production checklist, What Piwi does from Getting started; the Reference sidebar has six groups; Codex CLI and
+  DeepSeek CLI are nested under AI provider; `FeatureNeed` has `editor`, on the catalog entries and pages of the
+  editor's features; Getting started has a section on where the tests are written. Left out: the loop page's link on
+  Desktop app, a page at its word budget.
+- **Step 2, the Tools section and the regrouping**, with every URL kept (decision 3) and the four jobs' wording left
+  as it is (decision 2, not taken). The catalog's groups are the nine of Features below, five tool groups marked
+  `section: 'tools'` and Self-hosting. `toolsSidebar()` renders the Tools sidebar: a tool's own page is its group's
+  heading, and entries that share a `part` sit under its label. Each tool page is a sidebar key of its own, and the
+  top navigation's patterns are built from the same list. The landing page shows seven cards: a job's card counts
+  the narrower groups after it, and one card stands for the tools. Where it differs from the tree below: Explain the
+  failures comes before Watch a run, so each narrower group follows its job; UI overview and Guides stay in Keep the
+  history, with no Overview group; nothing is nested in the Features sidebar (Live view of a run and its three pages
+  are siblings); the extension's bug pages sit under "Bugs"; Tools has no Command line group, the CLI staying in
+  Reference; Remote development is a catalog entry, under Editor extensions. The Reference sidebar, at 1,225 px, is
+  the one sidebar taller than a screen.
+
+Step 3 and what was not done are under [Left for later](#left-for-later). What the pages say, as opposed to where
+they are, is audited in [`docs-content-audit.md`](docs-content-audit.md).
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -334,3 +347,12 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 6. **Groups named for the job, with the place in the intro**, or renamed after the app's tabs (Coverage, Performance).
    Recommended: the first. The same question stands for the app, which groups its capabilities a third way
    ([`docs-content-audit.md`](docs-content-audit.md#what-the-app-could-change), item 13).
+
+## Left for later
+
+- **A CI merge gate page** (L10), and Core concepts as a short page plus a glossary (L12).
+- **The Self-hosting items** (L13) and the file names that differ from their page's title (L14).
+- **The loop page's link on Desktop app**, and a place for the `piwi` CLI among the tools.
+- **Nesting inside a Features group**: Live view of a run over its three pages, Resource leaks over Leak history.
+- **The Reference sidebar**, a screen and a third tall since it has six groups.
+- **Decision 2**: whether writing and debugging tests is a fifth job in `ROADMAP.md` and What Piwi does.

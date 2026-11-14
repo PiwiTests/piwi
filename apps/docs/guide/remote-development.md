@@ -6,6 +6,8 @@ lang: en-US
 
 # Remote development
 
+<Needs editor />
+
 In remote development the editor's window is on your computer, while the code, the
 [editor service](/features/editors) and the test runs are on another machine: a server over SSH, WSL, a dev container
 or a codespace. What the editor shows from the service works there as it does on your computer: failures, runs,

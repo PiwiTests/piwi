@@ -91,13 +91,19 @@ What that means for a page:
 
 ### One grouping: the feature catalog
 
-The feature catalog (`apps/application/shared/piwi-features.ts`) is the only place features are grouped. Three things
+The feature catalog (`apps/application/shared/piwi-features.ts`) is the only place features are grouped. Four things
 are rendered from it, so never restate its lists by hand:
 
 - the **Features sidebar**, by `featuresSidebar()` in `.vitepress/navigation.ts`: one group per catalog group, one
   entry per catalog entry whose page is under `features/`;
-- the **landing page's cards**, one per catalog group, set by `transformPageData` in `.vitepress/config.mts`;
+- the **Tools sidebar**, by `toolsSidebar()`: one group per catalog group with `section: 'tools'`. A group whose first
+  entry carries its title links its heading to that entry's page, and entries that share a `part` sit under its label;
+- the **landing page's cards**, set by `transformPageData` in `.vitepress/config.mts`: one per group, a group with
+  `card: false` counted on the card before it, and one card for all the tools;
 - the **All features** page, `reference/features.md`.
+
+**A tool's page keeps its URL** under `features/` (or `guide/`): `sidebars()` gives each one a key of its own, and the
+top navigation's `activeMatch` patterns are built from the same list.
 
 The top navigation and the Guide, Self-hosting and Reference sidebars are plain data in `.vitepress/navigation.ts`,
 which the drift test also reads.
@@ -107,14 +113,16 @@ which the drift test also reads.
 | Guide → Get started | `guide/` | "How do I get a first run in, and what do these words mean?" |
 | Guide → Set up | `guide/` | "How do I connect my suite, my CI, and what a feature needs?" |
 | Guide → About Piwi | `guide/` | "What is this, and should I adopt it?" |
-| Features | `features/`, `recipes/` | "What does this feature do, and how do I use it?", grouped by catalog group |
+| Features | `features/`, `recipes/` | "What does the dashboard do with my results?", grouped by catalog group |
+| Tools | `features/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents |
 | Self-hosting | `operate/` | "I run the server." |
 | Reference | `reference/` | "What are all the values?" |
 
 ### Where a new page goes
 
-- **A new feature** adds a catalog entry and one page under `features/`. The entry's `title` is the page's H1 and its
-  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
+- **A new feature** adds a catalog entry and one page under `features/`: in a tool's group when the reader uses it
+  from an editor extension, Piwi Picker, the desktop app or an agent, else in a Features group. The entry's `title` is
+  the page's H1 and its sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
   feature groups an entry's `doc` is a whole page, never a `#section`; only the Self-hosting group may point into a
   section of an operator page. A page stays single-purpose: if it needs two sentences to say what it is for, it is two
   pages (`storage` + `database` was one).

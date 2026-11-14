@@ -34,7 +34,8 @@ const GENERATED = new Set([
 ]);
 
 const jiti = createJiti(import.meta.url);
-const { sidebars, sidebarEntries } = await jiti.import(join(docsRoot, '.vitepress/navigation.ts'));
+const { featuresSidebar, guideSidebar, referenceSidebar, selfHostingSidebar, sidebarEntries, toolsSidebar } =
+  await jiti.import(join(docsRoot, '.vitepress/navigation.ts'));
 const { demoExamplesFor } = await jiti.import(join(docsRoot, '../application/shared/demo/demo-examples.mjs'));
 const { downloadsMarkdown } = await jiti.import(join(docsRoot, '../application/shared/app-downloads.mjs'));
 
@@ -47,16 +48,16 @@ const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n/;
 
 /** Each sidebar's entries, nested ones included, in the order of the top navigation, one entry per page. */
 const SECTIONS = [
-  ['Guide', '/guide/'],
-  ['Features', '/features/'],
-  ['Self-hosting', '/operate/'],
-  ['Reference', '/reference/'],
+  ['Guide', guideSidebar],
+  ['Features', featuresSidebar()],
+  ['Tools', toolsSidebar()],
+  ['Self-hosting', selfHostingSidebar],
+  ['Reference', referenceSidebar],
 ];
-const all = sidebars();
 const seen = new Set();
-const sections = SECTIONS.map(([name, prefix]) => ({
+const sections = SECTIONS.map(([name, sidebar]) => ({
   name,
-  pages: sidebarEntries(all[prefix])
+  pages: sidebarEntries(sidebar)
     .filter((item) => item.link.startsWith('/'))
     .map((item) => ({ text: item.text, page: item.link.replace(/^\//, '').replace(/#.*$/, '') }))
     .filter(({ page }) => !seen.has(page) && seen.add(page)),

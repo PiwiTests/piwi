@@ -20,8 +20,8 @@ hero:
       text: GitHub
       link: https://github.com/PiwiTests/piwi
 
-# The cards under the hero are the feature catalog's groups, one card each,
-# filled in by transformPageData in .vitepress/config.mts.
+# The cards under the hero come from the feature catalog: one per job, one for
+# the tools, filled in by transformPageData in .vitepress/config.mts.
 ---
 
 <div class="home-start">
