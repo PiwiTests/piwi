@@ -888,6 +888,10 @@ class GlueTest {
         assertEquals(Glue.StatusIcon.RUNNING, Glue.runProgressIcon(mapOf("ed-1" to counted, "ed-2" to failing)))
         assertEquals(Glue.StatusIcon.FAILING, Glue.runProgressIcon(mapOf("ed-2" to failing, "ed-4" to flaky)))
         assertEquals(Glue.StatusIcon.PASSED, Glue.runProgressIcon(mapOf("ed-4" to flaky)))
+        fun ending(status: String) = mapOf("ed-5" to flaky.copy(progress = flaky.progress!!.copy(flaky = 0, status = status)))
+        assertEquals(Glue.StatusIcon.FAILING, Glue.runProgressIcon(ending("failed")))
+        assertEquals(Glue.StatusIcon.FAILING, Glue.runProgressIcon(ending("timedout")))
+        assertEquals(Glue.StatusIcon.WARNING, Glue.runProgressIcon(ending("interrupted")))
         // An agent's run says so, never reading as the person's own.
         val agents = counted.copy(label = "Started by Claude Code")
         assertEquals("Piwi: 3 of 9 · Started by Claude Code", Glue.runProgressText(mapOf("ed-1" to agents)))

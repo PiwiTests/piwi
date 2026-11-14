@@ -480,7 +480,7 @@ refused, as the panel hides or closes, at another slot's stop, at a stop that ta
 away (`changed`), so a rerun under the ref starts with it off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
-(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and the status menu's Watch a worker's test open
 **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
@@ -537,7 +537,7 @@ among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Pau
 (`stopPresence`) add who drives the stop (`driverText`, from `RunStop.driver`: `You drive this stop`, `An agent drives
 this stop: your input takes control` where the stop takes input) and who else watches its page (`watchersText`, from
 `RunWorker.watchers`, the editor itself named `you` and left out when alone); the paused page's caption follows them as
-they change. The progress item's tooltip names the other tools that have each run open (`presenceText`, from
+they change. The count's tooltip, leading the status item's, names the other tools that have each run open (`presenceText`, from
 `RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
 off, Escape included, gives it back.
 
@@ -649,15 +649,16 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 
 **The alarm**, `statusBarItem.errorBackground`, is the service's (`RunStatus.alarm`), as `piwi.statusBarAlert`, sent in
 the credentials, chooses: `new`, the default, only for a test a run this window started failed that the baseline does
-not fail, until a run fixes it, so a CI failure or a teammate's is counted but never red; `any`, any failing test;
+not fail, until a run fixes it or the service restarts (it knows its own runs, `ownRuns`, while it runs), so a CI
+failure or a teammate's is counted but never red; `any`, any failing test;
 `never`. A run in progress is never the alarm.
 
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
 in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
 told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
-the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
-counts the window's runs from the same events, with or without an instance.
+the run is finalizing or another run takes the ref, so the count never goes back. While the window's runs count from
+their own events, with or without an instance, the item shows that count instead (`progressItem`).
 
 **A click** opens the status menu (`piwi.statusMenu`, `statusMenu` in `src/glue.ts`): a quick pick in the JetBrains
 popup's sections, each row titled by the action catalog and offered only where its command acts, from the context keys

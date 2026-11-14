@@ -11,8 +11,8 @@ how far a run in progress is, for the Playwright config of the file you are edit
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
-is in progress, the item counts it instead (`run #124 · 4 of 9 · 1 failed · 1 flaky`) and returns to the latest run when
-it ends.
+is in progress, the item counts it instead (`run #124 · 4 of 9 · 1 failed`) and returns to the latest run when it
+ends.
 
 With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder
 that holds it, and follows you from file to file; outside every config folder, it shows the first connected config.
@@ -26,8 +26,8 @@ When the extension is not connected, the item says why, and its first entry is *
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 
 The item turns red (its background in VS Code, its text in a JetBrains IDE) only for a test a run you started from
-the editor failed that the baseline does not fail, until a run fixes it: a CI failure or a teammate's is counted, never
-red, and so is a run in progress. `piwi.statusBarAlert` in VS Code, and **The status bar item's text turns red** on
+the editor failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a
+teammate's is counted, never red, and so is a run in progress. `piwi.statusBarAlert` in VS Code, and **The status bar item's text turns red** on
 Settings → Tools → Piwi in a JetBrains IDE, choose any failing test or never instead.
 
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed), of

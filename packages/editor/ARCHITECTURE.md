@@ -230,7 +230,8 @@ the custom messages of `src/protocol.ts`:
   desktop app and Piwi Runner hear no key.
 - **The status item's alarm** is the service's (`RunStatus.alarm`, `statusAlarm`), as the credentials'
   `statusBarAlert` chooses: with `new`, the default, a test a run of this editor failed (an overlay of `ownRuns`) that
-  did not fail on that project in the baseline (`isNew`) and that the baseline fails on no other project, until a run
+  did not fail on that project in the baseline (`isNew`) and that the baseline failed on no other project (listed from
+  it, failed again, or fixed since), while the service runs (`ownRuns` lives in memory), until a run
   fixes it; with `any`, any failing test; never with `never`. A teammate's run and a CI run never raise it.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and

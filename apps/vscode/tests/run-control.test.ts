@@ -732,6 +732,14 @@ describe('Share live', () => {
       progress: { ...ended.progress!, failed: 1, status: 'failed' },
     };
     expect(progressItem(sessionsOf(failedRun))?.text).toBe('$(error) Piwi: 2 of 2 · 1 failed · 1 ended at a stop');
+    // A run that failed with no failed test (a global setup), timed out, or was stopped short.
+    const ending = (status: NonNullable<RunSession['progress']>['status']): RunSession => ({
+      ...ended,
+      progress: { ...ended.progress!, status },
+    });
+    expect(progressItem(sessionsOf(ending('failed')))?.text).toMatch(/^\$\(error\) /);
+    expect(progressItem(sessionsOf(ending('timedout')))?.text).toMatch(/^\$\(error\) /);
+    expect(progressItem(sessionsOf(ending('interrupted')))?.text).toMatch(/^\$\(warning\) /);
     // The number of the run that counts, never another run's.
     const paged: RunSession = {
       ...session('ed-2', [worker(0, 'running')]),

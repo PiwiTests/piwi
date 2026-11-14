@@ -830,10 +830,10 @@ export interface LiveRun {
   branch?: string;
 }
 
-/** `piwi/runStatus`: the latest run of each context, for the status bar. */
 /** Which failures turn the status item to its alarm: `new`, `any` or `never`. */
 export type StatusBarAlert = 'new' | 'any' | 'never';
 
+/** `piwi/runStatus`: the latest run of each context, for the status bar. */
 export interface RunStatusResult {
   contexts: RunStatus[];
 }

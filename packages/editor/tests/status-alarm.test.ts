@@ -5,9 +5,9 @@ import { statusAlarm } from '../src/server';
 type Failure = { testCaseId: number; source?: 'baseline' | 'overlay'; runId?: number; isNew?: boolean };
 
 /** A context reading CI run #41, the runs laid over it, and the editor's own runs among them. */
-const contextOf = (failures: Failure[], ownRuns: number[] = [42]): PiwiContext =>
+const contextOf = (failures: Failure[], ownRuns: number[] = [42], resolved: Array<{ testCaseId: number }> = []) =>
   ({
-    failures: { run: { id: 41, origin: 'ci' }, failures, overlays: [] },
+    failures: { run: { id: 41, origin: 'ci' }, failures, overlays: [], resolved },
     ownRuns: new Set(ownRuns),
   }) as unknown as PiwiContext;
 
@@ -26,6 +26,9 @@ describe('the status item’s alarm', () => {
     expect(
       statusAlarm(contextOf([ownNew, { testCaseId: 1, source: 'baseline', runId: 41, isNew: false }]), 'new'),
     ).toBe(false);
+    // A test the baseline failed on another project that a later run failed again, or fixed since.
+    expect(statusAlarm(contextOf([ownNew, { ...ownNew, isNew: false }]), 'new')).toBe(false);
+    expect(statusAlarm(contextOf([ownNew], [42], [{ testCaseId: 1 }]), 'new')).toBe(false);
     // Once a run fixed it, the test is no longer listed.
     expect(statusAlarm(contextOf([]), 'new')).toBe(false);
   });

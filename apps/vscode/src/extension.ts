@@ -833,7 +833,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuFlakyRoot = view.flakyRoot ?? null;
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
-    statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+    // A run the item counts is never the alarm.
+    statusItem.backgroundColor =
+      view.error && !counted ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.

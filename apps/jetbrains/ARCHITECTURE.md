@@ -344,7 +344,7 @@ platform's text presentations take no color. It shows:
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the service's alarm
   (`RunStatus.alarm`, `StatusView.error`), as `PiwiLocalSettings.statusBarAlert` chooses it on Settings → Tools →
   Piwi, sent in the credentials: `new`, the default, only for a test a run this project started failed that the
-  baseline does not fail, until a run fixes it; `any` failing test; `never`. Never for a recording, a stop, a share or
+  baseline does not fail, until a run fixes it or the service restarts; `any` failing test; `never`. Never for a recording, a stop, a share or
   a run in progress; otherwise in the status bar's foreground (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`).
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config

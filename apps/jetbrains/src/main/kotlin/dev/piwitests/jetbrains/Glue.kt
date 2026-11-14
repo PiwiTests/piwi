@@ -2357,7 +2357,7 @@ object Glue {
         val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
         val progress = told.mapNotNull { it.progress }
-        val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        val number = told.singleOrNull()?.page?.takeIf { it.id > 0 }?.let { "run #${it.id} · " }.orEmpty()
         val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
         val counts = countWords(
             progress.sumOf { it.done },
@@ -2371,15 +2371,17 @@ object Glue {
 
     /**
      * The status bar's icon while it counts the runs as their own processes say: the spinner while one goes on, else
-     * how they ended (VS Code's `progressItem` glyph); null while no run says.
+     * how they ended, passed, failed (a failed test, a failure of its own, a timeout) or stopped short (VS Code's
+     * `progressItem` glyph); null while no run says.
      */
     fun runProgressIcon(sessions: Map<String, RunSession>): StatusIcon? {
         val told = sessions.values.mapNotNull { it.progress }
         if (told.isEmpty()) return null
         return when {
             told.any { it.status == "running" } -> StatusIcon.RUNNING
-            told.any { it.failed > 0 } -> StatusIcon.FAILING
-            else -> StatusIcon.PASSED
+            told.any { it.failed > 0 || it.status == "failed" || it.status == "timedout" } -> StatusIcon.FAILING
+            told.all { it.status == "passed" } -> StatusIcon.PASSED
+            else -> StatusIcon.WARNING
         }
     }
 

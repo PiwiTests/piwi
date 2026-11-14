@@ -1060,8 +1060,15 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   // The run's number when one run counts, from that run's own page.
   const teller = told.length === 1 ? [...sessions.values()].find((s) => s.progress) : undefined;
   const one = teller?.page && teller.page.id > 0 ? teller.page : null;
-  // A spinner while a run goes on; once every run that counts ended, how they ended.
-  const glyph = told.some((p) => p.status === 'running') ? '$(sync~spin)' : failed ? '$(error)' : '$(pass)';
+  // A spinner while a run goes on; once every run that counts ended, how they ended: passed, failed (a failed test, a
+  // failure of its own, a timeout), else stopped short (interrupted).
+  const glyph = told.some((p) => p.status === 'running')
+    ? '$(sync~spin)'
+    : failed || told.some((p) => p.status === 'failed' || p.status === 'timedout')
+      ? '$(error)'
+      : told.every((p) => p.status === 'passed')
+        ? '$(pass)'
+        : '$(warning)';
   const links = [
     ...pages.map(
       (p) =>

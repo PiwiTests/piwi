@@ -647,14 +647,18 @@ function isOwnRun(context: PiwiContext, runId: number | undefined): boolean {
 
 /**
  * Whether the status item shows its alarm for `context` (`RunStatus.alarm`): with `new`, a test the editor's own run
- * failed (an overlay of `ownRuns`) that did not fail on that project in the baseline (`isNew`) and that the baseline
- * fails on no other project; with `any`, any failing test; never with `never`.
+ * failed (an overlay of `ownRuns`, which the service knows while it runs) that did not fail on that project in the
+ * baseline (`isNew`) and that the baseline failed on no other project (listed from it, failed again by a later run, or
+ * fixed since); with `any`, any failing test; never with `never`.
  */
 export function statusAlarm(context: PiwiContext, alert: StatusBarAlert): boolean {
   const failures = context.failures?.failures ?? [];
   if (alert === 'never') return false;
   if (alert === 'any') return failures.length > 0;
-  const baseline = new Set(failures.filter((f) => f.source !== 'overlay').map((f) => f.testCaseId));
+  const baseline = new Set([
+    ...failures.filter((f) => f.source !== 'overlay' || !f.isNew).map((f) => f.testCaseId),
+    ...(context.failures?.resolved ?? []).map((r) => r.testCaseId),
+  ]);
   return failures.some(
     (f) => f.source === 'overlay' && f.isNew && isOwnRun(context, f.runId) && !baseline.has(f.testCaseId),
   );
@@ -1710,7 +1714,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .map((c): RunStatus => {
         const run = c.failures?.run ?? null;
         const failing = new Set((c.failures?.failures ?? []).map((f) => f.testCaseId));
-
         const fixed = new Set((c.failures?.resolved ?? []).map((r) => r.testCaseId).filter((id) => !failing.has(id)));
         return {
           root: c.root,
