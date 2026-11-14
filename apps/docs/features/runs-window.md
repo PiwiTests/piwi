@@ -34,7 +34,7 @@ instance, read again every 15 seconds while the window is open, with **Open** an
 
 **Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
 locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
-[**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
+[**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to the cursor
 stays in the editor. A live run of several workers shows one at a time, behind tabs marked with their state, with
 **Pause all** and **Resume all** under its name. A new stop takes the tab from a worker neither stopped nor watched,
 and **Resume** or **End the test** moves it to the next stopped test. **Stop the run** ends a run an editor or the
@@ -62,7 +62,7 @@ agent asked for reads **Paused by the agent**.
 
 The actions under **Code** (the last two in **More** once five show) send code to the editor, which writes it at the
 stopped line, when its Piwi extension and your reporter take them. **Pick** and **Record** start the pause bar's **Pick
-a locator** and **Record here**, **Assert** the recorder's **Check an element**, and **Assert a region** a pick whose
+a locator** and **Record**, **Assert** the recorder's **Check an element**, and **Assert a region** a pick whose
 ARIA snapshot becomes `toMatchAriaSnapshot`.
 They run in the test's page: where the pause bar shows, or, at a headless stop you [watch](#watch-live), through the
 view, which the editor's own **Pick**, **Record** and **Assert** cannot do; else they show held, saying **Watch to

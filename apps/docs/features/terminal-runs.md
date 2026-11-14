@@ -56,9 +56,9 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
 - **The breakpoints.** It starts with the editor's breakpoints as they are, then takes them as you change them, while
   `piwi.breakpoints` (**Pause the runs Piwi starts at the editor's breakpoints** in a JetBrains IDE) is on. Without
   any, it runs as it would, and **Pause** stops it.
-- **The controls**: Pause, Resume, Step, Run to cursor, Finish and [End the test](./end-the-test), and the code a stop
+- **The controls**: Pause, Resume, Step, Run to the cursor, Finish and [End the test](./end-the-test), and the code a stop
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
-- **Record here and Assert** in the test's window, through the editor's recorder, and **Pick a locator**, which goes
+- **Record and Assert** in the test's window, through the editor's recorder, and **Pick a locator**, which goes
   to the editor (its Send to editor pairing), as for a run Piwi starts.
 - **Its stops on the desktop app's page of the run**, for a run that reports to [the app](./desktop): which tests wait
   for the editor (**In Visual Studio Code**), each place opening in the IDE.
@@ -93,7 +93,7 @@ by the rules above: [A reproduction in your editor](./desktop-runs#a-reproductio
 
 ## Limits
 
-- **Under the desktop app, a pick comes to its window to copy**, and Record here and Assert, which need an editor, are
+- **Under the desktop app, a pick comes to its window to copy**, and Record and Assert, which need an editor, are
   not offered. An editor extension older than this one names no pairing for the run: start the test from the editor
   to pick there.
 - **No Stop.** End the run in its terminal, or with the IDE's own **Stop**.

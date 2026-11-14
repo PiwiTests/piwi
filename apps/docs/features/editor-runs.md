@@ -38,11 +38,12 @@ Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 
 ## How a run starts
 
-Two choices apply to every run you start: **Run headed** (`--headed`, a verification included) and
+Two choices apply to every run: **Run headed** (`--headed`, a verification included) and
 [**Hold failures**](./watch-a-run#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
-decide: on with your breakpoints or a `page.pause()`, headed for the latter. In VS Code,
-**Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
-in a JetBrains IDE, **Tools → Piwi → Run headed** and **Hold failures from each run's start…**. A
+decide: on with your breakpoints or a `page.pause()`, headed for the latter.
+**Piwi: Turn headed runs on or off** and **Piwi: Hold failures from each run's start…** set them (in VS Code,
+`piwi.runHeaded` and `piwi.runHoldFailures`, shown in the status bar's tooltip and offered together by **Piwi: Run
+options…**). A
 [debug run](./debug-in-editor), a Flake Lab line and a fix plan's check leave them out.
 
 ## The Testing view (VS Code)

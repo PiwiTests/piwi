@@ -175,7 +175,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment(
                             "A verification too. Otherwise a run is headless but for a spec with a page.pause(), and " +
                                 "for a run with breakpoints when @piwitests/reporter is older than 0.62.0. " +
-                                "Tools → Piwi → Run headed. Kept for you only, in .idea/workspace.xml",
+                                "Tools → Piwi → Turn headed runs on or off. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {

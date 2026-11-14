@@ -78,7 +78,7 @@
         }
       },
       "piwi-reload": {
-        "description": "Reload Piwi: read the instance and the configs again",
+        "description": "Reload everything from the instance: read the instance and the configs again",
         "default": {
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E004"
@@ -139,7 +139,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Reload Piwi](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Reload everything from the instance](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {
@@ -260,8 +260,14 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openDocumentation",
+        "title": "Open the documentation",
+        "icon": "$(question)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.refresh",
-        "title": "Reload Piwi",
+        "title": "Reload everything from the instance",
         "icon": "$(piwi-reload)",
         "category": "Piwi"
       },
@@ -326,6 +332,18 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.toggleRunHeaded",
+        "title": "Turn headed runs on or off",
+        "icon": "$(window)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.setRunHoldFailures",
+        "title": "Hold failures from each run's start…",
+        "icon": "$(debug-breakpoint-unsupported)",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.openInDashboard",
         "title": "Open in dashboard",
         "category": "Piwi",
@@ -339,7 +357,7 @@
       },
       {
         "command": "piwi.openRunPage",
-        "title": "Open the run page",
+        "title": "Open a run started here",
         "category": "Piwi",
         "icon": "$(globe)"
       },
@@ -351,7 +369,7 @@
       },
       {
         "command": "piwi.openLiveRun",
-        "title": "Open the run in progress",
+        "title": "Open the branch's run in progress",
         "category": "Piwi",
         "icon": "$(globe)"
       },

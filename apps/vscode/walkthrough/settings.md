@@ -10,4 +10,5 @@
 
 The colors Piwi draws with, such as `piwi.failingTestBackground`, change in `workbench.colorCustomizations`.
 
-**Piwi: Get started** opens this walkthrough again.
+**Piwi: Get started** opens this walkthrough again, and **Piwi: Open the documentation** the editors' pages in the
+browser.

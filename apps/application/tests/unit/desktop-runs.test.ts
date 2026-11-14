@@ -683,7 +683,7 @@ describe('the hub Piwi Picker reaches', () => {
       message: expect.stringMatching(/^Pick a locator in the test/),
     });
     picker.send({ type: 'record', id: 4, ref: 'desktop-2', worker: 0, since: stop.since });
-    expect(await picker.answer(4)).toMatchObject({ ok: false, message: expect.stringMatching(/^Record here records/) });
+    expect(await picker.answer(4)).toMatchObject({ ok: false, message: expect.stringMatching(/^Record writes/) });
     picker.send({ type: 'assert', id: 5, ref: 'desktop-2', worker: 0, since: stop.since });
     expect(await picker.answer(5)).toMatchObject({
       ok: false,

@@ -114,20 +114,20 @@ which nobody attends, only one that knows such runs too.
   its start, as in the app.
 - **Its code is to copy.** Assert, Assert a region and Mock a request offer the code with **Copy the code** and write
   nothing: "This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file."
-  Record here is refused there, and a pick goes to the app's window, to copy.
+  Record is refused there, and a pick goes to the app's window, to copy.
 - **The app keeps it.** Its Local runs tray says where its tests wait (**In Visual Studio Code**), read only, stops it,
   and shows its verdict when it ends; the editor offers no Stop.
 
 ## Limits
 
-- **No recording.** **Record here**, and a stopped test's **Pick** and **Assert** buttons, which act in the test's
+- **No recording.** **Record**, and a stopped test's **Pick** and **Assert** buttons, which act in the test's
   window, end in an editor: run the test
   from VS Code or a JetBrains IDE to use them.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
   stops make no code here. With an editor open on the linked folder, the job runs on that editor instead, which offers
   its code to copy ([A reproduction in your editor](#a-reproduction-in-your-editor)).
 - **A file changed since the run started** makes no code: run the test again.
-- **Run to cursor** stays in the editor, which has the file.
+- **Run to the cursor** stays in the editor, which has the file.
 
 ## Related
 

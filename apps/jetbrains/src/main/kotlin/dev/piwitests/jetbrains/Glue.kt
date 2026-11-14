@@ -251,7 +251,7 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
+     * reads the instance again (Reload everything from the instance), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
      * `RESTART` starts a service that stopped again, with Open the log after it.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
@@ -423,7 +423,7 @@ object Glue {
         }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
-            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload Piwi reads it now.$hint"
+            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload everything from the instance reads it now.$hint"
             return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
         if (!shown.connected) {
@@ -524,7 +524,7 @@ object Glue {
     /** The editor extensions' documentation, which the first-run notification's **Learn more** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
 
-    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Documentation**). */
+    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Open the documentation**). */
     const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
@@ -2841,13 +2841,13 @@ object Glue {
     enum class StopControl(override val label: String, val action: String) : StopLink {
         RESUME("Resume", "resume"),
         STEP("Step", "step"),
-        RUN_TO_CARET("Run to caret", "run-to"),
+        RUN_TO_CARET("Run to the caret", "run-to"),
         FINISH("Finish", "finish"),
-        END("End test", "end"),
+        END("End the test", "end"),
     }
 
     /**
-     * The controls a stop offers: all of them, End test where its reporter takes it (`canEnd`); at a failure, Resume
+     * The controls a stop offers: all of them, End the test where its reporter takes it (`canEnd`); at a failure, Resume
      * alone, which lets the test end as it failed (Step, Finish and End do the same).
      */
     fun stopControls(stop: ShownStop): List<StopControl> =

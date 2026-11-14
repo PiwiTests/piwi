@@ -635,7 +635,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
         needs: ['fixtures'],
         where:
-          "End test on the stopped line's CodeLens, Piwi: End the test; Tools → Piwi → End the test in a JetBrains IDE",
+          "End the test in the stopped line's hover, Piwi: End the test; Tools → Piwi → End the test in a JetBrains IDE",
         doc: 'features/end-the-test',
       },
       {
@@ -787,7 +787,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend', 'editor'],
         where:
-          'Application files in the editor; Piwi: Show or hide the coverage marks in VS Code, Tools → Piwi → Show coverage marks in a JetBrains IDE',
+          'Application files in the editor; Piwi: Show or hide the coverage marks, under Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-coverage',
         part: 'Read results',
       },

@@ -19,12 +19,12 @@ are on [Pause and step from the editor](./editor-run-control).
 | Action | What is written | Where it runs |
 |---|---|---|
 | **Pick a locator** | The locator of the element you pick, in place of the locator chain on the stopped line | The test's window, as the pause bar's [Pick a locator](./editor-breakpoints#where-the-pick-lands) |
-| **Record here** | The steps you take, above the stopped line | The test's window, as the bar's [Record here](./editor-breakpoints#record-from-a-pause) |
+| **Record** | The steps you take, above the stopped line | The test's window, as the bar's [Record](./editor-breakpoints#record-from-a-pause) |
 | **Assert** | The check you choose in the recorder's check panel, `await expect(…).toHaveText(…)` and the like | The test's window |
 | **Assert a region** | `await expect(…).toMatchAriaSnapshot(…)` with the ARIA snapshot of the region you pick | The test's window |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
-From the editor, the first four need the pause bar, so a headed browser: choose **Run headed**
+From the editor, the first four need the pause bar, so a headed browser: choose **Turn headed runs on or off**
 ([How a run starts](./editor-runs#how-a-run-starts)). At a headless stop, Piwi Picker's
 [Runs window](./runs-window#code-from-a-stop) runs them through the page it watches. **Mock a request** works
 headless too.
@@ -136,6 +136,6 @@ and the editor shows nothing of it.
 ## Related
 
 - [Pause and step from the editor](./editor-run-control): the controls, the paused line, a headless test's page.
-- [Breakpoints in the browser](./editor-breakpoints): the pause bar, Pick a locator and Record here.
+- [Breakpoints in the browser](./editor-breakpoints): the pause bar, Pick a locator and Record.
 - [Mock and slow down requests](./mock-requests): the same mocks from Piwi Picker's Network tab.
 - [Recorded code](./recorded-code): what a recording writes, and how the config shapes it.

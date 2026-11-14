@@ -28,10 +28,10 @@ counts, the baseline, your local runs since, the run in progress, and when the r
 while the event stream is connected, `· read every minute` without it).
 
 In VS Code, a click opens **Piwi: Open the Piwi menu**, in the JetBrains menu's sections, the item's own action first:
-Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches,
+Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload everything from the instance** fetches,
 or goes to the stopped line while a test is stopped. The run's controls and its share are in the menu while a run is
 live.
-When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload Piwi** for an
+When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload everything from the instance** for an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 
 The item turns red (its background in VS Code, its text in a JetBrains IDE) only for a test a run you started from
@@ -42,7 +42,7 @@ Settings → Tools → Piwi in a JetBrains IDE, choose any failing test or never
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed), of
 a recording, or of the connection. A
 click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Refresh the latest
-run**, **Reload Piwi** for an unreachable instance or a desktop app to restart, **Connect…** while not connected,
+run**, **Reload everything from the instance** for an unreachable instance or a desktop app to restart, **Connect…** while not connected,
 **Node.js settings…** when Node.js is missing or too old, or **Go to the recorded lines** while a recording runs, with
 **Pause recording**, **Resume recording** and **Stop recording**.
 

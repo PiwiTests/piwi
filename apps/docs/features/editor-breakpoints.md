@@ -34,12 +34,12 @@ The pause bar's buttons:
 | **Resume** (<kbd>Esc</kbd>) | Runs on to the next breakpoint                                                                                                                                                                                  |
 | **Step**                    | Pauses again before the next call that acts on, reads or checks the page, breakpoint or not                                                                                                                     |
 | **Pick a locator**          | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
-| **Record here**             | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause)                                                                                             |
+| **Record**                  | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause)                                                                                             |
 | **Finish**                  | Runs on without pausing again in this test                                                                                                                                                                      |
 | **End the test**            | [Skips the rest of the test](./end-the-test)                                                                                                                                                                    |
 
 <figure>
-  <img src="/screenshots/picker-pause.png" alt="A shop page in the browser, paused before a click on Checkout: the button highlighted, Piwi's pause bar at the top with Resume, Step, Pick a locator, Record here and Finish">
+  <img src="/screenshots/picker-pause.png" alt="A shop page in the browser, paused before a click on Checkout: the button highlighted, Piwi's pause bar at the top with Resume, Step, Pick a locator, Record and Finish">
   <figcaption>A run paused before the click on <strong>Checkout</strong>: the element highlighted, and Piwi's bar at the top of the page.</figcaption>
 </figure>
 
@@ -64,7 +64,7 @@ nothing is copied to the clipboard.
 
 ## Record from a pause
 
-**Record here** hands the paused page to the editor's [recorder](./editor-recording): the steps you take from there
+**Record** hands the paused page to the editor's [recorder](./editor-recording): the steps you take from there
 are written into the file on a new line above the paused statement (the first line of a statement broken over lines),
 on the page expression in scope there, as **Record here** in the editor writes them, but with no `page.goto`: the page
 is where the test left it, signed in and filled in as the test made it. The editor opens the file at that line and
@@ -74,13 +74,13 @@ what follows.
 
 `await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts or
 [that follows your editor](./terminal-runs), or any headed run with breakpoints, it stops there under Piwi's pause bar
-in place of Playwright's Inspector (headless, in the editor), with **Record here** among its
+in place of Playwright's Inspector (headless, in the editor), with **Record** among its
 buttons in a run Piwi starts or that follows your editor, and Piwi adds `--headed` to a run whose spec holds a `page.pause()` call. The
 `page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In any other
 run, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
 test launched itself, `page.pause()` is Playwright's own, with its Inspector; in a headless browser it returns at
 once.
-**Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
+**Record** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
 so and nothing is recorded.
 
 The test reaches the editor through `PIWI_RECORD_CHANNEL`, the socket of
@@ -128,8 +128,8 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
 - **Every attempt pauses.** With retries, a test pauses again on its retry, and the bar says `attempt 2`.
 - **Each worker pauses its own browser.** When several tests reach a breakpoint, run `--workers=1` to pause one at a
   time.
-- **Record here** is offered from Piwi's pause bar only, never from a debugger paused in your code.
-- **Record here** records the paused page alone: a tab or a popup it opens is not recorded, as in any recording.
+- **Record** is offered from Piwi's pause bar only, never from a debugger paused in your code.
+- **Record** records the paused page alone: a tab or a popup it opens is not recorded, as in any recording.
 
 ## Related
 

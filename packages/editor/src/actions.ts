@@ -7,6 +7,11 @@
  * words are each editor's own: `{cursor}` (VS Code's cursor, JetBrains' caret) and `{window}` (what a VS Code window or
  * a JetBrains project holds). An entry of a platform's New menu is titled by the file it creates, a noun, in an entry of
  * its own beside the action it runs.
+ *
+ * A title says what happens, so two actions never share one, and actions alike differ in their first words. A toggle
+ * names both its states ("Show or hide …", "Turn … on or off"), JetBrains' check mark showing which one holds. An action
+ * at a stop ends with "at the stop"; the controls drawn at the stop (the pause bar, the stopped line's lens or inlay,
+ * Piwi Picker's Runs window) name it without the place: Pick a locator, Record, Assert, End the test.
  */
 export interface EditorAction {
   title: string;
@@ -16,8 +21,6 @@ export interface EditorAction {
   jetbrains?: string[];
   /** The one editor where the action asks for a choice first, its title then ending with an ellipsis there alone. */
   asksIn?: Editor;
-  /** A JetBrains toggle's title, which names the state its check mark shows. */
-  checked?: string;
 }
 
 export type Editor = 'vscode' | 'jetbrains';
@@ -30,8 +33,10 @@ export const EDITOR_WORDS: Record<Editor, Record<'cursor' | 'window', string>> =
 
 /** An action's title as one editor shows it. */
 export function actionTitle(action: EditorAction, editor: Editor): string {
-  const title = (editor === 'jetbrains' && action.checked) || action.title;
-  const words = title.replace(/\{(cursor|window)\}/g, (_, word: 'cursor' | 'window') => EDITOR_WORDS[editor][word]);
+  const words = action.title.replace(
+    /\{(cursor|window)\}/g,
+    (_, word: 'cursor' | 'window') => EDITOR_WORDS[editor][word],
+  );
   return action.asksIn === editor ? `${words}…` : words;
 }
 
@@ -40,7 +45,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Disconnect', vscode: 'piwi.disconnect', jetbrains: ['Piwi.Disconnect'] },
   { title: 'Open settings', vscode: 'piwi.openSettings', jetbrains: ['Piwi.OpenSettings'] },
   { title: 'Open the log', vscode: 'piwi.openLog', jetbrains: ['Piwi.OpenLog'] },
-  { title: 'Reload Piwi', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
+  { title: 'Reload everything from the instance', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
   { title: 'Restart the editor service', vscode: 'piwi.restartService', jetbrains: ['Piwi.RestartService'] },
   { title: 'Open the Piwi menu', vscode: 'piwi.statusMenu' },
   { title: 'Refresh the latest run', vscode: 'piwi.refreshRun', jetbrains: ['Piwi.RefreshRun'] },
@@ -56,7 +61,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Run a saved selection…', vscode: 'piwi.runSelection', jetbrains: ['Piwi.RunSelection'] },
   { title: 'Open in dashboard', vscode: 'piwi.openInDashboard', jetbrains: ['Piwi.OpenInDashboard'] },
   { title: 'Open the latest run', vscode: 'piwi.openRun', jetbrains: ['Piwi.OpenLatestRun'] },
-  { title: 'Open the run page', vscode: 'piwi.openRunPage', jetbrains: ['Piwi.OpenRunPage'] },
+  { title: 'Open a run started here', vscode: 'piwi.openRunPage', jetbrains: ['Piwi.OpenRunPage'] },
   { title: 'Turn hold failures on or off for the run', vscode: 'piwi.holdFailures', jetbrains: ['Piwi.HoldFailures'] },
   {
     title: 'Copy the MCP server configuration',
@@ -83,12 +88,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Re-run the failing tests', vscode: 'piwi.rerunFailing', jetbrains: ['Piwi.RerunFailing'] },
   { title: 'Compare with…', vscode: 'piwi.compareWith', jetbrains: ['Piwi.CompareWith'] },
   { title: 'Copy context for agent', vscode: 'piwi.copyAgentContext', jetbrains: ['Piwi.Failure.CopyContext'] },
-  {
-    title: 'Show or hide the coverage marks',
-    vscode: 'piwi.toggleCoverage',
-    jetbrains: ['Piwi.ToggleCoverageMarks'],
-    checked: 'Show coverage marks',
-  },
+  { title: 'Show or hide the coverage marks', vscode: 'piwi.toggleCoverage', jetbrains: ['Piwi.ToggleCoverageMarks'] },
   { title: 'Reproduce in the desktop app', vscode: 'piwi.reproduceInDesktop', jetbrains: ['Piwi.Failure.Reproduce'] },
   {
     title: 'Find the breaking commit in the desktop app',
@@ -140,9 +140,9 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   },
   { title: 'Get started', vscode: 'piwi.getStarted' },
   { title: 'Run options…', vscode: 'piwi.runOptions' },
-  { title: 'Open the run in progress', vscode: 'piwi.openLiveRun' },
+  { title: "Open the branch's run in progress", vscode: 'piwi.openLiveRun' },
   { title: 'Run tests', vscode: 'piwi.runTests' },
-  { title: 'Group the failures by…', vscode: 'piwi.groupFailuresBy' },
+  { title: 'Group the failures by…', vscode: 'piwi.groupFailuresBy', jetbrains: ['Piwi.GroupFailuresBy'] },
   { title: 'Follow the active editor', vscode: 'piwi.toggleFollowEditor' },
   { title: 'Stop following the active editor', vscode: 'piwi.stopFollowingEditor' },
   { title: 'Run a command', vscode: 'piwi.runCommand' },
@@ -151,13 +151,17 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Look into this flake…', vscode: 'piwi.lookIntoFlake' },
   { title: 'Shared live: open the run page, copy its link or stop sharing…', vscode: 'piwi.liveMenu' },
   { title: 'Write code at the stop…', vscode: 'piwi.codeAtStop' },
-  { title: 'Run headed', jetbrains: ['Piwi.RunHeaded'] },
-  { title: "Hold failures from each run's start…", jetbrains: ['Piwi.RunHoldFailures'] },
+  { title: 'Turn headed runs on or off', vscode: 'piwi.toggleRunHeaded', jetbrains: ['Piwi.RunHeaded'] },
+  {
+    title: "Hold failures from each run's start…",
+    vscode: 'piwi.setRunHoldFailures',
+    jetbrains: ['Piwi.RunHoldFailures'],
+  },
   {
     title: "Copy the runs' MCP server configuration for Claude Code or Cursor",
     jetbrains: ['Piwi.CopyRunsMcpHttpConfiguration'],
   },
-  { title: 'Documentation', jetbrains: ['Piwi.OpenDocumentation'] },
+  { title: 'Open the documentation', vscode: 'piwi.openDocumentation', jetbrains: ['Piwi.OpenDocumentation'] },
   { title: 'Go to the stopped line', vscode: 'piwi.showStop', jetbrains: ['Piwi.ShowStop'] },
   { title: 'Open the failures', jetbrains: ['Piwi.OpenFailures'] },
   { title: 'Node.js settings…', jetbrains: ['Piwi.NodeSettings'] },
