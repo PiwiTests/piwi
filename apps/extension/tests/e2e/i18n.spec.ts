@@ -278,7 +278,7 @@ test.describe('in a German browser', () => {
     expect(await clipped(page)).toEqual([]);
   });
 
-  test('the DevTools toolbar names each tool in one row, or shows its icons alone when narrower', async ({
+  test('the DevTools toolbar shows its labels where they fit, its icons alone where not, and never overflows', async ({
     context,
     page,
     extensionId,
@@ -289,20 +289,33 @@ test.describe('in a German browser', () => {
     await page.goto('https://shop.example/');
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', page);
     await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
-    const pick = panel.getByRole('button', { name: 'Element wählen', exact: true });
-    for (const width of [1321, 1320]) {
-      await panel.setViewportSize({ width, height: 300 });
-      await expect(pick).toBeVisible();
-      const { fits, labelShown } = await panel.evaluate(() => {
+    await expect(panel.getByRole('button', { name: 'Element wählen', exact: true })).toBeAttached();
+    const toolbar = () =>
+      panel.evaluate(() => {
         const bar = document.querySelector<HTMLElement>('.toolbar')!;
-        const label = document.querySelector<HTMLElement>('#pick > .piwi-label')!;
+        const labels = Array.from(document.querySelectorAll<HTMLElement>('.tools button > .piwi-label'));
+        const shown = labels.filter((label) => label.getBoundingClientRect().width > 1).length;
         return {
-          fits: bar.scrollWidth <= bar.clientWidth && bar.offsetHeight < 40,
-          labelShown: label.getBoundingClientRect().width > 1,
+          overflows: bar.scrollWidth > bar.clientWidth,
+          labels: shown === labels.length ? 'shown' : shown === 0 ? 'hidden' : 'some',
         };
       });
-      expect(fits, `${width} pixels wide`).toBe(true);
-      expect(labelShown, `${width} pixels wide: labels shown`).toBe(width > 1320);
+    // Wider letters stand in for a system whose fonts are wider than this one's.
+    for (const spacing of ['normal', '1px']) {
+      await panel.evaluate((value) => {
+        const style = document.getElementById('spacing') ?? document.head.appendChild(document.createElement('style'));
+        style.id = 'spacing';
+        style.textContent = `.toolbar button { letter-spacing: ${value}; }`;
+      }, spacing);
+      const where = (width: number) => `${width} pixels wide, letter spacing ${spacing}`;
+      await panel.setViewportSize({ width: 1600, height: 300 });
+      await expect.poll(toolbar, where(1600)).toEqual({ overflows: false, labels: 'shown' });
+      await panel.setViewportSize({ width: 1000, height: 300 });
+      await expect.poll(toolbar, where(1000)).toEqual({ overflows: false, labels: 'hidden' });
+      for (let width = 1000; width <= 1600; width += 40) {
+        await panel.setViewportSize({ width, height: 300 });
+        await expect.poll(async () => (await toolbar()).overflows, where(width)).toBe(false);
+      }
     }
   });
 

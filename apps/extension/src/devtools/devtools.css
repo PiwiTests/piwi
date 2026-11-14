@@ -615,28 +615,26 @@ body.panel {
 }
 
 /*
- * A narrow panel: the tools show their icons alone, their labels kept for assistive technology and as tooltips. The
- * width is the one the longest catalog's tabs and tools take in one row (German, about 1,290 pixels).
+ * A toolbar whose labels do not fit in one row (`compact`, set by `toolbar-fit.ts`): the tools show their icons alone,
+ * their labels kept for assistive technology and as tooltips.
  */
-@media (max-width: 1320px) {
-  .toolbar {
-    flex-wrap: wrap;
-  }
+.toolbar.compact {
+  flex-wrap: wrap;
+}
 
-  .tools button {
-    position: relative;
-    width: 26px;
-    padding: 0;
-  }
+.toolbar.compact .tools button {
+  position: relative;
+  width: 26px;
+  padding: 0;
+}
 
-  .tools button > .piwi-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+.toolbar.compact .tools button > .piwi-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* The viewport bar, under the toolbar while Viewport is on. */
