@@ -1337,12 +1337,12 @@
             "never"
           ],
           "enumDescriptions": [
-            "Say what every run started from the editor changed, once it ends.",
+            "Say what every run changed, once it ends.",
             "Only when the run failed a test.",
             "Never: the status bar, the gutter and the failures view still show it."
           ],
           "default": "failures",
-          "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+          "description": "When a run started from the editor, or a CI run of the branch (piwi.runNotificationsScope), ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         },
         "piwi.runNotificationsScope": {
           "type": "string",

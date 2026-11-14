@@ -47,6 +47,9 @@ const DETAILS_MS = 5_000;
 /** The titles a verdict names, at most, of the tests still failing and of the new failures. */
 const VERDICT_TITLES = 5;
 /** The order in which a test's results on several Playwright projects make its own: the first one present wins. */
+/** The CI runs followed and not yet told kept at most: the oldest goes first. */
+const MAX_CI_FOLLOWED = 200;
+
 const LIVE_ORDER: LiveTestStatus[] = ['running', 'failed', 'flaky', 'passed', 'skipped'];
 
 /** A ref for a run the editor starts: `ed-` and 8 random hexadecimal characters. */
@@ -166,15 +169,13 @@ export function runVerdict(
   const failingBefore = new Set((before?.failures ?? []).filter((f) => f.runId !== runId).map((f) => f.testCaseId));
   const failingAfter = new Set((after?.failures ?? []).map((f) => f.testCaseId));
   const failingIn = new Set((after?.failures ?? []).filter((f) => f.runId === runId).map((f) => f.testCaseId));
-  // A CI run fixed what the baseline it replaced failed, once it is the baseline; a run of the editor's, what it lists
-  // as resolved.
+  // A CI run that became the baseline fixed what failed on the branch before it, a later run's fixes included; any
+  // other run, what the instance lists as resolved by it.
   const fixed = new Set(
-    origin === 'ci'
-      ? after?.run?.id === runId
-        ? (before?.failures ?? [])
-            .filter((f) => f.source === 'baseline' && f.runId !== runId && !failingIn.has(f.testCaseId))
-            .map((f) => f.testCaseId)
-        : []
+    origin === 'ci' && after?.run?.id === runId
+      ? [...(before?.failures ?? []).filter((f) => f.runId !== runId), ...(before?.resolved ?? [])]
+          .map((f) => f.testCaseId)
+          .filter((id) => !failingIn.has(id))
       : (after?.resolved ?? [])
           .filter((r) => r.runId === runId && !failingAfter.has(r.testCaseId))
           .map((r) => r.testCaseId),
@@ -435,8 +436,15 @@ export class RunWatch {
   private readonly attempts = new Map<PiwiContext, Map<number, Map<string, LiveTestStatus>>>();
   /** The runs of the editor's own whose verdict was said, by instance. */
   private readonly told = new Set<string>();
-  /** The CI runs of a branch a context followed (`LiveRun.ci`), by `runKey`: each is told as it ends. */
+  /**
+   * The CI runs of the checked-out branch each context followed (`LiveRun.ci`), by the context's root and `runKey`:
+   * each is told as it ends, by the context that followed it.
+   */
   private readonly ciFollowed = new Set<string>();
+
+  private ciKey(context: PiwiContext, runId: number): string | null {
+    return context.client ? `${context.root}\n${runKey(context.client.connection, runId)}` : null;
+  }
   /** The results of the repeated runs of the editor's own, by instance and run, until their verdict is said. */
   private readonly tallies = new Map<string, RepeatTally>();
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -603,11 +611,24 @@ export class RunWatch {
     return false;
   }
 
-  /** The context's live run ended: the context follows none, and its tests show the latest run's results. */
-  end(context: PiwiContext): void {
+  /**
+   * The context's live run ended: the context follows none, and its tests show the latest run's results. Given the
+   * failures read before it ended (`before`), with the latest run read again since, a run of the editor's own or a CI
+   * run of the branch says what it changed.
+   */
+  end(context: PiwiContext, before?: BranchFailures | null): void {
+    const runId = context.live?.runId;
     context.live = null;
     this.unfollow(context);
     this.clearTests(context);
+    if (before !== undefined && runId !== undefined) this.ended(context, runId, before);
+  }
+
+  /** A run of the context's project ended: the editor's own, or a CI run of the branch it followed, is told. */
+  private ended(context: PiwiContext, runId: number, before: BranchFailures | null): void {
+    const ci = this.ciKey(context, runId);
+    if (context.ownRuns.has(runId)) void this.tell(context, runId, before, 'editor');
+    else if (ci && this.ciFollowed.delete(ci)) void this.tell(context, runId, before, 'ci');
   }
 
   dispose(): void {
@@ -685,10 +706,14 @@ export class RunWatch {
   /**
    * Follow a run in progress as the context's live run, the editor's own before any other; a run that already ended
    * is read with the context's latest run instead. A read of the live run with a status it has passed changes nothing.
-   * A CI run of the branch is told as it ends, followed as the live run or not.
+   * A CI run of the checked-out branch is told as it ends, followed as the live run or not.
    */
   private follow(context: PiwiContext, run: RunDetails, own: boolean): void {
-    if (!own && isCiRun(run) && context.client) this.ciFollowed.add(runKey(context.client.connection, run.id));
+    const ci = !own && isCiRun(run) && run.branch === context.checkedOutBranch ? this.ciKey(context, run.id) : null;
+    if (ci) {
+      this.ciFollowed.add(ci);
+      while (this.ciFollowed.size > MAX_CI_FOLLOWED) this.ciFollowed.delete(this.ciFollowed.values().next().value!);
+    }
     if (!ACTIVE.has(run.status)) {
       this.settle(context, run.id);
       return;
@@ -858,12 +883,7 @@ export class RunWatch {
       if (this.disposed) return;
       if (context.live && ended.has(context.live.runId)) this.end(context);
       this.options.changed();
-      const connection = context.client?.connection;
-      for (const id of ended) {
-        if (context.ownRuns.has(id)) void this.tell(context, id, before, 'editor');
-        else if (connection && this.ciFollowed.delete(runKey(connection, id)))
-          void this.tell(context, id, before, 'ci');
-      }
+      for (const id of ended) this.ended(context, id, before);
     }, SETTLE_MS);
     timer.unref?.();
     this.settling.set(context, { timer, ended });
@@ -889,7 +909,8 @@ export class RunWatch {
     if (!run || this.disposed || ACTIVE.has(run.status)) {
       this.told.delete(key);
       // Told when it ends again.
-      if (origin === 'ci' && !this.disposed) this.ciFollowed.add(key);
+      const ci = this.ciKey(context, runId);
+      if (origin === 'ci' && ci && !this.disposed) this.ciFollowed.add(ci);
       return;
     }
     const tally = this.tallies.get(key);

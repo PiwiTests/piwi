@@ -569,19 +569,18 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
         // A stop the service says calls (`RunStop.calls`) calls once while this project's frame is in the background,
-        // a modal dialog open or not: it raises the frame where the debugger's 'Focus application on breakpoint' is on,
-        // else asks for attention.
+        // a modal dialog open or not: it asks for attention, and raises the frame too while the debugger's 'Focus
+        // application on breakpoint' is on (its default) and no window of the IDE is active.
         val due = synchronized(lock) { Glue.attentionStops(Glue.stopsOf(sessions), attended) }
         if (due.isNotEmpty()) {
             ApplicationManager.getApplication().invokeLater({
                 val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)
                 if (frame?.isActive != true) {
                     val icon = com.intellij.ui.AppIcon.getInstance()
-                    if (frame != null && com.intellij.openapi.util.registry.Registry.`is`(FOCUS_ON_BREAKPOINT, false)) {
-                        icon.requestFocus(frame)
-                    } else {
-                        icon.requestAttention(project, false)
-                    }
+                    val raise = frame != null && !ApplicationManager.getApplication().isActive &&
+                        com.intellij.openapi.util.registry.Registry.`is`(FOCUS_ON_BREAKPOINT, true)
+                    if (raise) icon.requestFocus(frame!!)
+                    icon.requestAttention(project, false)
                 }
             }, com.intellij.openapi.application.ModalityState.any(), gone)
         }

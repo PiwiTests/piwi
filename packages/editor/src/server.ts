@@ -1804,8 +1804,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         forgetShared(answers);
         const read = await Promise.all(
           due.map(async (c) => {
+            const before = c.failures;
             const [changed, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
-            if (ended) runWatch.end(c);
+            if (ended) runWatch.end(c, before);
             return changed;
           }),
         );
@@ -4265,8 +4266,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     forgetShared(answers);
     await Promise.all(
       contexts.map(async (c) => {
+        const before = c.failures;
         const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
-        if (ended) runWatch.end(c);
+        if (ended) runWatch.end(c, before);
       }),
     );
     runChanged();

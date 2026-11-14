@@ -69,8 +69,8 @@ actions' ids, for the editor's runs and the CI runs of the branch it followed (`
 run notifications setting leaves out (`piwi.runNotificationsScope` and its JetBrains twin) (HM16 in part: the terminal
 and IDE runner's runs wait on the study's P7), and a test held at its failure or at `page.pause()` while the editor is
 in the background calls once, VS Code with a notification offering Resume and Go to the stopped line, JetBrains with
-`AppIcon.requestAttention`, or raising the IDE while 'Focus application on breakpoint' is on, as the service marks the
-stop (`RunStop.calls`) (HM17 in part: the status item's badge goes with M13's line). M4 in
+`AppIcon.requestAttention`, raising the IDE from another application while 'Focus application on breakpoint' is on,
+as the service marks the stop (`RunStop.calls`) (HM17 in part: the status item's badge goes with M13's line). M4 in
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye

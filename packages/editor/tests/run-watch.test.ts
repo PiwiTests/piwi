@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import type { PiwiContext } from '../src/context';
-import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch, unreachedNotice, verdictWords } from '../src/run-watch';
+import type { BranchFailures } from '../src/piwi-client';
+import {
+  catalogCaseOf,
+  exitVerdict,
+  repeatVerdict,
+  RunWatch,
+  runVerdict,
+  unreachedNotice,
+  verdictWords,
+} from '../src/run-watch';
 import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
@@ -161,6 +170,42 @@ describe('the verdict both clients show of a run that ended', () => {
       always: true,
       actions: ['failures', 'dashboard'],
     });
+  });
+});
+
+describe('what a CI run of the branch fixed', () => {
+  const failing = (testCaseId: number, runId: number, source: 'baseline' | 'overlay') => ({
+    testCaseId,
+    runId,
+    source,
+    title: `t${testCaseId}`,
+    file: 'a.spec.ts',
+  });
+  const read = (runId: number, failures: unknown[], resolved: unknown[] = []) =>
+    ({ run: { id: runId }, failures, resolved }) as unknown as BranchFailures;
+
+  test('as the new baseline: what failed before it, failed again or fixed by a later run of the branch', () => {
+    // CI run #129 failed 1, 2 and 3; a local run failed 1 again and passed 2; CI run #130 passes 1 and 2, fails 3.
+    const before = read(
+      129,
+      [failing(1, 140, 'overlay'), failing(3, 129, 'baseline')],
+      [{ testCaseId: 2, runId: 140 }],
+    );
+    const after = read(130, [{ ...failing(3, 130, 'baseline'), isNew: false }]);
+    expect(runVerdict(before, after, 130, 'ci')).toMatchObject({ fixed: 2, stillFailingCount: 1, newFailureCount: 0 });
+  });
+
+  test('as a partial run laid over the baseline: what the instance says it resolved', () => {
+    const before = read(129, [failing(1, 129, 'baseline'), failing(2, 129, 'baseline')]);
+    const after = read(
+      129,
+      [],
+      [
+        { testCaseId: 1, runId: 131 },
+        { testCaseId: 2, runId: 131 },
+      ],
+    );
+    expect(runVerdict(before, after, 131, 'ci')).toMatchObject({ fixed: 2, stillFailingCount: 0 });
   });
 });
 

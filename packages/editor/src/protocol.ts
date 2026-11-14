@@ -1019,8 +1019,10 @@ export interface CommandEndedParams {
 export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
 
 /**
- * `piwi/runEnded` (notification, server to client): a run the editor started ended, and the latest run was read again
- * with it. `fixed` counts the tests failing before it that it passed; `stillFailing` names the tests failing before it
+ * `piwi/runEnded` (notification, server to client): a run the editor started, or a CI run of the checked-out branch it
+ * followed, ended, and the latest run was read again with it. `fixed` counts the tests failing before it that it passed
+ * (for a CI run that became the baseline, those failing on the branch before it, a later run's fixes included);
+ * `stillFailing` names the tests failing before it
  * that it failed again, `newFailures` those it failed that were not failing before, each as `login.spec.ts › logs in`,
  * at most five, with their counts in `stillFailingCount` and `newFailureCount`.
  */

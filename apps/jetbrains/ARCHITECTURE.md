@@ -453,10 +453,10 @@ platform's, which says how serious it is. D25 lists the five group ids, which us
 The balloon is titled by the run the service names, `Piwi: run #124`, `Piwi: CI run #130 on feature-x`
 (`Glue.RunVerdict.title`), the verdict's words under it. A test held at its failure or stopped at `page.pause()` while
 this project's frame is in the background calls once, as the service says (`RunStop.calls`, `Glue.attentionStops`,
-`PiwiRunSessions.heard`): `AppIcon.requestAttention`, which the system shows as a bouncing or flashing icon, or
-`AppIcon.requestFocus` while the debugger's 'Focus application on breakpoint' is on (the registry key
-`debugger.mayBringFrameToFrontOnBreakpoint`), a modal dialog open or not; never a stop the person asked for, one an
-agent drives or holds, or a desktop app's job's.
+`PiwiRunSessions.heard`): `AppIcon.requestAttention`, which the system shows as a bouncing or flashing icon, a modal
+dialog open or not, and `AppIcon.requestFocus` first while no window of the IDE is active and the debugger's 'Focus
+application on breakpoint' is on, its default (the registry key `debugger.mayBringFrameToFrontOnBreakpoint`); never a
+stop the person asked for, one an agent drives or holds, or a desktop app's job's.
 
 **Diagnostic severity.** The severity of a failure's diagnostic is `PiwiLocalSettings.failureSeverity`
 (`Glue.FAILURE_SEVERITIES`, in the Runs group of the same page), sent in `credentials()`. The LSP client shows an
