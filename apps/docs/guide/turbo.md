@@ -48,7 +48,7 @@ import { test, expect } from '@piwitests/turbo/test';
 
 | Preset | Turns on |
 |---|---|
-| `safe` | Nothing a test observes changes: traces the config records are kept for failures (on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of the runner and its workers. |
+| `safe` | Nothing a test observes changes: traces the config records are kept for failures (on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker. |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests. |
 | `max` | `fast`, plus the [experimental hooks](#experimental-hooks). |
 
@@ -91,7 +91,7 @@ Every preset is a set of these options; name one to override it.
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations. |
 | `instantAnimations` | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion. |
 | `reuseContext` | One browser context per worker, reset between tests. |
-| `compileCache` | Node's compile cache for the runner and its workers, in `node_modules/.cache/piwi-turbo-compile` or the folder given. Skipped when coverage is collected or a compile cache is already set. |
+| `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` or the folder given. The runner loads Playwright before the config: set `NODE_COMPILE_CACHE` in the environment to cache its start too. Skipped when coverage is collected or a compile cache is already set. |
 
 `lightTraces` halved the CPU time of a suite that traces every test. On Piwi's own suite, one CI shard of 242 tests,
 `trace: 'on-first-retry'` and `reducedMotion` took 13% off the wall time and 28% off the CPU time, and
@@ -100,7 +100,7 @@ suite before keeping any of these.
 
 ## Experimental hooks
 
-**Experimental.** Five options reach into Playwright's internals inside each test worker. `max` turns them all on;
+**Experimental.** Six options reach into Playwright's internals inside each test worker. `max` turns them all on;
 name them under `experimental` to pick some.
 
 - `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger. Runs
@@ -114,6 +114,8 @@ name them under `experimental` to pick some.
 - `fastReset` (Chromium, with context reuse): between tests, the storage of the origins the test visited is cleared
   from the frames still on them and through CDP, where Playwright's reset loads each origin again. After a test that
   left an origin it visited, Playwright's reset runs as it is.
+- `fastStackTraces`: Playwright captures a stack for every API call, and looks up a source map for each of its
+  frames. The frames of Node and of `node_modules`, which have none, skip the lookup; stack traces read the same.
 
 ```ts
 withOptimizations(config, {
@@ -123,6 +125,7 @@ withOptimizations(config, {
     failFast: true,
     skipStabilityWait: true,
     fastReset: true,
+    fastStackTraces: true,
   },
 });
 ```

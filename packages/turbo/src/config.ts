@@ -34,8 +34,9 @@ export interface Optimizations {
    */
   reuseContext?: boolean;
   /**
-   * Node's compile cache for the runner and the workers, which shortens their start: `true` caches in
-   * `node_modules/.cache/piwi-turbo-compile`. Skipped when `NODE_V8_COVERAGE` or a compile cache is already set.
+   * Node's compile cache for the test workers, which shortens their start: `true` caches in
+   * `node_modules/.cache/piwi-turbo-compile`. The runner has loaded Playwright before the config: `NODE_COMPILE_CACHE`
+   * set in the environment caches its start too. Skipped when `NODE_V8_COVERAGE` or a compile cache is already set.
    */
   compileCache?: boolean | string;
   /**
@@ -85,6 +86,11 @@ export interface Optimizations {
      * through CDP instead of loading each of them.
      */
     fastReset?: boolean;
+    /**
+     * The test worker's stack traces, which Playwright captures for every API call, look up source maps only for the
+     * frames outside Node and `node_modules`. They read the same.
+     */
+    fastStackTraces?: boolean;
   };
 }
 
@@ -160,6 +166,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         failFast: true,
         skipStabilityWait: true,
         fastReset: true,
+        fastStackTraces: true,
       },
     };
   }
@@ -205,6 +212,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.failFast) use.failFast = true;
   if (experimental.skipStabilityWait) use.skipStabilityWait = true;
   if (experimental.fastReset) use.fastReset = true;
+  if (experimental.fastStackTraces) use.fastStackTraces = true;
   if (options.compileCache) {
     enableCompileCache(options.compileCache === true ? 'node_modules/.cache/piwi-turbo-compile' : options.compileCache);
   }

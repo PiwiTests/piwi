@@ -118,6 +118,8 @@ describe('presets', () => {
       retryIntervals: [10, 20, 40, 50],
       failFast: true,
       skipStabilityWait: true,
+      fastReset: true,
+      fastStackTraces: true,
       instantAnimations: true,
     });
   });

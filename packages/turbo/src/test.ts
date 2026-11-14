@@ -1,7 +1,7 @@
 // `test` with @piwitests/turbo's fixtures: request blocking, failure screenshots, instant animations, and
 // the experimental hooks, each off until enabled in `use`.
 import { test as base, expect, type BrowserContext, type Page, type Request, type TestInfo } from '@playwright/test';
-import { assertHooksWork, installHooks, state, validIntervals } from './hooks';
+import { assertHooksWork, installFastStackTraces, installHooks, state, validIntervals } from './hooks';
 import { IDLE_TRACKER } from './idle-tracker';
 import type { BlockRule, TurboOptions } from './types';
 
@@ -102,13 +102,25 @@ export async function captureFailure(context: BrowserContext, testInfo: Outcome)
   return captured;
 }
 
-type WorkerOptions = 'reuseContextWithReset' | 'fastReset';
+type WorkerOptions = 'reuseContextWithReset' | 'fastReset' | 'fastStackTraces';
 
-export const test = base.extend<Omit<TurboOptions, WorkerOptions>, Pick<TurboOptions, WorkerOptions>>({
+export const test = base.extend<
+  Omit<TurboOptions, WorkerOptions>,
+  Pick<TurboOptions, WorkerOptions> & { _turboStackTraces: void }
+>({
   // Playwright reuses one context per worker only through this option, so a suite on plain @playwright/test never
   // reuses a context without the reset below.
   reuseContextWithReset: [false, { scope: 'worker', option: true }],
   fastReset: [false, { scope: 'worker', option: true }],
+  fastStackTraces: [false, { scope: 'worker', option: true }],
+  // Installed once the worker has loaded the test files, after Playwright set up source-map-support.
+  _turboStackTraces: [
+    async ({ fastStackTraces }, use) => {
+      if (fastStackTraces) installFastStackTraces();
+      await use();
+    },
+    { scope: 'worker', auto: true },
+  ],
   reuseContext: [
     async ({ reuseContextWithReset, fastReset, connectOptions }, use) => {
       // The reset of a reused context runs before each test's fixtures, so fastReset holds for the whole worker.

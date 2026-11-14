@@ -8,8 +8,10 @@
 //                     from the frames still on them and through CDP, so the reset has no origin to load
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
+//   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
+//                     source map
 //
-// Both wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
+// They wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
 import { createRequire } from 'node:module';
 import { TESTED_VERSIONS } from './versions';
@@ -30,6 +32,8 @@ export const state = {
   failFast: false,
   skipStabilityWait: false,
   fastReset: false,
+  /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
+  sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
   pagesSeen: 0,
   /** The first internal that did not have the expected shape. */
@@ -73,12 +77,16 @@ export function checkVersion(version: string, allowUntested = false): void {
   );
 }
 
-/** Loads the playwright-core instance the installed @playwright/test runs on. */
-function loadCore(): { version: string; core: ServerPage } {
+/** Requires from the playwright-core instance the installed @playwright/test runs on. */
+function playwrightCore(): { version: string; load: NodeJS.Require } {
   const fromTest = createRequire(require.resolve('@playwright/test'));
-  const fromPlaywright = createRequire(fromTest.resolve('playwright/package.json'));
-  const version = (fromPlaywright('playwright-core/package.json') as { version: string }).version;
-  return { version, core: fromPlaywright('playwright-core/lib/coreBundle') };
+  const load = createRequire(fromTest.resolve('playwright/package.json'));
+  return { version: (load('playwright-core/package.json') as { version: string }).version, load };
+}
+
+function loadCore(): { version: string; core: ServerPage } {
+  const { version, load } = playwrightCore();
+  return { version, core: load('playwright-core/lib/coreBundle') };
 }
 
 /** Thrown inside the retry loop to end an assertion the page can no longer satisfy. */
@@ -378,4 +386,56 @@ export function assertHooksWork({ needsChromium }: { needsChromium: boolean }): 
     );
   }
   if (needsChromium && !state.sessionHooked) throw new IncompatibleError('fastScreenshots works on Chromium only');
+}
+
+const LIBRARY_FILE = /^node:|[\\/]node_modules[\\/]/;
+
+type CallSitePosition = { name?: string } | null;
+type WrapCallSite = (
+  frame: NodeJS.CallSite,
+  position: { nextPosition: CallSitePosition; curPosition: CallSitePosition },
+) => NodeJS.CallSite;
+
+/**
+ * Formats this worker's stack traces as source-map-support does, without looking up a source map for the frames of
+ * Node and of `node_modules`, which have none: Playwright captures a stack of 50 frames for every API call.
+ */
+export function installFastStackTraces({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTESTED === '1' } = {}): void {
+  if (state.sourceMappedStackTrace) return;
+  const { version, load } = playwrightCore();
+  checkVersion(version, allowUntested);
+  const sourceMapped = Error.prepareStackTrace;
+  if (typeof sourceMapped !== 'function' || !String(sourceMapped).includes('wrapCallSite(stack[')) {
+    throw new IncompatibleError("the worker's stack traces are not formatted by source-map-support");
+  }
+  const wrapCallSite = (load('playwright-core/lib/utilsBundle') as { sourceMapSupport?: { wrapCallSite?: unknown } })
+    .sourceMapSupport?.wrapCallSite as WrapCallSite | undefined;
+  if (typeof wrapCallSite !== 'function')
+    throw new IncompatibleError('playwright-core has no sourceMapSupport.wrapCallSite');
+  // source-map-support's own frame formatter, taken from a frame it wrapped.
+  Error.prepareStackTrace = (_error, stack) => stack;
+  const sample = (new Error().stack as unknown as NodeJS.CallSite[])[0];
+  Error.prepareStackTrace = sourceMapped;
+  const formatFrame = wrapCallSite(sample, { nextPosition: null, curPosition: null }).toString;
+  if (formatFrame === Object.prototype.toString) {
+    throw new IncompatibleError("source-map-support's wrapped frames no longer format themselves");
+  }
+  state.sourceMappedStackTrace = sourceMapped;
+  // source-map-support's loop: a frame takes the name its caller's source map gives it, so such a frame is wrapped.
+  Error.prepareStackTrace = (error: Error, stack: NodeJS.CallSite[]) => {
+    const position = { nextPosition: null as CallSitePosition, curPosition: null as CallSitePosition };
+    const lines: string[] = [];
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const frame = stack[i];
+      const file = frame.getFileName();
+      if (file && LIBRARY_FILE.test(file) && !frame.isNative() && !frame.isEval() && !position.nextPosition?.name) {
+        lines.push(`\n    at ${formatFrame.call(frame)}`);
+        position.curPosition = null;
+      } else {
+        lines.push(`\n    at ${wrapCallSite(frame, position)}`);
+      }
+      position.nextPosition = position.curPosition;
+    }
+    return `${error?.name || 'Error'}: ${error?.message || ''}${lines.reverse().join('')}`;
+  };
 }
