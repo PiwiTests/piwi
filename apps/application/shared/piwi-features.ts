@@ -411,10 +411,10 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'CI merge gate',
         summary:
-          'A `piwi gate` command that blocks a merge on new failures or flakiness, with the run URL in the CI log.',
+          'A `piwi gate` step that fails a CI job on the dashboard’s analysis of a run: new regressions, required tags or selections, flakiness, new clusters, leaks or quarantine debt, inconclusive on an environment incident, with an optional commit status of its own.',
         needs: [],
-        where: 'CI (`piwi gate`)',
-        doc: 'reference/cli',
+        where: 'CI (`piwi gate`); Project → Settings → Source control (Gate status)',
+        doc: 'features/merge-gate',
       },
     ],
   },
@@ -547,7 +547,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Coverage insights',
         summary:
           'From the coverage tests record: the code a failure ran that its last pass did not, a path that depends on which tests ran first, the code only some tests run before you quarantine them, and whether a new test reaches its target lines.',
-        needs: ['fixtures', 'backend'],
+        needs: ['fixtures'],
         where: 'Execution → Source; Test case → Path variation; API and MCP tools; the AI diagnosis',
         doc: 'features/coverage-insights',
       },

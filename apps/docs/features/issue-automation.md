@@ -79,9 +79,8 @@ and still-failing comments, the transitions, and the description updates. It tak
 environments like a rule, and every run when it names nothing. A fix verified on a feature branch then leaves the
 issue alone when the scope names `main`.
 
-Some runs never write to a tracker, whatever the scope: a run from an editor, a Flake Lab or probe run, a bisect step
-or a reproduction, a run flagged as an [environment incident](./environment-incidents), and a developer's local or
-desktop run of part of the suite ([run origin](/reference/test-metadata#run-origin)).
+Some runs never write to a tracker, whatever the scope, such as a run from an editor or one flagged as an
+[environment incident](./environment-incidents): [the runs that send nothing](/reference/test-metadata#run-origin).
 
 ## Comments and description updates
 

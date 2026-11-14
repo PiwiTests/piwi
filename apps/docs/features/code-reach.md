@@ -11,12 +11,14 @@ lang: en-US
 Code reach answers "which tests reach this file?" for application code: an opt-in capture records the source files
 whose functions ran during each test in the browser, so a change to a component or a module maps to the tests that
 execute it. An ASP.NET Core or Nitro backend built for coverage adds the code each test ran on the server:
-[server coverage](./server-coverage).
+[server coverage](./server-coverage). This page covers the browser's side, and for both sides what a test ran
+([on the execution page](#on-the-execution-page)) and [which tests run a file](#which-tests-run-a-file).
 
 ## Turn it on
 
 Set `captureCodeReach: true` in the reporter options, or `PIWI_CAPTURE_CODE_REACH=true`, with the
-[capture fixtures](/guide/capture-fixtures) in place. Coverage adds time to every test and reach changes slowly, so
+[capture fixtures](/guide/capture-fixtures) in place: it records files. `coverage.browser: 'functions'` or `'lines'`
+records more ([the modes](/reference/coverage-cost#the-modes)). Coverage adds time to every test and reach changes slowly, so
 turn it on in one scheduled job; a run without it keeps the reach the last one recorded.
 
 ```ts
@@ -92,12 +94,10 @@ recorded exactly the files it ran.
 
 ## Cost
 
-Code reach reads V8's function coverage, which records only whether each function ran. A test pays for a CDP session
-on each page it has, a debugger stop and a coverage read for each document it leaves, and a script's source is read
-once per worker, so the cost grows with the modules each document loads. One script-heavy page costs about 8% more per
-test; on a large ASP.NET Core and Vue application, served by Vite dev servers and moving between screens by full page
-loads, its UI tests took 40 to 50% longer, by file or by function alike: turn it on in a scheduled run there.
-[Coverage cost](/reference/coverage-cost) has every mode and how each was measured.
+Code reach reads V8's function coverage, so its cost grows with the modules each document loads and the full page
+loads a test makes: on a large application served by dev servers, its UI tests took 40 to 50% longer, by file or by
+function alike, so turn it on in a scheduled run there. Every mode, its figures and how each was measured:
+[Coverage cost](/reference/coverage-cost).
 
 ## On the execution page
 

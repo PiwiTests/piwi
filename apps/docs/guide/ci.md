@@ -1,6 +1,6 @@
 ---
 title: CI & sharding
-description: "Run the reporter in CI: GitHub Actions, GitLab and others, shards merged into one run, the run URL for later steps and the merge gate."
+description: "Run the reporter in CI: GitHub Actions, GitLab and others, shards merged into one run, the run URL for later steps and the CI merge gate."
 lang: en-US
 ---
 
@@ -222,7 +222,8 @@ Piwi can post a summary comment and a commit status on the pull request: see
 ## Blocking a merge
 
 `npx playwright test` exits non-zero when anything failed. *Did this change break something that was working* needs
-the run history, so the dashboard evaluates it.
+the run history, so the dashboard evaluates it: the [CI merge gate](/features/merge-gate) says what fails it, what
+only warns and what it leaves out.
 
 ```yaml
 - run: npx playwright test
@@ -243,21 +244,8 @@ A failed gate exits 1 and prints:
 
 <<< @/snippets/gate-output.txt
 
-Its rules bound the failing tests, the new regressions and newly flaky tests, the tests a tag or a
-[selection](/features/test-selection) requires, the [quarantine](/features/flaky-tests#quarantine-with-a-way-out)
-debt (`--max-quarantined`), new clusters and [leaks](/features/leak-history): every flag is in the
-[CLI reference](/reference/cli#gate).
-
-At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
-of the contract:
-**0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline never passes,
-**3** [inconclusive](/features/environment-incidents).
-
-**A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
-`--require-tag` or `--require-selection`, and the gate reports how many failures it excluded. How the rules count
-retried tests and a required tag that matches no test is in the [CLI reference](/reference/cli#gate).
-
-`npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
+Every flag and exit code is in the [CLI reference](/reference/cli#gate); `--json` prints the raw result for a
+pipeline to parse.
 
 ## Notifying people instead
 
@@ -288,5 +276,6 @@ sent.
 
 - [Reporter](./reporter): setup, streaming and authentication
 - [Pull-request feedback](/features/pr-feedback): the result on the pull request
+- [CI merge gate](/features/merge-gate): what the gate decides
 - [Test tags](/reference/test-metadata#test-tags): what `--require-tag` matches on
 - [API keys](/operate/api-keys): the key CI uses

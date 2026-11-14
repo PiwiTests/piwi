@@ -28,10 +28,10 @@ without it.
 | **Reachable, unvisited**<br>`reachable-unvisited` | blind-spot | a page other pages link to that no test navigates to | the page inventory | 0.4 plus 0.1 per linking page, at most 0.8 | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Fixed without a regression test**<br>`fixed-without-test` | blind-spot | a [bug report](/features/bug-reports) closed in the last 180 days while no test names it | Piwi Picker sending reports | 0.7 | `Bug report #2 was fixed without a regression test: Gift card balance shown twice` |
-| **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
-| **New error path**<br>`new-error-path` | blind-spot | at pull-request time, an error status (400 to 599) the change makes a route's handler answer with or throw, which no run of the route answered with, this one included | an SCM token and a pull request | 0.55 | `Adds 422 to POST /api/orders · never observed` |
-| **New control**<br>`new-control` | blind-spot | at pull-request time, a button, field, select or switch the change adds to a page file, on a page a test reaches, named by its static label, placeholder, name or text | an SCM token and a pull request | 0.5 | `Adds button "Apply promo" on /checkout` |
-| **Intent without a test**<br>`intent-without-test` | blind-spot | at pull-request time, a pull request whose title's words (half of them at least) no test's title, describe path, tags or feature holds | an SCM token and a pull request | 0.4 | `feat: apply a promo discount · no test title, tag or feature matches` |
+| **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | the [source control](/guide/source-control) diff: a token for a private repository | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
+| **New error path**<br>`new-error-path` | blind-spot | at pull-request time, an error status (400 to 599) the change makes a route's handler answer with or throw, which no run of the route answered with, this one included | the source control diff (a token for a private repository) and a pull request | 0.55 | `Adds 422 to POST /api/orders · never observed` |
+| **New control**<br>`new-control` | blind-spot | at pull-request time, a button, field, select or switch the change adds to a page file, on a page a test reaches, named by its static label, placeholder, name or text | the source control diff (a token for a private repository) and a pull request | 0.5 | `Adds button "Apply promo" on /checkout` |
+| **Intent without a test**<br>`intent-without-test` | blind-spot | at pull-request time, a pull request whose title's words (half of them at least) no test's title, describe path, tags or feature holds | the source control diff (a token for a private repository) and a pull request | 0.4 | `feat: apply a promo discount · no test title, tag or feature matches` |
 | **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
 | **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node went unseen through the default branch's last 30 complete runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
@@ -63,13 +63,10 @@ its URL pattern matches. A method whose every target comes from a parameter gets
 
 A trusted test is judged on the default branch's last 30 runs: it did not pass only after a retry in any of them, did
 not flip between failing and passing three times across them, did not fail each of its last three, is not quarantined, and was neither skipped nor left unrun in the newest it ran in.
-A test with no run among them stays trusted. *Surface drift* raises a node in the run it first appears in; the gap
-then stays open until any test reaches the node or the node leaves the graph, unless you dismiss it or close it with
-*Covered by* first. A node only untrusted tests reach is then a *Single covering test* gap. *Changed, unreached* is
-covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
-file, or a later diff no longer counts the file; an accepted gap closes only once a test reaches the file. A file no
-later diff reads, such as the old path of a rename or a file of an abandoned pull request, keeps its gap until a test
-reaches it or it is triaged. A finding never closes itself; triage it.
+A test with no run among them stays trusted. *Surface drift* raises a node in the run it first appears in; a node
+only untrusted tests reach is then a *Single covering test* gap. *Changed, unreached* is covered on
+[Uncovered changes in pull requests](/features/uncovered-changes). When each gap closes:
+[When a gap closes](#when-a-gap-closes).
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
@@ -81,6 +78,27 @@ name. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control 
 locator reaches some control on the project. A test that clicks or fills an element no node matches, through a test
 id or a CSS selector, might have used any control on that page, so *Control nobody exercises*, *Single covering
 test* and *Surface drift* raise none of those controls.
+
+## When a gap closes
+
+Gaps persist across recomputes, so triage survives them. A gap **closes itself** when its detector no longer raises
+it, for example once its node gains a trusted test, and a closed gap the detector raises again reopens. Beyond that
+rule:
+
+- **Covered by** closes a gap and records the covering test as reaching the node; such a gap stays closed when its
+  detector raises it again. A dismissed gap keeps its verdict.
+- **Surface drift** stays open until any test reaches the node or the node leaves the graph, unless you dismiss it or
+  close it with *Covered by* first.
+- **Changed, unreached** closes when a later diff no longer counts its file as uncovered, or when the next recompute
+  finds the file reached, out of the coverage scope, deleted or no longer observable. An accepted one closes only once
+  a test reaches the file. A file no later diff reads, such as the old path of a rename or a file of an abandoned pull
+  request, keeps its gap until a test reaches it or it is triaged.
+- **The pull-request detectors** (*New error path*, *New control*, *Intent without a test*) close when a later run of
+  the pull request no longer raises them.
+- **Not noticed** closes once a probe of its route is noticed.
+- **A finding** (*Not handled*) never closes itself: triage it.
+
+A closed gap keeps why it closed: [Close reasons and acted on](#close-reasons-and-acted-on).
 
 ## Exposure
 

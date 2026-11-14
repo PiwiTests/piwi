@@ -1,6 +1,6 @@
 ---
 title: Pull-request feedback
-description: "Piwi posts a run's result on the pull request, new failures apart from pre-existing ones, and sets a commit status from the merge gate's verdict."
+description: "Piwi posts a run's result on the pull request, new failures apart from pre-existing ones, and sets a commit status from the CI merge gate's verdict."
 lang: en-US
 ---
 
@@ -14,9 +14,9 @@ see [Re-run in CI](./ci-rerun).
 
 ## What gets posted
 
-A comment and a commit status get posted when a run finishes, unless it is a run from an editor, a Flake Lab or probe run, a bisect step, a
-reproduction, a run flagged as an [environment incident](./environment-incidents), or a partial run from a developer's
-machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
+A comment and a commit status get posted when a run finishes, unless it is one of the runs that
+[send nothing](/reference/test-metadata#run-origin), such as a run from an editor or one flagged as an
+[environment incident](./environment-incidents):
 
 - **A summary comment** on the run's open pull request (the one its CI names when the CI runs in the repository Piwi
   posts to, a pull request from a fork included, else the one open on its branch): one comment per pull request, edited on each later run rather than appended, so a busy
@@ -68,18 +68,11 @@ rewritten locator.
 
 ## The gate verdict
 
-Each [merge gate](/guide/ci#blocking-a-merge) evaluation made with a key that can upload or control the project's runs
-(the CI key `piwi gate` uses) is stored with its policy, its verdict, its violations and the pull request it judged. A
-reader of the project gets the verdict only: nothing is stored or posted.
-
-- **A commit status of its own.** Turn on **Gate status** under the project's **Settings → Source control** and each
-  verdict is also posted as your status context plus `/gate` (`piwi/tests/gate`), so a branch rule can require the
-  gate rather than the run. It needs **Set a commit status** on. An
-  [environment incident](./environment-incidents) posts nothing.
-- **Overrides and escapes.** Every ten minutes Piwi asks the host what became of the pull requests a gate failed on.
-  One merged while its last evaluation still failed counts as an override; one fixed first, or closed, does not. When
-  a cluster that evaluation caught as a new regression fails again on an eligible default-branch run within 30 days
-  of the merge, the override also counts as an escape past the gate.
+With **Gate status** on under the project's **Settings → Source control**, each verdict of the
+[CI merge gate](./merge-gate) made with the CI key is also posted as your status context plus `/gate`
+(`piwi/tests/gate`), so a branch rule can require the gate rather than the run. It needs **Set a commit status** on.
+What is stored, and how merges past a failed gate are counted:
+[On the pull request](./merge-gate#on-the-pull-request).
 
 ## Turn it on
 
@@ -101,12 +94,12 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
   overwritten.
 - Everything here is best-effort: the run is already stored by the time it runs, and a missing token or an unreachable
   host is logged rather than failing your pipeline.
-- A comment reports; it does not block. To fail the build on a policy, use the
-  [merge gate](/guide/ci#blocking-a-merge).
+- A comment reports; it does not block. To fail the build on a policy, use the [CI merge gate](./merge-gate).
 
 ## Related
 
-- [CI & sharding](/guide/ci): run the reporter in CI and gate a merge
+- [CI & sharding](/guide/ci): run the reporter in CI
+- [CI merge gate](./merge-gate): fail a CI job on the run's analysis
 - [Source control](/guide/source-control): the SCM token and its scopes
 - [Auto-heal PRs](./auto-heal): the pull request Piwi opens itself
 - [Failure clusters & the inbox](./failure-clusters): the clusters the comment reports

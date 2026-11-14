@@ -99,6 +99,24 @@ What each origin feeds:
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
+A finished run posts no [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI
+diagnosis or auto-heal, makes no [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write)
+and fires no [notification](/features/notifications#events), an environment incident's own event aside, when it is:
+
+- a Flake Lab or [probe](/features/probes#what-a-probe-run-never-counts) run, a bisect step or a reproduction;
+- a run a person requested from the dashboard (`request`), which only its requester sees;
+- a run from an editor (`editor`), complete or not;
+- a `local` or `desktop` run of part of the suite;
+- a run flagged as an [environment incident](/features/environment-incidents), which sends one
+  [`environment.incident`](/reference/notification-events) event in place of its failure, flakiness, performance and
+  new-cluster events (`run.finished` still fires) and gets the verdict *inconclusive* from the
+  [CI merge gate](/features/merge-gate#what-it-leaves-out);
+- an imported report, which runs none of a finished run's side effects.
+
+A complete `local` or `desktop` run, a `preflight` run and a `piwi bug` run send them like a CI run, except
+[`test.stuck`](/features/stuck-tests#the-notification), which no run started on a developer's machine sends.
+[Results in Zephyr Scale](/features/test-management#when-a-run-is-sent) take a narrower set: complete CI runs only.
+
 ### Playwright configuration
 
 The reporter also records browser project configs, worker count, the global timeout, and parallel settings. A sharded
@@ -137,7 +155,7 @@ it was written — filter for `smoke` or `@smoke` and you get the same rows. Rem
 next run that reports the test.
 
 Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
-leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+leaderboard, and the `--require-tag` rule of the [CI merge gate](/features/merge-gate#what-fails-it).
 
 #### Tag limit
 

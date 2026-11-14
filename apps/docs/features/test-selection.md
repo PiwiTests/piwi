@@ -21,7 +21,7 @@ npx @piwitests/reporter run smoke
 `piwi run <key>` resolves the selection and runs `playwright test` with exactly those tests. It finds your dashboard
 the way the reporter does, through `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` (if auth is on) and `PIWI_PROJECT_NAME`, and
 passes anything after `--` straight to Playwright. The run is **stamped** with the selection it came from, so the
-[pull-request comment](/features/pr-feedback) names the subset, and a [gate](/guide/ci) can re-resolve the same
+[pull-request comment](/features/pr-feedback) names the subset, and the [CI merge gate](/features/merge-gate) can re-resolve the same
 definition to check nothing was silently dropped.
 
 If the dashboard is unreachable, `piwi run` falls back to the full suite with a warning (and reuses the last good
@@ -31,19 +31,12 @@ resolution from `.piwi/selection-cache.json` when it has one): a reporting probl
 
 ### Print, shard and reorder
 
-`piwi select <key>` resolves and prints the Playwright arguments instead of running them, for a two-step job. Three
-flags shape a resolution:
-
-- `--shard i/n` keeps only shard _i_ of _n_ (up to 1,000 shards), split so each shard's summed test duration is even. The split is
-  **lock-aware**: every test that shares a [lock](/reference/test-metadata#test-locks) goes to the same shard, because
-  Playwright serializes lock holders only inside one process. Shard with `piwi run --shard` rather than Playwright's
-  own `--shard`, which would split the lock; a resolution whose tests share a lock carries a `split-lock` warning.
-- `--fail-fast` puts the least-reliable tests first, so a likely failure surfaces early. It reorders and never drops,
-  so a `--require-selection` gate still sees the whole set.
-- `--budget 5m` caps the total time for this resolution.
-
-`piwi run --shard` jobs merge into one run that still covers the whole selection. Every flag and the output formats are
-in the [CLI reference](/reference/cli#select-run).
+`piwi select <key>` resolves and prints the Playwright arguments instead of running them, for a two-step job. Flags
+shape a resolution: `--shard i/n` splits it into shards of even duration, keeping every test that shares a
+[lock](/reference/test-metadata#test-locks) in one shard, `--fail-fast` puts the least-reliable tests first without
+dropping any, and `--budget 5m` caps its total time. Shard with `piwi run --shard` rather than Playwright's own
+`--shard`, which would split a lock: `piwi run --shard` jobs merge into one run that still covers the whole selection.
+Every flag and the output formats are in the [CLI reference](/reference/cli#select-run).
 
 ## Built-in selections
 
@@ -122,8 +115,8 @@ npx @piwitests/reporter run smoke                 # run the subset, stamping the
 npx @piwitests/reporter gate --require-selection smoke   # then assert it held
 ```
 
-It composes with the other [gate](/guide/ci) rules (`--max-new-regressions`, `--fail-on-flaky`, …). A quarantined test is
-exempt: quarantine already means "don't gate on this test".
+It composes with the other rules of the [CI merge gate](/features/merge-gate#what-fails-it), which says what it
+counts and leaves out.
 
 ## In the dashboard, and for agents
 
@@ -152,7 +145,7 @@ get the same data from `analyze_selections`.
 
 `piwi run impact --base <ref>` runs only the tests your change affects: the tests a changed file defines, the ones
 that failed inside it, and the ones that executed it, down to those that ran the changed lines when tests record
-coverage. A changed file that maps to no test, or only through source frames, widens the run to the full suite. How each file is mapped:
+coverage. How each file is mapped, and when a change widens the run to the full suite:
 [Impact from a diff](/features/change-impact).
 
 ## Suggestions
@@ -180,6 +173,6 @@ Coverage here means the routes a test was _seen_ to hit on recent runs, not inst
 - [Impact from a diff](/features/change-impact): the tests a change affects, down to the changed lines
 - [Reuse forecast](/features/reuse-forecast): the test time that ran code identical to an earlier pass
 - [Piwi CLI](/reference/cli#select-run): every flag of `select` and `run`
-- [CI & sharding](/guide/ci): the gate in a CI job
+- [CI merge gate](/features/merge-gate): the gate in a CI job
 - [Analytics](/features/analytics#test-filter): filter every number by a selection
 - [Flaky tests & quarantine](/features/flaky-tests): what decides a test's verdict

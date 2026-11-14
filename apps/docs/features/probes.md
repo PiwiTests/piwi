@@ -51,12 +51,18 @@ change to the route's handler alone.
 
 A probe run is stamped as one, with retries off and no failure limit, whatever the config and its projects set.
 Every project of the config runs each planned test; pass Playwright's own flags after `--` to narrow it
-(`-- --project=chromium`). It never counts as a real run: no failure clusters, no regression
-signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
-compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the
-`failed` selection either, and leaves a test's tags, owner, locks and locator snapshots as they are.
-A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
+(`-- --project=chromium`). A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
 [CLI reference](/reference/cli#probe) lists every flag.
+
+### What a probe run never counts
+
+A probe run injects its failures on purpose, so it never counts as a real run: no failure clusters, no regression
+signals, no notification ([`run.interrupted`](/reference/notification-events) included), no pull-request feedback, no
+issue tracker write ([which runs send nothing](/reference/test-metadata#run-origin)), no metric or analytics, no
+quarantine streak, no branch status, never the baseline another run is compared with, never an
+[environment incident](/features/environment-incidents), and nothing in the Test Map but the probe outcomes. It never
+moves a pass rate, a duration or the `failed` selection either, and leaves a test's tags, owner, locks and locator
+snapshots as they are.
 
 ## What an outcome records
 
@@ -72,7 +78,7 @@ A probe (status-500) on POST /api/orders did not make checkout › pay fail. Ass
 ```
 
 The next step is an assertion on what the request is for: the order appears, the total changes, the error shows.
-Once a probe on that route is noticed, the gap closes itself.
+Once a probe on that route is noticed, the gap [closes itself](/reference/gap-detectors#when-a-gap-closes).
 
 ## Server probes
 
