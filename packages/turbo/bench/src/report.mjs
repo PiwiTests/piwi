@@ -1,6 +1,6 @@
 // Turns recorded runs into a comparison: every variant against the first one, per metric, with the
 // interval and verdict from paired rounds, plus where the test time went.
-import { compareRounds, median, relativeSpread, verdict } from './stats.mjs';
+import { compareRounds, median, relativeSpread, verdict, MIN_ROUNDS } from './stats.mjs';
 
 const METRICS = [
   { key: 'wallMs', label: 'Wall time', unit: 's', scale: 1 / 1000 },
@@ -16,13 +16,15 @@ function value(metric, raw) {
 }
 
 function percent(ratio) {
+  if (!Number.isFinite(ratio)) return '–';
   const change = (ratio - 1) * 100;
   return `${change > 0 ? '+' : change < 0 ? '−' : '±'}${Math.abs(change).toFixed(change !== 0 && Math.abs(change) < 10 ? 1 : 0)}%`;
 }
 
 /** The comparison as data: one entry per variant, metric by metric. */
 export function summarize(results, { minimumEffect = 0.02 } = {}) {
-  const measured = results.runs.filter((run) => !run.warmup);
+  const measured = results.runs.filter((run) => !run.warmup && !run.crashed);
+  const crashed = results.runs.filter((run) => !run.warmup && run.crashed);
   const baseline = results.variants[0].name;
   const byRound = (name) => new Map(measured.filter((run) => run.variant === name).map((run) => [run.round, run]));
   const baseRuns = byRound(baseline);
@@ -50,6 +52,7 @@ export function summarize(results, { minimumEffect = 0.02 } = {}) {
       name: variant.name,
       description: variant.description,
       runs: runs.length,
+      crashedRuns: crashed.filter((run) => run.variant === variant.name).length,
       failedRuns: runs.filter((run) => run.exitCode !== 0).length,
       failedTests: runs.reduce((sum, run) => sum + (run.counts?.unexpected ?? 0), 0),
       flakyTests: runs.reduce((sum, run) => sum + (run.counts?.flaky ?? 0), 0),
@@ -70,12 +73,14 @@ export function formatMarkdown(results, summary = summarize(results)) {
     `${results.machine.platform}/${results.machine.arch}, ${results.machine.cpus ?? '?'} CPUs, Node ${results.machine.node}. ` +
       `${baseline.runs} measured rounds after ${results.config.warmup} warm-up round(s); variants interleaved. ` +
       `Every variant is compared with **${baseline.name}** round by round: the change is the median of the per-round ratios, ` +
-      'the interval its 95% bootstrap interval, and "n/N lower" counts the rounds it came out lower.',
+      'the interval its 95% bootstrap interval, and "n/N lower" counts the rounds it came out lower. ' +
+      `A verdict needs ${MIN_ROUNDS} rounds; with 5, a variant no different from the baseline still reads lower or ` +
+      'higher in about 6% of comparisons, so expect a few among many. A run that failed without running the suite ' +
+      'is left out.',
     '',
   ];
   for (const metric of METRICS) {
     if (!baseline.metrics[metric.key]) continue;
-    const spread = baseline.metrics[metric.key].spread;
     lines.push(
       `## ${metric.label}${metric.key === 'peakMemoryMb' && results.memoryMetric ? ` (${results.memoryMetric}, sampled)` : ''}`,
       '',
@@ -97,17 +102,17 @@ export function formatMarkdown(results, summary = summarize(results)) {
         `| ${variant.name} | ${value(metric, entry.median)} | ${noise} | ${percent(ratio)} | ${percent(low)} … ${percent(high)} | ${better}/${rounds} | ${entry.verdict} |`,
       );
     }
-    if (!Number.isNaN(spread)) lines.push('');
+    lines.push('');
   }
   lines.push(
     '## Correctness',
     '',
-    '| Variant | Failed runs | Failed tests | Flaky tests | Retries |',
-    '| --- | ---: | ---: | ---: | ---: |',
+    '| Variant | Crashed runs | Failed runs | Failed tests | Flaky tests | Retries |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |',
   );
   for (const variant of summary) {
     lines.push(
-      `| ${variant.name} | ${variant.failedRuns}/${variant.runs} | ${variant.failedTests} | ${variant.flakyTests} | ${variant.retries} |`,
+      `| ${variant.name} | ${variant.crashedRuns} | ${variant.failedRuns}/${variant.runs} | ${variant.failedTests} | ${variant.flakyTests} | ${variant.retries} |`,
     );
   }
   const names = [...new Set(summary.flatMap((variant) => Object.keys(variant.categories)))].toSorted(

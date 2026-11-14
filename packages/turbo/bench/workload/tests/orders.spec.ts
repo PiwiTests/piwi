@@ -38,10 +38,10 @@ test.describe('orders', () => {
   });
 
   test('filters by status', async ({ page }) => {
-    await page.getByLabel('Status').selectOption('cancelled');
-    await expect(page).toHaveURL(/status=cancelled/);
+    await page.getByLabel('Status').selectOption('canceled');
+    await expect(page).toHaveURL(/status=canceled/);
     await settled(page);
-    expect(new Set(await column(page, 3).allTextContents())).toEqual(new Set(['cancelled']));
+    expect(new Set(await column(page, 3).allTextContents())).toEqual(new Set(['canceled']));
   });
 
   test('combines search and status', async ({ page }) => {
@@ -91,7 +91,7 @@ test.describe('orders', () => {
     await expect(page.locator('#page-label')).toContainText('Page 1 of 1');
     const row = page.getByRole('row', { name: /SO-10900/ });
     await expect(row).toBeVisible();
-    await expect(row.getByRole('cell').nth(2)).toHaveText(/pending|paid|shipped|delivered|cancelled/);
+    await expect(row.getByRole('cell').nth(2)).toHaveText(/pending|paid|shipped|delivered|canceled/);
     await row.getByRole('link').click();
     await expect(page.getByRole('heading', { name: 'SO-10900' })).toBeVisible();
     await evidence('order SO-10900', { fullPage: false });
@@ -108,10 +108,11 @@ test.describe('orders', () => {
   });
 
   test('opens an order from the table', async ({ page }) => {
-    const link = rows(page).first().getByRole('link');
-    const number = await link.textContent();
-    await link.click();
-    await expect(page.getByRole('heading', { name: number! })).toBeVisible();
+    // A seeded order: the newest one may belong to a test in another worker, which deletes it.
+    await page.goto('/orders?q=SO-10003');
+    await settled(page);
+    await rows(page).first().getByRole('link', { name: 'SO-10003' }).click();
+    await expect(page.getByRole('heading', { name: 'SO-10003' })).toBeVisible();
     await expect(page.locator('[data-field="customer"]')).not.toBeEmpty();
   });
 

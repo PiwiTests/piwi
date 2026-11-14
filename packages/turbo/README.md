@@ -135,7 +135,7 @@ your own risk. What each lever was measured to save, and what was tried and drop
 `bench/` compares configurations by running whole commands of a suite, interleaved in rotating rounds, and reports
 each against a baseline round by round with an interval, along with CPU (every process, Chromium included), peak
 memory, artifact size, failures and where the test time went. Its reference workload is an orders console with a slow
-API, third-party scripts, animations and a large table, tested by a 43-test suite.
+API, third-party scripts, animations and a large table, tested by a suite of 42 tests.
 
 ```sh
 npm run turbo:bench:profile # where the workload's test time goes

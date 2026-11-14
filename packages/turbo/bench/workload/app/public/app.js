@@ -3,7 +3,7 @@
 const app = document.getElementById('app');
 const toasts = document.getElementById('toasts');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
+const STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'canceled'];
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const date = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
 

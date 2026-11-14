@@ -11,11 +11,15 @@ import { withOptimizations } from '../../src/index';
 //   BENCH_FAILURE_SCREENSHOTS 1: @piwitests/turbo's failureScreenshots
 //   BENCH_INSTANT_ANIMATIONS 1: @piwitests/turbo's instantAnimations
 //   BENCH_PRESET             safe | fast | max: @piwitests/turbo's preset (BENCH_TRACE would win over it)
-//   BENCH_REUSE              0: reuseContext: false, whatever the preset
+//   BENCH_REUSE              1 | 0: reuseContext on or off, whatever the preset
+//   BENCH_COMPILE_CACHE      1: @piwitests/turbo's compileCache
 //   BENCH_FAIL_FAST          1: the experimental failFast hook
 //   BENCH_FAILING            1: also run the failing tests (tests/failing.spec.ts), to measure a red run
 //   BENCH_FAST_SCREENSHOTS   1: the experimental fastScreenshots hook
 //   BENCH_RETRY_INTERVALS    comma-separated milliseconds: the experimental retryIntervals hook
+//   BENCH_SKIP_STABILITY_WAIT 1: the experimental skipStabilityWait hook
+//   BENCH_FAST_RESET         1: the experimental fastReset hook (with reuseContext)
+//   BENCH_FAST_STACK_TRACES  1: the experimental fastStackTraces hook
 //   BENCH_WORKERS            worker count or percentage (default: Playwright's)
 //   BENCH_RETRIES            retries (default 2 on CI, 0 elsewhere)
 //   BENCH_SCREENSHOT         screenshot mode (default only-on-failure); BENCH_VIDEO video mode (default off)
@@ -65,7 +69,8 @@ const config = defineConfig({
 
 export default withOptimizations(config, {
   preset: env.BENCH_PRESET as 'safe' | 'fast' | 'max' | undefined,
-  reuseContext: env.BENCH_REUSE === '0' ? false : undefined,
+  reuseContext: env.BENCH_REUSE === '0' ? false : env.BENCH_REUSE === '1' || undefined,
+  compileCache: env.BENCH_COMPILE_CACHE === '1' || undefined,
   failureScreenshots: env.BENCH_FAILURE_SCREENSHOTS === '1' || undefined,
   instantAnimations: env.BENCH_INSTANT_ANIMATIONS === '1' || undefined,
   signIn: env.BENCH_AUTH === 'state' ? { storageState: '.auth/user.json' } : undefined,
@@ -77,5 +82,8 @@ export default withOptimizations(config, {
     fastScreenshots: env.BENCH_FAST_SCREENSHOTS === '1' || undefined,
     failFast: env.BENCH_FAIL_FAST === '1' || undefined,
     retryIntervals: env.BENCH_RETRY_INTERVALS ? env.BENCH_RETRY_INTERVALS.split(',').map(Number) : undefined,
+    skipStabilityWait: env.BENCH_SKIP_STABILITY_WAIT === '1' || undefined,
+    fastReset: env.BENCH_FAST_RESET === '1' || undefined,
+    fastStackTraces: env.BENCH_FAST_STACK_TRACES === '1' || undefined,
   },
 });

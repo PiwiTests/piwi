@@ -1,7 +1,8 @@
 // A Playwright reporter that splits test time by what it was spent on (navigation, actions, assertions,
 // screenshots, API requests, browser start-up, fixtures and test code) and records every test's outcome.
 //
-// With BENCH_PROFILE set, it writes the profile there as JSON; without it, it prints the breakdown.
+// With BENCH_PROFILE set, it writes the profile there as JSON; without it, it prints the breakdown once the run ends,
+// beside Playwright's own terminal reporter.
 import { writeFileSync } from 'node:fs';
 
 /** The category a step's own time counts toward. */
@@ -46,8 +47,9 @@ export default class BenchProfileReporter {
     this.startedAt = 0;
   }
 
+  // Only a table at the end: Playwright keeps its own terminal reporter when no other one prints.
   printsToStdio() {
-    return !this.output;
+    return false;
   }
 
   onBegin(config) {

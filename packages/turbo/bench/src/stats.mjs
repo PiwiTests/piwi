@@ -63,12 +63,17 @@ export function compareRounds(pairs, { iterations = 4000, seed = 7 } = {}) {
   };
 }
 
+/** Rounds a verdict needs: with fewer, a variant no different from its baseline too often comes out on one side. */
+export const MIN_ROUNDS = 5;
+
 /**
  * How a comparison reads. A change counts only when the interval excludes "no change" and at least
- * `minimumEffect` separates the median from it.
+ * `minimumEffect` separates the median from it. With 5 rounds, the interval spans the lowest to the highest
+ * per-round ratio, so a variant no different from its baseline still reads lower or higher in about 6% of
+ * comparisons (2 in 32: all five rounds on one side).
  */
 export function verdict(comparison, minimumEffect = 0.02) {
-  if (!comparison.rounds || comparison.rounds < 3) return 'too few rounds';
+  if (!comparison.rounds || comparison.rounds < MIN_ROUNDS) return 'too few rounds';
   if (comparison.high < 1 && 1 - comparison.ratio >= minimumEffect) return 'lower';
   if (comparison.low > 1 && comparison.ratio - 1 >= minimumEffect) return 'higher';
   return 'no clear difference';

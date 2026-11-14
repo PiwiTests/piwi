@@ -80,7 +80,7 @@ const COMPANIES = [
   'Zorg Industries',
   'Weyland Corp',
 ];
-const STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
+const STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'canceled'];
 const STATUS_WEIGHTS = [0.12, 0.18, 0.2, 0.42, 0.08];
 
 function seedOrders() {
@@ -216,7 +216,7 @@ async function api(req, res, url) {
     let revenue = 0;
     for (const order of orders) {
       byStatus[order.status]++;
-      if (order.status !== 'cancelled') revenue += order.total;
+      if (order.status !== 'canceled') revenue += order.total;
     }
     return send(res, 200, {
       orders: orders.length,

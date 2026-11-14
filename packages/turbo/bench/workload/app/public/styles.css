@@ -286,7 +286,7 @@ table[aria-busy='true'] tbody {
 .badge.delivered {
   background: #d1fae5;
 }
-.badge.cancelled {
+.badge.canceled {
   background: #f3f4f6;
   color: var(--muted);
 }

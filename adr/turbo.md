@@ -42,7 +42,7 @@ tell a real gain from noise.
   rounds, and compares each with a baseline round by round, with a bootstrap interval. It reports wall time, the CPU
   time of every process (Chromium included), peak memory (PSS), artifact size, and where the test time went. Its
   reference workload is an orders console with a slow API, third-party scripts, animations and a 1,200-row table,
-  tested by 43 tests.
+  tested by 42 tests.
 - **Piwi's own suite**: one CI shard of 242 tests, 4 or 5 runs per configuration, with a local change to its fixtures
   that was not committed.
 - **Flashwright's benchmark suites** (generated workloads such as 15 trivial tests, TodoMVC, a shop with saved

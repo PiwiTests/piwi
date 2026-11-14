@@ -22,7 +22,7 @@ node bench/cli.mjs run --config <config>         # every variant, interleaved; w
 node bench/cli.mjs report <results.json>         # the comparison again
 ```
 
-`run` takes `--runs N`, `--warmup N`, `--only a,b` (the first selected variant is the baseline), `--out dir` and
+`run` takes `--runs N`, `--warmup N`, `--only a,b` (the first name given is the baseline), `--out dir` and
 `--min-effect 0.02`. `npm run turbo:bench` and `npm run turbo:bench:profile` run the reference workload.
 
 ## Configuration
@@ -48,41 +48,47 @@ export default {
   (`remove`). Read the variables in your `playwright.config.ts`, so one config serves every variant.
 - **The profile reporter replaces your reporters** during a run (`--reporter`), so the measured runs leave out your
   HTML report's cost. To keep your reporters, set `injectReporter: false` and add `bench/src/profile-reporter.mjs` to
-  your config's reporters: it writes nothing unless the benchmark runs it.
+  your config's reporters: outside the benchmark, it prints its breakdown once a run ends.
 - `pauseMs` (default 2000) waits between runs; `sampleMs` (default 200) is the memory sampling interval.
 
 ## Reading the report
 
 For each metric (wall time, CPU time, peak memory, artifact size), every variant gets:
 
-| Column       | Meaning                                                                                                  |
-| ------------ | -------------------------------------------------------------------------------------------------------- |
-| Median       | The median over the measured rounds.                                                                     |
-| Noise        | The median absolute deviation over the median: how much the variant moves from run to run on its own.    |
-| Change       | The median of the per-round ratios against the baseline. Each round runs every variant back to back.     |
-| 95% interval | A bootstrap interval of that median. With 5 rounds it is rough: read it with the next column.            |
-| Rounds lower | In how many rounds the variant came out lower than the baseline.                                         |
-| Verdict      | `lower` or `higher` when the interval excludes no change and the change is at least 2% (`--min-effect`). |
+| Column       | Meaning                                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Median       | The median over the measured rounds.                                                                                       |
+| Noise        | The median absolute deviation over the median: how much the variant moves from run to run on its own.                      |
+| Change       | The median of the per-round ratios against the baseline. Each round runs every variant back to back.                       |
+| 95% interval | A bootstrap interval of that median. With 5 rounds it spans the lowest to the highest per-round ratio.                     |
+| Rounds lower | In how many rounds the variant came out lower than the baseline.                                                           |
+| Verdict      | `lower` or `higher` when the interval excludes no change and the change is at least 2% (`--min-effect`), from 5 rounds up. |
 
-The correctness table counts failed runs, failed and flaky tests, and retries. A faster variant that fails or retries
+A verdict at 5 rounds still names a variant no different from the baseline lower or higher about one time in 16 (all
+five rounds on one side), so among many comparisons expect a few. The rounds follow a balanced Latin square: each
+variant runs in every position, and after every other variant, equally often over a cycle. A run that failed without
+running the suite (no profile) is a crashed run, left out of the comparison.
+
+The correctness table counts crashed and failed runs, failed and flaky tests, and retries. A faster variant that fails or retries
 more is not faster. The time breakdown attributes each step's own time (its duration minus its children's) to a
 category from its Playwright step category and title, summed across workers.
 
 ## How it measures
 
-- **Interleaved rounds**: round _n_ runs every variant once, in an order rotated each round and reversed every other
-  round, so drift (a machine heating up, a neighbor on a shared CI host) affects every variant alike and the per-round
-  ratios cancel it.
-- **CPU** (Linux): the kernel's count of user and system time of every reaped descendant of the command, read from
-  `/proc/self/stat` before and after: exact, and it includes Chromium, the web server and the workers. A process the
-  run leaves behind, re-parented to `init` once its parent exits, is not counted.
+- **Interleaved rounds**: round _n_ runs every variant once, in the order of a balanced Latin square, so drift (a
+  machine heating up, a neighbor on a shared CI host) affects every variant alike and the per-round ratios cancel it.
+- **CPU** (Linux, with `python3`): the command runs under a small subreaper, which adopts every process orphaned below
+  it, such as Chromium's zygotes and renderers once the browser process exits, and reaps it. The kernel's count of user
+  and system time of every reaped descendant, read from `/proc/self/stat` before and after, then covers them all:
+  Chromium, the web server and the workers. Without `python3`, no CPU is reported. Wall time is the command's own
+  lifetime.
 - **Memory** (Linux): the peak, over samples, of the summed PSS of the process tree, which splits shared pages between
   the processes sharing them. macOS reports summed RSS, which overcounts; Windows reports wall time only.
 - **Artifacts**: the size of `artifacts` after each run: traces, videos and screenshots cost upload time and storage.
 
 ## The reference workload
 
-`workload/` is an orders console (a dependency-free Node server and a single-page app) and a 43-test suite with the
+`workload/` is an orders console (a dependency-free Node server and a single-page app) and a suite of 42 tests with the
 shapes real suites have: an API whose responses take 50–500 ms and a session check on every page load; two
 third-party scripts on another origin that hold the `load` event for about a second; a debounced search, a 1,200-row
 table, a polled export job; dialogs, toasts and page transitions that animate; tests that sign in, create their own

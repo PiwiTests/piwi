@@ -1,12 +1,12 @@
-// The reference benchmark: a typical unoptimized setup as the baseline, one variant per @piwitests/turbo lever, all public
-// levers together ("tuned"), then the experimental hooks on top of them.
+// The reference benchmark: a typical unoptimized setup as the baseline, one variant per @piwitests/turbo lever, the main
+// public levers together ("tuned"), then the experimental hooks on top of them.
 //
 //   npm run turbo:bench                                            every variant against stock
 //   npm run turbo:bench -- --only tuned,tuned+fast-png,tuned+retry,tuned+hooks --runs 8
 //                                                            the hooks against the tuned suite
 //   npm run turbo:bench -- --only stock,failure-screenshots,instant-animations,preset-safe,preset-fast,preset-max
 //                                                            the newer levers and the presets against stock
-// A variant's order in this list decides the baseline: the first variant of a run.
+// A run's baseline is the first name given to --only, else the first variant of this list.
 import { createRequire } from 'node:module';
 
 const stock = { BENCH_AUTH: 'ui', BENCH_TRACE: 'on' };
@@ -81,6 +81,16 @@ export default {
       description: 'instantAnimations: CSS and Web Animations run 1000 times faster.',
       env: { ...stock, BENCH_INSTANT_ANIMATIONS: '1' },
     },
+    {
+      name: 'reuse-context',
+      description: 'reuseContext: one browser context per worker, reset between tests.',
+      env: { ...stock, BENCH_REUSE: '1' },
+    },
+    {
+      name: 'compile-cache',
+      description: "compileCache: Node's compile cache for the test workers.",
+      env: { ...stock, BENCH_COMPILE_CACHE: '1' },
+    },
     { name: 'preset-safe', description: "preset: 'safe'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'safe' } },
     { name: 'preset-fast', description: "preset: 'fast'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast' } },
     { name: 'preset-max', description: "preset: 'max'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'max' } },
@@ -99,7 +109,11 @@ export default {
       description: 'stock with six failing tests, plus the experimental failFast hook.',
       env: { ...stock, BENCH_FAILING: '1', BENCH_FAIL_FAST: '1' },
     },
-    { name: 'tuned', description: 'Every public lever above together.', env: tuned },
+    {
+      name: 'tuned',
+      description: 'signIn, trace retain-on-failure, blockRequests, reducedMotion and four workers together.',
+      env: tuned,
+    },
     {
       name: 'tuned+fast-png',
       description: 'tuned, plus the experimental fastScreenshots hook.',
@@ -112,8 +126,28 @@ export default {
     },
     {
       name: 'tuned+hooks',
-      description: 'tuned, plus both experimental hooks.',
+      description: 'tuned, plus the experimental fastScreenshots and retryIntervals hooks.',
       env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1', BENCH_RETRY_INTERVALS: fastRetry },
+    },
+    {
+      name: 'tuned+skip-stability-wait',
+      description: 'tuned, plus the experimental skipStabilityWait hook.',
+      env: { ...tuned, BENCH_SKIP_STABILITY_WAIT: '1' },
+    },
+    {
+      name: 'tuned+reuse',
+      description: 'tuned, plus reuseContext.',
+      env: { ...tuned, BENCH_REUSE: '1' },
+    },
+    {
+      name: 'tuned+reuse+fast-reset',
+      description: 'tuned with reuseContext, plus the experimental fastReset hook.',
+      env: { ...tuned, BENCH_REUSE: '1', BENCH_FAST_RESET: '1' },
+    },
+    {
+      name: 'tuned+fast-stack-traces',
+      description: 'tuned, plus the experimental fastStackTraces hook.',
+      env: { ...tuned, BENCH_FAST_STACK_TRACES: '1' },
     },
     { name: 'tuned-red', description: 'tuned, with six failing tests.', env: { ...tuned, BENCH_FAILING: '1' } },
     {

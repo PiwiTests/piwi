@@ -67,7 +67,7 @@ test.describe('order detail', () => {
     expect((await page.request.get(`/api/orders/${order.id}`)).status()).toBe(404);
   });
 
-  test('keeps the order when deletion is cancelled', async ({ page }) => {
+  test('keeps the order when deletion is canceled', async ({ page }) => {
     await page.getByRole('button', { name: 'Delete' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'Keep order' }).click();

@@ -1,10 +1,14 @@
 // Runs one command and measures it as a whole: wall time, CPU time of every process it started (Chromium
 // included), and peak memory of the process tree.
 //
-// Linux: CPU from the kernel's account of reaped children (exact), memory as the peak sum of PSS.
-// macOS: memory as the peak sum of RSS (overcounts shared pages), no CPU. Windows: wall time only.
+// Linux: the command runs under a subreaper (python3), which adopts and reaps every process orphaned below it, such
+// as Chromium's zygotes and renderers once the browser process exits first: the kernel's account of this process's
+// reaped children then holds the CPU time of all of them (exact). Memory as the peak sum of PSS. Without python3, no
+// CPU. macOS: memory as the peak sum of RSS (overcounts shared pages), no CPU. Windows: wall time only.
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, createWriteStream } from 'node:fs';
+import { readFileSync, readdirSync, createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const linux = process.platform === 'linux';
 
@@ -31,6 +35,55 @@ function childrenCpuMs() {
   return ((cutime + cstime) * 1000) / ticksPerSecond();
 }
 
+// Runs the command as its child, adopts every process orphaned below it (PR_SET_CHILD_SUBREAPER), reaps them all, and
+// writes the command's exit code and lifetime to the file named first.
+const SUBREAPER = `
+import ctypes, json, os, subprocess, sys, time
+ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
+started = time.monotonic()
+child = subprocess.Popen(sys.argv[2:])
+code = child.wait()
+wall_ms = (time.monotonic() - started) * 1000
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    try:
+        pid, _ = os.waitpid(-1, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if pid == 0:
+        time.sleep(0.02)
+with open(sys.argv[1], 'w') as out:
+    json.dump({'exitCode': code if code >= 0 else 1, 'wallMs': wall_ms}, out)
+sys.exit(code if code >= 0 else 1)
+`;
+
+let subreaper;
+function hasSubreaper() {
+  if (subreaper === undefined) {
+    try {
+      execFileSync('python3', ['-c', 'import ctypes; ctypes.CDLL(None).prctl'], { stdio: 'ignore' });
+      subreaper = true;
+    } catch {
+      subreaper = false;
+    }
+  }
+  return subreaper;
+}
+
+/** A command line for Windows' shell: an argument with a space or a shell character is quoted. */
+export function windowsCommandLine(command, args) {
+  return [command, ...args]
+    .map((part) => (/[\s&|<>^()]/.test(part) && !part.includes('"') ? `"${part}"` : part))
+    .join(' ');
+}
+
+/** Spawns `command`: on Linux under the subreaper when there is one, on Windows through the shell. */
+export function spawnCommand(command, args, options, resultFile) {
+  if (linux && resultFile) return spawn('python3', ['-c', SUBREAPER, resultFile, command, ...args], options);
+  if (process.platform === 'win32') return spawn(windowsCommandLine(command, args), [], { ...options, shell: true });
+  return spawn(command, args, options);
+}
+
 function linuxTree(rootPid) {
   const children = new Map();
   for (const entry of readdirSync('/proc')) {
@@ -54,9 +107,10 @@ function linuxTree(rootPid) {
   return pids;
 }
 
-function linuxMemoryKb(rootPid) {
+function linuxMemoryKb(rootPid, { includeRoot = true } = {}) {
   let total = 0;
   for (const pid of linuxTree(rootPid)) {
+    if (!includeRoot && pid === rootPid) continue;
     try {
       const rollup = readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8');
       const match = /^Pss:\s+(\d+) kB/m.exec(rollup);
@@ -104,20 +158,19 @@ export const memoryMetric = linux ? 'PSS' : process.platform === 'darwin' ? 'RSS
 export function measure({ command, args, cwd, env, logFile, sampleMs = 200 }) {
   return new Promise((resolve, reject) => {
     const log = createWriteStream(logFile);
-    const cpuBefore = childrenCpuMs();
+    const reaped = linux && hasSubreaper();
+    const resultDir = reaped ? mkdtempSync(join(tmpdir(), 'turbo-bench-run-')) : undefined;
+    const resultFile = resultDir && join(resultDir, 'result.json');
+    const cpuBefore = reaped ? childrenCpuMs() : undefined;
     const started = process.hrtime.bigint();
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
-    });
+    const child = spawnCommand(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, resultFile);
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     let peakKb = 0;
     const sample = () => {
       if (!memoryMetric || !child.pid) return;
-      peakKb = Math.max(peakKb, linux ? linuxMemoryKb(child.pid) : psMemoryKb(child.pid));
+      // The subreaper itself is not the command's.
+      peakKb = Math.max(peakKb, linux ? linuxMemoryKb(child.pid, { includeRoot: !reaped }) : psMemoryKb(child.pid));
     };
     const timer = setInterval(sample, sampleMs);
     child.on('error', (error) => {
@@ -125,15 +178,28 @@ export function measure({ command, args, cwd, env, logFile, sampleMs = 200 }) {
       reject(error);
     });
     child.on('close', (code) => {
-      const wallMs = Number(process.hrtime.bigint() - started) / 1e6;
+      let wallMs = Number(process.hrtime.bigint() - started) / 1e6;
       clearInterval(timer);
-      const cpuAfter = childrenCpuMs();
+      const cpuAfter = cpuBefore === undefined ? undefined : childrenCpuMs();
+      let exitCode = code ?? 1;
+      if (resultFile) {
+        // The command's own lifetime and exit code, without the subreaper's start or its wait for orphans.
+        try {
+          const result = JSON.parse(readFileSync(resultFile, 'utf8'));
+          wallMs = result.wallMs;
+          exitCode = result.exitCode;
+        } catch {
+          // The subreaper did not get to write it: the measures taken from outside stand.
+        }
+        rmSync(resultDir, { recursive: true, force: true });
+      }
       log.end();
       resolve({
-        exitCode: code ?? 1,
+        exitCode,
         wallMs,
         cpuMs: cpuBefore === undefined ? undefined : cpuAfter - cpuBefore,
-        peakMemoryMb: memoryMetric ? peakKb / 1024 : undefined,
+        // No sample before the command ended: no peak to report.
+        peakMemoryMb: memoryMetric && peakKb > 0 ? peakKb / 1024 : undefined,
       });
     });
   });

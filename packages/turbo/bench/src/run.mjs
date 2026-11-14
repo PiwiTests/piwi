@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, readdirSync, wri
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { measure, memoryMetric } from './measure.mjs';
+import { measure, memoryMetric, windowsCommandLine } from './measure.mjs';
 
 const REPORTER = fileURLToPath(new URL('./profile-reporter.mjs', import.meta.url));
 
@@ -31,6 +31,9 @@ export async function loadConfig(file) {
   const names = new Set();
   for (const variant of config.variants) {
     if (!variant.name) throw new Error('Every variant needs a name');
+    // A name becomes the name of its log and profile files.
+    if (!/^[\w.+-]+$/.test(variant.name))
+      throw new Error(`The variant name "${variant.name}" may hold only letters, digits, ".", "+", "-" and "_"`);
     if (names.has(variant.name)) throw new Error(`Two variants are named "${variant.name}"`);
     names.add(variant.name);
   }
@@ -38,16 +41,19 @@ export async function loadConfig(file) {
 }
 
 /**
- * The order variants run in each round: rotated by one every round and reversed every other round, so no variant
- * always runs first, or always right after the same neighbor.
+ * The order variants run in each round, from a balanced Latin square (Williams design): over a full cycle of rows each
+ * variant takes every position equally often and follows every other variant equally often. An odd count needs the
+ * square and its mirror, so its cycle has twice as many rows as variants.
  */
 export function schedule(variantCount, rounds) {
-  const order = [];
-  for (let round = 0; round < rounds; round++) {
-    const rotated = Array.from({ length: variantCount }, (_, i) => (i + round) % variantCount);
-    order.push(round % 2 ? rotated.reverse() : rotated);
+  const first = [0];
+  for (let low = 1, high = variantCount - 1; first.length < variantCount;) {
+    first.push(low++);
+    if (first.length < variantCount) first.push(high--);
   }
-  return order;
+  const rows = first.map((_, shift) => first.map((variant) => (variant + shift) % variantCount));
+  if (variantCount % 2) rows.push(...rows.map((row) => row.toReversed()));
+  return Array.from({ length: rounds }, (_, round) => rows[round % rows.length]);
 }
 
 function sizeOf(path) {
@@ -59,12 +65,32 @@ function sizeOf(path) {
 
 function runPlain(argv, cwd, env) {
   const [command, ...args] = argv;
-  const result = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: process.platform === 'win32' });
+  const result =
+    process.platform === 'win32'
+      ? spawnSync(windowsCommandLine(command, args), [], { cwd, env, stdio: 'inherit', shell: true })
+      : spawnSync(command, args, { cwd, env, stdio: 'inherit' });
   if (result.status !== 0) throw new Error(`Preparation step failed: ${argv.join(' ')}`);
+}
+
+/** Runs the config's preparation steps, once before any measured run. */
+export function prepare(config, log = console.log) {
+  const env = { ...process.env, ...config.env };
+  for (const step of config.prepare) {
+    log(`prepare: ${step.join(' ')}`);
+    runPlain(step, config.cwd, env);
+  }
 }
 
 function format(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** The variants `only` names, in its order, so its first name is the baseline; every variant without it. */
+export function selectVariants(config, only) {
+  if (!only?.length) return config.variants;
+  const unknown = only.filter((name) => !config.variants.some((variant) => variant.name === name));
+  if (unknown.length) throw new Error(`No variant is named ${unknown.join(', ')}`);
+  return [...new Set(only)].map((name) => config.variants.find((variant) => variant.name === name));
 }
 
 /**
@@ -73,16 +99,12 @@ function format(ms) {
  * @param {{ outDir: string, only?: string[], log?: (line: string) => void }} options
  */
 export async function runBenchmark(config, { outDir, only, log = console.log }) {
-  const variants = only?.length ? config.variants.filter((variant) => only.includes(variant.name)) : config.variants;
-  if (!variants.length) throw new Error(`No variant is named ${only.join(', ')}`);
+  const variants = selectVariants(config, only);
   mkdirSync(join(outDir, 'logs'), { recursive: true });
   mkdirSync(join(outDir, 'profiles'), { recursive: true });
 
   const baseEnv = { ...process.env, ...config.env };
-  for (const step of config.prepare) {
-    log(`prepare: ${step.join(' ')}`);
-    runPlain(step, config.cwd, baseEnv);
-  }
+  prepare(config, log);
 
   const results = {
     tool: 'piwi-turbo-bench',
@@ -126,6 +148,8 @@ export async function runBenchmark(config, { outDir, only, log = console.log }) 
         variant: variant.name,
         round: warmup ? -1 : round - config.warmup,
         warmup,
+        // A failed command that left no profile did not run the suite: it is left out of the comparison.
+        crashed: measured.exitCode !== 0 && config.injectReporter && !profile,
         ...measured,
         artifactBytes,
         counts: profile?.counts,
