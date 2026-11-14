@@ -5,6 +5,7 @@ import { withOptimizations } from '../../src/index';
 // through @piwitests/turbo, so the benchmark measures the package itself:
 //   BENCH_AUTH               ui (default: sign in through the form in every test) | state (@piwitests/turbo's signIn)
 //   BENCH_TRACE              trace mode (default on)
+//   BENCH_LIGHT_TRACES       1: @piwitests/turbo's lightTraces
 //   BENCH_REDUCED_MOTION     1: @piwitests/turbo's reducedMotion
 //   BENCH_BLOCK_THIRD_PARTY  1: @piwitests/turbo's blockRequests, for the vendor origin
 //   BENCH_FAILURE_SCREENSHOTS 1: @piwitests/turbo's failureScreenshots
@@ -69,6 +70,7 @@ export default withOptimizations(config, {
   blockResources: env.BENCH_BLOCK_RESOURCES ? (env.BENCH_BLOCK_RESOURCES.split(',') as ['image']) : undefined,
   signIn: env.BENCH_AUTH === 'state' ? { storageState: '.auth/user.json' } : undefined,
   trace: env.BENCH_TRACE as 'on' | undefined,
+  lightTraces: env.BENCH_LIGHT_TRACES === '1' || undefined,
   reducedMotion: env.BENCH_REDUCED_MOTION === '1' || undefined,
   blockRequests: env.BENCH_BLOCK_THIRD_PARTY === '1' ? [(url) => url.port === VENDOR_PORT] : undefined,
   experimental: {

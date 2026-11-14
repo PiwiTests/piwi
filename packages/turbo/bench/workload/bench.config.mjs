@@ -62,6 +62,11 @@ export default {
       env: { ...stock, BENCH_WORKERS: '4' },
     },
     {
+      name: 'light-traces',
+      description: 'lightTraces: traces for every test, without DOM snapshots or the screencast.',
+      env: { ...stock, BENCH_LIGHT_TRACES: '1' },
+    },
+    {
       name: 'failure-screenshots',
       description: 'failureScreenshots: screenshots of failed tests only, in place of only-on-failure.',
       env: { ...stock, BENCH_FAILURE_SCREENSHOTS: '1' },

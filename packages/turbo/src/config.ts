@@ -18,6 +18,11 @@ export interface Optimizations {
   preset?: Preset;
   /** Trace mode for every test, e.g. `'retain-on-failure'` or `'on-first-retry'`. */
   trace?: TraceMode;
+  /**
+   * Traces keep the actions, network, console and sources, and leave out DOM snapshots and the screencast, which are
+   * most of what recording a trace costs. The trace viewer then shows no page at each step.
+   */
+  lightTraces?: boolean;
   /** Emulates `prefers-reduced-motion: reduce`. Changes what the app does when it honors the preference. */
   reducedMotion?: boolean;
   /** Requests every test aborts, typically third-party scripts. Needs `test` from `@piwitests/turbo/test`. */
@@ -114,6 +119,11 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   const use = result.use as Record<string, unknown> & { contextOptions?: Record<string, unknown> };
   if (config.projects) result.projects = config.projects.map((project) => ({ ...project }));
   if (options.trace) use.trace = options.trace;
+  if (options.lightTraces) {
+    const current = use.trace as TraceMode | { mode: TraceMode } | undefined;
+    const mode = typeof current === 'object' ? current.mode : (current ?? 'off');
+    use.trace = { ...(typeof current === 'object' ? current : {}), mode, snapshots: false, screenshots: false };
+  }
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
   if (options.blockResources?.length) use.blockResources = options.blockResources;
