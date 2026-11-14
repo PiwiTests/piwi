@@ -145,7 +145,7 @@ command palette or `g` then `s`: your **Account** and connected accounts ([OAuth
 **Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Source control**
-([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Integrations](/operate/integrations)),
+([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Jira Cloud](/operate/integrations)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
 ([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by

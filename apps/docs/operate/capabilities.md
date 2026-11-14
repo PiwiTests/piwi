@@ -23,4 +23,4 @@ Declining instance-wide is for administrators, and per project for the project's
 
 - [Getting started](/guide/getting-started): connect a first suite
 - [All features](/reference/features): every capability and what it needs
-- [Integrations](./integrations): connect the external services some capabilities use
+- [Jira Cloud](./integrations) and [Zephyr Scale Cloud](./zephyr-scale): connect the trackers some capabilities use
