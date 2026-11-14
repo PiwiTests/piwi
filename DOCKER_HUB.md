@@ -6,7 +6,7 @@
 
 ![The Piwi dashboard, light and dark: every project's health, the failing ones first, and the live activity across them](https://piwitests.dev/screenshots/home.png)
 
-Everything in the image serves four jobs: **keep the history** every CI run deletes, **explain the failures** (forty red tests become the three root causes behind them, each flaky test gets a score and the CI minutes it wastes), **hand back a fix** (ranked replacement locators from the last passing run, and an optional AI diagnosis read against your git diff) and **find what your tests miss**. [What Piwi does](https://piwitests.dev/guide/what-piwi-does) has the whole picture.
+Piwi serves five jobs: **keep the history** every CI run deletes, **explain the failures** (forty red tests become the three root causes behind them, each flaky test gets a score and the CI minutes it wastes), **hand back a fix** (ranked replacement locators from the last passing run, and an optional AI diagnosis read against your git diff), **find what your tests miss** and, with the editor extensions and Piwi Picker connected to this server, **write and debug tests**. [What Piwi does](https://piwitests.dev/guide/what-piwi-does) has the whole picture.
 
 > **Disclaimer:** Piwi Dashboard is not affiliated with, endorsed by, or connected to Microsoft Corporation. Playwright is a trademark of Microsoft Corporation.
 

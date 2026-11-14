@@ -95,11 +95,12 @@ editLink: false
 
 Everything Piwi does, in one place: what each feature is, what it needs beyond
 a running [reporter](/guide/reporter), where it lives in the dashboard, and the
-page that explains it. The groups are the four jobs the product serves (**keep
-the history**, **explain the failures**, **hand back a fix**, **find what your
-tests miss**), each with the narrower groups that follow from it, then trends
-and reports, the tools you install, and what an operator runs. The docs sidebars
-and the landing page use the same groups.
+page that explains it. The groups follow the five jobs the product serves:
+**keep the history**, **explain the failures**, **hand back a fix** and **find
+what your tests miss**, each with the narrower groups that follow from it, then
+**write and debug tests**, whose groups are its loop and the tools you install.
+Trends and reports and what an operator runs come last. The docs sidebars and the landing
+page use the same groups.
 
 New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this page is the "where next" once a first run has landed. The last two sections list the pieces you install and the decisions a setup involves.
 

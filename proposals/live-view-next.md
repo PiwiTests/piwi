@@ -51,7 +51,7 @@ here, and revises D1, D2, D10 and Parts 1 and 5 to 7 (its section "Changes to ot
 - **Holding a failing CI test while someone watches it**, a project setting off by default. It narrows run control's
   D8 for that one case and ships with an ADR that says so.
 
-Of the four things [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**:
+Of the five jobs [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**:
 a slow or stuck test explained while it runs, with Playwright's own words for what it waits for. It feeds the third,
 **hand back a fix**: a locator picked on the page a CI test is stuck on.
 

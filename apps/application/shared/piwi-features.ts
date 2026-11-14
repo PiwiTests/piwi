@@ -1,9 +1,12 @@
 /**
  * The product feature catalog — one entry per user-facing feature. The groups
- * are the four jobs Piwi serves (keep the history, explain the failures, hand
- * back a fix, find what the tests miss), each followed by the narrower groups
- * that hang off it, then trends and reports, the tools a reader installs
- * (`section: 'tools'`) and the operator surface.
+ * follow the five jobs Piwi serves, in the order of What Piwi does
+ * (`apps/docs/guide/what-piwi-does.md`): keep the history, explain the
+ * failures, hand back a fix and find what the tests miss, each followed by the
+ * narrower groups that hang off it; then write and debug tests, which is the
+ * Tools section (`section: 'tools'`, `TOOLS_SECTION`): its loop first, then
+ * the tools a reader installs. Trends and reports and the operator surface
+ * come last.
  *
  * It is the one grouping of the product. The docs render four things from it:
  * the All features page (`apps/docs/reference/features.md`, built at
@@ -93,11 +96,16 @@ export interface FeatureGroup {
   features: PiwiFeature[];
 }
 
-/** The Tools section of the docs: its name in the navigation and the line of its landing card. */
+/**
+ * The Tools section of the docs, where the fifth job lives: its name in the
+ * navigation, the job it serves (the title of its landing card, beside the
+ * other jobs' cards) and the line of that card.
+ */
 export const TOOLS_SECTION = {
   title: 'Tools',
+  job: 'Write and debug tests',
   intro:
-    'Piwi where you write and run the tests: the editor extensions, Piwi Picker in the browser, the desktop app, the MCP server and skills for coding agents, and the piwi command line.',
+    'Record a test from the editor or the browser, run it, stop it at a breakpoint and write the fix where it stopped, with the editor extensions, Piwi Picker, the desktop app, coding agents and the piwi command line.',
 };
 
 export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
@@ -577,51 +585,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     ],
   },
   {
-    title: 'Trends and reports',
-    intro:
-      'The same numbers over weeks and months, and in front of people who never open the dashboard: dashboards, scheduled quality reports, markers for what you changed, and alerts.',
-    features: [
-      {
-        title: 'Analytics',
-        summary:
-          'Cross-project trends (portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed) over any period against any other, from daily rollups that outlive retention.',
-        needs: [],
-        where: 'Analytics',
-        doc: 'features/analytics',
-      },
-      {
-        title: 'Dashboards',
-        summary:
-          'Your own arrangement of widgets with its own filters and period, private or shared, refreshed live and shown in TV mode on a wall screen; a shared dashboard shows nobody a project they cannot open.',
-        needs: [],
-        where: 'Analytics → dashboard switcher, Edit, Duplicate; Analytics → Manage dashboards',
-        doc: 'features/dashboards',
-      },
-      {
-        title: 'Quality reports',
-        summary:
-          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or Excel, sent on a schedule by email, Slack or webhook and kept as snapshots.',
-        needs: [],
-        where: 'Analytics → Quality report, Schedule…; Project → Quality report; Quality reports',
-        doc: 'features/quality-reports',
-      },
-      {
-        title: 'Timeline markers',
-        summary: 'Your deploys and infra changes overlaid on the trend charts, so a step change has a cause.',
-        needs: [],
-        where: 'Project → Runs chart → Markers',
-        doc: 'features/timeline-markers',
-      },
-      {
-        title: 'Notifications & alerts',
-        summary: 'Email, Slack, webhook and browser channels with per-project subscriptions, digests and mute.',
-        needs: [],
-        where: 'Settings → Notifications',
-        doc: 'features/notifications',
-      },
-    ],
-  },
-  {
     title: 'Write, run and fix a test',
     section: 'tools',
     intro:
@@ -1045,6 +1008,51 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'Terminal (`npx @piwitests/reporter <command>`)',
         doc: 'features/command-line',
+      },
+    ],
+  },
+  {
+    title: 'Trends and reports',
+    intro:
+      'The same numbers over weeks and months, and in front of people who never open the dashboard: dashboards, scheduled quality reports, markers for what you changed, and alerts.',
+    features: [
+      {
+        title: 'Analytics',
+        summary:
+          'Cross-project trends (portfolio health, wasted CI time, pass-rate heatmap, browser matrix, insights feed) over any period against any other, from daily rollups that outlive retention.',
+        needs: [],
+        where: 'Analytics',
+        doc: 'features/analytics',
+      },
+      {
+        title: 'Dashboards',
+        summary:
+          'Your own arrangement of widgets with its own filters and period, private or shared, refreshed live and shown in TV mode on a wall screen; a shared dashboard shows nobody a project they cannot open.',
+        needs: [],
+        where: 'Analytics → dashboard switcher, Edit, Duplicate; Analytics → Manage dashboards',
+        doc: 'features/dashboards',
+      },
+      {
+        title: 'Quality reports',
+        summary:
+          'The analytics page as a document for stakeholders: a rule-based verdict, headline numbers, the trend, what is being done and the risks, as PDF, HTML, Markdown or Excel, sent on a schedule by email, Slack or webhook and kept as snapshots.',
+        needs: [],
+        where: 'Analytics → Quality report, Schedule…; Project → Quality report; Quality reports',
+        doc: 'features/quality-reports',
+      },
+      {
+        title: 'Timeline markers',
+        summary: 'Your deploys and infra changes overlaid on the trend charts, so a step change has a cause.',
+        needs: [],
+        where: 'Project → Runs chart → Markers',
+        doc: 'features/timeline-markers',
+      },
+      {
+        title: 'Notifications & alerts',
+        summary: 'Email, Slack, webhook and browser channels with per-project subscriptions, digests and mute.',
+        needs: [],
+        where: 'Settings → Notifications',
+        doc: 'features/notifications',
       },
     ],
   },

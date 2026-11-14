@@ -8,16 +8,17 @@ lang: en-US
 
 Playwright's HTML report is excellent, and it lasts exactly until the next build. Piwi keeps every run instead — every trace and report — and then does something with them: it groups the failures by root cause, scores the flaky tests by what they cost, and finds the locator you should have used. Self-hosted, zero telemetry.
 
-Everything in the product is in service of **four jobs, in this order**. It's also the test for whether a feature belongs here at all: one that strengthens none of them is an argument against building it.
+Everything in the product is in service of **five jobs, in this order**. It's also the test for whether a feature belongs here at all: one that strengthens none of them is an argument against building it.
 
-## The four jobs
+## The five jobs {#the-four-jobs}
 
 1. **Keep the history.** CI deletes every report it makes. Piwi keeps every run, trace and report, so "has this always been flaky?" and "did my fix hold?" are answerable at all.
 2. **Explain the failures.** Group them by root cause so forty red tests become three problems, score the flaky ones by the CI minutes they actually waste, and — optionally — have an LLM explain a cluster against your real git diff.
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, and the command that verifies the work. The point is to leave with something to *do*, not just something to read.
 4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from. See [scenario gaps & the Test Map](/features/scenario-gaps).
+5. **Write and debug tests.** Record a test from the editor or the browser, run it, stop it at a breakpoint with the page still open, and write the fix where it stopped. The editor extensions, Piwi Picker and the desktop app do it where the test is written, and a coding agent can follow and steer the same runs. [Write, run and fix a test](/features/write-run-fix) names the tool for each step, and opens the Tools section.
 
-Everything else — analytics, quality reports, notifications, the [CI gate](/features/merge-gate), PR feedback, the MCP server, the desktop app — is a delivery route for those four. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the [CI gate](/features/merge-gate), PR feedback, the MCP server, the desktop app — is a delivery route for those five. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
 
 ## The loop it serves
 
