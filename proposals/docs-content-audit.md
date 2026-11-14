@@ -416,9 +416,36 @@ tabs, the More actions pages; the Settings pages already have `settings-metadata
 palette, the Capabilities copy and the catalog's `where`, and by the drift test, which then fails on a path in the
 docs that names no place. The UI overview keeps its prose and loses the right to be wrong about a tab.
 
-**Step 4: guards.** A drift check that a number stated on more than one page (the counts of tabs, tools, skills,
-factors) matches its registry, and a list of the words in "Words used two ways" that `concepts.md` must define once.
+**Step 4: the rules below**, the checks first.
 
 **For the app, your call:** items 1, 2 and 21 are bugs and belong to step 1 or 3. Items 3 to 8, 10 and 14 to 20
 change what people see; 14 and 15 would let one docs sentence serve both editors. Item 13 is the same decision as
 the layout audit's second: how many groupings the product has.
+
+## Rules that would keep it this way
+
+Proposed, not added: the root guide is at 19,847 of its 20,000 characters and the docs guide at 26,491 of 30,000, and
+a sentence in a guide is read before every edit in its area. So a rule here is a check wherever one can be written:
+its failure message is the instruction, and it costs a reader nothing until it fails. Eight checks, about 200 lines
+in `docs-drift.test.ts`, and two sentences in the guides, one of which replaces another.
+
+| # | Rule | Form | What it would have caught |
+|---|---|---|---|
+| G1 | **A place named in the docs or the catalog exists.** One list of the dashboard's places (a project's tabs and their views, a run's tabs, the pages of More actions), read by the project page, the palette and the Capabilities copy; the drift test resolves every `where` of the catalog and every `A → B` dashboard path in a page against it and `settings-metadata.ts`. | a module and a check | S1 to S12, the palette's missing tabs, the two stale strings of the Capabilities page |
+| G2 | **A count is checked or not written.** A number before "tabs", "views", "tools", "skills", "routes", "sections", "factors", "controls" or "commands" either appears in a table that ties it to the length of a list in the code, or fails. It extends the check that already keeps the MCP tool count on one page. | a check | T1, S15, C2.8, C2.10, C3.11 |
+| G3 | **A quoted command exists.** Every `**Piwi: …**` in a page is a title in `packages/editor/src/actions.ts`, which a test already holds both editor manifests to; every bold label on a Piwi Picker page is a string of its `messages.json`. | a check | C1.8, D2, D3, T2 to T6 |
+| G4 | **A page's chips are its catalog entry's needs.** | a check | the fifteen feature pages with no chip, and two with a partial one |
+| G5 | **A shared rule has one owner.** A table of about eight rules that cross features (the gate, Hold failures, the baseline, the fingerprint, quarantine, the runs left out of feedback, the live view's limits, the stop reasons), each with its owning page: a page that names one and is not its owner links the owner. | a check, and one sentence in the docs guide | P1: the nine copies of the gate, C1.1, C3.6, C3.7, C4.7 |
+| G6 | **`concepts.md` defines, the feature page explains.** Each term's entry is at most 80 words. | a check; the guide's sentence "A new term goes into `concepts.md`…" gains "its definition only" | P2: the drifted fingerprint, cluster states and live-view limits |
+| G7 | **A recipe states no figure.** No digit outside a code block on a `recipes/` page: a threshold or a formula is on the feature page the recipe links. | a check | P3: C3.7, C3.8, C2.10 |
+| G8 | **The privacy page lists every destination.** Each variable of the environment registry that names a host Piwi calls is named on `guide/privacy.md`. | a field on about ten registry entries, and a check | C5.1, D12 |
+
+G5 and G6 go in after step 2 has given each rule its owner; the others can go in with step 1.
+
+**The one habit no check replaces**, as eight words added to a sentence the root guide already has ("Update the
+affected doc in the same commit"): *search `apps/docs` for the label, number or default you change*. Most of the 70
+contradictions are a second copy nobody looked for.
+
+**Not proposed.** A list of banned absolute words ("every", "only", "nothing else"): too many true uses. A review
+agent on every docs change: its cost is paid on every change, and G1 to G8 catch what it would. Generating the UI
+overview from the app: G1 holds its facts and leaves its prose.
