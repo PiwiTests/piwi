@@ -11,20 +11,20 @@ lang: en-US
 A **quality report** is a document about the state of one or several projects over a period, written
 for a reader who may never open the dashboard: a manager, a release owner, a client. It is not the
 Playwright HTML report a run carries (the **run report**); it is the [Analytics](./analytics) page turned
-into something you can send.
+into something you can send. This page covers the report: what it contains, exporting it, report schedules
+and snapshots. The analytics dashboards a report renders are on [Dashboards](./dashboards).
 
 ## What a report contains
 
-A report renders a **dashboard**, an arrangement of analytics widgets in bands, over a **scope**: the
-projects, branches, environments, test filter and period of the analytics **Filters** block. Any
-[saved dashboard](./dashboards) can be exported and scheduled; four built-in dashboards exist for
-reports:
+A report renders an [analytics dashboard](./dashboards) over a **scope**: the projects, branches,
+environments, test filter and period of the analytics **Filters** block. Any saved analytics dashboard can be
+exported and scheduled; four built-in ones are written for reports:
 
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
   six headline numbers, the [pass rate](/guide/concepts#pass-rate) over time with the comparison period and your
-  [timeline markers](./timeline-markers), what changed, what is being done (causes fixed, assigned or
-  ticketed, tests released from quarantine) and the risks (metrics moving the wrong way, projects
-  failing run after run, the oldest open causes).
+  [timeline markers](./timeline-markers), what changed, what is being done (failure clusters fixed, assigned or
+  ticketed, tests released from [quarantine](./flaky-tests#quarantine-with-a-way-out)) and the risks (metrics moving the wrong way, projects
+  failing run after run, the oldest open failure clusters).
 - **Engineering**, for the team that owns the suite: the executive report, then the flakiest tests,
   the failure clusters, wasted CI time, regressions, CI time, the [combined coverage](./combined-coverage) trend
   (left out when no project in scope has coverage), the browser matrix and slow endpoints.
@@ -42,14 +42,14 @@ each metric's definition, and its limits: lists of tests reach back only as far 
 
 ### The verdict is built by rules
 
-The opening sentence ("The pass rate on main fell 2.1 points to 95.8%, and 3 failure causes were
+The opening sentence ("The pass rate on main fell 2.1 points to 95.8%, and 3 failure clusters were
 fixed.") comes from fixed rules over the numbers, never from a model. Its tone is **good** at a pass rate
 of 90% or more that did not drop by more than a point, **bad** under 50% or after a drop of 5 points or
 more, **mixed** otherwise.
 
 ## Exporting a report
 
-Click **Export** on the Analytics page (the current scope) or on a project page (that project, last 30
+Click **Quality report** on the Analytics page (the current scope) or on a project page (that project, last 30
 days). The dialog previews the report; pick another dashboard or the language, then **Download**:
 
 | Format | What you get |
@@ -147,7 +147,7 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 ## Turning reports off
 
 Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in **Settings → Capabilities** hides
-the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
+the *Quality report* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.
 

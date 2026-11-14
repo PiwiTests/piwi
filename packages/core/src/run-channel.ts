@@ -5,7 +5,7 @@
  * `PIWI_RECORD_CHANNEL` is (`formatRecordChannel`, `parseRecordChannel`). Its first line, `run-attach`, tells it from a
  * hand-off's `attach`. Over it the worker says which test it runs and where it stopped, and the editor service steers
  * it: pause, step, resume, finish, run to a line, end the test, the breakpoints, an image of the stopped page, and, at
- * a stop the pause bar shows, the bar's own **Pick a locator** and **Record here**, the check panel's **Check an
+ * a stop the pause bar shows, the bar's own **Pick a locator** and **Record**, the check panel's **Check an
  * element** and a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an
  * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
  * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
@@ -130,7 +130,7 @@ export interface PausedImage {
 
 /**
  * What a stop the pause bar shows starts from outside the page, in the test's window: the bar's **Pick a locator**
- * (`pick`) and **Record here** (`record`), their results going where the bar's go; the check panel's **Check an
+ * (`pick`) and **Record** (`record`), their results going where the bar's go; the check panel's **Check an
  * element** (`assert`), through the record channel's hand-off in its `check` mode, the editor service writing the
  * check; and a region picked with the bar's picker (`assert-region`), whose ARIA snapshot the worker reads and sends
  * (`region`).
@@ -283,7 +283,7 @@ const MAX_TAKES = 64;
 /** What each intent starts, as a sentence names it. */
 export const RUN_INTENT_NAMES: Record<RunIntent, string> = {
   pick: 'Pick a locator',
-  record: 'Record here',
+  record: 'Record',
   assert: 'Assert',
   'assert-region': 'Assert a region',
 };

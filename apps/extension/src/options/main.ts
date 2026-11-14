@@ -182,7 +182,7 @@ function setStatus(text: StatusText, kind: StatusKind = ''): void {
   writeStatus(statusEl, text, kind);
 }
 
-/** The Project mappings card's status line. */
+/** The URL patterns card's status line. */
 function setMappingsStatus(text: StatusText, kind: StatusKind = ''): void {
   writeStatus(mappingsStatusEl, text, kind);
 }
@@ -430,7 +430,7 @@ addMappingBtn.addEventListener('click', () => {
 /**
  * What the Connect to Piwi card says of the connection: its badge, "Connected
  * as …" once a sync has worked, Disconnect while an instance is kept; and the
- * Project mappings card, whose patterns need that instance's projects.
+ * URL patterns card, whose patterns need that instance's projects.
  */
 function renderInstanceState(): void {
   const kept = stored.instanceUrl.trim() !== '';

@@ -119,7 +119,7 @@ export const PIWI_ENV_KEYS = {
  *    the line it was picked at.
  * Beside them, `PIWI_RECORD_CHANNEL` (`@piwitests/core/ide-recorder`) names the
  * local socket of the editor service that built the command, over which the
- * pause bar's Record here hands the page to the editor's recorder, and
+ * pause bar's Record hands the page to the editor's recorder, and
  * `PIWI_RUN_CHANNEL` (`@piwitests/core/run-channel`) the same socket, which each
  * worker keeps a run connection to (`internal/capture/run-channel.ts`) when
  * `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, names the run. The desktop app names

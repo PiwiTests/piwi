@@ -82,8 +82,8 @@ Otherwise:
 
 - the start fails with that reason, which `PiwiProjectService.startFailed` keeps (`startProblem`) and says once;
 - the status bar item reads `Piwi: Node.js`, and its menu opens the Node.js settings first (`openNodeSettings`,
-  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Reload Piwi** while it
-  does not run.
+  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Read the instance and the
+  configs again** while it does not run.
 
 **The first file.** The service starts with the first supported file opened, since 2024.1 has no way to start it
 without one. Until then the status is null, and the status bar and the tool window say so.
@@ -230,8 +230,9 @@ The service pushes each of the three answers when it changes (`piwi/statusChange
 event thread, for all the pushes received meanwhile.
 
 It reads the three answers whole (`refreshStatus`) only when the plugin starts (the tool window and the status bar item
-are created), on **Reload Piwi**, on **Refresh the latest run** (`Piwi.RefreshRun`), and after new credentials. One read
-runs at a time, and a read asked for meanwhile follows it. A push that arrives during a read wins over the answer read.
+are created), on **Read the instance and the configs again**, on **Refresh the latest run** (`Piwi.RefreshRun`), and
+after new credentials. One read runs at a time, and a read asked for meanwhile follows it. A push that arrives during a
+read wins over the answer read.
 
 ## Tool window
 
@@ -245,15 +246,17 @@ With no failure, the empty text is `Glue.failuresEmpty` of the state the service
 links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare with…).
 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
-  dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
-  and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
-  and the MCP configurations, Reload Piwi, Restart the editor service, Open the log, Settings… and Documentation.
+  dashboard**, **Compare with…** and **Group the failures by…**, then the navigation (previous and next failure, expand
+  and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker and
+  the MCP configurations, Read the instance and the configs again, Restart the editor service, Open the log, Settings…
+  and Open the documentation.
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
   `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
   are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
 - **Each node's tooltip** is the service's (`FailureTreeNode.tooltip`, kept in `Glue.FailureNode.tooltip`), one line
   each through `Glue.htmlTooltip`: a failure's title, headline, run, cluster and owner, a run's counts.
-- **The grouping** is chosen in the **Group by** drop-down, of `ToggleAction`s, and kept in `PiwiLocalSettings.failuresGrouping`. It is
+- **The grouping** is chosen with **Group the failures by…** (`Piwi.GroupFailuresBy`, a popup of `ToggleAction`s under
+  the toolbar button, also under **Tools → Piwi**), and kept in `PiwiLocalSettings.failuresGrouping`. It is
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
@@ -368,9 +371,9 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 
 - connected: **Refresh the latest run** (`Piwi.RefreshRun`, `PiwiProjectService.refreshRun`: `piwi/refreshRun`, then
   `refreshStatus`, on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
-- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Reload Piwi**;
-- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Reload Piwi**; the
-  service also reads it again as the restarted app rewrites its discovery file;
+- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Read the instance and the configs again**;
+- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Read the instance and
+  the configs again**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
 - the service that ran stopped (`Piwi: not running`, `PiwiProjectService.serviceStopped`): **Restart the editor
@@ -501,7 +504,7 @@ is on, nothing otherwise (the service runs it headless but for a spec with a `pa
 breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
 `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
 `PiwiCommands.runTests`, a verification included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as
-built. **Tools → Piwi → Run headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold failures from each run's start…**
+built. **Tools → Piwi → Turn headed runs on or off** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold failures from each run's start…**
 (`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.
 
 ### Breakpoints
@@ -566,7 +569,7 @@ with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
   (`STOP`, `registeredWith`) with its key shown;
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
   `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
-  **Resume**, **Step**, **Run to caret** and **Finish** as links, and **End test** at a stop whose worker takes `end`
+  **Resume**, **Step**, **Run to the caret** and **Finish** as links, and **End the test** at a stop whose worker takes `end`
   and is no failure (`Glue.canEnd`, `Glue.stopControls`). An `EditorMouseListener` on the multicaster clicks
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
@@ -705,7 +708,7 @@ service's reference.
 **The actions.** A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`): after
 the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
 offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`, `Piwi.AssertRegionAtStop`,
-`Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a
+`Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record**, **Assert** and **Assert a region** at a
 stop the pause bar shows, **Mock a request** at any; the inlay names them shorter (`StopLink.inlayLabel`). Each is a
 `piwi/stopAction` on a pooled thread naming its stop, its answer a balloon. Mock a request lists `piwi/stopRequests`
 in a popup, the latest first, filtered by URL as you type (`setNamerForFiltering`; `RequestRenderer`: the method and
@@ -792,8 +795,8 @@ Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwrig
 The tool window, the status bar item and the service wait for the search. The service's workspace folders are the
 folders it searched (`createInitializeParams`).
 
-**Searching again.** **Reload Piwi** searches again, and so does `watchConfigs`, a second after the IDE reports one of
-these changes:
+**Searching again.** **Read the instance and the configs again** searches again, and so does `watchConfigs`, a second
+after the IDE reports one of these changes:
 
 - a config created, removed, renamed or moved (`Glue.isPlaywrightConfig`: every name Playwright reads a config from,
   `.mts` and `.cts` included);

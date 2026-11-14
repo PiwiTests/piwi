@@ -72,19 +72,19 @@ const METRIC_LABELS: Record<MetricId, [label: string, definition: string]> = {
     'Somme du 90e centile des durées de test de chaque exécution, divisée par le nombre d’exécutions.',
   ],
   'open-failure-causes': [
-    'Causes d’échec ouvertes',
+    'Groupes d’échecs ouverts',
     'Groupes d’échecs ouverts et non mis en veille à la fin de la période.',
   ],
-  'failure-causes-opened': ['Causes d’échec apparues', 'Groupes d’échecs créés dans la période.'],
+  'failure-causes-opened': ['Groupes d’échecs apparus', 'Groupes d’échecs créés dans la période.'],
   'failure-causes-fixed': [
-    'Causes d’échec corrigées',
+    'Groupes d’échecs corrigés',
     'Groupes d’échecs dont le correctif est arrivé dans la période.',
   ],
   'median-time-to-fix': [
     'Délai médian de correction',
     'Délai médian entre le premier échec et le correctif, sur les groupes d’échecs corrigés dans la période.',
   ],
-  'oldest-open-failure-cause': ['Plus ancienne cause ouverte', 'Âge du plus ancien groupe d’échecs ouvert.'],
+  'oldest-open-failure-cause': ['Plus ancien groupe d’échecs ouvert', 'Âge du plus ancien groupe d’échecs ouvert.'],
   'fixes-that-held': [
     'Correctifs tenus',
     'Groupes d’échecs corrigés dans la période et sans régression depuis, sur les groupes corrigés.',
@@ -117,7 +117,7 @@ const METRIC_LABELS: Record<MetricId, [label: string, definition: string]> = {
   ],
   'diagnosis-verified-rate': [
     'Diagnostics confirmés par le correctif',
-    'Causes d’échec diagnostiquées corrigées dans la période dont le correctif a modifié les fichiers nommés par le diagnostic, sur les causes diagnostiquées corrigées dans la période.',
+    'Groupes d’échecs diagnostiqués corrigés dans la période dont le correctif a modifié les fichiers nommés par le diagnostic, sur les groupes diagnostiqués corrigés dans la période.',
   ],
   'gate-blocked-merges': [
     'Fusions bloquées par la barrière',
@@ -181,7 +181,7 @@ const TITLES: Record<string, string> = {
   Errors: 'Erreurs',
   'Status flips': 'Changements de statut',
   Age: 'Âge',
-  'Failure cause': 'Cause d’échec',
+  'Failure cluster': 'Groupe d’échecs',
   'Scenario gaps': 'Lacunes de scénario',
   'New scenario gaps': 'Nouvelles lacunes de scénario',
   'What the tests do not reach yet, from the Test Map.':
@@ -250,7 +250,7 @@ const TITLES: Record<string, string> = {
   Feature: 'Fonctionnalité',
   'Spec directory': 'Dossier de tests',
   'Error type': 'Type d’erreur',
-  'Failure cause status': 'Statut de la cause d’échec',
+  'Failure cluster status': 'Statut du groupe d’échecs',
   Assignee: 'Attribuée à',
   'Gap class': 'Classe de lacune',
   // The groups of a breakdown that Piwi names (the others are names from the data)
@@ -265,12 +265,12 @@ const TITLES: Record<string, string> = {
   'No priority': 'Sans priorité',
   'No feature': 'Sans fonctionnalité',
   'Unknown error type': 'Type d’erreur inconnu',
-  Unassigned: 'Non attribuée',
+  Unassigned: 'Non attribué',
   'Full runs': 'Exécutions complètes',
   'Partial runs': 'Exécutions partielles',
-  Open: 'Ouvertes',
-  Resolved: 'Résolues',
-  Ignored: 'Ignorées',
+  Open: 'Ouverts',
+  Resolved: 'Résolus',
+  Ignored: 'Ignorés',
 };
 
 const GAP_CLASS_LABELS: Record<GapClass, string> = {
@@ -307,7 +307,7 @@ function verdict(facts: VerdictFacts, f: ValueFormatter): string {
   const points = facts.passRateDelta === null ? '' : f.number(Math.abs(facts.passRateDelta), 1);
   const fixed =
     facts.fixed > 0
-      ? `, et ${facts.fixed} ${plural(facts.fixed, 'cause d’échec a été corrigée', 'causes d’échec ont été corrigées')}`
+      ? `, et ${facts.fixed} ${plural(facts.fixed, 'groupe d’échecs a été corrigé', 'groupes d’échecs ont été corrigés')}`
       : '';
   let first: string;
   if (direction === 'up') {
@@ -321,7 +321,9 @@ function verdict(facts: VerdictFacts, f: ValueFormatter): string {
   }
   const rest: string[] = [];
   if (facts.open > 0) {
-    rest.push(`${facts.open} ${plural(facts.open, 'cause d’échec reste ouverte', 'causes d’échec restent ouvertes')}.`);
+    rest.push(
+      `${facts.open} ${plural(facts.open, 'groupe d’échecs reste ouvert', 'groupes d’échecs restent ouverts')}.`,
+    );
   }
   if (facts.wastedMinutes >= 1) {
     const cost = facts.wastedCost
@@ -341,13 +343,13 @@ function progress(p: AnalyticsProgress): string[] {
           ? 'le correctif a tenu'
           : 'tous ont tenu'
         : `${p.held} ${plural(p.held, 'a tenu', 'ont tenu')}`;
-    lines.push(`${p.fixed} ${plural(p.fixed, 'cause d’échec corrigée', 'causes d’échec corrigées')} ; ${held}.`);
+    lines.push(`${p.fixed} ${plural(p.fixed, 'groupe d’échecs corrigé', 'groupes d’échecs corrigés')} ; ${held}.`);
   } else {
-    lines.push('Aucune cause d’échec n’a été corrigée sur la période.');
+    lines.push('Aucun groupe d’échecs n’a été corrigé sur la période.');
   }
   if (p.assigned > 0 || p.withTicket > 0) {
     lines.push(
-      `${p.assigned} ${plural(p.assigned, 'cause ouverte est attribuée', 'causes ouvertes sont attribuées')}, ${p.withTicket} ${plural(p.withTicket, 'a un ticket', 'ont un ticket')}.`,
+      `${p.assigned} ${plural(p.assigned, 'groupe ouvert est attribué', 'groupes ouverts sont attribués')}, ${p.withTicket} ${plural(p.withTicket, 'a un ticket', 'ont un ticket')}.`,
     );
   }
   if (p.releasedFromQuarantine > 0 || p.quarantined > 0) {
@@ -397,7 +399,7 @@ function handbacks(d: AnalyticsHandbacks, f: ValueFormatter): HandbackLine[] {
     }
     if (dx.diagnosedFixes > 0) {
       parts.push(
-        `le correctif a touché les fichiers diagnostiqués pour ${Math.min(dx.verified, dx.diagnosedFixes)} ${plural(dx.diagnosedFixes, 'cause corrigée', 'causes corrigées')} sur ${dx.diagnosedFixes}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'correctifs')}`,
+        `le correctif a touché les fichiers diagnostiqués pour ${Math.min(dx.verified, dx.diagnosedFixes)} ${plural(dx.diagnosedFixes, 'groupe corrigé', 'groupes corrigés')} sur ${dx.diagnosedFixes}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'correctifs')}`,
       );
     }
     if (dx.regressed > 0) {
@@ -468,8 +470,8 @@ function risks(r: AnalyticsRisks, f: ValueFormatter): string[] {
     lines.push(`${p.name} a échoué à ses ${p.streak} dernières exécutions d’affilée.`);
   }
   for (const c of r.oldestOpen) {
-    const owner = c.assignee ? `, attribuée à ${c.assignee}` : ', non attribuée';
-    lines.push(`« ${c.title} » (${c.projectName}) est ouverte depuis ${f.value(c.ageDays, 'days', 0)}${owner}.`);
+    const owner = c.assignee ? `, attribué à ${c.assignee}` : ', non attribué';
+    lines.push(`« ${c.title} » (${c.projectName}) est ouvert depuis ${f.value(c.ageDays, 'days', 0)}${owner}.`);
   }
   if (r.quarantine.count > 0) {
     const oldest =
@@ -541,7 +543,7 @@ const FR_INSIGHTS: InsightPhrasebook<[f: ValueFormatter]> = {
       : undefined,
   }),
   'stale-cluster': (x, f) => ({
-    message: `« ${x.title} » est ouverte depuis ${f.value(x.ageDays, 'days', 0)} (${count(x.occurrences, 'occurrence', 'occurrences', f)})`,
+    message: `« ${x.title} » est ouvert depuis ${f.value(x.ageDays, 'days', 0)} (${count(x.occurrences, 'occurrence', 'occurrences', f)})`,
     detail: `${x.project} · erreur de type ${x.errorType ?? 'inconnu'}.`,
   }),
   'ci-time-growth': (x, f) => ({
@@ -590,7 +592,7 @@ const FR_INSIGHTS: InsightPhrasebook<[f: ValueFormatter]> = {
   },
   'time-to-fix-growth': (x, f) => ({
     message: `Le délai médian de correction s’allonge ${comparedTo(x.vs, f)}${NBSP}: ${f.value(x.days, 'days', 1)}`,
-    detail: `Il était de ${f.value(x.previousDays, 'days', 1)}, sur ${count(x.fixed, 'cause d’échec corrigée', 'causes d’échec corrigées', f)} pendant la période.`,
+    detail: `Il était de ${f.value(x.previousDays, 'days', 1)}, sur ${count(x.fixed, 'groupe d’échecs corrigé', 'groupes d’échecs corrigés', f)} pendant la période.`,
   }),
   'suite-shrank': (x, f) => ({
     message: `La suite a perdu ${count(x.lost, 'test', 'tests', f)} ${comparedTo(x.vs, f)}`,
@@ -601,8 +603,8 @@ const FR_INSIGHTS: InsightPhrasebook<[f: ValueFormatter]> = {
     detail: `${count(x.now, 'test est', 'tests sont', f)} en quarantaine, contre ${f.number(x.previous)} auparavant.`,
   }),
   'owner-load': (x, f) => ({
-    message: `${x.owner} détient ${x.open} des ${x.total} causes d’échec ouvertes`,
-    detail: `${f.value(x.share, 'percent', 0)} des causes d’échec ouvertes attendent un seul responsable.`,
+    message: `${x.owner} détient ${x.open} des ${x.total} groupes d’échecs ouverts`,
+    detail: `${f.value(x.share, 'percent', 0)} des groupes d’échecs ouverts attendent un seul responsable.`,
   }),
 };
 
@@ -781,11 +783,11 @@ function listItem(item: AnalyticsListItem, f: ValueFormatter): { title: string; 
       };
     case 'failure-clusters':
       return {
-        title: x.title ?? `Cause d’échec n°${NNBSP}${x.id}`,
+        title: x.title ?? `Groupe d’échecs n°${NNBSP}${x.id}`,
         detail: [
           count(x.occurrences, 'occurrence', 'occurrences', f),
           x.errorType,
-          x.assignee ? `attribuée à ${x.assignee}` : null,
+          x.assignee ? `attribué à ${x.assignee}` : null,
         ]
           .filter(Boolean)
           .join(' · '),

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
-import { PROJECT_TABS } from '#shared/app-places';
+import { PROJECT_MENU_PAGES, PROJECT_TABS } from '#shared/app-places';
 import type { CapabilityId } from '#shared/capabilities';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
 import { starredFirst } from '~/utils/project-stars';
-import { projectTabHidden } from '~/utils/project-tabs';
+import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 
 const route = useRoute();
 const toast = useToast();
@@ -379,23 +379,33 @@ const groups = computed<CommandPaletteGroup[]>(() => {
   ];
 
   // On a project page, the palette lists the tabs the project page's strip
-  // shows, in its order: the fastest keyboard path to each.
+  // shows, then the pages its More actions menu opens, in their order: the
+  // fastest keyboard path to each.
   if (currentProjectId.value) {
     const pid = currentProjectId.value;
+    const hidden = (id: CapabilityId) => projectCapHidden(pid, id);
+    const close = () => {
+      open.value = false;
+    };
     staticGroups.unshift({
       id: 'project-tabs',
       label: 'This project',
-      items: PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, (id) => projectCapHidden(pid, id))).map(
-        (tab) => ({
+      items: [
+        ...PROJECT_TABS.filter((tab) => !projectTabHidden(tab.value, hidden)).map((tab) => ({
           id: `project-tab-${tab.value}`,
           label: tab.label,
           icon: tab.icon,
           to: `/projects/${pid}?tab=${tab.value}`,
-          onSelect: () => {
-            open.value = false;
-          },
-        }),
-      ),
+          onSelect: close,
+        })),
+        ...PROJECT_MENU_PAGES.filter((menuPage) => !projectMenuPageHidden(menuPage.path, hidden)).map((menuPage) => ({
+          id: `project-page-${menuPage.path}`,
+          label: menuPage.label,
+          icon: menuPage.icon,
+          to: `/projects/${pid}/${menuPage.path}`,
+          onSelect: close,
+        })),
+      ],
     });
   }
 

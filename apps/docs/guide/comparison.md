@@ -13,7 +13,7 @@ Piwi Dashboard gives your Playwright results a permanent, self-hosted home — w
 Every tool below is good at what it targets. The honest differences:
 
 - **Playwright HTML report** — excellent for debugging a single run locally. But it's per-run and ephemeral: once the next CI build uploads its artifact, yesterday's context is gone, and there's no cross-run view (trends, flakiness, clustering) at all. Piwi doesn't replace it for local work — it replaces the *"download the artifact zip from CI"* workflow.
-- **Allure Report** — a mature, multi-framework report generator producing a rich static report. History across builds requires wiring previous results into each build, and there's no server, live view, or cross-run analytics in the open-source generator (that's the commercial TestOps product).
+- **Allure Report** — a mature, multi-framework report generator producing a rich static report. History across builds requires wiring previous results into each build, and there's no server, live progress, or cross-run analytics in the open-source generator (that's the commercial TestOps product).
 - **ReportPortal** — a mature, framework-agnostic, self-hosted test-ops platform with ML-based failure triage. It's built for organizations aggregating many frameworks, and its self-hosted footprint matches that ambition: a multi-service stack (API services, PostgreSQL, RabbitMQ, OpenSearch). Piwi trades that breadth for Playwright-native depth in a single container.
 - **Currents** — a polished commercial SaaS for Playwright and Cypress: run history, flake detection, CI orchestration. It's managed and maintained for you; in exchange it's paid and your test data lives on their infrastructure.
 - **Fault0** — the closest peer to Piwi: a newer, free, self-hosted, Playwright-only results dashboard with a one-line reporter, centralized run history, trace/screenshot/video debugging, notifications, and flaky-test trends. It targets the same "give your Playwright results a home" job. Where Piwi differs today is the depth of the analysis layer on top of that shared core — failure clustering, flaky **scoring** with CI-cost impact, locator healing, an MCP server for AI agents, and optional git-grounded AI diagnosis — so the honest split is *seeing* failures (both) versus *resolving* them (Piwi's focus). We've based this on Fault0's public docs and homepage; corrections welcome.
@@ -27,7 +27,7 @@ Every tool below is good at what it targets. The honest differences:
 | Live run streaming | ✅ SSE, per-test | ❌ | ❌ | ➖ | ✅ | ➖ real-time status |
 | Playwright traces, first-class | ✅ stored + viewer links | ✅ | ➖ attachments | ➖ attachments | ✅ | ✅ |
 | Flaky detection & scoring | ✅ composite score, root-cause classes, CI-cost impact | ❌ | ❌ | ✅ | ✅ | ➖ detection |
-| Failure clustering | ✅ error fingerprinting | ❌ | ❌ | ✅ ML-based | ✅ | ➖ |
+| Failure clustering | ✅ [error fingerprinting](/features/failure-clusters#how-failures-are-grouped) | ❌ | ❌ | ✅ ML-based | ✅ | ➖ |
 | AI failure diagnosis | ✅ optional, grounded in your git diff, patches validated server-side | ❌ | ❌ | ➖ ML triage | ➖ | ➖ |
 | Locator healing suggestions | ✅ from prior passing runs | ❌ | ❌ | ❌ | ❌ | ➖ |
 | Plain-English steps, compiled | ✅ [AI steps](/features/ai-steps) — resolved once, replayed with zero model calls | ❌ | ❌ | ❌ | ❌ | ❌ |

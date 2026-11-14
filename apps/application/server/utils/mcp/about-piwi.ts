@@ -276,6 +276,7 @@ async function featuresTopic(db: DbClient, facts: InstanceFacts) {
   return dropNulls({
     groups: PIWI_FEATURE_GROUPS.map((group) => ({
       title: group.title,
+      section: group.section ?? 'features',
       intro: group.intro,
       features: group.features.map((f) => ({
         title: f.title,

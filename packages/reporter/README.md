@@ -38,6 +38,8 @@ export default wrapConfig(defineConfig({}), {
 
 Run `npx playwright test` — results are uploaded automatically.
 
+A config that cannot be wrapped takes the bare reporter entry in `reporter` instead, with `screenshot` and `trace` set in `use` by hand; it gives up the run's *initializing* state during global setup (unless the setup file exports `createGlobalSetup`) and the forwarding of `failOnFlakyTests`. See [Reporter → Basic configuration](https://piwitests.dev/guide/reporter#basic-configuration).
+
 > Piwi rebuilds the run from the data it collects, so you don't also need Playwright's built-in `html` reporter — running it alongside Piwi just repeats the end-of-run report generation. Keep it only if you want Playwright's standalone report uploaded too.
 
 **Recommended: enable the capture fixtures.** One small file unlocks the dashboard's richest features:
@@ -62,7 +64,9 @@ Import `test` from this file in your specs instead of `@playwright/test`. A spec
 
 ## Configuration
 
-Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE`). The full option and env-var reference lives in [Reporter options](https://piwitests.dev/reference/reporter-options); authentication for CI is covered under [API keys](https://piwitests.dev/operate/api-keys).
+Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE` and `PIWI_DESKTOP_APP`). The full option and env-var reference lives in [Reporter options](https://piwitests.dev/reference/reporter-options).
+
+With authentication on, the reporter needs an API key in `PIWI_API_KEY` (the environment, or the `.env` beside your Playwright config) or the `apiKey` option, or a username and password; [API keys → Using the API key in the reporter](https://piwitests.dev/operate/api-keys#using-the-api-key-in-the-reporter) covers both, and the account CI should use.
 
 ## Requirements
 

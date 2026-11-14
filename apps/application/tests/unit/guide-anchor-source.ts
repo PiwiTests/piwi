@@ -225,8 +225,11 @@ export interface TabList {
   page: string;
   file: string;
   marker: string;
-  /** `strings`: each string of the array; `values`: each `value: '…'` of its items; `keys`: the object's keys. */
-  pick: 'strings' | 'values' | 'keys';
+  /**
+   * `strings`: each string of the array; `values`: each `value: '…'` of its items; `ids`: each `id: '…'` of its items;
+   * `keys`: the object's keys.
+   */
+  pick: 'strings' | 'values' | 'ids' | 'keys';
   /** The query that selects the tab of `value`. */
   query: (value: string) => Record<string, string>;
 }
@@ -266,9 +269,9 @@ export const TAB_LISTS: readonly TabList[] = [
   },
   {
     page: '/projects/[id]',
-    file: 'components/project/ProjectSettingsPanel.vue',
-    marker: 'const SECTION_IDS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_SETTINGS_SECTIONS =',
+    pick: 'ids',
     query: (section) => ({ tab: 'settings', section }),
   },
   {
@@ -323,6 +326,7 @@ export function tabValues(list: TabList): string[] {
   const pattern = {
     strings: /'([^']+)'/g,
     values: /\bvalue: '([^']+)'/g,
+    ids: /\bid: '([^']+)'/g,
     keys: /^\s*'?([\w-]+)'?\s*:/gm,
   }[list.pick];
   return [...new Set([...literal.matchAll(pattern)].map((match) => match[1]!))];

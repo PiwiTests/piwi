@@ -268,6 +268,8 @@ const MCP_OFFERED = 'piwi.mcpOffered';
  */
 const AGENTS_PORT = 'piwi.agentsPort';
 const WALKTHROUGH_OPENED = 'piwi.walkthroughOpened';
+/** The editor extensions' documentation, which Open the documentation opens. */
+const DOCS_URL = 'https://piwitests.dev/features/editors';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
 /**
@@ -714,6 +716,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const runChoices = (): RunStartChoices => {
     const settings = vscode.workspace.getConfiguration('piwi');
     return runStartChoices(settings.get('runHeaded'), settings.get('runHoldFailures'));
+  };
+
+  /** Save a run setting where its value comes from: the workspace's settings when they hold one, else the user's. */
+  const saveRunOption = async (key: 'runHeaded' | 'runHoldFailures', value: unknown) => {
+    const settings = vscode.workspace.getConfiguration('piwi');
+    const target =
+      runOptionTarget(settings.inspect(key)) === 'workspace'
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+    await settings.update(key, value, target);
   };
 
   const mcpChanged = new vscode.EventEmitter<void>();
@@ -1319,6 +1331,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.getStarted', () =>
       vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
     ),
+    vscode.commands.registerCommand('piwi.openDocumentation', () =>
+      vscode.env.openExternal(vscode.Uri.parse(DOCS_URL)),
+    ),
     vscode.commands.registerCommand('piwi.refresh', async () => {
       try {
         await lc.sendRequest(REFRESH_REQUEST);
@@ -1400,7 +1415,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       pick.dispose();
       if (chosen?.command) await vscode.commands.executeCommand(chosen.command, ...(chosen.args ?? []));
     }),
-    // The latest run and its failures alone, not the indexes Reload Piwi reads.
+    // The latest run and its failures alone, none of the indexes.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
       if (refreshing || !connectedOrSay()) return;
       refreshing = true;
@@ -1664,37 +1679,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       );
       if (command) await startRun(command, breakpoints);
     }),
-    // Run headed, and Hold failures from each run's start, for every run of the window: written where the setting's
-    // value comes from, the workspace's settings when they hold one, else the user's.
+    // Run headed, and Hold failures from each run's start, for every run of the window (`saveRunOption`); Run options…
+    // offers both.
     vscode.commands.registerCommand('piwi.runOptions', async () => {
-      const settings = vscode.workspace.getConfiguration('piwi');
-      const choices = runChoices();
-      const picked = await vscode.window.showQuickPick(runOptionPicks(choices), {
+      const picked = await vscode.window.showQuickPick(runOptionPicks(runChoices()), {
         placeHolder: 'How every test run of this window starts',
       });
       if (!picked) return;
-      const save = (key: string, value: unknown) =>
-        settings.update(
-          key,
-          value,
-          runOptionTarget(settings.inspect(key)) === 'workspace'
-            ? vscode.ConfigurationTarget.Workspace
-            : vscode.ConfigurationTarget.Global,
-        );
-      if (picked.option === 'headed') {
-        await save('runHeaded', !choices.headed);
-        return;
-      }
+      await vscode.commands.executeCommand(
+        picked.option === 'headed' ? 'piwi.toggleRunHeaded' : 'piwi.setRunHoldFailures',
+      );
+    }),
+    vscode.commands.registerCommand('piwi.toggleRunHeaded', async () => {
+      const headed = !runChoices().headed;
+      await saveRunOption('runHeaded', headed);
+      vscode.window.setStatusBarMessage(`Piwi: the runs start ${headed ? 'headed' : 'headless'}`, 4000);
+    }),
+    vscode.commands.registerCommand('piwi.setRunHoldFailures', async () => {
+      const current = runChoices().holdFailures;
       const hold = await vscode.window.showQuickPick(
         HOLD_FAILURES_CHOICES.map((c) => ({
           label: c.label,
-          description: c.choice === choices.holdFailures ? 'current' : undefined,
+          description: c.choice === current ? 'current' : undefined,
           detail: c.detail,
           choice: c.choice,
         })),
         { placeHolder: "Hold failures from each run's start" },
       );
-      if (hold) await save('runHoldFailures', hold.choice);
+      if (hold) await saveRunOption('runHoldFailures', hold.choice);
     }),
     vscode.commands.registerCommand('piwi.openLiveRun', async () => {
       if (liveUrl) await vscode.env.openExternal(vscode.Uri.parse(liveUrl));
@@ -1936,7 +1948,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor.",
       );
     }),
     { dispose: () => void sendListener?.close() },

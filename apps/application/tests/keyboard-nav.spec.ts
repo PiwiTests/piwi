@@ -1,8 +1,8 @@
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
-import { PROJECT_TABS } from '#shared/app-places';
+import { PROJECT_MENU_PAGES, PROJECT_TABS } from '#shared/app-places';
 
 /**
  * Regression guards for keyboard navigation:
@@ -41,18 +41,31 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
   const findProjectId = (request: APIRequestContext) => reportProject(request, PROJECT.KEYBOARD_NAV);
 
+  /**
+   * Presses a two-key chord with the page's clock paused, then lets it run again. A chord's second key counts only
+   * until a timer its first key starts runs out (800 ms in Nuxt UI's `defineShortcuts`), and each press waits for the
+   * page to take its key before the next is sent, so a busy page takes the two further apart than a person's keys.
+   * `pauseAt` only moves the clock forward, and the page's clock runs until the call reaches it, so it pauses a minute
+   * past the page's time.
+   */
+  async function pressChord(page: Page, first: string, second: string) {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 60_000);
+    await page.keyboard.press(first);
+    await page.keyboard.press(second);
+    await page.clock.resume();
+  }
+
   test('the g-h and g-p chords navigate', async ({ page }) => {
+    // The page's clock runs in real time, but for the chords `pressChord` presses.
+    await page.clock.install();
     await page.goto('/projects');
     await waitForHydration(page);
 
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await page.keyboard.press('g');
-    await page.keyboard.press('h');
+    await pressChord(page, 'g', 'h');
     await expect(page).toHaveURL(/\/$/);
 
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await page.keyboard.press('g');
-    await page.keyboard.press('p');
+    await pressChord(page, 'g', 'p');
     await expect(page).toHaveURL(/\/projects$/);
   });
 
@@ -72,7 +85,7 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
     await page.getByRole('button', { name: 'Performance' }).click();
     await expect(page).toHaveURL(/[?&]tab=performance/);
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.locator('#dashboard-panel-project-detail').getByRole('button', { name: 'Settings' }).click();
     await expect(page).toHaveURL(/[?&]tab=settings/);
 
     const endLen = await page.evaluate(() => history.length);
@@ -87,10 +100,21 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
     await page.getByRole('button', { name: /^Search…/ }).click();
     const projectTabs = page.getByRole('group', { name: 'This project' }).getByRole('option');
-    await expect(projectTabs).toHaveText(PROJECT_TABS.map((tab) => tab.label));
+    await expect(projectTabs).toHaveText([...PROJECT_TABS, ...PROJECT_MENU_PAGES].map((place) => place.label));
     await projectTabs.filter({ hasText: 'Flake Lab' }).click();
     await expect(page).toHaveURL(/[?&]tab=flake-lab/);
     await expect(page.getByRole('button', { name: 'Flake Lab', exact: true })).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('a page of the More actions menu picked in the command palette opens', async ({ page, request }) => {
+    const projectId = await findProjectId(request);
+    await page.goto(`/projects/${projectId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: /^Search…/ }).click();
+    await page.getByRole('group', { name: 'This project' }).getByRole('option', { name: 'Bug reports' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/bug-reports$`));
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toHaveCount(0);
   });
 
   test('the command palette follows the capabilities of the project the page shows', async ({ page, request }) => {
@@ -99,10 +123,14 @@ test.describe('Keyboard navigation & tab URL sync', () => {
       request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'flake-lab': decision } } });
     const allTabs = PROJECT_TABS.map((tab) => tab.label);
     const withoutFlakeLab = PROJECT_TABS.filter((tab) => tab.value !== 'flake-lab').map((tab) => tab.label);
-    /** Opens the command palette, checks the project's entries and closes it again. */
+    const menuPages = PROJECT_MENU_PAGES.map((menuPage) => menuPage.label);
+    /** Opens the command palette, checks the project's entries (its tabs, then its menu's pages) and closes it again. */
     async function expectPaletteTabs(labels: string[]) {
       await page.getByRole('button', { name: /^Search…/ }).click();
-      await expect(page.getByRole('group', { name: 'This project' }).getByRole('option')).toHaveText(labels);
+      await expect(page.getByRole('group', { name: 'This project' }).getByRole('option')).toHaveText([
+        ...labels,
+        ...menuPages,
+      ]);
       await page.keyboard.press('Escape');
       await expect(page.getByRole('group', { name: 'This project' })).toHaveCount(0);
     }
@@ -146,7 +174,7 @@ test.describe('Keyboard navigation & tab URL sync', () => {
     await page.goto(`/projects/${projectId}?tab=settings&section=capabilities`);
     await waitForHydration(page);
     await expectPaletteTabs(withoutFlakeLab);
-    await page.getByLabel('Flake suspects for this project').click();
+    await page.getByLabel('Flake Lab for this project').click();
     await page.getByRole('option', { name: 'Instance default' }).click();
     await expect(page.getByText('Capability updated', { exact: true })).toBeVisible();
     await expectStripTabs(allTabs);

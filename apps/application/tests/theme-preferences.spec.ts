@@ -12,7 +12,7 @@ test.describe('Theme preferences', () => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/');
     await waitForHydration(page);
-    const menuButton = page.getByRole('button', { name: 'Configuration' });
+    const menuButton = page.getByRole('button', { name: 'Settings', exact: true });
 
     await menuButton.click();
     await page.getByRole('menuitem', { name: /^Theme/ }).hover();

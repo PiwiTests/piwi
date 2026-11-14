@@ -2,7 +2,7 @@
  * Code from a stopped test: the actions a client (`piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`) and
  * Piwi Picker (the hub's commands) start at a stop of a run the editor started, each ending the same way: the worker
  * does the page's part through internal calls, this service renders the code (`stop-code.ts`), and the client writes it
- * above the stopped line (`piwi/stopCode`), whichever surface asked. Pick a locator and Record here go where the pause
+ * above the stopped line (`piwi/stopCode`), whichever surface asked. Pick a locator and Record go where the pause
  * bar's go (the client's Send to editor listener, `piwi/recordRequested`). Assert runs the check panel in the test's
  * page through a hand-off in its `check` mode (`check`); Assert a region has the worker pick the region and read its
  * ARIA snapshot (`region`); Mock a request asks the worker for the one response chosen among those its test kept. The

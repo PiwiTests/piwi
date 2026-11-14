@@ -186,7 +186,7 @@ watch(() => props.projectId, load, { immediate: true });
 <template>
   <SectionCard
     icon="i-lucide-link"
-    title="Browser extension URLs"
+    title="URL patterns"
     subtitle="Where this project’s application runs, so Piwi Picker knows which project a page belongs to"
     help="project.url-patterns"
     data-shot="project-url-patterns"

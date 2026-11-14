@@ -779,7 +779,7 @@ names the commit (`desktop-<id>-at-<commit>`, `checkoutCommitOf` in `@piwitests/
 context's (`root` null), so its stops are at the checkout's files; its session says so (`RunSession.checkout`), and the
 clients name the reproduction and its commit where it stops and offer no Stop, the app's to give (`canStopRun`). A
 reproduction holds its failures from its start (`watched`); a bisect step or a Flake Lab, a run nobody attends, none.
-The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record here is refused there.
+The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record is refused there.
 
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
@@ -1262,7 +1262,7 @@ At a stop of a job the desktop app runs in a throwaway checkout (`RunSession.che
 code is made from the checkout's file as the editor holds it, else as it is on disk (`StopActionsOptions.copy`, a
 regular file of 2 MB at most), its line followed through the editor's edits as a workspace file's (the service follows
 a document it opens of a file a checkout's worker stands stopped in, `inCheckoutStop`), and sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
-checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record here is refused
+checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record is refused
 there (`checkoutRecordWhy`), and the job's picks go to the desktop app's window, to copy, never to this editor's Send
 to editor, whose `piwi/applyPick` would write in the workspace's file of the same path.
 
@@ -1284,7 +1284,7 @@ removed or rewrote from its start.
 **Placement.** Each block goes where `placementBefore` puts a recording's (a chain broken over lines included), on the
 page expression `pageCandidates` gives there (`this.page` in a page object), with the config's preferred locators and
 the import of `expect` the file lacks (`blockImports`). The first code of a run adds that the stopped test goes on with
-the code it started with. `placementBefore` refuses, for Record here too:
+the code it started with. `placementBefore` refuses, for Record too:
 
 - a declaration's line: the block goes inside the body of a test or a function (`BlockPlacement.context`, where the
   line starts);

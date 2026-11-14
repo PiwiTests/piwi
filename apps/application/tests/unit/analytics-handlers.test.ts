@@ -744,7 +744,7 @@ describe('metric widgets', () => {
     expect(verdict.facts).toMatchObject({ runs: 5, passRate: 84, passRateDelta: -16, open: 2 });
     const en = sentencesFor('en').verdict(verdict.facts, makeFormatter('en'));
     expect(en).toContain('fell 16 points to 84%');
-    expect(en).toContain('2 failure causes are still open.');
+    expect(en).toContain('2 failure clusters are still open.');
     const fr = sentencesFor('fr').verdict(verdict.facts, makeFormatter('fr'));
     expect(fr).toContain('a perdu 16 points');
   });
@@ -774,7 +774,7 @@ describe('metric widgets', () => {
     const progress = await getAnalyticsProgress(db, DEFAULT_SCOPE, 'all');
     expect(progress.fixed).toBe(0);
     expect(sentencesFor('en').progress(progress, makeFormatter('en'))[0]).toBe(
-      'No failure cause was fixed in the period.',
+      'No failure cluster was fixed in the period.',
     );
   });
 });

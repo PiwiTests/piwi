@@ -1,10 +1,10 @@
 ---
-title: Inspect a running test's page
+title: Inspect a worker's page
 description: "In the live view of a running Playwright test, Inspect shows the page at each call as a document, before it, at its action and after it, with the locator picker; sent only while open, and never stored."
 lang: en-US
 ---
 
-# Inspect a running test's page
+# Inspect a worker's page
 
 <Needs reporter fixtures />
 
@@ -114,5 +114,5 @@ The live demo runs no browser, and Inspect needs a running test: [Watch all](./w
 
 - [Live view of a run](./live-view): turning it on, and the image and call of one worker
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
-- [Failure evidence](./evidence): the DOM snapshot and the picker of a finished test
-- [Share a run live](./share-live): a run on your machine, watched from the dashboard
+- [Failure evidence](./evidence): the DOM snapshot and the snapshot picker of a finished test
+- [Share a local run live](./share-live): a run on your machine, watched from the dashboard

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * *Export* on the analytics and project pages: the current scope rendered as a
+ * *Quality report* on the analytics and project pages: the current scope rendered as a
  * quality report, with the built-in report dashboards one click away and a
  * download in every format. The preview and each download come from the same
  * `GET /api/reports/preview`, so what is previewed is what is downloaded.

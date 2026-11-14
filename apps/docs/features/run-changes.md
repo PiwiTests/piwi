@@ -14,18 +14,41 @@ The **Changes** tab on a run compares it against **one baseline** and tells you 
 
 Every section reads the **same baseline**, so the "new failures" count is computed once and used throughout. The selector at the top says which run it is, which branch and environment that run is on, and **why it was chosen**.
 
-By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+By default the baseline is the **last passing full run**, chosen by environment first, then branch. The ladder is
+walked within the run's environment label first, then again without it. On each pass it takes the most recent passing
+run on the **same branch**, else on the **base branch** the run's branch forked from (the pull request's target branch
+when the reporter captured one, else the project's [default branch](./branches#the-default-branch)), else on **any
+branch**. So a `staging` run on `feature/x` compares with the last passing `staging` run on `feature/x`, then the last
+passing `staging` run on `main`, then any passing `staging` run, and only then with a run from another environment. A
+run whose branch is unknown has only the any-branch rung; a run with no environment label walks the branch ladder once.
+A lab run (a probe or a Flake Lab experiment) is never a baseline. The line under the selector spells out the rung that
+applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in
+staging."_
 
 <figure>
   <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment; with no passing run, the same rungs for the last failed run">
-  <figcaption>Six rungs, tried in order: the first with an earlier passing run gives the baseline.</figcaption>
+  <figcaption>The baseline rule: six rungs tried in order, the first with an earlier passing run giving the baseline.</figcaption>
 </figure>
+
+The same baseline is what the run insights, the stored [regression signals](./flaky-tests#regression-signals), the
+[CI merge gate](./merge-gate), [pull-request feedback](./pr-feedback), the bisect window and the git diff behind an
+[AI diagnosis](./ai-diagnosis#scm-grounded-context) compare against. The regression signals compare the last attempt
+of each test (of each repetition, with `--repeat-each`) with its outcome in the baseline in the same Playwright
+project, and are never set on an earlier attempt of a retried test.
+
+### One execution's baseline
+
+The environment, visual and page diffs of one failing execution compare it with the same test's last passing
+execution on the same browser, in a shorter order: the same environment, then the same branch, then the most recent,
+with no base-branch rung. When no passing run from the same environment exists, the card says which environment the
+baseline came from (_"compared with a production run; no passing development run of this test exists"_) and leaves
+the environment label out of the diff.
 
 ### When no earlier run passed
 
 A project that has never had a green run still gets a comparison. When no earlier full run passed, the tab walks the same ladder again for the **last failed run** and says so: _"No earlier full run passed; the last failed run on feature/x in staging."_ The sections read the same way against it: **New failures** are the tests that passed in that run and fail here, **Still failing** the ones that failed in both. Timed-out and interrupted runs stopped before the suite ended, so they are never picked automatically.
 
-Only the Changes tab and the MCP `get_run_insights` tool take a failed run. The stored regression signals, the [CI gate](/guide/ci#blocking-a-merge) and [pull-request feedback](/features/pr-feedback) keep comparing with a passing run, so their verdicts never rest on a run that was itself red.
+Only the Changes tab and the MCP `get_run_insights` tool take a failed run. The stored regression signals, the [CI merge gate](/features/merge-gate) and [pull-request feedback](/features/pr-feedback) keep comparing with a passing run, so their verdicts never rest on a run that was itself red.
 
 When nothing qualifies (the earlier runs are partial, timed out or interrupted), the tab says so and offers the earlier runs to pick from. On the project's first finished run, it says there is nothing earlier yet.
 
@@ -43,7 +66,8 @@ Two ways to compare against something else:
 - **New failures** — passed in the baseline, failing here.
 - **Fixed** — failed in the baseline, passing here.
 - **Still failing** — failing in both.
-- **Newly flaky / passed on retry** — passed here after an earlier attempt failed.
+- **Newly flaky / passed on retry** — passed here after an earlier attempt failed. Of these, a test that passed at
+  its first attempt in the baseline is also [newly flaky](#what-newly-flaky-says-about-your-change).
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
@@ -54,6 +78,18 @@ Two ways to compare against something else:
 </figure>
 
 Comparing two runs is also how the [run comparison](./ui-overview#test-run-detail) works: select two runs on the project's Runs tab and the newer one opens on its Changes tab with the older as its baseline.
+
+### What newly flaky says about your change
+
+**Newly flaky** is a change between the two runs, as a new failure is: the test needed a retry here and passed at
+its first attempt in the baseline. It does not clear your change. A change can make a test flaky (a new race, a
+slower call, a shared state), and so can anything else that differs between the runs. Nor does it convict it: one
+first-attempt pass in the baseline is one sample, and a test that has been flaky for weeks passes first time often.
+
+The test's own history settles it. A [flaky rate](/guide/concepts#flaky-rate) near zero until this run points at
+the commits since the baseline; one that has been high for weeks points at a flake your run happened to meet, which
+[Flaky tests](./flaky-tests) ranks and quarantines. The [CI merge gate](./merge-gate) counts newly flaky tests
+apart from new regressions (`--max-new-flaky`), so a pipeline can hold a branch for either.
 
 ## Shuffled runs
 
@@ -73,5 +109,5 @@ not shuffled, or the other way round, the Changes tab lists the **Test order** u
 - [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
-- [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause
+- [Failure clusters](./failure-clusters) — the failures grouped by cause
 - [Timeline markers](./timeline-markers) — annotate the trend charts with real-world events

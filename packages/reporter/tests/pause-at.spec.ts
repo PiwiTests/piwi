@@ -631,7 +631,7 @@ describe('pauseHere', () => {
     expect(await pauseHere(closed.page as never, POINT, PROBE, () => {})).toBe('resume');
   });
 
-  it('ends Pick a locator and Record here with the stop, the picker taken out of the page', async () => {
+  it('ends Pick a locator and Record with the stop, the picker taken out of the page', async () => {
     const g = globalThis as Record<string, unknown>;
     const picking = fakePausePage(['pick'], { hangPick: true });
     const ended = new AbortController();
@@ -713,7 +713,7 @@ describe('pauseHere', () => {
     }
   });
 
-  it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
+  it('offers Record when the editor can record, and shows the bar again once the recording ended', async () => {
     const { page, shown } = fakePausePage(['record', 'resume']);
     const recorded = vi.fn(async () => {});
     const choice = await pauseHere(page as never, POINT, PROBE, () => {}, recorded);
@@ -947,7 +947,7 @@ describe('an intent from outside the page', () => {
     // Its page is a guess among its context's pages: neither Pick nor Record could tell they are in the right one.
     for (const [what, name] of [
       ['pick', 'Pick a locator'],
-      ['record', 'Record here'],
+      ['record', 'Record'],
     ] as const) {
       expect(intentAt(intents, what, { ...HOLDS, guessed: true })).toEqual({
         ok: false,
@@ -956,7 +956,7 @@ describe('an intent from outside the page', () => {
     }
     expect(intentAt(intents, 'record', { ...HOLDS, record: false })).toMatchObject({
       ok: false,
-      message: expect.stringMatching(/^Record here needs the editor that started the run/),
+      message: expect.stringMatching(/^Record needs the editor that started the run/),
     });
     // None of those reached the bar: the first one taken is the one that holds.
     expect(intentAt(intents, 'pick', HOLDS)).toEqual({
@@ -1293,7 +1293,7 @@ describe('breakpoints in the capture fixtures', () => {
     }
   });
 
-  it('stops at page.pause() with Piwi’s bar in a run the editor started, with Record here, the test timeout the runner’s', async () => {
+  it('stops at page.pause() with Piwi’s bar in a run the editor started, with Record, the test timeout the runner’s', async () => {
     process.env.PIWI_RECORD_CHANNEL = `/tmp/piwi-no-such.sock#${'t'.repeat(20)}`;
     const start = thisLine();
     const run = await runWithBreakpoints('', ['step', 'resume'], async (page) => {

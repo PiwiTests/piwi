@@ -211,7 +211,7 @@ function openRunStep(input: NextStepInput): Omit<NextStep, 'source'> {
       return step(
         'See what made the run slow',
         'it runs again once the run ends within its time limit.',
-        openRun("Open the run's timeline", 'workers'),
+        openRun("Open the run's timeline", 'timeline'),
       );
     case 'interrupted':
       return step('Open the run', 'it runs again in the next run that completes.', openRun(runLabel));

@@ -6,6 +6,8 @@ lang: en-US
 
 # CSS coverage
 
+<Needs reporter fixtures />
+
 Each test records the rules of your style sheets its pages matched: a rule counts once an element on the page matched
 its selector. A change to a style sheet then selects the tests that rendered the rules it touched, where a style
 change used to run the whole suite. It sits beside [code reach](./code-reach), the scripts' side, and
@@ -52,9 +54,8 @@ to one rule, where it ran all 32 before.
 
 ## Cost
 
-The cost is Chromium's style recalculation, not the reads: about 10% more per test on the sample application, close to
-what function coverage costs there, and up to 57% on a page with 2,000 rules and frequent re-renders, where function
-coverage costs 4%. Turn it on where style changes are frequent, or in a scheduled run.
+Its cost is Chromium's style recalculation, which grows with a page's rules and re-renders: turn it on where style
+changes are frequent, or in a scheduled run. The figures: [Coverage cost](/reference/coverage-cost#css-rules).
 
 ## Limits
 

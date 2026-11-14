@@ -16,7 +16,7 @@ export const SHARP_DROP_POINTS = 5;
  * - **bad**: the pass rate is poor (below the fair threshold), or it dropped
  *   sharply against the comparison period;
  * - **good**: the pass rate is good and did not drop by more than a point, and
- *   failure causes are not piling up (no more opened than fixed while some are open);
+ *   failure clusters are not piling up (no more opened than fixed while some are open);
  * - **mixed**: everything else, and a period with no runs.
  */
 export function verdictTone(facts: VerdictFacts): VerdictTone {

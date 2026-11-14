@@ -1,7 +1,7 @@
 /**
  * Quality reports:
  *   GET /api/reports/preview — the report bundle as JSON, and every download format
- *   Export on /analytics      — the preview dialog, the dashboard and language pickers, a download
+ *   Quality report on /analytics — the preview dialog, the dashboard and language pickers, a download
  *   Settings → Performance    — the cost of a CI minute, shown with the wasted minutes
  *   MCP get_quality_report    — the bundle over the same scope
  */
@@ -54,7 +54,8 @@ test.beforeAll(async ({ request }) => {
 async function openReport(page: import('@playwright/test').Page) {
   const preview = page.getByTestId('report-view');
   await expect(async () => {
-    if (!(await preview.isVisible())) await page.getByRole('button', { name: 'Export' }).first().click();
+    if (!(await preview.isVisible()))
+      await page.getByRole('button', { name: 'Quality report', exact: true }).first().click();
     await expect(preview).toBeVisible({ timeout: 3000 });
   }).toPass({ timeout: 60_000 });
   return preview;
@@ -150,7 +151,7 @@ test.describe('Quality report API', () => {
   });
 });
 
-test.describe('Export on the analytics page', () => {
+test.describe('Quality report on the analytics page', () => {
   test('previews the scope as a quality report and downloads it', async ({ page, request }) => {
     const bundle: ReportBundle = await (await request.get(`/api/reports/preview?${scope()}`)).json();
     await page.goto(`/analytics?${scope()}`);
@@ -201,7 +202,7 @@ test.describe('Export on the analytics page', () => {
     expect(sheets[0]!.data.length).toBeGreaterThan(1);
   });
 
-  test('the project page offers Export for that project', async ({ page }) => {
+  test('the project page offers a quality report of that project', async ({ page }) => {
     await page.goto(`/projects/${projectId}`);
     const preview = await openReport(page);
     await expect(preview.getByText(`${PROJECT.QUALITY_REPORT}, Last 30 days`)).toBeVisible();

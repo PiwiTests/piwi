@@ -29,7 +29,7 @@ describe('the AI narrative', () => {
     const paragraphs = [
       'The pass rate on main stands at 89.5%.',
       'Wasted CI time came to 7.2 min over the period.',
-      'Watch the three open failure causes next.',
+      'Watch the three open failure clusters next.',
     ];
     expect(parseNarrative(answer(paragraphs), fixtureBundle())).toEqual(paragraphs);
     // A model that wraps its JSON in prose is still read.

@@ -53,7 +53,7 @@ import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 import { countWords, waitedFor } from './run-control';
 
-/** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
+/** What Read the instance and the configs again says when the service does not answer, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
 
 /** The button that runs `piwi.restartService`. */

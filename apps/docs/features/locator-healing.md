@@ -1,6 +1,6 @@
 ---
 title: Locator healing
-description: "When a locator breaks, ranked replacements captured from the last passing run, a recommended fix in your suite's style, and pickers for local runs."
+description: "When a locator breaks, ranked replacements captured from the last passing run, a recommended fix in the failing locator's own style, and pickers for local runs."
 lang: en-US
 ---
 
@@ -54,10 +54,15 @@ elements of the same role.
   <figcaption>Every stored match is checked against the failing page before anything is recommended.</figcaption>
 </figure>
 
-A single **recommended fix** is highlighted. It keeps your locator _style_ where that style is stable enough, and only
-otherwise escalates to the sturdiest alternative or advises adding a `data-testid`. When the stored accessible name is
-provably gone from the failing page, name-based alternatives, the failing locator included, stay listed but are never
-recommended.
+### The recommended fix
+
+A single **recommended fix** is highlighted. It follows the failing locator itself, not the rest of your suite: among
+the alternatives with a stability score of 50 or more, the most stable that uses the same method as the failing
+locator's last call (`getByLabel` for `getByLabel`), else one of its family (role; text, alt text and title; label and
+placeholder; test id; CSS). Otherwise it escalates to the most stable alternative, and when even that scores under 50
+among alternatives from a snapshot, advises adding a `data-testid`. A replacement you picked by hand, **Your pick**, outranks
+them all. When the stored accessible name is provably gone from the failing page, name-based alternatives, the
+failing locator included, stay listed but are never recommended.
 
 When a strict-mode violation matched several elements and only **one is visible**, the panel also suggests adding
 Playwright's `.visible()` (1.63 and later), the right fix when the duplicates are hidden copies rather than a naming
@@ -76,10 +81,12 @@ failure cluster pages; a cluster whose next step replaces the locator shows it u
 
 ## Use it
 
-Copy the recommended fix, or another alternative, and change the line the panel names. With an uploaded trace,
-**Pick from trace** opens the failure in the dashboard's [trace viewer](./evidence#trace-viewer), whose _Pick locator_
-tool works on the recorded page snapshots, so a CI failure nobody watched can still be picked visually. A replacement
-you confirmed with a picker shows a **Your pick** badge and becomes the recommended fix.
+Copy the recommended fix, or another alternative, and change the line the panel names. Two pickers in the panel let
+you click the element you meant instead: **Pick from snapshot**, when the failing locator is known, opens the
+failure-time DOM snapshot; **Pick from trace**, with an uploaded trace, opens the failure in the dashboard's
+[trace viewer](./evidence#trace-viewer), whose _Pick locator_ tool works on the recorded page snapshots. So a CI
+failure nobody watched can still be picked visually. A replacement you confirmed with one of them, or with the
+failure-time picker below, shows a **Your pick** badge and becomes the recommended fix.
 
 The first later run whose code at that call site uses the recommended locator shows as **healed in run #N**, whoever
 made the edit.
@@ -108,13 +115,10 @@ overlay is open (the test timeout is lifted), so prefer `--workers=1`.
 
 With `pickLocatorOnFailure: true` (or `PIWI_PICK_LOCATOR_ON_FAIL=true`), a test that failed on a locator, in an action
 (`.click()`, `.fill()`) or an assertion (`expect(locator).toBeVisible()`), gets the same overlay aimed at the locator
-that broke:
-
-1. **Pick the element.** The pick snaps to the nearest actionable ancestor; <kbd>↑</kbd>/<kbd>↓</kbd> walk the DOM
-   tree, showing each step's locator, and <kbd>Enter</kbd> picks the highlighted element, else the focused one.
-2. **Choose stable parents (optional).** The ancestors are listed with their strongest hook (`data-testid`, `#id`,
-   labeled landmark, role); one selected scopes the locator, with a live **"matches N"** count.
-3. **Confirm** one of the ranked candidates.
+that broke. Its steps are those of Piwi Picker's [Pick an element](./pick-an-element#how-a-pick-works): pick the
+element, choose stable parents to scope it to (optional, offered only for an element with a role), then **Confirm** one
+of the candidates. Unlike Pick an element, it ranks them by stability score without running each against the page or
+narrowing one that finds several elements.
 
 ```bash
 # Linux / macOS
@@ -126,8 +130,8 @@ $env:PIWI_PICK_LOCATOR_ON_FAIL='true'; npx playwright test --headed
 
 The pick is recorded in the run's locator snapshots, so the **Locator fix** panel shows it first once the run uploads,
 as a `piwi-user-pick` attachment and annotation in the Playwright report, and in the terminal with the call site and
-the replacement. The picker blocks the page's own click handlers while active, so picking can't navigate away. The
-same picker ships as the [Piwi Picker browser extension](/features/extension), for any live page with no test run.
+the replacement. The failure-time picker blocks the page's own click handlers while active, so picking can't navigate
+away.
 
 ## Pause at a breakpoint (local runs)
 
@@ -146,8 +150,9 @@ CI, like the options above. The editor extensions set both from your [breakpoint
   and the step failed afterwards (`element is not enabled`, a wrong count, a hidden element) or the page failed to
   load, the panel says _The locator resolved; this is not a locator problem_ (for a page that failed to load, _The page
   failed to navigate before any locator ran_), because a locator that found its element needs no rewrite.
-- Suggestions need a passing run captured with the fixtures; until then only the ARIA fallback applies. An Enter that
-  submits at once can leave its field unread.
+- Every suggestion but the diff rename needs a passing run captured with the fixtures; until then, without a diff
+  rename, only the ARIA fallback applies. The diff rename reads the run's diff and the failing error, no snapshot. An
+  Enter that submits at once can leave its field unread.
 - Capture reads each call site once per test, rarely twice. Negated assertions, absence checks (`toBeHidden`,
   `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with `captureLocators: false`
   or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is `false`.
@@ -162,4 +167,4 @@ CI, like the options above. The editor extensions set both from your [breakpoint
 - [Capture fixtures](/guide/capture-fixtures): the one-file setup that records the locator snapshots
 - [Auto-heal PRs](./auto-heal): when Piwi opens the recommended locator fix as a pull request itself
 - [Who uses a locator](./locator-usage): the tests that reach an element, before you change it
-- [Browser extension](/features/extension): the same picker on any live page, no run needed
+- [Pick an element](/features/pick-an-element): Piwi Picker's pick on any live page, no run needed

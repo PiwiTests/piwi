@@ -1,10 +1,10 @@
 ---
-title: Share a run live
+title: Share a local run live
 description: "Let a teammate watch the tests of a Playwright run on your machine from its page on the team instance, as a CI run's live view: Share live from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app."
 lang: en-US
 ---
 
-# Share a run live
+# Share a local run live
 
 <Needs reporter fixtures />
 
@@ -19,7 +19,7 @@ whose project enables live view, and connect to an editor or the desktop app for
 
 | Where | Share | Stop |
 |---|---|---|
-| VS Code | **Piwi: Share the run live on the team instance**, or the Piwi item's menu | **Piwi: Stop sharing the run live**, or **Stop sharing** in the Piwi item's menu under **Shared live**, beside **Open the run page** and **Copy the run page's link**, after a confirmation |
+| VS Code | **Piwi: Share the run live on the team instance**, or the Piwi item's menu | **Piwi: Stop sharing the run live**, or **Stop sharing** in the Piwi item's menu under **Shared live**, beside **Open the run page** and **Copy the run page's link**, which **Piwi: Shared live: open the run page, copy its link or stop sharing…** also lists, after a confirmation |
 | JetBrains IDEs | **Tools → Piwi → Share the run live on the team instance** | **Tools → Piwi → Stop sharing the run live**, or **Stop sharing the run** in the status bar item's menu, after a confirmation |
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing**, after a confirmation |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing…**, after a confirmation |
@@ -29,13 +29,14 @@ to share this run or [the window's runs](#a-window-s-runs). The shared run shows
 
 Until then, its workers send nothing, and the run's **Tests** tab says **Not shared live** once, beside its search,
 with [**Ask to watch**](#ask-to-watch) for a teammate who may ask; its running tests say where they
-[stopped](#stops-shared-or-not). Once shared, images go only to those watching. **Stop sharing** closes the views
+[stopped](./watch-a-run#where-a-test-stopped). Once shared, images go only to those watching. **Stop sharing** closes the views
 within seconds. Closing the editor or the desktop app stops it too.
 
 A run that cannot be shared says why: it reports to no instance or to the desktop app, it does not stream its results,
 its project has the live view off, the reporter's global setup did not register it, or the instance did not register the run
 as it started. A sharing that stops on its own says why (the live view turned off, or the instance stopped answering), and **Share live** shows again: shared again, the run streams once the instance answers with its live view
-on, a restarted instance taking the run's key back. A run the instance no longer holds live cannot be shared again.
+on, a restarted instance taking the run's key back. A run the instance no longer holds live cannot be shared again. A [requested run](./run-on-my-machine#a-requested-run-is-yours-alone)
+gets no live view key from the instance, so it cannot be shared.
 
 ### From a terminal
 
@@ -91,12 +92,8 @@ Asks are kept in the instance's memory, never stored, and end with the run.
 
 ## Stops, shared or not
 
-A test of a run on your machine stops at a breakpoint, a `page.pause()`, a step or **Run to here**, and its row on the
-run's page says why, at the stopped call: **Stopped at a breakpoint**, **Stopped at page.pause()**, **Paused**. The
-call's place opens in your editor. A shared run's row tells it from its live view. A run nobody shares tells it as
-text, with `@piwitests/reporter` 0.68.0 or later, and says for how long once the stop has stood a minute: its results
-stream sends the call's title, its file and line, the test's title and since when, as each stop shows and ends. Never
-an image. A test that stands stopped is never marked [**Stuck?**](./stuck-tests).
+A stopped test's row on the run's page says why and where, from the live view of a shared run, else as text, never an
+image: [where a test stopped](./watch-a-run#where-a-test-stopped).
 
 ## From the desktop app
 

@@ -1395,8 +1395,8 @@ export interface StopControl {
 }
 
 /**
- * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor, Finish, and End
- * test where its reporter takes it; at a failure, Resume alone, which lets the test end as it failed (Step, Finish and
+ * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to the cursor, Finish, and End
+ * the test where its reporter takes it; at a failure, Resume alone, which lets the test end as it failed (Step, Finish and
  * End do the same).
  */
 export function stopControls(stop: ShownStop): StopControl[] {
@@ -1405,16 +1405,16 @@ export function stopControls(stop: ShownStop): StopControl[] {
   return [
     resume,
     { title: 'Step', command: RUN_COMMANDS.step },
-    { title: 'Run to cursor', command: RUN_COMMANDS.runTo },
+    { title: 'Run to the cursor', command: RUN_COMMANDS.runTo },
     { title: 'Finish', command: RUN_COMMANDS.finish },
-    ...(canEnd(stop) ? [{ title: 'End test', command: RUN_COMMANDS.end }] : []),
+    ...(canEnd(stop) ? [{ title: 'End the test', command: RUN_COMMANDS.end }] : []),
   ];
 }
 
 /**
  * The entries of the lens row above a stop, after its paused text: Resume, Step and Finish (Resume alone at a
- * failure), then **Write code…** while the stop offers a code action. Run to cursor, End test and each code action are
- * in the stop's hover, its keys and the palette, so the row fits beside the line's own lenses.
+ * failure), then **Write code…** while the stop offers a code action. Run to the cursor, End the test and each code
+ * action are in the stop's hover, its keys and the palette, so the row fits beside the line's own lenses.
  */
 export function stopLensControls(stop: ShownStop): StopControl[] {
   const lens = stopControls(stop).filter((c) => c.command !== RUN_COMMANDS.runTo && c.command !== RUN_COMMANDS.end);

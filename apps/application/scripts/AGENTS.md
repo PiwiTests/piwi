@@ -37,9 +37,9 @@ every scene option.
   (`of: '[data-shot="flaky-table"]'`), never an XPath or nth-child path. Add one when a scene needs it, named for the
   content.
 - **The harness's server runs as a configured instance** (`SCENE_SERVER_ENV`): `PIWI_SITE_URL` set, share links on
-  (`PIWI_SHARE_LINKS_ENABLED`), and the caller's `PIWI_JIRA_*` cleared so no screenshot shows a real Jira site or
-  account. A Jira scene connects its own dead-port connection (`prepareJiraSceneConnection`) and answers the tracker's
-  pickers in the page (`routeJiraScreen`).
+  (`PIWI_SHARE_LINKS_ENABLED`), the dev server's `PIWI_SECRET_KEY` (else a fixed one), and the caller's `PIWI_JIRA_*`
+  cleared so no screenshot shows a real Jira site or account. A Jira scene connects its own dead-port connection
+  (`prepareJiraSceneConnection`) and answers the tracker's pickers in the page (`routeJiraScreen`).
 - **A capture waits on `settle()`** (fonts, network, nothing still loading), never on a timeout. A capture taller than
   the viewport fails with the viewport to use: give the scene that viewport, never a cropped image.
 - **`--freeze-now <iso>` pins the browser clock** so relative timestamps stop moving and two runs produce

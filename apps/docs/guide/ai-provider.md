@@ -6,11 +6,13 @@ lang: en-US
 
 # AI provider
 
-Piwi works without a model. Connect one and it powers [AI diagnosis](/features/ai-diagnosis) (the explanation of a
-failure cluster or a single execution, and the cluster titles), semantic merging of failure clusters, the
-**Fixed before** matches of [fix plans](/features/fix-plans#fixed-before), the authoring of [AI steps](/features/ai-steps)
-and the AI narrative of [quality reports](/features/quality-reports). All of them use the same provider, configured
-once on the server; API keys never leave it.
+This page sets up the model Piwi calls: the provider, its model roles, the response language and the context limits.
+Piwi works without one. Connected, it powers [AI diagnosis](/features/ai-diagnosis) (the explanation of a failure
+cluster or a single execution, and the cluster titles), semantic merging of failure clusters, the authoring of
+[AI steps](/features/ai-steps), the AI narrative of [quality reports](/features/quality-reports) and the
+[assistant](/features/assistant); an embedding model also sharpens the **Fixed before** matches of
+[fix plans](/features/fix-plans#fixed-before), which are found without one. All use the same provider, configured once
+on the server; API keys never leave it.
 
 ## Enabling AI diagnosis
 
@@ -35,15 +37,12 @@ Saved keys are bound to their provider and base URL. Enter the key again when ch
 
 The [Configuration reference](/reference/configuration#ai-diagnosis) lists every AI variable.
 
-When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](/features/evidence#clues): a cluster whose failure carries **no deterministic clue** (the one the model has to reason about from scratch) goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties. A cluster that already has a completed or a running diagnosis is left out before the ordering, so a recurring, already-diagnosed cluster never takes one of the slots. Ignored clusters are left out too. A diagnosis you rated unhelpful takes a slot again once the evidence has changed since it ran, once per rating.
+With `PIWI_AI_AUTO_DIAGNOSE` on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget goes to the clusters that need a model most:
+the order is on [Diagnosing automatically](/features/ai-diagnosis#diagnosing-automatically).
 
 ### Streaming diagnosis
 
-A diagnosis streams: the model's reasoning appears in a live panel as it arrives, with a stage indicator (*Researching patterns* while a
-[research model](#model-roles) pre-analyzes the failure, when one is configured, then *Diagnosing root cause*), and turns
-into the result card when it completes. The [API docs](https://piwitests.dev/demo/settings/api), or `/settings/api` on your
-instance, describe the streaming protocol.
-
+A diagnosis streams into a live panel, stage by stage ([Watching it stream](/features/ai-diagnosis#watching-it-stream)).
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference that shows a browser notification on completion once you grant the permission.
 
 ### Local Codex CLI
@@ -115,19 +114,8 @@ Screenshots are the one input a provider can refuse outright: many self-hosted a
 ## Usage and quality
 
 **AI usage** in Settings → AI counts, per provider and model over 7, 30 or 90 days, the diagnoses, the failed ones,
-the tokens and the average duration. A second table says how each model's diagnoses fared:
-
-- **Rated helpful**: thumbs up over every rating. The share appears from 10 ratings; below that the panel says the
-  sample is too small.
-- **Patches that apply**: suggested patches that [apply](/features/ai-diagnosis#validated-patches) to the source
-  they name, over every patch that could be checked.
-- **Verified by the fix**: diagnoses whose cluster was fixed by a change to the files they named.
-- **Regressed**: verified diagnoses whose failure came back.
-
-Diagnoses an agent recorded get their own row, under the model it named. Each diagnosis also stores a hash of the
-instructions it was written under (`promptSha` in its details), so diagnoses written before and after a change to
-the custom instructions or the language can be told apart. Piwi never switches models on these numbers; the
-[Analytics](/features/analytics#hand-back-outcomes) page shows the same ratings across projects.
+the assistant's answers, the tokens and the average duration. Its second table, how each model's diagnoses fared, is
+explained on [How diagnoses fare](/features/ai-diagnosis#how-diagnoses-fare).
 
 <figure>
   <img src="/screenshots/ai-usage.png" alt="Settings → AI → AI usage over the last 30 days: diagnoses, failures, tokens and average duration per model, then each model's helpful ratings, patches that apply, diagnoses verified by the fix and regressions">

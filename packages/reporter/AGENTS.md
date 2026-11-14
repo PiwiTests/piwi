@@ -69,7 +69,7 @@ responsibilities.
      locator enters (`frameOf`, reading `_frame` and `_selector`), each is taken down in every frame it was drawn in
      before the test goes on, `TAKE_DOWN_MS` at most, and one its frame draws later draws nothing
      (`__piwiStopHighlightsGone`, in the page's world);
-   - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
+   - with `PIWI_RECORD_CHANNEL`, **Record** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
    - with `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, each worker's run connection to the editor (or

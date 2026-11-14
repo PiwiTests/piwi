@@ -444,7 +444,7 @@ class PairPickerAction : AnAction(), DumbAware {
                 if (project != null) {
                     PiwiCommands.notify(
                         project,
-                        "The pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor. " +
+                        "The pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor. " +
                             Glue.forwardingHint(port, hubs),
                     )
                 }
