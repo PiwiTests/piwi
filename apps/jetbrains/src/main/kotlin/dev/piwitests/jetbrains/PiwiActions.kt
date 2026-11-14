@@ -568,8 +568,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
         private const val OFFERED = "piwi.mcpOffered"
 
         /** Whether the JetBrains AI Assistant is installed and enabled, whose MCP settings the notices then name. */
-        fun aiAssistantEnabled(): Boolean =
-            com.intellij.ide.plugins.PluginManagerCore.getPlugin(com.intellij.openapi.extensions.PluginId.getId("com.intellij.ml.llm"))?.isEnabled == true
+        fun aiAssistantEnabled(): Boolean {
+            val id = com.intellij.openapi.extensions.PluginId.getId("com.intellij.ml.llm")
+            return com.intellij.ide.plugins.PluginManagerCore.isPluginInstalled(id) && !com.intellij.ide.plugins.PluginManagerCore.isDisabled(id)
+        }
     }
 }
 

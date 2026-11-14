@@ -145,22 +145,35 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
 
     private var state = State()
 
+    /** Whether the IDE's settings were read once: a later read (Settings Sync, Import Settings) changes what is shown. */
+    private var loaded = false
+
     override fun getState(): State = state
 
     override fun loadState(state: State) {
+        val before = this.state.copy()
         this.state = state
+        if (loaded) ApplicationManager.getApplication().invokeLater { changed(before) }
+        loaded = true
     }
 
     companion object {
         fun state(): State = ApplicationManager.getApplication().getService(PiwiUserSettings::class.java).state
 
-        /** Hand again and draw again, in every open project, what changed of these options since `before`. */
-        fun changed(before: State) {
+        /**
+         * Hand again and draw again, in every open project, what changed of these options since `before`; `handedIn`, a
+         * project that hands its credentials itself.
+         */
+        fun changed(before: State, handedIn: Project? = null) {
             val now = state().copy()
             for (project in ProjectManager.getInstance().openProjects) {
-                if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.userSettingsChanged(before, now)
+                if (project.isDisposed) continue
+                project.getServiceIfCreated(PiwiProjectService::class.java)?.userSettingsChanged(before, now, hand = project != handedIn)
             }
         }
+
+        /** The options the editor service is handed with the credentials. */
+        fun handed(state: State): List<Any> = listOf(state.codeLens, state.locatorWarnings, state.statusBarAlert, state.mcpAuthorization)
     }
 }
 
@@ -561,11 +574,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * What a change of the person's own options changes in this project, `PiwiUserSettings.changed` telling every open
-     * one: the credentials the service is handed, then the files drawn again, and the runs going on.
+     * one: the credentials handed to a service that runs (`hand`), never starting one, then the files drawn again, and
+     * the runs going on.
      */
-    fun userSettingsChanged(before: PiwiUserSettings.State, now: PiwiUserSettings.State) {
-        val handed = { s: PiwiUserSettings.State -> listOf(s.codeLens, s.locatorWarnings, s.statusBarAlert, s.mcpAuthorization) }
-        if (handed(now) != handed(before)) sendCredentials()
+    fun userSettingsChanged(before: PiwiUserSettings.State, now: PiwiUserSettings.State, hand: Boolean = true) {
+        if (hand && PiwiUserSettings.handed(now) != PiwiUserSettings.handed(before) && server() != null) sendCredentials()
         ApplicationManager.getApplication().invokeLater({
             if (now.failingTestTint != before.failingTestTint) testsShownAgain()
             if (now.codeLens != before.codeLens) lensesShownAgain()

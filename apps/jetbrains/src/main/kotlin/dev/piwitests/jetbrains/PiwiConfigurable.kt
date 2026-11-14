@@ -34,6 +34,9 @@ import javax.swing.JList
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi", PiwiHelp.SETTINGS_TOPIC) {
     private val service get() = project.service<PiwiProjectService>()
+
+    /** The person's own options as the IDE holds them now: a reload of its settings replaces the object. */
+    private val user: PiwiUserSettings.State get() = service.user()
     private lateinit var key: JEditorPane
     private lateinit var inUse: JEditorPane
     private lateinit var desktopState: JEditorPane
@@ -49,8 +52,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
         val local = service.local()
-        val user = service.user()
-        val store = Glue.storeFolder(project.projectFilePath)
+        val files = Glue.storeFiles(project.projectFilePath)
         val content = panel {
             row {
                 text(
@@ -71,7 +73,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 }
             }
             group(SettingsWords.GROUPS.getValue("connection")) {
-                kept("Kept in $store/piwi.xml, which the team can share; the API key in the IDE's password safe, for its instance alone.", "connection")
+                kept("Kept in ${files.shared}, which the team can share; the API key in the IDE's password safe, for its instance alone.", "connection")
                 row {
                     overridden = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
@@ -112,7 +114,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 }
             }
             group("Piwi desktop app") {
-                kept("Kept for you only, in $store/workspace.xml.", "connection")
+                kept("Kept for you only, in ${files.workspace}.", "connection")
                 row {
                     desktopState = text("").component
                 }
@@ -198,12 +200,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 }
             }
             group(SettingsWords.GROUPS.getValue("editor")) {
-                kept("$YOURS_EXCEPT A failing test's line is this project's, kept for you only in $store/workspace.xml.", "editor")
+                kept("$YOURS_EXCEPT A failing test's line is this project's, kept for you only in ${files.workspace}.", "editor")
                 row {
                     comboBox(Glue.CODE_LENS_CHOICES, ChoiceRenderer("codeLens"))
                         .label("The lines Piwi writes above the code:", LabelPosition.TOP)
                         .bindItem({ user.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES } ?: "all" }, { user.codeLens = it ?: "all" })
-                        .comment("A test's mark in the gutter stays: Editor → General → Gutter Icons → Piwi hides it")
+                        .comment("A test's mark in the gutter stays: Editor → General → Gutter Icons → Piwi test results hides it")
                 }
                 row {
                     checkBox("Show the coverage marks at the left of the lines a run reached, did not reach, or changed since")
@@ -234,7 +236,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 }
             }
             group(SettingsWords.GROUPS.getValue("agents")) {
-                kept("$YOURS_EXCEPT Serving the runs to agents is this project's, kept for you only in $store/workspace.xml.", "agents")
+                kept("$YOURS_EXCEPT Serving the runs to agents is this project's, kept for you only in ${files.workspace}.", "agents")
                 row {
                     comboBox(Glue.MCP_AUTHORIZATIONS, ChoiceRenderer("mcpAuthorization"))
                         .label("Piwi's MCP server signs the agent in with:", LabelPosition.TOP)
@@ -281,26 +283,26 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
     override fun apply() {
         val before = connection()
         val agents = service.local().serveRunsToAgents
-        val user = service.user().copy()
+        val own = user.copy()
         super.apply()
         // The service serves the runs to agents, or stops, at once.
         if (service.local().serveRunsToAgents != agents) {
             ApplicationManager.getApplication().executeOnPooledThread { service.agentsChanged() }
         }
         if (connection() != before) service.sendCredentials()
-        // A person's own options hold in every open project, each handed and drawn again.
-        PiwiUserSettings.changed(user)
+        // A person's own options hold in every open project, each handed and drawn again; this one handed them above.
+        PiwiUserSettings.changed(own, handedIn = project)
         show()
     }
 
     /**
-     * What this page changes of this project's own that the service is handed: the key is saved by Connect, never here;
-     * the person's own options, by `PiwiUserSettings.changed`.
+     * What this page changes of what the service is handed: the key is saved by Connect, never here.
      */
     private fun connection(): List<Any> {
         val settings = service.settings()
         val local = service.local()
-        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject, local.failureSeverity)
+        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject, local.failureSeverity) +
+            PiwiUserSettings.handed(user)
     }
 
     private fun show() {

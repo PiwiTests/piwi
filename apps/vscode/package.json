@@ -1523,7 +1523,7 @@
           "piwi.gutterIcons": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Mark each test's latest result in the gutter, with a hover that says it. Off, the hover stays on the test's line. While the Testing view lists Piwi's tests (`piwi.testExplorer`), its own gutter shows them instead. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "markdownDescription": "Mark each test's latest result in the gutter, with a hover that says it. Off, the hover stays on the test's line, and a flaky test says so after it. While the Testing view lists Piwi's tests (`piwi.testExplorer`), its own gutter shows them instead. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
             "order": 1,
             "scope": "application"
           },
@@ -1569,7 +1569,7 @@
           "piwi.failingTestTint": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Tint a failing test and the line it failed at (`piwi.failingTestBackground`, `piwi.failingLineBackground`). The gutter still marks them. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "markdownDescription": "Tint a failing test and the line it failed at (`piwi.failingTestBackground`, `piwi.failingLineBackground`). The gutter still marks them, unless `piwi.gutterIcons` is off. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
             "order": 5,
             "scope": "application"
           },

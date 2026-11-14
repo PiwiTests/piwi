@@ -139,10 +139,10 @@ toggle writes; `piwi.failingTestTint`; and `piwi.ciPositions` (NF8), in an In th
 ST12 is built by scope rather than as a Defaults page: a person's own options live at the IDE's level in JetBrains
 (`PiwiUserSettings`, `options/piwi.xml`), as VS Code's user settings, a change applied in every open project, and a
 project's own stay in `workspace.xml`. Each JetBrains group says once where its options are kept, the path from the
-project's store folder, Rider's included (ST13); a reference page, Editor settings, lists every option by group, held to
-the registry, and each VS Code setting, each JetBrains group and the page's help button link its section (ST15); the
+project's store folder, Rider's included (ST13); a reference page, Editor settings, lists every option by group, written by hand
+as the registry holds no descriptions, its keys, defaults and kinds held to the registry by `docs-claims.test.ts`, and each VS Code setting, each JetBrains group and the page's help button link its section (ST15); the
 copy notices name the agent's MCP settings, the AI Assistant's only while it is enabled (ST21). M10 is built but for
-NF3's one shape of the start options. Record here is a code action where the
+NF3's one shape of the start options; ST7, ST8, ST12, ST13 and ST15 are left out of this document. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -171,8 +171,8 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 
 - **What is left.** Most of the plan's quick wins are built; the steps left center on one concept table and the words
   both clients show (M4, M22), the status menu (M3, M13), the run controls in the debugger's
-  places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the settings
-  registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision (L3).
+  places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the start
+  options in one shape and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -231,7 +231,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 
 8. **The settings differ in each editor, and JetBrains introduces Piwi with one balloon**: VS Code's list is
    alphabetical with code values, the scopes differ, the gutter icons, locator warnings and tint cannot be switched off,
-   and JetBrains has no Get Started ([ST7](#st7), [ST8](#st8), [ST12](#st12), [ST1](#st1)).
+   and JetBrains has no Get Started ([M10](#m10), [ST1](#st1)).
 
 9. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
 
@@ -284,7 +284,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
    has an icon and a when clause.** ([LI1](#li1))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
-   interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [ST8](#st8), [TL4](#tl4))
+   interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [TL4](#tl4))
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
    `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([LR6](#lr6),
    [RD4](#rd4))
@@ -402,7 +402,7 @@ group, hidden outside a config's folder, checked in Rider 2026.2 and every IDE o
 <a id="tl4"></a>**TL4. In JetBrains Piwi's result icon cannot be switched off, so a test line can carry two state icons
 that disagree, the IDE's last local run and Piwi's latest.** The IDE run icon draws its last run from
 `TestStateStorage`, and `PiwiTestAnnotator.kt:63-66` adds Piwi's from an external annotator; the Gutter Icons settings
-page lists `LineMarkerProviderDescriptor`s, not an annotator's icon ([ST8](#st8)). A green check from the developer's
+page lists `LineMarkerProviderDescriptor`s, not an annotator's icon. A green check from the developer's
 run can sit beside a red X from CI, and only the IDE's can be hidden. **(read)** Fix: a "Piwi test results" entry on
 the Gutter Icons page, a descriptor whose switch the annotator reads. ([M9](#m9), [LI8](#li8))
 
@@ -506,7 +506,7 @@ docs hold screenshots of the same fixture; breakpoints get one sentence (`apps/v
 pairing Piwi Picker none, and `apps/vscode/walkthrough/settings.md` lists 6 of the 11 settings. In VS Code 1.143.1 the
 description ends in 'run and record test…'. A new user never sees a run paused at a breakpoint, the loop Piwi is built
 around. **(seen)** Fix: a one-line description, steps for a breakpoint stop and for pairing Piwi Picker, the docs'
-images as `media.image`, an MCP step per editor through `when`, `settings.md` generated from the registry ([ST7](#st7)),
+images as `media.image`, an MCP step per editor through `when`, `settings.md` generated from the settings registry,
 and the six-step cap of `apps/vscode/tests/walkthrough.test.ts:32` raised. ([M11](#m11), [LI12](#li12))
 
 <a id="st3"></a>**ST3. The disconnected home offers only Connect in both editors and never says that recording works
@@ -524,70 +524,8 @@ offer, then the MCP offer after the first failure shown, none on 1.101+. ([M11](
 
 ### 6.2 The settings pages
 
-<a id="st7"></a>**ST7. The two settings pages show the same options in different groups and orders, and VS Code's is one
-alphabetical list with code values.** `apps/vscode/package.json:1133-1246` is one configuration object with no `order`,
-so VS Code sorts its 11 keys alphabetically with `piwi.serverUrl` ninth, shows `error` and `key` in its dropdowns and
-titles one key 'Mcp Authorization'. `PiwiConfigurable.kt:47-206` binds 12 controls in five groups, words its choices and
-checks the URL. Each side has options the other lacks, and the words are written three times,
-`apps/vscode/walkthrough/settings.md` included. A team using both editors cannot describe one setup. **(seen, counted)**
-Fix: [LI11](#li11)'s settings registry, VS Code's choices labeled with `enumItemLabels`, keys unchanged and grouped as
-the last column below. ([M10](#m10), [LI11](#li11))
-
-Place is the position on the page today. VS Code's window scope is per user and overridable by a workspace file
-([ST12](#st12)); JetBrains keeps the URL and project in `piwi.xml`, the rest in `workspace.xml`.
-
-| Option | VS Code key (place), scope | JetBrains group (place), file | Proposed group |
-|---|---|---|---|
-| The desktop app first, and its project | Connect's choice, `workspaceState` | Piwi Desktop App (3, 4), workspace | Connection |
-| Instance URL | `piwi.serverUrl` (9), window | Instance (1), `piwi.xml` | Connection |
-| Project | `piwi.project` (4), window | Instance (2), `piwi.xml` | Connection |
-| API key | secret storage, no row | Instance, a label; password safe | Connection |
-| Connection in use | the status tooltip only | In use (first), with Reconnect | Connection, first |
-| Failure severity | `piwi.failureSeverity` (2), window | Runs (6), workspace | Editor |
-| Lenses, gutter icons, locator warnings, tint | none ([ST8](#st8)) | none; Code Vision's Piwi entry, all or none | Editor |
-| Coverage marks | a command, `workspaceState` | a toggle action, workspace | Editor |
-| Run notifications | `piwi.runNotifications` (7), window | Runs (5), workspace | Runs |
-| Breakpoints | `piwi.breakpoints` (1), window | Runs (7), workspace | Runs |
-| Every run headed | `piwi.runHeaded` (5), window | Runs (8), workspace | Runs |
-| Hold failures from each run's start | `piwi.runHoldFailures` (6), window | Runs (9), workspace | Runs |
-| Piwi's tests in the Testing view | `piwi.testExplorer` (10), window | none | Runs |
-| The IDE's Playwright runner | none | Runs (10), workspace | Runs |
-| MCP sign-in | `piwi.mcpAuthorization` (3), application | AI Assistant (11), workspace | Agents |
-| Serve the runs to agents | `piwi.serveRunsToAgents` (8), window | AI Assistant (12), workspace | Agents |
-| The service's trace | `piwi.trace.server` (11), window | none ([developer-loop-audit.md](developer-loop-audit.md) P8) | Diagnostics |
-
-<a id="st8"></a>**ST8. Neither client can turn off Piwi's gutter icons, locator warnings or failing-test tint on their
-own, VS Code its lenses only with every other extension's, and a spec carries a lens over nearly every locator line.**
-The service emits a lens for each locator line of test code, specs included (`packages/editor/src/server.ts:3083-3095`),
-so a 29-line spec in VS Code shows a file lens, a '1 test · click' lens over most locator lines and two failure lenses,
-and only `editor.codeLens`, which hides every extension's lenses, turns them off. Of the display options
-`EditorCredentials` carries only `failureSeverity` (`packages/editor/src/protocol.ts:543-574`), and coverage marks are a
-per-workspace command and a JetBrains toggle. **(seen)** Fix: before D25 freezes the keys, `piwi.codeLens` (all,
-problems, off), `piwi.gutterIcons`, `piwi.coverageMarks`, `piwi.locatorWarnings` and `piwi.failingTestTint`, which the
-service reads from the credentials to filter lenses and diagnostics once for both clients, dropping a spec's lens whose
-only test is the one around it; JetBrains shows the five in its Editor group ([TL4](#tl4)). ([M10](#m10), [LI11](#li11))
-
-<a id="st12"></a>**ST12. The scopes differ: every JetBrains choice is per project, VS Code's are per user, and a
-committed `.vscode/settings.json` can override a personal choice.** JetBrains keeps all but the URL and project in
-`workspace.xml` (`PiwiProjectService.kt:94-115`); VS Code gives every key the window scope but `piwi.mcpAuthorization`,
-which is application (`apps/vscode/package.json:1205-1207`). A JetBrains developer with ten projects picks 'A warning'
-ten times, and a repository that commits `piwi.breakpoints` set to false turns breakpoints off for every VS Code user
-and for no JetBrains user. **(read)** Fix: each option's scope set once in the registry, team (URL, project, perhaps
-`failureSeverity`), user or machine (the desktop app); VS Code's personal keys scoped `application` or `machine`; a
-JetBrains Defaults page at the application level, each project showing 'Default (…)' or its override. ([M10](#m10),
-[LI11](#li11))
-
-<a id="st13"></a>**ST13. The settings page says 'Kept for you only, in .idea/workspace.xml' nine times and names paths
-that do not exist in Rider.** The sentence closes nine comments
-(`PiwiConfigurable.kt:107, 125, 135, 143, 151, 163, 173, 188, 197-198`), and in Rider both files sit under
-`.idea/.idea.<Name>/.idea/` (`Glue.projectFolder`). **(read)** Fix: one comment per storage group, its path computed
-from the project's store directory. ([M10](#m10), [LI11](#li11))
-
-<a id="st15"></a>**ST15. Neither the JetBrains settings page nor its Connect dialogs link to the documentation, and the
-Settings dialog's help button gives nothing for Piwi.** `PiwiConfigurable.kt:34` sets no help topic and no
-`webHelpProvider` is registered; VS Code's descriptions link nowhere, and the docs have no editor settings table.
-**(read)** Fix: a `WebHelpProvider`, a Documentation link per group, the same anchors in VS Code, and a settings section
-generated from the registry. ([M10](#m10), [LI11](#li11))
+Built with [M10](#m10): one settings registry, both pages grouped by it, each option scoped once, and the Editor
+settings page it links. The Status says how.
 
 ### 6.3 Connecting
 
@@ -870,7 +808,6 @@ What differs is RD3, RD4, RD7 and RD8 below and three findings filed elsewhere:
 |---|---|
 | Piwi's chords collide in the Visual Studio, VS 2022, ReSharper and Visual Assist keymaps | [AC12](#ac12), §4.5 |
 | Nothing from Piwi in the Solution Explorer or the Tests menu | [AC3](#ac3), §4.1 |
-| The settings page names `.idea` paths Rider does not use | [ST13](#st13), §6.2 |
 
 <a id="rd3"></a>**RD3. Specs beside a Rider solution, a layout the plugin's config search supports, may get no
 highlighting in Rider, and nothing offers to attach their folder.** `Glue.findPlaywright` searches the Git repository
@@ -1250,7 +1187,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`SummaryLine.actions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
-| <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8), [NF3](#nf3) |
+| <a id="m10"></a>M10 | **The start options in one shape in both editors**; the settings registry, its grouped pages, the display switches and the scopes are built (Status) | `ide` | [NF3](#nf3) |
 | <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state, a stop that waits for the person shown in it until answered | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18), [HM17](#hm17) |
@@ -1313,7 +1250,7 @@ whether M14's places are interim.
 10. **A CI run on the status line**: the study puts the developer's own run first (P5) and lists CI runs of the branch
     read-only (P10). Does a CI run ever take the line while none of the developer's own is live?
 11. **Team or personal settings**: which does a team share (`failureSeverity` in particular)? The new switches go into
-    D25 before 1.0, and the service filters by them ([ST8](#st8), [LI11](#li11)).
+    D25 before 1.0, and the service filters by them ([LI11](#li11)).
 12. **JetBrains' Get Started tab**: opened once per installation, as SonarQube for IDE's welcome is ([ST1](#st1)'s
     lean), or only from Tools → Piwi and the first-run balloon, keeping
     [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8's lighter touch?
@@ -1384,8 +1321,8 @@ the lines while a CI run of the branch runs cannot be turned off (`apps/vscode/s
 `PiwiCiRuns.kt:196-209`). VS Code's Run options… writes a choice into `.vscode/settings.json` whenever that file already
 sets the key, since its value would win (`apps/vscode/src/glue.ts:1836-1838`), so one person's choice becomes the
 team's, where JetBrains keeps both per person. Waiting for a project's trust offers no action and does not say how to
-trust it (`Glue.kt:385, 473`, `PiwiProjectService.kt:261-264`). **(read)** Fix: a CI-positions switch in [ST8](#st8)'s
-set, the run options scoped per person ([ST12](#st12)), and the IDE's trust action named. ([M10](#m10), [Q27](#q27))
+trust it (`Glue.kt:385, 473`, `PiwiProjectService.kt:261-264`). **(read)** Fix: a CI-positions switch with the other
+display switches, the run options scoped per person, and the IDE's trust action named. ([M10](#m10), [Q27](#q27))
 
 <a id="nf9"></a>**NF9. Two drifts: Re-run Failing and Run This Spec's wording.** `failuresView(states,
 answer.items.length > 0)` (`packages/editor/src/server.ts:1317`) keeps Re-run Failing enabled in both editors when only

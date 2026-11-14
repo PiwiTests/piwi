@@ -281,7 +281,6 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
-/** Whether the coverage marks are shown (the default) or hidden with Show or hide the coverage marks: workspace state. */
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -529,8 +528,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone,
-  // and a flaky test, which the view shows as passed, says so after its line.
+  // While the Testing view lists Piwi's tests, its gutter shows their results; with it or with `piwi.gutterIcons` off,
+  // the test's line keeps the hover alone, and a flaky test, which no Piwi icon marks, says so after its line.
   const testHover = vscode.window.createTextEditorDecorationType({});
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
@@ -570,7 +569,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       editor.setDecorations(testHover, icons ? [] : hovered(tests));
       editor.setDecorations(
         flakyMark,
-        explorer
+        !icons
           ? tests
               .filter((t) => t.status === 'flaky' && t.line < document.lineCount)
               .map((t) => document.lineAt(t.line).range)

@@ -2317,12 +2317,19 @@ class GlueTest {
     }
 
     @Test
-    fun `the project's settings folder, as the settings page names it`() {
-        assertEquals(".idea", Glue.storeFolder("/home/me/shop/.idea/misc.xml"))
-        assertEquals(".idea/.idea.Shop/.idea", Glue.storeFolder("/home/me/Shop/.idea/.idea.Shop/.idea/misc.xml"))
-        assertEquals(".idea/.idea.Shop/.idea", Glue.storeFolder("C:\\src\\Shop\\.idea\\.idea.Shop\\.idea\\misc.xml"))
-        assertEquals(".idea", Glue.storeFolder(null))
-        assertEquals(".idea", Glue.storeFolder("/home/me/shop.ipr"))
+    fun `the project's settings files, as the settings page names them`() {
+        assertEquals(Glue.StoreFiles(".idea/piwi.xml", ".idea/workspace.xml"), Glue.storeFiles("/home/me/shop/.idea/misc.xml"))
+        assertEquals(
+            Glue.StoreFiles(".idea/.idea.Shop/.idea/piwi.xml", ".idea/.idea.Shop/.idea/workspace.xml"),
+            Glue.storeFiles("/home/me/Shop/.idea/.idea.Shop/.idea/misc.xml"),
+        )
+        assertEquals(
+            Glue.StoreFiles(".idea/.idea.Shop/.idea/piwi.xml", ".idea/.idea.Shop/.idea/workspace.xml"),
+            Glue.storeFiles("C:\\src\\Shop\\.idea\\.idea.Shop\\.idea\\misc.xml"),
+        )
+        assertEquals(Glue.StoreFiles(".idea/piwi.xml", ".idea/workspace.xml"), Glue.storeFiles(null))
+        // A project of one file keeps every setting in it and its workspace file.
+        assertEquals(Glue.StoreFiles("shop.ipr", "shop.iws"), Glue.storeFiles("/home/me/shop.ipr"))
     }
 
     @Test

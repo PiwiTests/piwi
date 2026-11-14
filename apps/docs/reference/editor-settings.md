@@ -6,8 +6,10 @@ lang: en-US
 
 # Editor settings
 
-Both editors show the same options in the same five groups: VS Code in its settings editor (search `piwi.`), and
-**Settings → Tools → Piwi** in a JetBrains IDE, whose help button and **Documentation** links open this page. A row that names one editor is that editor's alone.
+Both editors group their options as this page does: VS Code in its settings editor (search `piwi.`), and
+**Settings → Tools → Piwi** in a JetBrains IDE, whose help button and **Documentation** links open this page. A row that
+names one editor is that editor's alone; the JetBrains page has no Advanced group, and opens with the connection in use
+and a group for the desktop app.
 
 Each option is one of three kinds:
 
@@ -27,6 +29,8 @@ In Rider, a project's `.idea` files sit under `.idea/.idea.<Name>/.idea/`, as th
 |---|---|---|---|
 | `piwi.serverUrl` | The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first, then this, then the desktop app while it runs: [Editor connection](/features/editor-connection) | none | The team's |
 | `piwi.project` | The project's name or id on the instance | none | The team's |
+| JetBrains: **Read this project from the desktop app while it runs** | Whether the desktop app comes first while it runs; VS Code chooses it with **Piwi: Connect…** | off | Yours, which a project may set |
+| JetBrains: **Desktop app project** | The project's name in the desktop app; empty uses the one linked there to this folder | none | Yours, which a project may set |
 
 The API key is kept in the editor's secret storage (VS Code) or the IDE's password safe, for its instance alone, and
 the choice of the desktop app on this machine only.
@@ -35,9 +39,9 @@ the choice of the desktop app on this machine only.
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.runNotifications` | When a run ends, whether a notification says what it changed: always, only when something fails, or never | when something fails | Yours |
-| `piwi.runNotificationsScope` | The runs it says it for: the runs started here, or also the branch's CI runs | also CI runs | Yours |
-| `piwi.statusBarAlert` | When the status bar item turns red: for a new failure a run started here caused, for any failing test, or never | a new failure | Yours |
+| `piwi.runNotifications` | When a run ends, whether a notification says what it changed: always, only when something fails, or never | Say what it changed when something fails | Yours |
+| `piwi.runNotificationsScope` | The runs it says it for: the runs started here, or also the branch's CI runs | The runs started here and the branch's CI runs | Yours |
+| `piwi.statusBarAlert` | When the status bar item turns red: for a new failure a run started here caused, for any failing test, or never | For a new failure a run started here caused | Yours |
 | `piwi.breakpoints` | Whether the runs Piwi starts pause at the editor's breakpoints: [Editor breakpoints](/features/editor-breakpoints) | on | Yours |
 | `piwi.runHeaded` | Whether every run Piwi starts runs headed, its browser window shown | off | Yours |
 | `piwi.runHoldFailures` | [Hold failures](/features/watch-a-run) from each run's start: Auto, On or Off | Auto | Yours |
@@ -48,19 +52,19 @@ the choice of the desktop app on this machine only.
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.codeLens` | The lines Piwi writes above the code: every line, a failure's and an uncovered change's alone, or none. A test's gutter mark stays | every line | Yours |
-| `piwi.gutterIcons` | VS Code: each test's latest result in the gutter; off, its line keeps the hover. A JetBrains IDE switches it under **Settings → Editor → General → Gutter Icons → Piwi** | on | Yours |
+| `piwi.codeLens` | The lines Piwi writes above the code: every line, a failure's and an uncovered change's alone, or none. A test's gutter mark stays | Every line | Yours |
+| `piwi.gutterIcons` | VS Code: each test's latest result in the gutter; off, its line keeps the hover. A JetBrains IDE switches it under **Settings → Editor → General → Gutter Icons → Piwi test results** | on | Yours |
 | `piwi.coverageMarks` | The coverage marks at the left of the lines: [Editor coverage](/features/editor-coverage) | on | Yours |
-| `piwi.failureSeverity` | How a failure shows at its line: an error, a warning, information (a weak warning in a JetBrains IDE), or nothing in the problems | an error | Yours, which a project may set |
+| `piwi.failureSeverity` | How a failure shows at its line: an error, a warning, information (a weak warning in a JetBrains IDE), or nothing in the problems | An error | Yours, which a project may set |
 | `piwi.locatorWarnings` | Whether a locator the [locator stability rules](/reference/locator-stability) find brittle is warned at, with its stable alternative as a quick fix | on | Yours |
-| `piwi.failingTestTint` | Whether a failing test and the line it failed at are tinted; the gutter still marks them | on | Yours |
+| `piwi.failingTestTint` | Whether a failing test and the line it failed at are tinted; the gutter still marks them, unless `piwi.gutterIcons` is off | on | Yours |
 | `piwi.ciPositions` | Whether a CI run of the branch shows where it stands, at the end of each line: [Editor CI runs](/features/editor-ci-runs) | on | Yours |
 
 ## Agents (MCP)
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.mcpAuthorization` | How the agent signs in to Piwi's MCP server: with the editor's API key, or a sign-in in the browser | the API key | Yours |
+| `piwi.mcpAuthorization` | How the agent signs in to Piwi's MCP server: with the editor's API key, or a sign-in in the browser | The editor's API key | Yours |
 | `piwi.serveRunsToAgents` | Whether the test runs started here are served to the agents of this machine, as an MCP server on `127.0.0.1` | on | Yours, which a project may set |
 
 ## Advanced
@@ -68,7 +72,7 @@ the choice of the desktop app on this machine only.
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
 | `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid; remove one to see it again | none | Yours |
-| `piwi.trace.server` | VS Code: whether the traffic with the editor service is traced in the Piwi output channel | off | Yours |
+| `piwi.trace.server` | VS Code: whether the traffic with the editor service is traced in the Piwi output channel | Off | Yours |
 
 ## Related
 

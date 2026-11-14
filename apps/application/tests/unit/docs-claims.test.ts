@@ -19,7 +19,12 @@ import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { piwiActionTitle } from '../../../../packages/editor/src/analysis';
-import { EDITOR_SETTINGS, SETTING_GROUPS, settingsDocsUrl } from '../../../../packages/editor/src/settings';
+import {
+  choiceLabel,
+  EDITOR_SETTINGS,
+  SETTING_GROUPS,
+  settingsDocsUrl,
+} from '../../../../packages/editor/src/settings';
 import { headingAnchor } from '../../../docs/.vitepress/navigation';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
 
@@ -364,7 +369,17 @@ describe('quoted editor commands', () => {
     ).toEqual([]);
   });
 
-  test('the Editor settings page names every VS Code setting under its group, at the address the editors link', () => {
+  // The Editor settings page says each option's default as VS Code shows it, and its scope as a kind.
+  const KIND_WORDS = { team: "The team's", project: 'Yours, which a project may set', user: 'Yours' } as const;
+  const defaultWords = (setting: (typeof EDITOR_SETTINGS)[number]) => {
+    const value = setting.default;
+    if (typeof value === 'boolean') return value ? 'on' : 'off';
+    if (value === '' || (Array.isArray(value) && value.length === 0)) return 'none';
+    const choice = setting.choices?.find((c) => c.value === value);
+    return choice ? choiceLabel(choice, 'vscode') : `\`${String(value)}\``;
+  };
+
+  test('the Editor settings page names every VS Code setting under its group, with its default and kind,, at the address the editors link', () => {
     const page = read('apps/docs/reference/editor-settings.md');
     const sections = new Map(
       page
@@ -378,9 +393,15 @@ describe('quoted editor commands', () => {
       expect(settingsDocsUrl(group.id)).toBe(
         `https://piwitests.dev/reference/editor-settings#${headingAnchor(group.title)}`,
       );
-      const named = new Set([...section!.matchAll(/^\| `(piwi\.[^`]+)`/gm)].map((m) => m[1]));
-      const keys = EDITOR_SETTINGS.filter((s) => s.group === group.id && s.key !== null).map((s) => s.key);
-      expect([...named], `the ${group.title} rows of apps/docs/reference/editor-settings.md`).toEqual(keys);
+      const rows = [...section!.matchAll(/^\| `(piwi\.[^`]+)` \|.*\| ([^|]+) \| ([^|]+) \|$/gm)].map((m) => [
+        m[1],
+        m[2],
+        m[3],
+      ]);
+      const registered = EDITOR_SETTINGS.filter((s) => s.group === group.id && s.key !== null);
+      expect(rows, `the ${group.title} rows of apps/docs/reference/editor-settings.md: key, default, kind`).toEqual(
+        registered.map((s) => [s.key, defaultWords(s), KIND_WORDS[s.scope]]),
+      );
     }
   });
 

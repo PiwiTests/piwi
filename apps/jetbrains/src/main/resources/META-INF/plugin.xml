@@ -146,7 +146,7 @@
                     <synonym text="Rerun failed tests"/>
                 </action>
                 <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
-                        description="Run every test Piwi starts in this project headed, with its browser window shown"/>
+                        description="Run every test Piwi starts headed, in every project, with its browser window shown"/>
                 <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
                         text="Hold failures from each run's start…"
                         icon="AllIcons.Debugger.Db_exception_breakpoint"

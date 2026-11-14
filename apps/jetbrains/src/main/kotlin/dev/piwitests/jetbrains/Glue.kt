@@ -135,15 +135,24 @@ object Glue {
         return path.substring(0, idea.range.first).ifEmpty { "/" }
     }
 
+    /** Where a project keeps the settings the team can share, and the ones kept for the person alone. */
+    data class StoreFiles(val shared: String, val workspace: String)
+
     /**
-     * The folder of a project's settings files, relative to the folder holding the project (`projectFolder`), from the
-     * path of its project file (`Project.projectFilePath`, `<folder>/misc.xml`): `.idea`, or Rider's
-     * `.idea/.idea.<name>/.idea`.
+     * A project's settings files, from the path of its project file (`Project.projectFilePath`): `piwi.xml` and
+     * `workspace.xml` in `.idea`, or in Rider's `.idea/.idea.<name>/.idea`, relative to the folder holding the project
+     * (`projectFolder`); a project of one `.ipr` file keeps them in it and its `.iws`.
      */
-    fun storeFolder(projectFilePath: String?): String {
-        val folder = projectFilePath?.replace('\\', '/')?.substringBeforeLast('/', "") ?: return ".idea"
-        if (!Regex("/\\.idea(/|$)").containsMatchIn(folder)) return ".idea"
-        return folder.removePrefix(projectFolder(folder)).trim('/').ifEmpty { ".idea" }
+    fun storeFiles(projectFilePath: String?): StoreFiles {
+        val path = projectFilePath?.replace('\\', '/') ?: return StoreFiles(".idea/piwi.xml", ".idea/workspace.xml")
+        if (path.endsWith(".ipr")) {
+            val name = path.substringAfterLast('/')
+            return StoreFiles(name, name.removeSuffix(".ipr") + ".iws")
+        }
+        val folder = path.substringBeforeLast('/', "")
+        val relative = if (Regex("/\\.idea(/|$)").containsMatchIn(folder)) folder.removePrefix(projectFolder(folder)).trim('/') else ""
+        val store = relative.ifEmpty { ".idea" }
+        return StoreFiles("$store/piwi.xml", "$store/workspace.xml")
     }
 
     /**

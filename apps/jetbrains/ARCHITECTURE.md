@@ -1063,8 +1063,9 @@ The settings registry's scope says where an option goes: `team` in `PiwiSettings
 (`GlueTest` checks each). `PiwiLocalSettings` also holds the choice of the desktop app and its project, a recording's
 choices, the failures' grouping, the baselines and the port the runs were last served to agents at. A change of a
 person's own option, from the settings page or an action, is handed and drawn again in every open project
-(`PiwiUserSettings.changed`, `PiwiProjectService.userSettingsChanged`). In Rider, the project's files sit under
-`.idea/.idea.<Name>/.idea/`, as the settings page's comments say (`Glue.storeFolder`). Each group of the page opens with one comment
+(`PiwiUserSettings.changed`, `PiwiProjectService.userSettingsChanged`), also when the IDE reads its settings again
+(Settings Sync, Import Settings); a project whose service is not running is not started for it. In Rider, the project's files sit under
+`.idea/.idea.<Name>/.idea/`, as the settings page's comments say, and a project of one `.ipr` file keeps them in it and its `.iws` (`Glue.storeFiles`). Each group of the page opens with one comment
 saying where its options are kept and a **Documentation** link to its section of the docs' Editor settings page
 (`SettingsWords.docsUrl`); the page's help button opens that page (`PiwiHelp`, a `webHelpProvider`). The runs' MCP server's token is in the `PasswordSafe`.
 

@@ -2,8 +2,8 @@ package dev.piwitests.jetbrains
 
 /**
  * The settings registry's words, restating the editor service's `settings.json`, which `GlueTest` holds this copy to:
- * the groups of the settings page, by their id, and the labels of each option's choices, by its field in
- * `PiwiLocalSettings`.
+ * the groups of the settings page, by their id, and the labels of each option's choices, by its field (in
+ * `PiwiUserSettings` or `PiwiLocalSettings`, as its scope says).
  */
 object SettingsWords {
     val GROUPS: Map<String, String> = linkedMapOf(
