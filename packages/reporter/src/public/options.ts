@@ -375,8 +375,8 @@ export interface PiwiDashboardOptions {
    * events are shed first — live step progress, then per-test `begin` markers,
    * and only as a last resort test results (the final counts and the end-of-run
    * batch submit stay complete regardless). Defaults to `104857600` (100 MB).
-   * Set to `0` to disable the cap (unbounded, the pre-`0.28` behavior). Can also
-   * be set with `PIWI_MAX_STREAM_BUFFER_BYTES`.
+   * Set to `0` to disable the cap (unbounded). Can also be set with
+   * `PIWI_MAX_STREAM_BUFFER_BYTES`.
    */
   maxStreamBufferBytes?: number;
 

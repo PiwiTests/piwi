@@ -441,7 +441,7 @@ export const HELP_TOPICS = {
   },
   'project.timeline': {
     title: 'Timeline markers',
-    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are detected automatically when tooling versions change between runs.',
+    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
     doc: 'features/timeline-markers',
     envVars: ['PIWI_AUTO_MARKERS'],
   },

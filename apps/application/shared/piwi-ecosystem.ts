@@ -331,7 +331,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       { option: 'No token', when: 'History, clusters, flaky scores and locator healing are unaffected.' },
       {
         option: 'A GitHub, GitLab or Bitbucket token',
-        when: 'Set instance-wide (Settings → Source control) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments and commit statuses (GitHub, GitLab) and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), both with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
+        when: 'Set instance-wide (Settings → Source control) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments, commit statuses and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
       },
     ],
     doc: 'guide/source-control',

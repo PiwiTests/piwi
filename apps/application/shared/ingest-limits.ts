@@ -5,7 +5,8 @@
  * failure-cluster sample error — a different concern from the AI context
  * limits (`PIWI_AI_MAX_*`, `shared/ai-context-limits.ts`), which bound what
  * enters a diagnosis prompt. Storage defaults sit at or above the AI-limit
- * maxima so the AI limits remain the binding constraint for prompts.
+ * defaults, so at their defaults the AI limits remain the binding constraint
+ * for prompts.
  *
  * Overridable per deployment via `PIWI_INGEST_MAX_*` environment variables
  * only (no settings UI — see `server/utils/ingest-limits.ts`).

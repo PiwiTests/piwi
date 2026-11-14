@@ -48,10 +48,15 @@ Reading markers is available to anyone who can read the project. Creating, editi
 
 Piwi can create markers for you when a run's tooling changes. On each finished run it compares the run against the previous run **in the same environment** and, when the **Playwright version** or **reporter version** changed, adds an `auto` marker (category `config`) at that run's time — for example _Playwright 1.49.0 → 1.50.0_. Auto markers are labeled with a small sparkle icon and can be edited or deleted like any other.
 
+When a run's [environment](./run-environment) differs from the previous run on the same branch and in the same
+environment, it gets one `auto` marker per kind of change, labeled with the fields that changed: its runner or a
+browser (category `infra`), or a server under test (category `config`). A kind either run did not record counts as no
+change. A project that declines the Timeline markers [capability](/operate/capabilities) gets none of these.
+
 A run flagged as an [environment incident](./environment-incidents) gets an `auto` marker in the `incident`
 category, linked to the run.
 
-This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn both off. See the [configuration reference](/reference/configuration).
+This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn all three off. See the [configuration reference](/reference/configuration).
 
 ## Release markers keep their run
 

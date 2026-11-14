@@ -145,7 +145,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       },
       {
         title: 'Import past runs',
-        summary: 'Backfill history from existing Playwright JSON/blob reports so trends start with a past, not empty.',
+        summary:
+          'Backfill history from existing Playwright blob reports or trace files so trends start with a past, not empty.',
         needs: ['admin'],
         where: 'project page → Import; ingest API',
         doc: 'guide/importing-runs',
