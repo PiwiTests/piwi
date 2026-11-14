@@ -83,14 +83,25 @@ export async function useProjectCapabilities(projectId: number) {
 }
 
 /**
- * Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads, once the app
- * has hydrated: a page's own read is the one its first render waits for. Renders nothing.
+ * Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads. Renders nothing.
+ *
+ * After a navigation in the browser it reads at once, and the page that needs the states joins that read. While the
+ * app hydrates it reads nothing the server render already holds, and what the server does not hold it reads once the
+ * app is ready, so the page's first render never waits for it.
  */
 const ProjectCapabilitiesRead = defineComponent({
   props: { projectId: { type: Number, required: true } },
   setup(props) {
-    const { execute } = useProjectCapabilityStates(props.projectId, { lazy: true, server: false, immediate: false });
-    onNuxtReady(() => execute());
+    const nuxtApp = useNuxtApp();
+    const hydrating = Boolean(nuxtApp.isHydrating);
+    const { execute } = useProjectCapabilityStates(props.projectId, {
+      lazy: true,
+      server: false,
+      immediate: !hydrating,
+    });
+    if (hydrating && nuxtApp.payload.data[projectCapabilitiesKey(props.projectId)] === undefined) {
+      onNuxtReady(() => execute());
+    }
     return () => null;
   },
 });
