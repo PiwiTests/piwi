@@ -9,13 +9,14 @@
  * fresh database and the dataset is written into it (`lib/dataset.mjs`), then
  * every target runs as its own server on a copy, signed in as an
  * administrator, so a newer build migrates the copy the way an upgrade would.
- * On PostgreSQL each copy is settled once its build's startup work is done:
- * autovacuum off on every table, vacuumed, and analyzed reading every row
- * (`settleDatabase` in `lib/pg.mjs`). For each page it measures the server
- * render over HTTP and the full load in Chromium, then replays every API call
- * the pages made. On PostgreSQL every
- * request's SQL is read from `pg_stat_statements`; a last pass with
- * OpenTelemetry on lists the SQL each request ran, on builds that trace.
+ * On PostgreSQL the seed is analyzed once with autovacuum off on its tables,
+ * and every copy inherits both; once each build's first start has done its
+ * startup work, the tables it wrote to on its copy are analyzed again reading
+ * every row (`settleSeed`, `settleCopy` in `lib/pg.mjs`). For each page it
+ * measures the server render over HTTP and the full load in Chromium, then
+ * replays every API call the pages made. On PostgreSQL every request's SQL is
+ * read from `pg_stat_statements`; a last pass with OpenTelemetry on lists the
+ * SQL each request ran, on builds that trace.
  *
  * The measuring rounds are split into sessions (`--sessions`, 2 by default):
  * each starts every target's server afresh, loads every page once in the
@@ -63,8 +64,9 @@ import {
   redact,
   statementDelta,
   statementSnapshot,
-  settleDatabase,
-  FULL_SAMPLE_ROWS,
+  settleCopy,
+  settleSeed,
+  waitForDisconnect,
 } from './lib/pg.mjs';
 import { startOtlpReceiver } from './lib/otlp-receiver.mjs';
 import { fetchTimed, loadPage, signedInContext } from './lib/measure.mjs';
@@ -181,6 +183,7 @@ async function prepareSeed() {
     scale: opts.scale,
     dialect,
     build: buildStamp(reference.outputDir),
+    settled: dialect === 'postgres',
   });
   const keyPath = join(workDir, `seed-${dialect}.json`);
   const seedDb =
@@ -249,6 +252,7 @@ async function prepareSeed() {
     await server.stop();
   }
   if (dialect === 'sqlite') await checkpointSqlite(seedDb.path);
+  else await settleSeed(opts['pg-url'], pgDatabase('seed'));
   writeFileSync(keyPath, JSON.stringify({ key: seedKey, manifest, createdAt: new Date().toISOString() }, null, 2));
   log(`  seed ready in ${Math.round((Date.now() - started) / 1000)} s`);
   return manifest;
@@ -340,11 +344,8 @@ function typicalSql(deltas) {
   return { source: 'pg_stat_statements', statements: d.statements, ms: d.ms, queries: d.queries, nested: [] };
 }
 
-/**
- * Start every target and wait until its startup work is done. With `settle`, each target's PostgreSQL database is
- * then settled (`settleDatabase`): the same data gets the same planner statistics, which hold until the run ends.
- */
-async function startTargets({ otel, settle = false }) {
+/** Start every target, wait until its startup work is done, and sign in. */
+async function startTargets({ otel }) {
   const servers = [];
   for (const target of targets) {
     const server = await startServer({
@@ -363,17 +364,6 @@ async function startTargets({ otel, settle = false }) {
       waitForIdle(s, { activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase(s.name)) : null, log }),
     ),
   );
-  if (settle && pg) {
-    for (const s of servers) {
-      const started = Date.now();
-      const largest = await settleDatabase(opts['pg-url'], pgDatabase(s.name));
-      log(`  ${s.name}: database vacuumed and analyzed in ${Math.round((Date.now() - started) / 1000)} s`);
-      if (largest && largest.rows > FULL_SAMPLE_ROWS)
-        log(
-          `  ${s.name}: ${largest.name} holds ${largest.rows} rows, past the ${FULL_SAMPLE_ROWS} ANALYZE reads whole`,
-        );
-    }
-  }
   for (const s of servers) await signIn(s);
   return Object.fromEntries(servers.map((s) => [s.name, s]));
 }
@@ -449,11 +439,29 @@ async function main() {
     }
   };
   const perSession = (total) => total / samples.sessions;
+  const listed = new Set();
+  const unmeasured = new Set();
+
+  // Each build's first start runs its migrations and startup work on its copy; on PostgreSQL the copy is then
+  // settled, with the server stopped so the cumulative statistics hold every write it made.
+  log('First start of every target…');
+  const firstStart = await startTargets({ otel: null });
+  await Promise.all(Object.values(firstStart).map((s) => s.stop()));
+  if (pg) {
+    for (const t of targets) {
+      await waitForDisconnect(pg.sql, pgDatabase(t.name));
+      const started = Date.now();
+      const analyzed = await settleCopy(opts['pg-url'], pgDatabase(t.name));
+      const tables = analyzed.map((a) => `${a.table} (${a.rows} rows, ${a.target ? `target ${a.target}` : 'sampled'})`);
+      log(
+        `  ${t.name}: copy settled in ${Math.round((Date.now() - started) / 1000)} s; analyzed again: ${tables.join(', ') || 'none'}`,
+      );
+    }
+  }
 
   for (let session = 0; session < samples.sessions; session++) {
     log(`Session ${session + 1} of ${samples.sessions}: starting the targets…`);
-    // The copies are settled once, after the startup work of each build's first start.
-    const servers = await startTargets({ otel: null, settle: session === 0 });
+    const servers = await startTargets({ otel: null });
     const contexts = {};
     try {
       if (browser) for (const t of targets) contexts[t.name] = await signedInContext(browser, servers[t.name]);
@@ -525,11 +533,13 @@ async function main() {
 
       // The API calls are the ones known once the first session's loads are done: every session measures that list.
       if (session > 0) {
-        const unlisted = [...discovered.keys()].filter((path) => !results.apis.some((api) => api.path === path));
+        const unlisted = [...discovered.keys()].filter((path) => !listed.has(path) && !unmeasured.has(path));
+        for (const path of unlisted) unmeasured.add(path);
         if (unlisted.length)
           log(`  API calls first made in session ${session + 1}, not measured: ${unlisted.join(', ')}`);
       } else {
-        results.apis = [...discovered.keys()]
+        for (const path of discovered.keys()) listed.add(path);
+        results.apis = [...listed]
           .sort((a, b) => a.localeCompare(b))
           .map((path) => ({
             path,

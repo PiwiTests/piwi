@@ -11,7 +11,7 @@ import { COMMENT_MARKER, renderComparison } from '../../scripts/perf/lib/markdow
 import { startOtlpReceiver, traceIdFromServerTiming } from '../../scripts/perf/lib/otlp-receiver.mjs';
 import { pageScenarios, shardPages } from '../../scripts/perf/lib/scenarios.mjs';
 import { mergeResults } from '../../scripts/perf/lib/merge.mjs';
-import { statementDelta } from '../../scripts/perf/lib/pg.mjs';
+import { fullReadTarget, MAX_STATISTICS_TARGET, statementDelta } from '../../scripts/perf/lib/pg.mjs';
 
 type Batch = { table: string; rows: Record<string, unknown>[] } | { manifest: { counts: Record<string, number> } };
 
@@ -178,9 +178,12 @@ describe('performance verdicts', () => {
   it('refuses a sample count that leaves a session without balanced rounds', () => {
     const run = (...args: string[]) => {
       try {
-        execFileSync(process.execPath, [new URL('../../scripts/perf/run.mjs', import.meta.url).pathname, ...args], {
-          stdio: 'pipe',
-        });
+        // `--database none` fails right after the sample counts are checked: no run starts.
+        execFileSync(
+          process.execPath,
+          [new URL('../../scripts/perf/run.mjs', import.meta.url).pathname, '--database', 'none', ...args],
+          { stdio: 'pipe', timeout: 20_000 },
+        );
         return '';
       } catch (error) {
         return String((error as { stderr: Buffer }).stderr);
@@ -325,7 +328,7 @@ describe('performance report', () => {
     expect(md).toContain('server render 100 ms → 217 ms (+117 %, p < 0.001, by session +100 % / +129 %)');
     expect(md).toContain('split into 2 sessions, each starting every server afresh after 2 warm-up rounds');
     expect(md).toContain('the median of every session, each on server processes of its own, grows past both floors');
-    expect(md).toContain('analyzed reading every row');
+    expect(md).toContain('the tables it wrote to on its copy were analyzed again reading every row');
   });
 
   it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {
@@ -493,6 +496,14 @@ describe('performance suite split across machines', () => {
 });
 
 describe('performance SQL counts', () => {
+  it('analyzes a table at the target that reads every row and block of it, never below the default', () => {
+    expect(fullReadTarget(1_000, 20, 100)).toBe(100);
+    expect(fullReadTarget(474_923, 12_000, 100)).toBe(1584);
+    expect(fullReadTarget(500, 40_000, 100)).toBe(134);
+    expect(fullReadTarget(300 * MAX_STATISTICS_TARGET, 10, 100)).toBe(MAX_STATISTICS_TARGET);
+    expect(fullReadTarget(300 * MAX_STATISTICS_TARGET + 1, 10, 100)).toBeNull();
+  });
+
   it('names each statement by its query id until its text is read', () => {
     const before = new Map([['7', { calls: 2, exec_ms: 1, rows: 2, blocks: 4 }]]);
     const after = new Map([

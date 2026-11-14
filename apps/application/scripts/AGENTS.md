@@ -73,9 +73,10 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 
 - **PostgreSQL must load `pg_stat_statements`** (`scripts/perf/lib/pg.mjs` has the `docker run` line); with it every
   request's statements are counted on any build.
-- **A copy's planner statistics are a function of its data alone.** After its build's first start,
-  `settleDatabase` (`scripts/perf/lib/pg.mjs`) turns autovacuum off on each table and analyzes every row of it
-  (statistics target 10,000, tables up to 3,000,000 rows); nothing else analyzes a copy during the measurement.
+- **Two copies holding the same data plan on the same statistics.** `settleSeed` (`scripts/perf/lib/pg.mjs`)
+  analyzes the seed once at the default target with autovacuum off on its tables, and the copies inherit both;
+  after each build's first start, with its server stopped, `settleCopy` analyzes only the tables it wrote to, at
+  `fullReadTarget` (every row read). Nothing else analyzes a copy during the measurement.
 - **A time is flagged only when every session shows the change** (`--sessions`, 2 by default; `compareMetric` in
   `scripts/perf/lib/compare.mjs`, held by `tests/unit/perf-suite.test.ts`). Each session restarts every server and
   measures each build first in half its rounds of each kind, so every sample count is a multiple of twice the

@@ -30,7 +30,7 @@ export function mode(values) {
 
 /**
  * The rounds `[from, to)` of `total` that session `session` (0-based) of `sessions` measures: a contiguous share,
- * the sizes differing by one at most. The suite measures by it and the comparison splits the samples by it.
+ * the sizes differing by one at most. `bySession` splits a run's samples by it.
  */
 export function sessionRange(total, session, sessions) {
   return [Math.round((session * total) / sessions), Math.round(((session + 1) * total) / sessions)];
