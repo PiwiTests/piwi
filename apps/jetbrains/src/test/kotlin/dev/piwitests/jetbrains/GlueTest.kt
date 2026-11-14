@@ -2271,6 +2271,20 @@ class GlueTest {
     }
 
     @Test
+    fun `the words both editors write are the editor service's, which VS Code reads`() {
+        val file = java.io.File("../../packages/editor/src/words.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val table = com.google.gson.Gson().fromJson(file.readText(), Map::class.java)
+        assertEquals(table, EditorWords.WORDS)
+        assertEquals(table.keys.toList(), EditorWords.WORDS.keys.toList())
+        // A stop's controls, its code actions and a worker read from the table, the caret for the cursor.
+        assertEquals("Run to the caret", Glue.StopControl.RUN_TO_CARET.label)
+        assertEquals("Assert region", Glue.StopAction.ASSERT_REGION.inlayLabel)
+        assertEquals("Worker 2", Glue.workerName(1))
+        assertEquals("Piwi decides: on with a breakpoint it can stop at or a page.pause(), off otherwise", Glue.holdFailuresLabel("auto"))
+    }
+
+    @Test
     fun `an instance on this machine is tried on every loopback address`() {
         assertEquals(
             listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),
@@ -2776,11 +2790,11 @@ class GlueTest {
     @Test
     fun `the banner says what the recording does and offers what applies`() {
         assertEquals(
-            Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Piwi: opening the browser", listOf(Glue.RecordingAction.STOP)),
             Glue.recordingBanner("starting", 0, edited = false, stopping = false, message = null),
         )
         assertEquals(
-            Glue.RecordingBanner("Piwi is recording what you do in the browser · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
+            Glue.RecordingBanner("Piwi: recording · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
             Glue.recordingBanner("recording", 1, edited = false, stopping = false, message = " "),
         )
         assertEquals(
@@ -2791,8 +2805,13 @@ class GlueTest {
             listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.KEEP_EDITS),
             Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).actions,
         )
+        // Edited, it says what Resume and Keep my edits do to the block, as VS Code's message does.
         assertEquals(
-            Glue.RecordingBanner("Piwi: stopping the recording…", emptyList()),
+            EditorWords.WORDS.getValue("recording.edited"),
+            Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).text,
+        )
+        assertEquals(
+            Glue.RecordingBanner("Piwi: stopping the recording", emptyList()),
             Glue.recordingBanner("recording", 3, edited = true, stopping = true, message = "ignored"),
         )
     }
@@ -3290,7 +3309,7 @@ class GlueTest {
         assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\"}", Gson().toJson(Glue.withRunStart(selection, false, "auto")))
         assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\",\"headed\":true,\"holdFailures\":false}", Gson().toJson(Glue.withRunStart(selection, true, "off")))
         assertEquals(listOf("auto", "on", "off"), Glue.HOLD_FAILURES_CHOICES)
-        assertEquals("Off from each run's start", Glue.holdFailuresLabel("off"))
+        assertEquals(EditorWords.WORDS.getValue("hold.off"), Glue.holdFailuresLabel("off"))
     }
 
     @Test

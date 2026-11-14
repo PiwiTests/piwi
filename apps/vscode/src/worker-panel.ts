@@ -50,6 +50,7 @@ import {
   type RunControlResult,
   type RunSession,
 } from '@piwitests/editor/protocol';
+import { editorWords } from '@piwitests/editor/words';
 import {
   actsOnPage,
   ciKey,
@@ -629,7 +630,7 @@ export function createWorkerPanel(
     async open(ref, slot) {
       if (!panel) panel = create();
       else panel.reveal(vscode.ViewColumn.Beside, true);
-      panel.title = `Piwi: ${workerName(slot).toLowerCase()}`;
+      panel.title = editorWords('worker.title', { n: slot + 1 });
       if (ciTarget || target?.ref !== ref || target.lane !== slot) {
         ciTarget = null;
         // Another slot's view turns Interact off.

@@ -44,6 +44,7 @@ import {
   type StopRecordingParams,
   type TestAtResult,
 } from '@piwitests/editor/protocol';
+import { editorWords } from '@piwitests/editor/words';
 import {
   DOCUMENT_PATTERN,
   RECORDED_ACTIONS,
@@ -366,15 +367,12 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     s.edited = true;
     refresh();
     if (s.state === 'starting' || s.state === 'recording') void send(s, 'pause');
-    const picked = await vscode.window.showInformationMessage(
-      'Piwi: you edited the recorded block, so the recording is paused. Resume writes the block again from the ' +
-        'recorded steps; Keep my edits stops the recording and keeps the code as it is.',
-      'Resume',
-      'Keep my edits',
-    );
+    const resumeWords = editorWords('recording.resume');
+    const keepWords = editorWords('recording.keep-edits');
+    const picked = await vscode.window.showInformationMessage(editorWords('recording.edited'), resumeWords, keepWords);
     if (s.finished || !s.edited) return;
-    if (picked === 'Resume') await resume(s.id);
-    else if (picked === 'Keep my edits') await stop(s.id);
+    if (picked === resumeWords) await resume(s.id);
+    else if (picked === keepWords) await stop(s.id);
   };
 
   /**
@@ -644,7 +642,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     if (already) {
       const choice = await vscode.window.showInformationMessage(
         'Piwi: this file is being recorded into already.',
-        'Stop',
+        editorWords('recording.stop'),
       );
       if (choice) await stop(already.id);
       return;

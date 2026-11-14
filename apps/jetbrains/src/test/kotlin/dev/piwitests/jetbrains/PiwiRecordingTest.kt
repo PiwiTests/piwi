@@ -145,11 +145,11 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
         send(update("s1", "", state = "starting"))
         assertEquals(original.replace("});", "\n});"), text())
-        assertEquals("Piwi: opening the browser to record into this file…", session.view.text)
+        assertEquals("Piwi: opening the browser", session.view.text)
 
         send(update("s1", "await page.getByRole('button', { name: 'Pay' }).click();"))
         assertEquals(original.replace("});", "  await page.getByRole('button', { name: 'Pay' }).click();\n});"), text())
-        assertEquals("Piwi is recording what you do in the browser · 1 step", session.view.text)
+        assertEquals("Piwi: recording · 1 step", session.view.text)
 
         val cartPage = "import { CartPage } from './pages/cart.page';"
         send(update("s1", "const cartPage = new CartPage(page);\nawait cartPage.pay();", importEdit = insertAt(1, "$cartPage\n")))
@@ -196,7 +196,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         myFixture.editor.caretModel.moveToOffset(text().length)
         recordings.stop(session)
         assertEquals(listOf("stop s1"), sent)
-        assertEquals("Piwi: stopping the recording…", session.view.text)
+        assertEquals("Piwi: stopping the recording", session.view.text)
         send(update("s1", code, state = "stopped"))
         assertNull(recordings.sessionFor(myFixture.file.virtualFile))
         assertNull(PiwiRecordingNotificationProvider().collectNotificationData(project, myFixture.file.virtualFile))
@@ -462,7 +462,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         val opening = "Opening Chromium with the options of the admin project."
         val session = recordings.register("s9", myFixture.editor, myFixture.file.virtualFile, "steps", RecordingPlacement(1, false, "  "), opening)
         assertSame(session, recordings.only())
-        assertEquals("Piwi: opening the browser to record into this file… · $opening", session.view.text)
+        assertEquals("Piwi: opening the browser · $opening", session.view.text)
         val actions = ActionManager.getInstance()
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
