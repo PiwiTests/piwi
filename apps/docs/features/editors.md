@@ -21,7 +21,7 @@ and draws differently.
 ## Install and connect
 
 **You need a Piwi instance:** the [desktop app](/features/desktop), `npx @piwitests/server` or the Docker image.
-Recording, runs by line, their pauses and steps need none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
 
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`

@@ -473,6 +473,11 @@ overview from the app: G1 holds its facts and leaves its prose.
 
 ## Left for later
 
+- **T8 is settled and not applied**: runs by line and their pauses and steps need no instance either, but the sentence
+  "Recording needs none" is held word for word on four listings (the editor page, the two store READMEs and the
+  plugin's description) by `editor-listings.test.ts`; it changes on all four together.
+- **Piwi Picker's own strings** send the reader to "the app's Setup page" for the pairing card, which is under
+  Settings → Desktop app (`apps/extension/public/_locales/en/messages.json`).
 - **Three rows are not settled**: C3.16 (whether "newly flaky" clears your change), D17 (whether a fine-grained
   GitHub token needs one more permission for the commit status: GitHub's documentation decides, not this code) and
   S16 (which dashboard Analytics opens on).

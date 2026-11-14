@@ -82,7 +82,7 @@ const isDesktop = useIsDesktop();
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
             <DocLink to="guide/getting-started#fast-path-one-command" class="text-sm">init</DocLink>
-            <DocLink to="guide/ci#blocking-a-merge" class="text-sm">gate</DocLink>
+            <DocLink to="features/merge-gate" class="text-sm">gate</DocLink>
             <DocLink to="features/test-selection" class="text-sm">run &amp; select</DocLink>
           </div>
         </div>

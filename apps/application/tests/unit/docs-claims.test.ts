@@ -31,9 +31,12 @@ const handWrittenPages = (function walk(dir: string): string[] {
   });
 })(join(repoRoot, 'apps/docs')).filter((page) => !isGeneratedDocsPage(page.slice('apps/docs/'.length, -'.md'.length)));
 
-/** What a reader reads of a page: no front matter, no code block, no inline code. */
+// An HTML or Vue tag with its attributes, and a character written as an entity.
+const MARKUP = /<\/?[a-zA-Z][^>]*>|&#?\w+;/g;
+
+/** What a reader reads of a page: no front matter, no code block, no inline code, no markup. */
 const proseOf = (page: string) =>
-  read(page).replace(FRONT_MATTER, '').replace(FENCED_CODE, ' ').replace(INLINE_CODE, ' ');
+  read(page).replace(FRONT_MATTER, '').replace(FENCED_CODE, ' ').replace(INLINE_CODE, ' ').replace(MARKUP, ' ');
 
 describe('counts in prose', () => {
   // A count copied into a sentence goes stale when its list grows. A number before one of COUNTED_NOUNS is
@@ -245,6 +248,7 @@ describe('recipes state no figure', () => {
       .replace(FENCED_CODE, ' ')
       .replace(INLINE_CODE, ' ')
       .replace(LINK_TARGET, ' ')
+      .replace(MARKUP, ' ')
       .replace(STEP_NUMBER, '$1')
       .split('\n')
       .filter((line) => /\d/.test(line))
@@ -294,7 +298,31 @@ describe('the privacy page lists every destination', () => {
       setBy: "the project's OpenAPI URL",
       calledBy: 'apps/application/server/utils/openapi-surface.ts',
     },
+    {
+      destination: 'Slack, Teams or your webhook URLs',
+      setBy: 'a notification channel',
+      calledBy: 'apps/application/server/utils/notifications/dispatch.ts',
+    },
+    {
+      destination: 'A URL you attach as a link',
+      setBy: 'a link added to a run, a test or a cluster',
+      calledBy: 'apps/application/server/utils/unfurl',
+    },
   ];
+
+  // A variable that takes an address either names the destination it points the server at, or is one of these: the
+  // server's own address, which it never calls.
+  const OWN_ADDRESS = ['PIWI_SITE_URL'];
+  const addresses = (Object.entries(PIWI_ENV_VARS) as [string, PiwiEnvVarMeta][]).filter(
+    ([name, meta]) => meta.type === 'url' && !OWN_ADDRESS.includes(name),
+  );
+
+  test.each(addresses)('%s, an address, names its destination', (name, meta) => {
+    expect(
+      meta.destination,
+      `${name} takes an address: give it the \`destination\` the table "${HEADING}" of ${PAGE} lists for the host it points the server at, or add it to OWN_ADDRESS when the server never calls it`,
+    ).toBeTruthy();
+  });
 
   test('the table and the marked variables are read', () => {
     expect(listed).toContain('Your AI provider');

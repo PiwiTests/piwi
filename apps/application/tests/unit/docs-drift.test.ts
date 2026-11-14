@@ -621,6 +621,15 @@ describe('docs site structure', () => {
     .map((entry) => entry.link)
     .filter((link) => link.startsWith('/'));
 
+  // The Guide and Features items of the top navigation leave the tool pages out of their match; the other items do
+  // not, so a tool's page lives under one of those two folders.
+  test.each(toolPages())('the tool page %s is under /features/ or /guide/', (toolPage) => {
+    expect(
+      toolPage,
+      `move the page under features/, or give its catalog entry to a group of the Features section`,
+    ).toMatch(/^\/(features|guide)\//);
+  });
+
   test.each(toolPages())('no page outside the Tools sidebar has a path starting with %s', (toolPage) => {
     expect(
       otherSidebarPages.filter((page) => page.startsWith(toolPage)),

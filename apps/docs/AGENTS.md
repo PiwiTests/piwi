@@ -114,7 +114,7 @@ which the drift test also reads.
 | Guide → Set up | `guide/` | "How do I connect my suite, my CI, and what a feature needs?" |
 | Guide → About Piwi | `guide/` | "What is this, and should I adopt it?" |
 | Features | `features/`, `recipes/` | "What does the dashboard do with my results?", grouped by catalog group |
-| Tools | `features/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents |
+| Tools | `features/`, `guide/` | "What does this tool I installed do?": the editor extensions, Piwi Picker, the desktop app, agents |
 | Self-hosting | `operate/` | "I run the server." |
 | Reference | `reference/` | "What are all the values?" |
 
@@ -242,7 +242,8 @@ descriptions and the word budgets; the prose bans (endpoints, MCP tool count, ch
 version" or "now supports", planned work); the hand-written reference pages and the _Live demo_ section of
 `features/ui-overview.md`; the recipes' links; the demo examples; the positioning line and the single-source snippets.
 `docs-page-meta.test.ts` checks that each page's description is at least 50 characters. `docs-claims.test.ts` checks
-counts, quoted editor commands, figures in recipes and the privacy page's destinations.
+counts, quoted editor commands, figures in recipes, the privacy page's destinations, the length of a `concepts.md`
+entry and the link from a page to the owner of a rule it names.
 
 The docs build itself fails only on a link to a missing page, so this test is what catches a heading that moved. It
 computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`); when you move a section, keep

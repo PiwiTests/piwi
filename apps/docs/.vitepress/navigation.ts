@@ -18,6 +18,8 @@ export interface SidebarItem {
   link?: string;
   /** The entries nested under this one, indented below it. */
   items?: SidebarItem[];
+  /** On a label: `false` shows its entries and lets the reader fold them. */
+  collapsed?: boolean;
 }
 
 export interface SidebarGroup {
@@ -121,7 +123,7 @@ export function featuresSidebar(): SidebarGroup[] {
  * One sidebar group per tool of the catalog. A group whose first entry carries
  * its title has that entry's page as its own: the heading links to it. The
  * entries that follow are links, and consecutive entries that share a `part`
- * sit under that part's label.
+ * sit under that part's label, which folds them.
  */
 export function toolsSidebar(): SidebarGroup[] {
   return PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools').map((group) => {
@@ -132,7 +134,7 @@ export function toolsSidebar(): SidebarGroup[] {
       const last = items.at(-1);
       if (!feature.part) items.push(entry);
       else if (last?.items && !last.link && last.text === feature.part) last.items.push(entry);
-      else items.push({ text: feature.part, items: [entry] });
+      else items.push({ text: feature.part, collapsed: false, items: [entry] });
     }
     return { text: group.title, ...(own ? { link: `/${own.doc}` } : {}), collapsed: true, items };
   });
@@ -145,37 +147,30 @@ export function toolPages(): string[] {
 
 /**
  * The landing page's cards, in catalog order: one per group that takes a card,
- * linking to that group on the All features page, and one for the Tools
- * section, linking to its first page. A card counts its group's features and
- * those of the groups without a card that follow it.
+ * linking to that group on the All features page with the count of its
+ * features, and one for the Tools section, linking to its first page with the
+ * count of every tool's features.
  */
 export function landingCards(): LandingCard[] {
-  const cards: (LandingCard & { features: number })[] = [];
-  for (const group of PIWI_FEATURE_GROUPS) {
-    const last = cards.at(-1);
+  const tools = PIWI_FEATURE_GROUPS.filter((group) => group.section === 'tools');
+  return PIWI_FEATURE_GROUPS.flatMap((group): LandingCard[] => {
     if (group.section === 'tools') {
-      if (last?.title === TOOLS_SECTION.title) last.features += group.features.length;
-      else
-        cards.push({
-          title: TOOLS_SECTION.title,
-          details: TOOLS_SECTION.intro,
-          link: toolPages()[0]!,
-          linkText: '',
-          features: group.features.length,
-        });
-    } else if (group.card === false && last) {
-      last.features += group.features.length;
-    } else {
-      cards.push({
+      if (group !== tools[0]) return [];
+      const features = tools.reduce((count, tool) => count + tool.features.length, 0);
+      return [
+        { title: TOOLS_SECTION.title, details: TOOLS_SECTION.intro, link: toolPages()[0]!, linkText: `${features} features` },
+      ];
+    }
+    if (group.card === false) return [];
+    return [
+      {
         title: group.title,
         details: group.intro,
         link: `/reference/features#${headingAnchor(group.title)}`,
-        linkText: '',
-        features: group.features.length,
-      });
-    }
-  }
-  return cards.map(({ features, ...card }) => ({ ...card, linkText: `${features} features` }));
+        linkText: `${group.features.length} features`,
+      },
+    ];
+  });
 }
 
 export const guideSidebar: SidebarGroup[] = [
