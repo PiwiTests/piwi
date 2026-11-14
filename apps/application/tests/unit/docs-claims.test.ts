@@ -6,7 +6,8 @@ import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { MAX_CONTROLS_PER_PAGE } from '#shared/graph';
 import { exposureFactorsFor, type DetectedGap } from '#shared/handlers/scenario-gaps';
 import { PIWI_ENV_VARS, type PiwiEnvVarMeta } from '#shared/piwi-env-vars';
-import { COVERAGE_VIEWS } from '~/utils/coverage-tab';
+import { PROJECT_COVERAGE_VIEWS, PROJECT_MENU_PAGES, PROJECT_TABS, RUN_TABS } from '#shared/app-places';
+import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
 
@@ -114,14 +115,14 @@ describe('counts in prose', () => {
     {
       page: 'apps/docs/features/scenario-gaps.md',
       phrase: 'three views',
-      list: 'COVERAGE_VIEWS (app/utils/coverage-tab.ts)',
-      count: () => COVERAGE_VIEWS.length,
+      list: 'PROJECT_COVERAGE_VIEWS (shared/app-places.ts)',
+      count: () => PROJECT_COVERAGE_VIEWS.length,
     },
     {
       page: 'apps/docs/features/ui-overview.md',
       phrase: 'three views',
-      list: 'COVERAGE_VIEWS (app/utils/coverage-tab.ts)',
-      count: () => COVERAGE_VIEWS.length,
+      list: 'PROJECT_COVERAGE_VIEWS (shared/app-places.ts)',
+      count: () => PROJECT_COVERAGE_VIEWS.length,
     },
     {
       page: 'apps/docs/reference/gap-detectors.md',
@@ -434,5 +435,63 @@ describe('a shared rule has one owner', () => {
       linkedPages(page).has(owner),
       `${page} names ${rule}, whose rule apps/docs/${owner}.md owns: state its effect in a sentence and link that page at the first mention`,
     ).toBe(true);
+  });
+});
+
+describe('a place named in the docs is a place of the dashboard', () => {
+  // A path such as "Project → Coverage → Gaps" or "Test run → Changes" names a tab the page has, by the label it has
+  // in shared/app-places.ts, which the pages and the command palette read too. After a tab with views comes one of
+  // its views; after the More actions menu, one of its pages; after any other tab, what the tab holds.
+  const MENU = 'More actions';
+  // The controls of the project page that sit outside its tabs.
+  const PROJECT_CONTROLS = ['Filters', 'Export', 'Import'];
+  const PATH = /\b(Project|Test run|Run) → ([A-Z][A-Za-z -]*[A-Za-z])(?: → ([A-Z][A-Za-z -]*[A-Za-z]))?/g;
+
+  const names = (segment: string, labels: readonly string[]) =>
+    labels.some((label) => segment === label || segment.startsWith(`${label} `));
+
+  const problemsOf = (text: string): string[] =>
+    [...text.matchAll(PATH)].flatMap(([path, page, first, second]) => {
+      if (page !== 'Project') {
+        const tabs = RUN_TABS.map((tab) => tab.label);
+        return names(first!, tabs) ? [] : [`"${path}": a run's tabs are ${tabs.join(', ')}`];
+      }
+      if (names(first!, [MENU])) {
+        const pages = PROJECT_MENU_PAGES.map((menuPage) => menuPage.label);
+        return !second || names(second, pages) ? [] : [`"${path}": the ${MENU} menu opens ${pages.join(', ')}`];
+      }
+      if (names(first!, PROJECT_CONTROLS)) return [];
+      const tab = PROJECT_TABS.find((projectTab) => names(first!, [projectTab.label]));
+      if (!tab) {
+        const tabs = PROJECT_TABS.map((projectTab) => projectTab.label);
+        return [`"${path}": a project's tabs are ${tabs.join(', ')}, and its other pages open from ${MENU}`];
+      }
+      const views = (tab.views ?? []).map((view) => view.label);
+      return !second || views.length === 0 || names(second, views)
+        ? []
+        : [`"${path}": the views of ${tab.label} are ${views.join(', ')}`];
+    });
+
+  test('a path is read to its tab, its view or its menu page', () => {
+    expect(problemsOf('**Project → Coverage → Gaps**, then Test run → Changes.')).toEqual([]);
+    expect(problemsOf('Project → More actions → Locators')).toEqual([]);
+    expect(problemsOf('Project → Timeline')).toHaveLength(1);
+    expect(problemsOf('Project → Failures → Gaps')).toHaveLength(1);
+    expect(problemsOf('Test run → Failures')).toHaveLength(1);
+  });
+
+  const entries = PIWI_FEATURE_GROUPS.flatMap((group) => group.features).map(
+    (feature) => [feature.title, feature.where] as const,
+  );
+
+  test.each(entries)('the catalog entry "%s" says where it is', (title, where) => {
+    expect(
+      problemsOf(where),
+      `shared/piwi-features.ts, "${title}": name the place by its label in shared/app-places.ts`,
+    ).toEqual([]);
+  });
+
+  test.each(handWrittenPages)('%s names places the dashboard has', (page) => {
+    expect(problemsOf(proseOf(page)), `${page}: name the place by its label in shared/app-places.ts`).toEqual([]);
   });
 });
