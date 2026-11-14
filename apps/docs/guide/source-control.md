@@ -29,14 +29,15 @@ logged, and the feature shows nothing rather than failing a run.
 
 ## Set the token
 
-- **Instance-wide**: **Settings → AI → What the model receives → Repository access token**. Every project uses it unless it has its own.
+- **Instance-wide**: **Settings → Source control**, field **SCM token** in its **Repository access** card. Every
+  project uses it unless it has its own.
 - **Per project**: the **Source control** section of the project's **Settings** tab, field **SCM token**. It overrides
   the instance-wide token for that project. Prefer one per project for write access: an instance-wide write token can
   write everywhere it reaches.
 
 A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
-the field shows that one is stored. Leave the field empty to keep it. To remove it, save the instance-wide field empty,
-or click **Remove stored token** under the project field.
+the field shows that one is stored. Leave the field empty to keep it. To remove it, click **Remove** beside the
+instance-wide token, or **Remove stored token** under the project field.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
 A private repository needs one, except on the desktop app with a linked folder (below).

@@ -89,8 +89,10 @@ describe('explain_setting', () => {
     await setAppSetting(db as never, 'scm_token', { value: 'ghp_secret_token_123' });
     process.env.PIWI_AI_ASSISTANT_API_KEY = 'sk-secret-key-456';
     process.env.PIWI_AI_ASSISTANT_MODEL = 'claude-haiku';
-    const token = await explain(administrator, 'ai.scm-token');
-    expect(token).toMatchObject({ set: true });
+    const token = await explain(administrator, 'source-control.scm-token');
+    expect(token).toMatchObject({ set: true, page: { route: '/settings/source-control' } });
+    // The id the field had on the AI page still answers.
+    expect(await explain(administrator, 'ai.scm-token')).toMatchObject({ id: 'source-control.scm-token', set: true });
     expect(token).not.toHaveProperty('value');
     expect(JSON.stringify(token)).not.toContain('ghp_secret_token_123');
     const assistant = await explain(administrator, 'ai.assistant');
