@@ -168,10 +168,15 @@ function beforeLine(call: string, method: string, params: Record<string, unknown
   return JSON.stringify({ type: 'before', callId: call, method, params });
 }
 
-describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser writes', () => {
+/** A browser's launch, which a full suite's load slows; a case past it waits up to `waitFor`'s 15 s for its trace. */
+const LAUNCH_MS = 30_000;
+const CASE_MS = LAUNCH_MS + 30_000;
+const launchTracing = (tracesDir: string) => chromium!.launch({ tracesDir, timeout: LAUNCH_MS });
+
+describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser writes', { timeout: CASE_MS }, () => {
   it('keeps each call’s page as its trace took it, its secrets hidden, its styles and images in it, no script', async () => {
     const traces = path.join(root, 'live', '.playwright-artifacts-0', 'traces');
-    const browser = await chromium!.launch({ tracesDir: traces });
+    const browser = await launchTracing(traces);
     try {
       const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
       await context.tracing.start({ snapshots: true, screenshots: false, name: 'attempt' });
@@ -228,7 +233,7 @@ describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser
 
   it('reads no file through a link, and no resource but from the trace folder’s own resources', async () => {
     const traces = path.join(root, 'linked', '.playwright-artifacts-0', 'traces');
-    const browser = await chromium!.launch({ tracesDir: traces });
+    const browser = await launchTracing(traces);
     try {
       const context = await browser.newContext();
       await context.tracing.start({ snapshots: true, screenshots: false, name: 'real' });
