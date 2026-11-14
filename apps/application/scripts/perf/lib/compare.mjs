@@ -2,11 +2,9 @@
  * Turns the suite's raw samples into verdicts. A timing regresses when the
  * head's median is slower by more than both a relative and an absolute floor,
  * the Mann–Whitney test says the two sets differ (p < 0.01), and the change
- * holds past both floors in every session on its own. A session starts every
- * build's server afresh: a server process can run one page a tenth slower than
- * another process of the same build for as long as it lives, and all of a
- * session's samples share that offset, so only a change every session shows is
- * the build's. A count (SQL statements, bytes, requests) is deterministic, so it
+ * holds past both floors in every session on its own, each session having
+ * samples on both sides (a session runs every build on server processes of its
+ * own). A count (SQL statements, bytes, requests) is deterministic, so it
  * regresses as soon as it grows past its floors. Improvements mirror regressions.
  */
 import { bySession, median, mannWhitneyP, mode } from './stats.mjs';
@@ -54,10 +52,8 @@ export function compareMetric(key, baseSamples, headSamples, { sessions = 1 } = 
   const large = (d, r) => Math.abs(d) >= def.abs && Math.abs(r) >= def.rel;
   const significant = p < SIGNIFICANCE;
   const split = def.kind === 'timing' && sessions > 1 ? sessionChanges(baseSamples, headSamples, sessions) : null;
-  // Every session with samples on both sides shows the change past both floors, in the same direction.
-  const holds = (split ?? [])
-    .filter(Boolean)
-    .every((s) => Math.sign(s.delta) === Math.sign(delta) && large(s.delta, s.ratio));
+  // Every session has samples on both sides and shows the change past both floors, in the same direction.
+  const holds = (split ?? []).every((s) => s && Math.sign(s.delta) === Math.sign(delta) && large(s.delta, s.ratio));
   const verdict =
     large(delta, ratio) && significant && holds ? (delta > 0 ? 'regression' : 'improvement') : 'unchanged';
   return {

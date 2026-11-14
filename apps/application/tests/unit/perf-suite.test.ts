@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
@@ -166,6 +167,34 @@ describe('performance verdicts', () => {
     expect(compareMetric('ssrMs', slowBuild, base, { sessions: 2 }).verdict).toBe('improvement');
   });
 
+  it('does not confirm a time in a session without samples on a side', () => {
+    const halfMissing = [...slowBuild.slice(0, 6), ...Array(6).fill(null)];
+    expect(compareMetric('ssrMs', base, halfMissing).verdict).toBe('regression');
+    const split = compareMetric('ssrMs', base, halfMissing, { sessions: 2 });
+    expect(split.bySession).toEqual([expect.any(Number), null]);
+    expect(split.verdict).toBe('unchanged');
+  });
+
+  it('refuses a sample count that leaves a session without balanced rounds', () => {
+    const run = (...args: string[]) => {
+      try {
+        execFileSync(process.execPath, [new URL('../../scripts/perf/run.mjs', import.meta.url).pathname, ...args], {
+          stdio: 'pipe',
+        });
+        return '';
+      } catch (error) {
+        return String((error as { stderr: Buffer }).stderr);
+      }
+    };
+    expect(run('--load-samples', '6')).toContain('--load-samples needs 0 or a multiple of twice --sessions (4), got 6');
+    expect(run('--sessions', '3', '--load-samples', '6')).toContain(
+      '--api-samples needs 0 or a multiple of twice --sessions (6), got 8',
+    );
+    expect(run('--sessions', '3', '--ssr-samples', '6', '--load-samples', '1', '--api-samples', '0')).toContain(
+      '--load-samples needs 0 or a multiple of twice --sessions (6), got 1',
+    );
+  });
+
   it('reads the sessions of a run from its metadata, and counts whatever the sessions', () => {
     const run = (sessions?: number) => ({
       meta: sessions ? { samples: { sessions } } : {},
@@ -295,8 +324,8 @@ describe('performance report', () => {
     );
     expect(md).toContain('server render 100 ms → 217 ms (+117 %, p < 0.001, by session +100 % / +129 %)');
     expect(md).toContain('split into 2 sessions, each starting every server afresh after 2 warm-up rounds');
-    expect(md).toContain('the median of each session grows past both floors too');
-    expect(md).toContain('Every copy carries the same planner statistics');
+    expect(md).toContain('the median of every session, each on server processes of its own, grows past both floors');
+    expect(md).toContain('analyzed reading every row');
   });
 
   it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {

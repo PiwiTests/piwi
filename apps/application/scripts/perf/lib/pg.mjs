@@ -7,6 +7,9 @@
  * The server must load the extension at startup:
  *   docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine \
  *     -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track_utility=off
+ *
+ * Each target's copy is settled by `settleDatabase` after its build's first start, whatever the server's own
+ * autovacuum setting.
  */
 
 const quote = (name) => `"${name.replaceAll('"', '""')}"`;
@@ -52,17 +55,37 @@ export async function dropDatabase(sql, name) {
 }
 
 /**
- * Vacuum database `name`, as autovacuum would in its own time: the dead rows a build's startup work left (a
- * migration's or a backfill's rewrites) are cleared. With `analyze`, the planner's statistics are read again too.
- * ANALYZE reads a random sample of each large table, so two databases analyzed apart get different statistics, and
- * the planner can pick a different plan in each: the suite analyzes the seed once, and every copy inherits its
- * statistics. `pg_stat_statements.track_utility=off` keeps both out of the counted statements.
+ * The rows ANALYZE reads from each table at the largest statistics target (300 × 10,000). A table of at most this
+ * many rows is read whole, so its statistics depend on its data alone.
  */
-export async function vacuumDatabase(adminUrl, name, { analyze = false } = {}) {
+export const FULL_SAMPLE_ROWS = 3_000_000;
+
+/**
+ * Prepare database `name` for measuring, once its build's startup work is done: autovacuum is off on every table
+ * for the rest of the run, the dead rows the startup work left are vacuumed, and every table is analyzed at the
+ * largest statistics target. Two databases holding the same data get the same planner statistics. Returns the
+ * largest table and its row count; a table past `FULL_SAMPLE_ROWS` is sampled, not read whole.
+ * `pg_stat_statements.track_utility=off` keeps all of it out of the counted statements.
+ */
+export async function settleDatabase(adminUrl, name) {
   const { default: postgres } = await import('postgres');
   const sql = postgres(databaseUrl(adminUrl, name), { max: 1, onnotice: () => {} });
   try {
-    await sql.unsafe(analyze ? 'VACUUM (ANALYZE)' : 'VACUUM');
+    const tables = await sql`
+      SELECT c.oid::regclass::text AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'`;
+    for (const t of tables)
+      await sql.unsafe(`ALTER TABLE ${t.name} SET (autovacuum_enabled = false, toast.autovacuum_enabled = false)`);
+    await sql.unsafe('VACUUM');
+    await sql.unsafe('SET default_statistics_target = 10000');
+    await sql.unsafe('ANALYZE');
+    const [largest] = await sql`
+      SELECT c.oid::regclass::text AS name, c.reltuples::float8 AS rows FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY c.reltuples DESC LIMIT 1`;
+    return largest ?? null;
   } finally {
     await sql.end();
   }
