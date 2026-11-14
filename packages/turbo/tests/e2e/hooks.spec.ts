@@ -1,4 +1,4 @@
-import { test, expect } from '../../src/test';
+import { captureFailure, test, expect } from '../../src/test';
 import { state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
 
@@ -157,5 +157,87 @@ test.describe('blockRequests', () => {
       ]);
     });
     expect(results).toEqual(['blocked', 'blocked', 'loaded']);
+  });
+});
+
+test.describe('blockResources', () => {
+  test.use({ blockResources: ['image', 'font'] });
+
+  test('aborts images and fonts, and lets the rest through', async ({ page }) => {
+    const served: string[] = [];
+    await page.route('https://res.test/**', (route) => {
+      served.push(new URL(route.request().url()).pathname);
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/') {
+        return route.fulfill({
+          contentType: 'text/html',
+          body: '<link rel="stylesheet" href="/s.css"><img src="/a.png"><script src="/app.js"></script><p>page</p>',
+        });
+      }
+      return route.fulfill({ body: path.endsWith('.js') ? 'document.body.dataset.ran = "1"' : '' });
+    });
+    await page.goto('https://res.test/');
+    await expect(page.locator('body')).toHaveAttribute('data-ran', '1');
+    expect(served.toSorted()).toEqual(['/', '/app.js', '/s.css']);
+  });
+});
+
+test.describe('instantAnimations', () => {
+  test.use({ instantAnimations: true });
+
+  test('runs a long transition at once, on pages the test opens too', async ({ page, context }) => {
+    const animated = `<style>#box{width:10px;transition:width 20s linear}#box.wide{width:300px}</style><div id="box"></div>
+      <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('wide')))</script>`;
+    await page.setContent(animated);
+    await expect(page.locator('#box')).toHaveCSS('width', '300px', { timeout: 2000 });
+    const other = await context.newPage();
+    await other.waitForTimeout(100);
+    await other.setContent(animated);
+    await expect(other.locator('#box')).toHaveCSS('width', '300px', { timeout: 2000 });
+  });
+
+  test('keeps working after a navigation', async ({ page }) => {
+    await page.route('https://anim.test/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<style>#box{opacity:0;transition:opacity 20s linear}#box.on{opacity:1}</style><div id="box">x</div>
+          <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('on')))</script>`,
+      }),
+    );
+    await page.goto('https://anim.test/one');
+    await page.goto('https://anim.test/two');
+    await expect(page.locator('#box')).toHaveCSS('opacity', '1', { timeout: 2000 });
+  });
+});
+
+test.describe('failureScreenshots', () => {
+  function outcome(status: 'passed' | 'failed') {
+    const attached: string[] = [];
+    return {
+      attached,
+      info: {
+        status,
+        expectedStatus: 'passed' as const,
+        attach: async (name: string) => void attached.push(name),
+      },
+    };
+  }
+
+  test('captures nothing for a passing test', async ({ page, context }) => {
+    await page.setContent('<p>passes</p>');
+    const { attached, info } = outcome('passed');
+    expect(await captureFailure(context, info)).toBe(0);
+    expect(attached).toEqual([]);
+  });
+
+  test('captures every open page of a failed test', async ({ page, context }) => {
+    await page.setContent('<p>first</p>');
+    const second = await context.newPage();
+    await second.setContent('<p>second</p>');
+    const closed = await context.newPage();
+    await closed.close();
+    const { attached, info } = outcome('failed');
+    expect(await captureFailure(context, info)).toBe(2);
+    expect(attached).toEqual(['screenshot', 'screenshot']);
   });
 });

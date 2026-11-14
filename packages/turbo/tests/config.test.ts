@@ -82,3 +82,50 @@ describe('withOptimizations', () => {
     expect(result.use).toMatchObject({ fastScreenshots: true, retryIntervals: [10, 20] });
   });
 });
+
+describe('presets', () => {
+  test('safe keeps traces for failures and screenshots failed tests only', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({ use: { screenshot: 'only-on-failure' } }, { preset: 'safe' });
+    expect(result.use).toMatchObject({ trace: 'retain-on-failure', screenshot: 'off', failureScreenshots: true });
+    expect(result.use).not.toHaveProperty('contextOptions');
+  });
+
+  test('safe records traces on the first retry when the config retries', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({ retries: 2 }, { preset: 'safe' });
+    expect(result.use?.trace).toBe('on-first-retry');
+  });
+
+  test('fast adds reduced motion and instant animations', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'fast' });
+    expect(result.use).toMatchObject({ contextOptions: { reducedMotion: 'reduce' }, instantAnimations: true });
+    expect(result.use).not.toHaveProperty('retryIntervals');
+  });
+
+  test('experimental adds both hooks', () => {
+    const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'experimental' });
+    expect(result.use).toMatchObject({ fastScreenshots: true, retryIntervals: [10, 20, 40, 50], instantAnimations: true });
+  });
+
+  test('an option named next to the preset wins', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      {},
+      { preset: 'experimental', trace: 'on', experimental: { retryIntervals: [25] } },
+    );
+    expect(result.use).toMatchObject({ trace: 'on', retryIntervals: [25], fastScreenshots: true });
+  });
+
+  test("keeps the config's own screenshots of every test", () => {
+    const result = withOptimizations<PlaywrightTestConfig>({ use: { screenshot: 'on' } }, { preset: 'safe' });
+    expect(result.use).toMatchObject({ screenshot: 'on' });
+    expect(result.use).not.toHaveProperty('failureScreenshots');
+  });
+
+  test('refuses an unknown preset', () => {
+    expect(() => withOptimizations({}, { preset: 'turbo' as 'safe' })).toThrow(/unknown preset "turbo"/);
+  });
+});
+
+test('passes blocked resource types to the fixtures', () => {
+  const result = withOptimizations<PlaywrightTestConfig>({}, { blockResources: ['image', 'font'] });
+  expect(result.use).toMatchObject({ blockResources: ['image', 'font'] });
+});

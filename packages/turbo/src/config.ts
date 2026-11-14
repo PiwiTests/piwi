@@ -1,17 +1,39 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
-import type { BlockRule } from './types';
+import type { BlockRule, ResourceType } from './types';
 
 type TraceMode = 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries' | 'retain-on-first-failure';
 type Matcher = string | RegExp | Array<string | RegExp>;
 
+/**
+ * A named bundle of optimizations, by how much a test can notice:
+ * - `safe`: nothing a test observes changes. Traces kept for failures only, and failure screenshots.
+ * - `fast`: `safe`, plus changes to what the page does: reduced motion and instant animations.
+ * - `experimental`: `fast`, plus the hooks into Playwright's internals.
+ */
+export type Preset = 'safe' | 'fast' | 'experimental';
+
 export interface Optimizations {
+  /** A bundle of the options below. An option named next to it wins over the preset. */
+  preset?: Preset;
   /** Trace mode for every test, e.g. `'retain-on-failure'` or `'on-first-retry'`. */
   trace?: TraceMode;
   /** Emulates `prefers-reduced-motion: reduce`. Changes what the app does when it honors the preference. */
   reducedMotion?: boolean;
   /** Requests every test aborts, typically third-party scripts. Needs `test` from `@piwitests/turbo/test`. */
   blockRequests?: BlockRule[];
+  /** Resource types every test aborts, e.g. `['image', 'font', 'media']`. Needs `test` from `@piwitests/turbo/test`. */
+  blockResources?: ResourceType[];
+  /**
+   * Screenshots of a test's pages when it fails, and none when it passes, in place of `screenshot: 'only-on-failure'`,
+   * which captures every test's pages and keeps the failed ones. Needs `test` from `@piwitests/turbo/test`.
+   */
+  failureScreenshots?: boolean;
+  /**
+   * Chromium: CSS transitions and animations, and Web Animations, run 1000 times faster, whether or not the app
+   * honors reduced motion. Needs `test` from `@piwitests/turbo/test`.
+   */
+  instantAnimations?: boolean;
   /**
    * Signs in once: adds a setup project that runs the files matching `setup` (default `*.setup.ts`) and saves
    * `storageState`, which every other project then loads into each fresh context.
@@ -55,14 +77,48 @@ function applySignIn(config: AnyConfig, signIn: NonNullable<Optimizations['signI
   ];
 }
 
-/** Returns `config` with the given optimizations applied. Every one is off unless named. */
-export function withOptimizations<T extends AnyConfig>(config: T, options: Optimizations = {}): T {
+const EXPERIMENTAL_RETRY_INTERVALS = [10, 20, 40, 50];
+
+/** The options a preset stands for, given the config it applies to. */
+export function presetOptions(preset: Preset, config: AnyConfig): Optimizations {
+  const retries = typeof config.retries === 'number' && config.retries > 0;
+  const safe: Optimizations = {
+    // With retries, the first retry records the trace; without, every test records and only failures keep it.
+    trace: retries ? 'on-first-retry' : 'retain-on-failure',
+    failureScreenshots: true,
+  };
+  if (preset === 'safe') return safe;
+  const fast: Optimizations = { ...safe, reducedMotion: true, instantAnimations: true };
+  if (preset === 'fast') return fast;
+  if (preset === 'experimental') {
+    return { ...fast, experimental: { fastScreenshots: true, retryIntervals: EXPERIMENTAL_RETRY_INTERVALS } };
+  }
+  throw new Error(`@piwitests/turbo: unknown preset "${String(preset)}"; use safe, fast or experimental`);
+}
+
+/** Returns `config` with the given optimizations applied. Every one is off unless named, or part of the preset. */
+export function withOptimizations<T extends AnyConfig>(config: T, given: Optimizations = {}): T {
+  const preset = given.preset ? presetOptions(given.preset, config) : {};
+  const options: Optimizations = {
+    ...preset,
+    ...given,
+    experimental: { ...preset.experimental, ...given.experimental },
+  };
   const result: AnyConfig = { ...config, use: { ...config.use } };
   const use = result.use as Record<string, unknown> & { contextOptions?: Record<string, unknown> };
   if (config.projects) result.projects = config.projects.map((project) => ({ ...project }));
   if (options.trace) use.trace = options.trace;
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
+  if (options.blockResources?.length) use.blockResources = options.blockResources;
+  if (options.instantAnimations) use.instantAnimations = true;
+  if (options.failureScreenshots) {
+    // In place of Playwright's own capture, unless the config asks for every test's screenshots.
+    if (use.screenshot !== 'on' && use.screenshot !== 'on-first-failure') {
+      use.screenshot = 'off';
+      use.failureScreenshots = true;
+    }
+  }
   if (options.signIn) applySignIn(result, options.signIn);
   const experimental = options.experimental ?? {};
   if (experimental.fastScreenshots) use.fastScreenshots = true;

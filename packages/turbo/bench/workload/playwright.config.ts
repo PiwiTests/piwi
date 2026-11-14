@@ -7,6 +7,10 @@ import { withOptimizations } from '../../src/index';
 //   BENCH_TRACE              trace mode (default on)
 //   BENCH_REDUCED_MOTION     1: @piwitests/turbo's reducedMotion
 //   BENCH_BLOCK_THIRD_PARTY  1: @piwitests/turbo's blockRequests, for the vendor origin
+//   BENCH_FAILURE_SCREENSHOTS 1: @piwitests/turbo's failureScreenshots
+//   BENCH_INSTANT_ANIMATIONS 1: @piwitests/turbo's instantAnimations
+//   BENCH_BLOCK_RESOURCES    comma-separated resource types: @piwitests/turbo's blockResources
+//   BENCH_PRESET             safe | fast | experimental: @piwitests/turbo's preset (BENCH_TRACE would win over it)
 //   BENCH_FAST_SCREENSHOTS   1: the experimental fastScreenshots hook
 //   BENCH_RETRY_INTERVALS    comma-separated milliseconds: the experimental retryIntervals hook
 //   BENCH_WORKERS            worker count or percentage (default: Playwright's)
@@ -51,12 +55,16 @@ const config = defineConfig({
 });
 
 export default withOptimizations(config, {
+  preset: env.BENCH_PRESET as 'safe' | 'fast' | 'experimental' | undefined,
+  failureScreenshots: env.BENCH_FAILURE_SCREENSHOTS === '1' || undefined,
+  instantAnimations: env.BENCH_INSTANT_ANIMATIONS === '1' || undefined,
+  blockResources: env.BENCH_BLOCK_RESOURCES ? (env.BENCH_BLOCK_RESOURCES.split(',') as ['image']) : undefined,
   signIn: env.BENCH_AUTH === 'state' ? { storageState: '.auth/user.json' } : undefined,
   trace: env.BENCH_TRACE as 'on' | undefined,
-  reducedMotion: env.BENCH_REDUCED_MOTION === '1',
+  reducedMotion: env.BENCH_REDUCED_MOTION === '1' || undefined,
   blockRequests: env.BENCH_BLOCK_THIRD_PARTY === '1' ? [(url) => url.port === VENDOR_PORT] : undefined,
   experimental: {
-    fastScreenshots: env.BENCH_FAST_SCREENSHOTS === '1',
+    fastScreenshots: env.BENCH_FAST_SCREENSHOTS === '1' || undefined,
     retryIntervals: env.BENCH_RETRY_INTERVALS ? env.BENCH_RETRY_INTERVALS.split(',').map(Number) : undefined,
   },
 });
