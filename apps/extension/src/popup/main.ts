@@ -346,7 +346,7 @@ async function refreshRecordButton(): Promise<void> {
   if (state === 'recording') {
     recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
     recordHint.textContent = t('popup_stepsSoFar');
-    setTileState(recordBtn, bug ? 'finish' : 'stop', bug ? 'check' : 'stop');
+    setTileState(recordBtn, bug ? 'finish' : 'stop', bug ? 'check' : 'stop-circle');
   } else if (state === 'stopped') {
     recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
     recordHint.textContent = t('popup_notExported');

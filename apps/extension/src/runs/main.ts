@@ -2220,7 +2220,7 @@ function renderHubs(current: RunsState): void {
       if (!hub.connected || !hub.windowShared) continue;
       const editor = hub.client ?? t('runs_editor');
       lines.push({
-        icon: 'eye',
+        icon: 'broadcast',
         text: t('runs_windowShared', { editor }),
         boxed: false,
         actions: [],
@@ -2244,7 +2244,7 @@ function renderHubs(current: RunsState): void {
   hubsLine.replaceChildren(
     ...lines.flatMap(({ icon, text, actions, stopWindow }, index) => {
       const line = iconText(element('p'), icon, text);
-      line.classList.toggle('waiting', icon !== 'check-circle' && icon !== 'eye');
+      line.classList.toggle('waiting', icon !== 'check-circle' && icon !== 'broadcast');
       for (const action of actions) line.append(emptyActionButton(action, `hubs|${index}|${action}`));
       return stopWindow ? [line, renderStopWindow(stopWindow)] : [line];
     }),
@@ -3127,7 +3127,7 @@ function renderShare(run: RunsRun, live: HubLive, hub: RunsHub | undefined): HTM
       box.append(
         iconText(
           element('p', 'shared'),
-          'eye',
+          'broadcast',
           `${t('runs_sharedLive', { instance: instanceOf(live) })} · ${watching}`,
         ),
       );

@@ -87,7 +87,8 @@ Stop recording with a ring around a square, and a recording's gutter mark and ba
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
 `status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M4 in part: Piwi Picker draws Stop recording as a square in a ring (`stop-circle`) and Share live as a broadcast mark
-(`broadcast`), apart from the run's Stop and a share of a result, and Finish steps out (`step-out`). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
+(`broadcast`) on its buttons and its "shared live" line, in the recording bar, the popup and the DevTools panel, apart
+from the run's Stop and a share of a result. M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4); both editors tint a failing test, its failing line and a recording in
 `STATUS_COLORS`' failed and running fills, the JetBrains schemes blending them over classic Default's or Darcula's background, and VS Code's
 held failure's arrow takes the failed fill (LI3); VS Code's running ring spins, still under the system's reduced
@@ -1361,7 +1362,7 @@ such action.
 | Assert a region | `scan` | `viewport` | `$(screen-full)` or `$(piwi-region)` (new) | `region.svg` |
 | Mock a request | `network` | `network` | `$(arrow-swap)` or `$(piwi-mock)` (new) | `mock.svg` |
 | Share live ([LR14](#lr14)) | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
-| Stop sharing live | – | – | `$(piwi-stop-live)` (new) | `stopLive.svg` |
+| Stop sharing live | `circle-stop` | `eye-off` | `$(piwi-stop-live)` | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
 | Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |
 | Run on my machine | `monitor-play` | – | – | – |
@@ -1406,8 +1407,7 @@ still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/
 running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
 lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
-draws `crosshair`, and Piwi Picker's recording bar stops with `stop`, the square
-(`apps/extension/src/content/record-panel.ts:673`). VS Code's `$(beaker)` stays the Piwi mark on the status item and the
+draws `crosshair`,. VS Code's `$(beaker)` stays the Piwi mark on the status item and the
 run node until `$(piwi-mark)` is drawn.
 
 ## Appendix B. Checked and found sound

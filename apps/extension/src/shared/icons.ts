@@ -56,7 +56,7 @@ export const ICONS = {
   play: ['M7.5 5.5v13l10-6.5z'],
   pause: ['M8.5 5.5v13', 'M15.5 5.5v13'],
   stop: ['M7 7h10v10H7z'],
-  'stop-circle': [CIRCLE(12, 12, 8.5), 'M9.5 9.5h5v5h-5z'],
+  'stop-circle': [CIRCLE(12, 12, 8.5), { fill: 'M9 9h6v6H9z' }],
   next: ['M5.75 5.5v13l9-6.5z', 'M18.25 5.5v13'],
   'step-out': ['M6 9.5l6-6 6 6', 'M12 3.5v12', CIRCLE(12, 19.5, 1)],
   skip: ['M4 14a7.5 7.5 0 0 1 13.3-4.8L19.5 11.5', 'M20 6.5v5.5h-5.5', 'M12 17.5h0.01'],

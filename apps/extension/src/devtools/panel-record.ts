@@ -113,7 +113,7 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
             chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }).catch(() => undefined),
           );
         },
-        { icon: 'stop', tone: 'danger' },
+        { icon: 'stop-circle', tone: 'danger' },
       ),
     );
   } else if (!bug) {
