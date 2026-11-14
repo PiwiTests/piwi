@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/runner",
-  "version": "0.69.0",
+  "version": "0.70.0",
   "private": true,
   "description": "Piwi Runner: the app that runs the tests a team instance asks for on this machine, with the window and the Node host that serve it",
   "license": "FSL-1.1-MIT",
