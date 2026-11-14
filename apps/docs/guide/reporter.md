@@ -21,7 +21,7 @@ version on its page.
 
 ### Try it without editing your config
 
-Playwright's `--add-reporter` (1.63 or later; older versions refuse it) appends this reporter to your config's reporters (unlike `--reporter`, which replaces them), so one run can go to a dashboard without a config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options):
+Playwright's `--add-reporter` (1.63 or later) appends this reporter to your config's reporters, where `--reporter` replaces them, so one run can go to a dashboard without a config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options):
 
 ::: code-group
 
@@ -67,7 +67,9 @@ CI job that sets the variable reports there. `wrapConfig` also:
 
 ## Basic configuration
 
-When a config cannot be wrapped, add the reporter entry and the capture options `wrapConfig` would set:
+When a config cannot be wrapped, add the bare reporter entry and the capture options `wrapConfig` would set. It
+gives up the rest of `wrapConfig`: the run appears only when the first test starts unless you add the
+[global setup](#global-setup-phase) yourself, and `failOnFlakyTests` does not reach Playwright.
 
 ```typescript
 import { defineConfig } from '@playwright/test'
@@ -206,11 +208,9 @@ tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted
 
 ## With authentication enabled
 
-With authentication enabled, pass an **API key**: create one ([API keys](/operate/api-keys); **Connect a suite**
-creates one in place); keep it in a CI secret (locally, `.env`), and pass it as `PIWI_API_KEY` or the `apiKey` option.
-
-The key is sent as an `Authorization: Bearer` header. `username` (or the account's email) and `password`
-(`PIWI_USERNAME`, `PIWI_PASSWORD`) work too, signing in once per run; prefer an API key in CI.
+With authentication on, the reporter needs a credential: an API key in `PIWI_API_KEY` or the `apiKey` option, or a
+username and password. [API keys → Using the API key in the reporter](/operate/api-keys#using-the-api-key-in-the-reporter)
+covers both, and where to keep them.
 
 ## Troubleshooting
 

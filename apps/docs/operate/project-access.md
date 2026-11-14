@@ -6,8 +6,9 @@ lang: en-US
 
 # Access, roles and groups
 
-With [authentication](./authentication) on, what a signed-in user can do inside a project comes from the **project
-roles** they hold there. An Administrator can do everything on every project. A Member can do only what their project
+This page covers **project roles**, the groups that hold them and who grants them; the instance roles, Administrator
+and Member, are on [Authentication](./authentication#roles). With authentication on, a signed-in user's rights inside a
+project come from the project roles they hold there. An Administrator can do everything on every project. A Member can do only what their project
 roles allow, granted to them directly or to one of their groups; a Member with no role sees an empty dashboard.
 
 ## Project roles
@@ -62,7 +63,8 @@ a project are the **union** of every role they hold there, on that project and o
 each of their groups. Maintainer on All projects plus Project admin on `web-app` means Project admin on `web-app` and
 Maintainer everywhere else.
 
-Results sent under a new project name create the project only for an account that can upload on All projects.
+An administrator creates a project in the dashboard; results sent under a new project name create one too, from an
+account that can upload on All projects.
 
 ## Groups
 
@@ -126,10 +128,11 @@ same 403, that says an administrator or a Project admin of that project can gran
 
 ## CI accounts
 
-Run the reporter in CI as a Member with the **Uploader** role, through an [API key](./api-keys): it reads the project
-and uploads runs, nothing else. Grant it on All projects when CI should create projects from a new project name, else
-on the projects it reports to. A CI account that the upgrade from the three roles made a Maintainer narrows the same
-way.
+Run the reporter in CI as a dedicated Member with the **Uploader** role, through its own
+[API key](./api-keys#using-the-api-key-in-the-reporter): a leaked CI key can then read and upload, never triage, delete
+or change anything. Grant it on All projects when CI should create
+projects from a new project name, else on the projects it reports to. A CI account that the upgrade from the three
+roles made a Maintainer narrows the same way.
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with seeded identities, from an
 > administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner and watch the

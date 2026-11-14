@@ -14,7 +14,7 @@ things:
 - an **execution** or a **failure cluster**: the live counterpart of an [offline export](./offline-export), the
   investigation as it stands when the link is opened;
 - a **report snapshot**: a stored [quality report](./quality-reports#report-snapshots), as it was generated;
-- a **saved dashboard**: a [live dashboard link](#live-dashboard-links), computed at every view.
+- a saved **analytics dashboard**: a [live dashboard link](#live-dashboard-links), computed at every view.
 
 Share links are **off by default**. Set `PIWI_SHARE_LINKS_ENABLED=true` to allow them — see the
 [configuration reference](/reference/configuration#authentication).
@@ -34,7 +34,8 @@ On an execution page, a failure-cluster page or a report snapshot page, open **S
 2. **Copy the link immediately — it is shown only once.** The server stores a hash of the token, not the token, so
    there is no way to display the URL again later. Mint a new link instead.
 
-Creating and revoking links requires the **Maintainer** role or above on the project, or an administrator; anyone
+Creating and revoking links requires the **Maintainer** role or above on the project, or an administrator
+([roles](/operate/project-access#what-each-role-can-do)); anyone
 who can read the project can see which links exist. Each entry in the dialog shows the link's prefix, its expiry state, and how many times it was opened.
 
 ## What the viewer sees
@@ -116,5 +117,5 @@ the reader's address, since such a proxy fetches for many readers.
 
 ## Related
 - [Offline export](./offline-export) — the file to hand over when the recipient has no network path to your instance
-- [Authentication](/operate/authentication) — roles, and who can mint or revoke
+- [Access, roles and groups](/operate/project-access#what-each-role-can-do) — the project roles that can mint or revoke
 - [Storage & retention](/operate/storage#data-retention) — retention, and how it interacts with long-lived links

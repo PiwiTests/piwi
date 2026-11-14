@@ -93,8 +93,9 @@ database, an older version will not run against it correctly, and starting one m
 So the rollback path is not "pull the old tag", it's **restore your backup**:
 
 1. Stop the container.
-2. Restore the database and `.data/storage/` from the backup you took before upgrading.
-3. Start the previous version's tag.
+2. Restore the database and `.data/storage/` from the backup pair you took before upgrading, as
+   [Backup & restore → Restoring](./backup-restore#restoring) describes.
+3. Start the previous version's tag, with the same `PIWI_SECRET_KEY`.
 
 This is the entire reason step 2 of the short version isn't optional.
 
@@ -152,9 +153,9 @@ npm install --save-dev @piwitests/reporter@latest
 
 ## Upgrading the desktop app
 
-The [desktop build](/features/desktop) bundles its own server, so installing a newer build upgrades both. Its
-database lives outside the app bundle and is migrated on first launch, exactly as the server does —
-which means the same forward-only rule applies. Back up its data directory before a major jump.
+The [desktop build](/features/desktop) bundles its own server, so installing a newer build upgrades both. Its data
+is migrated on first launch under the same forward-only rule: back it up first, as
+[Backup & restore → The desktop app](./backup-restore#the-desktop-app) describes.
 On Windows an in-app update closes the app as soon as the download finishes and hands over to the
 installer, which reopens it when done. The `.exe` installer runs without a window; the `.msi` one shows a
 progress bar.

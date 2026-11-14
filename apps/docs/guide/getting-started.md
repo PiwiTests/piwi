@@ -23,10 +23,10 @@ The dashboard is one Node process. Pick the way to run it that fits:
 
 | Path | Best for | Needs |
 |---|---|---|
-| [Desktop app](/features/desktop) | One developer running Playwright locally | Nothing; the runtime is bundled. Windows x64, Apple-silicon macOS and Linux x86-64; the installers are not signed yet |
-| Docker *(below)* | A shared instance for a team, or anything long-lived | Docker; about 300 MB RAM, 1 vCPU, `linux/amd64` or `linux/arm64` |
-| [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run | Node.js 22 or later |
-| [One-click deploy](/operate/deployment#one-click-deploy) | A shared instance with no server of your own | An account on the host |
+| [Desktop app](/features/desktop) | One developer running Playwright locally, with no server at all | An installer; the runtime is bundled, so no Docker and no Node. Windows x64, Apple-silicon macOS and Linux x86-64; the installers are not code-signed, so the first launch needs a click-through |
+| Docker *(below)* | A shared instance for a team, or anything long-lived | Docker; about 300 MB RAM, 1 vCPU, `linux/amd64` or `linux/arm64`, and disk for the traces ([sizing](/operate/deployment#resource-requirements)) |
+| [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run without Docker | Node.js 22 or later; `.data/` in the current directory |
+| [One-click deploy](/operate/one-click-deploy) | A shared instance with no server of your own | An account on the host, and what it charges |
 
 With Docker:
 
@@ -51,8 +51,8 @@ it runs the tests a team instance asks for, on a machine without the desktop app
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
 token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 
-Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's. Want
-to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
+Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's, whose
+reporter needs Node.js 20 or later ([Reporter](./reporter#installation)). Want to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
 
 ## 2. Connect your suite
 
@@ -101,7 +101,7 @@ import { test, expect } from './fixtures'
 A coding agent can do both: the **Coding agent** path on **Connect a suite** gives it a prompt that runs `init --json`, finishes
 the steps it reports as `manual` and moves the specs onto the fixtures.
 
-If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Connect a suite** creates one in place. When
+If authentication is on, pass an [API key](/operate/api-keys#using-the-api-key-in-the-reporter) as `PIWI_API_KEY`; **Connect a suite** creates one in place. When
 developers run the [desktop app](/features/desktop) and CI reports to a shared dashboard, add `--desktop-app prefer`:
 [local runs then land in the app](./reporter#local-runs-to-the-desktop-app-ci-to-a-team-server). To wire the reporter
 in by hand, or to send one run without editing your config, see [Reporter](./reporter).

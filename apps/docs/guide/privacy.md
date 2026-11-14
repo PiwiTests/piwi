@@ -12,7 +12,7 @@ network calls, and sometimes your git history. This page lists where they go.
 **There is no telemetry**, no usage analytics, no crash reporting, and no license or
 activation call. The server never checks for updates; the desktop app checks at startup (optional, in
 **Settings → About**) and on **Check for updates**, then reads the newer releases' notes from GitHub, anonymously.
-Every outbound call the server makes is listed below; all but two are opt-in. An air-gapped instance works the same.
+Every outbound call the server makes is listed below; all but two are opt-in.
 
 ## What leaves your server
 
@@ -25,7 +25,7 @@ Every outbound call the server makes is listed below; all but two are opt-in. An
 | Zephyr Scale Cloud | Only if you [connect it](/features/test-management) | A run's results |
 | Your CI server | Only if you [connect one](/features/ci-rerun) | The re-run or Flake Lab request |
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
-| Slack or your webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
+| Slack, Teams or your webhook URLs | Only for subscriptions you create, and [report schedules](/features/quality-reports#report-schedules) that name the channel | The event payload (run status, cluster, test names, file paths, short error excerpts), or the quality report |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Your PostgreSQL server | Only if you [use one](/operate/database#postgresql) | Everything but the files |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | OAuth exchange and profile picture |
@@ -37,38 +37,34 @@ The reporter sends your instance what its options switch on. [Code reach](/featu
 blob ids only with `coverage.browser` or `coverage.server` set to `'functions'` or `'lines'`. `piwi coverage
 upload` adds the commit's tracked paths. Source code and hit counts never leave.
 
-Two rows need no setting, the anonymous git-host reads and a link's title: both fail quietly offline.
+Two rows need no setting, the anonymous git-host reads and a link's title: both fail quietly offline, so an
+air-gapped instance works the same.
 
-The **AI provider** is the one to weigh: it alone receives your source code and the full
-failure context, and only at the endpoint *you* set (with a local
-model over Ollama or vLLM, nothing leaves the machine). You can preview the exact
-context before it's sent, and cap its size:
+The **AI provider** alone receives your source code and the full failure context, at the endpoint
+*you* set (a local model over Ollama or vLLM keeps it on the machine). Preview and cap that context:
 [AI diagnosis → Privacy](/features/ai-diagnosis#privacy).
 
 ## What never leaves your server
 
-- **Traces.** The Playwright trace viewer is bundled and served by your instance at
-  `/trace-viewer/`. Opening a trace from Piwi uploads it nowhere, unlike sending a colleague to
-  the hosted `trace.playwright.dev`.
+- **Traces.** Your instance serves the Playwright trace viewer at `/trace-viewer/`: opening a trace
+  uploads it nowhere, unlike the hosted `trace.playwright.dev`.
 - **The API reference.** Rendered in-app from your instance's OpenAPI spec, with no third-party CDN, so it
   works offline.
 - **Screenshots, videos, HTML reports.** Stored on your disk or S3 bucket, served by your instance.
-- **HTML report execution.** Reports run with scripts enabled inside a CSP sandbox with a unique opaque origin. Piwi
-  gives the report an in-memory Web Storage facade so Playwright's settings UI works; it is discarded with the
-  report document and cannot read the dashboard's cookies or local storage. Uploaded reports remain untrusted active
-  content.
-- **Your IDE mapping.** The [Open in editor](/features/ide-integration) workspace root lives in your browser's
-  local storage, because the source is on your machine, and is never sent to the
-  dashboard.
+- **HTML report execution.** Reports run their scripts in a CSP sandbox with a unique opaque origin, with an
+  in-memory Web Storage facade for Playwright's settings UI, discarded with the report; they cannot read the
+  dashboard's cookies or local storage. Uploaded reports remain untrusted active content.
+- **Your IDE mapping.** The [Open in editor](/features/ide-integration) workspace root stays in your browser's
+  local storage, never sent to the dashboard.
 
 ## What reaches your server from Piwi Picker
 
 The [browser extension](/features/extension) works with no instance. Connecting sends the browser's and operating
 system's names. Connected, it reads a project's URL patterns, function catalog and locator index, and sends a URL
-pattern you add and a [bug report](/features/bug-reports), the report only on **Send** in its preview, which shows
-exactly what goes. That report carries the recorded steps with the values
+pattern you add and a [bug report](/features/bug-reports), only on **Send** in its preview, which shows
+exactly what goes. It carries the recorded steps with the values
 typed (never a password, and none with **Leave out the values I typed**), and whichever evidence the reporter
-kept ticked: screenshots of the tab, console errors and warnings, failed requests (method, path without query values,
+kept ticked: screenshots of the tab, a screenshot of each step when the instance takes them, console errors and warnings, failed requests (method, path without query values,
 status; never a header or a body) and an outline of the page. It goes only to the connected
 instance, stored there like a run's evidence.
 
@@ -81,7 +77,7 @@ report's title and steps, with their typed values and nothing else, to that app 
 
 ## What Piwi deliberately does not capture
 
-Some data is never captured, so cannot leak:
+Never captured, so it cannot leak:
 
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* (role, accessible name, test id), never what was typed into it. Traces and the
@@ -101,16 +97,19 @@ Some data is never captured, so cannot leak:
   (`#access_token=[masked]`).
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
   network view, as are token-shaped strings in URLs, bodies and [test errors](/reference/test-metadata#test-errors).
-  The trace file is stored as uploaded, so the trace viewer and a downloaded trace still show them.
+  Piwi stores the trace file split and compressed but with its content unchanged, so the trace viewer and a
+  downloaded trace still show them.
 - **Backend logs, in production.** The [backend-log integrations](./backend-logs) emit their header only
   in development and test environments by default.
 
 ## Secrets at rest
 
-Credentials you store in the dashboard (AI API keys, SCM tokens, webhook signing secrets) are
-encrypted with AES-256-GCM using `PIWI_SECRET_KEY`. **Set it in production.** With it unset,
-or set to the development default published in this repository, the dashboard refuses to save a
-credential and says which variable to set. Generate a key with:
+Credentials you store in the dashboard are encrypted with AES-256-GCM using `PIWI_SECRET_KEY`:
+AI provider keys, SCM tokens (the instance's and each project's), webhook signing secrets, Slack bot
+tokens, the Jira and Zephyr Scale connections' credentials, CI server tokens, and a scheduled
+report's share-link token on its way to delivery. **Set it in production.** Unset, or set to the
+published development default, the dashboard refuses to save a credential and names the variable.
+Generate a key with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -119,25 +118,24 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 API keys are stored as SHA-256 hashes and shown once, at creation. A leaked database gives an
 attacker no usable key.
 
-Secrets provided by environment variable are never written to the database nor returned by the
-API: the settings UI shows them read-only with a lock badge.
+Secrets set by environment variable are never written to the database nor returned by the API:
+the settings UI shows them read-only, with a lock badge.
 
 ## The demo
 
-The [live demo](https://piwitests.dev/demo/) has no backend. It runs the real application against
-an in-browser SQLite database seeded with fake data, inside a service worker. Nothing you click
-reaches a server.
+The [live demo](https://piwitests.dev/demo/) has no backend: the real application runs in a service
+worker, against an in-browser SQLite database of fake data. Nothing you click reaches a server.
 
 ## Retention
 
-You are responsible for the data you keep: `PIWI_RETENTION_DAYS` prunes old runs and their files
+The data you keep is yours to manage: `PIWI_RETENTION_DAYS` prunes old runs and their files
 nightly, or delete in bulk from **Settings → Storage**.
 Deleting a run removes its executions, traces, reports, and any evidence payloads nothing else
 references: [Storage → Data retention](/operate/storage#data-retention).
 
 ## Verifying any of this
 
-The source is public and the outbound surface small enough to audit: watch the container's egress, or read
+The source is public and the outbound surface small: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/piwi/tree/main/apps/application/server/utils): the AI
 provider, SCM, SMTP, notification, OAuth, Jira, Zephyr Scale, CI server, OpenTelemetry, OpenAPI, avatar and
 link-unfurl clients alone open a socket there; the S3 client is in `server/storage/`, PostgreSQL's in

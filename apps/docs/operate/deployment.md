@@ -116,10 +116,9 @@ Run with:
 docker compose up -d
 ```
 
-With authentication off, a container that reaches the dashboard by its service name, such as a reporter in a
-Playwright container sending to `http://piwi:3000`, gets a `403` until that name is in `PIWI_ALLOWED_HOSTS`:
-add `PIWI_ALLOWED_HOSTS=piwi` to the dashboard's `environment`
-([why](./authentication#disabling-authentication)).
+With authentication off, a reporter in another container that sends to `http://piwi:3000` needs
+`PIWI_ALLOWED_HOSTS=piwi` in the dashboard's `environment`
+([the host allowlist](./authentication#disabling-authentication)).
 
 ### Docker Compose with PostgreSQL
 
@@ -240,8 +239,9 @@ spec:
 
 The Service stays inside the cluster: publish it through your Ingress with TLS, rather than as a plain-HTTP
 `LoadBalancer`, with the proxy settings of [Reverse proxy (HTTPS)](#reverse-proxy-https). With authentication off, a
-pod that calls the Service by name needs that name in `PIWI_ALLOWED_HOSTS` (`piwi-dashboard`, or the full
-`piwi-dashboard.<namespace>.svc.cluster.local`); the probes call the pod's IP address and need nothing.
+pod that calls the Service by name needs that name in [`PIWI_ALLOWED_HOSTS`](./authentication#disabling-authentication)
+(`piwi-dashboard`, or the full `piwi-dashboard.<namespace>.svc.cluster.local`); the probes call the pod's IP address
+and need nothing.
 
 ## npm / npx (quick local run)
 
@@ -285,7 +285,10 @@ isolates the environment.
 
 ## Reverse proxy (HTTPS)
 
-Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost. Two working examples — mind the **upload size** (trace/report uploads can reach hundreds of MB, and a run's results sent as one JSON document up to [`PIWI_SUBMIT_MAX_BYTES`](/reference/configuration#ingest-limits), 256 MB by default) and **SSE streaming** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered).
+Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost: with authentication on, browser sign-in needs HTTPS, since the session cookie is `Secure` and plain `http://` works only on `localhost`. A proxy gets two things wrong by default, which both examples below set:
+
+- **Upload size.** Trace and report uploads reach hundreds of MB: one upload (a report, or one test's files) is accepted up to [`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default, and a run's results sent as one JSON document up to `PIWI_SUBMIT_MAX_BYTES`, 256 MB by default. Raise the proxy's body limit to match (`client_max_body_size` in nginx), or lower those limits to the proxy's.
+- **Event-stream buffering.** Live runs and browser notifications use long-lived `text/event-stream` responses: the proxy must pass them through unbuffered and keep them open (`proxy_buffering off` and a long `proxy_read_timeout` in nginx).
 
 **Caddy** (automatic HTTPS):
 
@@ -324,7 +327,7 @@ server {
 
 Serve the dashboard over HTTP/2 when people keep several tabs open. Over HTTP/1.1, plain HTTP or HTTPS without HTTP/2, a browser opens at most six connections to one address, and each Piwi page that follows a running run holds one: a run page that finds none left says **Live updates stalled**. Caddy speaks HTTP/2 by default; nginx needs `http2 on`, as above.
 
-When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a name other than `localhost`, its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
+Set `PIWI_SITE_URL` to the public HTTPS URL, so email links and OAuth callbacks point at the right origin, and `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). Have the proxy forward the browser's `Host` header, as both examples do: with authentication off, the [host allowlist](./authentication#disabling-authentication) reads it.
 
 ## Resource requirements
 

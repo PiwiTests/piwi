@@ -8,10 +8,11 @@ lang: en-US
 
 <Needs reporter />
 
-A **dashboard** is a named arrangement of [analytics](./analytics) widgets in bands, with a default
-[scope](./analytics#scope): its projects, filters and period. The analytics page is the built-in
-**Overview** dashboard; anyone can keep their own dashboards, share them with the team, schedule them
-as a [quality report](./quality-reports), and put them on a wall screen.
+An **analytics dashboard** is a named arrangement of [analytics](./analytics) widgets in bands, with a default
+[scope](./analytics#scope): its projects, filters and period. This page covers the analytics dashboards
+themselves: the built-in ones, saving and editing your own, sharing them and showing them on a wall screen.
+The scope and what the numbers mean are on [Analytics](./analytics); sending one as a document is on
+[Quality reports](./quality-reports). On this page, "dashboard" means an analytics dashboard.
 
 <figure>
   <img src="/screenshots/saved-dashboard.png" alt="A shared dashboard: the checkout smoke tests over the current sprint, with a list, the period's releases and a note">
@@ -23,8 +24,9 @@ as a [quality report](./quality-reports), and put them on a wall screen.
 The header's switcher lists every dashboard you can open, with a search:
 
 - **Built-in**: Overview (the analytics page, four bands and sixteen widgets), and the report dashboards
-  Executive, Engineering and Gaps digest (only where the [Test Map](./scenario-gaps) is not declined). The Team
-  dashboard is a [quality report](./quality-reports) only, offered when the report's tests have an owner. A built-in dashboard cannot be changed, only duplicated.
+  Executive, Engineering and Gaps digest (only where the [Test Map](./scenario-gaps) is not declined), whose
+  contents [Quality reports](./quality-reports#what-a-report-contains) describes. The Team dashboard is a quality
+  report only, offered when the report's tests have an owner. A built-in dashboard cannot be changed, only duplicated.
 - **Shared**: saved dashboards someone shared with every signed-in user.
 - **Personal**: your private dashboards.
 - **Unused**: shared dashboards nobody opened for 90 days, where their owner or an administrator can
@@ -71,7 +73,7 @@ widgets (ownership, environment comparison, movers; see [Analytics widgets](/ref
 
 - **Metric**: one number of the metric catalog, drawn as a number, a line, bars, a table or a heatmap
   (below).
-- **List**: the latest runs of the period, the open failure causes with the most occurrences, the
+- **List**: the latest runs of the period, the open failure clusters with the most occurrences, the
   flakiest tests, or the highest-scored open scenario gaps, top 5 to 25, each linking to its page.
 - **Timeline markers**: the [timeline markers](./timeline-markers) of the period, optionally of some categories.
 - **Note**: text in Markdown. Raw HTML is shown as text, so a shared dashboard cannot carry a script.
@@ -85,13 +87,13 @@ dashboard.
 ### The metric widget
 
 Pick a metric, a display and, optionally, a **breakdown**: "wasted CI minutes by browser", "pass rate by
-project tag", "open failure causes by assignee". The breakdowns a metric offers depend on what it
+project tag", "open failure clusters by assignee". The breakdowns a metric offers depend on what it
 counts:
 
 | Metric counts | Breakdowns |
 |---|---|
 | Runs and tests (pass rates, durations, wasted and CI minutes, regressions) | project, project tag, environment, branch, run kind; browser, test tag, owner, priority, feature, spec directory |
-| Failure causes | project, project tag, error type, status, assignee |
+| Failure clusters | project, project tag, error type, status, assignee |
 | Quarantined tests | project, project tag, owner, test tag |
 
 With a breakdown, *Bars* and *Table* show one row per group for the period, *Line* one line per group
