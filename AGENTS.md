@@ -87,8 +87,8 @@ configuration: the SQLite database and `.data/` are created when the server star
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).
 
-Run typecheck, lint, format check and the relevant tests **once at the end**, before the final commit, not after every
-edit.
+Run typecheck, lint, format check and the tests that cover your change **once at the end**, before the final commit, not
+after every edit. Never run a whole unit suite or a full end-to-end suite locally: they take long, and CI runs them.
 
 ## Conventions that apply everywhere
 
