@@ -6,7 +6,15 @@ catalog that renders one of them, and where a reader of each tool finds its page
 [`docs-revamp.md`](../adr/docs-revamp.md) (v0.39.0), whose mechanisms shipped and are measured here against the site
 they now hold.
 
-**Status.** Proposed 2026-11-14. Nothing is built. The [plan](#the-plan) has a first step that needs no decision.
+**Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit: step 1 of [the plan](#the-plan),
+all six items but one link. The Features groups are collapsed; the loop page is linked from the landing page, Getting started,
+Editor extensions and Browser extension, Tracing from Metrics and the Production checklist, What Piwi does from
+Getting started; the Reference sidebar has six groups; Codex CLI and DeepSeek CLI are nested under AI provider
+(`SidebarItem` has `items`, and `sidebarEntries()` flattens a sidebar for the drift test and `llms.txt`); `FeatureNeed`
+has `editor`, on 13 catalog entries and their pages; Getting started has a section on where the tests are written.
+Left out: the loop page's link on Desktop app, a page at its word budget whose Related list would lose Desktop app
+runs to make room. Steps 2 and 3 wait for the [decisions](#decisions-for-you). What the pages say, as opposed to
+where they are, is audited in [`docs-content-audit.md`](docs-content-audit.md).
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -193,6 +201,38 @@ instrumentation), `change-impact` (Impact from a diff), `live-view-layers` (Page
 `devtools` (Developer tools), `comparison` (Why Piwi?), `project-access` (Access, roles and groups). Each costs a
 contributor a search and nothing to a reader. Rename one only when its page moves anyway.
 
+## Against the app's own structure
+
+The dashboard was started on the seeded data and walked. Its structure agrees with the layout proposed below more
+than with the one the site has.
+
+- **The app has a Tools page.** Settings → Companion tools ("Piwi tools" in the user menu) lists Piwi Picker, the
+  desktop app, the reporter CLI, the MCP server and agent skills, the editor extensions and Open in editor, each
+  with its install link and a link to its docs page. That is the Tools section, already drawn: the section takes
+  those entries, and Piwi Runner, which the page lacks.
+- **Each proposed group is one place in the app**, where "Explain the failures" today spans five:
+
+| Proposed group | Its place in the dashboard |
+|---|---|
+| Keep the history | Home; Project → Runs |
+| Watch a run | a running run's page |
+| Explain the failures | Project → Failures (Clusters, Flaky, Quarantine) and Flake Lab; the execution and cluster pages |
+| Time and resources | Project → Performance; Run → Timeline and Resources |
+| Hand back a fix | the execution page's More ways to fix; Settings → Pull requests and Auto-heal |
+| Issue trackers | Settings → Integrations; Project → Settings → Issue tracker and Test management |
+| Run the right tests | Project → More actions → Selections |
+| Find what your tests miss | Project → Coverage (Gaps, Map, Code) |
+| Trends and reports | Analytics and Quality reports, in the main navigation |
+| Tools | Settings → Companion tools |
+
+- **The names differ.** The group is "Find what your tests miss", the tab is Coverage and the capability is
+  "Scenario gaps"; "Time and resources" is the Performance tab. The job names are the product's positioning and can
+  stay, if each group's intro line names its place, on the sidebar's landing and on All features.
+- **The places are written by hand, and wrong.** The catalog's `where` hints name three tabs the app does not have,
+  and the UI overview misses a run tab, five sections of a project's Settings and several pages:
+  [`docs-content-audit.md`](docs-content-audit.md#docs-against-the-dashboards-structure) lists them and proposes
+  one list of places that the app, the catalog and the drift test read.
+
 ## The proposed layout
 
 Top navigation: **Guide · Features · Tools · Self-hosting · Reference · Blog · Demo**. Features keeps what the
@@ -263,7 +303,7 @@ recommends; it needs one check that no Features page's path starts with a Tools 
 
 ## The plan
 
-**Step 1, no decision needed (one pull request, no URL moves):**
+**Step 1, no decision needed (one pull request, no URL moves), built:**
 
 1. `collapsed: true` on the Features groups (L1).
 2. Links to the loop page from the landing page, Getting started, and the three tool hubs; a link to Tracing from
@@ -291,3 +331,6 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 3. **Keep every URL** (per-page sidebar keys) or move the tool pages to `/tools/`. Recommended: keep.
 4. **The budget stays at 1,500 words, with nesting as the way to split.** Recommended over raising it.
 5. **Core concepts as a short page plus a glossary.** Recommended; the anchors stay where the drift test finds them.
+6. **Groups named for the job, with the place in the intro**, or renamed after the app's tabs (Coverage, Performance).
+   Recommended: the first. The same question stands for the app, which groups its capabilities a third way
+   ([`docs-content-audit.md`](docs-content-audit.md#what-the-app-could-change), item 13).

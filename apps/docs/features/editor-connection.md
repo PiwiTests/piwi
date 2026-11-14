@@ -6,6 +6,8 @@ lang: en-US
 
 # Editor connection
 
+<Needs editor />
+
 The [editor extensions](./editors) read everything from your Piwi instance. They find it in this order, and the first
 that names an instance wins:
 
@@ -136,6 +138,5 @@ The **Piwi** failures view says the same in both editors, naming the instance an
 
 ## Related
 
-- [Editor extensions](./editors): what the extensions show once connected
 - [API keys](/operate/api-keys): the key the editor signs in with, and how to revoke it
 - [Desktop app](/features/desktop): the local instance the editor finds by itself

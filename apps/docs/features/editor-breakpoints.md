@@ -6,7 +6,7 @@ lang: en-US
 
 # Breakpoints in the browser
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
 A breakpoint you set with the editor's own gutter click pauses the next test run the [editor extensions](./editors)
 start, in the browser, right before the call on its line that acts on, reads or checks the page: a navigation, a

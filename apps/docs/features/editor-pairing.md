@@ -6,7 +6,7 @@ lang: en-US
 
 # Piwi Picker and your editor
 
-<Needs extension />
+<Needs extension editor />
 
 [Send to editor](./editor-recording#send-from-piwi-picker) and the [Runs window](./runs-window) reach your editor
 through one pairing: the address **Piwi: Pair with Piwi Picker** copies, pasted under **Send to editor** in Piwi

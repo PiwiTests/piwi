@@ -6,6 +6,8 @@ lang: en-US
 
 # JetBrains plugin
 
+<Needs editor />
+
 The Piwi plugin brings the [editor extensions](./editors) to the JetBrains IDEs with the LSP API: WebStorm, IntelliJ
 IDEA Ultimate, Rider and the others, from 2024.1. It runs the same editor service as the VS Code extension, so the
 editor pages describe it too, with the JetBrains names of each action. This page lists what the plugin needs, and

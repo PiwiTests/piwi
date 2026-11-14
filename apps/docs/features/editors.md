@@ -6,6 +6,8 @@ lang: en-US
 
 # Editor extensions
 
+<Needs editor />
+
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
 (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
 are editing. Both run the same editor service; the [JetBrains plugin](./jetbrains) page lists what the plugin needs
@@ -143,4 +145,4 @@ the lines above the code with Code Vision, and its actions under **Tools → Piw
 - [Failures in the editor](./editor-failures): the CI failures at their lines, the quick fixes and the failures view.
 - [Runs from the editor](./editor-runs): run tests, and follow the run in the status bar.
 - [Record tests from the editor](./editor-recording): steps written at the cursor as you take them in a browser.
-- [Editor connection](./editor-connection): the instance the editor reads, and its key.
+- [Write, run and fix a test](./write-run-fix): the loop across tools.

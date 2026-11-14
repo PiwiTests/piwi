@@ -6,7 +6,7 @@ lang: en-US
 
 # Pause and step from the editor
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
 A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's own
 commands: no debug session starts, and the IDE's debugger works as usual beside it; so can

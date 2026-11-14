@@ -6,6 +6,8 @@ lang: en-US
 
 # Recorded code
 
+<Needs editor />
+
 A [recording from the editor](./editor-recording), and a flow [sent from Piwi Picker](./editor-recording#send-from-piwi-picker),
 are written as the code your suite would hold: locators verified on the page, calls to your own page objects and
 helpers, no password in the file. The Playwright config sets how that code looks for everyone who records in the

@@ -6,7 +6,7 @@ lang: en-US
 
 # Debug in my editor
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
 On a failed execution's page, **Debug in my editor** takes you from the failure to the same test, stopped at the
 failing line in your editor, on your machine. It sits on the **Source** tab, beside the open link of the frame where

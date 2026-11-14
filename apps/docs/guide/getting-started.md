@@ -7,9 +7,10 @@ lang: en-US
 # Getting started
 
 Piwi is a **server plus a Playwright reporter**. The reporter runs inside `npx playwright test` and sends the results
-to the server, which keeps every run with its traces and renders the dashboard. Three steps set up both. New to the
-vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the dashboard
-uses.
+to the server, which keeps every run with its traces and renders the dashboard. Three steps set up both.
+[What Piwi does](./what-piwi-does) says what the server does with those runs: its four jobs, and the pieces around it.
+New to the vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the
+dashboard uses.
 
 <figure>
   <img src="/diagrams/moving-parts.svg" alt="The reporter, inside a Playwright run on your machine or in CI, streams results and uploads traces to the Piwi server, which keeps them in its database and artifact storage and serves the dashboard to your browser">
@@ -144,8 +145,24 @@ When a test fails, its execution page opens on what happened, the most likely ca
 trace, screenshots and logs underneath. [Your first failure, explained](./first-failure) walks through one failing
 test from its headline to its evidence.
 
+## Where you write the tests
+
+The dashboard is where you read results. Two tools work where you write the tests, in your editor and in your browser:
+
+- **[Editor extensions](/features/editors)**: the Piwi extension for VS Code and the Piwi plugin for the JetBrains IDEs
+  with the LSP API (WebStorm, IntelliJ IDEA Ultimate, Rider). They record a test at the cursor in a browser your
+  project's own Playwright opens, run it and stop it at the editor's breakpoints, and show the latest CI failures at
+  the lines that failed, with the replacement locator as a quick fix.
+- **[Piwi Picker](/features/extension)**: a Chrome, Edge and Firefox extension that picks ranked Playwright locators
+  from the page you are looking at and records a flow as a runnable spec. It works with no instance; paired with the
+  editor, it sends a recording to the cursor and follows the editor's runs in its Runs window.
+
+[Write, run and fix a test](/features/write-run-fix) takes a test from an empty spec to a passing run, and names the
+tool for each step.
+
 ## Related
 
+- [What Piwi does](./what-piwi-does): the four jobs, the two rules behind every feature, and the pieces
 - [Core concepts](./concepts): the vocabulary the dashboard and these docs use
 - [Reporter](./reporter): manual setup, options, streaming and authentication
 - [Capture fixtures](./capture-fixtures): what the fixtures file adds

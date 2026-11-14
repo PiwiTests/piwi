@@ -15,6 +15,8 @@ import { PIWI_FEATURE_GROUPS } from '../../application/shared/piwi-features';
 export interface SidebarItem {
   text: string;
   link: string;
+  /** The pages nested under this one: the entry stays a link, with these indented below it. */
+  items?: SidebarItem[];
 }
 
 export interface SidebarGroup {
@@ -67,11 +69,19 @@ export function headingAnchor(heading: string): string {
     .toLowerCase();
 }
 
+/** Every entry of a sidebar in reading order, an entry before the ones nested under it. */
+export function sidebarEntries(groups: SidebarGroup[]): SidebarItem[] {
+  const withNested = (items: SidebarItem[]): SidebarItem[] =>
+    items.flatMap((item) => [item, ...withNested(item.items ?? [])]);
+  return groups.flatMap((group) => withNested(group.items));
+}
+
 /**
  * One sidebar group per catalog group, holding its recipes and then the catalog
  * entries whose page lives under /features/. Several entries can point into the
  * same page with different anchors; each keeps its own item, and a whole-page
- * entry appears once.
+ * entry appears once. The groups are collapsed: VitePress opens the one that
+ * holds the current page.
  */
 export function featuresSidebar(): SidebarGroup[] {
   return PIWI_FEATURE_GROUPS.map((group) => {
@@ -87,7 +97,7 @@ export function featuresSidebar(): SidebarGroup[] {
     }
     return {
       text: group.title,
-      collapsed: false,
+      collapsed: true,
       items: [...(RECIPES_BY_GROUP[group.title] ?? []), ...features],
     };
   }).filter((group) => group.items.length > 0);
@@ -119,9 +129,14 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'Capture fixtures', link: '/guide/capture-fixtures' },
       { text: 'CI & sharding', link: '/guide/ci' },
       { text: 'Source control', link: '/guide/source-control' },
-      { text: 'AI provider', link: '/guide/ai-provider' },
-      { text: 'Codex CLI', link: '/guide/codex-cli' },
-      { text: 'DeepSeek CLI', link: '/guide/deepseek-cli' },
+      {
+        text: 'AI provider',
+        link: '/guide/ai-provider',
+        items: [
+          { text: 'Codex CLI', link: '/guide/codex-cli' },
+          { text: 'DeepSeek CLI', link: '/guide/deepseek-cli' },
+        ],
+      },
       { text: 'Backend instrumentation', link: '/guide/backend-logs' },
       { text: 'Import past runs', link: '/guide/importing-runs' },
       { text: 'Remote development', link: '/guide/remote-development' },
@@ -179,27 +194,52 @@ export const selfHostingSidebar: SidebarGroup[] = [
 
 export const referenceSidebar: SidebarGroup[] = [
   {
-    text: 'Reference',
+    text: 'Product',
     items: [
       { text: 'All features', link: '/reference/features' },
       { text: "What's new", link: '/reference/whats-new' },
+    ],
+  },
+  {
+    text: 'Configuration',
+    items: [
       { text: 'Configuration reference', link: '/reference/configuration' },
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
       { text: 'Reporter options', link: '/reference/reporter-options' },
       { text: 'Coverage cost', link: '/reference/coverage-cost' },
-      { text: 'Test metadata', link: '/reference/test-metadata' },
-      { text: 'Test search', link: '/reference/test-search' },
-      { text: 'Clue rules', link: '/reference/clues' },
-      { text: 'Locator stability rules', link: '/reference/locator-stability' },
+    ],
+  },
+  {
+    text: 'Reporter & CLI',
+    items: [
       { text: 'Piwi CLI', link: '/reference/cli' },
+      { text: 'Test metadata', link: '/reference/test-metadata' },
       { text: 'Steps file format', link: '/reference/steps-format' },
       { text: 'Bug report file format', link: '/reference/bug-report-file' },
-      { text: 'MCP tools', link: '/reference/mcp-tools' },
+    ],
+  },
+  {
+    text: 'Analysis rules',
+    items: [
+      { text: 'Clue rules', link: '/reference/clues' },
+      { text: 'Locator stability rules', link: '/reference/locator-stability' },
+      { text: 'Gap detectors & exposure', link: '/reference/gap-detectors' },
+    ],
+  },
+  {
+    text: 'Dashboard',
+    items: [
+      { text: 'Test search', link: '/reference/test-search' },
+      { text: 'Keyboard shortcuts', link: '/reference/keyboard-shortcuts' },
       { text: 'Analytics widgets', link: '/reference/analytics-widgets' },
       { text: 'Metrics', link: '/reference/metrics' },
-      { text: 'Gap detectors & exposure', link: '/reference/gap-detectors' },
+    ],
+  },
+  {
+    text: 'Automation',
+    items: [
+      { text: 'MCP tools', link: '/reference/mcp-tools' },
       { text: 'Notification events & webhooks', link: '/reference/notification-events' },
-      { text: 'Keyboard shortcuts', link: '/reference/keyboard-shortcuts' },
       { text: 'API docs (interactive)', link: 'https://piwitests.dev/demo/settings/api' },
     ],
   },

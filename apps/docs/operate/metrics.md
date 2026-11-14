@@ -67,4 +67,5 @@ The column list and every parameter are in the API reference (`/settings/api` on
 ## Related
 - [Analytics](/features/analytics): the metrics, the scope and the periods
 - [Quality reports](/features/quality-reports): the same numbers as a document for a reader
+- [Tracing with OpenTelemetry](./tracing): a trace of each request the server handles, with its SQL statements, for a collector you run
 - [Configuration reference](/reference/configuration#general): `PIWI_METRICS_ENABLED`

@@ -6,7 +6,7 @@ lang: en-US
 
 # Coverage in the editor
 
-<Needs reporter fixtures backend />
+<Needs reporter fixtures backend editor />
 
 With [coverage](/guide/concepts#coverage) recorded, the [editor extensions](./editors) mark the lines of an
 application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and in

@@ -6,6 +6,8 @@ lang: en-US
 
 # Runs from the editor
 
+<Needs editor />
+
 The [editor extensions](./editors) run your tests where you edit them, then show what the run changed: its progress
 in the status bar while it executes, and its results over the latest CI run's [failures](./editor-failures) within a
 second of its end.
@@ -125,6 +127,5 @@ run**, **Reload Piwi** for an unreachable instance or a desktop app to restart, 
 ## Related
 
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
-- [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
 - [Test selection](/features/test-selection): the selections **Run a saved selection…** runs.

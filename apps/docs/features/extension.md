@@ -121,5 +121,6 @@ project** select overrides both for the session. See [Extension connection](./ex
 - [Extension connection](./extension-connection): connecting in one step, and the URL patterns kept on the instance
 - [Tested elements](./tested-elements): the elements your tests reach, drawn on the page
 - [Runs window](./runs-window): the editor's runs, steered and watched from the browser
+- [Write, run and fix a test](./write-run-fix): a test from an empty spec to a passing run, with the tool for each step
 - [Test functions catalog](./test-functions): the functions a recording can call
 - [Locator healing](./locator-healing): the replacement Piwi proposes after a failure

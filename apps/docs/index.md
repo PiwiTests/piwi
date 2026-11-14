@@ -116,6 +116,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 - [Capture fixtures](/guide/capture-fixtures): the one file behind locator healing, network timing and console capture
 - [CI & sharding](/guide/ci): two environment variables, and every shard merged into one run
 - [Browser extension](/features/extension) and [Editor extensions](/features/editors): Piwi where you write the tests
+- [Write, run and fix a test](/features/write-run-fix): a test from an empty spec to a passing run, with the tool for each step
 
 ### Something is red right now
 

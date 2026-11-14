@@ -14,7 +14,7 @@ import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
 import { TEST_SEARCH_FIELD_DEFS } from '#shared/test-search';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
-import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
+import { headingAnchor, sidebarEntries, sidebars } from '../../../docs/.vitepress/navigation';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { buildDocsCorpus } from '#shared/docs-corpus';
 import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
@@ -618,17 +618,16 @@ describe('docs site structure', () => {
         .replace(/^---\n[\s\S]*?\n---\n/, '')
         .replace(/```[\s\S]*?```/g, ''),
     )?.[1];
-  const sidebarEntries = [
+  const sidebarLinks = [
     ...new Map(
       Object.values(sidebars())
-        .flat()
-        .flatMap((group) => group.items)
+        .flatMap(sidebarEntries)
         .filter((item) => item.link.startsWith('/'))
         .map((item) => [`${item.link} ${item.text}`, [item.link, item.text] as const]),
     ).values(),
   ];
 
-  test.each(sidebarEntries)('sidebar entry %s resolves to a page titled "%s"', (link, text) => {
+  test.each(sidebarLinks)('sidebar entry %s resolves to a page titled "%s"', (link, text) => {
     const [route, anchor] = link.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '/index');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);

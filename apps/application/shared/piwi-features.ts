@@ -28,6 +28,7 @@ export type FeatureNeed =
   | 'backend' // a backend instrumentation package in the app under test
   | 'desktop' // the desktop app
   | 'extension' // the browser extension
+  | 'editor' // the VS Code extension or the JetBrains plugin
   | 'admin'; // an administrator (or auth disabled)
 
 /** Human labels for the need chips, used by the All features generator. */
@@ -38,6 +39,7 @@ export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
   backend: 'a backend integration',
   desktop: 'the desktop app',
   extension: 'the browser extension',
+  editor: 'the editor extension',
   admin: 'an administrator',
 };
 
@@ -52,6 +54,7 @@ export const FEATURE_NEED_DOCS: Record<FeatureNeed, string> = {
   backend: 'guide/backend-logs',
   desktop: 'features/desktop',
   extension: 'features/extension',
+  editor: 'features/editors',
   admin: 'operate/authentication#roles',
 };
 
@@ -577,7 +580,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Record tests from the editor',
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
-        needs: [],
+        needs: ['editor'],
         where: 'Piwi: Record here…; Tools → Piwi → Record here… in a JetBrains IDE',
         doc: 'features/editor-recording',
       },
@@ -585,7 +588,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Recorded code',
         summary:
           "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
-        needs: [],
+        needs: ['editor'],
         where: "playwright.config.ts → '@piwi' → codegen",
         doc: 'features/recorded-code',
       },
@@ -593,7 +596,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Runs from the editor',
         summary:
           "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
-        needs: [],
+        needs: ['editor'],
         where: 'Piwi: Run the tests that reach this file, Piwi: Run a saved selection…; the status bar',
         doc: 'features/editor-runs',
       },
@@ -618,7 +621,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Piwi Picker and your editor',
         summary:
           'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
-        needs: ['extension'],
+        needs: ['extension', 'editor'],
         where: 'Browser extension → Settings → Send to editor',
         doc: 'features/editor-pairing',
       },
@@ -626,7 +629,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Breakpoints in the browser',
         summary:
           "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
-        needs: ['fixtures'],
+        needs: ['fixtures', 'editor'],
         where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-breakpoints',
       },
@@ -634,7 +637,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Pause and step from the editor',
         summary:
           'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
-        needs: ['fixtures'],
+        needs: ['fixtures', 'editor'],
         where:
           'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-run-control',
@@ -652,7 +655,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Code from a pause',
         summary:
           "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
-        needs: ['fixtures'],
+        needs: ['fixtures', 'editor'],
         where:
           "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-stop-code',
@@ -670,7 +673,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Debug in my editor',
         summary:
           "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
-        needs: ['fixtures'],
+        needs: ['fixtures', 'editor'],
         where: "Execution → Source, beside the failing line's frame",
         doc: 'features/debug-in-editor',
       },
@@ -847,7 +850,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Editor extensions',
         summary:
           'In VS Code and the JetBrains IDEs: the latest CI failures at their lines with the heal as a quick fix, the tests behind each locator and file, and the locators an unsaved change breaks.',
-        needs: [],
+        needs: ['editor'],
         where: 'VS Code extension, JetBrains plugin',
         doc: 'features/editors',
       },
@@ -855,7 +858,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'JetBrains plugin',
         summary:
           'The editor extensions in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API: what the plugin needs, the failures in its tool window, Code Vision above the code, and its actions under Tools → Piwi.',
-        needs: [],
+        needs: ['editor'],
         where: 'JetBrains IDEs: Tools → Piwi, the Piwi tool window',
         doc: 'features/jetbrains',
       },
@@ -863,7 +866,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Failures in the editor',
         summary:
           "The latest CI run's failures at the lines that failed, with the heal and the fix plan as quick fixes, your local runs laid over them, each failing line followed through your edits, and the failures view as a tree.",
-        needs: [],
+        needs: ['editor'],
         where: 'The Problems panel; the Failures view in VS Code, the Piwi tool window in a JetBrains IDE',
         doc: 'features/editor-failures',
       },
@@ -871,7 +874,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Coverage in the editor',
         summary:
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
-        needs: ['fixtures', 'backend'],
+        needs: ['fixtures', 'backend', 'editor'],
         where:
           'Application files in the editor; Piwi: Show or hide the coverage marks, in VS Code and under Tools → Piwi',
         doc: 'features/editor-coverage',
@@ -880,7 +883,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Editor connection',
         summary:
           'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',
-        needs: [],
+        needs: ['editor'],
         where: 'Piwi: Connect…; Settings → Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-connection',
       },

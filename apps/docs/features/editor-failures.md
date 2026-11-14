@@ -6,6 +6,8 @@ lang: en-US
 
 # Failures in the editor
 
+<Needs editor />
+
 The [editor extensions](./editors) show the failures of the latest CI run at the lines that failed, lay your local runs
 over them, and follow each failing line through your edits until a run covers its test again.
 
@@ -131,6 +133,5 @@ The choice is kept on this machine, per Playwright config.
 
 ## Related
 
-- [Editor extensions](./editors): what else the editor shows from your suite.
 - [Runs from the editor](./editor-runs): run the failing tests again, and follow the run in the status bar.
 - [Locator healing](/features/locator-healing): where the heal quick fix comes from.

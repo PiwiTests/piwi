@@ -6,7 +6,7 @@ lang: en-US
 
 # Code from a pause
 
-<Needs reporter fixtures />
+<Needs reporter fixtures editor />
 
 When a test stops in a run the [editor extensions](./editors) started, at a breakpoint, after **Pause** or **Step**,
 or at a failure, the editor offers code written from the page as it stands: an assertion of what you see, a mock of a
