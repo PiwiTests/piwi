@@ -2,7 +2,7 @@
  * Report schedules and report snapshots:
  *   /api/reports/schedules    — create, validate, mute, run now, delete, preview
  *   /api/reports/snapshots    — list, read, download a snapshot
- *   /reports and /reports/:id — the Reports page, Run now, the snapshot page
+ *   /reports and /reports/:id — the Quality reports page, Run now, the snapshot page
  *   Schedule… on /analytics   — the schedule form, prefilled with the scope, and its preview
  *
  * The email itself is checked by email-notifications.spec.ts; here the
@@ -176,7 +176,7 @@ test.describe('Report schedule API', () => {
   });
 });
 
-test.describe('The Reports page', () => {
+test.describe('The Quality reports page', () => {
   test('lists the schedule, runs it, and opens the snapshot', async ({ page, request }) => {
     // A name of its own: a snapshot outlives its deleted schedule, so a rerun on the same server would find the last one.
     const name = `Report page schedule ${Date.now()}`;
