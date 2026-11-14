@@ -1,6 +1,6 @@
 # Docs content audit: accuracy against the app, contradictions and redundancy
 
-An audit of what the documentation site (`apps/docs/`) says, where [`docs-layout-audit.md`](docs-layout-audit.md)
+An audit of what the documentation site (`apps/docs/`) says, where [`docs-layout-audit.md`](../adr/docs-layout-audit.md)
 audits where it says it. Three questions: does the site describe the dashboard and the tools as they are built, do
 two pages say different things, and is the same thing explained twice. It ends with what the app itself could change,
 seen while answering the first. State audited: `main` at v0.69.0 (`e3ddb84b`), 2026-11-14.
@@ -28,7 +28,7 @@ pull request of their own:
   run's tabs and the More actions pages that the palette's pull request adds and that the project page, the run page
   and the palette build from; this pull request is merged after that one.
 
-- **The follow-ups**, each tracked by an issue (#1406 to #1420), built by four pull requests:
+- **The follow-ups**, each tracked by an issue (#1406 to #1420), built by five pull requests:
   - **#1422**: the comments the code contradicts (#1416), the flaky chord test (#1418), and the Runner prepared on
     install so `npm run knip` passes after a plain install (#1419).
   - **#1421**: Piwi Picker's pairing messages and popup link (#1411), one name per Piwi Picker tool (part of #1415),
@@ -39,8 +39,11 @@ pull request of their own:
   - **This record's follow-up pull request**: C3.16 and D17 settled (#1409), the failure inbox on a page of its own
     (the first half of #1406), the glossary's *Words kept to one meaning* with the pages where a second sense misled
     corrected (#1412), Piwi Picker's popup keys and its Replay a bug report row (the rest of #1407), G2, G3, G7 and G8
-    widened (#1417), and the blog post, the integrations' READMEs and a catalog place corrected against the code
-    (#1420).
+    widened (#1417), the blog post, the integrations' READMEs and a catalog place corrected against the code, and the
+    dashboard's docs screenshots captured again (#1420).
+  - **#1424**: what the app could change, items 3 to 13 (#1414); the UI overview's missing pages and tabs, and S16
+    settled (#1408); "failure cause" read as "failure cluster" wherever a user reads it (the analytics part of
+    #1412); Settings paths in every form resolved by the docs check (G1 of #1417).
 
 What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
 
@@ -398,7 +401,7 @@ Seen in the code and, where marked **(seen)**, in the running dashboard on the s
    gaps show on the Coverage tab.
 9. **Companion tools lists six tools and not Piwi Runner** **(seen)**: Piwi Picker, the desktop app, the reporter
    CLI, the MCP server and agent skills, the editor extensions and Open in editor. The user menu calls the same page
-   "Piwi tools". It is the app's own list of what [`docs-layout-audit.md`](docs-layout-audit.md) proposes as the
+   "Piwi tools". It is the app's own list of what [`docs-layout-audit.md`](../adr/docs-layout-audit.md) proposes as the
    Tools section, and that section should carry its name and its order.
 10. **Run tab addresses do not match their labels.** `?tab=workers` is Timeline and `?tab=test-cases` is Tests;
     `?tab=timeline` falls back to Tests, while the project page accepts its old names.
@@ -443,7 +446,7 @@ or two, each with the code reference above. C5.3 and C5.1 first. It includes the
 the two lines of `setup-capabilities.ts`, since they are the same error.
 
 **Step 2: one owner per rule (P1, P2, P3).** In this order, since each removes the most copies: the CI gate, which
-[`docs-layout-audit.md`](docs-layout-audit.md) also asks a page for; Hold failures and the stop reasons; what the
+[`docs-layout-audit.md`](../adr/docs-layout-audit.md) also asks a page for; Hold failures and the stop reasons; what the
 live view sends; the fingerprint and cluster states out of `concepts.md`; the recipes cut back to links. A copy is
 replaced by a sentence and a link, and the owner gains the facts only a copy held. This shortens about thirty pages
 that are at their word budget.
@@ -489,21 +492,12 @@ overview from the app: G1 holds its facts and leaves its prose.
 
 ## Left for later
 
-Each item is tracked by an open GitHub issue of `PiwiTests/piwi`.
+What remains is tracked by an open GitHub issue of `PiwiTests/piwi`, which keeps this record in `proposals/`.
 
-- **S16 is not settled** ([#1408](https://github.com/PiwiTests/piwi/issues/1408)): which dashboard Analytics opens on.
-- **The UI overview** ([#1408](https://github.com/PiwiTests/piwi/issues/1408)) claims its main pages and tabs and
-  still leaves out the analytics dashboard routes, the bug report page and the test case's tabs.
-- **"Failure cause"** ([#1412](https://github.com/PiwiTests/piwi/issues/1412)): the analytics metrics and targets say
-  it for a failure cluster (`shared/analytics/metrics.ts`, `targets.ts`, `insight-rules.ts`).
-- **What the app could change**, items 3 to 13 ([#1414](https://github.com/PiwiTests/piwi/issues/1414)), and what
-  of items 14 to 21 the pull requests above left ([#1415](https://github.com/PiwiTests/piwi/issues/1415)).
-- **G1** ([#1417](https://github.com/PiwiTests/piwi/issues/1417)) resolves the paths that start at a project or a
-  run, in the catalog and on the pages; a path into Settings is not checked on a page, where the same words also name
-  an editor's or Piwi Picker's settings, and the sections of a project's Settings are not in the list. The other rules
-  say in their comment what they leave out: G2 reads a count before twelve nouns only, since most other numbers count
-  what their sentence names; G3 reads Piwi Picker's labels only as Piwi Picker's **Label**; G8 sees a new file that
-  sends a request, not a new call in a file already listed.
-- **Screenshots** ([#1420](https://github.com/PiwiTests/piwi/issues/1420)): the project page's images show its tab
-  Gaps where the page has Coverage, and `jetbrains-heal.png` shows quick fixes not named `Piwi: …`; the wording of
-  each help topic and of the generated reference pages has had spot checks only.
+- **Items 14 to 21 of [What the app could change](#what-the-app-could-change)**
+  ([#1415](https://github.com/PiwiTests/piwi/issues/1415)): #1421 and #1423 built them; the issue is still open, for
+  what they left (the size of the editors' command surface is an observation with nothing to build).
+- **`jetbrains-heal.png`** ([#1420](https://github.com/PiwiTests/piwi/issues/1420)) shows the quick fixes without their
+  `Piwi: …` names: `apps/jetbrains/scripts/take-screenshots.mjs` needs a JetBrains IDE under Xvfb.
+- **Spot checks only** ([#1420](https://github.com/PiwiTests/piwi/issues/1420)): the wording of each in-app help topic
+  and of the generated reference pages was sampled, not read in full against the code.

@@ -1,9 +1,12 @@
 # Docs layout audit: one sidebar for a dashboard and five tools
 
+- Status: accepted
+- Date: 2026-11-14
+
 An audit of how the documentation site (`apps/docs/`) is laid out: the top navigation, the four sidebars, the feature
 catalog that renders one of them, and where a reader of each tool finds its pages. State audited: `main` at v0.69.0
-(`e3ddb84b`), 2026-11-14. It follows [`docs-restructure.md`](../adr/docs-restructure.md) (v0.26.1) and
-[`docs-revamp.md`](../adr/docs-revamp.md) (v0.39.0), whose mechanisms shipped and are measured here against the site
+(`e3ddb84b`), 2026-11-14. It follows [`docs-restructure.md`](docs-restructure.md) (v0.26.1) and
+[`docs-revamp.md`](docs-revamp.md) (v0.39.0), whose mechanisms shipped and are measured here against the site
 they now hold.
 
 **Status.** Proposed 2026-11-14. Built, by the pull request that adds this audit:
@@ -28,7 +31,7 @@ they now hold.
 
 - **From step 3**: the CI merge gate has its page, `features/merge-gate.md`, in Hand back a fix (L10), and Core
   concepts is under half its length, each entry a definition that links its rule (L12), both built with
-  [`docs-content-audit.md`](docs-content-audit.md), which audits what the pages say as opposed to where they are.
+  [`docs-content-audit.md`](../proposals/docs-content-audit.md), which audits what the pages say as opposed to where they are.
   The editor's status bar, a page `main` added meanwhile, sits under Editor extensions.
 - **The follow-ups of [#1413](https://github.com/PiwiTests/piwi/issues/1413)**, in a later pull request. Core
   concepts is a short page in Get started (`guide/core-concepts.md`: the object model and the words a first run
@@ -46,7 +49,8 @@ they now hold.
 - **CI runs in your editor** have a page of their own, `features/editor-ci-runs.md`, under Editor extensions, built by
   #1423 (the second half of [#1406](https://github.com/PiwiTests/piwi/issues/1406)).
 
-What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
+Every planned item is built. What was not done, and why, is under [Left for later](#left-for-later): a decision the
+maintainer keeps, a rule that applies only when a page moves, and labels no issue asked to change.
 
 **Summary.** The rules of the two earlier records work: every feature has its own page, no page is a 6,000-word dump,
 nothing is copied, and the catalog keeps the sidebar, the landing page and All features in step. What they did not
@@ -262,7 +266,7 @@ than with the one the site has.
   stay, if each group's intro line names its place, on the sidebar's landing and on All features.
 - **The places are written by hand, and wrong.** The catalog's `where` hints name three tabs the app does not have,
   and the UI overview misses a run tab, five sections of a project's Settings and several pages:
-  [`docs-content-audit.md`](docs-content-audit.md#docs-against-the-dashboards-structure) lists them and proposes
+  [`docs-content-audit.md`](../proposals/docs-content-audit.md#docs-against-the-dashboards-structure) lists them and proposes
   one list of places that the app, the catalog and the drift test read.
 
 ## The proposed layout
@@ -365,7 +369,7 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 5. **Core concepts as a short page plus a glossary.** Recommended; the anchors stay where the drift test finds them.
 6. **Groups named for the job, with the place in the intro**, or renamed after the app's tabs (Coverage, Performance).
    Recommended: the first. The same question stands for the app, which groups its capabilities a third way
-   ([`docs-content-audit.md`](docs-content-audit.md#what-the-app-could-change), item 13).
+   ([`docs-content-audit.md`](../proposals/docs-content-audit.md#what-the-app-could-change), item 13).
 
 ## Left for later
 
