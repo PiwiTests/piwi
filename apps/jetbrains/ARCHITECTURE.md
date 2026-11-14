@@ -1071,14 +1071,14 @@ entry runs one exact release, `Glue.MCP_REMOTE` (`npx -y mcp-remote@<version>`, 
 CVE-2025-6514), over streamable HTTP alone (`--transport http-only`): `npx` with no version runs whatever npm serves
 that day, with the key or the token in its environment.
 
-With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the AI Assistant group of the
+With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the Agents (MCP) group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
 in through the instance's OAuth. The notification says which (`Glue.mcpAuthorizationNote`).
 
 **The runs' MCP server.** The editor service serves this project's runs to the agents of this machine as an MCP server
 of its own ([Agents](../../packages/editor/ARCHITECTURE.md#agents) in its reference). The initialization options say
 whether (`agents`, from `PiwiProjectService.agentsOptions`): `PiwiLocalSettings.serveRunsToAgents` (**Serve the test
-runs this project starts to the agents of this machine**, in the AI Assistant group of the settings page, which sends
+runs this project starts to the agents of this machine**, in the Agents (MCP) group of the settings page, which sends
 `piwi/agents` on a change), the port it listened at last (`agentsPort`) and the token, kept in the `PasswordSafe`
 per project (`Glue.agentsTokenEntry` of `Project.getLocationHash`, a new one when none is kept: `Glue.newAgentsToken`).
 So a configuration copied once still connects after a restart. When another program holds the kept port, the service

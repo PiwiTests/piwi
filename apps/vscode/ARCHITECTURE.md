@@ -158,19 +158,20 @@ the status item and the view say the service is down. The client writes to the e
 
 The settings (`contributes.configuration` in `package.json`), in the groups and order of the editor service's settings
 registry (`packages/editor/src/settings.json`), which `tests/settings.test.ts` holds them to with their scope, type,
-default and choice labels (`enumItemLabels`): a team's options (`piwi.serverUrl`, `piwi.project`) are window-scoped,
-every other one application-scoped, each person's own, which a committed `.vscode/settings.json` does not override:
+default and choice labels (`enumItemLabels`). A team's options (`piwi.serverUrl`, `piwi.project`) and those a project
+may set for itself (`piwi.failureSeverity`, `piwi.serveRunsToAgents`, `piwi.testExplorer`) are window-scoped; every
+other one is each person's own, application-scoped, which a committed `.vscode/settings.json` cannot set:
 
 | Setting                  | Values, default first                    | What it does                                                                                    |
 | ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
 | `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
 | `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
-| `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
-| `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
+| `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Application scope.        |
+| `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Application scope. |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
 | `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
-| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
+| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.         |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |

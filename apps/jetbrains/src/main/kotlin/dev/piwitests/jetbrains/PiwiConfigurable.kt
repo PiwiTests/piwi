@@ -179,7 +179,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
-                    comboBox(Glue.HOLD_FAILURES_CHOICES, ChoiceRenderer("runHoldFailures"))
+                    comboBox(Glue.HOLD_FAILURES_CHOICES, HoldFailuresRenderer())
                         .label("Hold failures, from each run's start:", LabelPosition.TOP)
                         .bindItem(
                             { local.runHoldFailures.takeIf { it in Glue.HOLD_FAILURES_CHOICES } ?: "auto" },
@@ -356,12 +356,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 }
 
-
-
-
-
-
-
 /**
  * The words Settings search finds **Settings → Tools → Piwi** by beyond its labels, which the release's searchable
  * options index holds: what a developer looking for the page types.
@@ -386,5 +380,12 @@ class PiwiSearchableOptions : SearchableOptionContributor() {
 private class ChoiceRenderer(private val field: String) : SimpleListCellRenderer<String>() {
     override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
         text = SettingsWords.choice(field, value)
+    }
+}
+
+/** A choice of `PiwiLocalSettings.runHoldFailures`, whole, in the editors' words: the short label says too little alone. */
+private class HoldFailuresRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = Glue.holdFailuresLabel(value ?: "auto")
     }
 }

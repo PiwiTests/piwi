@@ -2285,11 +2285,17 @@ class GlueTest {
             }
         }
         assertEquals(choices.mapValues { it.value.entries.toList() }.entries.toList(), SettingsWords.CHOICES.mapValues { it.value.entries.toList() }.entries.toList())
-        // Each option's default is its field's in the project's settings.
-        val states = listOf(PiwiLocalSettings.State(), PiwiSettings.State())
+        // The combos list each option's choices in the registry's order.
+        val lists = mapOf(
+            "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
+            "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
+            "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
+        )
+        assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
+        // A team's option is the project's shared setting, any other one the person's (`PiwiLocalSettings`), with its default.
         for (setting in settings) {
             val field = setting["jetbrains"].asString
-            val state = states.first { s -> s.javaClass.methods.any { it.name == "get" + field.replaceFirstChar(Char::uppercase) } }
+            val state: Any = if (setting["scope"].asString == "team") PiwiSettings.State() else PiwiLocalSettings.State()
             val value = state.javaClass.getMethod("get" + field.replaceFirstChar(Char::uppercase)).invoke(state)
             val expected = setting["default"].let { if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asString }
             assertEquals(field, expected, value)

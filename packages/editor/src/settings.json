@@ -1,9 +1,21 @@
 {
   "groups": [
-    { "id": "connection", "title": "Connection" },
-    { "id": "runs", "title": "Runs" },
-    { "id": "agents", "title": "Agents (MCP)" },
-    { "id": "advanced", "title": "Advanced" }
+    {
+      "id": "connection",
+      "title": "Connection"
+    },
+    {
+      "id": "runs",
+      "title": "Runs"
+    },
+    {
+      "id": "agents",
+      "title": "Agents (MCP)"
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced"
+    }
   ],
   "settings": [
     {
@@ -30,9 +42,18 @@
       "type": "string",
       "default": "failures",
       "choices": [
-        { "value": "always", "label": "Say what it changed" },
-        { "value": "failures", "label": "Say what it changed when something fails" },
-        { "value": "never", "label": "Say nothing" }
+        {
+          "value": "always",
+          "label": "Say what it changed"
+        },
+        {
+          "value": "failures",
+          "label": "Say what it changed when something fails"
+        },
+        {
+          "value": "never",
+          "label": "Say nothing"
+        }
       ]
     },
     {
@@ -43,8 +64,14 @@
       "type": "string",
       "default": "mineAndCi",
       "choices": [
-        { "value": "mine", "label": "The runs started here" },
-        { "value": "mineAndCi", "label": "The runs started here and the branch's CI runs" }
+        {
+          "value": "mine",
+          "label": "The runs started here"
+        },
+        {
+          "value": "mineAndCi",
+          "label": "The runs started here and the branch's CI runs"
+        }
       ]
     },
     {
@@ -55,23 +82,50 @@
       "type": "string",
       "default": "new",
       "choices": [
-        { "value": "new", "label": "For a new failure a run started here caused" },
-        { "value": "any", "label": "For any failing test" },
-        { "value": "never", "label": "Never" }
+        {
+          "value": "new",
+          "label": "For a new failure a run started here caused"
+        },
+        {
+          "value": "any",
+          "label": "For any failing test"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
       ]
     },
     {
       "key": "piwi.failureSeverity",
       "jetbrains": "failureSeverity",
       "group": "runs",
-      "scope": "user",
+      "scope": "project",
       "type": "string",
       "default": "error",
       "choices": [
-        { "value": "error", "label": "An error" },
-        { "value": "warning", "label": "A warning" },
-        { "value": "information", "label": { "vscode": "An information", "jetbrains": "A weak warning" } },
-        { "value": "off", "label": "Nothing in the problems" }
+        {
+          "value": "error",
+          "label": "An error"
+        },
+        {
+          "value": "warning",
+          "label": "A warning"
+        },
+        {
+          "value": "information",
+          "label": {
+            "vscode": "Information",
+            "jetbrains": "A weak warning"
+          }
+        },
+        {
+          "value": "off",
+          "label": {
+            "vscode": "Nothing in the Problems panel",
+            "jetbrains": "Nothing in the editor's problems"
+          }
+        }
       ]
     },
     {
@@ -98,22 +152,30 @@
       "type": "string",
       "default": "auto",
       "choices": [
-        { "value": "auto", "label": "Auto" },
-        { "value": "on", "label": "On" },
-        { "value": "off", "label": "Off" }
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "on",
+          "label": "On"
+        },
+        {
+          "value": "off",
+          "label": "Off"
+        }
       ]
     },
     {
       "key": "piwi.testExplorer",
       "jetbrains": null,
       "group": "runs",
-      "scope": "user",
+      "scope": "project",
       "type": "boolean",
       "default": true
     },
     {
-      "key": "piwi.playwrightRunner",
-      "vscode": false,
+      "key": null,
       "jetbrains": "playwrightRunner",
       "group": "runs",
       "scope": "user",
@@ -128,15 +190,24 @@
       "type": "string",
       "default": "key",
       "choices": [
-        { "value": "key", "label": { "vscode": "The editor's API key", "jetbrains": "The IDE's API key" } },
-        { "value": "sign-in", "label": "A sign-in in the browser" }
+        {
+          "value": "key",
+          "label": {
+            "vscode": "The editor's API key",
+            "jetbrains": "The IDE's API key"
+          }
+        },
+        {
+          "value": "sign-in",
+          "label": "A sign-in in the browser"
+        }
       ]
     },
     {
       "key": "piwi.serveRunsToAgents",
       "jetbrains": "serveRunsToAgents",
       "group": "agents",
-      "scope": "user",
+      "scope": "project",
       "type": "boolean",
       "default": true
     },
@@ -156,9 +227,18 @@
       "type": "string",
       "default": "off",
       "choices": [
-        { "value": "off", "label": "Off" },
-        { "value": "messages", "label": "Messages" },
-        { "value": "verbose", "label": "Verbose" }
+        {
+          "value": "off",
+          "label": "Off"
+        },
+        {
+          "value": "messages",
+          "label": "Messages"
+        },
+        {
+          "value": "verbose",
+          "label": "Verbose"
+        }
       ]
     }
   ]

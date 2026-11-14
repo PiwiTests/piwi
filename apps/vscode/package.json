@@ -1466,12 +1466,12 @@
             "default": "error",
             "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information.",
             "order": 3,
-            "scope": "application",
+            "scope": "window",
             "enumItemLabels": [
               "An error",
               "A warning",
-              "An information",
-              "Nothing in the problems"
+              "Information",
+              "Nothing in the Problems panel"
             ]
           },
           "piwi.breakpoints": {
@@ -1485,7 +1485,7 @@
             "type": "boolean",
             "scope": "application",
             "default": false,
-            "markdownDescription": "Run every test headed, with its browser window shown: each run Piwi starts from this window, **Verify ×3** included. Off, a run follows the Playwright config; a run with a `page.pause()` runs headed either way, as does a run with breakpoints when the project's `@piwitests/reporter` is older than 0.62.0. **Piwi: Run options…** changes it.",
+            "markdownDescription": "Run every test headed, with its browser window shown: each run Piwi starts, in every window, **Verify ×3** included. Off, a run follows the Playwright config; a run with a `page.pause()` runs headed either way, as does a run with breakpoints when the project's `@piwitests/reporter` is older than 0.62.0. **Piwi: Run options…** changes it.",
             "order": 5
           },
           "piwi.runHoldFailures": {
@@ -1502,7 +1502,7 @@
               "Off from each run's start: a failed test fails as it would without Piwi."
             ],
             "default": "auto",
-            "markdownDescription": "**Hold failures** of each run Piwi starts from this window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it.",
+            "markdownDescription": "**Hold failures** of each run Piwi starts, in every window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it.",
             "order": 6,
             "enumItemLabels": [
               "Auto",
@@ -1515,7 +1515,7 @@
             "default": true,
             "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts, Debug with Piwi headed and holding each failure at its line. Results only: it discovers no test.",
             "order": 7,
-            "scope": "application"
+            "scope": "window"
           }
         }
       },
@@ -1547,7 +1547,7 @@
             "default": true,
             "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent, and **Piwi: Reset the runs' MCP server token** gives it a new token.",
             "order": 1,
-            "scope": "application"
+            "scope": "window"
           }
         }
       },

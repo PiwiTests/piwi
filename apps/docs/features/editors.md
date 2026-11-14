@@ -120,6 +120,11 @@ recorded and the stopped line under **Settings → Editor → Color Scheme → P
 window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing`
 (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again.
 
+VS Code's Piwi settings come in four groups, Connection, Runs, Agents (MCP) and Advanced, as JetBrains' settings page
+does. Your own choices (how runs start and notify, breakpoints, the status bar's alert, the agent's sign-in) hold in
+every workspace: a repository's `.vscode/settings.json` sets only the instance and the project, the failure severity,
+serving runs to agents and Piwi's tests in the Testing view.
+
 ## Commands
 
 Each extension's commands, under **Piwi:** in VS Code's command palette and **Tools → Piwi** in a JetBrains IDE, are
