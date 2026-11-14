@@ -338,8 +338,8 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   // als.run() scope covers every hook, middleware, and route handler.
   const originalHandler = nitroApp.h3App.handler;
   nitroApp.h3App.handler = ((event) => {
-    // Serve the declared-surface manifest and the process's runtime facts outside
-    // production (the plugin already returned early when log capture is disabled):
+    // Serve the declared-surface manifest and the process's runtime facts while log
+    // capture is on (the plugin already returned early when it is off):
     // the manifest lists the routes the module declared, then the ones observed.
     const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
     if (serveCoverage(event, requestPath)) return;

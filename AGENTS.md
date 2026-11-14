@@ -205,7 +205,7 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
 
 - A branch's migrations follow extra rules through a merge (keep them unless the base branch added migrations, never
   edit a committed one): see [`apps/application/server/database/AGENTS.md`](apps/application/server/database/AGENTS.md).
-- Run typecheck, lint and the unit tests on the merged tree before pushing.
+- Run typecheck, lint and the tests covering what the merge changed before pushing.
 
 ### Working with the user's requests
 
