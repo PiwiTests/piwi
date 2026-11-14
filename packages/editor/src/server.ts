@@ -1755,7 +1755,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         .slice(0, 10)
         .map(
           (t) =>
-            `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${target.context.client?.testUrl(t.id) ?? ''}) · \`${t.file}\``,
+            `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${target.context.client?.testUrl(t.id, true) ?? ''}) · \`${t.file}\``,
         );
       if (tests.length > 10) list.push(`- and ${tests.length - 10} more`);
       const where = marks.state === 'mapped' ? ' · recorded on another version of this file' : '';
@@ -1976,7 +1976,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       '',
       failure.headline ?? 'Failed',
       failure.location ? `At ${failure.location}` : `In ${failure.file}${failure.line ? `:${failure.line}` : ''}`,
-      context.client ? `Execution: ${context.client.executionUrl(failure.executionId)}` : null,
+      context.client ? `Execution: ${context.client.executionUrl(failure.executionId, true)}` : null,
       recommended
         ? `\n## Locator healing\n\nReplace the failing locator with \`${recommended}\`${healing?.edit ? `:\n\n\`\`\`diff\n- ${healing.edit.oldLine.trim()}\n+ ${healing.edit.newLine.trim()}\n\`\`\`` : '.'}`
         : null,
@@ -3170,7 +3170,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const run = runLabel(context, failure);
       parts.push(
         [
-          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
+          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId, true) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
           diagnosedHere.has(failure.executionId) ? '' : (failure.headline ?? ''),
           message && message !== failure.headline ? fenced(message) : '',
           chain.length > 1 ? `Called from ${chain.join(' ← ')}` : '',
@@ -3221,7 +3221,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .slice(0, 10)
       .map(
         (t) =>
-          `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${context.client?.testUrl(t.id) ?? ''}) · \`${t.file}\``,
+          `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${context.client?.testUrl(t.id, true) ?? ''}) · \`${t.file}\``,
       )
       .join('\n');
     const pages = [

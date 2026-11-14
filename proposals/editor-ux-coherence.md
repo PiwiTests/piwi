@@ -119,7 +119,9 @@ and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and t
 (TL7 in part: that a quick fix only edits remains). M9: the IDE run icon's menu on a test offers Run with Piwi and
 Verify ×3 with Piwi on its line (`JSTestRunLineMarkersAdditionalActionGroup`, TL3), Piwi test results on the Gutter
 Icons page switches Piwi's result icon (TL4), and the editor fixture carries this repository's Playwright; TL3's check
-in Rider and every IDE of `verifyIdes` remains. Record here is a code action where the
+in Rider and every IDE of `verifyIdes` remains. M24 in part: an editor reading the desktop app opens its pages in the app's window
+(`piwi://open/<page>`, `PiwiClient.pageUrl`), a link in text keeping the app's address; each hand-off's one glyph at
+both ends remains. Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),

@@ -70,3 +70,26 @@ describe('the answers clients share', () => {
     expect(asked).toBe(1);
   });
 });
+
+describe('the dashboard pages the editor opens', () => {
+  const instance = new PiwiClient({ serverUrl: 'https://piwi.example.com', apiKey: 'k', project: 'Shop' });
+  const desktop = new PiwiClient({ serverUrl: 'http://127.0.0.1:7494', apiKey: 't', project: 'Shop', desktop: true });
+
+  test("open an instance's at its address", () => {
+    expect(instance.runUrl(41)).toBe('https://piwi.example.com/test-runs/41');
+    expect(instance.flakinessUrl(3)).toBe('https://piwi.example.com/test-cases/3?tab=flakiness');
+  });
+
+  test("open the desktop app's in its window, through its link", () => {
+    expect(desktop.runUrl(41)).toBe('piwi://open/test-runs/41');
+    expect(desktop.executionUrl(900)).toBe('piwi://open/test-run-cases/900');
+    expect(desktop.clusterUrl(77)).toBe('piwi://open/failure-clusters/77');
+    expect(desktop.flakinessUrl(3)).toBe('piwi://open/test-cases/3?tab=flakiness');
+    expect(desktop.gapsOfFileUrl(7, 'src/a b.ts')).toBe('piwi://open/projects/7?tab=gaps&gapFile=src%2Fa%20b.ts');
+  });
+
+  test("give the desktop app's in text at its address, which any reader can follow", () => {
+    expect(desktop.executionUrl(900, true)).toBe('http://127.0.0.1:7494/test-run-cases/900');
+    expect(desktop.testUrl(3, true)).toBe('http://127.0.0.1:7494/test-cases/3');
+  });
+});

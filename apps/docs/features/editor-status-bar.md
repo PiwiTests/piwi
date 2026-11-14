@@ -28,6 +28,8 @@ or goes to the stopped line while a test is stopped. The run's controls and its 
 live.
 When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload Piwi** for an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
+While the editor reads the [desktop app](./editor-connection#with-the-desktop-app), every page it opens, from this menu
+or elsewhere, shows in the app's window (through its `piwi://open/` links) rather than in a browser.
 
 The item turns red (its background in VS Code, its text in a JetBrains IDE) only for a test a run you started from
 the editor failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a

@@ -20,6 +20,8 @@ import type { TimeoutAdvice } from './analysis.js';
 import { instanceFetch } from './http.js';
 
 const TIMEOUT_MS = 15_000;
+/** The desktop app's link to a page of its window (`piwi://open/<page>`). */
+const DESKTOP_PAGE_LINK = 'piwi://open';
 /** How long a stored file may take to download: a trace can weigh tens of megabytes. */
 const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 /** The catalog's cases one request reads (the route's most), and the requests a read of the whole catalog makes. */
@@ -806,9 +808,18 @@ export class PiwiClient {
     return body.items ?? [];
   }
 
+  /**
+   * A dashboard page (`page`, its path and query) as the editor opens it: the desktop app's through its link,
+   * `piwi://open/<page>`, which its own window shows; any other instance's at its address. In text (`inText`: a hover's
+   * Markdown, an agent's context), every instance's at its address, which any reader can follow.
+   */
+  pageUrl(page: string, inText = false): string {
+    return this.connection.desktop && !inText ? `${DESKTOP_PAGE_LINK}${page}` : `${this.connection.serverUrl}${page}`;
+  }
+
   /** A failure cluster's page in the dashboard. */
   clusterUrl(clusterId: number): string {
-    return `${this.connection.serverUrl}/failure-clusters/${clusterId}`;
+    return this.pageUrl(`/failure-clusters/${clusterId}`);
   }
 
   /** A failure cluster's fix plan (`GET /api/failure-clusters/:id/fix-plan`). */
@@ -867,18 +878,18 @@ export class PiwiClient {
   }
 
   /** An execution's page in the dashboard. */
-  executionUrl(executionId: number): string {
-    return `${this.connection.serverUrl}/test-run-cases/${executionId}`;
+  executionUrl(executionId: number, inText = false): string {
+    return this.pageUrl(`/test-run-cases/${executionId}`, inText);
   }
 
   /** A run's page in the dashboard. */
   runUrl(runId: number): string {
-    return `${this.connection.serverUrl}/test-runs/${runId}`;
+    return this.pageUrl(`/test-runs/${runId}`);
   }
 
   /** A test case's page in the dashboard. */
-  testUrl(testCaseId: number): string {
-    return `${this.connection.serverUrl}/test-cases/${testCaseId}`;
+  testUrl(testCaseId: number, inText = false): string {
+    return this.pageUrl(`/test-cases/${testCaseId}`, inText);
   }
 
   /** A test case's Flakiness tab. */
@@ -888,6 +899,6 @@ export class PiwiClient {
 
   /** The Gaps tab on the gaps of one repository-relative file, such as its uncovered change. */
   gapsOfFileUrl(projectId: number, file: string): string {
-    return `${this.connection.serverUrl}/projects/${projectId}?tab=gaps&gapFile=${encodeURIComponent(file)}`;
+    return this.pageUrl(`/projects/${projectId}?tab=gaps&gapFile=${encodeURIComponent(file)}`);
   }
 }

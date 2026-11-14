@@ -1720,6 +1720,10 @@ branch (`PiwiContext.branch`).
 `src/piwi-client.ts` is the only file that talks to an instance; it also opens the event streams `src/run-stream.ts`
 reads. Every request carries the connection's key, when it has one, in `X-API-Key`.
 
+The dashboard pages the clients open come from it too (`pageUrl`, `runUrl`, `executionUrl`, …): the desktop app's
+(`connection.desktop`) as its `piwi://open/<page>` links, which its window shows, any other instance's at its address.
+A link in text (a hover's Markdown, an agent's context) keeps the address (`inText`), which any reader can follow.
+
 A run target's requests go through `src/request-host.ts` with the target's key. On its first list it ends the requests
 the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being claimed, or a run the
 shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others end, and an instance that
