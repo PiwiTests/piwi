@@ -70,10 +70,12 @@ line** on the debugger's Show Execution Point key:
   can be moved or hidden; each test's result is in the gutter, and a click on its icon opens the test in the dashboard.
   Its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own
   runs do.
-- **The status bar** item, its icon, its error color and its menu: [the status bar](./editor-runs#the-status-bar). It
-  counts a run you started (`3 of 9 · 1 failed`) as the run itself reports it, with no instance too; with one, the
-  run's node in the Piwi tool window counts it the same way. While a run is [shared live](./share-live), the menu opens
-  its page, copies its link, and has **Stop sharing the run**, which asks first.
+- **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
+  icon for its state, and the error color for a new failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
+  the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
+  way. A click opens a menu of the actions, led by what the item calls for:
+  [the status bar](./editor-status-bar). While a run is [shared live](./share-live), the menu opens its page,
+  copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
   menu leaves out what does not apply.

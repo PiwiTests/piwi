@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import type { PiwiContext } from '../src/context';
-import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch, unreachedNotice } from '../src/run-watch';
+import type { BranchFailures } from '../src/piwi-client';
+import {
+  catalogCaseOf,
+  exitVerdict,
+  repeatVerdict,
+  RunWatch,
+  runVerdict,
+  unreachedNotice,
+  verdictWords,
+} from '../src/run-watch';
 import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
@@ -72,6 +81,131 @@ describe('the verdict of a run of each test several times', () => {
     expect(exitVerdict(3, null, 'tests/checkout.spec.ts:42').message).toBe(
       'The 3 runs of tests/checkout.spec.ts:42 ended without an exit code: see the output.',
     );
+  });
+});
+
+describe('the verdict both clients show of a run that ended', () => {
+  const ended = {
+    root: '/w',
+    runId: 124,
+    origin: 'editor' as const,
+    url: 'http://piwi/test-runs/124',
+    passed: 9,
+    failed: 0,
+    flaky: 0,
+    skipped: 0,
+    fixed: 0,
+    stillFailing: [],
+    newFailures: [],
+    stillFailingCount: 0,
+    newFailureCount: 0,
+  };
+
+  test('says what it changed, the first titles then how many more, as a warning while something fails', () => {
+    expect(
+      verdictWords({
+        ...ended,
+        failed: 3,
+        fixed: 1,
+        stillFailing: ['login.spec.ts › logs in'],
+        stillFailingCount: 2,
+        newFailures: ['cart.spec.ts › adds'],
+        newFailureCount: 1,
+      }),
+    ).toEqual({
+      title: 'run #124',
+      text: '1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in and 1 more) · 1 new failure (cart.spec.ts › adds)',
+      failing: true,
+      always: false,
+      actions: ['failures', 'dashboard', 'rerun'],
+    });
+  });
+
+  test('counts its failures in the plural and one fixed CI failure in the singular', () => {
+    const titles = ['a.spec.ts › 1', 'a.spec.ts › 2', 'a.spec.ts › 3', 'a.spec.ts › 4', 'a.spec.ts › 5'];
+    expect(verdictWords({ ...ended, failed: 7, newFailures: titles, newFailureCount: 7 }).text).toBe(
+      `7 new failures (${titles.join(', ')} and 2 more)`,
+    );
+    expect(verdictWords({ ...ended, fixed: 1 }).text).toBe('1 of 1 CI failure fixed');
+  });
+
+  test('says its counts when it changed nothing, the tests ended at a stop beside the skipped', () => {
+    expect(verdictWords({ ...ended, flaky: 1, skipped: 2, endedAtStop: 1 })).toEqual({
+      title: 'run #124',
+      text: '9 passed, 0 failed, 1 flaky, 2 skipped (1 ended at a stop)',
+      failing: false,
+      always: false,
+      actions: ['failures', 'dashboard'],
+    });
+  });
+
+  test('names a CI run of the branch and what it fixed against the baseline it replaced', () => {
+    const ci = { ...ended, origin: 'ci' as const, branch: 'feature-x', runId: 130 };
+    expect(
+      verdictWords({
+        ...ci,
+        failed: 2,
+        fixed: 2,
+        stillFailing: ['login.spec.ts › logs in'],
+        stillFailingCount: 1,
+        newFailures: ['cart.spec.ts › adds'],
+        newFailureCount: 1,
+      }),
+    ).toEqual({
+      title: 'CI run #130 on feature-x',
+      text: '2 fixed · 1 still failing (login.spec.ts › logs in) · 1 new failure (cart.spec.ts › adds)',
+      failing: true,
+      always: false,
+      actions: ['failures', 'dashboard', 'rerun'],
+    });
+    expect(verdictWords({ ...ci, branch: undefined }).title).toBe('CI run #130');
+    expect(verdictWords(ci).text).toBe('9 passed, 0 failed');
+  });
+
+  test('says how a run of each test several times went, whatever the run notifications setting', () => {
+    expect(verdictWords({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } })).toEqual({
+      title: 'run #124',
+      text: 'Failed 1 of 3',
+      failing: true,
+      always: true,
+      actions: ['failures', 'dashboard'],
+    });
+  });
+});
+
+describe('what a CI run of the branch fixed', () => {
+  const failing = (testCaseId: number, runId: number, source: 'baseline' | 'overlay') => ({
+    testCaseId,
+    runId,
+    source,
+    title: `t${testCaseId}`,
+    file: 'a.spec.ts',
+  });
+  const read = (runId: number, failures: unknown[], resolved: unknown[] = []) =>
+    ({ run: { id: runId }, failures, resolved }) as unknown as BranchFailures;
+
+  test('as the new baseline: what failed before it, failed again or fixed by a later run of the branch', () => {
+    // CI run #129 failed 1, 2 and 3; a local run failed 1 again and passed 2; CI run #130 passes 1 and 2, fails 3.
+    const before = read(
+      129,
+      [failing(1, 140, 'overlay'), failing(3, 129, 'baseline')],
+      [{ testCaseId: 2, runId: 140 }],
+    );
+    const after = read(130, [{ ...failing(3, 130, 'baseline'), isNew: false }]);
+    expect(runVerdict(before, after, 130, 'ci')).toMatchObject({ fixed: 2, stillFailingCount: 1, newFailureCount: 0 });
+  });
+
+  test('as a partial run laid over the baseline: what the instance says it resolved', () => {
+    const before = read(129, [failing(1, 129, 'baseline'), failing(2, 129, 'baseline')]);
+    const after = read(
+      129,
+      [],
+      [
+        { testCaseId: 1, runId: 131 },
+        { testCaseId: 2, runId: 131 },
+      ],
+    );
+    expect(runVerdict(before, after, 131, 'ci')).toMatchObject({ fixed: 2, stillFailingCount: 0 });
   });
 });
 

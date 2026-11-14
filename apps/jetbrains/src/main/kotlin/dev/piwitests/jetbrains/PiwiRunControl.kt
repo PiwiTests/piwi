@@ -568,7 +568,26 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         // Before the draws that follow, so a rerun under the ref starts with Interact off.
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
+        // A stop the service says calls (`RunStop.calls`) calls once while this project's frame is in the background,
+        // a modal dialog open or not: it asks for attention, and raises the frame too while the debugger's 'Focus
+        // application on breakpoint' is on (its default) and no window of the IDE is active.
+        val due = synchronized(lock) { Glue.attentionStops(Glue.stopsOf(sessions), attended) }
+        if (due.isNotEmpty()) {
+            ApplicationManager.getApplication().invokeLater({
+                val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)
+                if (frame?.isActive != true) {
+                    val icon = com.intellij.ui.AppIcon.getInstance()
+                    val raise = frame != null && !ApplicationManager.getApplication().isActive &&
+                        com.intellij.openapi.util.registry.Registry.`is`(FOCUS_ON_BREAKPOINT, true)
+                    if (raise) icon.requestFocus(frame!!)
+                    icon.requestAttention(project, false)
+                }
+            }, com.intellij.openapi.application.ModalityState.any(), gone)
+        }
     }
+
+    /** The stops already called attention to (`Glue.attentionStops`). */
+    private val attended = LinkedHashSet<String>()
 
     /** A run started with `breakpoints`: they are not sent to it again, and its lines are the documents' now. */
     fun started(ref: String, breakpoints: List<Glue.RunBreakpoint>) {
@@ -2187,6 +2206,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         /** What a control says when no editor service runs to send it to. */
         private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
+
+        /** The registry key of the debugger's 'Focus application on breakpoint' (Settings → Build, Execution → Debugger). */
+        private const val FOCUS_ON_BREAKPOINT = "debugger.mayBringFrameToFrontOnBreakpoint"
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L

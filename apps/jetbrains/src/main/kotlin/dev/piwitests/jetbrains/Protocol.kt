@@ -97,7 +97,6 @@ data class SpecTest(
     val tags: List<String>? = null,
     val owner: String? = null,
     val quarantined: Boolean = false,
-    val durationMs: Long? = null,
     /** The duration of the result `status` stands for, in ms (`SpecTest.resultDurationMs`). */
     val resultDurationMs: Long? = null,
 )
@@ -280,6 +279,8 @@ data class StatusResult(val contexts: List<ContextStatus>? = null, val desktopUr
 data class RunInfo(
     val id: Int = 0,
     val status: String? = null,
+    /** `status` in the dashboard's words: `timed out` for `timedout`. */
+    val statusText: String? = null,
     val startTime: String? = null,
     val totalTests: Int = 0,
     val passedTests: Int = 0,
@@ -316,7 +317,8 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
- * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
+ * them, `failingTests` the tests among them, `alarm` whether the status item shows its alarm (the credentials'
+ * `statusBarAlert` chooses), `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
@@ -330,6 +332,7 @@ data class RunStatus(
     val failures: Int = 0,
     val checkedOut: String? = null,
     val failingTests: Int? = null,
+    val alarm: Boolean = false,
     val resolved: Int? = null,
     val overlays: Int? = null,
     val live: LiveRun? = null,
@@ -476,11 +479,16 @@ data class CiFrame(
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
  * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
- * were ended at a stop (End the test), null for none.
+ * were ended at a stop (End the test), null for none. `verdict` is the verdict in the service's words, as both clients
+ * show it.
  */
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
+    /** `editor`, a command built for this IDE; `ci`, a CI run of the branch the service followed. */
+    val origin: String = "editor",
+    /** The branch a CI run ran on. */
+    val branch: String? = null,
     val ref: String? = null,
     val url: String? = null,
     val passed: Int = 0,
@@ -494,6 +502,20 @@ data class RunEnded(
     val stillFailingCount: Int? = null,
     val newFailureCount: Int? = null,
     val repeat: RepeatVerdict? = null,
+    val verdict: VerdictWords? = null,
+)
+
+/**
+ * A run's verdict in words: `title`, the run it names (`run #124`, `CI run #130 on feature-x`); `text`, what it changed
+ * or its counts; `failing`, a warning; `always`, said whatever the run notifications setting; `actions`, `failures`,
+ * `dashboard` and `rerun`, in order.
+ */
+data class VerdictWords(
+    val title: String = "",
+    val text: String = "",
+    val failing: Boolean = false,
+    val always: Boolean = false,
+    val actions: List<String> = emptyList(),
 )
 
 /** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`, and whether one of the runs failed. */
@@ -828,7 +850,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
- * `sign-in`, through the instance's OAuth; `key` when null.
+ * `sign-in`, through the instance's OAuth; `key` when null. `statusBarAlert` chooses which failures turn the status
+ * item to its alarm (`RunStatus.alarm`): `new`, `any` or `never`; `new` when null.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -839,6 +862,7 @@ data class EditorCredentials(
     val baselines: Map<String, BaselineChoice>? = null,
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
+    val statusBarAlert: String? = null,
 )
 
 /**
@@ -891,6 +915,11 @@ data class RunStop(
     val bar: Boolean = false,
     val since: String? = null,
     val by: String? = null,
+    /**
+     * The stop calls for the person's attention while the IDE is out of sight, once: a held failure or a `page.pause()`
+     * in a run launched here that no agent asked for, drives or holds.
+     */
+    val calls: Boolean = false,
     /**
      * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
      * person last acted on it. A person's action takes it from the agent. Null while nobody drives.

@@ -202,11 +202,6 @@ export interface SpecTest {
   /** Whether the project quarantines it. */
   quarantined: boolean;
   /**
-   * Its average duration over the runs the instance keeps, in ms; null for a test Piwi does not know or never saw
-   * end.
-   */
-  durationMs: number | null;
-  /**
    * The duration of the result `status` stands for, in ms: a failure's own, else the longest final attempt of the
    * catalog's latest run; null for a test the run in progress runs, one a later run fixed, one Piwi does not know, and
    * from an instance that does not say it.
@@ -587,6 +582,8 @@ export interface EditorCredentials {
    * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
    */
   failureSeverity?: FailureSeverity | null;
+  /** Which failures turn the status item to its alarm (`RunStatus.alarm`): `new` when absent, `any` or `never`. */
+  statusBarAlert?: StatusBarAlert | null;
   /**
    * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
    * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
@@ -739,6 +736,8 @@ export interface RunStatus {
   run: {
     id: number;
     status: string;
+    /** `status` in the dashboard's words (`statusWords`): `timed out` for `timedout`. */
+    statusText?: string;
     /** ISO 8601. */
     startTime: string;
     totalTests: number;
@@ -753,6 +752,12 @@ export interface RunStatus {
   failures: number;
   /** The tests among those failures: a test failing on several Playwright projects counts once. */
   failingTests?: number;
+  /**
+   * Whether the status item shows its alarm, as the credentials' `statusBarAlert` chooses (`statusAlarm`): with `new`,
+   * a test the editor's own run failed and the baseline does not fail on any Playwright project, until a run fixes it;
+   * with `any`, any failing test; never with `never`.
+   */
+  alarm?: boolean;
   /** The tests that failed in `run` and passed since in a run laid over it, on every project they failed on. */
   resolved?: number;
   /** The runs of the branch since `run` that the service lays over it. */
@@ -819,6 +824,9 @@ export interface LiveRun {
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
 }
+
+/** Which failures turn the status item to its alarm: `new`, `any` or `never`. */
+export type StatusBarAlert = 'new' | 'any' | 'never';
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
 export interface RunStatusResult {
@@ -1011,14 +1019,23 @@ export interface CommandEndedParams {
 export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
 
 /**
- * `piwi/runEnded` (notification, server to client): a run the editor started ended, and the latest run was read again
- * with it. `fixed` counts the tests failing before it that it passed; `stillFailing` names the tests failing before it
+ * `piwi/runEnded` (notification, server to client): a run the editor started, or a CI run of the checked-out branch it
+ * followed, ended, and the latest run was read again with it. `fixed` counts the tests failing before it that it passed
+ * (for a CI run that became the baseline, those failing on the branch before it, a later run's fixes included);
+ * `stillFailing` names the tests failing before it
  * that it failed again, `newFailures` those it failed that were not failing before, each as `login.spec.ts › logs in`,
  * at most five, with their counts in `stillFailingCount` and `newFailureCount`.
  */
 export interface RunEnded {
   root: string;
   runId: number;
+  /**
+   * Who started it: `editor`, a command the service built for this editor; `ci`, a CI run of the branch the editor
+   * followed (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
+   */
+  origin: 'editor' | 'ci';
+  /** The branch a CI run ran on, which its verdict names. */
+  branch?: string;
   /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
   ref?: string;
   /** The run's page in the dashboard. */
@@ -1028,8 +1045,8 @@ export interface RunEnded {
   flaky: number;
   skipped: number;
   /**
-   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: a client says it
-   * beside the skipped. Absent for none, and for a reporter that predates the count.
+   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: the verdict says
+   * it beside the skipped. Absent for none, and for a reporter that predates the count.
    */
   endedAtStop?: number;
   fixed: number;
@@ -1039,12 +1056,32 @@ export interface RunEnded {
   newFailureCount: number;
   /**
    * For a run of each test several times (`RunTestsArgs.repeat`): how many of those runs passed, `Passed 3 of 3` or
-   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which a client shows
-   * in place of what the run changed, whatever its run notifications setting, and whether one of them failed. Absent
-   * otherwise.
+   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which the verdict
+   * says in place of what the run changed, and whether one of them failed. Absent otherwise.
    */
   repeat?: RepeatVerdict;
+  /** The verdict as both clients show it (`verdictWords`). */
+  verdict: VerdictWords;
 }
+
+/**
+ * A run's verdict in words: the run it names (`title`: `run #124`, `CI run #130 on feature-x`), and what it changed
+ * (`text`), `1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays) · 1 new
+ * failure (…)`, for a CI run `2 fixed · 1 new failure (…)`, else its counts, `9 passed, 0 failed, 1 skipped (1 ended at a
+ * stop)`, or for a run of each test several times how its runs went, `Failed 1 of 3`.
+ * `failing` makes it a warning; `always` says it whatever the client's run notifications setting (a run of each test
+ * several times); `actions` are the client's, in order: open the failures, open the run in the dashboard, re-run the
+ * failing tests.
+ */
+export interface VerdictWords {
+  title: string;
+  text: string;
+  failing: boolean;
+  always: boolean;
+  actions: VerdictAction[];
+}
+
+export type VerdictAction = 'failures' | 'dashboard' | 'rerun';
 
 /** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`. */
 export interface RepeatVerdict {
@@ -1821,6 +1858,12 @@ export interface RunStop {
    * client shows beside the stop. Absent for a stop a person or a breakpoint made.
    */
   by?: 'agent';
+  /**
+   * The stop calls for the person's attention while their client is out of sight, once: a test held at its failure or
+   * stopped at `page.pause()`, in a run launched here (not a desktop app's job in its own checkout), that no agent
+   * asked for, drives or holds. Absent otherwise.
+   */
+  calls?: true;
   /**
    * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the surface whose
    * person took it (a click, a key or text on its view, a pick, an intent, or a hub's `drive`), which takes it from the

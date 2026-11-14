@@ -228,6 +228,11 @@ the custom messages of `src/protocol.ts`:
   `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
   desktop app and Piwi Runner hear no key.
+- **The status item's alarm** is the service's (`RunStatus.alarm`, `statusAlarm`), as the credentials'
+  `statusBarAlert` chooses: with `new`, the default, a test a run of this editor failed (an overlay of `ownRuns`) that
+  did not fail on that project in the baseline (`isNew`) and that the baseline failed on no other project (listed from
+  it, failed again, or fixed since), while the service runs (`ownRuns` lives in memory), until a run
+  fixes it; with `any`, any failing test; never with `never`. A teammate's run and a CI run never raise it.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -530,17 +535,31 @@ result:
 clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
 its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
-Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what the run
-changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries the ref of the command
-that started the run while the service keeps that command (`RefWatch.carried`), the run's counts, and:
+Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
+`RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
+run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it
+(`origin`: `editor` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
+keeps that command (`RefWatch.carried`), the run's counts, and:
 
-- `fixed`: the tests failing before that it passed;
+- `fixed`: the tests failing before that it passed; for a CI run, those the baseline it replaced failed, once it is the
+  baseline;
 - `stillFailing`: the tests it failed again (failing before in another run, or not new on the instance's word);
 - `newFailures`: the tests it failed that were not failing before;
 - `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
-  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
+  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none;
+- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `CI run #130 on
+  feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
+  `2 fixed · …`), else its counts, or how a run of each test several times went; whether something fails, whether it
+  is said whatever the client's run notifications setting (a repeated run), and its actions' ids (`failures`,
+  `dashboard`, `rerun`). The clients add their own setting's actions, and leave a CI run's unsaid while their run
+  notifications' scope is the editor's runs alone.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+
+A stop calls for the person's attention (`RunStop.calls`, `RunSessions.view`) when it is a test held at its failure
+or stopped at `page.pause()` in a run launched here: never a desktop app's job in its own checkout (its window calls),
+a stop an agent asked for or drives, or a failure held because an agent turned Hold failures on. Each client calls
+once per stop while it is out of sight.
 
 ### CI runs of the branch
 

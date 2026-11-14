@@ -80,7 +80,8 @@ files (`summaryOf`), and draws it in two places:
   (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
   `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
   failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
-  service's summary says so.
+  service's summary says so. Each tint has a scrollbar mark of its own, opaque as the JetBrains schemes' error stripes
+  (`piwi.*OverviewRuler`), and so do a recording's block, the execution point and a held failure.
 - Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
@@ -159,6 +160,8 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.runNotificationsScope` | `mineAndCi`, `mine`               | Whether the branch's CI runs have one too ([Runs](#runs)).                                      |
+| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
@@ -284,8 +287,10 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as the
-`piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
+When a run started from the editor, or a CI run of the branch the service followed (`RunEnded.origin`), ends,
+`piwi/runEnded` shows as a notification in the service's words (`RunEnded.verdict`, `runVerdict` in `src/glue.ts`,
+`Piwi: CI run #130 on feature-x · 1 new failure (…)`), as the `piwi.runNotifications` setting allows (`always`,
+`failures`, the default, `never`), a CI run's only while `piwi.runNotificationsScope` is `mineAndCi`, the default:
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;
@@ -294,7 +299,10 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 - each last with **Settings**, which opens the Settings editor at `piwi.runNotifications`.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
-when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+when one of the runs failed. A test held at its failure or stopped at `page.pause()` while the window is in the
+background calls once, as the service says (`RunStop.calls`), as a warning with **Resume** and **Go to the stopped
+line**, which reveals it with the focus (`attentionStops` in `src/run-control.ts`, `callAttention` in
+`src/run-view.ts`); never a stop the person asked for, one an agent drives or holds, or a desktop app's job's. A `piwi/notice` is shown as a warning or an information message, as its severity says.
 One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
 one write after the other); a key that setting holds is not shown (`noticeShown`).
 
@@ -479,7 +487,7 @@ refused, as the panel hides or closes, at another slot's stop, at a stop that ta
 away (`changed`), so a rerun under the ref starts with it off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
-(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and the status menu's Watch a worker's test open
 **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
@@ -536,7 +544,7 @@ among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Pau
 (`stopPresence`) add who drives the stop (`driverText`, from `RunStop.driver`: `You drive this stop`, `An agent drives
 this stop: your input takes control` where the stop takes input) and who else watches its page (`watchersText`, from
 `RunWorker.watchers`, the editor itself named `you` and left out when alone); the paused page's caption follows them as
-they change. The progress item's tooltip names the other tools that have each run open (`presenceText`, from
+they change. The count's tooltip, leading the status item's, names the other tools that have each run open (`presenceText`, from
 `RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
 off, Escape included, gives it back.
 
@@ -559,10 +567,13 @@ click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Cop
 sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
 asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
 whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
-`piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
-out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
-run's own process tells the service: so it counts offline and with the desktop app. An agent's run ends it with its
-label (`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
+`piwi.stopSharingWindowLive`) stop at once. The Piwi status item itself counts the window's runs while one says
+(`progressItem`): the tests they ran out of the tests they hold, and their failures (`$(sync~spin) Piwi: run #78 · 3 of
+9 · 1 failed · 1 flaky`, worded by `countWords` as the JetBrains plugin's `Glue.countWords`, the pass or error glyph
+once they ended), from `RunSession.progress`, which the run's own process tells the service: so it counts offline and
+with the desktop app, one count of a run, as the JetBrains plugin's single item does. Its tooltip leads the item's, and
+its menu offers Watch a worker's test and Open the run page. An agent's run ends it with its label
+(`RunSession.label`, `· Started by Claude Code`), so it never reads as the person's own.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
@@ -643,12 +654,18 @@ The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
 
+**The alarm**, `statusBarItem.errorBackground`, is the service's (`RunStatus.alarm`), as `piwi.statusBarAlert`, sent in
+the credentials, chooses: `new`, the default, only for a test a run this window started failed that the baseline does
+not fail, until a run fixes it or the service restarts (it knows its own runs, `ownRuns`, while it runs), so a CI
+failure or a teammate's is counted but never red; `any`, any failing test;
+`never`. A run in progress is never the alarm.
+
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
 in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
 told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
-the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
-counts the window's runs from the same events, with or without an instance.
+the run is finalizing or another run takes the ref, so the count never goes back. While the window's runs count from
+their own events, with or without an instance, the item shows that count instead (`progressItem`).
 
 **A click** opens the status menu (`piwi.statusMenu`, `statusMenu` in `src/glue.ts`): a quick pick in the JetBrains
 popup's sections, each row titled by the action catalog and offered only where its command acts, from the context keys
@@ -656,7 +673,7 @@ this extension last set (`src/context-keys.ts`, since VS Code reads none back). 
 the item's own action (a recording's controls follow it), which depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
-  a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
+  a run started here holds a stop, the run's count shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
   linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
@@ -885,10 +902,10 @@ The run is the one a profile run's command started, by its ref, or the editor's 
 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
-has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
-carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
-(`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
-its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. A result is published with its own
+has no flaky result (`testOutcome` shows one as passed), so a flaky test's item carries the `flaky` tag
+(`testItemTags`, `@piwi:flaky` in the view's filter), and its line ends with *flaky* (`flakyMark`). Every known test's
+item also carries its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. An item has no
+description: the view names an item by its description when it has one, in place of its title. A result is published with its own
 duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none
 for a run in progress. With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed
 ring. The API `activate` returns gives what the view shows (`testExplorer`).

@@ -303,12 +303,23 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the editor's own. */
+    /** A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own. */
     private fun liveText(live: LiveRun): String {
-        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
         val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${live.done}/${live.total}$failing" + if (live.own) " · yours" else ""
+        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
     }
+
+    /**
+     * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a
+     * stop`, each outcome only when there is one (VS Code's `countWords`).
+     */
+    fun countWords(done: Int, total: Int, failed: Int = 0, flaky: Int = 0, endedAtStop: Int = 0): String =
+        listOfNotNull(
+            "$done of $total",
+            if (failed > 0) "$failed failed" else null,
+            if (flaky > 0) "$flaky flaky" else null,
+            if (endedAtStop > 0) "$endedAtStop ended at a stop" else null,
+        ).joinToString(" · ")
 
     /**
      * The run in progress the status bar counts for the context of `file`, as `statusView` picks it: that context's
@@ -323,15 +334,14 @@ object Glue {
         return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
-    /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+    /** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
     private fun liveLine(live: LiveRun): String {
-        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
         val run = when {
             live.own -> "Your run"
             live.ci -> "CI run"
             else -> "Run"
         }
-        return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
+        return "\n$run #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -419,7 +429,7 @@ object Glue {
         val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
         // The editor's own run in progress stays in view whichever config the file belongs to.
         val live = run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
-        val liveFailing = (live?.failed ?: 0) > 0
+        val alarm = run?.alarm == true
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val overlays = run?.overlays ?: 0
@@ -430,14 +440,14 @@ object Glue {
             val text = live?.let { liveText(it) } ?: if (failing > 0) "Piwi: $failing failing" else "Piwi: no failure"
             val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$config$baseline$progress$from"
             return when {
-                live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
-                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, true)
+                live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING)
+                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, alarm)
                 else -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.PASSED)
             }
         }
         if (r == null) {
             val tooltip = "No run of $where yet$config$baseline$progress$from"
-            if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
+            if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING)
             return StatusView("Piwi: no run", tooltip, null, StatusAction.REFRESH)
         }
         // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
@@ -449,17 +459,16 @@ object Glue {
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val refresh = StatusAction.REFRESH
         return when {
-            live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING, liveFailing)
+            live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
-                val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh, StatusIcon.RUNNING, r.failedTests > 0)
+                StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, true)
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
             }
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.statusText ?: r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)
         }
@@ -590,7 +599,7 @@ object Glue {
     /**
      * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
      * description (`4 min ago`), and, while the editor's own run is `live` ([ownRunInProgress]), that run on the node of
-     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9 · 1
+     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4 of 9 · 1
      * failed`).
      */
     fun failureNodes(
@@ -606,7 +615,7 @@ object Glue {
             kind = node.kind,
             label = node.label,
             description = if (running != null && node.kind == "run" && (liveRoot == null || node.root == null || node.root == liveRoot)) {
-                "running ${running.done}/${running.total}" + if (running.failed > 0) " · ${running.failed} failed" else ""
+                "running ${countWords(running.done, running.total, running.failed)}"
             } else {
                 listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
             },
@@ -897,6 +906,18 @@ object Glue {
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
     /**
+     * Whose runs say what they changed (`PiwiLocalSettings.runNotificationsScope`, VS Code's
+     * `piwi.runNotificationsScope`): `mineAndCi`, the editor's own and the branch's CI runs; `mine`, the editor's own.
+     */
+    val RUN_NOTIFICATION_SCOPES = listOf("mineAndCi", "mine")
+
+    /**
+     * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
+     * `EditorCredentials.statusBarAlert`, VS Code's `piwi.statusBarAlert`), as the service decides it (`RunStatus.alarm`).
+     */
+    val STATUS_BAR_ALERTS = listOf("new", "any", "never")
+
+    /**
      * The severity of a failure's diagnostic (`EditorCredentials.failureSeverity`): `error`, `warning`, `information`,
      * or `off`, which leaves the failures to the tool window and the gutter.
      */
@@ -927,69 +948,30 @@ object Glue {
     const val ONLY_ON_FAILURE_SET =
         "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
 
-    /** The title of a run's verdict balloon, which tells two runs' balloons apart: `Piwi: run #124`. */
-    fun runVerdictTitle(runId: Int): String = "Piwi: run #$runId"
-
-    /** A run's verdict under its balloon's title (`runVerdictTitle`): its sentence without the run it names. */
-    fun runVerdictBody(verdict: RunVerdict, runId: Int): String = verdict.text.removePrefix("Run #$runId · ")
-
-    /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
-    data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
-
-    private fun titleList(titles: List<String>, count: Int): String {
-        val more = count - titles.size
-        return "(${titles.joinToString(", ")}${if (more > 0) " and $more more" else ""})"
-    }
+    /**
+     * A run's verdict: a warning when something fails, its balloon's title, which names the run so two runs' balloons
+     * read apart (`Piwi: run #124`, `Piwi: CI run #130 on feature-x`), its sentence, and the actions it offers.
+     */
+    data class RunVerdict(val warning: Boolean, val title: String, val text: String, val actions: List<String>)
 
     /**
-     * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
-     * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run failing** when something fails, and **Only on failure** when nothing does while `setting` is `always`.
-     * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
-     * `Run #124 · Failed 1 of 3`, whatever the setting.
+     * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `1 of 3 CI failures fixed, 2
+     * still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the service's actions when
+     * something fails, and **Only on failure** when nothing does while `setting` is `always`. Null when `setting` keeps
+     * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its
+     * runs went whatever the setting.
      */
-    fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
-        val repeat = ended.repeat
-        if (repeat?.verdict != null) {
-            return RunVerdict(repeat.failed, "Run #${ended.runId} · ${repeat.verdict}", listOf(OPEN_FAILURES, OPEN_IN_DASHBOARD))
-        }
-        val stillTitles = ended.stillFailing.orEmpty()
-        val newTitles = ended.newFailures.orEmpty()
-        val still = ended.stillFailingCount ?: stillTitles.size
-        val added = ended.newFailureCount ?: newTitles.size
-        val parts = mutableListOf<String>()
-        if (ended.fixed > 0 || still > 0) {
-            val total = ended.fixed + still
-            val fixed = "${ended.fixed} of $total CI ${if (total == 1) "failure" else "failures"} fixed"
-            parts += if (still > 0) "$fixed, $still still failing ${titleList(stillTitles, still)}" else fixed
-        }
-        if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
-        if (parts.isEmpty()) {
-            val endedAtStop = ended.endedAtStop ?: 0
-            parts += listOfNotNull(
-                "${ended.passed} passed",
-                "${ended.failed} failed",
-                if (ended.flaky > 0) "${ended.flaky} flaky" else null,
-                if (ended.skipped > 0) {
-                    "${ended.skipped} skipped" + if (endedAtStop > 0) " ($endedAtStop ended at a stop)" else ""
-                } else {
-                    null
-                },
-            ).joinToString(", ")
-        }
-        val failing = still + added > 0 || ended.failed > 0
-        if (setting == "never" || (setting == "failures" && !failing)) return null
-        return RunVerdict(
-            failing,
-            "Run #${ended.runId} · ${parts.joinToString(" · ")}",
-            listOfNotNull(
-                OPEN_FAILURES,
-                OPEN_IN_DASHBOARD,
-                if (failing) RERUN_FAILING else null,
-                if (!failing && setting == "always") ONLY_ON_FAILURE else null,
-            ),
-        )
+    fun runVerdict(ended: RunEnded, setting: String = "always", scope: String = "mineAndCi"): RunVerdict? {
+        val words = ended.verdict ?: return null
+        if (ended.origin == "ci" && scope == "mine") return null
+        if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
+        val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
+        val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
+        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure)
     }
+
+    /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */
+    private val VERDICT_ACTIONS = mapOf("failures" to OPEN_FAILURES, "dashboard" to OPEN_IN_DASHBOARD, "rerun" to RERUN_FAILING)
 
     /** Where the service found the instance, in the words of the settings page. */
     fun sourceLabel(source: String?): String = when (source) {
@@ -1994,6 +1976,14 @@ object Glue {
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
 
+    /** The stops that call for the person's attention as the service says (`RunStop.calls`), each once (`attended`, the last 200). */
+    fun attentionStops(stops: List<ShownStop>, attended: LinkedHashSet<String>): List<ShownStop> {
+        val due = stops.filter { it.stop.calls && stopKey(it) !in attended }
+        due.forEach { attended += stopKey(it) }
+        while (attended.size > 200) attended.remove(attended.first())
+        return due
+    }
+
     /** What tells a worker's slot from another: its run and its slot. */
     private fun slotKey(ref: String, slot: Int): String = "$ref\u0000$slot"
 
@@ -2335,24 +2325,40 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, how many failed, and how many were ended at a stop, then who started the one run that says
+     * of how many they hold, how many failed, were flaky and were ended at a stop, then who started the one run that says
      * when a person did not (`RunSession.label`); null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
         val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
         val progress = told.mapNotNull { it.progress }
-        val failed = progress.sumOf { it.failed }
-        val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
-        val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        val number = told.singleOrNull()?.page?.takeIf { it.id > 0 }?.let { "run #${it.id} · " }.orEmpty()
         val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
-        return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
-            (if (failed > 0) " · $failed failed" else "") +
-            (if (endedAtStop > 0) " · $endedAtStop ended at a stop" else "") + by
+        val counts = countWords(
+            progress.sumOf { it.done },
+            progress.sumOf { it.total },
+            progress.sumOf { it.failed },
+            progress.sumOf { it.flaky },
+            progress.sumOf { it.endedAtStop ?: 0 },
+        )
+        return "Piwi: $number$counts$by"
     }
 
-    /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
-    fun runsFailing(sessions: Map<String, RunSession>): Boolean = sessions.values.any { (it.progress?.failed ?: 0) > 0 }
+    /**
+     * The status bar's icon while it counts the runs as their own processes say: the spinner while one goes on, else
+     * how they ended, passed, failed (a failed test, a failure of its own, a timeout) or stopped short (VS Code's
+     * `progressItem` glyph); null while no run says.
+     */
+    fun runProgressIcon(sessions: Map<String, RunSession>): StatusIcon? {
+        val told = sessions.values.mapNotNull { it.progress }
+        if (told.isEmpty()) return null
+        return when {
+            told.any { it.status == "running" } -> StatusIcon.RUNNING
+            told.any { it.failed > 0 || it.status == "failed" || it.status == "timedout" } -> StatusIcon.FAILING
+            told.all { it.status == "passed" } -> StatusIcon.PASSED
+            else -> StatusIcon.WARNING
+        }
+    }
 
     /**
      * A stop's or a share's status with how far the runs are after it, so neither hides the other:
@@ -3581,7 +3587,7 @@ object Glue {
         stopping -> "Piwi: stopping the recording"
         state == "starting" -> "Piwi: opening the browser"
         edited || state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}"
-        else -> "Piwi: ● recording · ${stepCount(steps)}"
+        else -> "Piwi: recording · ${stepCount(steps)}"
     }
 
     /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */

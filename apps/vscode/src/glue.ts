@@ -48,7 +48,7 @@ import type {
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
-import { laneDuration } from './run-control';
+import { countWords } from './run-control';
 
 /** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
@@ -117,7 +117,15 @@ export interface StatusMenuState {
   /** The item's own action, the menu's first row, so Enter does what a click on the item did. */
   action: StatusBarView['action'];
   recording: 'recording' | 'paused' | null;
-  run: { active: boolean; stopped: boolean; failed: boolean; pausable: boolean; stoppable: boolean; page: boolean };
+  run: {
+    active: boolean;
+    stopped: boolean;
+    failed: boolean;
+    pausable: boolean;
+    stoppable: boolean;
+    page: boolean;
+    watchable: boolean;
+  };
   failing: boolean;
   /** The config whose flaky tests the failures view lists, for the item's config. */
   flakyRoot: string | null;
@@ -167,6 +175,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
             state.run.stopped && !state.run.failed && 'piwi.stepRun',
             state.run.stopped && 'piwi.showPausedPage',
             state.run.pausable && 'piwi.pauseRun',
+            state.run.watchable && 'piwi.watchWorker',
             state.run.page && 'piwi.openRunPage',
             state.run.stoppable && 'piwi.stopRun',
           ]
@@ -211,6 +220,10 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.restartService',
   'piwi.openLog',
   'piwi.showFlakyTests',
+  // The window's runs' count leads the tooltip (`progressItem`).
+  'piwi.openRunPage',
+  'piwi.watchWorker',
+  'piwi.holdFailures',
 ];
 
 /** The tooltip's link to a config's flaky tests, which the failures tree lists; null while it lists none. */
@@ -256,20 +269,18 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the
+ * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
  * editor's own.
  */
 function liveText(live: LiveRun): string {
-  const failing = live.failed ? ` · ${live.failed} failing` : '';
   const run = live.ci ? 'CI run' : 'run';
-  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${live.done}/${live.total}${failing}${live.own ? ' · yours' : ''}`;
+  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${live.own ? ' · yours' : ''}`;
 }
 
-/** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+/** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
 function liveLine(live: LiveRun): string {
-  const failing = live.failed ? ` · ${live.failed} failing` : '';
   const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
-  return `${run} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+  return `${run} #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}`;
 }
 
 /** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
@@ -564,7 +575,7 @@ export function statusBarView(
         action: 'refresh',
         url: null,
         liveUrl,
-        error: !live && failing > 0,
+        error: !live && !!run?.alarm,
       };
     }
     return {
@@ -614,19 +625,24 @@ export function statusBarView(
   };
   if (active) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
-    const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
       ownLive: !!live?.own,
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
   if (failing > 0) {
     const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
-    return { ...view, text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`, error: true };
+    return {
+      ...view,
+      text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
+      error: !!run?.alarm,
+    };
   }
-  if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
+  if (r.status !== 'passed' && r.status !== 'failed') {
+    return { ...view, text: `$(warning) Piwi: ${r.statusText ?? r.status}` };
+  }
   if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
   return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
 }
@@ -726,7 +742,7 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
 /**
  * The failures view's nodes, from the tree the service grouped: a run's age after its description (`4 min ago`), and,
  * while the editor's own run is `live`, that run on the node of the run of its Playwright config (`liveRoot`; any run's
- * node when either does not say which: `running 4/9`), whose tooltip says it too.
+ * node when either does not say which: `running 4 of 9 · 1 failed`), whose tooltip says it too.
  */
 export function failureNodes(
   result: FailuresResult | null,
@@ -743,11 +759,13 @@ export function failureNodes(
       key: node.key,
       kind: node.kind,
       label: node.label,
-      description: running ? `running ${live.done}/${live.total}` : [node.description, age].filter(Boolean).join(' · '),
+      description: running
+        ? `running ${countWords(live.done, live.total, live.failed)}`
+        : [node.description, age].filter(Boolean).join(' · '),
       tooltip: lines(
         node.kind === 'failure' && first ? `**${first}**` : first,
         ...rest,
-        running ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null,
+        running ? liveLine(live) : null,
       ),
       icon: FAILURE_ICONS[node.icon] ?? 'circle-outline',
       state: node.children.length ? (node.expanded ? 'expanded' : 'collapsed') : 'none',
@@ -946,6 +964,9 @@ export function hasCoverageMarks(result: CoverageResult | null | undefined): boo
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
 export type RunNotifications = 'always' | 'failures' | 'never';
 
+/** Whose runs a verdict comes for (`piwi.runNotificationsScope`): the editor's own, or those and the branch's CI runs. */
+export type RunNotificationsScope = 'mine' | 'mineAndCi';
+
 /** The actions a run's verdict offers. */
 export const VERDICT_ACTIONS = {
   failures: 'Open the failures',
@@ -955,59 +976,30 @@ export const VERDICT_ACTIONS = {
   settings: 'Settings',
 } as const;
 
-/** Titles as a verdict lists them: the first ones, then how many more. */
-function titleList(titles: string[], count: number): string {
-  const more = count - titles.length;
-  return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
-}
-
 /**
- * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
- * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`; each
- * last with **Settings**, which opens `piwi.runNotifications`.
- * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
- * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
+ * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `Piwi: run #124 · 1 of 3 CI failures
+ * fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`, `Piwi: CI run #130 on feature-x · 1 new
+ * failure (…)`. A warning when something fails, with the service's actions, then **Only on failure** while nothing
+ * fails and `setting` is `always`, and last **Settings**, which opens `piwi.runNotifications`. Null when `setting` keeps
+ * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its runs
+ * went whatever the setting, with the service's actions alone.
  */
 export function runVerdict(
   ended: RunEnded,
   setting: RunNotifications = 'always',
+  scope: RunNotificationsScope = 'mineAndCi',
 ): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
-  if (ended.repeat) {
-    const { verdict, failed } = ended.repeat;
-    return {
-      severity: failed ? 'warning' : 'information',
-      text: `Piwi: run #${ended.runId} · ${verdict}`,
-      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard],
-    };
-  }
-  const still = ended.stillFailingCount ?? ended.stillFailing.length;
-  const added = ended.newFailureCount ?? ended.newFailures.length;
-  const parts: string[] = [];
-  if (ended.fixed || still) {
-    const fixed = `${ended.fixed} of ${ended.fixed + still} CI ${ended.fixed + still === 1 ? 'failure' : 'failures'} fixed`;
-    parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
-  }
-  if (added) parts.push(`${plural(added, 'new failure')} ${titleList(ended.newFailures, added)}`);
-  if (!parts.length) {
-    const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
-    if (ended.flaky) counts.push(`${ended.flaky} flaky`);
-    if (ended.skipped) {
-      counts.push(`${ended.skipped} skipped${ended.endedAtStop ? ` (${ended.endedAtStop} ended at a stop)` : ''}`);
-    }
-    parts.push(counts.join(', '));
-  }
-  const failing = still + added > 0 || ended.failed > 0;
-  if (setting === 'never' || (setting === 'failures' && !failing)) return null;
+  const { title, text, failing, always, actions } = ended.verdict;
+  if (ended.origin === 'ci' && scope === 'mine') return null;
+  if (!always && (setting === 'never' || (setting === 'failures' && !failing))) return null;
   return {
     severity: failing ? 'warning' : 'information',
-    text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
+    text: `Piwi: ${title} · ${text}`,
     actions: [
-      VERDICT_ACTIONS.failures,
-      VERDICT_ACTIONS.dashboard,
-      ...(failing ? [VERDICT_ACTIONS.rerun] : []),
-      ...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []),
-      VERDICT_ACTIONS.settings,
+      ...actions.map((a) => VERDICT_ACTIONS[a]),
+      ...(always
+        ? []
+        : [...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []), VERDICT_ACTIONS.settings]),
     ],
   };
 }
@@ -1425,7 +1417,7 @@ export function recordingView(
     return {
       title: `$(circle-large-outline) Paused while you edit · ${count}`,
       actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(circle-large-outline) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
@@ -1433,7 +1425,7 @@ export function recordingView(
     return {
       title: `$(circle-large-outline) Paused · ${count}`,
       actions: [stop, resume],
-      status: `$(circle-large-outline) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: recording paused · ${count}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }
@@ -1888,26 +1880,19 @@ export const FLAKY_TAG = 'flaky';
 export const QUARANTINED_TAG = 'quarantined';
 
 /**
- * What the Testing view adds to a test's item, which its gutter and its results do not say, beside the title
- * (`flaky · quarantined · ~1.2 s`) and as tags its filter finds (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`):
- * flaky, for a test the view shows as passed (`testOutcome`), quarantined, its average duration, its Playwright tags,
- * which start with `@` as no tag of Piwi's does, and its owner.
+ * The tags the Testing view's filter finds a test by (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`): flaky, for a
+ * test the view shows as passed (`testOutcome`), quarantined, its Playwright tags, which start with `@` as no tag of
+ * Piwi's does, and its owner. The item has no description: the view names an item by its description when it has one,
+ * so a screen reader would hear it in place of the test's title.
  */
-export function testItemExtras(test: TreeTest | null): { description: string | undefined; tags: string[] } {
-  if (!test) return { description: undefined, tags: [] };
-  const flaky = test.status === 'flaky';
-  const words = [
-    flaky ? 'flaky' : null,
-    test.quarantined ? 'quarantined' : null,
-    test.durationMs !== null ? `~${laneDuration(test.durationMs)}` : null,
-  ].filter((word): word is string => !!word);
-  const tags = [
-    ...(flaky ? [FLAKY_TAG] : []),
+export function testItemTags(test: TreeTest | null): string[] {
+  if (!test) return [];
+  return [
+    ...(test.status === 'flaky' ? [FLAKY_TAG] : []),
     ...(test.quarantined ? [QUARANTINED_TAG] : []),
     ...test.tags.filter((tag) => tag.startsWith('@')),
     ...(test.owner ? [`owner:${test.owner.replace(/\s+/g, '-')}`] : []),
   ];
-  return { description: words.length ? words.join(' · ') : undefined, tags };
 }
 
 /**

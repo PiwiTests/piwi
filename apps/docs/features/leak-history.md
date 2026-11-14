@@ -31,7 +31,9 @@ Three places read it:
 - The [CI merge gate](/features/merge-gate#what-fails-it): `--max-leaks <n>` fails when the run left more than `n`
   objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
   Neither counts a lingering object, and a run whose leaks are not measured fails both.
-- The [pull-request comment](./pr-feedback) lists each leak the branch introduces under **Left open by this change**.
+- The [pull-request comment](./pr-feedback) lists each leak, server and process the branch introduces under **Left
+  open by this change** (the gate's leak rules count no server nor process), and each open one of the default branch
+  that a full run of the pull request no longer shows under **Closed by this change**.
 - Agents read `list_resource_findings` and `get_resource_profile` over [MCP](/reference/mcp-tools).
 
 ```bash

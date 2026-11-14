@@ -32,7 +32,7 @@ import {
   startStub,
   writeWorkspace,
 } from '../../vscode/scripts/lib/editor-fixture.mjs';
-import { countPixels, cutWindow, hasSolidSquare, imageSize, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
+import { cutWindow, hasSolidSquare, imageSize, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(here, '..');
@@ -321,9 +321,9 @@ function xinput(...commands) {
 }
 
 /**
- * Whether the status bar draws Piwi's item as failing, as `PiwiStatusBar` does for the fixture's failures: the error
- * color of its label, counted in the right part of the status bar of a window captured at `SCALE`, and the `TestError`
- * icon (`PiwiIcons.FAILED`), a filled disc of the same red, which the label's strokes are too thin to make.
+ * Whether the status bar draws Piwi's item as failing, as `PiwiStatusBar` does for the fixture's failures: the
+ * `TestError` icon (`PiwiIcons.FAILED`), a filled disc, in the right part of the status bar of a window captured at
+ * `SCALE`. Its label keeps the bar's color: the fixture's failures are a CI run's, never the alarm (`RunStatus.alarm`).
  */
 async function statusItemFailing(window) {
   const { width, height } = await imageSize(window);
@@ -333,7 +333,6 @@ async function statusItemFailing(window) {
     width: Math.round(width * 0.6),
     height: 30 * SCALE,
   };
-  const red = await countPixels(window, bar, (r, g, b) => r > 170 && g < 120 && b < 120);
   // The dark theme's `TestError` fill, #DB5C5C.
   const near = (value, target, within) => Math.abs(value - target) <= within;
   const icon = await hasSolidSquare(
@@ -342,7 +341,7 @@ async function statusItemFailing(window) {
     5 * SCALE,
     (r, g, b) => near(r, 219, 20) && near(g, 92, 20) && near(b, 92, 20),
   );
-  return { red, icon, failing: red >= 400 && icon };
+  return { icon, failing: icon };
 }
 
 /**
@@ -360,8 +359,8 @@ async function shoot(name, { dir = outDir, failing = false } = {}) {
       const rejected = path.join(os.tmpdir(), `jetbrains-${name}-rejected.png`);
       await writeAtWidth(window, WINDOW.width, rejected);
       throw new Error(
-        `The status bar draws Piwi's item without its failing icon and color (${status.red} red pixels, ` +
-          `${status.icon ? 'the' : 'no'} TestError icon): ${name} is not written; the capture is ${rejected}.`,
+        `The status bar draws Piwi's item without its failing TestError icon: ${name} is not written; the capture is ` +
+          `${rejected}.`,
       );
     }
   }

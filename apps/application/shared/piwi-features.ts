@@ -716,6 +716,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'Run and debug',
       },
       {
+        title: "The editor's status bar",
+        summary:
+          "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",
+        needs: ['editor'],
+        where: 'The status bar of VS Code or a JetBrains IDE; piwi.statusBarAlert',
+        doc: 'features/editor-status-bar',
+        part: 'Run and debug',
+      },
+      {
         title: 'Runs started outside Piwi',
         summary:
           "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",

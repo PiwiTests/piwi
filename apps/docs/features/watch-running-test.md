@@ -8,22 +8,22 @@ lang: en-US
 
 <Needs reporter fixtures />
 
-This page is about **Watch** in your own tools: a test's page in your editor, Piwi Picker's Runs window or the
+**Watch** in your own tools shows a test's page in your editor, Piwi Picker's Runs window or the
 desktop app, in a run on your machine or a remote container, read-only in a CI run of your branch. On the
 team instance, it is the [live view](./live-view); a run's progress and stops: [Watch a run](./watch-a-run). The page
 shows up to ten images a second, through the test's next tests and stops, and the worker Playwright starts in its
 place after a failure. It needs
-`@piwitests/reporter` newer than 0.67.0 and the [capture fixtures](/guide/capture-fixtures). Nothing leaves your
+`@piwitests/reporter` after 0.67.0 and the [capture fixtures](/guide/capture-fixtures). Nothing leaves your
 machine: [what is sent](#what-is-sent-and-kept).
 
 ## Where to watch
 
 | Where | Open it | At a stop |
 |---|---|---|
-| VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: `Piwi: worker 2` beside the editor | A headless stop shows there, with **Interact** and the pick on a click, instead of the paused page |
+| VS Code | **Piwi: Watch a worker's test**, or the status bar's menu during a run: `Piwi: worker 2` beside the editor | A headless stop shows there, with **Interact** and the pick on a click, instead of the paused page |
 | JetBrains IDEs | **Tools → Piwi → Watch a worker's test**: the Piwi tool window's **Worker 2** tab | The tab only watches: a headless stop opens the **Paused page** beside it, for **Interact**, unless that tab holds another stop |
-| Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | [Its controls](./runs-window#the-controls) above the view |
-| Desktop app | **Watch** on a running row of its own runs, in the [Local runs](./desktop-runs#watch) tray | The tray shows the stopped worker, behind its tab in a run of several |
+| Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | Its controls above the view; the stopped worker scrolls into view |
+| Desktop app | **Watch** on a running row of its own runs opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
 **Pause and watch**, which also stops the test before its next call, is **Piwi: Pause and watch a worker's test**
 (**Tools → Piwi → …**), and a button beside **Watch** in the Runs window and the desktop app. With several workers, the editor asks which.

@@ -142,17 +142,17 @@ object PiwiCommands {
     }
 
     /**
-     * Say what a run started from the IDE changed, as **Settings → Tools → Piwi** allows, with the failures, the run's
-     * page and **Re-run failing** one click away.
+     * Say what a run started from the IDE, or a CI run of the branch, changed, as **Settings → Tools → Piwi** allows,
+     * with the failures, the run's page and **Re-run failing** one click away.
      */
     fun runEnded(project: Project, ended: RunEnded) {
-        val setting = project.service<PiwiProjectService>().local().runNotifications
-        val verdict = Glue.runVerdict(ended, setting) ?: return
+        val local = project.service<PiwiProjectService>().local()
+        val verdict = Glue.runVerdict(ended, local.runNotifications, local.runNotificationsScope) ?: return
         val notification = PiwiNotifier.create(
             PiwiNotice.RESULT,
-            com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(Glue.runVerdictBody(verdict, ended.runId)),
+            com.intellij.openapi.util.text.StringUtil.escapeXmlEntities(verdict.text),
             if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION,
-            Glue.runVerdictTitle(ended.runId),
+            verdict.title,
         )
         for (label in verdict.actions) {
             notification.addAction(

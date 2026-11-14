@@ -50,9 +50,9 @@ in a JetBrains IDE, **Tools → Piwi → Run headed** and **Hold failures from e
 VS Code's Testing view lists Piwi's tests: the specs your instance knows, as they stand in the editor, under their
 folders and `test.describe` blocks, each test with its latest result and its duration, and why and where a failure
 failed (**Peek Error**). The results are published as a test run (`Piwi: run #120 on main`) whenever the runs it shows
-change, and a run in progress is one of its own. Its gutter shows each result in
-place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result, so a flaky test shows as passed: its
-item says **flaky**, and its line ends with *flaky*. An item also says a test's average duration and quarantine, and its
+change, and a run in progress is one of its own, each test shown as it begins and ends. Its gutter shows each result in
+place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result, so a flaky test shows as passed, and
+its line ends with *flaky*. An item is named by its test's title alone, as a screen reader reads it, and the view's
 filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@piwi:@smoke`) or an owner
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
@@ -96,39 +96,28 @@ and new failures, with **Open the failures**, **Open in dashboard** and **Re-run
 setting (**Settings → Tools → Piwi** in JetBrains) shows it when a test fails, the default, always (a passing run then
 offers **Only on failure**), or never; **Settings** opens it in VS Code.
 
+A CI run of your checked-out branch says the same once it ends, against the run it replaced:
+`Piwi: CI run #130 on feature-x · 2 fixed · 1 new failure (cart.spec.ts › adds)`. The `piwi.runNotificationsScope`
+setting, **The runs it says it for** in JetBrains, keeps it to the runs you started.
+
 A [verification](/guide/concepts#verification), **Verify ×3**, runs the test three times without retries or
 breakpoints (`--repeat-each=3 --retries=0`), each run a result on the instance, and holds no failure. Its notification
 says how many passed, whatever the setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3` with **Open the
 failures** and **Open in dashboard**, counted from the results the run streams (`Failed at least 1 of 3` when some
 were missed), else [from its exit code](./editor-recording#run-it-or-verify-it-three-times).
 
-## The status bar
+## A test that waits for you
 
-The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
-local runs fixed (`2 failing · 1 fixed locally`). A run in progress, yours or
-[another of the branch](./watch-running-test#a-ci-run-of-your-branch), is counted instead
-(`Piwi: run #124 · 4/9 · 1 failing · yours`) until it ends.
-
-With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder
-that holds it; outside every config folder, it shows the first connected config.
-Its tooltip names the config (`The active file's Playwright config, in apps/admin (one of 3)`), then holds the run's
-counts, the baseline, your local runs since, the run in progress, and when the run was read (`Updated 12 s ago · live`
-while the event stream is connected, `· read every minute` without it).
-
-A click opens a menu led by what the item calls for: in VS Code **Piwi: Open the Piwi menu**, in the JetBrains menu's
-sections, in a JetBrains IDE the **Tools → Piwi** actions that apply. First comes **Refresh the latest run** (Enter in
-VS Code), which reads the latest run and its failures again without the indexes **Reload Piwi** fetches; **Reload
-Piwi** for an [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart; or
-**Connect…** while not connected, the item saying why. A JetBrains IDE adds **Node.js settings…** when Node.js is
-missing or too old, and **Go to the recorded lines** while a recording runs, with **Pause recording**, **Resume
-recording** and **Stop recording**.
-
-In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or of
-the connection, and the text takes the theme's error color while tests of that run fail, a run in progress included. How it counts a run you started, and its menu while a run
-is shared: [JetBrains plugin](./jetbrains#where-things-are).
+A test held at its failure, or stopped at `page.pause()`, while the editor is in the background, calls you once: a
+notification with **Resume** and **Go to the stopped line** in VS Code, the system's attention request (a bouncing or
+flashing icon) in a JetBrains IDE, which also comes to the front while you are in another application and the
+debugger's **Focus application on breakpoint** is on, as it is by default. A stop you asked for, at a breakpoint, a **Step** or a **Pause**, never does, nor
+one an agent drives or a desktop app's job, which calls from its own window.
+[A paused run](./editor-run-control) has the controls.
 
 ## Related
 
+- [The editor's status bar](./editor-status-bar): the latest run, the run in progress, and when the item turns red.
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
 - [Test selection](/features/test-selection): the selections **Run a saved selection…** runs.

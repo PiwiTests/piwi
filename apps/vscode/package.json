@@ -1313,6 +1313,22 @@
           "default": [],
           "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again."
         },
+        "piwi.statusBarAlert": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "new",
+            "any",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Only for a test a run you started from this window failed that the baseline does not fail, until a run fixes it or the editor restarts: a CI failure or a teammate's never does.",
+            "For any failing test, CI failures included.",
+            "Never: the item still counts the failing tests."
+          ],
+          "default": "new",
+          "description": "When the Piwi status bar item takes the error background."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [
@@ -1321,12 +1337,25 @@
             "never"
           ],
           "enumDescriptions": [
-            "Say what every run started from the editor changed, once it ends.",
+            "Say what every run changed, once it ends.",
             "Only when the run failed a test.",
             "Never: the status bar, the gutter and the failures view still show it."
           ],
           "default": "failures",
-          "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+          "description": "When a run started from the editor, or a CI run of the branch (piwi.runNotificationsScope), ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+        },
+        "piwi.runNotificationsScope": {
+          "type": "string",
+          "enum": [
+            "mine",
+            "mineAndCi"
+          ],
+          "enumDescriptions": [
+            "The runs started from the editor.",
+            "Those, and the CI runs of the checked-out branch Piwi follows."
+          ],
+          "default": "mineAndCi",
+          "description": "Which runs a notification of piwi.runNotifications comes for: a CI run of the branch says what it fixed and its new failures against the run it replaced."
         },
         "piwi.failureSeverity": {
           "type": "string",
@@ -1399,6 +1428,16 @@
         }
       },
       {
+        "id": "piwi.failingTestOverviewRuler",
+        "description": "The mark in the scrollbar of a test that failed in the latest run Piwi reads.",
+        "defaults": {
+          "dark": "#f43f5e80",
+          "light": "#f43f5e80",
+          "highContrast": "#f43f5e80",
+          "highContrastLight": "#f43f5e80"
+        }
+      },
+      {
         "id": "piwi.failingLineBackground",
         "description": "The background of the line a failing test failed at, over the test's own.",
         "defaults": {
@@ -1406,6 +1445,16 @@
           "light": "#f43f5e33",
           "highContrast": "#f43f5e66",
           "highContrastLight": "#f43f5e40"
+        }
+      },
+      {
+        "id": "piwi.failingLineOverviewRuler",
+        "description": "The mark in the scrollbar of the line a failing test failed at, in the dashboard's failure red.",
+        "defaults": {
+          "dark": "#f43f5e",
+          "light": "#f43f5e",
+          "highContrast": "#f43f5e",
+          "highContrastLight": "#f43f5e"
         }
       },
       {
@@ -1469,6 +1518,16 @@
         }
       },
       {
+        "id": "piwi.recordingBlockOverviewRuler",
+        "description": "The mark in the scrollbar of the block a recording writes, while it records.",
+        "defaults": {
+          "dark": "#3b82f6",
+          "light": "#3b82f6",
+          "highContrast": "#3b82f6",
+          "highContrastLight": "#3b82f6"
+        }
+      },
+      {
         "id": "piwi.executionPointBackground",
         "description": "The background of the line a test Piwi started is stopped at, as the debugger's current stack frame by default.",
         "defaults": {
@@ -1479,6 +1538,16 @@
         }
       },
       {
+        "id": "piwi.executionPointOverviewRuler",
+        "description": "The mark in the scrollbar of the line a test Piwi started is stopped at, as the debugger's current stack frame by default.",
+        "defaults": {
+          "dark": "debugIcon.breakpointCurrentStackframeForeground",
+          "light": "debugIcon.breakpointCurrentStackframeForeground",
+          "highContrast": "debugIcon.breakpointCurrentStackframeForeground",
+          "highContrastLight": "debugIcon.breakpointCurrentStackframeForeground"
+        }
+      },
+      {
         "id": "piwi.failurePointBackground",
         "description": "The background of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
         "defaults": {
@@ -1486,6 +1555,16 @@
           "light": "#f43f5e33",
           "highContrast": "#f43f5e66",
           "highContrastLight": "#f43f5e40"
+        }
+      },
+      {
+        "id": "piwi.failurePointOverviewRuler",
+        "description": "The mark in the scrollbar of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
+        "defaults": {
+          "dark": "#f43f5e",
+          "light": "#f43f5e",
+          "highContrast": "#f43f5e",
+          "highContrastLight": "#f43f5e"
         }
       }
     ],

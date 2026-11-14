@@ -16,6 +16,8 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  attentionStops,
+  countWords,
   ciLaneArg,
   ciLaneCaption,
   ciLaneLayersNote,
@@ -548,7 +550,7 @@ describe('what the controls offer', () => {
     expect(
       accessibleLabel({
         name: 'Piwi: Run progress',
-        text: '$(beaker) 3 of 9',
+        text: '$(sync~spin) Piwi: 3 of 9',
         tooltip:
           "Piwi: [run #78](command:piwi.openRunPage) ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
         markdown: true,
@@ -665,6 +667,33 @@ describe('Hold failures', () => {
   });
 });
 
+describe('a stop that calls for attention', () => {
+  test('is one the service says calls, each once', () => {
+    const at = (line: number, reason: RunStop['reason'], calls: boolean) =>
+      worker(line, 'stopped', { stop: { ...stopAt(spec, line), reason, ...(calls ? { calls: true as const } : {}) } });
+    const sessions = sessionsOf(
+      session('ed-1', [
+        at(1, 'failure', true),
+        at(2, 'page-pause', true),
+        at(3, 'breakpoint', false),
+        at(4, 'failure', false),
+      ]),
+    );
+    const attended = new Set<string>();
+    expect(attentionStops(stopsOf(sessions), attended).map((s) => s.stop.reason)).toEqual(['failure', 'page-pause']);
+    // Called once: the same stops call no more.
+    expect(attentionStops(stopsOf(sessions), attended)).toEqual([]);
+  });
+});
+
+describe('the words of a run’s count', () => {
+  test('are the JetBrains plugin’s: done of total, then each outcome there is', () => {
+    expect(countWords(3, 9)).toBe('3 of 9');
+    expect(countWords(4, 10, 1, 1, 1)).toBe('4 of 10 · 1 failed · 1 flaky · 1 ended at a stop');
+    expect(countWords(2, 2, 0, 0, 1)).toBe('2 of 2 · 1 ended at a stop');
+  });
+});
+
 describe('Share live', () => {
   const page = 'https://piwi.example.com/test-runs/42';
   const live = (ref: string, extra: Partial<NonNullable<RunSession['live']>> = {}): RunSession => ({
@@ -695,7 +724,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(beaker) 3 of 9',
+      text: '$(sync~spin) Piwi: 3 of 9',
       // What each worker runs now, under the counts.
       tooltip: 'Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays',
       markdown: true,
@@ -703,7 +732,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(beaker) 4 of 10 · $(error) 1',
+      text: '$(sync~spin) Piwi: 4 of 10 · 1 failed · 1 flaky',
       tooltip:
         'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.\n\n' +
         'Run in shop (ed-1) · Worker 1 · checkout › pays\n\nRun in shop (ed-2) · Worker 1 · checkout › pays',
@@ -716,15 +745,36 @@ describe('Share live', () => {
       progress: { total: 2, done: 2, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1, status: 'passed', failure: null },
     };
     expect(progressItem(sessionsOf(ended))?.tooltip).toMatch(/^Piwi: the run ran 2 of 2 tests: 1 ended at a stop\./);
+    // A run that ended says how it ended, not a spinner, until its session goes.
+    expect(progressItem(sessionsOf(ended))?.text).toBe('$(pass) Piwi: 2 of 2 · 1 ended at a stop');
+    const failedRun: RunSession = {
+      ...ended,
+      progress: { ...ended.progress!, failed: 1, status: 'failed' },
+    };
+    expect(progressItem(sessionsOf(failedRun))?.text).toBe('$(error) Piwi: 2 of 2 · 1 failed · 1 ended at a stop');
+    // A run that failed with no failed test (a global setup), timed out, or was stopped short.
+    const ending = (status: NonNullable<RunSession['progress']>['status']): RunSession => ({
+      ...ended,
+      progress: { ...ended.progress!, status },
+    });
+    expect(progressItem(sessionsOf(ending('failed')))?.text).toMatch(/^\$\(error\) /);
+    expect(progressItem(sessionsOf(ending('timedout')))?.text).toMatch(/^\$\(error\) /);
+    expect(progressItem(sessionsOf(ending('interrupted')))?.text).toMatch(/^\$\(warning\) /);
+    // The number of the run that counts, never another run's.
+    const paged: RunSession = {
+      ...session('ed-2', [worker(0, 'running')]),
+      page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
+    };
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(sync~spin) Piwi: 3 of 9');
     // An agent's run says who started it, never reading as the person's own.
     const agents = progressItem(sessionsOf({ ...counted('ed-1', 3, 9), label: 'Started by Claude Code' }))!;
-    expect(agents.text).toBe('$(beaker) 3 of 9 · Started by Claude Code');
+    expect(agents.text).toBe('$(sync~spin) Piwi: 3 of 9 · Started by Claude Code');
     expect(agents.tooltip).toMatch(/^Piwi: the run ran 3 of 9 tests\. Started by Claude Code\./);
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(beaker) 3 of 9',
+      text: '$(sync~spin) Piwi: 3 of 9',
       tooltip:
         "Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n[Watch a worker's test](command:piwi.watchWorker)",
       markdown: true,
@@ -735,7 +785,7 @@ describe('Share live', () => {
     const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
     expect(progressItem(sessionsOf(named))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(beaker) #78 · 3 of 9',
+      text: '$(sync~spin) Piwi: run #78 · 3 of 9',
       tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n${link}`,
       markdown: true,
       command: RUN_COMMANDS.openPage,

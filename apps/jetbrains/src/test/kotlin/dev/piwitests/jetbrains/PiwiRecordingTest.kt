@@ -471,7 +471,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
             statusBar.update()
             return (statusBar.component as javax.swing.JLabel).text
         }
-        assertEquals("Piwi: ● recording · 1 step", statusText())
+        assertEquals("Piwi: recording · 1 step", statusText())
         // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
