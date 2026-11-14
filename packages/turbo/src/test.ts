@@ -1,4 +1,4 @@
-// `test` with @piwitests/turbo's fixtures: request and resource blocking, failure screenshots, instant animations, and
+// `test` with @piwitests/turbo's fixtures: request blocking, failure screenshots, instant animations, and
 // the experimental hooks, each off until enabled in `use`.
 import { test as base, expect, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { assertHooksWork, installHooks, state, validIntervals } from './hooks';
@@ -49,7 +49,6 @@ const speedUps = new WeakMap<BrowserContext, Set<Promise<void>>>();
 
 export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
   blockRequests: [[], { option: true }],
-  blockResources: [[], { option: true }],
   failureScreenshots: [false, { option: true }],
   instantAnimations: [false, { option: true }],
   fastScreenshots: [false, { option: true }],
@@ -89,16 +88,10 @@ export const test = base.extend<TurboOptions & { _turboHooks: HookSettings }>({
     { auto: true },
   ],
 
-  context: async ({ context, blockRequests, blockResources, instantAnimations, browserName, _turboHooks }, use) => {
+  context: async ({ context, blockRequests, instantAnimations, browserName, _turboHooks }, use) => {
     if (_turboHooks.failFast) await context.addInitScript(IDLE_TRACKER);
     for (const rule of blockRequests)
       await context.route(routeMatcher(rule), (route) => route.abort('blockedbyclient'));
-    if (blockResources.length) {
-      const types = new Set<string>(blockResources);
-      await context.route('**/*', (route) =>
-        types.has(route.request().resourceType()) ? route.abort('blockedbyclient') : route.fallback(),
-      );
-    }
     if (instantAnimations && browserName === 'chromium') {
       const pending = new Set<Promise<void>>();
       speedUps.set(context, pending);

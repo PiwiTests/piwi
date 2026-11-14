@@ -1,6 +1,6 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
-import type { BlockRule, ResourceType } from './types';
+import type { BlockRule } from './types';
 
 type TraceMode = 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries' | 'retain-on-first-failure';
 type Matcher = string | RegExp | Array<string | RegExp>;
@@ -33,8 +33,6 @@ export interface Optimizations {
   reducedMotion?: boolean;
   /** Requests every test aborts, typically third-party scripts. Needs `test` from `@piwitests/turbo/test`. */
   blockRequests?: BlockRule[];
-  /** Resource types every test aborts, e.g. `['image', 'font', 'media']`. Needs `test` from `@piwitests/turbo/test`. */
-  blockResources?: ResourceType[];
   /**
    * Screenshots of a test's pages when it fails, and none when it passes, in place of `screenshot: 'only-on-failure'`,
    * which captures every test's pages and keeps the failed ones. Needs `test` from `@piwitests/turbo/test`.
@@ -145,7 +143,6 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (options.videoOnRetry && result.retries && use.video === 'retain-on-failure') use.video = 'on-first-retry';
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
-  if (options.blockResources?.length) use.blockResources = options.blockResources;
   if (options.instantAnimations) use.instantAnimations = true;
   if (options.failureScreenshots) {
     // In place of Playwright's own capture, unless the config asks for every test's screenshots.

@@ -133,11 +133,6 @@ describe('presets', () => {
   });
 });
 
-test('passes blocked resource types to the fixtures', () => {
-  const result = withOptimizations<PlaywrightTestConfig>({}, { blockResources: ['image', 'font'] });
-  expect(result.use).toMatchObject({ blockResources: ['image', 'font'] });
-});
-
 test('light traces keep the trace mode and leave out snapshots and the screencast', () => {
   const result = withOptimizations<PlaywrightTestConfig>({ use: { trace: 'on' } }, { trace: 'retain-on-failure', lightTraces: true });
   expect(result.use?.trace).toEqual({

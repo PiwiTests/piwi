@@ -160,29 +160,6 @@ test.describe('blockRequests', () => {
   });
 });
 
-test.describe('blockResources', () => {
-  test.use({ blockResources: ['image', 'font'] });
-
-  test('aborts images and fonts, and lets the rest through', async ({ page }) => {
-    // Page routes run before the context's, so the test serves only the files it expects to load.
-    await page.route(/https:\/\/res\.test\/(s\.css|app\.js)?$/, (route) => {
-      const path = new URL(route.request().url()).pathname;
-      if (path === '/') {
-        return route.fulfill({
-          contentType: 'text/html',
-          body: '<link rel="stylesheet" href="/s.css"><img src="/a.png"><script src="/app.js"></script><p>page</p>',
-        });
-      }
-      return route.fulfill({ body: path.endsWith('.js') ? 'document.body.dataset.ran = "1"' : '' });
-    });
-    const failed: string[] = [];
-    page.on('requestfailed', (request) => failed.push(new URL(request.url()).pathname));
-    await page.goto('https://res.test/');
-    await expect(page.locator('body')).toHaveAttribute('data-ran', '1');
-    await expect.poll(() => failed).toEqual(['/a.png']);
-  });
-});
-
 test.describe('instantAnimations', () => {
   test.use({ instantAnimations: true });
 

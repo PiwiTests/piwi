@@ -10,7 +10,6 @@ import { withOptimizations } from '../../src/index';
 //   BENCH_BLOCK_THIRD_PARTY  1: @piwitests/turbo's blockRequests, for the vendor origin
 //   BENCH_FAILURE_SCREENSHOTS 1: @piwitests/turbo's failureScreenshots
 //   BENCH_INSTANT_ANIMATIONS 1: @piwitests/turbo's instantAnimations
-//   BENCH_BLOCK_RESOURCES    comma-separated resource types: @piwitests/turbo's blockResources
 //   BENCH_PRESET             safe | fast | experimental: @piwitests/turbo's preset (BENCH_TRACE would win over it)
 //   BENCH_FAIL_FAST          1: the experimental failFast hook
 //   BENCH_DIFFERENTIAL_SNAPSHOTS 1: the experimental differentialSnapshots hook
@@ -68,7 +67,6 @@ export default withOptimizations(config, {
   preset: env.BENCH_PRESET as 'safe' | 'fast' | 'experimental' | undefined,
   failureScreenshots: env.BENCH_FAILURE_SCREENSHOTS === '1' || undefined,
   instantAnimations: env.BENCH_INSTANT_ANIMATIONS === '1' || undefined,
-  blockResources: env.BENCH_BLOCK_RESOURCES ? (env.BENCH_BLOCK_RESOURCES.split(',') as ['image']) : undefined,
   signIn: env.BENCH_AUTH === 'state' ? { storageState: '.auth/user.json' } : undefined,
   trace: env.BENCH_TRACE as 'on' | undefined,
   lightTraces: env.BENCH_LIGHT_TRACES === 'actions' ? 'actions' : env.BENCH_LIGHT_TRACES === '1' || undefined,
