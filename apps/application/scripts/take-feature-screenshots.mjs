@@ -1857,17 +1857,30 @@ async function prepareTeamSlackChannel({ base, request }) {
   });
 }
 
+/** A variable's value in `apps/application/.env`, the file `nuxt dev` reads, or undefined when the file sets none. */
+function appEnvFileValue(name) {
+  const file = join(APP_DIR, '.env');
+  if (!existsSync(file)) return undefined;
+  const line = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.*?)\\s*$`, 'm').exec(readFileSync(file, 'utf8'));
+  return line ? line[1].replace(/^(['"])(.*)\1$/, '$2') : undefined;
+}
+
 /**
- * The server the harness boots runs as a configured instance: a public address,
- * so no screen shows the missing-PIWI_SITE_URL warnings, share links on, so the
- * pages show their Share button, and a secret key, so a scene can store a
- * connection's credentials (the caller's own value wins for all three), and
- * never the caller's own Jira: the scenes connect their own. The key is one
- * string for every run, so a connection an earlier run stored still opens.
+ * The server the harness boots runs as a configured instance, on the local dev
+ * database: a public address, so no screen shows the missing-PIWI_SITE_URL
+ * warnings, share links on, so the pages show their Share button (the caller's
+ * own value wins for both), never the caller's own Jira (the scenes connect
+ * their own), and a secret key, so a scene can store a connection's
+ * credentials. The key is the one the dev server would use: the environment's,
+ * else the one `apps/application/.env` sets, so the secrets the dev database
+ * holds still open; else one fixed string, the same on every run.
  */
 const SCENE_SERVER_ENV = {
   PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
-  PIWI_SECRET_KEY: process.env.PIWI_SECRET_KEY ?? createHash('sha256').update('piwi feature screenshots').digest('hex'),
+  PIWI_SECRET_KEY:
+    process.env.PIWI_SECRET_KEY ||
+    appEnvFileValue('PIWI_SECRET_KEY') ||
+    createHash('sha256').update('piwi feature screenshots').digest('hex'),
   PIWI_SHARE_LINKS_ENABLED: process.env.PIWI_SHARE_LINKS_ENABLED ?? 'true',
   PIWI_JIRA_BASE_URL: '',
   PIWI_JIRA_EMAIL: '',
