@@ -118,7 +118,7 @@ A JetBrains IDE says caret, under **Tools → Piwi**, and has no **Get started**
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Run a saved selection… | Run a saved [selection](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
-| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-failures#compare-with-another-run) |
+| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-status-bar#compare-with-another-run) |
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
 | Piwi: Record here…, Record a new test file… | Record at the cursor, or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |

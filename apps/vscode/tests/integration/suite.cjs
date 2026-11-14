@@ -125,18 +125,18 @@ const tests = {
         failure.range,
         vscode.CodeActionKind.QuickFix.value,
       );
-      return found?.some((a) => a.title.startsWith('Heal')) ? found : null;
+      return found?.some((a) => a.title.startsWith('Piwi: heal with')) ? found : null;
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
-    assert.ok(titles.includes("Heal: use getByRole('row', { name: /Mug/ })"), titles.join(' | '));
-    assert.ok(titles.includes('Open the trace'), titles.join(' | '));
-    assert.ok(titles.includes('Open the failure in the dashboard'), titles.join(' | '));
-    assert.ok(titles.includes('Copy context for agent'), titles.join(' | '));
-    const copy = actions.find((a) => a.title === 'Copy context for agent');
+    assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the trace'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: open the failure in the dashboard'), titles.join(' | '));
+    assert.ok(titles.includes('Piwi: copy context for agent'), titles.join(' | '));
+    const copy = actions.find((a) => a.title === 'Piwi: copy context for agent');
     await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
-    const heal = actions.find((a) => a.title.startsWith('Heal'));
+    const heal = actions.find((a) => a.title.startsWith('Piwi: heal with'));
     assert.ok(await vscode.workspace.applyEdit(heal.edit));
     const document = await vscode.workspace.openTextDocument(pageObject);
     assert.equal(document.lineAt(4).text, "  row = () => this.page.getByRole('row', { name: /Mug/ });");

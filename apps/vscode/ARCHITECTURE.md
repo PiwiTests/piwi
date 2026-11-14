@@ -271,7 +271,9 @@ reference.
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
 (`root`). **Debug this failure** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
 service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
-debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`).
+debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`). **Verify the test ×3**
+(`piwi.verifyFailure`) runs `WorkspaceFailure.verify`, and **Go to the test** (`piwi.goToFailureTest`) opens
+`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`.
 
 **The rest of the view.**
 
@@ -831,7 +833,7 @@ at `RecordResult.placement`), with the service's import edit (`importEdit`) in t
 
 Once the recording stopped, a warning on a step with other verified locators (`RecordingStep.locators`) offers each one
 as a quick fix (a `CodeActionProvider` on the diagnostic, `locatorChoices` in `src/glue.ts`).
-**Use getByTestId('pay')** puts it in place of the written locator, found on the line exactly once, as one workspace
+**Piwi: use getByTestId('pay')** puts it in place of the written locator, found on the line exactly once, as one workspace
 edit. None is offered while it records, since the next update writes the block again.
 
 ### Edits, recording from a paused test, and Stop

@@ -1381,9 +1381,9 @@ describe('a recorded line’s warning', () => {
     const start = line.indexOf(written);
     const end = start + written.length;
     expect(locatorChoices(line, step)).toEqual([
-      { title: "Use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
+      { title: "Piwi: use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
       {
-        title: "Use getByRole('button', { name: 'Pay' })",
+        title: "Piwi: use getByRole('button', { name: 'Pay' })",
         locator: "getByRole('button', { name: 'Pay' })",
         start,
         end,

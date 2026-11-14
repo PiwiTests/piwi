@@ -14,6 +14,7 @@ import {
   locatorCompletionSite,
   pauseAtValue,
   pickEditOnLine,
+  piwiActionTitle,
   placeLine,
   testCalls,
 } from '../src/analysis';
@@ -556,5 +557,22 @@ describe('withoutComments', () => {
       ' '.repeat('/* await page.pause();'.length),
       '                      await page.pause();',
     ]);
+  });
+});
+
+describe('piwiActionTitle', () => {
+  test('names a quick fix Piwi, its words after the colon in lower case', () => {
+    expect(piwiActionTitle('Run this test')).toBe('Piwi: run this test');
+    expect(piwiActionTitle('Open the trace')).toBe('Piwi: open the trace');
+  });
+
+  test('reads a heal as heal with its locator', () => {
+    expect(piwiActionTitle("Heal: use getByRole('button', { name: 'Pay' })")).toBe(
+      "Piwi: heal with getByRole('button', { name: 'Pay' })",
+    );
+  });
+
+  test('leaves a title already named Piwi as it is', () => {
+    expect(piwiActionTitle("Piwi: use getByTestId('pay')")).toBe("Piwi: use getByTestId('pay')");
   });
 });

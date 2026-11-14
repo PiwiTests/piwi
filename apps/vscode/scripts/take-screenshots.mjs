@@ -206,7 +206,7 @@ const SCENES = {
     await goToLine(page, FAILING_LINE, 5);
     await settle(page, 800);
     await page.keyboard.press('Control+.');
-    await page.locator('.action-widget', { hasText: 'Heal: use' }).first().waitFor({ state: 'visible' });
+    await page.locator('.action-widget', { hasText: 'Piwi: heal with' }).first().waitFor({ state: 'visible' });
     await settle(page);
     await shoot(page, 'heal');
     await page.keyboard.press('Escape');

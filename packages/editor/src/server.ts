@@ -104,6 +104,7 @@ import {
   type LineLocator,
   type LineState,
   type TestCall,
+  piwiActionTitle,
   testActions,
 } from './analysis.js';
 import {
@@ -1299,29 +1300,36 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * each (`failuresAnswer`).
    */
   /**
-   * Debug this failure (`WorkspaceFailure.debug`): the dashboard's Debug in my editor run of its test, the one test of
-   * its spec, as it stands, titled as it failed, stopping once at the line it failed through (`debugRunOf`); null when
-   * the spec holds no such test or several.
+   * What a failure's node offers on its test, the one test of its spec, as it stands, titled as it failed; nothing when
+   * the spec holds no such test or several: the test's `test(…)` line (`WorkspaceFailure.test`), Verify ×3 by its
+   * location (`verify`), and Debug this failure (`debug`), the dashboard's Debug in my editor run stopping once at the
+   * line it failed through (`debugRunOf`).
    */
-  const failureDebugRun = (
+  const failureTestActions = (
     context: PiwiContext,
     spec: string,
     f: BranchFailure,
     stop: EditorBreakpoint,
-  ): RunTestsArgs | null => {
+  ): Pick<WorkspaceFailure, 'test' | 'verify' | 'debug'> => {
     const file = path.join(context.root, spec);
     const text = readText(file);
-    if (text === null) return null;
+    if (text === null) return {};
     const titled = testCalls(text.split(/\r?\n/)).filter((c) => c.title === f.title);
-    if (titled.length !== 1) return null;
+    if (titled.length !== 1) return {};
+    const call = titled[0]!;
     const uri = pathToFileURL(file).href;
-    return debugRunOf(
+    const debug = debugRunOf(
       { uri, root: context.root, text, name: spec },
-      titled[0]!,
+      call,
       stop,
       f.browserName ?? null,
       f.executionId,
     );
+    return {
+      test: { uri, line: call.line },
+      verify: { uri, root: context.root, testIds: [], locations: [`${spec}:${call.line + 1}`], repeat: 3 },
+      ...(debug ? { debug } : {}),
+    };
   };
 
   const failuresResult = (pass: Placer): FailuresResult => {
@@ -1333,7 +1341,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!at || at.state === 'gone') return [];
         const spec = specOf(context, f);
         const failingUri = pathToFileURL(at.file).href;
-        const debug = failureDebugRun(context, spec, f, { uri: failingUri, line: at.line - 1 });
+        const onTest = failureTestActions(context, spec, f, { uri: failingUri, line: at.line - 1 });
         return [
           {
             uri: failingUri,
@@ -1357,7 +1365,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
-            ...(debug ? { debug } : {}),
+            ...onTest,
           },
         ];
       });
@@ -3009,7 +3017,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         }
       }
     }
-    return actions;
+    return actions.map((a) => ({ ...a, title: piwiActionTitle(a.title) }));
   });
 
   // In test code: after a page expression's `.` (`page.`, `adminPage.`, `this.page.`), the chains the suite uses on the

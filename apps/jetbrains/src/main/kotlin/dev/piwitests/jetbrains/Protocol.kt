@@ -569,6 +569,10 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
+    val test: EditorBreakpoint? = null,
+    /** Verify the test ×3: its run by its location, three times; null where `test` is. */
+    val verify: RunTestsArgs? = null,
     /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
     val debug: RunTestsArgs? = null,
 )

@@ -3499,7 +3499,7 @@ object Glue {
         val start = line.indexOf(written)
         if (start < 0 || line.indexOf(written, start + 1) >= 0) return emptyList()
         return locators.filter { it.isNotEmpty() && it != written }
-            .map { LocatorChoice("Use $it", it, start, start + written.length) }
+            .map { LocatorChoice("Piwi: use $it", it, start, start + written.length) }
     }
 
     /** "1 step", "3 steps". */

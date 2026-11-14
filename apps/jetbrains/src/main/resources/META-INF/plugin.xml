@@ -346,6 +346,10 @@
                     description="Run the selected failure's test as Piwi runs it"/>
             <action id="Piwi.Failure.Debug" class="dev.piwitests.jetbrains.DebugFailureAction" text="Debug this failure"
                     description="Run the selected failure's test headed, stopping once at the line it failed through"/>
+            <action id="Piwi.Failure.Verify" class="dev.piwitests.jetbrains.VerifyFailureAction" text="Verify the test ×3"
+                    description="Run the selected failure's test three times, without retries"/>
+            <action id="Piwi.Failure.GoToTest" class="dev.piwitests.jetbrains.GoToFailureTestAction" text="Go to the test"
+                    description="Open the selected failure's test at its test(…) line"/>
             <action id="Piwi.Failure.OpenTrace" class="dev.piwitests.jetbrains.OpenFailureTraceAction" text="Open the trace"
                     description="Open the selected failure's trace in Playwright's trace viewer">
                 <synonym text="Playwright trace viewer"/>

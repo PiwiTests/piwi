@@ -318,7 +318,9 @@ that each of Piwi's resolves to a file, and lists the actions that share a glyph
 (`WorkspaceFailure.root`). **Debug this failure** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
 built for it (`WorkspaceFailure.debug`) once the files are saved, quietly (the service says why it refuses a debug
 run); so does **Debug with Piwi** among a test's actions on the result icon (`TestAction.kind` `debug`,
-`PiwiCommands.debug`). A run that names its own start keeps it (`Glue.withRunStart`).
+`PiwiCommands.debug`). **Verify the test ×3** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
+the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. A run that names its own start keeps it
+(`Glue.withRunStart`).
 
 ### Compare with
 
@@ -880,7 +882,7 @@ thread.
   until their line changes.
 - **Quick fixes.** Once the recording stopped, a warning on a step with other verified locators
   (`RecordingStep.locators`, kept with the warning in `RecordingWarningMark`) offers each one as a quick fix
-  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Use getByTestId('pay')** puts
+  (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`, `Glue.locatorChoices`). **Piwi: use getByTestId('pay')** puts
   it in place of the written locator, found on the line exactly once, in one command, and the line it changes no longer
   shows the warning. None is offered while it records, since the next update writes the block again.
 - **The banner** over the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step

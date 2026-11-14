@@ -28,7 +28,7 @@ menu and failures tree built from registered actions, the tree's as new `Piwi.Fa
 and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Point's key, `Piwi.OpenRunPage`,
 `Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
-say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
+say Open the screenshot (HM11). M2 is built, with HM11's Verify ×3 and Jump to Source (Go to the test) on failure nodes,
 and the status popup takes one entry per run page (HM3); its three new groups (`Piwi.RunControl`, `Piwi.StatusActions`,
 `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and part of Q2: VS Code's outcome marks in the
 dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result icon and JetBrains' CI tab), and
@@ -113,7 +113,11 @@ session: in each test's action list, the dashboard's Debug in my editor run for 
 line, with no consent prompt) and a headed run holding its failures otherwise; VS Code's Debug profile in the Testing
 view; and **Debug this failure** on the failure nodes of both editors, from the run the service builds
 (`WorkspaceFailure.debug`) (TL17 in part: the IDE run icon waits on M9, and whether a plain Run still stops at
-breakpoints stays open). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+breakpoints stays open). M7 continued: the failure nodes of both editors gain **Verify the test ×3** and **Go to the
+test**, from what the service finds of the failure's test (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11),
+and every quick fix carries Piwi's name, the service's (`piwiActionTitle`) and the clients' recorded-locator ones alike
+(TL7 in part: that a quick fix only edits, Record here in both editors' actions (TL9), and the IDE run icon (M9)
+remain). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
@@ -1415,6 +1419,7 @@ such action.
 | Reproduce in the desktop app | `monitor` | `monitor` | `$(device-desktop)` | `Nodes.Desktop` |
 | Find the breaking commit | `git-branch` | – | `$(git-branch)` | `Vcs.Branch` |
 | Verify ×3 | – | – | `$(sync)` | `Actions.Rerun` |
+| Go to a failure's test | – | – | `$(go-to-file)` | `Nodes.Test` |
 | Run this spec | – | – | `$(run-all)` | `Actions.RunAll` |
 | Re-run the failing tests | – | – | `$(run-errors)` | `RunConfigurations.RerunFailedTests` |
 | Coverage | `scan-line` | – | `$(run-coverage)` | `General.RunWithCoverage` |

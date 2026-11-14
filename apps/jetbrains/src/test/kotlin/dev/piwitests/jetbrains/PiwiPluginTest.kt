@@ -176,6 +176,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
             setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
             setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
+            setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify"),
             setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
             setOf(
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
@@ -1394,14 +1395,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
-    /** **Debug this failure** is offered on a failure the service built a debug run for, and only there. */
-    fun testDebugThisFailureAppliesToAFailureWithADebugRun() {
+    /** **Debug this failure**, **Verify the test ×3** and **Go to the test** are offered where the service built them. */
+    fun testAFailuresTestActionsApplyWhereTheServiceBuiltThem() {
         val failure = WorkspaceFailure(uri = "file:///w/tests/a.spec.ts", line = 3, title = "pays", executionId = 9)
         val debug = RunTestsArgs("file:///w/tests/a.spec.ts", emptyList())
         val action = ActionManager.getInstance().getAction("Piwi.Failure.Debug") as DebugFailureAction
         assertTrue(action.applies(project, failure.copy(debug = debug)))
         assertFalse(action.applies(project, failure))
         assertNotNull(action.templatePresentation.icon)
+        // Verify the test ×3 and Go to the test, where the service found the failure's test.
+        val manager = ActionManager.getInstance()
+        val verify = manager.getAction("Piwi.Failure.Verify") as VerifyFailureAction
+        val goTo = manager.getAction("Piwi.Failure.GoToTest") as GoToFailureTestAction
+        val found = failure.copy(test = EditorBreakpoint("file:///w/tests/a.spec.ts", 2), verify = debug.copy(repeat = 3))
+        assertTrue(verify.applies(project, found))
+        assertTrue(goTo.applies(project, found))
+        assertFalse(verify.applies(project, failure))
+        assertFalse(goTo.applies(project, failure))
     }
 
     /**

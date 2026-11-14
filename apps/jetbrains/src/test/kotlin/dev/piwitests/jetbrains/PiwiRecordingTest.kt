@@ -100,7 +100,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
     fun testAltEnterOffersARecordingAndChangesNothingItself() {
         myFixture.configureByText("intention.spec.ts", "test('t', async ({ page }) => {\n  <caret>\n});\n")
         val intention = RecordHereIntention()
-        assertEquals("Piwi: Record here…", intention.text)
+        assertEquals("Piwi: record here…", intention.text)
         assertFalse(intention.startInWriteAction())
         assertTrue(com.intellij.codeInsight.intention.IntentionManager.getInstance().availableIntentions.any { it is RecordHereIntention ||
             (it as? com.intellij.codeInsight.intention.IntentionActionDelegate)?.delegate is RecordHereIntention })
@@ -422,8 +422,8 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         recordings.stop(session)
         send(update("s13", code, state = "stopped", warnings = warnings).copy(steps = steps))
         val recorded = text()
-        assertEquals(setOf("Use getByTestId('pay')", "Use getByRole('button', { name: 'Pay' })"), locatorFixes().map { it.text }.toSet())
-        myFixture.checkPreviewAndLaunchAction(locatorFixes().single { it.text == "Use getByTestId('pay')" })
+        assertEquals(setOf("Piwi: use getByTestId('pay')", "Piwi: use getByRole('button', { name: 'Pay' })"), locatorFixes().map { it.text }.toSet())
+        myFixture.checkPreviewAndLaunchAction(locatorFixes().single { it.text == "Piwi: use getByTestId('pay')" })
         assertEquals(recorded.replace("page.locator('form > button.btn-3')", "page.getByTestId('pay')"), text())
         assertEquals(listOf(password), recordings.warnings(myFixture.editor.document).map { it.message })
         assertEquals(emptyList<String>(), locatorFixes().map { it.text })
@@ -431,7 +431,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(recorded, text())
 
         myFixture.editor.caretModel.moveToOffset(text().indexOf("getByLabel"))
-        assertEquals(listOf("Use locator('#password')"), locatorFixes().map { it.text })
+        assertEquals(listOf("Piwi: use locator('#password')"), locatorFixes().map { it.text })
     }
 
     /**

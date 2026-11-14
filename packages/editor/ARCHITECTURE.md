@@ -440,8 +440,13 @@ On a spec, `piwi/fileSummary` gives each test's line:
   spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
   `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
   the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
-  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`, `failureDebugRun`: the one test of its spec
-  titled as it failed), stopping at its own line, for **Debug this failure**.
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug this
+  failure**, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
+  spec titled as it failed (`failureTestActions`).
+
+Every code action the service answers carries Piwi's name, its words after it starting lower-case (`piwiActionTitle`:
+`Piwi: heal with getByRole(…)`, `Piwi: run this test`); the clients' recorded-locator fixes read the same
+(`Piwi: use getByTestId('pay')`).
 
 `piwi/testAt` answers, for a position of a spec:
 

@@ -1325,7 +1325,7 @@ export function editedLine(change: TextChange): number | null {
 
 /** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)`. */
 export interface LocatorChoice {
-  /** `Use getByTestId('pay')`. */
+  /** `Piwi: use getByTestId('pay')`. */
   title: string;
   locator: string;
   start: number;
@@ -1346,7 +1346,7 @@ export function locatorChoices(line: string, step: Pick<RecordingStep, 'locators
   if (start < 0 || line.includes(written, start + 1)) return [];
   return locators
     .filter((locator) => locator && locator !== written)
-    .map((locator) => ({ title: `Use ${locator}`, locator, start, end: start + written.length }));
+    .map((locator) => ({ title: `Piwi: use ${locator}`, locator, start, end: start + written.length }));
 }
 
 /** The service's import edit as a change of the document; null without one. */
