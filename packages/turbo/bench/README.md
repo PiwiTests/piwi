@@ -74,7 +74,8 @@ category from its Playwright step category and title, summed across workers.
   round, so drift (a machine heating up, a neighbor on a shared CI host) affects every variant alike and the per-round
   ratios cancel it.
 - **CPU** (Linux): the kernel's count of user and system time of every reaped descendant of the command, read from
-  `/proc/self/stat` before and after: exact, and it includes Chromium, the web server and the workers.
+  `/proc/self/stat` before and after: exact, and it includes Chromium, the web server and the workers. A process the
+  run leaves behind, re-parented to `init` once its parent exits, is not counted.
 - **Memory** (Linux): the peak, over samples, of the summed PSS of the process tree, which splits shared pages between
   the processes sharing them. macOS reports summed RSS, which overcounts; Windows reports wall time only.
 - **Artifacts**: the size of `artifacts` after each run: traces, videos and screenshots cost upload time and storage.

@@ -132,10 +132,21 @@ test('passes blocked resource types to the fixtures', () => {
 
 test('light traces keep the trace mode and leave out snapshots and the screencast', () => {
   const result = withOptimizations<PlaywrightTestConfig>({ use: { trace: 'on' } }, { trace: 'retain-on-failure', lightTraces: true });
-  expect(result.use?.trace).toEqual({ mode: 'retain-on-failure', snapshots: false, screenshots: false });
-  const kept = withOptimizations<PlaywrightTestConfig>(
+  expect(result.use?.trace).toEqual({
+    mode: 'retain-on-failure',
+    snapshots: { dom: true, aria: false, screen: false },
+    screenshots: false,
+  });
+  const actions = withOptimizations<PlaywrightTestConfig>(
     { use: { trace: { mode: 'on', sources: false } } },
-    { lightTraces: true },
+    { lightTraces: 'actions' },
   );
-  expect(kept.use?.trace).toEqual({ mode: 'on', sources: false, snapshots: false, screenshots: false });
+  expect(actions.use?.trace).toEqual({ mode: 'on', sources: false, snapshots: false, screenshots: false });
+});
+
+test('records video on the first retry only when the config retries', () => {
+  const retrying = withOptimizations<PlaywrightTestConfig>({ retries: 2, use: { video: 'retain-on-failure' } }, { preset: 'safe' });
+  expect(retrying.use?.video).toBe('on-first-retry');
+  const once = withOptimizations<PlaywrightTestConfig>({ use: { video: 'retain-on-failure' } }, { preset: 'safe' });
+  expect(once.use?.video).toBe('retain-on-failure');
 });

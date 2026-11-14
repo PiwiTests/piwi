@@ -7,7 +7,7 @@ type Matcher = string | RegExp | Array<string | RegExp>;
 
 /**
  * A named bundle of optimizations, by how much a test can notice:
- * - `safe`: nothing a test observes changes. Traces kept for failures only, and failure screenshots.
+ * - `safe`: nothing a test observes changes. Traces and video for failures or retries only, and failure screenshots.
  * - `fast`: `safe`, plus changes to what the page does: reduced motion and instant animations.
  * - `experimental`: `fast`, plus the hooks into Playwright's internals.
  */
@@ -19,10 +19,16 @@ export interface Optimizations {
   /** Trace mode for every test, e.g. `'retain-on-failure'` or `'on-first-retry'`. */
   trace?: TraceMode;
   /**
-   * Traces keep the actions, network, console and sources, and leave out DOM snapshots and the screencast, which are
-   * most of what recording a trace costs. The trace viewer then shows no page at each step.
+   * Lighter traces, whatever the trace mode. `true` keeps the DOM snapshots of each action and leaves out the ARIA and
+   * screenshot snapshots and the screencast, which cost the most to record. `'actions'` also leaves out the DOM
+   * snapshots: the trace keeps the actions, network, console and sources, and the viewer shows no page at each step.
    */
-  lightTraces?: boolean;
+  lightTraces?: boolean | 'actions';
+  /**
+   * With retries, records video on the first retry instead of `retain-on-failure`, which records every test to keep the
+   * failed ones.
+   */
+  videoOnRetry?: boolean;
   /** Emulates `prefers-reduced-motion: reduce`. Changes what the app does when it honors the preference. */
   reducedMotion?: boolean;
   /** Requests every test aborts, typically third-party scripts. Needs `test` from `@piwitests/turbo/test`. */
@@ -97,6 +103,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
     // With retries, the first retry records the trace; without, every test records and only failures keep it.
     trace: retries ? 'on-first-retry' : 'retain-on-failure',
     failureScreenshots: true,
+    videoOnRetry: true,
   };
   if (preset === 'safe') return safe;
   const fast: Optimizations = { ...safe, reducedMotion: true, instantAnimations: true };
@@ -122,8 +129,10 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (options.lightTraces) {
     const current = use.trace as TraceMode | { mode: TraceMode } | undefined;
     const mode = typeof current === 'object' ? current.mode : (current ?? 'off');
-    use.trace = { ...(typeof current === 'object' ? current : {}), mode, snapshots: false, screenshots: false };
+    const snapshots = options.lightTraces === 'actions' ? false : { dom: true, aria: false, screen: false };
+    use.trace = { ...(typeof current === 'object' ? current : {}), mode, snapshots, screenshots: false };
   }
+  if (options.videoOnRetry && result.retries && use.video === 'retain-on-failure') use.video = 'on-first-retry';
   if (options.reducedMotion) use.contextOptions = { ...use.contextOptions, reducedMotion: 'reduce' };
   if (options.blockRequests?.length) use.blockRequests = options.blockRequests;
   if (options.blockResources?.length) use.blockResources = options.blockResources;

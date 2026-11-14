@@ -63,8 +63,13 @@ export default {
     },
     {
       name: 'light-traces',
-      description: 'lightTraces: traces for every test, without DOM snapshots or the screencast.',
+      description: 'lightTraces: traces for every test, with DOM snapshots only, without the screencast.',
       env: { ...stock, BENCH_LIGHT_TRACES: '1' },
+    },
+    {
+      name: 'action-traces',
+      description: "lightTraces: 'actions': traces for every test, without snapshots or the screencast.",
+      env: { ...stock, BENCH_LIGHT_TRACES: 'actions' },
     },
     {
       name: 'failure-screenshots',
