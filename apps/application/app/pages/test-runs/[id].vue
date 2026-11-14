@@ -32,7 +32,7 @@ import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
 import { summarizeRunCases } from '#shared/utils/test-counts';
-import { RUN_TABS, type RunTabValue } from '#shared/app-places';
+import { RUN_TAB_ALIASES, RUN_TABS, type RunTabValue } from '#shared/app-places';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
@@ -1253,7 +1253,7 @@ function handleFilterStatus(status: string) {
       ? testCaseActiveStatuses.value.filter((s) => s !== status)
       : [...testCaseActiveStatuses.value, status];
   }
-  activeTab.value = 'test-cases';
+  activeTab.value = 'tests';
 }
 
 // Reports from the files table
@@ -1266,7 +1266,7 @@ const totalWastedTime = computed(() => {
   return cases.reduce((sum, tc) => sum + (tc.wastedTimeMs ?? 0), 0);
 });
 
-const activeTab = ref('test-cases');
+const activeTab = ref('tests');
 
 const hasFailures = computed(() => (displayProgress.value?.failedTests ?? 0) > 0);
 
@@ -1345,8 +1345,8 @@ const videoCount = computed(() => testRun.value?.videoCount ?? 0);
 
 /** The count a tab's label carries, for the tabs that show one. */
 const tabCounts = computed<Partial<Record<RunTabValue, number>>>(() => ({
-  'test-cases': dedupedDisplayCases.value.length,
-  workers: timelineLanes.value > 0 ? timelineLanes.value : undefined,
+  tests: dedupedDisplayCases.value.length,
+  timeline: timelineLanes.value > 0 ? timelineLanes.value : undefined,
   video: !isLive.value && videoCount.value > 0 ? videoCount.value : undefined,
 }));
 
@@ -1373,40 +1373,28 @@ const tabItems = computed(() =>
 );
 
 const tabPanelClass: Record<string, string> = {
-  'test-cases': 'overflow-hidden flex flex-col',
+  tests: 'overflow-hidden flex flex-col',
 };
 
-// The former Failure clusters tab is now the Tests tab's cluster grouping;
-// `?tab=failure-groups` lands there. The grouping cookie is written client-side
-// so the list opens grouped by cluster.
-if (route.query.tab === 'failure-groups') {
-  activeTab.value = 'test-cases';
-  if (import.meta.client) {
-    document.cookie = 'piwi-group-by-run-tests=cluster; path=/; max-age=31536000; sameSite=lax';
-    onMounted(() => {
-      const query = { ...route.query };
-      delete query.cluster;
-      query.tab = 'test-cases';
-      router.replace({ query });
-    });
-  }
+// `?tab=failure-groups` opens the Tests tab grouped by cluster. The grouping
+// cookie is written client-side so the list opens grouped.
+if (route.query.tab === 'failure-groups' && import.meta.client) {
+  document.cookie = 'piwi-group-by-run-tests=cluster; path=/; max-age=31536000; sameSite=lax';
 }
 
-// Deep-links naming the insights, regression or compare tab open the Changes
-// tab, and endpoints opens the Tests tab (slow endpoints are on the project
-// page), so shared URLs land somewhere sensible.
-const LEGACY_TAB_REDIRECTS: Record<string, string> = {
-  insights: 'changes',
-  regression: 'changes',
-  compare: 'changes',
-  endpoints: 'test-cases',
-};
-if (typeof route.query.tab === 'string' && LEGACY_TAB_REDIRECTS[route.query.tab]) {
-  const target = LEGACY_TAB_REDIRECTS[route.query.tab]!;
+// A `?tab=` value of RUN_TAB_ALIASES opens its tab, and the address is
+// rewritten to the tab's own value, so shared and stored links land where
+// they meant.
+if (typeof route.query.tab === 'string' && RUN_TAB_ALIASES[route.query.tab]) {
+  const target = RUN_TAB_ALIASES[route.query.tab]!;
+  const dropCluster = route.query.tab === 'failure-groups';
   activeTab.value = target;
   if (import.meta.client) {
     onMounted(() => {
-      router.replace({ query: { ...route.query, tab: target } });
+      const query = { ...route.query };
+      query.tab = target;
+      if (dropCluster) delete query.cluster;
+      router.replace({ query });
     });
   }
 }
@@ -1424,12 +1412,12 @@ if (typeof route.query.tab === 'string' && runTabValues.value.includes(route.que
 watch(
   () => route.query.tab,
   (raw) => {
-    const value = typeof raw === 'string' ? (LEGACY_TAB_REDIRECTS[raw] ?? raw) : '';
-    activeTab.value = runTabValues.value.includes(value) ? value : 'test-cases';
+    const value = typeof raw === 'string' ? (RUN_TAB_ALIASES[raw] ?? raw) : '';
+    activeTab.value = runTabValues.value.includes(value) ? value : 'tests';
   },
 );
 watch(runTabValues, (vals) => {
-  if (!vals.includes(activeTab.value)) activeTab.value = 'test-cases';
+  if (!vals.includes(activeTab.value)) activeTab.value = 'tests';
 });
 watch(activeTab, (tab) => {
   const query = { ...route.query };
@@ -1445,7 +1433,7 @@ const testCasesListRef: {
 } = ref(null);
 
 function handleSelectTestCase(id: number) {
-  activeTab.value = 'test-cases';
+  activeTab.value = 'tests';
   // The timeline lists every attempt, but the Tests list shows one row per test
   // (its final attempt), so redirect a non-final attempt's id to its test's row.
   const source = displayTestCases.value.find((tc) => tc.executionId === id);
@@ -1631,7 +1619,7 @@ const moreMenuItems = computed(() => {
             <DesktopEditorRunNote v-if="isLive && editorRunsHere.length" :runs="editorRunsHere" />
           </template>
 
-          <template #tab-test-cases>
+          <template #tab-tests>
             <RunWatchAll
               v-if="watchAll && offersWatchAll"
               class="mb-3 max-h-[45svh] shrink-0 overflow-y-auto"
@@ -1722,7 +1710,7 @@ const moreMenuItems = computed(() => {
             />
           </template>
 
-          <template #tab-workers>
+          <template #tab-timeline>
             <div class="space-y-6" data-tour="run-workers">
               <WorkersTimeline
                 :test-cases="timelineCases"
@@ -1756,7 +1744,7 @@ const moreMenuItems = computed(() => {
               :project-key="testRun?.projectId"
               :project-name="testRun?.project?.name"
               :refresh-key="runRefreshKey"
-              @open-timeline="activeTab = 'workers'"
+              @open-timeline="activeTab = 'timeline'"
             />
           </template>
         </DetailPageLayout>

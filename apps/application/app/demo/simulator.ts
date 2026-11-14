@@ -152,7 +152,7 @@ export type DemoScenarioGroupId = (typeof DEMO_SCENARIO_GROUPS)[number]['id'];
  * The run page tabs a scenario can open its run on: ones the page lists while the run streams. Resources is listed only
  * once the finish stored the run's report, so a scenario links to it from its result instead.
  */
-export type DemoScenarioTab = 'workers';
+export type DemoScenarioTab = 'timeline';
 
 export interface DemoScenario {
   id: string;
@@ -1206,7 +1206,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description: 'Tests split across 2 parallel CI shards that merge into one run, each with its own machine',
     icon: 'i-lucide-layers',
     group: 'setups',
-    tab: 'workers',
+    tab: 'timeline',
     result: {
       text: 'Both shards reported into one run: the Timeline lays out each shard’s workers side by side.',
     },
@@ -1230,7 +1230,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description: 'Every test in Chromium and Firefox, split across 2 CI shards that each run one browser',
     icon: 'i-lucide-layers-2',
     group: 'setups',
-    tab: 'workers',
+    tab: 'timeline',
     result: {
       text: 'Each shard ran one browser, and both listed the run’s two projects: against a Chromium-only baseline, the Changes tab shows the browsers that changed.',
       link: { label: 'Open Changes', to: (runId) => `/test-runs/${runId}?tab=changes` },

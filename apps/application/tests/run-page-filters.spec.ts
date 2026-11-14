@@ -184,6 +184,18 @@ test.describe.serial('Run page Tests tab', () => {
     await expect(page.getByText(/Authentication ›/).filter({ visible: true })).toHaveCount(0);
   });
 
+  test('the tab addresses links already hold open their tab under its own address', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: /^Timeline/ }).first()).toHaveAttribute('aria-current', 'true');
+    await expect(page).toHaveURL(/tab=timeline\b/);
+
+    await page.goto(`/test-runs/${runId}?tab=test-cases`);
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: /^Tests/ }).first()).toHaveAttribute('aria-current', 'true');
+    await expect(page).toHaveURL(/tab=tests\b/);
+  });
+
   test('the count bar filters the list and switches to the Tests tab from another tab', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -193,12 +205,12 @@ test.describe.serial('Run page Tests tab', () => {
       .getByRole('button', { name: /^Timeline/ })
       .first()
       .click();
-    await expect(page).toHaveURL(/tab=workers/);
+    await expect(page).toHaveURL(/tab=timeline\b/);
 
     await page.getByRole('button', { name: '3 failed' }).first().click();
 
     // It lands back on the Tests tab with only the failing rows.
-    await expect(page).toHaveURL(/tab=test-cases/);
+    await expect(page).toHaveURL(/tab=tests\b/);
     await expect(groupBy(page)).toBeVisible();
     await expect(visibleTitles(page)).toHaveCount(3);
     await expect(page.getByText('homepage loads')).toHaveCount(0);
@@ -317,7 +329,7 @@ test.describe.serial('Run page Tests tab', () => {
     await page.goto(`/test-runs/${runId}?tab=failure-groups`);
     await waitForHydration(page);
 
-    await expect(page).toHaveURL(/tab=test-cases/);
+    await expect(page).toHaveURL(/tab=tests\b/);
     await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2, { timeout: 15000 });
   });
 });

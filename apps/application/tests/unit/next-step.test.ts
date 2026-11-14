@@ -61,7 +61,7 @@ describe('computeNextStep — one row per rule', () => {
       expect(s.primary).toEqual({
         label: "Open the run's timeline",
         action: 'open-run',
-        payload: { runId: 66, tab: 'workers' },
+        payload: { runId: 66, tab: 'timeline' },
       });
     });
 

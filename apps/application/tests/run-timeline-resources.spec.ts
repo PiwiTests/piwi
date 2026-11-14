@@ -100,7 +100,7 @@ test.describe('Run timeline resource tracks', () => {
   });
 
   test('draws CPU, memory and open pages above the rows, reads them on hover, and turns each off', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
 
     const tracks = page.locator('[data-resource-track]');
@@ -133,7 +133,7 @@ test.describe('Run timeline resource tracks', () => {
   });
 
   test('draws one metric under each worker row, each test’s value across its bar', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
     await expect(page.locator('[data-resource-track]').first()).toBeVisible();
     await expect(page.getByTestId('timeline-worker-strip')).toHaveCount(0);
@@ -263,7 +263,7 @@ test.describe('Run timeline leaks', () => {
   test('draws what each worker kept open for nothing under its row, explains it on hover, and opens its test', async ({
     page,
   }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
     await expect(page.getByTestId('timeline-left-open')).toHaveText('1 left open');
     await expect(page.getByTestId('timeline-lingering')).toHaveText('1 lingering');
@@ -295,11 +295,11 @@ test.describe('Run timeline leaks', () => {
     // A click opens the test the leak outlived.
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(page).toHaveURL(/tab=test-cases/);
+    await expect(page).toHaveURL(/tab=tests\b/);
   });
 
   test('turns the tails off, and back on', async ({ page }) => {
-    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await page.goto(`/test-runs/${runId}?tab=timeline`);
     await waitForHydration(page);
     await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
     await page.getByRole('switch', { name: 'Show leaks' }).click();
