@@ -383,6 +383,7 @@ object Glue {
         file: String? = null,
         trusted: Boolean = true,
         stopped: Boolean = false,
+        alert: String = "new",
     ): StatusView {
         if (status == null && !trusted) {
             return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
@@ -419,7 +420,8 @@ object Glue {
         val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
         // The editor's own run in progress stays in view whichever config the file belongs to.
         val live = run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
-        val liveFailing = (live?.failed ?: 0) > 0
+        // A run in progress is the alarm only for any failing test: whether its failures are new is known once it ended.
+        val liveFailing = alert == "any" && (live?.failed ?: 0) > 0
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val overlays = run?.overlays ?: 0
@@ -431,7 +433,7 @@ object Glue {
             val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$config$baseline$progress$from"
             return when {
                 live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
-                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, true)
+                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, alarmed(run, failing, alert))
                 else -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.PASSED)
             }
         }
@@ -453,11 +455,11 @@ object Glue {
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh, StatusIcon.RUNNING, r.failedTests > 0)
+                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh, StatusIcon.RUNNING, alert == "any" && r.failedTests > 0)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, true)
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarmed(run, failing, alert))
             }
             r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
@@ -895,6 +897,20 @@ object Glue {
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
+
+    /**
+     * Which failures turn the status item to its alarm, its text in the error color (`PiwiLocalSettings.statusBarAlert`,
+     * VS Code's `piwi.statusBarAlert`): `new`, those new against the baseline that a run of this machine failed
+     * (`RunStatus.newFailingTests`); `any` failing test, a run's in progress included; `never`.
+     */
+    val STATUS_BAR_ALERTS = listOf("new", "any", "never")
+
+    /** Whether the status item shows its alarm for `run`, `failing` of whose tests fail, as `alert` says. */
+    fun alarmed(run: RunStatus?, failing: Int, alert: String): Boolean = when (alert) {
+        "never" -> false
+        "any" -> failing > 0
+        else -> (run?.newFailingTests ?: 0) > 0
+    }
 
     /**
      * The severity of a failure's diagnostic (`EditorCredentials.failureSeverity`): `error`, `warning`, `information`,

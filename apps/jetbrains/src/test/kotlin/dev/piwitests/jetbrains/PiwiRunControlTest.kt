@@ -760,7 +760,16 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(running("ed-count").copy(progress = RunProgress(total = 9, done = 4, failed = 1)))
         statusBar.update()
         assertEquals("Piwi: 4 of 9 · 1 failed", label.text)
-        assertTrue(label.error)
+        // A run in progress turns the text red only for any failing test (`statusBarAlert`).
+        assertFalse(label.error)
+        val alert = project.service<PiwiProjectService>().local()
+        alert.statusBarAlert = "any"
+        try {
+            statusBar.update()
+            assertTrue(label.error)
+        } finally {
+            alert.statusBarAlert = "new"
+        }
         assertEquals(
             LiveRun(status = "running", done = 4, total = 9, failed = 1, own = true, ref = "ed-count") to base.path,
             Glue.ownRunInProgress(emptyList(), sessions.sessions),

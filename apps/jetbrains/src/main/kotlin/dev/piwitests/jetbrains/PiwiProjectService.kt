@@ -106,6 +106,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var runHeaded: Boolean = false,
         var runHoldFailures: String = "auto",
         var runNotifications: String = "failures",
+        var statusBarAlert: String = "new",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
@@ -865,6 +866,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
         changed()
         offerDesktop(status)
     }
+
+    /** A setting of this machine that only changes what is drawn (`statusBarAlert`): the listeners draw again. */
+    fun drawAgain() = changed()
 
     /**
      * Tell the listeners on the event thread, once for every change made until then, and draw the open files again as

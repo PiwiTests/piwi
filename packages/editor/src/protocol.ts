@@ -753,6 +753,12 @@ export interface RunStatus {
   failures: number;
   /** The tests among those failures: a test failing on several Playwright projects counts once. */
   failingTests?: number;
+  /**
+   * The tests among those failures that are new against the baseline and failed in a run of this machine (the
+   * editor's own, a terminal's, any run that is not CI's): what turns the status item to its alarm
+   * (`piwi.statusBarAlert`, `new`), until a run fixes them.
+   */
+  newFailingTests?: number;
   /** The tests that failed in `run` and passed since in a run laid over it, on every project they failed on. */
   resolved?: number;
   /** The runs of the branch since `run` that the service lays over it. */

@@ -339,9 +339,12 @@ platform's text presentations take no color. It shows:
 - an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
   instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared,
   `AnimatedIcon.Default` for a run in progress or a read;
-- the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) while tests of the run it counts fail,
-  a run in progress by its own failures (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's
-  progress), and in the status bar's foreground
+- the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) for the alarm
+  `PiwiLocalSettings.statusBarAlert` asks for (`Glue.alarmed`, VS Code's `piwi.statusBarAlert`): `new`, the default,
+  only for a failing test new against the baseline that a run of this machine failed (`RunStatus.newFailingTests`),
+  until a run fixes it; `any`, while tests of the run it counts fail, a run in progress by its own failures
+  (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's progress); `never`. Settings → Tools → Piwi
+  chooses it, kept in `.idea/workspace.xml`. Otherwise, in the status bar's foreground
   (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`) otherwise.
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config

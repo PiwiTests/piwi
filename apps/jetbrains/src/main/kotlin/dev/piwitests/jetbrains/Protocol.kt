@@ -316,7 +316,8 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
- * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
+ * them, `failingTests` the tests among them, `newFailingTests` those new against the baseline that a run of this machine
+ * failed (the status item's alarm), `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
@@ -330,6 +331,7 @@ data class RunStatus(
     val failures: Int = 0,
     val checkedOut: String? = null,
     val failingTests: Int? = null,
+    val newFailingTests: Int? = null,
     val resolved: Int? = null,
     val overlays: Int? = null,
     val live: LiveRun? = null,

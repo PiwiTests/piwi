@@ -899,7 +899,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.runStatusChanged(
                 RunStatusResult(
                     listOf(
-                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2)),
+                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2), newFailingTests = 1),
                         RunStatus(root = admin.path, run = RunInfo(id = 12, status = "passed", totalTests = 5, passedTests = 5)),
                     ),
                 ),

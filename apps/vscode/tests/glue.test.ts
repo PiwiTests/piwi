@@ -355,12 +355,23 @@ describe('statusBarView', () => {
     expect(statusBarView(named, run({})).tooltip).toMatch(/^Run #41 of Shop\\_\\\*Web\\\* on feature\/pay: /);
   });
 
-  test('a failing run is an error', () => {
-    expect(statusBarView(connected, run({ status: 'failed', failedTests: 3, passedTests: 115 }))).toMatchObject({
+  test('a failing run is an alarm only for failures new against the baseline that a run of this machine failed', () => {
+    const failing = (newFailingTests: number) => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115 });
+      return { contexts: [{ ...runs.contexts[0]!, newFailingTests }] };
+    };
+    const args = [false, Date.now(), null, () => undefined, () => 0] as const;
+    // CI failures the developer did not cause: counted, never the alarm.
+    expect(statusBarView(connected, failing(0))).toMatchObject({
       text: '$(error) Piwi: 3 failing · 2 flaky',
       action: 'refresh',
-      error: true,
+      error: false,
     });
+    expect(statusBarView(connected, failing(1)).error).toBe(true);
+    expect(statusBarView(connected, failing(0), ...args, 'any').error).toBe(true);
+    expect(statusBarView(connected, failing(1), ...args, 'never').error).toBe(false);
+    // A passing run is no alarm, whatever the setting.
+    expect(statusBarView(connected, run({}), ...args, 'any').error).toBe(false);
   });
 
   test('counts the tests still failing after the local runs, and those they fixed', () => {
@@ -369,7 +380,7 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
     };
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
-    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: false });
     expect(view.tooltip).toBe(
       `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
@@ -609,7 +620,7 @@ describe('statusBarView', () => {
       expect(view).toMatchObject({
         text: '$(error) Piwi: 2 failing · 2 flaky',
         url: 'http://piwi/test-runs/300',
-        error: true,
+        error: false,
       });
       expect(view.tooltip.split('\n\n').slice(0, 2)).toEqual([
         'Run #300 of Admin on main: 10 passed, 2 failed, 2 flaky, 0 skipped',
@@ -1129,6 +1140,7 @@ describe('Compare with…', () => {
           branch: 'main',
           failures: 2,
           failingTests: 1,
+          newFailingTests: 1,
           overlays: 2,
           run: null,
           baseline: { choice: { kind: 'local' }, label: 'your local runs only' },

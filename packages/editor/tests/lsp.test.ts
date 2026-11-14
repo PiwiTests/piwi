@@ -1085,6 +1085,7 @@ describe('the Piwi language server', () => {
         run: expect.objectContaining({ id: 41, status: 'failed', failedTests: 1, url: `${url}/test-runs/41` }),
         failures: 1,
         failingTests: 1,
+        newFailingTests: 0,
         resolved: 0,
         overlays: 0,
         live: null,
@@ -2222,6 +2223,8 @@ describe('local runs over the latest CI run', () => {
         run: { id: 41 },
         failures: 1,
         failingTests: 1,
+        // The editor's own run failed it, and it did not fail in CI run #41: new and local.
+        newFailingTests: 1,
         resolved: 1,
         overlays: 1,
       });

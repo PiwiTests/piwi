@@ -454,6 +454,19 @@ function withOwnProgress(
 }
 
 /**
+ * Which failures turn the status item to its alarm (`piwi.statusBarAlert`): `new`, those new against the baseline that
+ * a run of this machine failed (`RunStatus.newFailingTests`); `any` failing test; `never`.
+ */
+export type StatusBarAlert = 'new' | 'any' | 'never';
+
+/** Whether the status item shows its alarm for `run`, `failing` of whose tests fail, as `alert` says. */
+export function alarmed(run: RunStatus | undefined, failing: number, alert: StatusBarAlert): boolean {
+  if (alert === 'never') return false;
+  if (alert === 'any') return failing > 0;
+  return (run?.newFailingTests ?? 0) > 0;
+}
+
+/**
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
@@ -468,6 +481,7 @@ export function statusBarView(
   activeFile: string | null = null,
   progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined = () => undefined,
   flakyListed: (root: string) => number = () => 0,
+  alert: StatusBarAlert = 'new',
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
@@ -564,7 +578,7 @@ export function statusBarView(
         action: 'refresh',
         url: null,
         liveUrl,
-        error: !live && failing > 0,
+        error: !live && alarmed(run, failing, alert),
       };
     }
     return {
@@ -624,7 +638,11 @@ export function statusBarView(
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
   if (failing > 0) {
     const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
-    return { ...view, text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`, error: true };
+    return {
+      ...view,
+      text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
+      error: alarmed(run, failing, alert),
+    };
   }
   if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
   if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };

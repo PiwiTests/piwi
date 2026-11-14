@@ -98,32 +98,9 @@ offers **Only on failure**), or never; **Settings** opens it in VS Code.
 A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
 setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 
-## The status bar
-
-The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
-local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
-is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends.
-
-With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder
-that holds it, and follows you from file to file; outside every config folder, it shows the first connected config.
-Its tooltip names the config (`The active file's Playwright config, in apps/admin (one of 3)`), then holds the run's
-counts, the baseline, your local runs since, the run in progress, and when the run was read (`Updated 12 s ago · live`
-while the event stream is connected, `· read every minute` without it).
-
-In VS Code, a click opens **Piwi: Open the Piwi menu**, in the JetBrains menu's sections, the item's own action first:
-Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches.
-When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload Piwi** for an
-[unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
-
-In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or of
-the connection, and the text takes the theme's error color while tests of that run fail, a run in progress included. A
-click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Refresh the latest
-run**, **Reload Piwi** for an unreachable instance or a desktop app to restart, **Connect…** while not connected,
-**Node.js settings…** when Node.js is missing or too old, or **Go to the recorded lines** while a recording runs, with
-**Pause recording**, **Resume recording** and **Stop recording**.
-
 ## Related
 
+- [The editor's status bar](./editor-status-bar): the latest run, the run in progress, and when the item turns red.
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
 - [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.

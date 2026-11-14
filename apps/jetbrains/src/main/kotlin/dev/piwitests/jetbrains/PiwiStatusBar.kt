@@ -112,6 +112,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             file = shownFile(project),
             trusted = it.trusted(),
             stopped = it.serviceStopped,
+            alert = it.local().statusBarAlert,
         )
     }
 
@@ -155,7 +156,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
         label.error = when {
             recording != null || stopped != null || shared != null -> false
-            progress != null -> runs()?.let { Glue.runsFailing(it.sessions) } == true
+            progress != null -> service().local().statusBarAlert == "any" && runs()?.let { Glue.runsFailing(it.sessions) } == true
             else -> !refreshing && view.error
         }
         label.toolTipText = Glue.htmlTooltip(

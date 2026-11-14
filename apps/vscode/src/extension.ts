@@ -188,6 +188,7 @@ import {
   withRunStart,
   pickNotice,
   statusBarView,
+  type StatusBarAlert,
   baselinePicks,
   withBaseline,
   serviceEnvironment,
@@ -810,6 +811,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           activeFile(),
           (ref, instance) => ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
           (root) => flakyListed(root),
+          vscode.workspace.getConfiguration('piwi').get<StatusBarAlert>('statusBarAlert') ?? 'new',
         );
     statusItem.text = refreshing
       ? refreshingText(view.text)
@@ -1680,7 +1682,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
-      if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
+      if (
+        e.affectsConfiguration('piwi.runHeaded') ||
+        e.affectsConfiguration('piwi.runHoldFailures') ||
+        e.affectsConfiguration('piwi.statusBarAlert')
+      )
+        render();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();

@@ -1313,6 +1313,22 @@
           "default": [],
           "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again."
         },
+        "piwi.statusBarAlert": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "new",
+            "any",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Only for failures new against the baseline that a run of this machine failed, until a run fixes them: a CI failure you did not cause never does.",
+            "For any failing test, CI failures included.",
+            "Never: the item still counts the failing tests."
+          ],
+          "default": "new",
+          "description": "When the Piwi status bar item takes the error background."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [

@@ -1694,6 +1694,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .map((c): RunStatus => {
         const run = c.failures?.run ?? null;
         const failing = new Set((c.failures?.failures ?? []).map((f) => f.testCaseId));
+        const newLocal = new Set(
+          (c.failures?.failures ?? [])
+            .filter((f) => f.isNew && failureSource(c, f.runId ?? run?.id) !== 'ci')
+            .map((f) => f.testCaseId),
+        );
         const fixed = new Set((c.failures?.resolved ?? []).map((r) => r.testCaseId).filter((id) => !failing.has(id)));
         return {
           root: c.root,
@@ -1714,6 +1719,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             : null,
           failures: c.failures?.failures.length ?? 0,
           failingTests: failing.size,
+          newFailingTests: newLocal.size,
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
           live: c.live ? { ...c.live, url: c.client!.runUrl(c.live.runId) } : null,

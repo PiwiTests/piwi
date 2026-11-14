@@ -159,6 +159,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.statusBarAlert`    | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Window scope.              |
 | `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
@@ -642,6 +643,11 @@ The pure half is `src/run-control.ts` (`tests/run-control.test.ts`, "the CI runs
 The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright config (`statusContext`): the deepest
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
+
+**The alarm**, `statusBarItem.errorBackground`, follows `piwi.statusBarAlert` (`alarmed`): `new`, the default, only for
+a failing test new against the baseline that a run of this machine failed (`RunStatus.newFailingTests`), until a run
+fixes it, so a CI failure the developer did not cause is counted but never red; `any`, for any failing test of the run
+it counts once it ended; `never`. A run in progress is never the alarm.
 
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
