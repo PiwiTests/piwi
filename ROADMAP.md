@@ -10,9 +10,9 @@ Everything below is in service of five jobs, in this order. When a proposed feat
 2. **Explain the failures.** Group them by root cause so forty red tests become three problems, score the flaky ones by what they actually cost, and — optionally — have an LLM explain a cluster against your real diff.
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, a command that verifies the work. The point is to leave with something to do, not just something to read.
 4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from.
-5. **Write and debug tests.** Record a test from the editor or the browser, run it, stop it at a breakpoint with the page still open, and write the fix where it stopped. The editor extensions, Piwi Picker and the desktop app do it where the test is written; [Write, run and fix a test](https://piwitests.dev/features/write-run-fix), the first page of the docs' Tools section, names the tool for each step.
+5. **Write and debug tests.** Record a test from the editor or the browser, run it, stop it at a breakpoint with the page still open, and write the fix where it stopped. The editor extensions and Piwi Picker do it where the test is written, and the desktop app runs and re-runs tests from its window; [Write, run and fix a test](https://piwitests.dev/features/write-run-fix), the first page of the docs' Tools section, names the tool for each step.
 
-Everything else — analytics, quality reports, notifications, the CI gate, PR feedback, MCP, the desktop app — is a delivery route for those five. That's the ranking the UI follows too: the dashboard leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the CI gate, PR feedback, MCP, the desktop app as a dashboard on your machine — is a delivery route for those five jobs. That's the ranking the UI follows too: the dashboard leads with results and failures, and the supporting lenses sit behind them.
 
 ## Recently shipped
 

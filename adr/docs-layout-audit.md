@@ -18,7 +18,8 @@ they now hold.
   editor's features; Getting started has a section on where the tests are written. Left out: the loop page's link on
   Desktop app, a page at its word budget.
 - **Step 2, the Tools section and the regrouping**, with every URL kept (decision 3) and the four jobs' wording left
-  as it is (decision 2, not taken). The catalog's groups are the nine of Features below, five tool groups marked
+  as it is (decision 2, not taken at that time; the later bullet on decision 2 records it). The catalog's groups are
+  the nine of Features below, five tool groups marked
   `section: 'tools'` and Self-hosting. `toolsSidebar()` renders the Tools sidebar: a tool's own page is its group's
   heading, and entries that share a `part` sit under its label. Each tool page is a sidebar key of its own, and the
   top navigation's patterns are built from the same list. The landing page shows seven cards: a job's card counts
@@ -44,11 +45,11 @@ they now hold.
   entry's `parent` nests Live view of a run's three pages under it, and Leak history in CI under Resource leaks. The
   Reference groups are collapsed until the reader is in one. L8: Follow a run, Watch a local test, Share a local run
   live, Inspect a worker's page and Bug reports on your instance, each page's H1 and label together, no URL changed.
-  L14: no file was renamed, since no page moved. Decision 2 is kept as it was: the four jobs stay four, and the Tools
-  section is where writing and debugging tests lives.
+  L14: no file was renamed, since no page moved. Decision 2 was still open then: the four jobs stayed four, and the
+  Tools section was where writing and debugging tests lived.
 - **CI runs in your editor** have a page of their own, `features/editor-ci-runs.md`, under Editor extensions, built by
   #1423 (the second half of [#1406](https://github.com/PiwiTests/piwi/issues/1406)).
-- **Decision 2, taken by the maintainer** and built by the pull request that closes
+- **Decision 2, taken later by the maintainer (2026-11-14)**, and built by the pull request that closes
   [#1413](https://github.com/PiwiTests/piwi/issues/1413): writing and debugging tests is the fifth job, **Write and
   debug tests**, after the four. What Piwi does, `ROADMAP.md`, `README.md`, `DOCKER_HUB.md`, Getting started and the
   All features intro list five jobs; the jobs' heading is "The five jobs" and keeps its anchor, `#the-four-jobs`,

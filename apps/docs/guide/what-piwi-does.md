@@ -16,9 +16,9 @@ Everything in the product is in service of **five jobs, in this order**. It's al
 2. **Explain the failures.** Group them by root cause so forty red tests become three problems, score the flaky ones by the CI minutes they actually waste, and — optionally — have an LLM explain a cluster against your real git diff.
 3. **Hand back a fix.** A ranked replacement locator, a validated patch, an owner, and the command that verifies the work. The point is to leave with something to *do*, not just something to read.
 4. **Find what your tests miss.** The runs you already have show the routes, pages and controls no test reaches, and the ones a test reaches without noticing when they break. Each gap comes with a skeleton to start the missing test from. See [scenario gaps & the Test Map](/features/scenario-gaps).
-5. **Write and debug tests.** Record a test from the editor or the browser, run it, stop it at a breakpoint with the page still open, and write the fix where it stopped. The editor extensions, Piwi Picker and the desktop app do it where the test is written, and a coding agent can follow and steer the same runs. [Write, run and fix a test](/features/write-run-fix) names the tool for each step, and opens the Tools section.
+5. **Write and debug tests.** Record a test from the editor or the browser, run it, stop it at a breakpoint with the page still open, and write the fix where it stopped. The editor extensions and Piwi Picker do it where the test is written, the desktop app runs and re-runs tests from its window, and a coding agent can follow and steer the same runs. [Write, run and fix a test](/features/write-run-fix) names the tool for each step, and opens the Tools section.
 
-Everything else — analytics, quality reports, notifications, the [CI gate](/features/merge-gate), PR feedback, the MCP server, the desktop app — is a delivery route for those five. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
+Everything else — analytics, quality reports, notifications, the [CI gate](/features/merge-gate), PR feedback, the MCP server, the desktop app as a dashboard on your machine — is a delivery route for those five jobs. The dashboard follows the same ranking: it leads with results and failures, and the supporting lenses sit behind them.
 
 ## The loop it serves
 
