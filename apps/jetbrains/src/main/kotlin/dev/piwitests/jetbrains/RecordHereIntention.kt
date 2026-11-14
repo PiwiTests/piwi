@@ -23,7 +23,7 @@ class RecordHereIntention : IntentionAction, LowPriorityAction, DumbAware {
 
     override fun getText(): String = title
 
-    override fun getFamilyName(): String = "Piwi: record here"
+    override fun getFamilyName(): String = "Piwi: Record here"
 
     override fun isAvailable(project: Project, editor: Editor?, file: PsiFile?): Boolean {
         val virtualFile = file?.virtualFile ?: return false

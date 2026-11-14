@@ -933,6 +933,13 @@ describe('recordPlace', () => {
     expect(recordPlace(spec, 11)).toBeNull();
   });
 
+  test('takes a require declaration as an import', () => {
+    const text =
+      "const { test } = require('@playwright/test');\nconst x = require('./x');\n\ntest('a', async () => {});";
+    expect(recordPlace(text, 1)).toBeNull();
+    expect(recordPlace(text, 2)).toBe('test');
+  });
+
   test('takes an import over several lines as one', () => {
     expect(recordPlace("import {\n  test,\n} from '@playwright/test';\n\ntest('a', async () => {});", 1)).toBeNull();
     expect(recordPlace("import {\n  test,\n} from '@playwright/test';\n\ntest('a', async () => {});", 3)).toBe('test');

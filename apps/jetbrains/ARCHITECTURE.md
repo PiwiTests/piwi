@@ -839,7 +839,7 @@ service's reference.
 **Record here** (`PiwiRecordingActions.kt`) is under **Tools → Piwi**, in the editor's menu, in Alt+Insert's Generate
 menu (`Piwi.RecordHereGenerate`), and on Alt+Enter through `RecordHereIntention.kt`, only where `piwi/recordPlace`
 says it writes, under the service's title (**Piwi: record a test here…**, **Piwi: record steps here…**; waited for
-off the event thread, `PiwiProjectService.recordPlace`). It asks `piwi/pageCandidates`
+off the event thread, 300 ms at most, and kept by the document's stamp and the line, `PiwiProjectService.recordPlace`). It asks `piwi/pageCandidates`
 where the caret is (`Glue.recordInto`): outside every test, function and class it records a new test; anywhere else,
 the steps there, which the service refuses where they cannot go. Without an answer, nothing starts.
 
