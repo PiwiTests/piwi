@@ -60,7 +60,7 @@ With the [capture fixtures](./capture-fixtures), extend that `test` instead of `
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`. | It changes what an app that honors the preference does: leave it off for tests of animations. |
 
 On the package's reference suite (43 tests against an app with a slow API, two third-party scripts and animations),
-the four together with four workers took a run from 82 s to 17 s and its CPU time from 43 s to 19 s, for 36% more
+the four together with four workers took a run from 81 s to 16 s and its CPU time from 40 s to 18 s, for 36% more
 peak memory, which the extra workers account for. Measure on your own suite before keeping any of them.
 
 ## Experimental hooks
