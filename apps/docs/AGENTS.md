@@ -246,7 +246,8 @@ descriptions and the word budgets; the prose bans (endpoints, MCP tool count, ch
 version" or "now supports", planned work); the hand-written reference pages and the _Live demo_ section of
 `features/ui-overview.md`; the recipes' links; the demo examples; the positioning line and the single-source snippets.
 `docs-page-meta.test.ts` checks that each page's description is at least 50 characters. `docs-claims.test.ts` checks
-counts, quoted editor commands, figures in recipes, the privacy page's destinations, the length of a `concepts.md`
+counts, quoted editor commands, Piwi Picker's labels quoted as Piwi Picker's **Label**, figures in recipes, the
+privacy page's destinations (every server file that sends a request names its row), the length of a `concepts.md`
 entry and the link from a page to the owner of a rule it names.
 
 The docs build itself fails only on a link to a missing page, so this test is what catches a heading that moved. It
