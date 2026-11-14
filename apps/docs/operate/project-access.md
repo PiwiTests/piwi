@@ -131,7 +131,7 @@ same 403, that says an administrator or a Project admin of that project can gran
 Run the reporter in CI as a dedicated Member with the **Uploader** role, through its own
 [API key](./api-keys#using-the-api-key-in-the-reporter): a leaked CI key can then read and upload, never triage, delete
 or change anything. Grant it on All projects when CI should create
-projects from a new project name, else on the projects it reports to. A CI account that the upgrade from the three
+projects from a new project name, else on the projects it reports to. A CI account that the upgrade to project
 roles made a Maintainer narrows the same way.
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with seeded identities, from an

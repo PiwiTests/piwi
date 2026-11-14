@@ -43,6 +43,12 @@ const proseOf = (page: string) =>
 describe('counts in prose', () => {
   // A count copied into a sentence goes stale when its list grows. A number before one of COUNTED_NOUNS is
   // therefore tied here to the list it counts, and a sentence whose list no test can read names no number.
+  //
+  // COUNTED_NOUNS holds the nouns that, on these pages, always count a list the code keeps. A number before any other
+  // noun passes, and so does a number with no noun ("Piwi ships seven"): most such numbers count what the sentence
+  // itself goes on to name ("two widgets read it: …", "two modes" for the two just described) or a limit
+  // ("8 levels deep"), and a check that read them would fail on every one. A noun joins the list once every count
+  // the pages put before it is a list's length.
   const NUMBER_WORDS = [
     'two',
     'three',
@@ -64,7 +70,20 @@ describe('counts in prose', () => {
     'nineteen',
     'twenty',
   ];
-  const COUNTED_NOUNS = ['tabs', 'views', 'tools', 'skills', 'routes', 'sections', 'factors', 'controls', 'commands'];
+  const COUNTED_NOUNS = [
+    'tabs',
+    'views',
+    'tools',
+    'skills',
+    'routes',
+    'sections',
+    'factors',
+    'controls',
+    'commands',
+    'categories',
+    'roles',
+    'queues',
+  ];
   // The number, at most one word, the noun: "six skills", "six workflow skills".
   const COUNT = new RegExp(
     `\\b(\\d+|${NUMBER_WORDS.join('|')})\\s+(?:[\\w'’-]+\\s+)?(?:${COUNTED_NOUNS.join('|')})\\b`,
@@ -86,6 +105,11 @@ describe('counts in prose', () => {
     return [...menu.matchAll(/<group id="/g)].length - 1;
   };
   const exposureFactors = () => Object.keys(exposureFactorsFor({} as DetectedGap, {})).length;
+  /** The members of a union of string literals, `export type Name = 'a' | 'b';`, in a TypeScript file. */
+  const unionMembers = (file: string, name: string) => {
+    const declaration = new RegExp(`export type ${name} =([^;]*);`).exec(read(file))?.[1] ?? '';
+    return [...declaration.matchAll(/'[^']*'/g)].length;
+  };
 
   // Each count the pages state: the page, the phrase as countsOf reads it, and the list that holds the true number.
   const COUNTS: { page: string; phrase: string; list: string; count: () => number }[] = [
@@ -132,6 +156,18 @@ describe('counts in prose', () => {
       count: exposureFactors,
     },
     {
+      page: 'apps/docs/features/flaky-tests.md',
+      phrase: 'six categories',
+      list: 'FlakyRootCause (shared/flaky-classify.ts)',
+      count: () => unionMembers('apps/application/shared/flaky-classify.ts', 'FlakyRootCause'),
+    },
+    {
+      page: 'apps/docs/guide/ai-provider.md',
+      phrase: 'four roles',
+      list: 'AiModelRole (types/api.ts)',
+      count: () => unionMembers('apps/application/types/api.ts', 'AiModelRole'),
+    },
+    {
       page: 'apps/docs/reference/gap-detectors.md',
       phrase: '200 controls',
       list: 'MAX_CONTROLS_PER_PAGE (shared/graph.ts)',
@@ -149,6 +185,7 @@ describe('counts in prose', () => {
     expect(counts('Three of its many open tabs, and one tab.')).toEqual([]);
     expect(numberOf('six workflow skills')).toBe(6);
     expect(numberOf('200 controls')).toBe(200);
+    expect(unionMembers('apps/application/shared/flaky-classify.ts', 'FlakyRootCause')).toBeGreaterThan(1);
   });
 
   test.each(handWrittenPages)('%s states no count that no list backs', (page) => {
@@ -246,28 +283,102 @@ describe('quoted editor commands', () => {
   });
 });
 
+describe("Piwi Picker's quoted labels", () => {
+  // A label of Piwi Picker is quoted as **Label** right after "Piwi Picker's": what the reader looks for in the
+  // extension, so it is one of the strings the extension shows, its English messages. Bold elsewhere is emphasis or
+  // another tool's label, which nothing in the syntax tells apart, so only this form is read.
+  const normalizeLabel = (label: string) =>
+    label
+      .replace(/\s+/g, ' ')
+      .replace(/’/g, "'")
+      .trim()
+      .replace(/(?:…|\.\.\.)$/, '');
+
+  const messages = new Set(
+    Object.values(
+      JSON.parse(read('apps/extension/public/_locales/en/messages.json')) as Record<string, { message: string }>,
+    ).map(({ message }) => normalizeLabel(message)),
+  );
+
+  const quotedLabels = (markdown: string) =>
+    [
+      ...markdown
+        .replace(FRONT_MATTER, '')
+        .replace(FENCED_CODE, ' ')
+        .matchAll(/Piwi Picker['’]s \*\*([^*]+)\*\*/g),
+    ].map((m) => normalizeLabel(m[1]!));
+
+  test('the messages and the quoted labels are read', () => {
+    expect(messages).toContain('Record actions');
+    expect(quotedLabels("Open Piwi Picker's **Record actions**, then **Stop**.")).toEqual(['Record actions']);
+  });
+
+  test.each(handWrittenPages)('%s quotes only labels Piwi Picker shows', (page) => {
+    expect(
+      quotedLabels(read(page)).filter((label) => !messages.has(label)),
+      `${page} quotes as Piwi Picker's **…** what is no message of apps/extension/public/_locales/en/messages.json: use the label the extension shows, or write the words without the possessive`,
+    ).toEqual([]);
+  });
+});
+
 describe('recipes state no figure', () => {
   // A recipe sends the reader to the feature pages; a threshold, a formula or a number of runs copied into it is
-  // a second copy that drifts. A step's number is its place, not a figure: the number that opens a heading or an
-  // ordered list item is left out, with the code and the link targets.
+  // a second copy that drifts. A step's number is its place, not a figure, and is left out with the code and the
+  // link targets: the number that opens a heading counts the page's numbered headings from 1, the one that opens an
+  // ordered list item counts its list from 1. Any other number at the start of a heading or an item is a figure.
   const LINK_TARGET = /\]\([^)\s]*\)|\b(?:src|href|poster)="[^"]*"/g;
-  const STEP_NUMBER = /^(\s*(?:#{1,6}\s+)?)\d+\.(?=\s)/gm;
+  const STEP_NUMBER = /^(\s*)(#{1,6}\s+)?(\d+)\.(?=\s)/;
+
+  /** The text with each step's number taken out, and a number out of its step's sequence left in. */
+  const withoutStepNumbers = (markdown: string) => {
+    let heading = 0;
+    // The last number of the open ordered list at each indentation.
+    const items = new Map<number, number>();
+    return markdown
+      .split('\n')
+      .map((line) => {
+        const step = STEP_NUMBER.exec(line);
+        if (!step) {
+          if (/^#{1,6}\s/.test(line)) items.clear();
+          return line;
+        }
+        const [numbered, indent, hashes, digits] = step;
+        const number = Number(digits);
+        if (hashes) {
+          if (number !== heading + 1) return line;
+          heading = number;
+          items.clear();
+        } else {
+          if (number !== 1 && number !== (items.get(indent!.length) ?? 0) + 1) return line;
+          items.set(indent!.length, number);
+        }
+        return `${indent}${hashes ?? ''}${line.slice(numbered.length)}`;
+      })
+      .join('\n');
+  };
 
   const figuresOf = (markdown: string) =>
-    markdown
-      .replace(FRONT_MATTER, '')
-      .replace(FENCED_CODE, ' ')
-      .replace(INLINE_CODE, ' ')
-      .replace(LINK_TARGET, ' ')
-      .replace(MARKUP, ' ')
-      .replace(STEP_NUMBER, '$1')
+    withoutStepNumbers(
+      markdown
+        .replace(FRONT_MATTER, '')
+        .replace(FENCED_CODE, ' ')
+        .replace(INLINE_CODE, ' ')
+        .replace(LINK_TARGET, ' ')
+        .replace(MARKUP, ' '),
+    )
       .split('\n')
       .filter((line) => /\d/.test(line))
       .map((line) => line.trim());
 
   test('a figure is read in prose, not in code, a link target or a step number', () => {
-    expect(figuresOf('## 2. Check `retries: 2`\n\n1. See [the score](/features/flaky-tests#top-5).\n')).toEqual([]);
+    expect(
+      figuresOf(
+        '## 1. Open it\n\n## 2. Check `retries: 2`\n\n1. See [the score](/features/flaky-tests#top-5).\n2. Fix.\n',
+      ),
+    ).toEqual([]);
     expect(figuresOf('Red at 30 minutes or more.\n')).toEqual(['Red at 30 minutes or more.']);
+    expect(figuresOf('## 1. Open it\n\n## 30. minutes is the limit\n')).toEqual(['## 30. minutes is the limit']);
+    expect(figuresOf('1. Open it\n5. retries at most\n')).toEqual(['5. retries at most']);
   });
 
   const recipes = handWrittenPages.filter((page) => page.startsWith('apps/docs/recipes/'));
@@ -356,6 +467,66 @@ describe('the privacy page lists every destination', () => {
       listed,
       `${calledBy} calls the host ${setBy} names, which the table "${HEADING}" of ${PAGE} does not list as "${destination}": add its row`,
     ).toContain(destination);
+  });
+
+  // Each file of the server that sends a request names the destination it reaches, so a call a feature adds in a new
+  // file, to a host set in the dashboard as well as by a variable, fails here until its destination is placed in the
+  // table. A file that only sends what its callers give it is a helper. The S3, PostgreSQL and OpenTelemetry clients
+  // are libraries this pattern does not see: their rows come from the registry and UNREGISTERED. A new call in a file
+  // already listed is not seen either.
+  const CALL = /\bfetch\(|\$fetch\b|\bofetch\b|\bsafeFetch\(|\bfetchPublicImage\(|\bcreateTransport\(/;
+  const OUTBOUND: Record<string, string> = {
+    'server/api/settings/ai/models.post.ts': 'Your AI provider',
+    'server/utils/ai-embeddings.ts': 'Your AI provider',
+    'server/utils/ai-provider.ts': 'Your AI provider',
+    'server/utils/ai-tool-calls.ts': 'Your AI provider',
+    'server/utils/ci-server-dispatch.ts': 'Your CI server',
+    'server/utils/email.ts': 'Your SMTP server',
+    'server/utils/integrations/jira/check.ts': 'Your issue tracker (Jira)',
+    'server/utils/integrations/jira/client.ts': 'Your issue tracker (Jira)',
+    'server/utils/integrations/jira/icons.ts': 'Your issue tracker (Jira)',
+    'server/utils/integrations/test-management/zephyr-scale.ts': 'Zephyr Scale Cloud',
+    'server/utils/notifications/channel-test.ts': 'Slack, Teams or your webhook URLs',
+    'server/utils/notifications/dispatch.ts': 'Slack, Teams or your webhook URLs',
+    'server/utils/notifications/slack-api.ts': 'Slack, Teams or your webhook URLs',
+    'server/utils/oauth.ts': 'Google / GitHub',
+    'server/utils/user-avatar.ts': 'Google / GitHub',
+    'server/utils/openapi-surface.ts': "A project's OpenAPI URL",
+    'server/utils/scm/BitbucketProvider.ts': 'Your git host',
+    'server/utils/scm/GitHubProvider.ts': 'Your git host',
+    'server/utils/scm/GitLabProvider.ts': 'Your git host',
+    'server/utils/unfurl/GenericUnfurlProvider.ts': 'A URL you attach as a link',
+  };
+  const HELPERS = ['server/utils/safe-fetch.ts', 'server/utils/public-image.ts'];
+
+  const callers = (function walk(dir: string): string[] {
+    return readdirSync(join(repoRoot, 'apps/application', dir), { withFileTypes: true }).flatMap((entry) => {
+      const path = posix.join(dir, entry.name);
+      if (entry.isDirectory()) return walk(path);
+      if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return [];
+      return CALL.test(read(`apps/application/${path}`)) ? [path] : [];
+    });
+  })('server');
+
+  test('the calls of the server are found', () => {
+    expect(callers).toContain('server/utils/scm/GitHubProvider.ts');
+    expect(CALL.test('await $fetch<Answer>(url)')).toBe(true);
+    expect(CALL.test('const prefetch = 1')).toBe(false);
+  });
+
+  test.each(callers)('%s names the destination it calls', (file) => {
+    if (HELPERS.includes(file)) return;
+    expect(
+      OUTBOUND[file],
+      `apps/application/${file} sends a request: add it to OUTBOUND (tests/unit/docs-claims.test.ts) with the row of the table "${HEADING}" of ${PAGE} that lists its destination, adding the row when none does`,
+    ).toBeDefined();
+    expect(listed, `apps/application/${file} reaches "${OUTBOUND[file]}", which the table does not list`).toContain(
+      OUTBOUND[file],
+    );
+  });
+
+  test.each(Object.keys(OUTBOUND))('%s still sends a request', (file) => {
+    expect(callers, `apps/application/${file} no longer sends a request: remove it from OUTBOUND`).toContain(file);
   });
 });
 
