@@ -6,7 +6,7 @@ import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { MAX_CONTROLS_PER_PAGE } from '#shared/graph';
 import { exposureFactorsFor, type DetectedGap } from '#shared/handlers/scenario-gaps';
 import { PIWI_ENV_VARS, type PiwiEnvVarMeta } from '#shared/piwi-env-vars';
-import { PROJECT_COVERAGE_VIEWS, PROJECT_MENU_PAGES, PROJECT_TABS, RUN_TABS } from '#shared/app-places';
+import { PROJECT_COVERAGE_VIEWS, PROJECT_MENU_PAGES, PROJECT_TABS, RUN_TABS, type PlaceTab } from '#shared/app-places';
 import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
@@ -461,7 +461,7 @@ describe('a place named in the docs is a place of the dashboard', () => {
         return !second || names(second, pages) ? [] : [`"${path}": the ${MENU} menu opens ${pages.join(', ')}`];
       }
       if (names(first!, PROJECT_CONTROLS)) return [];
-      const tab = PROJECT_TABS.find((projectTab) => names(first!, [projectTab.label]));
+      const tab: PlaceTab | undefined = PROJECT_TABS.find((projectTab) => names(first!, [projectTab.label]));
       if (!tab) {
         const tabs = PROJECT_TABS.map((projectTab) => projectTab.label);
         return [`"${path}": a project's tabs are ${tabs.join(', ')}, and its other pages open from ${MENU}`];
