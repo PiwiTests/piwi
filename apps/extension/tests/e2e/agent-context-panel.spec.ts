@@ -98,8 +98,8 @@ test.describe('agent-context-panel.js', () => {
     await expect.poll(panel).not.toBeNull();
     expect(await panel()).toEqual({
       lang: 'fr',
-      label: 'Contexte pour un agent IA',
-      title: 'Contexte pour un agent IA',
+      label: 'Contexte IA',
+      title: 'Contexte IA',
       sub: 'Collez ce texte dans votre assistant de code IA · Échap pour fermer',
       close: 'Fermer',
       copy: 'Copier',

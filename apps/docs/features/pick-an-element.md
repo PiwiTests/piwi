@@ -71,7 +71,7 @@ While the results are open, the picked element stays outlined on the page, and t
 the page when they would cover it. **Pick another** closes them and starts picking the next element, without going
 back to the popup or the shortcut.
 
-Each locator leads with a word: `stable`, `could break` or `brittle` for one that finds the element alone, by what the
+Each locator leads with a word: `stable`, `watch` or `brittle` for one that finds the element alone, by what the
 [stability rules](/reference/locator-stability#levels) say of it, and `unique by position`, `3 matches` or
 `not checked` otherwise, the words the DevTools sidebar uses. Its **Details** give the reasons
 (`unique · brittle: CSS class`) and the stability score.

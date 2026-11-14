@@ -3641,7 +3641,7 @@ const SCENES = [
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({
     name,
-    description: `The browser extension URLs of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
+    description: `The URL patterns of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
     route: '/projects/2?tab=settings&section=browser-extension',
     viewport: { width, height: 1000 },
     of: '[data-shot="project-url-patterns"]',

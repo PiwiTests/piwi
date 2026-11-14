@@ -16,7 +16,7 @@ through one pairing. The desktop app has a pairing of its own, which the Runs wi
 
 1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
    It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
-2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
+2. In Piwi Picker's settings, paste it under **Editor** and click **Pair**; the browser asks once for access to
    that local address.
 
 In a remote window (Remote SSH, WSL, Dev Containers), the pairing address is the local end of a port VS Code forwards
