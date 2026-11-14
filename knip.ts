@@ -24,8 +24,9 @@ const config: KnipConfig = {
       // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root. The showcase's
       // stage page loads its own script.
       entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs', 'apps/showcase/*.mts', 'apps/showcase/stage/*.js'],
-      // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
-      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
+      // Not workspaces: built on their own toolchains (Tauri, VitePress), resolved from the npm registry, or released on
+      // their own (suitebench).
+      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**', 'packages/suitebench/**'],
       // The showcase runs Playwright from the workspaces' install.
       ignoreDependencies: ['playwright'],
     },

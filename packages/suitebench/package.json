@@ -1,0 +1,44 @@
+{
+  "name": "suitebench",
+  "version": "0.1.0",
+  "description": "Compare configurations of a Playwright suite: interleaved runs, whole-process CPU and memory, paired confidence intervals, and where the test time went",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "suitebench": "./bin/suitebench.mjs"
+  },
+  "exports": {
+    ".": "./src/run.mjs",
+    "./reporter": "./src/profile-reporter.mjs",
+    "./stats": "./src/stats.mjs",
+    "./report": "./src/report.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "workload",
+    "!workload/test-results",
+    "!workload/.auth",
+    "!workload/.cache",
+    "!workload/.suitebench",
+    "!workload/tests/__screenshots__"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "workload": "node bin/suitebench.mjs run --config workload/suitebench.config.mjs",
+    "workload:profile": "node bin/suitebench.mjs profile --config workload/suitebench.config.mjs"
+  },
+  "keywords": [
+    "playwright",
+    "benchmark",
+    "performance",
+    "e2e",
+    "testing"
+  ],
+  "engines": {
+    "node": ">=22.3.0"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50.0 <2"
+  }
+}

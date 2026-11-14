@@ -8,6 +8,7 @@ This repository is licensed in two parts.
      packages/reporter
      packages/core
      packages/picker-dom
+     packages/suitebench
      integrations/
      examples/
 

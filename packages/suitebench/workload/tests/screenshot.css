@@ -1,0 +1,2 @@
+/* Third-party UI is not part of the app under test: hide it in screenshot comparisons. */
+#vendor-chat { visibility: hidden !important; }
