@@ -80,7 +80,10 @@ afterAll(async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-async function waitFor<T>(read: () => T | undefined | false | null, ms = 15_000): Promise<T> {
+/** How long `waitFor` waits by default. */
+const WAIT_MS = 15_000;
+
+async function waitFor<T>(read: () => T | undefined | false | null, ms = WAIT_MS): Promise<T> {
   const start = Date.now();
   for (;;) {
     const value = read();
@@ -168,9 +171,12 @@ function beforeLine(call: string, method: string, params: Record<string, unknown
   return JSON.stringify({ type: 'before', callId: call, method, params });
 }
 
-/** A browser's launch, which a full suite's load slows; a case past it waits up to `waitFor`'s 15 s for its trace. */
+/**
+ * A browser case's budget: its launch, which a full suite's load slows, two `waitFor`s for the trace it writes, and
+ * the browser's own calls and close.
+ */
 const LAUNCH_MS = 30_000;
-const CASE_MS = LAUNCH_MS + 30_000;
+const CASE_MS = LAUNCH_MS + 2 * WAIT_MS + 15_000;
 const launchTracing = (tracesDir: string) => chromium!.launch({ tracesDir, timeout: LAUNCH_MS });
 
 describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser writes', { timeout: CASE_MS }, () => {
