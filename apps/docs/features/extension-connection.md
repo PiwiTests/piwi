@@ -123,7 +123,7 @@ Connecting, and pairing with the desktop app, send the browser's and operating s
 the machine. It then downloads the projects, the URL patterns, each mapped project's function catalog,
 locator index and bug reports, and the runs in progress. It sends the instance nothing else but these, each on your
 click: a site's pattern (**Add this site**), a bug report after the **Send to Piwi…** preview
-([Bug reports](./bug-reports#sending-a-report)), and a replay's answer (**Share result…**). A recording goes only to a
+([sending one](./bug-reports#sending-a-report)), and a replay's answer (**Share result…**). A recording goes only to a
 paired editor (**Send to editor**), and steps only to the paired desktop app (**Run with Playwright…**). Only the settings
 page and the background worker make requests, never a page's script.
 

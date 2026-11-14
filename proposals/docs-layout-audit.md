@@ -43,6 +43,8 @@ they now hold.
   live, Inspect a worker's page and Bug reports on your instance, each page's H1 and label together, no URL changed.
   L14: no file was renamed, since no page moved. Decision 2 is kept as it was: the four jobs stay four, and the Tools
   section is where writing and debugging tests lives.
+- **CI runs in your editor** have a page of their own, `features/editor-ci-runs.md`, under Editor extensions, built by
+  #1423 (the second half of [#1406](https://github.com/PiwiTests/piwi/issues/1406)).
 
 What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
 
@@ -373,7 +375,5 @@ Each item is tracked by a GitHub issue of `PiwiTests/piwi`.
   renamed only when the page moves anyway, with a redirect; none has moved.
 - **Decision 2** ([#1413](https://github.com/PiwiTests/piwi/issues/1413)): whether writing and debugging tests is a
   fifth job in `ROADMAP.md` and What Piwi does. The four jobs are kept; the maintainer may decide otherwise.
-- **CI runs in your editor** ([#1406](https://github.com/PiwiTests/piwi/issues/1406)), still on Watch a local test,
-  need a page and a catalog entry of their own, under Editor extensions.
 - **The other clusters of L8** (Runs, "Extension" and "editor", one word for two things), which no issue lists:
   nesting under the tool groups tells most of them apart.

@@ -46,7 +46,7 @@ While a run's [**Hold failures**](./watch-a-run#hold-failures), a switch on each
 its line: **Failed at** in red, its error under it. **Resume** lets it end as it failed; **Pick** replaces the failing
 locator.
 
-**Share live**, under the run's name, shares the run with your team: [Share a run live](./share-live).
+**Share live**, under the run's name, shares the run with your team: [Share a local run live](./share-live).
 
 ### Who drives a stop
 
@@ -78,7 +78,7 @@ code went to the editor, with what to review in it, or why not.
 ## Watch a test {#watch-live}
 
 **Watch**, on a worker's row, shows its test's page as it paints, running or stopped, the controls above the view at a
-stop and the stopped worker scrolled into view, and **Pause and watch** pauses it too: [Watch a running test](./watch-running-test). An older reporter's row says to update it; with one newer than
+stop and the stopped worker scrolled into view, and **Pause and watch** pauses it too: [Watch a local test](./watch-running-test). An older reporter's row says to update it; with one newer than
 0.61.0, its stops have their own **Watch**, which watches each stop alone and, left on, the worker's next ones.
 
 The view fills the window's width under a red **Live** badge. Only the window that asked gets the frames

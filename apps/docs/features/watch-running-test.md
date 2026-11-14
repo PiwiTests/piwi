@@ -10,7 +10,7 @@ lang: en-US
 
 **Watch** in your own tools shows a test's page in your editor, Piwi Picker's Runs window or the
 desktop app, in a run on your machine or a remote container, read-only in a CI run of your branch. On the
-team instance, it is the [live view](./live-view); a run's progress and stops: [Watch a run](./watch-a-run). The page
+team instance, it is the [live view](./live-view); a run's progress and stops: [Follow a run](./watch-a-run). The page
 shows up to ten images a second, through the test's next tests and stops, and the worker Playwright starts in its
 place after a failure. It needs
 `@piwitests/reporter` after 0.67.0 and the [capture fixtures](/guide/capture-fixtures). Nothing leaves your

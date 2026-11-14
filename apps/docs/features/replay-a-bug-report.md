@@ -11,8 +11,8 @@ lang: en-US
 **Replay** plays a [bug report](./report-a-bug)'s steps again in a tab, with a cursor that moves to each element and a
 caption saying what it does, then says whether the bug shows there. It suits the developer who receives the report:
 open the app on your own dev server, and the steps run there, with your session and your browser's developer tools at
-hand, or [with Playwright](#running-it-with-playwright) in the desktop app. Recording a report is on
-[Report a bug](./report-a-bug), and what an instance keeps on [Bug reports](./bug-reports).
+hand, or [with Playwright](#running-it-with-playwright) in the desktop app. Recording a report:
+[Report a bug](./report-a-bug); what an instance keeps: [Bug reports on your instance](./bug-reports).
 
 <figure>
   <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
@@ -134,5 +134,5 @@ result does not hold, **not reproduced** when the test passes, or **diverged** a
 ## Related
 
 - [Report a bug](./report-a-bug): recording the report Replay plays
-- [Bug reports](./bug-reports): the reports kept on your instance
+- [Bug reports on your instance](./bug-reports): the reports kept
 - [Bug report file format](/reference/bug-report-file): what a `.piwibug` holds

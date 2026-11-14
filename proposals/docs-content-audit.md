@@ -28,10 +28,19 @@ pull request of their own:
   run's tabs and the More actions pages that the palette's pull request adds and that the project page, the run page
   and the palette build from; this pull request is merged after that one.
 
-- **The follow-ups**, each tracked by an issue (#1406 to #1420): a later pull request settled C3.16 and D17, gave the
-  failure inbox a page of its own, recorded in the glossary the meaning each word of [Words used two
-  ways](#words-used-two-ways) keeps and corrected the pages where a second sense misled, widened G2, G3, G7 and G8, and corrected the blog post, the integrations'
-  READMEs and a catalog place against the code.
+- **The follow-ups**, each tracked by an issue (#1406 to #1420), built by four pull requests:
+  - **#1422**: the comments the code contradicts (#1416), the flaky chord test (#1418), and the Runner prepared on
+    install so `npm run knip` passes after a plain install (#1419).
+  - **#1421**: Piwi Picker's pairing messages and popup link (#1411), one name per Piwi Picker tool (part of #1415),
+    and the stability level "watch" in Piwi Picker as in the dashboard (part of #1412).
+  - **#1423**: the editor listings (T8, #1410), one name per editor action (part of #1415), the editor commands, theme
+    colors, hidden messages and desktop tray described (#1407), and CI runs in your editor on a page of its own (the
+    second half of #1406).
+  - **This record's follow-up pull request**: C3.16 and D17 settled (#1409), the failure inbox on a page of its own
+    (the first half of #1406), the glossary's *Words kept to one meaning* with the pages where a second sense misled
+    corrected (#1412), Piwi Picker's popup keys and its Replay a bug report row (the rest of #1407), G2, G3, G7 and G8
+    widened (#1417), and the blog post, the integrations' READMEs and a catalog place corrected against the code
+    (#1420).
 
 What was not done is under [Left for later](#left-for-later), with the issue that tracks each item.
 
@@ -480,52 +489,21 @@ overview from the app: G1 holds its facts and leaves its prose.
 
 ## Left for later
 
-Each item is tracked by a GitHub issue of `PiwiTests/piwi`.
+Each item is tracked by an open GitHub issue of `PiwiTests/piwi`.
 
-- **T8 is settled and not applied** ([#1410](https://github.com/PiwiTests/piwi/issues/1410)): runs by line and their
-  pauses and steps need no instance either, but the sentence "Recording needs none" is held word for word on four
-  listings (the editor page, the two store READMEs and the plugin's description) by `editor-listings.test.ts`; it
-  changes on all four together.
-- **Piwi Picker's own strings** ([#1411](https://github.com/PiwiTests/piwi/issues/1411)) send the reader to "the app's
-  Setup page" for the pairing card, which is under Settings → Desktop app
-  (`apps/extension/public/_locales/en/messages.json`), and its popup links its docs through the redirect table.
 - **S16 is not settled** ([#1408](https://github.com/PiwiTests/piwi/issues/1408)): which dashboard Analytics opens on.
-  C3.16 and D17 are ([#1409](https://github.com/PiwiTests/piwi/issues/1409)): "newly flaky" is a change between the
-  run and its baseline that neither clears nor convicts the commits since, owned by `features/run-changes.md`; a
-  fine-grained GitHub token needs Commit statuses: write for the commit status, by GitHub's permission tables.
-- **The parts of the tools no page describes** ([#1407](https://github.com/PiwiTests/piwi/issues/1407)), listed under
-  [Docs against the tools' structure](#docs-against-the-tools-structure): about twenty editor commands, the CI Runs
-  view, five theme colors and one setting, Piwi Picker's popup keys, four tray items of the desktop app.
-- **Two pages hold two subjects** ([#1406](https://github.com/PiwiTests/piwi/issues/1406)): the failure inbox has its
-  page, `features/failure-inbox.md`; CI runs in your editor are still on Watch a local test.
 - **The UI overview** ([#1408](https://github.com/PiwiTests/piwi/issues/1408)) claims its main pages and tabs and
   still leaves out the analytics dashboard routes, the bug report page and the test case's tabs.
-- **Words used two ways** ([#1412](https://github.com/PiwiTests/piwi/issues/1412)). The glossary records, under *Words
-  kept to one meaning*, the meaning each word of the table keeps and the name its other senses take. Where a page's
-  second sense misled and the page is not another tool's, it was corrected (Flake Lab's repetitions, an execution
-  called a test case in the test metadata reference, a provider's console); the other pages keep their wording. Two need the app to move: the analytics metrics and targets say
-  "failure cause" (`shared/analytics/metrics.ts`, `targets.ts`, `insight-rules.ts`), and one stability level is
-  Watch in the dashboard and "could break" in Piwi Picker.
-- **What the app could change**, items 3 to 13 ([#1414](https://github.com/PiwiTests/piwi/issues/1414)) and 14 to 21
-  ([#1415](https://github.com/PiwiTests/piwi/issues/1415)).
-- **Comments the code contradicts** ([#1416](https://github.com/PiwiTests/piwi/issues/1416)):
-  `packages/editor/src/protocol.ts:1763` on what a terminal run names; the Nitro integration's "outside production"
-  (`integrations/nitro/src/index.ts`, `manifest.ts`, `environment.ts`), where the rule is an allow-list; the root
-  guide's "on the first API call" for a database created at boot.
-- **What the rules do not see** ([#1417](https://github.com/PiwiTests/piwi/issues/1417)). G1 resolves the paths that
-  start at a project or a run, in the catalog and on the pages; a path into Settings is not checked on a page, where
-  the same words also name an editor's or Piwi Picker's settings, and the sections of a project's Settings are not in
-  the list. G2 reads a count before twelve nouns, and not one before any other noun or with none ("Piwi ships
-  seven"), since most such numbers count what their sentence names. G3 reads Piwi Picker's labels only as
-  Piwi Picker's **Label**. G7 reads a step number only in its sequence. G8 holds every server file that sends a request
-  to a row of the table, not a new call in a file already listed. Each check's comment says what it leaves out.
-- **A flaky end-to-end test on `main`** ([#1418](https://github.com/PiwiTests/piwi/issues/1418)): "the g-h and g-p
-  chords navigate" of `tests/keyboard-nav.spec.ts` failed 2 of 6 repeats on a local dev server at `16bbe607`, the
-  `g h` chord leaving the page on `/projects`.
-- **`npm run knip` fails in a fresh session** ([#1419](https://github.com/PiwiTests/piwi/issues/1419)) until
-  `npx nuxt prepare` has run in `apps/runner`.
-- **Not audited at first** ([#1420](https://github.com/PiwiTests/piwi/issues/1420)): the blog post, the READMEs of the
-  backend integrations, the in-app help links and the catalog's places were read against the code since, and what was
-  certainly wrong corrected. Left: the screenshots of the project page still show its tab Gaps where the page has
-  Coverage, `jetbrains-heal.png` shows quick fixes not yet named `Piwi: …`, and the wording of each help topic and of
-  the generated reference pages has had spot checks only.
+- **"Failure cause"** ([#1412](https://github.com/PiwiTests/piwi/issues/1412)): the analytics metrics and targets say
+  it for a failure cluster (`shared/analytics/metrics.ts`, `targets.ts`, `insight-rules.ts`).
+- **What the app could change**, items 3 to 13 ([#1414](https://github.com/PiwiTests/piwi/issues/1414)), and what
+  of items 14 to 21 the pull requests above left ([#1415](https://github.com/PiwiTests/piwi/issues/1415)).
+- **G1** ([#1417](https://github.com/PiwiTests/piwi/issues/1417)) resolves the paths that start at a project or a
+  run, in the catalog and on the pages; a path into Settings is not checked on a page, where the same words also name
+  an editor's or Piwi Picker's settings, and the sections of a project's Settings are not in the list. The other rules
+  say in their comment what they leave out: G2 reads a count before twelve nouns only, since most other numbers count
+  what their sentence names; G3 reads Piwi Picker's labels only as Piwi Picker's **Label**; G8 sees a new file that
+  sends a request, not a new call in a file already listed.
+- **Screenshots** ([#1420](https://github.com/PiwiTests/piwi/issues/1420)): the project page's images show its tab
+  Gaps where the page has Coverage, and `jetbrains-heal.png` shows quick fixes not named `Piwi: …`; the wording of
+  each help topic and of the generated reference pages has had spot checks only.

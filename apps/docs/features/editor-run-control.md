@@ -37,7 +37,7 @@ of an answer, until that worker stops, a key answers no other worker and starts 
   whose text says why and where a test stopped.
 
 The item's line comes from the run, so it counts offline and with the desktop app
-([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
+([Follow a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
 
 **Pause** stops every run Piwi started in this window (a JetBrains IDE's project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
@@ -92,8 +92,8 @@ stopped line's, and the tab shows the result or refusal.
 
 **Watch** updates the paused page until you hide or close the tab, resume or switch stops, and
 [**Interact**](./watch-running-test#interact) plays your input on it, taking the stop.
-The preview uses the editor's connection: no Picker, pairing, live-view setting or port forwarding. Older reporters
-keep the still image. To watch the test before it stops: [Watch a running test](./watch-running-test).
+The preview uses the editor's connection: no Piwi Picker, pairing, live-view setting or port forwarding. Older reporters
+keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
 
 ## Share with Playwright tools
 
@@ -135,6 +135,6 @@ only you can read (`PIWI_RUN_CHANNEL`), saying which test it runs and where it s
 
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints and the pause bar.
 - [Runs from the editor](./editor-runs): the commands that start a run.
-- [Share a run live](./share-live): let a teammate watch it.
+- [Share a local run live](./share-live): for a teammate.
 - [Debug in my editor](./debug-in-editor): a run started from a failure's page.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

@@ -127,6 +127,6 @@ What the editor says of a run it started that sent nothing: [Runs from the edito
 
 - [Watch a local test](./watch-running-test): a test's page, in your tools
 - [Live view of a run](./live-view): a test's page, on the team instance
-- [Share a local run live](./share-live): let a teammate watch a run on your machine
+- [Share a local run live](./share-live): a teammate watches a run on your machine
 - [Runs window](./runs-window): follow and steer your runs from Piwi Picker
 - [Pause and step from the editor](./editor-run-control): the controls at a stop

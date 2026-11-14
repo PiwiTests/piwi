@@ -13,7 +13,7 @@ a tool of the [Piwi Picker extension](./extension): it records your steps with t
 wrong ("this should read Total: 36.00"), collects evidence from the page, and hands you a failing Playwright test, a
 Markdown report and a `.piwibug` file for the developer. Everything is built in your browser; nothing is sent anywhere unless you
 send it to your Piwi instance. This page covers recording a report and what it holds, with no instance;
-[Replay a bug report](./replay-a-bug-report) plays one again, and [Bug reports](./bug-reports) covers what an instance
+[Replay a bug report](./replay-a-bug-report) plays one again, and [Bug reports on your instance](./bug-reports) covers what an instance
 does with one sent to it.
 
 <figure>

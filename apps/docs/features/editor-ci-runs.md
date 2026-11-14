@@ -58,6 +58,6 @@ instance, a refused **Watch**).
 
 ## Related
 
-- [Watch a running test](./watch-running-test): a test running on your machine.
+- [Watch a local test](./watch-running-test): a test running on your machine.
 - [Live view of a run](./live-view): the team instance's view of a run, which a CI lane comes from.
 - [Failures in the editor](./editor-failures): the CI run's failures once it ended.
