@@ -2756,8 +2756,8 @@ class GlueTest {
         val line = "await page.$written.click();"
         assertEquals(
             listOf(
-                Glue.LocatorChoice("Use getByTestId('pay')", "getByTestId('pay')", 11, 41),
-                Glue.LocatorChoice("Use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
+                Glue.LocatorChoice("Piwi: use getByTestId('pay')", "getByTestId('pay')", 11, 41),
+                Glue.LocatorChoice("Piwi: use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
             ),
             Glue.locatorChoices(line, step),
         )

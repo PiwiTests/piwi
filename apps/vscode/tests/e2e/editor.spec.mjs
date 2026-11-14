@@ -97,7 +97,7 @@ test('the quick fixes on the failing line offer the recommended locator first', 
   await page.keyboard.press('Control+.');
   // The menu's rows, its group headers left out.
   const fixes = page.locator('.action-widget .monaco-list-row:not(.group-header)');
-  await expect(fixes.first()).toContainText(`Heal: use ${RECOMMENDED}`);
+  await expect(fixes.first()).toContainText(`Piwi: heal with ${RECOMMENDED}`);
   await page.keyboard.press('Escape');
 });
 

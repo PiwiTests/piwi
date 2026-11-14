@@ -9,6 +9,7 @@ import { PIWI_ENV_VARS, type PiwiEnvVarMeta } from '#shared/piwi-env-vars';
 import { PROJECT_COVERAGE_VIEWS, PROJECT_MENU_PAGES, PROJECT_TABS, RUN_TABS, type PlaceTab } from '#shared/app-places';
 import { PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { actionTitle, EDITOR_ACTIONS } from '../../../../packages/editor/src/actions';
+import { piwiActionTitle } from '../../../../packages/editor/src/analysis';
 import { ALL_SKILLS, WORKFLOW_SKILLS } from '../../../../packages/reporter/src/cli/skills';
 
 // The agent guide of a directory and the file that loads it for Claude Code: not docs pages.
@@ -222,6 +223,15 @@ describe('quoted editor commands', () => {
     expect(normalize('Record a new\n  test file…')).toBe('Record a new test file');
   });
 
+  // A quick fix's title is built from the code under the cursor (`piwiActionTitle` in packages/editor/src/analysis.ts):
+  // its words after `Piwi: ` start lower-case, where a command's start upper-case.
+  const isQuickFix = (title: string) => /^[a-z]/.test(title);
+
+  test('a command title starts upper-case, a quick fix title lower-case', () => {
+    expect([...titles].filter(isQuickFix)).toEqual([]);
+    expect(isQuickFix(piwiActionTitle("Use getByTestId('pay')").replace(/^Piwi: /, ''))).toBe(true);
+  });
+
   test.each(handWrittenPages)('%s quotes only commands the editors have', (page) => {
     const quoted = [
       ...read(page)
@@ -230,7 +240,7 @@ describe('quoted editor commands', () => {
         .matchAll(/\*\*Piwi: ([^*]+)\*\*/g),
     ].map((m) => normalize(m[1]!));
     expect(
-      quoted.filter((title) => !titles.has(title)),
+      quoted.filter((title) => !isQuickFix(title) && !titles.has(title)),
       `${page} quotes as **Piwi: …** what neither editor has as a command: use a title of packages/editor/src/actions.ts, or write text that is no command (a status bar label, a panel's name) as inline code`,
     ).toEqual([]);
   });

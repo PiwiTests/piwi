@@ -83,7 +83,7 @@ page object or a helper offer neither action: no test holds them.
 
 The recorder keeps up to five locators for each element it acts on, each verified to find that element alone on the
 page, and writes the best one. Once the recording stopped, a warning on a step that has other locators offers each of
-them as a quick fix, best first: **Use getByTestId('pay')** in the light bulb menu in VS Code, with **Alt+Enter** in a
+them as a quick fix, best first: **Piwi: use getByTestId('pay')** in the light bulb menu in VS Code, with **Alt+Enter** in a
 JetBrains IDE. It puts that locator in place of the one written on the line, as one edit that **Undo** takes back, and
 the line's warning goes. While the recording runs, none is offered: each step writes the block again.
 

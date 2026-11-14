@@ -108,7 +108,7 @@ describe("a spec's editor title", () => {
     ]);
   });
 
-  test('draws each button with a glyph of its own: no other command has it, but Record’s', () => {
+  test('draws each button with a glyph of its own: no other command has it, but Record’s and Verify ×3’s', () => {
     const shown = [
       ...menus['editor/title']!.filter((e) => e.group?.startsWith('navigation')),
       ...menus['editor/title/run']!,
@@ -118,8 +118,12 @@ describe("a spec's editor title", () => {
       const icon = iconOf(command);
       expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
       const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
-      // Record, Resume recording and Record at the stop are one concept, with one glyph.
-      expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording', 'piwi.recordAtStop'] : []);
+      // Record, Resume recording and Record at the stop are one concept, with one glyph, as are the Verify ×3s.
+      const concept: Record<string, string[]> = {
+        'piwi.record': ['piwi.resumeRecording', 'piwi.recordAtStop'],
+        'piwi.verifyTestAtCursor': ['piwi.verifyFailure'],
+      };
+      expect(sharing, command).toEqual(concept[command] ?? []);
     }
   });
 });
@@ -175,6 +179,7 @@ describe("the commands' glyphs", () => {
       ['piwi.openTrace', 'piwi.openTraceSoFar'],
       ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
       ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
+      ['piwi.verifyTestAtCursor', 'piwi.verifyFailure'],
       ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
       // Follow the active editor and Watch a worker's test, still to settle.
       ['piwi.stopFollowingEditor', 'piwi.watchWorker'],
@@ -226,6 +231,22 @@ describe('Debug this failure', () => {
     expect(offered('piwi.failure.failing.trace.agent')).toBe(false);
     expect(offered('piwi.failure.fixed-locally')).toBe(false);
     expect(menus.commandPalette!.find((e) => e.command === 'piwi.debugFailure')!.when).toBe('false');
+  });
+});
+
+describe('Verify the test ×3 and Go to the test', () => {
+  test.each([
+    ['piwi.verifyFailure', 'verify'],
+    ['piwi.goToFailureTest', 'test'],
+  ])('%s is offered on a failure whose node carries %s, never in the palette', (command, flag) => {
+    const entry = menus['view/item/context']!.find((e) => e.command === command)!;
+    const offered = (contextValue: string) =>
+      new RegExp(/viewItem =~ \/(.+)\/$/.exec(entry.when!)![1]!).test(contextValue);
+    expect(entry.when!.startsWith('view == piwi.failures && ')).toBe(true);
+    expect(offered(`piwi.failure.failing.trace.agent.debug.${flag}`)).toBe(true);
+    expect(offered('piwi.failure.failing.trace.agent.debug')).toBe(false);
+    expect(offered('piwi.failure.fixed-locally')).toBe(false);
+    expect(menus.commandPalette!.find((e) => e.command === command)!.when).toBe('false');
   });
 });
 

@@ -398,6 +398,18 @@
         "icon": "$(debug-alt)"
       },
       {
+        "command": "piwi.verifyFailure",
+        "title": "Verify the test ×3",
+        "category": "Piwi",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "piwi.goToFailureTest",
+        "title": "Go to the test",
+        "category": "Piwi",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "piwi.rerunFailing",
         "title": "Re-run the failing tests",
         "category": "Piwi",
@@ -921,6 +933,14 @@
         {
           "command": "piwi.debugFailure",
           "when": "false"
+        },
+        {
+          "command": "piwi.verifyFailure",
+          "when": "false"
+        },
+        {
+          "command": "piwi.goToFailureTest",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -1126,6 +1146,16 @@
           "command": "piwi.debugFailure",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdebug\\b/",
           "group": "1_run@2"
+        },
+        {
+          "command": "piwi.verifyFailure",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bverify\\b/",
+          "group": "1_run@3"
+        },
+        {
+          "command": "piwi.goToFailureTest",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\btest\\b/",
+          "group": "0_go@1"
         },
         {
           "command": "piwi.openTrace",

@@ -1241,12 +1241,16 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */
+  test?: { uri: string; line: number };
+  /** Verify the test ×3: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
+  verify?: RunTestsArgs;
   /**
    * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
    * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
-   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, and where the run would be refused: its
-   * spec holds no one test of its title, the title or project is not one Piwi takes, or it stops on the test's own
-   * `test(…)` line.
+   * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, where its spec holds no one test of its
+   * title (as are `test` and `verify`), and where the run would be refused: the title or project is not one Piwi takes,
+   * or it stops on the test's own `test(…)` line.
    */
   debug?: RunTestsArgs;
 }
