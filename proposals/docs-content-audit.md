@@ -23,8 +23,10 @@ pull request of their own:
   holds a failure only while Hold failures is on), C1.4, C1.5, C1.6, C1.9, C1.11, C1.12, T7, T8, C2.3, C2.4, C2.5,
   C2.7, C3.4, C3.8, C3.10, C3.13, C3.14, C3.15, C4.8, C4.11, C4.12, D10, D16, C5.7, C5.9, C5.13, C5.15, C5.16 and
   C5.17. Their rows below keep the wording of the audit; the pages say what the code does.
-- **Step 4, the rules**: G2 to G8, in `docs-claims.test.ts` and `docs-drift.test.ts`, each seen to fail on a
-  deliberate error. G1 and step 3 come with the palette's pull request, which adds the list of places they read.
+- **Steps 3 and 4, the places and the rules**: G1 to G8, in `docs-claims.test.ts` and `docs-drift.test.ts`, each
+  seen to fail on a deliberate error. G1 reads `shared/app-places.ts`, the list of a project's tabs and views, a
+  run's tabs and the More actions pages that the palette's pull request adds and that the project page, the run page
+  and the palette build from; this pull request is merged after that one.
 
 What was not done is under [Left for later](#left-for-later).
 
@@ -498,7 +500,9 @@ overview from the app: G1 holds its facts and leaves its prose.
 - **Comments the code contradicts**: `packages/editor/src/protocol.ts:1763` on what a terminal run names; the Nitro
   integration's "outside production" (`integrations/nitro/src/index.ts`, `manifest.ts`, `environment.ts`), where the
   rule is an allow-list; the root guide's "on the first API call" for a database created at boot.
-- **What the rules do not see.** G2 reads a count only before one of nine nouns ("Piwi ships seven" passes). G3
+- **What the rules do not see.** G1 resolves the paths that start at a project or a run, in the catalog and on the
+  pages; a path into Settings is not checked on a page, where the same words also name an editor's or Piwi Picker's
+  settings, and the sections of a project's Settings are not in the list. G2 reads a count only before one of nine nouns ("Piwi ships seven" passes). G3
   checks editor commands, not Piwi Picker's labels, which nothing in the syntax tells from emphasis. G7 lets a number
   open a heading or a list item. G8 knows the destinations a variable names and two listed by hand, not those set
   in the dashboard, such as a webhook's address.
