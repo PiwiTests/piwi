@@ -641,6 +641,21 @@ describe('docs site structure', () => {
     },
   );
 
+  // A page's <Needs> chips say what its catalog entry says the feature needs,
+  // so the page and the All features table never disagree. The reporter is the
+  // baseline every feature builds on: its chip is the page's own choice.
+  test.each(featureEntries)('the chips of %s are its needs in the catalog', (entry, doc) => {
+    if (doc.includes('#')) return;
+    const needs = PIWI_FEATURE_GROUPS.flatMap((group) => group.features).find((feature) => feature.doc === doc)!.needs;
+    const chips = [...read(`apps/docs/${doc}.md`).matchAll(/<Needs([^>]*)\/>/g)].flatMap((chip) =>
+      chip[1]!.split(/\s+/).filter((prop) => prop && prop !== 'reporter'),
+    );
+    expect(
+      chips.sort(),
+      `apps/docs/${doc}.md: make its <Needs … /> chips and the needs of "${entry}" in shared/piwi-features.ts agree`,
+    ).toEqual([...needs].sort());
+  });
+
   // The description is the page's search snippet and its social-card text.
   // The home page uses the site description in config.mts instead.
   test.each(docsPages)('%s has a description', (page) => {

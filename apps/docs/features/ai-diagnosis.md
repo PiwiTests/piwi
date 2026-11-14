@@ -6,6 +6,8 @@ lang: en-US
 
 # AI diagnosis
 
+<Needs reporter llm />
+
 When a run finishes, Piwi groups related failures into [failure clusters](./failure-clusters) and, optionally, asks an
 LLM to explain why each broke, against the code that changed.
 

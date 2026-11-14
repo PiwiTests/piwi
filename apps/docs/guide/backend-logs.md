@@ -6,6 +6,8 @@ lang: en-US
 
 # Backend instrumentation
 
+<Needs reporter backend />
+
 A small package in your backend attaches to each HTTP response what the server did for that request, and the
 [capture fixtures](./capture-fixtures) read it from the response while your tests run. Nothing leaves your backend
 except in those response headers, or from the coverage endpoints of a coverage build, and only in development and test environments by default.

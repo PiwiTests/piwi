@@ -6,6 +6,8 @@ lang: en-US
 
 # CSS coverage
 
+<Needs reporter fixtures />
+
 Each test records the rules of your style sheets its pages matched: a rule counts once an element on the page matched
 its selector. A change to a style sheet then selects the tests that rendered the rules it touched, where a style
 change used to run the whole suite. It sits beside [code reach](./code-reach), the scripts' side, and

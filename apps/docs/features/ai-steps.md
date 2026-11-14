@@ -6,6 +6,8 @@ lang: en-US
 
 # AI steps
 
+<Needs reporter llm />
+
 AI steps let you locate elements and drive flows in **plain English**, without giving up the determinism of hand-written Playwright:
 
 ```typescript

@@ -6,6 +6,8 @@ lang: en-US
 
 # Server coverage
 
+<Needs reporter fixtures backend />
+
 With an ASP.NET Core or a Nitro backend built for coverage, each test records the backend code it ran: its files, the
 functions that ran in them and, at the finest granularity, the executed lines. Requests are told apart, so tests running in
 parallel against one shared backend each keep their own. The browser side is [code reach](./code-reach); both feed
