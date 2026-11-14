@@ -208,7 +208,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     id: 'markers',
     title: 'Timeline markers',
     summary: 'Your deploys and infrastructure changes overlaid on the trend charts, so a step change has a cause.',
-    how: "Add a marker from a project's Timeline tab.",
+    how: "Add a marker with the Markers button of a project's Runs tab.",
     icon: 'i-lucide-git-commit-horizontal',
     doc: 'features/timeline-markers',
   },
@@ -217,7 +217,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Quarantine',
     summary:
       'A known-bad test keeps running and reporting, but stops failing the CI gate — and earns its way out on a passing streak.',
-    how: "Quarantine a test from its test-case page, or from the project's Quarantine tab.",
+    how: "Quarantine a test from the More actions menu of its execution page, or from the Flaky view of the project's Failures tab. The Quarantine view of that tab lists the quarantined tests.",
     icon: 'i-lucide-shield-alert',
     doc: 'features/flaky-tests',
   },

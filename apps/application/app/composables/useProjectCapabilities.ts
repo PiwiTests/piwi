@@ -1,5 +1,35 @@
 import { capabilityHidden, type CapabilityId, type CapabilityState, type ProjectDecision } from '#shared/capabilities';
+import { defineComponent } from 'vue';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
+
+/** The `useAsyncData` key that holds one project's capability states. */
+const projectCapabilitiesKey = (projectId: number) => `capabilities-project-${projectId}`;
+
+/**
+ * One project's capability states under its key, which every caller for the project shares: a caller asking while a
+ * read is running joins it. A read that fails keeps the states last read or written for the project; with none, it
+ * fails, and the payload holds no states for the project.
+ */
+function useProjectCapabilityStates(
+  projectId: number,
+  options: { lazy?: boolean; server?: boolean; immediate?: boolean } = {},
+) {
+  const nuxtApp = useNuxtApp();
+  const requestFetch = useRequestFetch();
+  const key = projectCapabilitiesKey(projectId);
+  return useAsyncData<CapabilityStateItem[]>(
+    key,
+    () =>
+      requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
+        .then((r) => r.items)
+        .catch((error: unknown) => {
+          const kept = nuxtApp.payload.data[key] as CapabilityStateItem[] | undefined;
+          if (kept) return kept;
+          throw error;
+        }),
+    { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender, ...options },
+  );
+}
 
 /**
  * The resolved state of every optional capability for one project: the
@@ -17,24 +47,15 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * applicable or never offered by the desktop build, `canDecide` gates the controls to holders of `project:manage` on
  * the project, `decide` writes one decision and `decideMany` writes several at
  * once (`enabled` overrides an instance decline; `null` clears a decision). A
- * read that fails keeps the states already shown; the first one resolves to an
- * empty list.
+ * read that fails keeps the states last read or written; a first one that fails
+ * reads every capability as undecided.
  */
 export async function useProjectCapabilities(projectId: number) {
   const { can } = useAuth();
-  const requestFetch = useRequestFetch();
+  const nuxtApp = useNuxtApp();
   const isDesktop = useIsDesktop();
 
-  let shown: Ref<CapabilityStateItem[]> | null = null;
-  const { data: items } = await useAsyncData<CapabilityStateItem[]>(
-    `capabilities-project-${projectId}`,
-    () =>
-      requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
-        .then((r) => r.items)
-        .catch(() => shown?.value ?? []),
-    { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender },
-  );
-  shown = items;
+  const { data: items } = await useProjectCapabilityStates(projectId);
 
   const stateMap = computed(() => {
     const map = new Map<CapabilityId, CapabilityState>();
@@ -51,6 +72,7 @@ export async function useProjectCapabilities(projectId: number) {
       body: { decisions },
     });
     items.value = res.items;
+    nuxtApp.payload.data[projectCapabilitiesKey(projectId)] = res.items;
   }
 
   const decide = (id: CapabilityId, decision: ProjectDecision | null) => decideMany({ [id]: decision });
@@ -58,4 +80,54 @@ export async function useProjectCapabilities(projectId: number) {
   const canDecide = computed(() => can('project:manage', projectId));
 
   return { capabilities: items, state, isHidden, canDecide, decide, decideMany };
+}
+
+/**
+ * Reads one project's capability states in the browser, under the key `useProjectCapabilities` reads. Renders nothing.
+ *
+ * After a navigation in the browser it reads at once, and the page that needs the states joins that read. While the
+ * app hydrates it reads nothing the server render already holds, and what the server does not hold it reads once the
+ * app is ready, so the page's first render never waits for it.
+ */
+const ProjectCapabilitiesRead = defineComponent({
+  props: { projectId: { type: Number, required: true } },
+  setup(props) {
+    const nuxtApp = useNuxtApp();
+    const hydrating = Boolean(nuxtApp.isHydrating);
+    const { execute } = useProjectCapabilityStates(props.projectId, {
+      lazy: true,
+      server: false,
+      immediate: !hydrating,
+    });
+    if (hydrating && nuxtApp.payload.data[projectCapabilitiesKey(props.projectId)] === undefined) {
+      onNuxtReady(() => execute());
+    }
+    return () => null;
+  },
+});
+
+/**
+ * What a project hides, for the layout, from the states held for it: those a page read or wrote, or those
+ * `ProjectCapabilitiesRead` read. The layout renders `ProjectCapabilitiesRead` keyed by `routeProjectId`, the project
+ * the router's route names, which changes as a navigation is confirmed, before the next page's setup: a page that
+ * loads the states joins the same read. `isHidden(projectId, id)` is null until the project's states have been read
+ * once; a refresh, or a later read that fails, keeps them.
+ */
+export function useLoadedProjectCapabilities() {
+  const nuxtApp = useNuxtApp();
+  const router = useRouter();
+  const isDesktop = useIsDesktop();
+
+  const routeProjectId = computed(() => {
+    const match = router.currentRoute.value.path.match(/^\/projects\/(\d+)/);
+    return match?.[1] ? parseInt(match[1], 10) : null;
+  });
+
+  const isHidden = (projectId: number, id: CapabilityId): boolean | null => {
+    const items = nuxtApp.payload.data[projectCapabilitiesKey(projectId)] as CapabilityStateItem[] | undefined;
+    if (!items) return null;
+    return capabilityHidden(id, items.find((item) => item.id === id)?.state ?? 'undecided', isDesktop);
+  };
+
+  return { isHidden, routeProjectId, ProjectCapabilitiesRead };
 }

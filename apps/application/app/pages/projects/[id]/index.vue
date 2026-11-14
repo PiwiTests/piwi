@@ -21,6 +21,14 @@ import { refetchKeeping } from '~/utils/refetch-keeping';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
+import { projectTabHidden } from '~/utils/project-tabs';
+import {
+  PROJECT_FAILURE_VIEWS,
+  PROJECT_MENU_PAGES,
+  PROJECT_TABS,
+  type ProjectFailureView,
+  type ProjectTabValue,
+} from '#shared/app-places';
 
 const route = useRoute();
 const router = useRouter();
@@ -419,8 +427,8 @@ usePageReload(() =>
 );
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'coverage', 'performance', 'settings'] as const;
-type TabValue = (typeof TABS)[number];
+type TabValue = ProjectTabValue;
+const TABS: readonly TabValue[] = PROJECT_TABS.map((tab) => tab.value);
 
 // Other ?tab= values (and the redirecting sub-routes) land on the tab that holds them.
 const TAB_ALIASES: Record<string, TabValue> = {
@@ -437,7 +445,7 @@ const TAB_ALIASES: Record<string, TabValue> = {
   members: 'settings',
 };
 
-type FailureSegment = 'clusters' | 'flaky' | 'quarantine';
+type FailureSegment = ProjectFailureView;
 const ALIAS_SEGMENT: Record<string, FailureSegment> = {
   'failure-clusters': 'clusters',
   'flaky-tests': 'flaky',
@@ -451,13 +459,14 @@ const failureSegment = useViewState<FailureSegment>('failures:segment', () => 'c
 // declined it loses the segment button, and a stale `?tab=quarantine` link falls
 // back to Clusters.
 const failureSegments = computed(() => {
-  const segs: { key: FailureSegment; label: string; count: number }[] = [
-    { key: 'clusters', label: 'Clusters', count: clustersCount.value.total },
-    { key: 'flaky', label: 'Flaky', count: flakyCount.value ?? 0 },
-  ];
-  if (!projCapHidden('quarantine'))
-    segs.push({ key: 'quarantine', label: 'Quarantine', count: quarantineCount.value ?? 0 });
-  return segs;
+  const counts: Record<FailureSegment, number> = {
+    clusters: clustersCount.value.total,
+    flaky: flakyCount.value ?? 0,
+    quarantine: quarantineCount.value ?? 0,
+  };
+  return PROJECT_FAILURE_VIEWS.filter((view) => view.value !== 'quarantine' || !projCapHidden('quarantine')).map(
+    (view) => ({ key: view.value, label: view.label, count: counts[view.value] }),
+  );
 });
 watch(
   () => projCapHidden('quarantine'),
@@ -473,17 +482,9 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
-// The Flake Lab tab follows the `flake-lab` capability, and the Coverage tab
-// the `test-map` and `coverage` ones (it shows while either is on): a project
-// that declined them loses the tab, and a stale `?tab=` link to it falls back to Runs.
-const TAB_CAPABILITIES: Partial<Record<TabValue, Array<Parameters<typeof projCapHidden>[0]>>> = {
-  coverage: ['test-map', 'coverage'],
-  'flake-lab': ['flake-lab'],
-};
-const tabHidden = (tab: TabValue) => {
-  const capabilities = TAB_CAPABILITIES[tab];
-  return capabilities ? capabilities.every((capability) => projCapHidden(capability)) : false;
-};
+// A project that declined the capabilities a tab stands on (Flake Lab, Coverage)
+// loses the tab, and a stale `?tab=` link to it falls back to Runs.
+const tabHidden = (tab: TabValue) => projectTabHidden(tab, projCapHidden);
 watch(
   () => tabHidden(activeTab.value),
   (hidden) => {
@@ -545,24 +546,18 @@ onMounted(() => {
 
 const failuresCount = computed(() => clustersCount.value.open + (flakyCount.value ?? 0) + (quarantineCount.value ?? 0));
 
+/** The count a tab's label carries, for the tabs that show one. */
+const tabCounts = computed<Partial<Record<TabValue, number>>>(() => ({
+  runs: listedRuns.value.length,
+  tests: testCasesTotal.value ?? undefined,
+  failures: failuresCount.value > 0 ? failuresCount.value : undefined,
+}));
+
 const tabItems = computed(() =>
-  [
-    { label: `Runs (${listedRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
-    {
-      label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
-      icon: 'i-lucide-flask-conical',
-      value: 'tests' as const,
-    },
-    {
-      label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
-      icon: 'i-lucide-layers',
-      value: 'failures' as const,
-    },
-    { label: 'Flake Lab', icon: 'i-lucide-snowflake', value: 'flake-lab' as const },
-    { label: 'Coverage', icon: 'i-lucide-radar', value: 'coverage' as const },
-    { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
-    { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
-  ].filter((item) => !tabHidden(item.value)),
+  PROJECT_TABS.filter((tab) => !tabHidden(tab.value)).map((tab) => {
+    const count = tabCounts.value[tab.value];
+    return { label: count === undefined ? tab.label : `${tab.label} (${count})`, icon: tab.icon, value: tab.value };
+  }),
 );
 
 const tabNavItems = computed(() =>
@@ -893,27 +888,14 @@ const moreMenuItems = computed(() => {
   }[] = [];
   if (canEditSettings.value)
     items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
-  items.push({
-    label: 'Test functions',
-    icon: 'i-lucide-square-function',
-    onSelect: () => navigateTo(`/projects/${projectId}/test-functions`),
-  });
-  items.push({
-    label: 'Selections',
-    icon: 'i-lucide-list-filter',
-    onSelect: () => navigateTo(`/projects/${projectId}/selections`),
-  });
-  items.push({
-    label: 'Locators',
-    icon: 'i-lucide-crosshair',
-    onSelect: () => navigateTo(`/projects/${projectId}/locators`),
-  });
-  if (!projCapHidden('bug-reports'))
+  for (const menuPage of PROJECT_MENU_PAGES) {
+    if (menuPage.path === 'bug-reports' && projCapHidden('bug-reports')) continue;
     items.push({
-      label: 'Bug reports',
-      icon: 'i-lucide-bug',
-      onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
+      label: menuPage.label,
+      icon: menuPage.icon,
+      onSelect: () => navigateTo(`/projects/${projectId}/${menuPage.path}`),
     });
+  }
   if (canScheduleReport.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',
