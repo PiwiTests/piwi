@@ -186,7 +186,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 6,
     intro:
       'Controls which Playwright wait steps are counted as "wasted time" on the run timeline and in per-test/run totals. Classification happens when a run is viewed, so changing it re-classifies historical runs immediately.',
-    note: 'When unset, configure the patterns from **Settings → Wasted time** (administrator only). The default counts only explicit `waitForTimeout` sleeps, since framework-injected waits (load-state, wait-for-function) are usually unavoidable.',
+    note: 'When unset, configure the patterns from **Settings → Performance** (administrator only). The default counts only explicit `waitForTimeout` sleeps, since framework-injected waits (load-state, wait-for-function) are usually unavoidable.',
   },
   ai: {
     title: 'AI diagnosis',

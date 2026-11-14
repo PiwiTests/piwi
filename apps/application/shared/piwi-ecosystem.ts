@@ -347,7 +347,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
         when: 'The dashboard’s analysis decides: how many tests failed, newly failed, newly turned flaky or are quarantined, a failure cluster never seen before, required tags, or a selection whose tests must run and pass.',
       },
     ],
-    doc: 'guide/ci#blocking-a-merge',
+    doc: 'features/merge-gate',
   },
   {
     id: 'mcp-modules',

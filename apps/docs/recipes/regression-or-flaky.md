@@ -72,7 +72,7 @@ Not everyone wants to click through a dashboard mid-review.
 install. `get_run_insights` returns the same new failures / fixed / newly flaky split this page walks
 through, and `get_test_stability_trend` answers "is this getting flakier?" for one test.
 
-**Wire it into CI.** The [CI gate](/guide/ci#blocking-a-merge) already knows the difference: a test in
+**Wire it into CI.** The [CI merge gate](/features/merge-gate) already knows the difference: a test in
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) keeps running and keeps reporting, but doesn't
 block the merge — and the gate reports how many failures it excluded.
 

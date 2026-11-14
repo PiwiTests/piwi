@@ -25,7 +25,7 @@ By default the baseline is the last passing full run the [baseline rule](/guide/
 
 A project that has never had a green run still gets a comparison. When no earlier full run passed, the tab walks the same ladder again for the **last failed run** and says so: _"No earlier full run passed; the last failed run on feature/x in staging."_ The sections read the same way against it: **New failures** are the tests that passed in that run and fail here, **Still failing** the ones that failed in both. Timed-out and interrupted runs stopped before the suite ended, so they are never picked automatically.
 
-Only the Changes tab and the MCP `get_run_insights` tool take a failed run. The stored regression signals, the [CI gate](/guide/ci#blocking-a-merge) and [pull-request feedback](/features/pr-feedback) keep comparing with a passing run, so their verdicts never rest on a run that was itself red.
+Only the Changes tab and the MCP `get_run_insights` tool take a failed run. The stored regression signals, the [CI merge gate](/features/merge-gate) and [pull-request feedback](/features/pr-feedback) keep comparing with a passing run, so their verdicts never rest on a run that was itself red.
 
 When nothing qualifies (the earlier runs are partial, timed out or interrupted), the tab says so and offers the earlier runs to pick from. On the project's first finished run, it says there is nothing earlier yet.
 

@@ -71,7 +71,7 @@ instance, stored there like a run's evidence.
 **Share result**, after a replay of a report from the instance, sends the verdict, the site it ran on and the
 browser's name to that report, on **Send** in its preview.
 
-Paired with the [desktop app](/features/bug-reports#running-it-with-playwright-in-the-desktop-app), it also sends a
+Paired with the [desktop app](/features/extension-connection#pair-with-the-desktop-app), it also sends a
 report's title and steps, with their typed values and nothing else, to that app on this machine on **Send** in the
 **Run with Playwright** preview.
 

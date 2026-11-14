@@ -54,7 +54,7 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 - **Choosing the base branch** — the Changes tab lets you take the baseline from any branch with an earlier full run, so a long-lived branch can be compared against `release/2` rather than `main`; the choice is in the URL (`?baseBranch=`) and on the API and MCP tool. See [What changed in a run](./run-changes#the-baseline).
 - **The environment, visual and page diffs** of one execution prefer the same environment, then the same branch, then
   the most recent pass: there is no base-branch rung ([the rule](/guide/concepts#baseline-last-green-run)).
-- **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` [CI gate](/guide/ci#blocking-a-merge) counts the same new failures. A failure whose test is already flaky on the default branch is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
+- **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` rule of the [CI merge gate](/features/merge-gate) counts the same new failures. A failure whose test is already flaky on the default branch is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
 - **Performance alerts** — the `perf.regression` [notification](./notifications) measures a run against the previous runs on the same branch **in the same environment**.
 
 ## From an agent (MCP)
