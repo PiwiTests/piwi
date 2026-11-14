@@ -231,6 +231,9 @@ export interface TabList {
   query: (value: string) => Record<string, string>;
 }
 
+/** The registry of the places several files name (`shared/app-places.ts`), by its path from `app/`. */
+const PLACES_FILE = '../shared/app-places.ts';
+
 /**
  * Every tab list of the dashboard that the URL selects. Tabs that live only in
  * a component's state (the MCP page's clients, the Screen tab's views, the
@@ -240,9 +243,9 @@ export interface TabList {
 export const TAB_LISTS: readonly TabList[] = [
   {
     page: '/projects/[id]',
-    file: 'pages/projects/[id]/index.vue',
-    marker: 'const TABS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_TABS =',
+    pick: 'values',
     query: (tab) => ({ tab }),
   },
   // The Failures tab's segments, each selected by the alias that opens it.
@@ -256,9 +259,9 @@ export const TAB_LISTS: readonly TabList[] = [
   // The Coverage tab's views.
   {
     page: '/projects/[id]',
-    file: 'utils/coverage-tab.ts',
-    marker: 'export const COVERAGE_VIEWS =',
-    pick: 'strings',
+    file: PLACES_FILE,
+    marker: 'export const PROJECT_COVERAGE_VIEWS =',
+    pick: 'values',
     query: (view) => ({ tab: 'coverage', view }),
   },
   {
@@ -270,8 +273,8 @@ export const TAB_LISTS: readonly TabList[] = [
   },
   {
     page: '/test-runs/[id]',
-    file: 'pages/test-runs/[id].vue',
-    marker: 'const tabItems = computed(() =>',
+    file: PLACES_FILE,
+    marker: 'export const RUN_TABS =',
     pick: 'values',
     query: (tab) => ({ tab }),
   },
