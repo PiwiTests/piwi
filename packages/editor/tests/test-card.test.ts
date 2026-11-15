@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { TestExecution } from '../src/piwi-client';
+import { TEST_HISTORY_ROWS } from '../src/piwi-client';
 import { agoWords, cardStatus, durationWords, median, runResults, testCard } from '../src/test-card';
 
 const NOW = Date.parse('2026-11-15T12:00:00.000Z');
@@ -83,6 +84,21 @@ describe("a test's card", () => {
       executions: [execution(3, 'failed', { error: '\u001b[31mError: boom\u001b[39m' })],
     });
     expect(card.markdown).toContain('`Error: boom`');
+  });
+
+  test('leaves out the oldest run of a full history, which may be cut short', () => {
+    const executions = Array.from({ length: TEST_HISTORY_ROWS }, (_, i) =>
+      execution(100 - Math.floor(i / 2), i === TEST_HISTORY_ROWS - 1 ? 'failed' : 'passed', { retries: i % 2 }),
+    );
+    const runs = runResults(executions).map((r) => r.shown.runId);
+    expect(runs).toHaveLength(TEST_HISTORY_ROWS / 2 - 1);
+    expect(runs).not.toContain(100 - (TEST_HISTORY_ROWS / 2 - 1));
+    expect(runResults(executions.slice(0, 10)).map((r) => r.shown.runId)).toEqual([100, 99, 98, 97, 96]);
+  });
+
+  test('says a test skipped in every run is skipped', () => {
+    const card = testCard({ ...input, executions: [execution(2, 'skipped'), execution(1, 'skipped')] });
+    expect(card.markdown).toContain('Skipped in the last 2 runs');
   });
 
   test('takes the median of the runs that passed or failed', () => {

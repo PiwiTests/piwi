@@ -1,6 +1,6 @@
 ---
 title: Test card
-description: "A test's card in VS Code's hover and on a click of its result icon in a JetBrains IDE: its last twenty runs as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine."
+description: "A test's card in VS Code's hover and on a click of its result icon in a JetBrains IDE: its latest runs as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine."
 lang: en-US
 ---
 
@@ -13,10 +13,12 @@ A test's card answers "my bug or a flake?" without leaving the editor. In VS Cod
 
 ## What it shows
 
-- **The strip**: the test's last twenty runs, oldest on the left, as the dashboard's test row draws them: `✓`
-  passed, `✗` failed, `◐` flaky (it passed on a retry), `○` skipped. A run is one mark, whatever its retries,
-  repetitions and projects: failed when one of them ended failed, flaky when one passed on a retry. Each mark links to
-  its run, and its tooltip names the run, the outcome and how long the test took.
+- **The strip**: the test's latest runs, oldest on the left, as the dashboard's test row draws them: `✓` passed, `✗`
+  failed, `◐` flaky (it passed on a retry), `○` skipped. A run is one mark, whatever its retries, repetitions and
+  projects: failed when one of them ended failed, flaky when one passed on a retry. Each mark links to its run, and its
+  tooltip names the run, the outcome and how long the test took.
+- **How far back**: twenty runs at most, read from the test's last 50 attempts, so a test run in three projects shows
+  about sixteen, and one run with `--repeat-each` fewer still. The dashboard's test page holds its whole history.
 - **How they went**: `Passed 17 of the last 20 runs · 2 flaky · median 1.4 s`, skipped runs left out.
 - **The last failure**: the run it failed in, how long ago, and the first line of its error.
 - **Its owner, tags and quarantine**: the owner its `piwi:owner` annotation names, its Playwright tags, and, while it

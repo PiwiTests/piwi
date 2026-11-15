@@ -3,7 +3,7 @@
  * run, how they went, its last failure, its owner, tags and quarantine, in the words both clients show.
  */
 import { stripAnsi } from '@piwitests/core/error-parse';
-import type { TestExecution } from './piwi-client.js';
+import { TEST_HISTORY_ROWS, type TestExecution } from './piwi-client.js';
 import { TEST_CARD_RESULTS, type TestCard, type TestCardResult } from './protocol.js';
 
 /** What a card is built from: the test, its history newest first, and the instance's pages. */
@@ -47,10 +47,13 @@ interface RunResult {
 /**
  * The test's runs, newest first, each read from its final attempts (the last retry of each repetition and project): it
  * failed when one of them failed, was flaky when one passed after a failure, was skipped when all were, else passed.
+ * A history of `TEST_HISTORY_ROWS` attempts may end in the middle of its oldest run, which is left out.
  */
 export function runResults(executions: TestExecution[]): RunResult[] {
+  const cut = executions.length >= TEST_HISTORY_ROWS ? executions[executions.length - 1]?.runId : undefined;
   const runs = new Map<number, Map<string, TestExecution>>();
   for (const e of executions) {
+    if (e.runId === cut) continue;
     const finals = runs.get(e.runId) ?? new Map<string, TestExecution>();
     runs.set(e.runId, finals);
     const key = `${e.repeatEachIndex ?? 0}\n${e.browserName ?? ''}`;
@@ -136,7 +139,9 @@ export function testCard(input: TestCardInput): TestCard {
       ]
         .filter(Boolean)
         .join(' · ')
-    : 'No result yet';
+    : results.length
+      ? `Skipped in the last ${plural(results.length, 'run')}`
+      : 'No result yet';
   const failed = runs.find((r) => r.status === 'failed')?.shown;
   const failedAgo = failed ? agoWords(failed.startTime, input.now) : null;
   const failedWhere = failed ? `Last failed in run #${failed.runId}${failedAgo ? `, ${failedAgo}` : ''}` : null;

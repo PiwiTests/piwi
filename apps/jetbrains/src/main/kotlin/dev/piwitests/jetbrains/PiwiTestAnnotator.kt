@@ -138,16 +138,20 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                         val testCaseId = line.testCaseId
                         if (uri == null || testCaseId == null || point == null) return showActions()
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val card = runCatching {
-                                project.getServiceIfCreated(PiwiProjectService::class.java)?.server()
-                                    ?.testCard(TestCardParams(uri, testCaseId))
-                                    ?.get(CARD_WAIT_MILLIS, TimeUnit.MILLISECONDS)
-                            }.getOrNull()
+                            val service = project.getServiceIfCreated(PiwiProjectService::class.java)
+                                ?: return@executeOnPooledThread
+                            val asked = runCatching { service.server()?.testCard(TestCardParams(uri, testCaseId)) }.getOrNull()
+                            // A card not there in time is asked for no longer: the service stops reading it.
+                            val card = try {
+                                runCatching { asked?.get(CARD_WAIT_MILLIS, TimeUnit.MILLISECONDS) }.getOrNull()
+                            } finally {
+                                asked?.cancel(true)
+                            }
                             ApplicationManager.getApplication().invokeLater({
                                 // The editor clicked may have closed while the card was asked for.
                                 if (!point.component.isShowing) return@invokeLater
                                 if (card?.html == null) showActions() else showCard(card, testCaseId, point, showActions)
-                            }, project.disposed)
+                            }, service.gone)
                         }
                     }
                 }

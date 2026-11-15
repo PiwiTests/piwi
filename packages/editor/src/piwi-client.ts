@@ -210,9 +210,9 @@ export interface TestExecution {
   error: string | null;
   /** It passed on a retry after an attempt failed: flaky. */
   passedAfterFailure?: boolean | null;
-  /** The attempt: 0 for the first, 1 for the first retry. A run's last attempt of each repetition is its result. */
+  /** The attempt: 0 for the first, 1 for the first retry. A run's results are the last attempts of each repetition in each project. */
   retries?: number | null;
-  /** Its repetition (`--repeat-each`) and Playwright project's browser, which tell a run's results apart. */
+  /** Its repetition (`--repeat-each`) and Playwright project's name, which tell a run's results apart. */
   repeatEachIndex?: number | null;
   browserName?: string | null;
   /** When its run started. */
@@ -405,6 +405,9 @@ export function forgetShared(answers: ResponseCache): void {
     else entry.until = 0;
   }
 }
+
+/** The most attempts the instance answers for a test's history. */
+export const TEST_HISTORY_ROWS = 50;
 
 export class PiwiClient {
   /**
@@ -892,6 +895,7 @@ export class PiwiClient {
   }
 
   /** A test's latest executions, newest first, the instance's fifty at most. */
+  /** A test's attempts, newest run first, `TEST_HISTORY_ROWS` at most. */
   testHistory(testCaseId: number): Promise<{ items: TestExecution[] }> {
     return this.get(`/api/test-cases/${testCaseId}/history`);
   }
