@@ -37,6 +37,7 @@ import {
   waitsView,
   withLaneLayer,
   ciNodes,
+  attemptOutcome,
   runNodes,
   ciPositionFiles,
   ciPositionsIn,
@@ -2334,6 +2335,19 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('names who asks and the run', () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
+  });
+
+  test('each attempt’s result from the run’s own events, a failure at its test’s line; none for one cut short', () => {
+    expect(attemptOutcome('passed', runTest())).toEqual({ state: 'passed' });
+    expect(attemptOutcome('skipped', runTest())).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('failed', runTest())).toEqual({ state: 'failed', message: 'Failed in this run.', line: 2 });
+    expect(attemptOutcome('timedOut', runTest(1))).toEqual({
+      state: 'failed',
+      message: 'Timed out in this run (attempt 2).',
+      line: 2,
+    });
+    expect(attemptOutcome('interrupted', runTest())).toBeNull();
+    expect(attemptOutcome(undefined, runTest())).toBeNull();
   });
 });
 

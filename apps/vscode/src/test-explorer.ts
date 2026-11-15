@@ -18,12 +18,14 @@ import {
   type RunCommand,
   type RunEnded,
   type RunSession,
+  type RunTest,
+  type RunTestEvent,
   type RunStatusResult,
   type RunTestsArgs,
   type TestItemsParams,
   type TestItemsResult,
 } from '@piwitests/editor/protocol';
-import { sessionLines, testsBegun } from './run-control';
+import { attemptOutcome, sessionLines, testsBegun } from './run-control';
 import {
   SPEC_FILE,
   VERIFY_REPEAT,
@@ -130,6 +132,8 @@ export class TestExplorer implements vscode.Disposable {
   /** The service's last answer, which a spec's own answer replaces in place. */
   private answer: TestItemsResult = { contexts: [] };
   /** Each test's item and what the service says of it, and the items of each test the catalog knows, by its id. */
+  /** The test each worker of a run began last, by ref and worker, which its `test-end` ends. */
+  private readonly begun = new Map<string, RunTest>();
   private readonly testOf = new Map<vscode.TestItem, TreeTest>();
   private byCase = new Map<number, vscode.TestItem[]>();
   /** The result each test was last shown with. */
@@ -492,9 +496,33 @@ export class TestExplorer implements vscode.Disposable {
     }
   }
 
+  /**
+   * A worker of a run began or ended a test (`piwi/runTest`): a profile run shows each attempt's result as it ends, from
+   * the run's own events, whether an instance follows the run or not (`attemptOutcome`). A test the run of an instance
+   * shows later takes that result instead.
+   */
+  testEvent(event: RunTestEvent): void {
+    if (this.disposed) return;
+    const key = `${event.ref}\n${event.worker}`;
+    if (event.type === 'test-begin') {
+      if (event.test) this.begun.set(key, event.test);
+      return;
+    }
+    const test = event.test ?? this.begun.get(key);
+    this.begun.delete(key);
+    const profile = [...this.profiles].find((p) => p.parts.some((part) => part.ref === event.ref));
+    if (!test || !profile) return;
+    const item = this.itemAt(test.uri, test.line);
+    const outcome = attemptOutcome(event.status, test);
+    if (!item || !outcome || !profile.tests.has(item)) return;
+    this.show(profile.run, item, outcome);
+    profile.shown.add(item);
+  }
+
   /** The service stopped: its runs' sessions ended with it, and a rerun of a ref starts anew. */
   sessionsCleared(): void {
     this.sessions.clear();
+    this.begun.clear();
   }
 
   /** The test run that follows the run of `ref`: a profile run's command, else a run in progress followed. */

@@ -37,6 +37,7 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  RUN_TEST_NOTIFICATION,
   RUN_LINE_NOTIFICATION,
   type RunLine,
   type RunLineParams,
@@ -70,6 +71,7 @@ import {
   type RenderStepsParams,
   type RunEnded,
   type RunSession,
+  type RunTestEvent,
   type ShareDesktopJobResult,
   type StopCode,
 } from '@piwitests/editor/protocol';
@@ -2189,6 +2191,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl.heard(session);
       explorer?.sessionChanged(session);
     }),
+    // A worker of a run began or ended a test: the Testing view shows its result from the run's own events.
+    lc.onNotification(RUN_TEST_NOTIFICATION, (event: RunTestEvent) => explorer?.testEvent(event)),
     // A CI run of the branch moved: the CI Runs view and the CI positions.
     lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => {
       ciRuns.heard(session);

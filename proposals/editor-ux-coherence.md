@@ -64,7 +64,9 @@ names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part)
 (`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
 workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
 run acting on it, and a run's row says and turns over its Hold failures (LR7 in part: run control as a Tools → Piwi
-submenu remains).
+submenu remains); a run the Testing view started shows each test's result as its worker ends it, from the run's own
+events (`piwi/runTest`), an instance or not (LR9 in part: the test lines of a run that reports to no instance and the
+pause or failed glyph while a test waits remain).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of

@@ -10,6 +10,7 @@
  * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
  * nodes, the CI positions marked at a line, and what the worker panel says of a CI run's lane it watches.
  */
+import type { TestOutcome } from './glue';
 import type {
   CiSession,
   CiTest,
@@ -586,6 +587,22 @@ export interface SessionLine {
   test: { uri: string; line: number } | null;
   /** Where the stop it tells of stands; null for any other line. */
   at: { uri: string; line: number } | null;
+}
+
+/**
+ * An attempt's result as the Testing view shows it from the run's own events (`piwi/runTest`'s `test-end`): passed,
+ * skipped, or failed at its test's line (a timeout too); null for an attempt that did not end on its own (`interrupted`,
+ * a worker that left), which leaves the result to the run's end.
+ */
+export function attemptOutcome(status: string | undefined, test: RunTest): TestOutcome | null {
+  if (status === 'passed') return { state: 'passed' };
+  if (status === 'skipped') return { state: 'skipped' };
+  if (status === 'failed' || status === 'timedOut') {
+    const how = status === 'timedOut' ? 'Timed out' : 'Failed';
+    const attempt = test.retry ? ` (attempt ${test.retry + 1})` : '';
+    return { state: 'failed', message: `${how} in this run${attempt}.`, line: test.line };
+  }
+  return null;
 }
 
 /**

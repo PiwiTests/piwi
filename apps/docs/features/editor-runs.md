@@ -50,12 +50,12 @@ options…**). A
 
 ## The Testing view (VS Code)
 
-VS Code's Testing view lists Piwi's tests: the specs your instance knows, as they stand in the editor, under their
-folders and `test.describe` blocks, each test with its latest result and duration, and why and where a failure
-failed (**Peek Error**). The results are published as a test run (`Piwi: run #120 on main`) whenever the runs it shows
-change, and a run in progress is one of its own, each test shown as it begins and ends. Its gutter shows each result in
-place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result, so a flaky test shows as passed, and
-its line ends with *flaky*. An item is named by its test's title alone, as a screen reader reads it, and the view's
+VS Code's Testing view lists Piwi's tests: the specs your instance knows, under their folders and `test.describe`
+blocks, each with its latest result and duration, and why and where a failure failed (**Peek Error**). The results are
+published as a test run (`Piwi: run #120 on main`) whenever the runs it shows change, and a run in progress is one of
+its own, each test shown as its worker begins and ends it, an instance or not. Its gutter shows each
+result in place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result, so a flaky test shows as passed, and
+its line ends with _flaky_. An item is named by its test's title alone, as a screen reader reads it, and the view's
 filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@piwi:@smoke`) or an owner
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
@@ -95,7 +95,7 @@ or a commit is noticed within seconds: the editor reads that run again and compa
 files with the new `HEAD`.
 
 A run started from the editor is its own wherever it runs: the status bar follows it, the gutter shows each test as
-running, then its result, and its failures read *your run #124* once it ends. The editor learns the command's end and
+running, then its result, and its failures read _your run #124_ once it ends. The editor learns the command's end and
 exit code from the process it started, in every shell, a rerun included. When no run on the instance carries its ref,
 it says why: its reporter sent nothing (its lines in the output name the server address, the key, or a refusal), or
 the config has no Piwi reporter: `The run ended (exit code 1) but did not
