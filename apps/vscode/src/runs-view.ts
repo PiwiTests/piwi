@@ -1,7 +1,8 @@
 /**
  * The **Runs** view of the Piwi panel (`piwi.liveRuns`), shown while a run is in progress: each run with how far it is,
  * each of its workers with its test and whether it stands stopped, and the run's page on the dashboard. A row names its
- * run and worker, so the run commands of its menus (Watch, Pause and watch, Resume, Step, Pause, Stop) act on it. What
+ * run and worker, so the run commands of its menus (Watch, Pause and watch, Resume, Step, Stop the run, Hold failures)
+ * act on it. What
  * it lists comes from `runNodes` (`run-control.ts`), tested without an editor.
  */
 import { setContextKey } from './context-keys';
@@ -29,7 +30,8 @@ export function registerRunsView(): RunsView {
       item.description = node.description;
       item.tooltip = node.tooltip;
       item.iconPath = new vscode.ThemeIcon(node.icon);
-      item.contextValue = node.kind;
+      // A run that holds failures or can is `run hold`, so its menu offers Hold failures.
+      item.contextValue = node.hold === undefined ? node.kind : `${node.kind} hold`;
       const open = node.open;
       if (open && 'url' in open) {
         item.command = { command: 'piwi.openInDashboard', title: node.label, arguments: [open.url] };

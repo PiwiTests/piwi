@@ -2624,6 +2624,8 @@ object Glue {
         val uri: String? = null,
         val line: Int = 0,
         val url: String? = null,
+        /** A run's Hold failures, on or off; null for a run nobody attends and for any other row. */
+        val hold: Boolean? = null,
     )
 
     /**
@@ -2646,8 +2648,14 @@ object Glue {
                 key = ref,
                 kind = if (session.terminal || session.checkout != null) "run-elsewhere" else "run",
                 text = runLabel(session, live),
-                detail = listOf(howFar, session.label.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
+                // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+                detail = listOf(
+                    howFar,
+                    session.label.orEmpty(),
+                    if (session.hold?.on == true) EditorWords.words("hold.run.on", "by" to "").substringBefore(":") else "",
+                ).filter { it.isNotEmpty() }.joinToString(" · "),
                 ref = ref,
+                hold = session.hold?.on,
             )
             val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
                 val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }
@@ -2940,7 +2948,10 @@ object Glue {
         inPiwiWindow || fileName?.substringAfterLast('.', "")?.lowercase() in CHORD_FILES
 
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
-    fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
+    fun holdActionText(controls: RunControls): String = holdActionText(controls.onlyHold?.on)
+
+    /** Hold failures' text for a run holding them (`true`), one not (`false`), or any run (`null`). */
+    fun holdActionText(on: Boolean?): String = when (on) {
         true -> "Turn hold failures off"
         false -> "Turn hold failures on"
         null -> "Turn hold failures on or off for the run"
