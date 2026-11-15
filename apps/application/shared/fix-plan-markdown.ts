@@ -158,7 +158,7 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
   }
 
   // Verify
-  lines.push('## Verify', '', fence(verify.command), '', verify.expectation, '');
+  if (verify.command) lines.push('## Verify', '', fence(verify.command), '', verify.expectation, '');
   if (verify.commitTrailer) lines.push('Commit trailer:', '', fence(verify.commitTrailer), '');
 
   // Reproduce locally — the commands are git/npm/npx, identical on every OS.

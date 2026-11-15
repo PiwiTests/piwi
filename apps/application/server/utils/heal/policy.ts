@@ -161,7 +161,10 @@ export async function rejectedHealEdits(db: DbClient, projectId: number): Promis
   return rejected;
 }
 
-/** Build the verify command shown in the PR body — exactly the affected tests. */
+/**
+ * Build the verify command shown in the PR body — exactly the affected tests — or an empty string when they name
+ * neither a file nor a title, since the command would run every test.
+ */
 function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]): string {
   const byExecution = new Map(rows.map((r) => [r.executionId, r] as const));
   const cases = edits
@@ -169,7 +172,8 @@ function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]):
     .filter((r): r is HealCandidateRow => !!r)
     .map((r) => ({ filePath: r.filePath, title: r.title }));
   const fileCmd = buildRetryCommand(cases, { mode: 'file' });
-  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))].slice(0, 5));
+  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title).filter(Boolean))].slice(0, 5));
+  if (!fileCmd && !grep) return '';
   return `${fileCmd || 'npx playwright test'}${grep}`;
 }
 

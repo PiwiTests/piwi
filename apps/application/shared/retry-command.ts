@@ -115,11 +115,13 @@ function projectFlags(projects: string[]): string {
 
 /**
  * The ` -g "<title|title>"` flag that narrows a `playwright test` run to these
- * titles, or an empty string without titles. See {@link titleGrepPattern}.
+ * titles, or an empty string without titles. An empty title, which every test
+ * matches, is left out. See {@link titleGrepPattern}.
  */
 export function buildTitleGrepFlag(titles: string[]): string {
-  if (titles.length === 0) return '';
-  return ` -g "${titles.map(titleGrepPattern).join('|')}"`;
+  const named = titles.filter(Boolean);
+  if (named.length === 0) return '';
+  return ` -g "${named.map(titleGrepPattern).join('|')}"`;
 }
 
 // Playwright's CLI file filter is matched as a regex against forward-slash paths,
@@ -284,16 +286,21 @@ export function buildRetryArgs(cases: RetryCase[]): string {
  * It is the same on every shell and a single command, so it can be copied,
  * handed to `git bisect run` across commits, or shown as the command that
  * verifies a fix. Past {@link MAX_CMD_LENGTH} it drops the titles and runs the
- * files whole. Without cases it runs the whole suite.
+ * files whole. Without cases it runs the whole suite; with cases that name no
+ * file and no title it can pass on (see {@link isSpecFilter}), or too many titles
+ * and no file, it is empty, since it would run every test.
  */
 export function buildRerunCommand(cases: RetryCase[]): string {
   const base = 'npx playwright test';
   if (cases.length === 0) return base;
   const files = quoteSpecs([...new Set(cases.map((c) => specPattern(c.filePath)))]);
+  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]);
+  if (files.length === 0 && !grep) return '';
   const projects = projectFlags(caseProjects(cases));
   const head = [base, ...files].join(' ');
-  const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
-  return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+  const withTitles = `${head}${grep}${projects}`;
+  if (withTitles.length <= MAX_CMD_LENGTH) return withTitles;
+  return files.length > 0 ? `${head}${projects}` : '';
 }
 
 /**

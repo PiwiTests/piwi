@@ -57,6 +57,11 @@ describe('buildHealPrBody', () => {
     expect(body).toContain('npx playwright test "tests/checkout.spec.ts" -g "checkout pays"');
   });
 
+  test('leaves out the Verify section without a verify command', () => {
+    const body = buildHealPrBody({ ...payload([edit()]), verifyCommand: '' }, 'https://piwi.example.com');
+    expect(body).not.toContain('### Verify');
+  });
+
   test('labels a user pick and omits cluster links without a site URL', () => {
     const body = buildHealPrBody(payload([edit({ pickedByUser: true, clusterId: null })]), null);
     expect(body).toContain('your confirmed pick');

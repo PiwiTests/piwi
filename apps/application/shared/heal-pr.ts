@@ -85,11 +85,13 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
     lines.push('');
   }
 
-  lines.push('### Verify');
-  lines.push('```bash');
-  lines.push(payload.verifyCommand);
-  lines.push('```');
-  lines.push('');
+  if (payload.verifyCommand) {
+    lines.push('### Verify');
+    lines.push('```bash');
+    lines.push(payload.verifyCommand);
+    lines.push('```');
+    lines.push('');
+  }
   lines.push(
     '_Opened automatically by Piwi. Review the diff as you would any change — the evidence points at these ' +
       'locators, but only your suite proves the fix._',

@@ -262,7 +262,13 @@ export function buildBisectScript(input: BisectInput): BisectResult {
     };
   }
 
-  const command = verifyCommand.trim() || 'npx playwright test';
+  const command = verifyCommand.trim();
+  if (!command) {
+    return {
+      available: false,
+      reason: 'The failing tests have no file path or title a command can name, so no bisect is built for them.',
+    };
+  }
   const goodShort = good.slice(0, 7);
   const badShort = bad.slice(0, 7);
 
