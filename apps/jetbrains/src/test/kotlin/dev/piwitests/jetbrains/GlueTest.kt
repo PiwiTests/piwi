@@ -231,8 +231,8 @@ class GlueTest {
             lines = listOf(
                 entry(9, "✗ locator('#pay') was not found"),
                 entry(9, "Run with Piwi"),
-                entry(9, "Screenshot"),
-                entry(9, "Trace"),
+                entry(9, "Flake Lab · run 20 times"),
+                entry(9, "Flake Lab · find the breaking commit"),
                 entry(4, "passed 44 of 48 runs", status = "failing"),
                 entry(4, "Flaky · Flake Lab"),
                 entry(12, ""),
@@ -241,8 +241,8 @@ class GlueTest {
         val slots = (0 until Glue.CODE_VISION_SLOTS).map { slot -> Glue.codeVisionSlot(summary, slot).map { it.line to it.title } }
         assertEquals(listOf(0 to "3 tests in Piwi · 1 failing", 9 to "✗ locator('#pay') was not found", 4 to "Flaky · Flake Lab"), slots[0])
         assertEquals(listOf(9 to "Run with Piwi"), slots[1])
-        assertEquals(listOf(9 to "Screenshot"), slots[2])
-        assertEquals(listOf(9 to "Trace"), slots[3])
+        assertEquals(listOf(9 to "Flake Lab · run 20 times"), slots[2])
+        assertEquals(listOf(9 to "Flake Lab · find the breaking commit"), slots[3])
         assertEquals(emptyList<Pair<Int, String?>>(), slots[4])
     }
 

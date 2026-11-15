@@ -22,12 +22,12 @@ The failures of the latest complete [CI run](/reference/test-metadata#run-origin
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
-reason unless a Piwi problem says it, **Run with Piwi**, **Screenshot** and **Trace** above it.
+reason unless a Piwi problem says it, and **Run with Piwi** above it; the failure's screenshot and trace are among the
+test's actions.
 
 On a failure, the light bulb lists Piwi's quick fixes, each under Piwi's name. They edit the code; running
 the test, its trace, the context for an agent, its page in the dashboard, the desktop app's jobs and **File an issue**
-are on the failure's node in the [failures view](#the-failures-view), and running it and its trace above the line a
-spec failed at:
+are on the failure's node in the [failures view](#the-failures-view), and running it above the line a spec failed at:
 
 - **heal with …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
   [locator healing](/features/locator-healing) has a recommendation for the failing locator.

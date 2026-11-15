@@ -1584,7 +1584,7 @@ describe('the Piwi language server', () => {
     expect(none).toEqual({ file: null, lines: [] });
   });
 
-  test('marks where and why a test failed, with its evidence above the line', async () => {
+  test('marks where and why a test failed, with its evidence among the test’s actions', async () => {
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
     const evidence = { uri: uri('tests/rows.spec.ts'), executionId: 900 };
     expect(spec.lines).toEqual([
@@ -1625,18 +1625,6 @@ describe('the Piwi language server', () => {
           arguments: [{ uri: uri('tests/rows.spec.ts'), testIds: [3] }],
         },
       },
-      {
-        problem: true,
-        line: 6,
-        title: 'Screenshot',
-        command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
-      },
-      {
-        problem: true,
-        line: 6,
-        title: 'Trace',
-        command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
-      },
     ]);
 
     // The spec's line in the failing call chain shows the failure, with the message and the chain.
@@ -1660,10 +1648,15 @@ describe('the Piwi language server', () => {
     const shot = (await client.sendRequest('piwi/screenshot', evidence)) as ScreenshotResult;
     expect(fs.readFileSync(shot.path, 'utf-8')).toBe('PK-stub');
     expect(await client.sendRequest('piwi/screenshot', { ...evidence, executionId: 1 })).toBeNull();
-    // A failed test's gutter offers its evidence and its context for an agent.
+    // A failed test's gutter offers its evidence, which its failing line leaves out, and its context for an agent.
     expect(spec.lines[0]!.actions!.map((a) => a.title)).toEqual(
-      expect.arrayContaining(['Open in dashboard', 'Copy context for agent']),
+      expect.arrayContaining(['Open the trace', 'Open the screenshot', 'Open in dashboard', 'Copy context for agent']),
     );
+    expect(spec.lines[0]!.actions!.find((a) => a.title === 'Open the trace')!.command).toEqual({
+      title: 'Open the trace',
+      command: 'piwi.openTrace',
+      arguments: [evidence],
+    });
     // A failed test debugs as the dashboard's Debug in my editor does: stopping once at the line it failed through.
     expect(spec.lines[0]!.actions!.find((a) => a.kind === 'debug')!.command.arguments).toEqual([
       {
@@ -2387,8 +2380,6 @@ describe('failures follow the edits', () => {
       [5, 'failing in run #41'],
       [8, '✗ Failed here'],
       [8, 'Run with Piwi'],
-      [8, 'Screenshot'],
-      [8, 'Trace'],
     ]);
     expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { line: 8, state: 'failing' } });
     const hover = (await client.sendRequest('textDocument/hover', {
@@ -4103,8 +4094,6 @@ describe('the severity of a failure', () => {
       expect(problems.lines.filter((l) => l.status === undefined).map((l) => l.title)).toEqual([
         "✗ Failed here · locator('.cart-row').nth(2) was not found",
         'Run with Piwi',
-        'Screenshot',
-        'Trace',
       ]);
       expect(problems.lines.filter((l) => l.status === 'failed')).toHaveLength(1);
       await severityClient.sendNotification('piwi/setCredentials', { codeLens: 'off' });

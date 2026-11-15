@@ -14,7 +14,7 @@ import com.intellij.psi.PsiFile
 /**
  * The lines above a file, a test and a locator (`piwi/fileSummary`): the
  * tests behind each locator line, each test's pass rate, the tests that reach
- * an application file, a failure's reason and evidence. A click runs what the
+ * an application file, a failure's reason and Run with Piwi. A click runs what the
  * entry names.
  *
  * The platform draws one entry per provider on a line, so a line's entries are

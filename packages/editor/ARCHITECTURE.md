@@ -400,7 +400,7 @@ A failure follows the edits made since its run (`placeLine` in `src/analysis.ts`
 lines, as the run reported them, are placed on the files as they stand, saved or not. That covers:
 
 - its diagnostic and `TestFailure.line`;
-- the reason, **Screenshot** and **Trace** lines above it;
+- the reason and **Run with Piwi** lines above it;
 - the hover's call chain;
 - its `piwi/failures` item.
 
@@ -438,7 +438,7 @@ The failures are placed again on the timer that analyzes an edited document, and
 ### File summary and the test at a position
 
 The summary's lines are filtered once for both clients by the person's choice (`EditorCredentials.codeLens`,
-`lensesShown`): every line; with `problems`, a failure's reason and evidence and a file's uncovered changes alone
+`lensesShown`): every line; with `problems`, a failure's reason and Run with Piwi and a file's uncovered changes alone
 (`SummaryLine.problem`); with `off`, none. A test's line, its gutter mark, always stays. A spec's locator line whose only
 test is the one whose call holds it is left out (`locatorLineTellsMore`), and `EditorCredentials.locatorWarnings` false
 leaves out the brittle locators' diagnostics.
@@ -505,7 +505,8 @@ as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server
 
 A failing test's line also carries `failure`: the line of the test that its error's stack goes through. The instance
 sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run with Piwi**
-(`piwi.runTests` with the test's id), **Screenshot** and **Trace** are ordinary summary lines. The hover on any line of
+(`piwi.runTests` with the test's id) are ordinary summary lines; its screenshot and trace are among the test's actions
+(`testActions`). The hover on any line of
 that stack shows the message and the call chain.
 
 A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`):

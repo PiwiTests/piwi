@@ -60,7 +60,7 @@ export interface SummaryLine {
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
   /**
-   * A line about a problem: a failure's reason and evidence above its failing line, a file's uncovered changes. The
+   * A line about a problem: a failure's reason and Run with Piwi above its failing line, a file's uncovered changes. The
    * lines `EditorCredentials.codeLens` `problems` keeps.
    */
   problem?: boolean;
