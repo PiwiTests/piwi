@@ -8,7 +8,7 @@ Each IDE is read from its folder, its `.tar.gz`, or a `.tar.gz` piped to stdin (
     curl -sSL https://download.jetbrains.com/rider/JetBrains.Rider-2026.2.2.tar.gz | \\
       python3 scripts/keymap-chords.py RD-2026.2.2=- WS-263.7307.202=.ide/WebStorm-263.7307.202 IU-2026.2.3=ideaIU.tar.gz
 
-The IDEs named replace those of the same product (the part before the first `-`) in the file; the others are kept.
+An IDE named replaces the one of the same name in the file, and `--drop NAME` removes one; the others are kept.
 Every jar's `keymaps/*.xml` is read, and every `<keyboard-shortcut keymap="…">` of a plugin's descriptors. A keymap
 resolves its actions as the platform does: an action it lists replaces its parent's shortcuts, a plugin's shortcut is
 added to the keymap it names (`replace-all` and `remove` as the platform reads them), and a keymap whose name starts with
@@ -179,12 +179,15 @@ def main():
     if os.path.exists(OUT):
         with open(OUT) as f:
             snapshot = json.load(f)
-    for arg in sys.argv[1:]:
+    args = sys.argv[1:]
+    while '--drop' in args:
+        at = args.index('--drop')
+        snapshot['ides'].pop(args[at + 1], None)
+        del args[at : at + 2]
+    for arg in args:
         name, source = arg.split('=', 1)
         ide = Ide()
         read(ide, source)
-        product = name.split('-')[0]
-        snapshot['ides'] = {k: v for k, v in snapshot['ides'].items() if k.split('-')[0] != product}
         snapshot['ides'][name] = ide.resolve()
         print(f'{name}: {len(ide.keymaps)} keymaps', file=sys.stderr)
     snapshot['ides'] = dict(sorted(snapshot['ides'].items()))
