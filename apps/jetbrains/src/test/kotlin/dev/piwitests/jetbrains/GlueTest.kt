@@ -1006,6 +1006,42 @@ class GlueTest {
     }
 
     @Test
+    fun `the Runs tab lists each run in progress, its workers by lane with their tests, and its page`() {
+        val run = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 4), watchable = true),
+            RunWorker(0, 0, "running", runTest(), watchable = true),
+            RunWorker(2, 2, "between"),
+        ).copy(
+            page = RunPage(124, "https://piwi.test/test-runs/124"),
+            progress = RunProgress(total = 9, done = 4, failed = 1),
+        )
+        val sessions = mapOf(
+            "ed-1" to run,
+            "terminal-1" to session("terminal-1").copy(terminal = true),
+            "ended" to session("ended").copy(ended = true),
+        )
+        val rows = Glue.runRows(sessions)
+        assertEquals(
+            listOf(
+                listOf("run-terminal", "terminal-1"),
+                listOf("run", "Run #124", "4 of 9 · 1 failed"),
+                listOf("worker-watchable", "Worker 1", "checkout › pays"),
+                listOf("worker-stopped", "Worker 2", "checkout › pays · stopped"),
+                listOf("worker-between", "Worker 3", "between tests"),
+                listOf("page", "Open run #124", "on the dashboard"),
+            ),
+            rows.map { r -> if (r.kind == "run-terminal") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
+        )
+        // A stopped worker names its stop and opens its line, a running one its test's, the page the dashboard.
+        assertEquals(4, rows[3].line)
+        assertEquals(Glue.stopsOf(sessions).single().stop.since, rows[3].stop?.stop?.since)
+        assertEquals(2, rows[2].line)
+        assertEquals(1, rows[3].worker?.worker)
+        assertEquals("https://piwi.test/test-runs/124", rows[5].url)
+    }
+
+    @Test
     fun `the workers a Worker tab can watch, and what it says of its slot`() {
         val sessions = mapOf(
             "ed-1" to session(

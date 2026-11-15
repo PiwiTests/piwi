@@ -60,7 +60,10 @@ JetBrains' result icon: its latest runs as a strip, each to its run, how they we
 owner, tags and quarantine, with Run, Open in dashboard and More… (TL21). L1 in part since: a test the instance says
 may be stuck says so on its line (`Stuck? running over 4 min, usually 40 s, in your run #130`), in VS Code's Testing
 view's output and on both status lines (`· 1 stuck?`), never while it stands stopped (LR12); another's run in progress
-names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part).
+names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part); a Runs view in the Piwi panel
+(`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
+workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
+run acting on it (LR7 in part: Hold failures on a run's row and run control as a Tools → Piwi submenu remain).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of

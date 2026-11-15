@@ -37,6 +37,7 @@ import {
   waitsView,
   withLaneLayer,
   ciNodes,
+  runNodes,
   ciPositionFiles,
   ciPositionsIn,
   withCiSession,
@@ -2333,6 +2334,36 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('names who asks and the run', () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
+  });
+});
+
+describe('the Runs view', () => {
+  test('lists each run in progress, its workers by lane with their tests, and its page, each row naming its target', () => {
+    const stopped = worker(1, 'stopped', { stop: stopAt(spec, 4) });
+    const run = {
+      ...session('ed-1', [stopped, worker(0, 'running', { watchable: true }), worker(2, 'between')]),
+      page: { id: 124, url: 'https://piwi.test/test-runs/124' },
+      progress: { total: 9, done: 4, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null },
+    };
+    const terminal = { ...session('terminal-1', []), terminal: true };
+    const [first, second, ...rest] = runNodes(sessionsOf(run, terminal, session('ended', [], true)));
+    expect(rest).toEqual([]);
+    expect(first).toMatchObject({ label: 'Run in shop (terminal-1)', kind: 'run-terminal', ref: 'terminal-1' });
+    expect(second).toMatchObject({ label: 'Run #124', description: '4 of 9 · 1 failed', kind: 'run', ref: 'ed-1' });
+    expect(second!.children.map((n) => [n.label, n.description, n.kind, n.worker, n.since])).toEqual([
+      ['Worker 1', 'checkout › pays', 'worker-watchable', 0, undefined],
+      ['Worker 2', 'checkout › pays · stopped', 'worker-stopped', 1, stopAt(spec, 4).since],
+      ['Worker 3', 'between tests', 'worker-between', 2, undefined],
+      ['Open run #124', 'on the dashboard', 'page', undefined, undefined],
+    ]);
+    // A stopped worker opens its stop, a running one its test, the page the dashboard.
+    expect(second!.children.map((n) => n.open)).toEqual([
+      { uri: spec, line: 2, character: 0 },
+      { uri: spec, line: 4, character: 0 },
+      null,
+      { url: 'https://piwi.test/test-runs/124' },
+    ]);
+    expect(runTargetArg(second!.children[1])).toEqual({ ref: 'ed-1', worker: 1, since: stopAt(spec, 4).since });
   });
 });
 

@@ -203,7 +203,7 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
   panel (**Piwi: worker N**); `src/ci-view.ts`: the CI runs of the branch, read-only (the **CI Runs** view, the CI
-  positions); `src/run-control.ts`: their pure half.
+  positions); `src/runs-view.ts`: the **Runs** view of the runs in progress; `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

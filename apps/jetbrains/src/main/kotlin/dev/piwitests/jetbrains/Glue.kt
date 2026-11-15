@@ -2606,6 +2606,81 @@ object Glue {
         }
     }
 
+    /**
+     * A row of the Runs tab, as VS Code's Runs view has it (`runNodes`): a run in progress (`run`, `run-terminal` for one
+     * started in a terminal, which the terminal stops), one of its workers (`worker-running`, `worker-watchable`,
+     * `worker-stopped`, `worker-between`) with its watch target and stop, or its page (`page`). A row opens its stop's
+     * line, its test's, or the page.
+     */
+    data class RunRow(
+        val key: String,
+        val kind: String,
+        val text: String,
+        val detail: String,
+        val ref: String,
+        val worker: WatchTarget? = null,
+        val stop: ShownStop? = null,
+        val uri: String? = null,
+        val line: Int = 0,
+        val url: String? = null,
+    )
+
+    /**
+     * The Runs tab: each run in progress, newest first, named as the status bar names it with how far it is, then each
+     * of its workers by its lane with its test and whether it stands stopped, and its page on the dashboard once its
+     * process names it, as VS Code's `runNodes`.
+     */
+    fun runRows(sessions: Map<String, RunSession>): List<RunRow> {
+        val live = sessions.values.filter { !it.ended }
+        val stops = stopsOf(sessions)
+        return live.reversed().flatMap { session ->
+            val ref = session.ref ?: ""
+            val progress = session.progress
+            val howFar = when {
+                session.starting -> "starting"
+                progress != null -> countWords(progress.done, progress.total, progress.failed, progress.flaky, progress.endedAtStop ?: 0)
+                else -> ""
+            }
+            val run = RunRow(
+                key = ref,
+                kind = if (session.terminal) "run-terminal" else "run",
+                text = runLabel(session, live),
+                detail = listOf(howFar, session.label.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
+                ref = ref,
+            )
+            val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }
+                val kind = when {
+                    w.state == "stopped" -> "worker-stopped"
+                    w.state == "between" || test == null -> "worker-between"
+                    w.watchable -> "worker-watchable"
+                    else -> "worker-running"
+                }
+                val stop = stops.firstOrNull { it.ref == ref && it.worker == w.worker }
+                RunRow(
+                    key = "$ref\n${w.parallelIndex}",
+                    kind = kind,
+                    text = workerName(w.parallelIndex),
+                    detail = when {
+                        test == null -> "between tests"
+                        w.state == "stopped" -> "$test · stopped"
+                        w.pausing -> "$test · pausing"
+                        else -> test
+                    },
+                    ref = ref,
+                    worker = WatchTarget(ref, w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · ${test ?: "between tests"}"),
+                    stop = stop,
+                    uri = w.stop?.uri ?: w.test?.uri,
+                    line = w.stop?.line ?: w.test?.line ?: 0,
+                )
+            }
+            val page = session.page?.let {
+                listOf(RunRow("$ref\npage", "page", "Open run #${it.id}", "on the dashboard", ref, url = it.url))
+            }.orEmpty()
+            listOf(run) + workers + page
+        }
+    }
+
     /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
     private fun listed(names: List<String>): String =
         if (names.size < 2) names.firstOrNull().orEmpty() else "${names.dropLast(1).joinToString(", ")} and ${names.last()}"
