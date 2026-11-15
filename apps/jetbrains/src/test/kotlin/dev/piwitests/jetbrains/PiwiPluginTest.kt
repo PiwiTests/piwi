@@ -779,6 +779,83 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(PiwiTestResultsGutter.shown())
     }
 
+    /**
+     * A spec's tests drawn in the gutter from the service's answer, as the golden fixture of `packages/editor/tests/golden/`
+     * holds them: each test's line, its result's icon and its tooltip, the words VS Code's `tests/golden.test.ts` holds
+     * its test decorations to. A line with no result draws no icon.
+     */
+    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/test-lines.json").readText(),
+        ).asJsonObject
+        val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
+        val spec = golden.getAsJsonObject("spec")
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val e2e = File(base, "golden").apply { mkdirs() }
+        val asked = mutableListOf<String>()
+        service.summaryOf = { uri ->
+            asked += uri
+            CompletableFuture.completedFuture(summary)
+        }
+        try {
+            File(e2e, "playwright.config.ts").writeText("export default {};\n")
+            val file = File(e2e, spec.get("file").asString).apply { parentFile.mkdirs() }
+            file.writeText(spec.get("text").asString)
+            service.searchPlaywright()
+            val virtual = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)!!
+            myFixture.configureFromExistingVirtualFile(virtual)
+            val document = myFixture.editor.document
+            // The annotator's three steps, as the highlighting's external tool pass runs them, into the platform's holder:
+            // the 2024.1 test platform's `AnnotationHolderImpl`, whose call a newer platform takes without the annotator.
+            val psiFile = com.intellij.openapi.application.runReadAction { com.intellij.psi.PsiManager.getInstance(project).findFile(virtual)!! }
+            val annotator = PiwiTestAnnotator()
+            val lines = annotator.doAnnotate(annotator.collectInformation(psiFile, myFixture.editor, false))
+            val holder = com.intellij.codeInsight.daemon.impl.AnnotationHolderImpl(com.intellij.lang.annotation.AnnotationSession(psiFile), false)
+            com.intellij.openapi.application.runReadAction { holder.applyExternalAnnotatorWithContext(psiFile, annotator, lines) }
+            // The tooltip as the IDE shows it: a tag nobody escaped gone, then an escaped character as itself.
+            val shown = { html: String ->
+                html.removeSurrounding("<html>", "</html>").replace(Regex("<[^>]*>"), "")
+                    .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            }
+            val drawn = holder
+                .mapNotNull { annotation ->
+                    val gutter = annotation.gutterIconRenderer as? PiwiTestAnnotator.TestResultGutter ?: return@mapNotNull null
+                    Triple(document.getLineNumber(annotation.startOffset), gutter.icon, shown(gutter.tooltipText))
+                }
+                .sortedBy { it.first }
+            val marks = golden.getAsJsonArray("marks").map { it.asJsonArray }
+            assertEquals(marks.map { listOf(it[0].asInt, it[2].asString) }, drawn.map { listOf(it.first, it.third) })
+            // Each result's own icon, the concept table's.
+            val icons = mapOf(
+                "failed" to PiwiIcons.FAILED,
+                "flaky" to PiwiIcons.FLAKY,
+                "running" to PiwiIcons.RUNNING,
+                "paused" to PiwiIcons.PAUSED,
+                "passed" to AllIcons.RunConfigurations.TestPassed,
+            )
+            for ((mark, at) in marks.zip(drawn)) assertSame(mark[1].asString, icons.getValue(mark[1].asString), at.second)
+            // The failing test's background around the line it failed at, and that line's own.
+            val linesOf = { key: com.intellij.openapi.editor.colors.TextAttributesKey ->
+                holder.filter { it.textAttributes == key }
+                    .flatMap { (document.getLineNumber(it.startOffset)..document.getLineNumber(it.endOffset - 1)).toList() }
+                    .sorted()
+            }
+            val failing = golden.getAsJsonObject("failing")
+            val test = failing.getAsJsonArray("test").map { it.asInt }
+            val failedAt = failing.get("line").asInt
+            assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
+            assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            assertEquals(listOf(virtual.toNioPath().toUri().toString()), asked.distinct())
+            service.showsTests(virtual, false)
+        } finally {
+            service.summaryOf = null
+            FileUtil.delete(e2e)
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshIoFiles(listOf(e2e))
+            service.searchPlaywright()
+        }
+    }
+
     /** New offers a recorded Playwright test on a folder of a Playwright config, and on no other folder. */
     fun testNewOffersARecordedTestOnAPlaywrightConfigsFoldersAlone() {
         val actions = ActionManager.getInstance()

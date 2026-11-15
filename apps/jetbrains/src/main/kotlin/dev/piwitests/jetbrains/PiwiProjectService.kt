@@ -1094,11 +1094,21 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * changed, or after [SUMMARY_TTL_MILLIS]. Null while the service does not run, and for a file that is not on disk.
      */
     fun fileSummary(file: VirtualFile, stamp: Long): CompletableFuture<FileSummary?>? {
-        val server = server() ?: return null
+        val ask = summaryOf ?: server()?.let { server -> { uri: String -> server.fileSummary(UriParams(uri)) } } ?: return null
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
         // Read before the request: a change pushed while it is sent makes the next pass ask again.
-        return summaries.get(uri, stamp, pushed.get(), System.currentTimeMillis()) { server.fileSummary(UriParams(uri)) }
+        return summaries.get(uri, stamp, pushed.get(), System.currentTimeMillis()) { ask(uri) }
     }
+
+    /**
+     * What answers `piwi/fileSummary` for a file's URI in the service's place, as `PiwiPluginTest` does; null asks the
+     * service. The summaries kept from the one before go as it changes.
+     */
+    @Volatile internal var summaryOf: ((String) -> CompletableFuture<FileSummary?>)? = null
+        set(value) {
+            field = value
+            summaries.clear()
+        }
 
     /**
      * Once per project, when the first-run queue gives it the turn: when the desktop app runs while another instance is
