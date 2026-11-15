@@ -17,7 +17,6 @@ import {
   type LaneEvent,
   type LaneId,
 } from '@piwitests/core/live-lane';
-import { resolveExpectedStatus } from '@piwitests/core/status-classify';
 
 export type { Lane } from '@piwitests/core/live-lane';
 
@@ -67,8 +66,8 @@ function laneEventOf(event: PublishedEvent, lane: Lane): LaneEvent | null {
         worker: count(data.workerIndex),
         test: laneTestId(data),
         retry: count(data.retries),
+        // Already read against the status the test was expected to end with, as the run stores it.
         status: typeof data.status === 'string' ? data.status : 'passed',
-        expected: resolveExpectedStatus(data.expectedStatus, data.testAnnotations),
       };
     case 'test-stopped': {
       const stop = data.stop as { reason?: unknown; title?: unknown; since?: unknown } | null | undefined;
