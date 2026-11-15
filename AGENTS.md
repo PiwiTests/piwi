@@ -88,8 +88,8 @@ configuration: the SQLite database and `.data/` are created when the server star
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).
 
 **Run checks once, at the end**: typecheck, lint, format check and the tests covering your change, before the final
-commit. Never after each edit or fix, never to reproduce a failure first or repeat a run, never a whole unit or
-end-to-end suite: they take long, and CI runs them.
+commit, then again only what a fix of theirs touched. Never after each edit, never a whole unit or end-to-end suite:
+they take long, and CI runs them.
 
 ## Conventions that apply everywhere
 
