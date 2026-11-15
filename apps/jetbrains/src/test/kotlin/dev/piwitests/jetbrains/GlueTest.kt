@@ -3632,6 +3632,13 @@ class GlueTest {
         assertEquals(Glue.Redraw.NONE, Glue.redraw(null, null))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(latest, testing))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(testing, ended))
+        // A test of a run the IDE follows, as its worker tells it, draws the tests' lines again too.
+        val mug = RunLineTest("file:///w/tests/cart.spec.ts", listOf("adds a mug"), "paused")
+        val paused = ended.copy(contexts = ended.contexts!!.map { it.copy(runTests = listOf(mug)) })
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(ended, paused))
+        // Its spec is drawn again, though no test of it showed a result before.
+        assertEquals(setOf(java.nio.file.Path.of(java.net.URI(mug.uri))), Glue.runTestFiles(paused))
+        assertEquals(emptySet<java.nio.file.Path>(), Glue.runTestFiles(ended))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
         // Another baseline is another run in the files.

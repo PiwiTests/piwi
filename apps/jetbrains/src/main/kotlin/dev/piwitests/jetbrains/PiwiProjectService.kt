@@ -1022,19 +1022,25 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             testsDrawnAt = System.currentTimeMillis()
         }
+        // A spec whose tests showed no result yet shows those its runs tell of (`runTests`), and one they leave clears.
+        val named = Glue.runTestFiles(drawn) + Glue.runTestFiles(shown)
         drawn = shown
-        drawAgain(redraw)
+        drawAgain(redraw, named)
     }
 
     /**
-     * Draw the open files Piwi reads again, or only those whose tests show a result: their gutter, their backgrounds and
-     * Code Vision. Other files, and other languages, keep their highlighting.
+     * Draw the open files Piwi reads again, or only those whose tests show a result and those `named`: their gutter,
+     * their backgrounds and Code Vision. Other files, and other languages, keep their highlighting.
      */
-    private fun drawAgain(kind: Glue.Redraw) {
+    private fun drawAgain(kind: Glue.Redraw, named: Set<java.nio.file.Path> = emptySet()) {
         if (kind == Glue.Redraw.NONE) return
         val open = FileEditorManager.getInstance(project).openFiles.filter { PiwiLspServerSupportProvider.isSupported(it) }
         filesWithTests.retainAll(open.mapTo(HashSet()) { it.url })
-        val files = if (kind == Glue.Redraw.ALL) open else open.filter { it.url in filesWithTests }
+        val files = if (kind == Glue.Redraw.ALL) {
+            open
+        } else {
+            open.filter { it.url in filesWithTests || runCatching { it.toNioPath() }.getOrNull() in named }
+        }
         if (files.isEmpty()) return
         val analyzer = DaemonCodeAnalyzer.getInstance(project)
         ApplicationManager.getApplication().runReadAction {

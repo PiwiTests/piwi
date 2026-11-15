@@ -552,7 +552,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // Each test's latest result on the test: a gutter icon with a hover (a dashed ring for a test with no recent result),
   // and a background while it fails, stronger on the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
-    (['failed', 'flaky', 'passed', 'skipped', 'running', 'unknown'] as const).map((status) => [
+    (['failed', 'flaky', 'passed', 'skipped', 'running', 'paused', 'unknown'] as const).map((status) => [
       status,
       vscode.window.createTextEditorDecorationType({
         gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
