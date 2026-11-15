@@ -2107,6 +2107,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /** Turn the Hold failures of the run `ref` over, a Runs tab row's; nothing for a run that holds none. */
+    fun holdFailures(ref: String) {
+        sessions[ref]?.hold?.let { holdRun(ref, !it.on) }
+    }
+
     private fun holdRun(ref: String, on: Boolean) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.holdRun(HoldRunParams(ref, on))
@@ -2529,7 +2534,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** The stop a popup's actions act on, which the registered controls and code actions read before the caret. */
         val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
 
-        /** The run a control acts on, the Run tab's: its stops alone; the run Stop the run ends, the Runs tab's row's. */
+        /**
+         * The run an action acts on, the Run tab's or a Runs tab row's: a control at its stops alone, Hold failures on it
+         * alone, and the run Stop the run ends (a Runs tab row's).
+         */
         val RUN: DataKey<String> = DataKey.create("piwi.run")
 
         /** The worker Watch and Pause and watch act on, a Runs tab's row's, rather than one chosen. */
@@ -3946,12 +3954,24 @@ class HoldFailuresAction : RunControlAction() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
-        val controls = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
+        val sessions = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)
+        // An entry about one run (the Run tab's, a Runs tab row's) acts on that run alone, and only while it can hold.
+        val ref = e.getData(PiwiRunSessions.RUN)
+        if (ref != null) {
+            val hold = sessions?.sessions?.get(ref)?.hold
+            e.presentation.isVisible = hold != null
+            e.presentation.isEnabled = e.presentation.isEnabled && hold != null
+            e.presentation.text = Glue.holdActionText(hold?.on)
+            return
+        }
+        val controls = sessions?.controls()
         e.presentation.text = Glue.holdActionText(controls ?: Glue.RunControls(active = false, pausable = false, pausing = false, stopped = false))
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        sessions(e)?.holdFailures()
+        val sessions = sessions(e) ?: return
+        e.getData(PiwiRunSessions.RUN)?.let { return sessions.holdFailures(it) }
+        sessions.holdFailures()
     }
 }
 

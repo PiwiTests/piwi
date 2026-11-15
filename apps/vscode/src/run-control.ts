@@ -10,6 +10,7 @@
  * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
  * nodes, the CI positions marked at a line, and what the worker panel says of a CI run's lane it watches.
  */
+import type { TestOutcome } from './glue';
 import type {
   CiSession,
   CiTest,
@@ -586,6 +587,29 @@ export interface SessionLine {
   test: { uri: string; line: number } | null;
   /** Where the stop it tells of stands; null for any other line. */
   at: { uri: string; line: number } | null;
+}
+
+/**
+ * An attempt's result as the Testing view shows it from the run's own events (`piwi/runTest`'s `test-end`): passed,
+ * skipped, or failed at its test's line (a timeout too); null for an attempt that did not end on its own (`interrupted`,
+ * a worker that left), which leaves the result to the run's end.
+ */
+export function attemptOutcome(status: string | undefined, test: RunTest): TestOutcome | null {
+  if (status === 'passed') return { state: 'passed' };
+  if (status === 'skipped') return { state: 'skipped' };
+  if (status === 'failed' || status === 'timedOut') {
+    const how = status === 'timedOut' ? 'Timed out' : 'Failed';
+    const attempt = test.retry ? ` (attempt ${test.retry + 1})` : '';
+    return { state: 'failed', message: `${how} in this run${attempt}.`, line: test.line };
+  }
+  return null;
+}
+
+/** A test's result from its projects' last attempts: failed when one failed, else passed when one passed, else skipped. */
+export function combinedOutcome(outcomes: readonly TestOutcome[]): TestOutcome {
+  return (
+    outcomes.find((o) => o.state === 'failed') ?? outcomes.find((o) => o.state === 'passed') ?? { state: 'skipped' }
+  );
 }
 
 /**
@@ -2498,6 +2522,8 @@ export interface RunNode {
   ref: string;
   worker?: number;
   since?: string;
+  /** A run's **Hold failures**, on or off; absent for a run nobody attends and for any other row. */
+  hold?: boolean;
   /** What a click opens: a place in a file, or a page on the dashboard; null for nothing. */
   open: { uri: string; line: number; character: number } | { url: string } | null;
   children: RunNode[];
@@ -2585,11 +2611,19 @@ export function runNodes(sessions: Sessions): RunNode[] {
     return {
       key,
       label: runLabel(session, live),
-      description: [howFar, session.label ?? ''].filter(Boolean).join(' · '),
+      // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+      description: [
+        howFar,
+        session.label ?? '',
+        session.hold?.on ? editorWords('hold.run.on', { by: '' }).split(':')[0]! : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
       tooltip: [title, howFar, session.hold ? holdText(session.hold) : ''].filter(Boolean).join('\n\n'),
       icon: 'loading~spin',
       kind: session.terminal || session.checkout ? 'run-elsewhere' : 'run',
       ref: session.ref,
+      ...(session.hold ? { hold: session.hold.on } : {}),
       open: null,
       children: [...workers, ...page],
     };

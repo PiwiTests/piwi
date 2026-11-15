@@ -32,7 +32,7 @@ While a run is in progress, VS Code's **Runs** view and the JetBrains **Runs** t
 each worker by its lane with its test and whether it stands stopped, and the run's page on the dashboard. A row opens
 the stopped line or the test, and its buttons (VS Code) or its right-click (JetBrains) offer **Watch**, **Pause and
 watch** on a test that can pause, **Resume**, **Step** except at a failure, and, for a run the editor started, **Stop
-the run**.
+the run**. A run that can hold its failures says when it does (`Hold failures on`) and turns it over from its row.
 
 ## A CI run of your branch
 

@@ -37,6 +37,8 @@ import {
   waitsView,
   withLaneLayer,
   ciNodes,
+  attemptOutcome,
+  combinedOutcome,
   runNodes,
   ciPositionFiles,
   ciPositionsIn,
@@ -2335,6 +2337,24 @@ describe("this window's runs shared live, and a teammate's ask", () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
   });
+
+  test('each attempt’s result from the run’s own events, a failure at its test’s line; none for one cut short', () => {
+    expect(attemptOutcome('passed', runTest())).toEqual({ state: 'passed' });
+    expect(attemptOutcome('skipped', runTest())).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('failed', runTest())).toEqual({ state: 'failed', message: 'Failed in this run.', line: 2 });
+    expect(attemptOutcome('timedOut', runTest(1))).toEqual({
+      state: 'failed',
+      message: 'Timed out in this run (attempt 2).',
+      line: 2,
+    });
+    expect(attemptOutcome('interrupted', runTest())).toBeNull();
+    // A test run in several projects fails when one of them failed it.
+    const failed = attemptOutcome('failed', runTest())!;
+    expect(combinedOutcome([failed, { state: 'passed' }])).toBe(failed);
+    expect(combinedOutcome([{ state: 'skipped' }, { state: 'passed' }])).toEqual({ state: 'passed' });
+    expect(combinedOutcome([{ state: 'skipped' }])).toEqual({ state: 'skipped' });
+    expect(attemptOutcome(undefined, runTest())).toBeNull();
+  });
 });
 
 describe('the Runs view', () => {
@@ -2345,10 +2365,16 @@ describe('the Runs view', () => {
       page: { id: 124, url: 'https://piwi.test/test-runs/124' },
       progress: { total: 9, done: 4, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null },
     };
-    const terminal = { ...session('terminal-1', []), terminal: true };
+    const terminal = { ...session('terminal-1', []), terminal: true, hold: { on: true, by: 'start' as const } };
     const [first, second, ...rest] = runNodes(sessionsOf(run, terminal, session('ended', [], true)));
     expect(rest).toEqual([]);
-    expect(first).toMatchObject({ label: 'Run in shop (terminal-1)', kind: 'run-elsewhere', ref: 'terminal-1' });
+    expect(first).toMatchObject({
+      label: 'Run in shop (terminal-1)',
+      description: 'Hold failures on',
+      kind: 'run-elsewhere',
+      ref: 'terminal-1',
+      hold: true,
+    });
     expect(second).toMatchObject({ label: 'Run #124', description: '4 of 9 · 1 failed', kind: 'run', ref: 'ed-1' });
     expect(second!.children.map((n) => [n.label, n.description, n.kind, n.worker, n.since])).toEqual([
       ['Worker 1', 'checkout › pays', 'worker-watchable', 0, undefined],

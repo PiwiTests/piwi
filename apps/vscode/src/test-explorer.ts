@@ -18,12 +18,14 @@ import {
   type RunCommand,
   type RunEnded,
   type RunSession,
+  type RunTest,
+  type RunTestEvent,
   type RunStatusResult,
   type RunTestsArgs,
   type TestItemsParams,
   type TestItemsResult,
 } from '@piwitests/editor/protocol';
-import { sessionLines, testsBegun } from './run-control';
+import { attemptOutcome, combinedOutcome, sessionLines, testsBegun } from './run-control';
 import {
   SPEC_FILE,
   VERIFY_REPEAT,
@@ -83,6 +85,8 @@ interface ProfileRun {
   /** The tests it runs, and the result each was last shown with. */
   tests: Map<vscode.TestItem, TreeTest>;
   shown: Set<vscode.TestItem>;
+  /** Each test's last attempt in each Playwright project, as its workers ended them (`piwi/runTest`). */
+  attempts: Map<vscode.TestItem, Map<string, TestOutcome>>;
   parts: ProfilePart[];
   /** While its commands are being started: it does not end before the last one started. */
   starting: boolean;
@@ -129,6 +133,8 @@ export class TestExplorer implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   /** The service's last answer, which a spec's own answer replaces in place. */
   private answer: TestItemsResult = { contexts: [] };
+  /** The test each worker of a run began last, by ref and worker, which its `test-end` ends. */
+  private readonly begun = new Map<string, RunTest>();
   /** Each test's item and what the service says of it, and the items of each test the catalog knows, by its id. */
   private readonly testOf = new Map<vscode.TestItem, TreeTest>();
   private byCase = new Map<number, vscode.TestItem[]>();
@@ -482,7 +488,10 @@ export class TestExplorer implements vscode.Disposable {
     const profile = [...this.profiles].find((p) => p.run === run);
     for (const begun of profile ? testsBegun(before, session) : []) {
       const item = this.itemAt(begun.uri, begun.line);
-      if (item && profile!.tests.has(item) && !profile!.shown.has(item)) run.started(item);
+      // A test shown from its workers' events runs again on a retry, or in another project.
+      if (item && profile!.tests.has(item) && (!profile!.shown.has(item) || profile!.attempts.has(item))) {
+        run.started(item);
+      }
     }
     for (const line of sessionLines(before, session)) {
       const at = line.at
@@ -492,9 +501,36 @@ export class TestExplorer implements vscode.Disposable {
     }
   }
 
+  /**
+   * A worker of a run began or ended a test (`piwi/runTest`): a profile run shows each attempt's result as it ends, from
+   * the run's own events, whether an instance follows the run or not (`attemptOutcome`). A test the run of an instance
+   * shows later takes that result instead.
+   */
+  testEvent(event: RunTestEvent): void {
+    if (this.disposed) return;
+    const key = `${event.ref}\n${event.worker}`;
+    if (event.type === 'test-begin') {
+      if (event.test) this.begun.set(key, event.test);
+      return;
+    }
+    const test = event.test ?? this.begun.get(key);
+    this.begun.delete(key);
+    const profile = [...this.profiles].find((p) => p.parts.some((part) => part.ref === event.ref));
+    if (!test || !profile) return;
+    const item = this.itemAt(test.uri, test.line);
+    const outcome = attemptOutcome(event.status, test);
+    if (!item || !outcome || !profile.tests.has(item)) return;
+    // Each project's last attempt counts: the test fails when one of them failed (`combinedOutcome`).
+    const projects = profile.attempts.get(item) ?? profile.attempts.set(item, new Map()).get(item)!;
+    projects.set(test.project, outcome);
+    this.show(profile.run, item, combinedOutcome([...projects.values()]));
+    profile.shown.add(item);
+  }
+
   /** The service stopped: its runs' sessions ended with it, and a rerun of a ref starts anew. */
   sessionsCleared(): void {
     this.sessions.clear();
+    this.begun.clear();
   }
 
   /** The test run that follows the run of `ref`: a profile run's command, else a run in progress followed. */
@@ -668,6 +704,7 @@ export class TestExplorer implements vscode.Disposable {
       run,
       tests: picked,
       shown: new Set(),
+      attempts: new Map(),
       parts: [],
       starting: true,
       coverage,

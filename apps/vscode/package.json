@@ -1387,8 +1387,13 @@
         },
         {
           "command": "piwi.stopRun",
-          "when": "view == piwi.liveRuns && viewItem == run",
+          "when": "view == piwi.liveRuns && viewItem =~ /^run( hold)?$/",
           "group": "inline@1"
+        },
+        {
+          "command": "piwi.holdFailures",
+          "when": "view == piwi.liveRuns && viewItem =~ /^run(-elsewhere)? hold$/",
+          "group": "inline@2"
         }
       ],
       "piwi.editorContext": [
