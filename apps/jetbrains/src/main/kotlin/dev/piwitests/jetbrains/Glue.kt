@@ -901,12 +901,12 @@ object Glue {
 
     /** The specs the tests of the runs the IDE follows stand in (`runTests`), which a tests' redraw draws too. */
     fun runTestFiles(runs: RunStatusResult?): Set<java.nio.file.Path> =
-        runs?.contexts.orEmpty().flatMap { it.runTests.orEmpty() }
+        (runs?.contexts.orEmpty().flatMap { it.runTests.orEmpty() } + runs?.runTests.orEmpty().flatMap { it.tests })
             .mapNotNull { runCatching { java.nio.file.Path.of(java.net.URI(it.uri)) }.getOrNull() }
             .toSet()
 
     private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
-        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null, runTests = null) })
+        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null, runTests = null) }, runTests = null)
 
     /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {

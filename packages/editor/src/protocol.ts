@@ -1015,6 +1015,11 @@ export type StatusBarAlert = 'new' | 'any' | 'never';
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
 export interface RunStatusResult {
   contexts: RunStatus[];
+  /**
+   * For each config no instance reads, which `contexts` leaves out, the tests of the runs the editor follows that its
+   * lines show (as `RunStatus.runTests`); absent while none has any.
+   */
+  runTests?: Array<{ root: string; tests: RunLineTest[] }>;
 }
 
 export const RUN_STATUS_REQUEST = 'piwi/runStatus';

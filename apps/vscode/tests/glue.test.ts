@@ -656,6 +656,15 @@ describe('statusBarView', () => {
         ],
       }),
     ).toBe('tests');
+    // And a test of a run in a config no instance reads, which the contexts leave out.
+    expect(
+      filesRedraw(testing, {
+        ...testing,
+        runTests: [
+          { root: '/w2', tests: [{ uri: 'file:///w2/tests/cart.spec.ts', title: ['adds a mug'], status: 'running' }] },
+        ],
+      }),
+    ).toBe('tests');
     expect(filesRedraw(null, latest)).toBe('all');
     expect(filesRedraw(null, null)).toBe('none');
     // The failures view's first node follows the editor's own run alone.

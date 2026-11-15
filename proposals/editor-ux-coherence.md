@@ -68,7 +68,7 @@ submenu remains); a run the Testing view started shows each test's result as its
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
 failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
-newer latest run (LR9 in part: the test lines of a config with no instance at all remain). L6 in part since: golden
+newer latest run, a config no instance reads included (LR9 built, its finding removed). L6 in part since: golden
 fixtures both editors read (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, and a spec's test
 marks and lens rows), held to the same words by VS Code's `tests/golden.test.ts` and `GlueTest`, the marks and rows
 drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Code Vision providers on the 2024.1 test
@@ -517,16 +517,6 @@ beside Failures or in the Run and Debug container is decided: the Piwi panel (§
 
 ### 8.5 What the study's model brings
 
-<a id="lr9"></a>**LR9. The Testing view and the test lines take the developer's own run from the instance, so a run
-that reports to none shows no test running, and no line shows where a running test is.** The service sets a test's
-live state from the instance's run stream (`packages/editor/src/run-watch.ts:622-668`), which the test lines
-(`packages/editor/src/server.ts:3060-3061`) and the Testing view (`apps/vscode/src/test-explorer.ts:383-410`) read; the
-workers' own reports reach the Testing view only as output lines, once a test run follows the instance's run
-(`test-explorer.ts:418-432`). No line marks the call a running test of the developer's own is at, where a CI run's
-positions are marked (`apps/vscode/src/ci-view.ts:90-106`). **(read)** This is live-runs E3 (E2 for the running line),
-of the study's P4. Fix: the Testing view and the test's line from the run's own events, a spinner while it runs and the
-pause or failed glyph while it waits, and the running line marked. ([L1](#l1))
-
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
 run reads `Piwi: run #131 · 4 of 9` in both status bars and `running in run #131` beside a test's result. **(read)**
@@ -916,7 +906,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [NF10](#nf10) |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide` | [LR7](#lr7), [LR10](#lr10), [NF10](#nf10) |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
 | <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |

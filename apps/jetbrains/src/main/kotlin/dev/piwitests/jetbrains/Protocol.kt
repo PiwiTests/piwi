@@ -433,7 +433,14 @@ data class Baseline(val choice: BaselineChoice? = null, val label: String? = nul
 /** `piwi/setBaseline`: the baseline chosen for the context at `root`, read at once. */
 data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 
-data class RunStatusResult(val contexts: List<RunStatus>? = null)
+/**
+ * The runs each context reads (`contexts`), and for each config no instance reads, which `contexts` leaves out, the tests
+ * of the runs the IDE follows that its lines show (`runTests`).
+ */
+data class RunStatusResult(val contexts: List<RunStatus>? = null, val runTests: List<UnreadRunTests>? = null)
+
+/** A config no instance reads, by its folder, and the tests of its runs the IDE follows that its lines show. */
+data class UnreadRunTests(val root: String = "", val tests: List<RunLineTest> = emptyList())
 
 /**
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,

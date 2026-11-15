@@ -579,8 +579,9 @@ another run of its config begins or the context reads a newer latest run (`forge
 a result in place of a failure the instance read drops that failure from the line. A test the catalog does not know
 gets a line of that state alone. `piwi/runStatus` gives these tests in `runTests`, at most every 300 ms, which the
 clients compare as they compare `liveTests`; the JetBrains plugin draws again the specs they name, whether or not
-their tests showed a result before. A config without an instance
-has no test lines (`piwi/fileSummary` answers none).
+their tests showed a result before. A config no instance reads gets its specs' test lines from these states alone
+(`ownRunSummary`), and `piwi/runStatus` names its tests in the result's own `runTests`, by config folder, as its
+`contexts` leave it out.
 
 The stream's `test-stuck` (once per attempt, `elapsedMs` and `usualMs`), `test-stopped` and `test-resumed` name an
 attempt as its `test-begin` did (`attemptKey`: title, place, browser, repetition). A running attempt the instance said
