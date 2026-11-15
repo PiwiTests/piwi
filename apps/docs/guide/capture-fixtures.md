@@ -92,7 +92,7 @@ Semantics worth knowing:
 
 - **`beforeAll` / `afterAll` activity is not captured**: only a test's own activity is attributed to it.
 - **Multi-page tests** attribute Web Vitals, the failure ARIA snapshot and screenshot to the most recently active page.
-- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run.
+- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run. A later test of the same worker that runs the same line with the same locator on the same page (address without its query) takes the element the first one read, so a step whose element changes from test to test on one page keeps the first until the next run.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 
 ## Composing with your own fixtures

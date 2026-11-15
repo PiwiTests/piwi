@@ -12,6 +12,7 @@ import {
   configuredCodeReachRoots,
   errorPlace,
   failureError,
+  forgetWorkerSnapshots,
   runningCall,
   runnerTraceSnapshots,
   runnerTraces,
@@ -284,7 +285,7 @@ describe('per-call-site capture dedupe', () => {
       page: { getByTestId: (id: string) => { click: () => Promise<void> } },
       emit: (event: string, arg?: unknown) => void,
     ) => Promise<void>,
-    infoOverrides: { status?: string; file?: string; title?: string } = {},
+    infoOverrides: { status?: string; file?: string; title?: string; pageUrl?: string } = {},
     click: (emit: (event: string, arg?: unknown) => void) => Promise<void> = async () => {},
   ) {
     let ariaSnapshots = 0;
@@ -314,6 +315,7 @@ describe('per-call-site capture dedupe', () => {
         listeners.set(event, existing);
       },
       evaluate: async () => null,
+      ...(infoOverrides.pageUrl ? { url: () => infoOverrides.pageUrl } : {}),
     };
     const emit = (event: string, arg?: unknown) => (listeners.get(event) ?? []).forEach((handler) => handler(arg));
 
@@ -360,6 +362,52 @@ describe('per-call-site capture dedupe', () => {
     expect(probes).toBe(1);
     expect(attached).toHaveLength(1);
     expect(attached[0]!.element?.accessibleName).toBe('Save');
+  });
+
+  it('takes the element an earlier test of the worker read at the same step and page', async () => {
+    forgetWorkerSnapshots();
+    let probes = 0;
+    const probe = async () => {
+      probes++;
+      return savedButton;
+    };
+    // One step every test runs, as a page object's method is.
+    const save = (page: { getByTestId: (id: string) => { click: () => Promise<void> } }) =>
+      page.getByTestId('save').click();
+
+    const first = await runCapture(probe, save, { pageUrl: 'https://app.test/orders?page=1' });
+    const second = await runCapture(probe, save, { pageUrl: 'https://app.test/orders?page=2#top' });
+    expect(probes).toBe(1);
+    expect(second.attached).toHaveLength(1);
+    expect(second.attached[0]!.element).toEqual(first.attached[0]!.element);
+    expect(second.attached[0]!.alternatives).toEqual(first.attached[0]!.alternatives);
+
+    // Another page, or the same step with another locator, reads its element.
+    await runCapture(probe, save, { pageUrl: 'https://app.test/settings' });
+    expect(probes).toBe(2);
+    await runCapture(probe, (page) => page.getByTestId('cancel').click(), { pageUrl: 'https://app.test/orders' });
+    expect(probes).toBe(3);
+    forgetWorkerSnapshots();
+  });
+
+  it('keeps a known element off a step whose action failed', async () => {
+    forgetWorkerSnapshots();
+    const save = (page: { getByTestId: (id: string) => { click: () => Promise<void> } }) =>
+      page.getByTestId('save').click();
+    await runCapture(async () => savedButton, save, { pageUrl: 'https://app.test/orders' });
+    const failing = await runCapture(
+      async () => savedButton,
+      async (page) => {
+        await save(page).catch(() => {});
+      },
+      { pageUrl: 'https://app.test/orders' },
+      async () => {
+        throw new Error('element is not visible');
+      },
+    );
+    expect(failing.attached).toHaveLength(1);
+    expect(failing.attached[0]!.element).toBeNull();
+    forgetWorkerSnapshots();
   });
 
   it('skips the ARIA snapshot when the probed attributes settle the name', async () => {
