@@ -789,7 +789,10 @@ export async function finalCommitTotals(
  * commit that superseded it; one with no totals yet has them computed first,
  * and one whose totals are being computed keeps its reports until the next
  * prune, unless it is `only.ready`, the commit whose computation just stored
- * them. `only` keeps to one project's branch. Returns how many reports went.
+ * them. The newer commits that supersede a commit's reports have their totals
+ * before those reports go, computed here unless their computation is waiting,
+ * which then prunes the commit itself. `only` keeps to one project's branch.
+ * Returns how many reports went.
  */
 export async function pruneSupersededReports(
   db: DrizzleDB,
@@ -867,13 +870,14 @@ export async function pruneSupersededReports(
     const top = newest.get(key);
     if (!top || later(r, top)) newest.set(key, r);
   }
-  const superseded = new Map<string, { ids: number[]; by: string; byAt: number }>();
+  const superseded = new Map<string, { ids: number[]; by: string; byAt: number; newer: Set<string> }>();
   for (const r of reports) {
     const top = newest.get(`${r.projectId}\0${r.branch}\0${r.suite}`)!;
     if (top.commit === r.commit) continue;
     const key = `${r.projectId}\0${r.commit}`;
-    const entry = superseded.get(key) ?? { ids: [], by: top.commit, byAt: arrival(top) };
+    const entry = superseded.get(key) ?? { ids: [], by: top.commit, byAt: arrival(top), newer: new Set<string>() };
     entry.ids.push(r.id);
+    entry.newer.add(top.commit);
     if (arrival(top) > entry.byAt) Object.assign(entry, { by: top.commit, byAt: arrival(top) });
     superseded.set(key, entry);
   }
@@ -882,6 +886,13 @@ export async function pruneSupersededReports(
   for (const [key, entry] of superseded) {
     const { projectId, commit, totals } = commits.get(key)!;
     if (commit !== only?.ready && totalsInFlight(projectId, commit)) continue;
+    // The newer commits carry suites forward from this commit's reports: each has its totals before they go.
+    const newer = [...entry.newer].map((c) => commits.get(`${projectId}\0${c}`)!).filter((c) => !c.totals);
+    if (newer.some((c) => totalsInFlight(projectId, c.commit))) continue;
+    for (const c of newer) {
+      await storeCommitTotals(db, projectId, c.commit);
+      c.totals = true;
+    }
     if (!totals) await storeCommitTotals(db, projectId, commit);
     await markDetailRemoved(db, projectId, commit, entry.by, now);
     for (let i = 0; i < entry.ids.length; i += ROW_CHUNK) {

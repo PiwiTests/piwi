@@ -64,14 +64,12 @@ async function removeCiServerToken() {
       subtitle="Named ways to start CI from a failure’s page, and the token they send"
     >
       <div class="space-y-5">
-        <UFormField
-          name="ciRerun"
-          data-tour="project-ci-rerun"
+        <FormFieldGroup
+          label="CI actions"
+          help="project.ci-rerun"
           description="Each action has its own target, inputs and environment. Maintainers, Project admins and administrators can use them. Off by default."
+          data-tour="project-ci-rerun"
         >
-          <template #label>
-            <span class="inline-flex items-center gap-1">CI actions <HelpHint topic="project.ci-rerun" /></span>
-          </template>
           <ProjectCiActions
             v-model="state.ciRerun"
             :project-id="project.id"
@@ -79,7 +77,7 @@ async function removeCiServerToken() {
             :has-token="hasToken"
             :token-url="storedUrl"
           />
-        </UFormField>
+        </FormFieldGroup>
 
         <UFormField
           v-if="tokenApplies"

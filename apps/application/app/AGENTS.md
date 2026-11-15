@@ -43,7 +43,7 @@ them.
 folding), `EmptyState` / `LoadingState` / `ErrorState`, `StatTile` + `StatTileGrid` (never hand-rolled tile markup),
 `FiltersBlock` + `FilterBar`, `FilterToolbar`, `TableScroller`, `NavbarActions`, `BreadcrumbNav`, `ChartCard`,
 `DurationValue`, `ErrorText` (the `run-ui` layer's; never print a raw error string: it carries ANSI codes), `DiffPatch`
-/ `DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField`, `OpenInIdeLink`. What each
+/ `DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField` / `FormFieldGroup`, `OpenInIdeLink`. What each
 one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 - **A detail page's title is its `BreadcrumbNav`**: the navbar never repeats it.
@@ -94,6 +94,9 @@ one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
   `HELP_TOPICS` entry with `envVars`, (3) its `fields` entry in `SETTINGS_PAGES`, (4) render it with `SettingsField`,
   (5) its guide anchor of kind `field` ([`shared/guide-anchors/AGENTS.md`](../shared/guide-anchors/AGENTS.md)).
 - **Never hand-roll an env-managed `UAlert` or lock icon**: use `EnvManagedBadge` / `EnvManagedAlert`.
+- **A field of several controls is a `FormFieldGroup`, never a `UFormField` or `SettingsField`**: a form field gives
+  its one input id to every control inside it, nested components and their modals included, so each control's label
+  points at the first. `tests/unit/form-field-controls.test.ts` names a field that holds several.
 
 ## UTable
 

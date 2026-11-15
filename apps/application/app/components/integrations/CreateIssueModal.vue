@@ -672,7 +672,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </UFormField>
           </div>
 
-          <UFormField v-if="!perSubmission" label="Include">
+          <FormFieldGroup v-if="!perSubmission" label="Include">
             <div class="flex flex-wrap gap-4">
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
@@ -693,7 +693,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
                 The issue cannot link back to Piwi: this instance has no public address (<code>PIWI_SITE_URL</code>).
               </template>
             </p>
-          </UFormField>
+          </FormFieldGroup>
 
           <div data-shot="issue-preview">
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>

@@ -297,9 +297,8 @@ jobs:
           # The tarballs are already gzipped.
           compression-level: 0
 
-      # The performance job of a pull request measures against its base commit's build, restored by this key and path
-      # (perf-base, reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves
-      # serves it alone.
+      # The performance job of a pull request measures against its base commit's build, which perf-base restores by
+      # this key and path. A cache saved on main serves every pull request; one a pull request saves serves it alone.
       - name: Stage the build as a performance base
         if: github.event_name == 'push'
         run: |
@@ -1019,7 +1018,9 @@ jobs:
 
   # The base commit's build the performance job measures against. The build job cached it by its sha when that commit
   # ran on main; when it did not (main's change left the build alone, or a later push cancelled its run), it is built
-  # here, alongside this pull request's own build, and cached for this pull request's runs only.
+  # here, alongside this pull request's own build, and cached for this pull request's runs only. Either way it reaches
+  # the performance job as this run's artifact, kept a day as `build-output` is: a cache can be evicted between two
+  # jobs.
   perf-base:
     name: Performance base
     needs: changes
@@ -1038,13 +1039,12 @@ jobs:
         id: base
         run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
 
-      - name: Look for the base build
+      - name: Restore the base build
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
-          lookup-only: true
 
       - name: Check out the base
         if: steps.cache.outputs.cache-hit != 'true'
@@ -1070,6 +1070,17 @@ jobs:
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+
+      - name: Upload the base build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-base-output
+          path: base/apps/application/.output
+          # `.output` is dot-prefixed, so without this the upload silently skips it.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
 
   # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
   # perf-comment.yml once this run completes.

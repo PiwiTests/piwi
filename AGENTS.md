@@ -76,7 +76,7 @@ plans/                The maintainer's local planning folder: gitignored, absent
 ## Setup and repository-wide commands
 
 Prerequisites: **Node.js 24+**, npm, Git. `npm ci` at the repository root installs every workspace (a Claude Code web
-session runs it, builds the reporter and installs Chromium in `.claude/hooks/session-start.sh`). Each area guide lists
+session does it, with the reporter build and Chromium, in `.claude/hooks/session-start.sh`). Each area guide lists
 its own commands; the dashboard's run from `apps/application/` (`npm run app:dev`, http://localhost:7494, with no
 configuration: the SQLite database and `.data/` are created when the server starts).
 
@@ -87,8 +87,9 @@ configuration: the SQLite database and `.data/` are created when the server star
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).
 
-Run typecheck, lint, format check and the tests that cover your change **once at the end**, before the final commit, not
-after every edit. Never run a whole unit suite or a full end-to-end suite locally: they take long, and CI runs them.
+**Run checks once, at the end**: typecheck, lint, format check and the tests covering your change, before the final
+commit, then again only what a fix of theirs touched. Never after each edit, never a whole unit or end-to-end suite:
+they take long, and CI runs them.
 
 ## Conventions that apply everywhere
 
