@@ -129,6 +129,34 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
+test('no row of lenses is cut short in an editor of the window’s width', async () => {
+  /** The rows of the active editor that are cut short: their text past their box, or their box past the code. */
+  const cut = () =>
+    page.evaluate(() => {
+      const editor = document.activeElement?.closest('.monaco-editor');
+      const code = editor?.querySelector('.editor-scrollable');
+      const scrollbar = editor?.querySelector('.scrollbar.vertical')?.getBoundingClientRect().width ?? 0;
+      const right = (code?.getBoundingClientRect().right ?? 0) - scrollbar;
+      // A row scrolled out of view is not drawn.
+      const rows = [...(editor?.querySelectorAll('.codelens-decoration') ?? [])].filter(
+        (row) => row.getBoundingClientRect().width > 0,
+      );
+      return {
+        rows: rows.length,
+        cut: rows
+          .filter((row) => row.scrollWidth > row.clientWidth + 1 || row.getBoundingClientRect().right > right + 1)
+          .map((row) => row.textContent),
+      };
+    });
+  for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
+    await openFile(page, file);
+    await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
+    const { rows, cut: short } = await cut();
+    expect(rows, file).toBeGreaterThan(0);
+    expect(short, file).toEqual([]);
+  }
+});
+
 test('a spec’s editor title offers Record here…, and its Run button the spec’s runs', async () => {
   await clearNotifications(page);
   await openFile(page, SPEC_FILE);
