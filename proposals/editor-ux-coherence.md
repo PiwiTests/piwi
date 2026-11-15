@@ -105,7 +105,7 @@ VS Code offers **Don't Show Again** on it, kept in `piwi.hiddenMessages`. M21 in
 once for both clients (`RunEnded.verdict`, `verdictWords`), the run it names, its text, whether it fails, whether it is
 said whatever the setting and its actions' ids, for the editor's runs and the CI runs of the branch it followed
 (`RunEnded.origin`), which a scope on the run notifications setting leaves out (`piwi.runNotificationsScope` and its
-JetBrains twin) (HM16 in part, its rest built with M21 below), and a test held at its
+JetBrains twin) (HM16 in part, its rest built with M21, above), and a test held at its
 failure or at `page.pause()` while the editor is in the background calls once, VS Code with a notification offering
 Resume and Go to the stopped line, JetBrains with `AppIcon.requestAttention`, raising the IDE from another application
 while 'Focus application on breakpoint' is on, as the service marks the stop (`RunStop.calls`), the status item marked

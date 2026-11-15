@@ -204,6 +204,8 @@ export type BranchFlaky = NonNullable<BranchFailures['flaky']>[number];
 /** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
 export interface RunDetails {
   id: number;
+  /** Its project; absent from an instance that does not send it. */
+  projectId?: number;
   /** `running`, `initializing`, `finalizing`, or the final status. */
   status: string;
   branch: string | null;

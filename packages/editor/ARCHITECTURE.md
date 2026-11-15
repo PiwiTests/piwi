@@ -572,8 +572,8 @@ its own result, and its title names the CI run after it (`passed in its latest r
 Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
 `RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
 run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it
-(`origin`: `editor`, `terminal`, `runner` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
-keeps that command (`RefWatch.carried`), the run's counts, and:
+(`origin`: `editor`, `terminal`, `runner` or `ci`, with the CI run's `branch`), the ref of the command that started
+the run while the service keeps that command (`RefWatch.carried`), the run's counts, and:
 
 - `fixed`: the tests failing before that it passed; for a CI run, those the baseline it replaced failed, once it is the
   baseline;
@@ -720,8 +720,10 @@ It keeps the run found in `PiwiContext.ownRuns` for its lifetime: its failures r
 
 A run the developer started in a terminal or in the IDE's test runner (`RunSession.terminal`, `RunSession.runner`) is
 the developer's own too, once its own process names its page on the context's instance (`RunSession.page`): the run
-watch adopts it under its run channel's ref (`RunWatch.adopt`, from the sessions' `notify`), asking the instance
-nothing before, follows it, and tells its verdict as it ends with its origin (`RefWatch.origin`).
+watch adopts it under its run channel's ref (`RunWatch.adopt`, from the sessions' `notify`): it asks the instance for
+the run once, takes it only from the context's instance (by origin and path) and project, follows it, and tells its
+verdict as it ends with its origin (`RefWatch.origin`), a run that ended during that read with the failures read before
+it ended. A run nobody attends (`isUnattendedRef`) is not adopted.
 
 A client says when the command ended (`piwi/commandEnded`, with its exit code). The service then reads the run once
 more, and when no run carries the ref 5 s later, it sends `piwi/notice`. The instance is not asked for the ref again.

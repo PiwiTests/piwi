@@ -52,7 +52,6 @@ import {
   RUN_REF_ENV,
   TERMINAL_REF_PREFIX,
   checkoutCommitOf,
-  isPageOfInstance,
   isUnattendedRef,
 } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
@@ -691,7 +690,10 @@ function ciCommit(context: PiwiContext, runId: number | undefined): string | nul
   return answer.overlays?.find((o) => o.id === runId)?.commit ?? null;
 }
 
-/** Whether the editor started the run: a command of `piwi/runArgs` or `piwi/runSelection`. */
+/**
+ * Whether the run is the developer's own: a command of `piwi/runArgs` or `piwi/runSelection`, or a run started in a
+ * terminal or in the IDE's test runner that the run watch adopted (`RunWatch.adopt`).
+ */
 function isOwnRun(context: PiwiContext, runId: number | undefined): boolean {
   return runId !== undefined && context.ownRuns.has(runId);
 }
@@ -716,7 +718,7 @@ export function statusAlarm(context: PiwiContext, alert: StatusBarAlert): boolea
 }
 
 /**
- * The run a failure is listed from: `run #120`, `your run #124` for a run the editor started, or `local run #124` for
+ * The run a failure is listed from: `run #120`, `your run #124` for the developer's own (`isOwnRun`), or `local run #124` for
  * another run that did not run in CI, the baseline included.
  */
 function runLabel(context: PiwiContext, f: BranchFailure): string {
@@ -2169,15 +2171,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The runs the service built, as their workers tell them on the run channel. */
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
+  /** Whether a page is one of the instance at `serverUrl`: its origin, and under its path. */
+  const onInstance = (page: string, serverUrl: string): boolean => {
+    try {
+      const at = new URL(page);
+      const instance = new URL(serverUrl);
+      const base = instance.pathname.replace(/\/+$/, '');
+      return at.origin === instance.origin && (at.pathname === base || at.pathname.startsWith(`${base}/`));
+    } catch {
+      return false;
+    }
+  };
+
   /**
    * A run the developer started outside the editor (a terminal's, the IDE's test runner's), once its own process names
    * its page on a context's instance: the run watch follows it as the developer's own, and tells its verdict as it ends.
    */
   const adoptOutsideRun = (session: RunSession) => {
     if (session.ended || !session.page || !session.root || !(session.terminal || session.runner)) return;
+    // A run nobody attends (its output piped elsewhere, an agent's) is nobody's to be told of.
+    if (isUnattendedRef(session.ref)) return;
     const context = contexts.find((c) => c.root === session.root);
     const serverUrl = context?.client?.connection.serverUrl;
-    if (!context || !serverUrl || !isPageOfInstance(session.page.url, [serverUrl])) return;
+    if (!context || !serverUrl || !onInstance(session.page.url, serverUrl)) return;
     runWatch.adopt(context, session.page.id, session.ref, session.runner ? 'runner' : 'terminal');
   };
 

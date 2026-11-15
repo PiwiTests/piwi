@@ -5,7 +5,8 @@
  * A test run the editor starts carries a ref (`PIWI_ORIGIN_REF`), which the service looks for on the instance for two
  * minutes, seldom while the instance's stream is connected, and in every run the stream announces: the context follows
  * that run wherever it runs and keeps it as its own
- * (`ownRuns`), and so a later run with the same ref, a rerun of the command. A command that ended without its run
+ * (`ownRuns`), and so a later run with the same ref, a rerun of the command; a run started in a terminal or in the IDE's
+ * test runner joins them once its own process names its page on the instance. A command that ended without its run
  * reaching the instance is said in a notice. The tests the live run begins and ends are kept until the latest run is
  * read once it ended (`liveTests`), and when a run of the editor's own ended and was read, its verdict is said: for a
  * command that runs each test several times, with how many of those runs passed, counted from the run's stream.
@@ -412,7 +413,8 @@ interface Followed {
 
 /**
  * One per service: the event streams of the instances the contexts read, the run each context follows, and the latest
- * commands built with a ref, whose runs are the editor's own, a rerun with the same ref included.
+ * commands built with a ref, whose runs are the editor's own, a rerun with the same ref included, and the runs started
+ * outside the editor it adopted as the developer's own (`adopt`).
  */
 /**
  * What a run that ended without reaching the instance says: a reporter that ran but sent nothing is told apart from a
@@ -441,6 +443,14 @@ export function unreachedNotice(
 export class RunWatch {
   private readonly streams = new Map<string, InstanceStream>();
   private readonly watches = new Map<string, RefWatch>();
+  /** The runs started outside the editor that were adopted (`adopt`), by their run channel's ref. */
+  private readonly adopted = new Map<string, RefWatch>();
+  /** The runs `adopt` asked the instance about, by instance and id: each is asked about once. */
+  private readonly asked = new Set<string>();
+  /** The runs `adopt` is asking the instance about now, by instance and id. */
+  private readonly adopting = new Set<string>();
+  /** The failures read before a run ended that `adopt` was still asking about, by instance and id. */
+  private readonly pendingEnds = new Map<string, BranchFailures | null>();
   private readonly followed = new Map<PiwiContext, Followed>();
   private readonly settling = new Map<PiwiContext, { timer: ReturnType<typeof setTimeout>; ended: Set<number> }>();
   /** The results of the live run's tests, per test and Playwright project, which make `liveTests`. */
@@ -546,19 +556,26 @@ export class RunWatch {
 
   /**
    * A run the developer started outside the editor, in a terminal or in the IDE's test runner (`origin`), whose own
-   * process named its page on the context's instance (`RunSession.page`) under its run channel's `ref`: followed as the
-   * developer's own, and its verdict told as it ends, as a command's run is. Nothing is asked of the instance before
-   * the page is named, and a run already adopted under the ref changes nothing.
+   * process named its page on the context's instance (`RunSession.page`) under its run channel's `ref`: once the
+   * instance says the run is of the context's project, followed as the developer's own, and its verdict told as it ends,
+   * as a command's run is; a run that ended while the instance was asked is told with the failures read before it ended
+   * (`pendingEnds`). Each run is asked about once, and adopted runs are kept apart from the commands' watches
+   * (`adopted`), the latest `MAX_WATCHES` of them.
    */
   adopt(context: PiwiContext, runId: number, ref: string, origin: 'terminal' | 'runner'): void {
-    if (this.disposed || !context.client || !context.project) return;
-    const held = this.watches.get(ref);
-    if (held && held.context === context && held.carried.has(runId)) return;
+    const client = context.client;
+    const project = context.project;
+    if (this.disposed || !client || !project) return;
+    const key = runKey(client.connection, runId);
+    if (this.asked.has(key)) return;
+    this.asked.add(key);
+    while (this.asked.size > MAX_WATCHES) this.asked.delete(this.asked.values().next().value!);
+    this.adopting.add(key);
     const w: RefWatch = {
       context,
       ref,
-      serverUrl: context.client.connection.serverUrl,
-      projectId: context.project.id,
+      serverUrl: client.connection.serverUrl,
+      projectId: project.id,
       known: new Set(),
       carried: new Set(),
       found: null,
@@ -569,20 +586,33 @@ export class RunWatch {
       builtAt: null,
       origin,
     };
-    if (held?.timer) clearTimeout(held.timer);
-    this.watches.delete(ref);
-    this.watches.set(ref, w);
-    for (const [oldest, dropped] of this.watches) {
-      if (this.watches.size <= MAX_WATCHES) break;
-      if (dropped.timer) clearTimeout(dropped.timer);
-      this.watches.delete(oldest);
-    }
-    void context.client
+    void client
       .runDetails(runId)
       .then((run) => {
-        if (run && run.id === runId && this.watches.get(ref) === w && this.current(w)) this.found(w, run);
+        this.adopting.delete(key);
+        const pending = this.pendingEnds.get(key);
+        this.pendingEnds.delete(key);
+        if (!run || run.id !== runId || !this.current(w)) return;
+        if (run.projectId !== undefined && run.projectId !== w.projectId) return;
+        this.adopted.delete(ref);
+        this.adopted.set(ref, w);
+        for (const oldest of this.adopted.keys()) {
+          if (this.adopted.size <= MAX_WATCHES) break;
+          this.adopted.delete(oldest);
+        }
+        if (pending === undefined) {
+          this.found(w, run);
+          return;
+        }
+        w.found = run.id;
+        w.carried.add(run.id);
+        context.ownRuns.add(run.id);
+        void this.tell(context, run.id, pending, origin);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        this.adopting.delete(key);
+        this.pendingEnds.delete(key);
+      });
   }
 
   /**
@@ -680,9 +710,15 @@ export class RunWatch {
   /** A run of the context's project ended: the editor's own, or a CI run of the branch it followed, is told. */
   private ended(context: PiwiContext, runId: number, before: BranchFailures | null): void {
     const ci = this.ciKey(context, runId);
-    if (context.ownRuns.has(runId))
+    const asked = context.client ? runKey(context.client.connection, runId) : null;
+    if (context.ownRuns.has(runId)) {
       void this.tell(context, runId, before, this.watchOf(context, runId)?.origin ?? 'editor');
-    else if (ci && this.ciFollowed.delete(ci)) void this.tell(context, runId, before, 'ci');
+    } else if (ci && this.ciFollowed.delete(ci)) {
+      void this.tell(context, runId, before, 'ci');
+    } else if (asked && this.adopting.has(asked)) {
+      // Being adopted: told once the instance says it is the context's project's.
+      this.pendingEnds.set(asked, before);
+    }
   }
 
   dispose(): void {
@@ -774,7 +810,9 @@ export class RunWatch {
     }
     if (context.live?.own && !own && context.live.runId !== run.id) return;
     if (staleFor(context.live, run)) return;
-    context.live = liveOf(run, own, own ? this.refOf(context, run.id) : null);
+    // A read of the developer's own run, as another's announcement of it reads it, keeps it the developer's.
+    const mine = own || (context.live?.own === true && context.live.runId === run.id);
+    context.live = liveOf(run, mine, mine ? this.refOf(context, run.id) : null);
     this.followLive(context);
     this.progress();
   }
@@ -1000,7 +1038,7 @@ export class RunWatch {
   /** The watch of the command whose run `runId` is on the context's instance; null when the service keeps none. */
   private watchOf(context: PiwiContext, runId: number): RefWatch | null {
     const serverUrl = context.client?.connection.serverUrl;
-    for (const w of this.watches.values()) {
+    for (const w of [...this.watches.values(), ...this.adopted.values()]) {
       if (w.serverUrl === serverUrl && w.carried.has(runId)) return w;
     }
     return null;
