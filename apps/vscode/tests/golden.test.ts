@@ -16,6 +16,7 @@ const golden = JSON.parse(
 const testLines = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/test-lines.json'), 'utf-8'),
 ) as {
+  spec: { text: string };
   summary: FileSummary;
   marks: Array<[number, string, string]>;
   failing: { test: [number, number]; line: number };
@@ -39,7 +40,8 @@ const flat = (nodes: RunNode[]): string[][] =>
 describe('the golden fixtures both editors read', () => {
   test('the rows above a spec’s lines: each line’s lenses, in the service’s order', () => {
     const rows = new Map<number, string[]>();
-    for (const l of lensLines(testLines.summary)) rows.set(l.line, [...(rows.get(l.line) ?? []), l.title]);
+    for (const l of lensLines(testLines.summary, testLines.spec.text.split('\n').length))
+      rows.set(l.line, [...(rows.get(l.line) ?? []), l.title]);
     expect([...rows].sort(([a], [b]) => a - b)).toEqual(testLines.lenses);
   });
 

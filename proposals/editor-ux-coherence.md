@@ -72,9 +72,10 @@ newer latest run (LR9 in part: the test lines of a config with no instance at al
 fixtures both editors read (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, and a spec's test
 marks and lens rows), held to the same words by VS Code's `tests/golden.test.ts` and `GlueTest`, the marks and rows
 drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Code Vision providers on the 2024.1 test
-platform (VS Code's nightly snapshot and the layout checks remain). L4 in part since: the ASP.NET Core route manifest names each handler's line,
-the instance keeps it on the handler file and the code index carries each route a file handles with the tests that
-called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests · 1 failing`) that runs them.
+platform (VS Code's nightly snapshot and the layout checks remain). L4 in part since: the ASP.NET Core route manifest
+names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
+handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
+1 failing`) that runs them.
 L7 decided: Playwright for .NET gets an MIT NuGet adapter, proposed in [playwright-dotnet.md](playwright-dotnet.md).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test

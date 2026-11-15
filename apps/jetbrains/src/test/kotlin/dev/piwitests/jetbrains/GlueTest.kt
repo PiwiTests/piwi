@@ -1023,6 +1023,10 @@ class GlueTest {
             row.asJsonArray.let { it[0].asInt to it[1].asJsonArray.map { title -> title.asString } }
         }
         assertEquals(expected, rows.map { (line, titles) -> line to titles })
+        // A line holds as many entries as VS Code's lenses on a line.
+        val perLine = Regex("export const LENSES_PER_LINE = (\\d+);")
+            .find(java.io.File("../vscode/src/glue.ts").readText())?.groupValues?.get(1)?.toInt()
+        assertEquals(perLine, Glue.CODE_VISION_SLOTS)
     }
 
     /**

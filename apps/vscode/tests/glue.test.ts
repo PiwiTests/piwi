@@ -79,6 +79,8 @@ import {
   statusContext,
   testAtRun,
   testDecorations,
+  lensLines,
+  LENSES_PER_LINE,
   testHoverMarkdown,
   testLineArg,
   testActionsAt,
@@ -1001,6 +1003,32 @@ describe('the coverage marks of a file', () => {
     expect(DOCUMENT_PATTERN).toMatch(/[{,]cs[,}]/);
     expect(DOCUMENT_PATTERN).toContain('cshtml');
     expect(DOCUMENT_PATTERN).toContain('razor');
+  });
+});
+
+describe('the lenses above a file’s lines', () => {
+  const line = (at: number, title: string, status?: 'passed') => ({ line: at, title, ...(status ? { status } : {}) });
+  test('leave out a test’s own line, a blank title, a line outside the document and a stopped line', () => {
+    const summary = {
+      file: line(0, '3 tests in Piwi'),
+      lines: [
+        line(2, 'passed in its latest run', 'passed'),
+        line(3, '2 tests · click'),
+        line(4, ' '),
+        line(-1, 'before the file'),
+        line(9, 'past its end'),
+        line(5, '1 test · fill'),
+      ],
+    };
+    expect(lensLines(summary, 9).map((l) => l.title)).toEqual(['3 tests in Piwi', '2 tests · click', '1 test · fill']);
+    expect(lensLines(summary, 9, new Set([3])).map((l) => l.title)).toEqual(['3 tests in Piwi', '1 test · fill']);
+  });
+
+  test('hold eight on a line at most, as Code Vision’s slots', () => {
+    const many = Array.from({ length: LENSES_PER_LINE + 3 }, (_, i) => line(4, `lens ${i}`));
+    expect(lensLines({ file: null, lines: many }, 9).map((l) => l.title)).toEqual(
+      many.slice(0, LENSES_PER_LINE).map((l) => l.title),
+    );
   });
 });
 

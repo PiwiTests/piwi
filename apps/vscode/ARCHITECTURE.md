@@ -90,8 +90,9 @@ files (`summaryOf`), and draws it in two places:
   failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
   service's summary says so. Each tint has a scrollbar mark of its own, opaque as the JetBrains schemes' error stripes
   (`piwi.*OverviewRuler`), and so do a recording's block, the execution point and a held failure.
-- Every other line of the summary (the file's line, a locator's tests) is a CodeLens (`lensLines`), but a blank one and
-  a line a stop's row draws; the JetBrains plugin's Code Vision draws the same rows.
+- Every other line of the summary (the file's line, a locator's tests) is a CodeLens (`lensLines`), eight on a line at
+  most, but a blank one, one outside the document and a line a stop's row draws; the JetBrains plugin's Code Vision
+  draws the same rows, a stopped line's too.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
 draw the CodeLens and the gutter again, once for all the notifications of a 50 ms burst (`filesChanged`, `coalesced`
