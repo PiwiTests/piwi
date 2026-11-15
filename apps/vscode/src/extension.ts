@@ -61,6 +61,7 @@ import {
   type HubResult,
   type InitializationOptions,
   type Notice,
+  type NoticeKey,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
@@ -208,6 +209,7 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
+  NOT_CONNECTED,
   notConnectedNotice,
   RESTART_SERVICE,
   SERVICE_NOT_ANSWERING,
@@ -760,7 +762,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let status: StatusResult | null = null;
   /** The writes of `piwi.hiddenMessages`, one after the other, each adding its key to what the last one wrote. */
   let hiding: Promise<void> = Promise.resolve();
-  const hideMessage = (key: string) => {
+  const hideMessage = (key: NoticeKey) => {
     hiding = hiding.then(async () => {
       const piwi = vscode.workspace.getConfiguration('piwi');
       const hidden = withHiddenMessage(piwi.get('hiddenMessages'), key);
@@ -776,6 +778,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
   /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
   const connectedOrSay = (): boolean => {
+    // A service that is down answers nothing: it is restarted, not connected.
+    if (menuDown) {
+      void vscode.window
+        .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+        .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+      return false;
+    }
     const notice = notConnectedNotice(status);
     if (!notice) return true;
     const button = notice.action === 'retry' ? 'Retry' : notice.action === 'connect' ? 'Connect' : null;
@@ -1123,7 +1132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const started = await startSendListener({
       port,
       token: () => sendStore.token,
-      onPayload: (payload) => insertFromPicker(lc, payload),
+      onPayload: (payload) => insertFromPicker(lc, payload, hideMessage),
       // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
       live: () =>
         liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir()), {
@@ -1554,7 +1563,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.c)
           : contexts[0]);
       if (!target) {
-        if (!contexts.length) void vscode.window.showInformationMessage('Piwi: connect to an instance first.');
+        if (!contexts.length) {
+          void vscode.window
+            .showInformationMessage(NOT_CONNECTED, 'Connect')
+            .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
+        }
         return;
       }
       const picked = await vscode.window.showQuickPick(baselinePicks(target), {
@@ -1803,9 +1816,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // The format the configuration is copied in: chosen, or named by the command's argument.
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
+      // Refused only while the service is down: it lists a context's servers whether the instance answers or not.
+      if (menuDown) {
+        void vscode.window
+          .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+        return;
+      }
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
-        void vscode.window.showWarningMessage('Piwi: connect to an instance first.');
+        void vscode.window
+          .showWarningMessage(NOT_CONNECTED, 'Connect')
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
         return;
       }
       const format: RunsMcpFormat | undefined = MCP_FORMATS.some((f) => f.format === asked)
@@ -2207,7 +2229,11 @@ function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
  * flow is rendered for the cursor's place, and the import lines it needs that the file lacks go after the file's
  * imports, in the same edit.
  */
-async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
+async function insertFromPicker(
+  lc: LanguageClient,
+  payload: EditorSendPayload,
+  hideMessage: (key: NoticeKey) => void,
+): Promise<SendResult> {
   let notice: string | null = null;
   if (payload.kind === 'locator' && payload.at) {
     const at = payload.at;
@@ -2267,13 +2293,24 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
     }
     edit.replace(selection, text);
   });
-  if (inserted) {
-    void vscode.window.showInformationMessage(
-      notice ??
-        (payload.kind === 'locator'
-          ? 'Piwi: inserted the locator from Piwi Picker.'
-          : 'Piwi: inserted the recorded steps from Piwi Picker.'),
+  if (inserted && notice) void vscode.window.showInformationMessage(notice);
+  else if (inserted) {
+    // The plain confirmation of each pick, which the edit itself shows, may be hidden.
+    const shown = noticeShown(
+      {
+        message:
+          payload.kind === 'locator'
+            ? 'inserted the locator from Piwi Picker.'
+            : 'inserted the recorded steps from Piwi Picker.',
+        key: 'picker-inserted',
+      },
+      vscode.workspace.getConfiguration('piwi').get('hiddenMessages'),
     );
+    if (shown) {
+      void vscode.window
+        .showInformationMessage(shown.text, ...shown.actions)
+        .then((picked) => picked === DONT_SHOW_AGAIN && hideMessage('picker-inserted'));
+    }
   }
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }

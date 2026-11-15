@@ -94,6 +94,8 @@ class GlueTest {
         val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
         assertEquals("Run #78", Glue.runLabel(numbered))
         assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        // An agent's run says who started it.
+        assertEquals("Run #78 · checkout.spec.ts:12 · Started by Claude Code", Glue.runTitle(numbered.copy(label = "Started by Claude Code")))
         assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
         // Two runs of one name in one list are told apart by their refs.
         val again = named.copy(ref = "ed-2")
@@ -258,7 +260,7 @@ class GlueTest {
             ),
             Glue.statusView(status, null),
         )
-        assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
+        assertEquals("The instance does not answer. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
         val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
         assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
     }
@@ -398,6 +400,10 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // An agent's run is never the person's own.
+        val agent = Glue.statusView(connected, live(failed, inProgress.copy(label = "Started by Claude Code")))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code", agent.text)
+        assertEquals(true, agent.tooltip.contains("\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.
@@ -673,7 +679,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
-            "The picked locator was inserted in a new scratch file: the Piwi editor service did not answer.",
+            "The picked locator was inserted in a new scratch file. ${Glue.SERVICE_NO_ANSWER}",
             Glue.pickNotice(at, Glue.PickOutcome.NO_ANSWER, scratch = true),
         )
     }
@@ -2267,7 +2273,7 @@ class GlueTest {
             ),
         )
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
-        assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
+        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.OPEN_LOG), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
         assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
     }
 
@@ -3352,7 +3358,7 @@ class GlueTest {
                 true,
                 "Piwi: run #124",
                 "1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
-                listOf("Open the failures", "Open in dashboard", "Re-run failing"),
+                listOf("Open the failures", "Open in dashboard", "Re-run failing", "Settings…"),
             ),
             Glue.runVerdict(ended),
         )
@@ -3361,7 +3367,7 @@ class GlueTest {
     @Test
     fun `a run where nothing fails is an information, offering Only on failure`() {
         assertEquals(
-            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure")),
+            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure", "Settings…")),
             Glue.runVerdict(passing),
         )
     }

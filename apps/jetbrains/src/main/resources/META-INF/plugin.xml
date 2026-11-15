@@ -133,7 +133,7 @@
                 </action>
                 <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
                         icon="AllIcons.Actions.RunAll"
-                        description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
+                        description="Run every test of this spec as it stands, in the Run tool window, with the breakpoints">
                 </action>
                 <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                         text="Run the tests that reach this file" description="Run them in the Run tool window">

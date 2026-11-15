@@ -71,7 +71,7 @@ the choice of the desktop app on this machine only.
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid: `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing` (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again | none | Yours |
+| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid: `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on), `reporter-missing` (a run did not reach the instance, from a config without the Piwi reporter) and `picker-inserted` (what Piwi Picker inserted at the cursor). Remove a kind to see its message again | none | Yours |
 | `piwi.trace.server` | VS Code: whether the traffic with the editor service is traced in the Piwi output channel | Off | Yours |
 
 ## Related

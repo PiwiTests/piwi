@@ -122,7 +122,7 @@ at, `piwi.failurePointBackground` and `piwi.failurePointOverviewRuler` the line 
 marks have [their own](./editor-coverage#the-marks). A JetBrains IDE has the failing test, its line, the lines being
 recorded and the stopped line under **Settings → Editor → Color Scheme → Piwi**.
 
-**Don't Show Again** on a message of the editor service adds its kind to VS Code's `piwi.hiddenMessages`
+**Don't Show Again** on a message that may come again adds its kind to VS Code's `piwi.hiddenMessages`
 ([Editor settings](/reference/editor-settings#advanced) lists the kinds); remove a kind to see its message again.
 
 VS Code's Piwi settings come in five groups, Connection, Runs, In the editor, Agents (MCP) and Advanced, as JetBrains'

@@ -190,7 +190,9 @@ class PiwiRecordings(private val project: Project) : Disposable {
         if (!session.stopRequested()) return
         remote.send(session.id, "stop").whenComplete { answered, _ ->
             val delay = if (answered == true) STOP_TIMEOUT_SECONDS else 0L
-            val reason = if (answered == true) null else "The Piwi editor service did not answer: the recording ended here."
+            val running = project.getServiceIfCreated(PiwiProjectService::class.java)?.server() != null
+            val why = if (running) Glue.SERVICE_NO_ANSWER else Glue.SERVICE_NOT_RUNNING
+            val reason = if (answered == true) null else "The recording ended here. $why"
             val end = Runnable {
                 ApplicationManager.getApplication().invokeLater({ session.end(reason, failed = reason != null) }, gone)
             }
@@ -540,6 +542,7 @@ class RecordingSession internal constructor(
         val show = { runs: Boolean ->
             val notification = if (failed) {
                 PiwiNotifier.create(PiwiNotice.PROBLEM, text, NotificationType.WARNING)
+                    .also { if (Glue.offersServiceFixes(text)) PiwiCommands.withServiceFixes(project, it) }
             } else {
                 PiwiNotifier.create(PiwiNotice.RESULT, text)
             }

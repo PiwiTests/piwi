@@ -172,7 +172,7 @@ other one is each person's own, application-scoped, which a committed `.vscode/s
 | `piwi.runNotifications`      | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                                     |
 | `piwi.runNotificationsScope` | `mineAndCi`, `mine`                      | Whether the branch's CI runs have one too ([Runs](#runs)).                                                  |
 | `piwi.statusBarAlert`        | `new`, `any`, `never`                    | Which failures turn the status item red ([Status bar](#status-bar)). Application scope.                     |
-| `piwi.hiddenMessages`        | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                            |
+| `piwi.hiddenMessages`        | `[]`, the `NOTICE_KEYS`                  | The service's notices and the extension's own messages **Don't Show Again** hid ([Runs](#runs)). App scope. |
 | `piwi.failureSeverity`       | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                                     |
 | `piwi.codeLens`              | `all`, `problems`, `off`                 | The lines the service gives above the code (`EditorCredentials.codeLens`). Application scope.               |
 | `piwi.gutterIcons`           | `true`, `false`                          | Each test's outcome mark in the gutter; off, its line keeps the hover (`decorateTests`). Application scope. |

@@ -1,52 +1,61 @@
 {
   "name": "piwi",
   "displayName": "Piwi",
-  "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
   "version": "0.70.0",
-  "publisher": "piwitests",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
-  "icon": "icon.png",
+  "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
+  "categories": [
+    "Linters",
+    "Testing"
+  ],
+  "keywords": [
+    "coverage",
+    "e2e",
+    "flaky tests",
+    "locators",
+    "playwright",
+    "test history"
+  ],
   "homepage": "https://piwitests.dev",
   "bugs": {
     "url": "https://github.com/PiwiTests/piwi/issues"
   },
-  "qna": "https://github.com/PiwiTests/piwi/issues",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "https://github.com/PiwiTests/piwi",
     "directory": "apps/vscode"
   },
-  "engines": {
-    "vscode": "^1.91.0"
-  },
-  "capabilities": {
-    "untrustedWorkspaces": {
-      "supported": false,
-      "description": "The Piwi editor service reads the workspace's files from disk and runs its Playwright."
-    },
-    "virtualWorkspaces": {
-      "supported": false,
-      "description": "The Piwi editor service reads the files from disk and runs Playwright; a virtual workspace has neither."
-    }
-  },
-  "categories": [
-    "Testing",
-    "Linters"
-  ],
-  "keywords": [
-    "playwright",
-    "e2e",
-    "locators",
-    "flaky tests",
-    "test history",
-    "coverage"
-  ],
+  "qna": "https://github.com/PiwiTests/piwi/issues",
+  "publisher": "piwitests",
   "main": "./dist/extension.cjs",
-  "activationEvents": [
-    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}",
-    "onUri"
-  ],
+  "scripts": {
+    "vscode:build": "npm run editor:build -w @piwitests/editor && node build.mjs",
+    "vscode:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "vscode:lint": "oxlint --config oxlint.config.mts .",
+    "vscode:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "vscode:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" \"scripts/\" build.mjs",
+    "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"scripts/\" build.mjs",
+    "vscode:test": "vitest run",
+    "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
+    "vscode:test:e2e": "playwright test --config tests/e2e/playwright.config.mjs",
+    "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
+    "test": "npm run vscode:test"
+  },
+  "devDependencies": {
+    "@piwitests/core": "*",
+    "@piwitests/editor": "*",
+    "@piwitests/run-model": "*",
+    "@playwright/test": "^1.64.1",
+    "@types/vscode": "~1.91.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "ovsx": "^1.3.0",
+    "playwright": "^1.63.0",
+    "sharp": "^0.35.5",
+    "vscode-languageclient": "^10.1.2"
+  },
   "contributes": {
     "icons": {
       "piwi-mark": {
@@ -778,6 +787,10 @@
         },
         {
           "command": "piwi.compareWith",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.copyMcpConfiguration",
           "when": "piwi.active"
         },
         {
@@ -1709,17 +1722,19 @@
                 "agent-let-go",
                 "window-shared",
                 "unattended-resumed",
-                "reporter-missing"
+                "reporter-missing",
+                "picker-inserted"
               ],
               "enumDescriptions": [
                 "A stop an agent held goes on once the agent went idle.",
                 "A run is shared live, as this window's runs are.",
                 "A test stopped where nobody attends the run goes on.",
-                "A run did not reach the instance, from a config without the Piwi reporter."
+                "A run did not reach the instance, from a config without the Piwi reporter.",
+                "What Piwi Picker inserted at the cursor."
               ]
             },
             "default": [],
-            "markdownDescription": "The messages of the editor service Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again. [Documentation](https://piwitests.dev/reference/editor-settings#advanced)",
+            "markdownDescription": "The messages Piwi no longer shows: **Don't Show Again** on one adds its kind here. Remove one to see it again. [Documentation](https://piwitests.dev/reference/editor-settings#advanced)",
             "order": 0
           },
           "piwi.trace.server": {
@@ -1924,31 +1939,22 @@
       }
     ]
   },
-  "scripts": {
-    "vscode:build": "npm run editor:build -w @piwitests/editor && node build.mjs",
-    "vscode:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
-    "vscode:lint": "oxlint --config oxlint.config.mts .",
-    "vscode:lint:fix": "oxlint --config oxlint.config.mts . --fix",
-    "vscode:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" \"scripts/\" build.mjs",
-    "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"scripts/\" build.mjs",
-    "vscode:test": "vitest run",
-    "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
-    "vscode:test:e2e": "playwright test --config tests/e2e/playwright.config.mjs",
-    "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
-    "test": "npm run vscode:test"
+  "activationEvents": [
+    "onUri",
+    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}"
+  ],
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.91.0"
   },
-  "devDependencies": {
-    "@piwitests/core": "*",
-    "@piwitests/editor": "*",
-    "@piwitests/run-model": "*",
-    "@playwright/test": "^1.64.1",
-    "@types/vscode": "~1.91.0",
-    "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^4.1.0",
-    "esbuild": "^0.28.2",
-    "ovsx": "^1.3.0",
-    "playwright": "^1.63.0",
-    "sharp": "^0.35.5",
-    "vscode-languageclient": "^10.1.2"
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the workspace's files from disk and runs its Playwright."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the files from disk and runs Playwright; a virtual workspace has neither."
+    }
   }
 }

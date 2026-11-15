@@ -733,8 +733,8 @@ export function runLabel(session: RunSession, among: Iterable<RunSession> = []):
 
 /**
  * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), the
- * same in the JetBrains plugin (`Glue.runTitle`); else `runLabel`. Its ref after it while another of `among` reads the
- * same.
+ * same in the JetBrains plugin (`Glue.runTitle`); else `runLabel`; then who started it when a person did not (`·
+ * Started by Claude Code`). Its ref after it while another of `among` reads the same.
  */
 export function runTitle(session: RunSession, among: Iterable<RunSession> = []): string {
   return apart(plainTitle, session, among);
@@ -748,7 +748,8 @@ function plainLabel(session: RunSession): string {
 }
 
 function plainTitle(session: RunSession): string {
-  return session.page && session.name ? `${runName(session.page)} · ${session.name}` : plainLabel(session);
+  const title = session.page && session.name ? `${runName(session.page)} · ${session.name}` : plainLabel(session);
+  return session.label ? `${title} · ${session.label}` : title;
 }
 
 function apart(name: (s: RunSession) => string, session: RunSession, among: Iterable<RunSession>): string {

@@ -823,6 +823,48 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
+     * Each kind of balloon goes to its group, which the IDE's notification settings name: a run's verdict to the
+     * results, ending with Settings…; a confirmation to the confirmations; a picked locator the service did not place
+     * to the problems, with Restart and the log; a recording the service did not start to the problems too.
+     */
+    fun testEachKindOfBalloonGoesToItsGroup() {
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    shown += notification
+                }
+            },
+        )
+        val user = PiwiUserSettings.state()
+        val before = user.runNotifications
+        try {
+            user.runNotifications = "always"
+            PiwiCommands.runEnded(
+                project,
+                RunEnded(root = "/w", runId = 124, verdict = VerdictWords("run #124", "Passed 3 of 3", actions = listOf("failures"))),
+            )
+        } finally {
+            user.runNotifications = before
+        }
+        PiwiNotifier.confirm(project, "The MCP configuration is on the clipboard.")
+        PiwiCommands.notify(project, Glue.pickNotice(Glue.SendPlace("tests/a.spec.ts", 3), Glue.PickOutcome.NO_ANSWER))
+        PiwiCommands.notify(project, PiwiRecordFlow.startFailure(java.util.concurrent.CompletableFuture<PageCandidatesResult>()), com.intellij.notification.NotificationType.ERROR)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(4, shown.size)
+        val (verdict, confirmed, pick, recording) = shown
+        assertEquals(PiwiNotice.RESULT.group, verdict.groupId)
+        assertEquals(listOf(Glue.OPEN_FAILURES, Glue.ONLY_ON_FAILURE, "Settings…"), verdict.actions.map { it.templateText })
+        assertEquals(PiwiNotice.CONFIRMATION.group, confirmed.groupId)
+        for (problem in listOf(pick, recording)) {
+            assertEquals(PiwiNotice.PROBLEM.group, problem.groupId)
+            assertEquals(Glue.SERVICE_FIXES.map { it.label }, problem.actions.map { it.templateText })
+        }
+        assertEquals(com.intellij.notification.NotificationType.WARNING, pick.type)
+    }
+
+    /**
      * The first project holding a Playwright config opens the Get Started tab, once per installation and when the
      * first-run queue gives it the turn; its buttons are registered actions with the onboarding script's labels, and a
      * step's action checks it off.

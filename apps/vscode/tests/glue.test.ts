@@ -527,6 +527,11 @@ describe('statusBarView', () => {
       text: '$(sync~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
+    // An agent's run is never the person's own.
+    expect(statusBarView(connected, live({ label: 'Started by Claude Code' }))).toMatchObject({
+      text: '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',
+      tooltip: expect.stringContaining('\n\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n\n'),
+    });
     // The editor's own run counts from its own process's events, which the instance may not have heard yet.
     const told = (ref: string) =>
       ref === 'ed-1'
@@ -2535,6 +2540,9 @@ describe('the Testing view', () => {
     expect(resultsRunName(runs())).toBe('Piwi: run #120 on main');
     expect(resultsRunName(null)).toBe('Piwi: the latest runs');
     expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
+    expect(liveRunName({ runId: 124, own: true, label: 'Started by Claude Code' } as LiveRun)).toBe(
+      'Piwi: run #124 (Started by Claude Code)',
+    );
     expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
     // A CI run of the branch says so: it is not the person's tests running.
     expect(liveRunName({ runId: 126, own: false, ci: true, branch: 'main' } as LiveRun)).toBe(

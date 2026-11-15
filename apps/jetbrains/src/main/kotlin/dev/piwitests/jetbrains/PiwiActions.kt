@@ -670,7 +670,7 @@ class ResetRunsMcpTokenAction : AnAction(), DumbAware {
         if (!yes) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = project.service<PiwiProjectService>().agentsChanged(newToken = true)
-            PiwiCommands.notify(
+            PiwiNotifier.confirm(
                 project,
                 if (answer?.token != null) {
                     "The runs' MCP server has a new token: copy the runs' MCP server configuration again for each agent."

@@ -3034,6 +3034,41 @@ describe('runs as they happen', () => {
     });
   });
 
+  test('a teammate’s run of the branch in progress is named beside a test’s result, never drawn as running', async () => {
+    const run = {
+      id: 69,
+      status: 'running',
+      branch: 'main',
+      startTime: '2026-09-27T12:20:00.000Z',
+      metadata: {},
+      totalTests: 2,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    };
+    runDetails.set(69, run);
+    pushInstanceEvent({ type: 'run-started', runId: 69, projectId: 7 });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 69));
+    expect(statuses[statuses.length - 1]!.contexts[0]!.live).toMatchObject({ own: false });
+    await waitFor(() => (runStreams.get(69)?.size === 1 ? true : undefined));
+
+    pushRunEvent(69, 'test-begin', { title: 'pays', filePath: 'tests/checkout.spec.ts', browser: 'chromium' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.liveTests?.some((t) => t.status === 'running')));
+    const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    const line = summary.lines.find((l) => l.line === 2 && l.status !== undefined);
+    expect(line?.status).not.toBe('running');
+    expect(line?.title).toMatch(/ · running in run #69 · /);
+    expect(line?.title).not.toMatch(/your run #69/);
+
+    runDetails.set(69, { ...run, status: 'passed', passedTests: 2 });
+    pushRunEvent(69, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    runDetails.delete(69);
+  });
+
   test('an initializing run of the branch has its stream opened once it runs, not while it initializes', async () => {
     const run = {
       id: 64,

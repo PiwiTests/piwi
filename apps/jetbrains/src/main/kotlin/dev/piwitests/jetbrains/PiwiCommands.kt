@@ -10,6 +10,7 @@ import com.intellij.execution.process.KillableColoredProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
+import com.intellij.notification.Notification
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -18,6 +19,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -173,6 +175,7 @@ object PiwiCommands {
                             PiwiUserSettings.state().runNotifications = "failures"
                             PiwiNotifier.confirm(project, Glue.ONLY_ON_FAILURE_SET)
                         }
+                        Glue.EmptyLink.SETTINGS.label -> ShowSettingsUtil.getInstance().showSettingsDialog(project, PiwiConfigurable::class.java)
                     }
                 },
             )
@@ -424,16 +427,18 @@ object PiwiCommands {
         val fixes = Glue.offersServiceFixes(message)
         val shown = if (fixes && type == NotificationType.INFORMATION) NotificationType.WARNING else type
         val notification = PiwiNotifier.create(PiwiNotifier.kindOf(shown), StringUtil.escapeXmlEntities(message), shown)
-        if (fixes) {
-            notification.addAction(
-                NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
-                    project.service<PiwiProjectService>().restartService()
-                },
-            )
-            notification.addAction(NotificationAction.createSimple(Glue.EmptyLink.OPEN_LOG.label) { project.service<PiwiLog>().show() })
-        }
+        if (fixes) withServiceFixes(project, notification)
         notification.notify(project)
     }
+
+    /** `notification` with Restart the editor service and Open the log, for a message that the service does not run or did not answer. */
+    fun withServiceFixes(project: Project, notification: Notification): Notification = notification
+        .addAction(
+            NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
+                project.service<PiwiProjectService>().restartService()
+            },
+        )
+        .addAction(NotificationAction.createSimple(Glue.EmptyLink.OPEN_LOG.label) { project.service<PiwiLog>().show() })
 
     private fun background(project: Project, title: String, body: () -> Unit) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, true) {

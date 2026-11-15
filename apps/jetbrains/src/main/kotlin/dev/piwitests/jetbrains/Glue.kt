@@ -339,10 +339,14 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own. */
+    /**
+     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own, or
+     * who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
+     */
     private fun liveText(live: LiveRun): String {
         val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
+        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" +
+            if (live.own) " · ${live.label ?: "yours"}" else ""
     }
 
     /**
@@ -370,14 +374,18 @@ object Glue {
         return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
-    /** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
+    /**
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     */
     private fun liveLine(live: LiveRun): String {
         val run = when {
-            live.own -> "Your run"
-            live.ci -> "CI run"
-            else -> "Run"
+            live.own && live.label != null -> "Run #${live.runId} (${live.label})"
+            live.own -> "Your run #${live.runId}"
+            live.ci -> "CI run #${live.runId}"
+            else -> "Run #${live.runId}"
         }
-        return "\n$run #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}"
+        return "\n$run is running: ${countWords(live.done, live.total, live.failed)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -525,11 +533,12 @@ object Glue {
 
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+    const val UNTRUSTED = "Piwi starts once you trust this project, with Trust project… in the safe mode banner at the " +
+        "top of an editor: it runs the project's tests and reads its .env."
 
     /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
     const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
-        ".env. Trusting it starts Piwi."
+        ".env. Trust project… in the safe mode banner at the top of an editor starts Piwi."
 
     /**
      * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
@@ -697,7 +706,7 @@ object Glue {
         val told = sessions.values.filter { !it.ended && !it.terminal && it.checkout == null && it.progress?.status == "running" }
         val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
         val progress = session?.progress ?: return ownLive?.let { it to own.root }
-        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
+        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref, label = session.label))
             .copy(done = progress.done, total = progress.total, failed = progress.failed)
         return counted to (if (ownLive != null) own.root else session.root)
     }
@@ -1012,9 +1021,10 @@ object Glue {
     /**
      * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `1 of 3 CI failures fixed, 2
      * still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the service's actions when
-     * something fails, and **Only on failure** when nothing does while `setting` is `always`. Null when `setting` keeps
-     * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its
-     * runs went whatever the setting.
+     * something fails, then **Only on failure** when nothing does while `setting` is `always`, and last **Settings…**,
+     * which opens Piwi's settings page, as VS Code's `runVerdict`. Null when `setting` keeps it quiet, or for a CI run of
+     * the branch when `scope` is `mine`; a run of each test several times says how its runs went whatever the setting,
+     * with the service's actions alone.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always", scope: String = "mineAndCi"): RunVerdict? {
         val words = ended.verdict ?: return null
@@ -1022,7 +1032,8 @@ object Glue {
         if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
         val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
         val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
-        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure)
+        val settings = if (words.always) emptyList() else listOf(EmptyLink.SETTINGS.label)
+        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure + settings)
     }
 
     /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */
@@ -1118,7 +1129,8 @@ object Glue {
     fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
 
     /**
-     * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
+     * One sentence on the connection, for the tool window and the settings page, in the words of the tool window's empty
+     * text: an instance that does not answer said so, never as a lost connection. With no status, why: the project waits
      * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
      */
     fun connectionSummary(
@@ -1137,7 +1149,7 @@ object Glue {
         val unproven = contexts.firstOrNull { it.problemKind == "desktop-unproven" }
         val c = contexts.firstOrNull { it.connected }
             ?: return if (unreachable != null) {
-                "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+                "The instance does not answer. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
             } else if (unproven != null) {
                 "Not connected. " + (unproven.problem ?: "") + hint
             } else {
@@ -1259,15 +1271,16 @@ object Glue {
 
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
-     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
-     * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open
+     * the log; an instance still being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare
+     * with…; no connection, with Connect… and Record a new test file…, which needs none; else no failure in the run read
+     * (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
         "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
         "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
         "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
-        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
+        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY, EmptyLink.OPEN_LOG))
         "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
         else -> EmptyText(
             when {
@@ -1868,7 +1881,7 @@ object Glue {
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
             PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
-            PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
+            PickOutcome.NO_ANSWER -> "$went. $SERVICE_NO_ANSWER"
         }
     }
 
@@ -2776,7 +2789,8 @@ object Glue {
 
     /**
      * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as
-     * VS Code's `runTitle`; else [runLabel]. Its ref after it while another of `among` reads the same.
+     * VS Code's `runTitle`; else [runLabel]; then who started it when a person did not (`· Started by Claude Code`). Its
+     * ref after it while another of `among` reads the same.
      */
     fun runTitle(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainTitle, session, among)
 
@@ -2789,7 +2803,8 @@ object Glue {
 
     private fun plainTitle(session: RunSession): String {
         val name = session.name
-        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        val title = if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        return session.label?.let { "$title · $it" } ?: title
     }
 
     private fun apart(name: (RunSession) -> String, session: RunSession, among: Collection<RunSession>): String {

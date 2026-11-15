@@ -865,6 +865,11 @@ export interface LiveRun {
   ci?: boolean;
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
+  /**
+   * Who started an own run when a person did not (`Started by Claude Code`, as `RunSession.label` says): the clients
+   * say it where they would say the run is the person's. Absent for a person's run.
+   */
+  label?: string;
 }
 
 /** Which failures turn the status item to its alarm: `new`, `any` or `never`. */
@@ -1150,9 +1155,16 @@ export interface Notice {
  * The notices an editor client may hide, kept by these values in the developer's settings: `agent-let-go`, a stop an
  * agent held let go once it went idle; `window-shared`, a run shared live as the window's runs are;
  * `unattended-resumed`, a stop nobody attends let go on; `reporter-missing`, a run that did not reach the instance
- * from a config without the Piwi reporter.
+ * from a config without the Piwi reporter; `picker-inserted`, the client's own confirmation of what Piwi Picker
+ * inserted at the cursor.
  */
-export const NOTICE_KEYS = ['agent-let-go', 'window-shared', 'unattended-resumed', 'reporter-missing'] as const;
+export const NOTICE_KEYS = [
+  'agent-let-go',
+  'window-shared',
+  'unattended-resumed',
+  'reporter-missing',
+  'picker-inserted',
+] as const;
 
 export type NoticeKey = (typeof NOTICE_KEYS)[number];
 

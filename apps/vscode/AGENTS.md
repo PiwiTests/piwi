@@ -30,7 +30,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
   and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
   freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`). A new
-  command id or setting is registered in its D25 in the same change
+  command id, setting, view or submenu is registered in its D25 in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).
   `tests/walkthrough.test.ts` also fails when a walkthrough step names a command, view or context key that no longer
   exists.
