@@ -104,7 +104,7 @@ describe("Piwi Runner's release files", () => {
 
   test('requires only the update file signature of a signed macOS build', () => {
     const files = [
-      'dmg/Piwi Runner_0.70.0_aarch64.dmg',
+      'dmg/Piwi Runner_0.69.0_aarch64.dmg',
       'macos/Piwi Runner.app.tar.gz',
       'macos/Piwi Runner.app.tar.gz.sig',
     ];
@@ -116,6 +116,9 @@ describe("Piwi Runner's release files", () => {
     expect(() =>
       releaseFiles({ files: files.slice(0, 2), target: 'aarch64-apple-darwin', pattern, signed: true }),
     ).toThrow('the build made no macos/Piwi Runner.app.tar.gz.sig for aarch64-apple-darwin');
+    expect(() =>
+      releaseFiles({ files: files.slice(0, 1), target: 'aarch64-apple-darwin', pattern, signed: true }),
+    ).toThrow('the build made no macos/*.app.tar.gz for aarch64-apple-darwin');
   });
 
   test('fills the workflow pattern, and refuses one it cannot fill', () => {
