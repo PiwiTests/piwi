@@ -372,11 +372,11 @@
         </group>
         <!-- The Piwi tool window's actions on its selected failure (`FAILURE_NODE`): its right-click menu, and Find Action. -->
         <group id="Piwi.FailureActions">
-            <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run this test"
+            <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run with Piwi"
                     description="Run the selected failure's test as Piwi runs it"/>
-            <action id="Piwi.Failure.Debug" class="dev.piwitests.jetbrains.DebugFailureAction" text="Debug this failure"
+            <action id="Piwi.Failure.Debug" class="dev.piwitests.jetbrains.DebugFailureAction" text="Debug with Piwi"
                     description="Run the selected failure's test headed, stopping once at the line it failed through"/>
-            <action id="Piwi.Failure.Verify" class="dev.piwitests.jetbrains.VerifyFailureAction" text="Verify the test ×3"
+            <action id="Piwi.Failure.Verify" class="dev.piwitests.jetbrains.VerifyFailureAction" text="Verify ×3 with Piwi"
                     description="Run the selected failure's test three times, without retries"/>
             <action id="Piwi.Failure.GoToTest" class="dev.piwitests.jetbrains.GoToFailureTestAction" text="Go to the test"
                     description="Open the selected failure's test at its test(…) line"/>
@@ -393,6 +393,11 @@
             <action id="Piwi.Failure.FindBreakingCommit" class="dev.piwitests.jetbrains.FindBreakingCommitAction"
                     text="Find the breaking commit in the desktop app"
                     description="Find the commit that broke the selected CI failure's test, in the desktop app"/>
+            <action id="Piwi.Failure.FlakeLab" class="dev.piwitests.jetbrains.FlakeLabFailureAction"
+                    text="Run Flake Lab on its untested suspects in the desktop app"
+                    description="Run Flake Lab on the flake suspects no experiment tested yet of the selected CI failure's test, in the desktop app"/>
+            <action id="Piwi.Failure.FileIssue" class="dev.piwitests.jetbrains.FileIssueAction" text="File an issue"
+                    description="Open the page of the selected failure's cluster, where the dashboard files an issue"/>
         </group>
         <!--
           While a run is live, its controls where the debugger keeps its own: a stop's first in the editor's context

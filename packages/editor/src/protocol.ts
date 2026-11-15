@@ -16,7 +16,8 @@ export interface PiwiCommand {
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
    * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`),
-   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`) or `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
+   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`), `piwi.desktopJob` (arguments: `[DesktopJobParams]`) or
+   * `piwi.record` (arguments: `[uri, line]`, Record here at that 0-based line).
    */
   command:
     | 'piwi.openInDashboard'
@@ -26,7 +27,8 @@ export interface PiwiCommand {
     | 'piwi.runCommand'
     | 'piwi.copyText'
     | 'piwi.copyAgentContext'
-    | 'piwi.desktopJob';
+    | 'piwi.desktopJob'
+    | 'piwi.record';
   arguments: unknown[];
 }
 
@@ -64,19 +66,21 @@ export interface SummaryLine {
   problem?: boolean;
   /**
    * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
-   * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
+   * it and verify it, record steps in it, its evidence, its context for an agent, then its Flake Lab commands. Absent
+   * on other lines.
    */
   actions?: TestAction[];
 }
 
 /**
  * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
- * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
- * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
- * Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`.
+ * separator before it: none for the first group (`run`), `Record`, `Evidence`, `Agent`, `Flake Lab`. `kind` names the
+ * client's own action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor;
+ * `verify`: Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`, `piwi.record`
+ * as the client's Record here.
  */
 export interface TestAction {
-  group: 'run' | 'evidence' | 'agent' | 'lab';
+  group: 'run' | 'record' | 'evidence' | 'agent' | 'lab';
   section: string;
   kind?: 'run' | 'verify' | 'debug';
   title: string;
@@ -770,6 +774,22 @@ export interface ScreenshotResult {
 
 export const SCREENSHOT_REQUEST = 'piwi/screenshot';
 
+/** `piwi/fileIssue`: File an issue for a failure of `piwi/failures` (`WorkspaceFailure.fileIssue`). */
+export type FileIssueParams = TraceParams;
+
+/**
+ * `url`: the page of the failure's cluster, where the dashboard files its issue, while no ticket is linked to the
+ * cluster or the test; otherwise null, and `message` says why, `issueUrl` being the ticket already filed when there is
+ * one.
+ */
+export interface FileIssueResult {
+  url: string | null;
+  message: string | null;
+  issueUrl: string | null;
+}
+
+export const FILE_ISSUE_REQUEST = 'piwi/fileIssue';
+
 /**
  * The latest run on the checked-out branch of one workspace context: its latest complete run, and the later runs of
  * that branch the service lays over it (a test re-run from an editor, a run on a developer's machine).
@@ -1284,12 +1304,19 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+  fileIssue?: true;
+  /**
+   * The test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: the failure's
+   * node offers Run Flake Lab on its untested suspects in the desktop app while it runs.
+   */
+  untestedSuspects?: true;
   /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */
   test?: { uri: string; line: number };
-  /** Verify the test ×3: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
+  /** Verify ×3 with Piwi: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
   verify?: RunTestsArgs;
   /**
-   * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
+   * Debug with Piwi: the run that stops once at the line it failed through, on its project, as the dashboard's
    * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
    * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, where its spec holds no one test of its
    * title (as are `test` and `verify`), and where the run would be refused: the title or project is not one Piwi takes,

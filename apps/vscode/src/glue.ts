@@ -893,7 +893,7 @@ export function withBaseline(
   return next;
 }
 
-/** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+/** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
 export function failureRunArgs(failure: WorkspaceFailure): RunTestsArgs | null {
   if (failure.testCaseId === undefined) return null;
   return { uri: failure.uri, ...(failure.root ? { root: failure.root } : {}), testIds: [failure.testCaseId] };

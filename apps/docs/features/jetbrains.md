@@ -68,11 +68,11 @@ line** on the debugger's Show Execution Point key:
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
   since the IDE highlights open files only.
 - **Code Vision** shows the lines above files, locators and failing lines, a line's entries side by side (a failing
-  line's reason, **Run this test**, **Screenshot** and **Trace**), up to the number the IDE's Code Vision settings show
+  line's reason, **Run with Piwi**, **Screenshot** and **Trace**), up to the number the IDE's Code Vision settings show
   per line (five by default), in a group named Piwi under **Settings → Editor → Inlay Hints → Code Vision**, where they
   can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
-  **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, a failure's trace
-  and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
+  **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, **Record steps in
+  this test…**, a failure's trace and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
 - **[The status bar](./editor-status-bar)** item has an icon for the run's state, and the error color for a new
   failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same

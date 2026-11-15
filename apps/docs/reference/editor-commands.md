@@ -79,9 +79,10 @@ script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes t
 | **Piwi: Show the run's flaky tests** | Open the failures view on the run's [flaky tests](/features/flaky-tests) |
 | **Piwi: Show or hide the coverage marks** | The [coverage marks](/features/editor-coverage) of the lines the tests ran |
 
-A failure's menu in the failures view adds **Run this test**, **Debug this failure**, **Verify the test ×3**, **Go to
+A failure's menu in the failures view adds **Run with Piwi**, **Debug with Piwi**, **Verify ×3 with Piwi**, **Go to
 the test**, **Open the trace**, **Open the screenshot**, **Copy context for agent**, **Reproduce in the desktop app**,
-**Find the breaking commit in the desktop app** and, on a flaky test in VS Code, **Look into this flake…**:
+**Find the breaking commit in the desktop app**, **Run Flake Lab on its untested suspects in the desktop app**, **File
+an issue** and, on a flaky test in VS Code, **Look into this flake…**:
 [Failures in the editor](/features/editor-failures).
 
 ## Recording

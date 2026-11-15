@@ -33,9 +33,9 @@ data class SummaryLine(
 )
 
 /**
- * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
- * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
- * it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
+ * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `record`, `evidence`, `agent`,
+ * `lab`), whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action
+ * that does it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
  */
 data class TestAction(
     val group: String = "run",
@@ -262,6 +262,12 @@ data class TraceParams(val uri: String, val executionId: Int)
 data class TraceResult(val path: String? = null, val cwd: String? = null, val command: String? = null)
 
 data class ScreenshotResult(val path: String? = null)
+
+/**
+ * `piwi/fileIssue`: `url`, the page of the failure's cluster where the dashboard files its issue, while no ticket is
+ * linked; otherwise `message` says why, `issueUrl` being the ticket already filed when there is one.
+ */
+data class FileIssueResult(val url: String? = null, val message: String? = null, val issueUrl: String? = null)
 
 data class ContextStatus(
     val root: String? = null,
@@ -574,11 +580,18 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+    val fileIssue: Boolean? = null,
+    /**
+     * Whether its test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: Flake
+     * Lab in the desktop app runs it.
+     */
+    val untestedSuspects: Boolean? = null,
     /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
     val test: EditorBreakpoint? = null,
-    /** Verify the test ×3: its run by its location, three times; null where `test` is. */
+    /** Verify ×3 with Piwi: its run by its location, three times; null where `test` is. */
     val verify: RunTestsArgs? = null,
-    /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
+    /** Debug with Piwi: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
     val debug: RunTestsArgs? = null,
 )
 
@@ -1545,6 +1558,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/screenshot")
     fun screenshot(params: TraceParams): CompletableFuture<ScreenshotResult?>
+
+    @JsonRequest("piwi/fileIssue")
+    fun fileIssue(params: TraceParams): CompletableFuture<FileIssueResult?>
 
     @JsonRequest("piwi/agentContext")
     fun agentContext(params: TraceParams): CompletableFuture<AgentContextResult?>

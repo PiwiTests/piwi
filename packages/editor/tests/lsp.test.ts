@@ -1127,7 +1127,7 @@ describe('the Piwi language server', () => {
             locations: ['tests/rows.spec.ts:4'],
             repeat: 3,
           },
-          // Debug this failure: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
+          // Debug with Piwi: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
           debug: {
             uri: uri('tests/rows.spec.ts'),
             root: dir,
@@ -1141,6 +1141,9 @@ describe('the Piwi language server', () => {
           },
           duration: 5012,
           hasScreenshot: true,
+          // File an issue, on its cluster; its test has a flake suspect no experiment tested.
+          fileIssue: true,
+          untestedSuspects: true,
         },
       ],
       run: {
@@ -1186,6 +1189,18 @@ describe('the Piwi language server', () => {
       ['Reproduce this flake', 'piwi.runCommand'],
       ['Verify the flake fix', 'piwi.runCommand'],
     ]);
+    // File an issue looks for a ticket when asked: this failure's cluster has one, which it names.
+    const at = uri('tests/pages/checkout.page.ts');
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 900 })).toEqual({
+      url: null,
+      message: 'Piwi: an issue is filed for this failure already: SHOP-12 Cart rows missing.',
+      issueUrl: 'https://jira.test/browse/SHOP-12',
+    });
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 1 })).toEqual({
+      url: null,
+      message: 'Piwi: this failure is no longer in the latest run.',
+      issueUrl: null,
+    });
   });
 
   test('groups the failures as the client last asked, for the failures it pushes too', async () => {
@@ -1532,18 +1547,24 @@ describe('the Piwi language server', () => {
       },
     ]);
 
-    // The gutter's actions, in their groups: Run and Verify ×3 at the test's line, the test in the dashboard, then the
-    // Flake Lab commands of its line.
+    // The gutter's actions, in their groups: Run and Verify ×3 at the test's line, Record steps in its body, the test in
+    // the dashboard, then the Flake Lab commands of its line.
     const actions = spec.lines[0]!.actions!;
     expect(actions.map((a) => [a.group, a.title, a.kind])).toEqual([
       ['run', 'Run with Piwi', 'run'],
       ['run', 'Debug with Piwi', 'debug'],
       ['run', 'Verify ×3 with Piwi', 'verify'],
+      ['record', 'Record steps in this test…', undefined],
       ['evidence', 'Open in dashboard', undefined],
       ['lab', 'Reproduce this flake', undefined],
       ['lab', 'Verify the flake fix', undefined],
     ]);
-    expect(actions.map((a) => a.section)).toEqual(['', '', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions.map((a) => a.section)).toEqual(['', '', '', 'Record', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions[3]!.command).toEqual({
+      title: 'Record steps in this test…',
+      command: 'piwi.record',
+      arguments: [uri('tests/checkout.spec.ts'), spec.lines[0]!.endLine! - 1],
+    });
     // A test that passed debugs headed, holding its failures.
     expect(actions[1]!.command.arguments).toEqual([
       { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true },
@@ -1597,9 +1618,9 @@ describe('the Piwi language server', () => {
       {
         problem: true,
         line: 6,
-        title: 'Run this test',
+        title: 'Run with Piwi',
         command: {
-          title: 'Run this test',
+          title: 'Run with Piwi',
           command: 'piwi.runTests',
           arguments: [{ uri: uri('tests/rows.spec.ts'), testIds: [3] }],
         },
@@ -1660,6 +1681,16 @@ describe('the Piwi language server', () => {
       title: 'Copy context for agent',
       command: 'piwi.copyAgentContext',
       arguments: [evidence],
+    }); // Steps are recorded after the last line of the test's body, inside it.
+    expect(spec.lines[0]!.actions!.find((a) => a.group === 'record')).toEqual({
+      group: 'record',
+      section: 'Record',
+      title: 'Record steps in this test…',
+      command: {
+        title: 'Record steps in this test…',
+        command: 'piwi.record',
+        arguments: [uri('tests/rows.spec.ts'), 6],
+      },
     });
   });
 
@@ -2355,7 +2386,7 @@ describe('failures follow the edits', () => {
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
       [5, 'failing in run #41'],
       [8, '✗ Failed here'],
-      [8, 'Run this test'],
+      [8, 'Run with Piwi'],
       [8, 'Screenshot'],
       [8, 'Trace'],
     ]);
@@ -2369,7 +2400,7 @@ describe('failures follow the edits', () => {
     );
   });
 
-  test('rewriting the failing line turns its error into an information, with Run this test first', async () => {
+  test('rewriting the failing line turns its error into an information, Run with Piwi first among its fixes', async () => {
     const seen = failuresChanges.length;
     const rewritten = PAGE_OBJECT.replace("this.page.locator('.cart-row').nth(2)", "this.page.getByRole('row').nth(2)");
     await change(page, rewritten, ++version);
@@ -2385,7 +2416,7 @@ describe('failures follow the edits', () => {
       context: { diagnostics: [edited] },
     })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
     expect(actions[0]).toMatchObject({
-      title: 'Piwi: run this test',
+      title: 'Run with Piwi',
       command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
     });
     // The healing replaces a line the buffer does not hold.
@@ -4012,7 +4043,7 @@ describe('the severity of a failure', () => {
       expect(problems.file).toBeNull();
       expect(problems.lines.filter((l) => l.status === undefined).map((l) => l.title)).toEqual([
         "✗ Failed here · locator('.cart-row').nth(2) was not found",
-        'Run this test',
+        'Run with Piwi',
         'Screenshot',
         'Trace',
       ]);
@@ -4609,7 +4640,7 @@ describe('a change pushed to the client', () => {
 });
 
 describe('jobs for the desktop app running beside a team instance', () => {
-  test('offer Flake Lab on a flaky test and on a failure whose test has an untested suspect', async () => {
+  test('offer Flake Lab on a flaky test, and say on a failure whose test has an untested suspect', async () => {
     const desktopFile = path.join(dir, '.desktop-beside.json');
     // The app runs, but the environment names the team instance, which the context reads.
     fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
@@ -4658,6 +4689,10 @@ describe('jobs for the desktop app running beside a team instance', () => {
         arguments: [{ root: dir, testCaseId: 1, kind: 'flake-lab' }],
       });
 
+      // The failure's node offers the desktop app's jobs, Flake Lab on its untested suspects among them; its light bulb
+      // holds edits.
+      const failures = (await beside.sendRequest('piwi/failures')) as FailuresResult;
+      expect(failures.items.find((f) => f.executionId === 900)).toMatchObject({ untestedSuspects: true, source: 'ci' });
       const failure = await waitFor(() =>
         published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.code === 'ci-failure'),
       );
@@ -4666,15 +4701,7 @@ describe('jobs for the desktop app running beside a team instance', () => {
         range: failure.range,
         context: { diagnostics: [failure] },
       })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
-      const jobs = actions.filter((a) => a.command?.command === 'piwi.desktopJob');
-      expect(jobs.map((a) => [a.title, a.command!.arguments[0]])).toEqual([
-        ['Piwi: reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
-        ['Piwi: find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
-        [
-          'Piwi: run Flake Lab on its untested suspects in the desktop app',
-          { root: dir, executionId: 900, testCaseId: 3, kind: 'flake-lab' },
-        ],
-      ]);
+      expect(actions.filter((a) => a.command?.command === 'piwi.desktopJob')).toEqual([]);
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopBeside();
