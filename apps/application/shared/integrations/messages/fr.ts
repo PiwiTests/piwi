@@ -37,6 +37,10 @@ export const fr: Record<MessageKey, MessageValue> = {
   'label.rootCause': 'Cause racine',
   'label.failingLocator': 'Localisateur en échec',
   'label.verify': 'Vérifier',
+  'label.verifyLeftOut': {
+    one: 'La commande laisse de côté ce test, lancez-le vous-même :',
+    other: 'La commande laisse de côté ces tests, lancez-les vous-même :',
+  },
   'label.reproduce': 'Reproduire',
   'label.category': 'Catégorie',
 

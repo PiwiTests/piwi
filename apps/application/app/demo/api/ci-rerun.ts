@@ -33,7 +33,7 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
-import { buildRetryArgs, NO_RETRY_ARGS, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, NO_RETRY_ARGS, withRetryCases, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
   ciServerValues,
@@ -157,7 +157,10 @@ export async function demoClusterRerunInfo(db: DemoDB, clusterId: number, action
   const target = await clusterTarget(db, clusterId);
   if (!target) throw demoHttpError(404, 'Failure cluster not found');
   return {
-    ...(await availability(db, target.projectId, target.runId, actionId)),
+    ...withRetryCases(
+      await availability(db, target.projectId, target.runId, actionId),
+      await clusterRerunCases(db, clusterId),
+    ),
     lastDispatch: await clusterLastDispatch(db, clusterId),
   };
 }
@@ -167,7 +170,7 @@ export async function demoExecutionRerunInfo(db: DemoDB, executionId: number) {
   const target = await executionRerunTarget(db, executionId);
   if (!target) throw demoHttpError(404, 'Test run case not found');
   return {
-    ...(await availability(db, target.projectId, target.runId)),
+    ...withRetryCases(await availability(db, target.projectId, target.runId), [target.rerunCase]),
     lastDispatch: await clusterLastDispatch(db, target.clusterId),
   };
 }
@@ -189,7 +192,7 @@ async function dispatch(
   input: { projectId: number; runId: number; clusterId: number | null; cases: RetryCase[]; actionId?: string | null },
   userId: number | null,
 ) {
-  const ready = await availability(db, input.projectId, input.runId, input.actionId);
+  const ready = withRetryCases(await availability(db, input.projectId, input.runId, input.actionId), input.cases);
   if (!ready.available) throw demoHttpError(400, ready.reason ?? UNAVAILABLE);
   const { settings } = await projectCiActions(db, input.projectId);
   const action = pickRerunAction(settings, await runEnvironment(db, input.runId), input.actionId).action as

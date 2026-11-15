@@ -4,6 +4,7 @@ import {
   buildLocalRunPlan,
   buildReproduceArgs,
   canBisect,
+  localRunNamedCases,
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
@@ -295,6 +296,15 @@ describe('a test with no spec path Playwright takes', () => {
   test('a blank title selects nothing', () => {
     expect(buildLocalRunPlan([{ ...CASE, title: '   ' }], { mode: 'grep' })).toEqual([]);
     expect(buildBisectArgs([{ ...CASE, filePath: '', title: ' ' }])).toEqual([]);
+  });
+});
+
+describe('the cases a local run names', () => {
+  test('by file, those whose path Playwright takes; by title, those with a title', () => {
+    const cases = [CASE, { ...CASE, filePath: '.' }, { ...CASE, filePath: 'tests/b.spec.ts', title: ' ' }];
+    expect(localRunNamedCases(cases)).toEqual([CASE, cases[2]]);
+    expect(localRunNamedCases(cases, 'grep')).toEqual([CASE, cases[1]]);
+    expect(buildLocalRunPlan([{ ...CASE, filePath: '/' }])).toEqual([]);
   });
 });
 

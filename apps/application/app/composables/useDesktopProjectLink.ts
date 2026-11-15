@@ -40,10 +40,13 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
   /** The IPC bridge exists — resolved on mount so SSR renders nothing. */
   const available = ref(false);
   const link = ref<DesktopProjectLink | null>(null);
+  /** The link was read once: until then, `link` being null does not mean the project has none. */
+  const loaded = ref(false);
   const busy = ref(false);
 
   async function refresh() {
     link.value = await getDesktopProjectLink(toValue(projectId));
+    loaded.value = true;
   }
 
   onMounted(() => {
@@ -53,6 +56,7 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
   watch(
     () => toValue(projectId),
     () => {
+      loaded.value = false;
       if (available.value) void refresh();
     },
   );
@@ -92,5 +96,5 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
     }
   }
 
-  return { available, link, busy, refresh, pickAndLink, unlink };
+  return { available, link, loaded, busy, refresh, pickAndLink, unlink };
 }
