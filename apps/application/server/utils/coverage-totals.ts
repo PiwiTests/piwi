@@ -789,7 +789,9 @@ export async function finalCommitTotals(
  * commit that superseded it; one with no totals yet has them computed first,
  * and one whose totals are being computed keeps its reports until the next
  * prune, unless it is `only.ready`, the commit whose computation just stored
- * them. `only` keeps to one project's branch. Returns how many reports went.
+ * them. A commit is superseded only by one whose totals are stored, or not
+ * waiting to be computed: the newer commit's own computation prunes it. `only`
+ * keeps to one project's branch. Returns how many reports went.
  */
 export async function pruneSupersededReports(
   db: DrizzleDB,
@@ -882,6 +884,8 @@ export async function pruneSupersededReports(
   for (const [key, entry] of superseded) {
     const { projectId, commit, totals } = commits.get(key)!;
     if (commit !== only?.ready && totalsInFlight(projectId, commit)) continue;
+    // Until the newer commit's totals are stored, the branch's coverage is still this commit's.
+    if (!commits.get(`${projectId}\0${entry.by}`)!.totals && totalsInFlight(projectId, entry.by)) continue;
     if (!totals) await storeCommitTotals(db, projectId, commit);
     await markDetailRemoved(db, projectId, commit, entry.by, now);
     for (let i = 0; i < entry.ids.length; i += ROW_CHUNK) {

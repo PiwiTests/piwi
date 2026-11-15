@@ -29,9 +29,11 @@ const {
   commitDetailRemoved,
   loadCommitCoverage,
   pruneSupersededReports,
+  scheduleCommitTotals,
   settleCommitCoverage,
   staleCoverageCommits,
   storeCommitTotals,
+  TOTALS_DELAY_MS,
 } = await import('../../server/utils/coverage-totals');
 const { exportCommitCoverage, getCoverageSummary, getCoverageTree, invalidateCommitCoverage } =
   await import('../../server/utils/coverage-summary');
@@ -132,6 +134,29 @@ describe('pruneSupersededReports', () => {
     expect(await pruneSupersededReports(db as never, at(2, 14))).toBe(1);
     const [combined] = (await totalsOf(COMMIT_1)).filter((r) => r.suite === 'combined' && r.area === '');
     expect(combined).toMatchObject({ executedLines: 4, supersededBy: COMMIT_2 });
+  });
+
+  test('waits for the newer commit’s totals, whose computation then supersedes the older commit', async () => {
+    await upload(COMMIT_1, 'unit-back', { files: [back([[1, 4]])] }, at(1));
+    await upload(COMMIT_1, 'unit-front', { files: [front([[1, 2]])] }, at(1));
+    await storeCommitTotals(db as never, 1, COMMIT_1, at(1, 13));
+    await upload(COMMIT_2, 'unit-back', { files: [back([[1, 6]])] }, at(2));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      scheduleCommitTotals(async () => db as never, 1, COMMIT_2);
+      // The first commit's own computation is done: the second's is still waiting.
+      expect(
+        await pruneSupersededReports(db as never, at(2, 14), { projectId: 1, branch: BRANCH, ready: COMMIT_1 }),
+      ).toBe(0);
+      expect(await commitDetailRemoved(db as never, 1, COMMIT_1)).toBeNull();
+      await vi.advanceTimersByTimeAsync(TOTALS_DELAY_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    await vi.waitFor(async () =>
+      expect(await commitDetailRemoved(db as never, 1, COMMIT_1)).toMatchObject({ supersededBy: COMMIT_2 }),
+    );
+    expect(await reports()).toEqual(['1 unit-front', '2 unit-back']);
   });
 
   test('leaves the default branch to its own rule', async () => {
