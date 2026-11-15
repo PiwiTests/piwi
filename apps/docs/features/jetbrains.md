@@ -68,7 +68,7 @@ line** on the debugger's Show Execution Point key:
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
   since the IDE highlights open files only.
 - **Code Vision** shows the lines above files, locators and failing lines, a line's entries side by side (a failing
-  line's reason, **Run with Piwi**, **Screenshot** and **Trace**), up to the number the IDE's Code Vision settings show
+  line's reason and **Run with Piwi**), up to the number the IDE's Code Vision settings show
   per line (five by default), in a group named Piwi under **Settings → Editor → Inlay Hints → Code Vision**, where they
   can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
   **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, **Record steps in

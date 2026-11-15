@@ -1914,7 +1914,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(listOf(4 to "1 test · click · 1 failing"), summary?.lines?.map { it.line to it.title })
                 assertEquals("piwi.runTests", summary?.lines?.single()?.command?.command)
 
-                // In the spec: the line the failure went through, why, and the evidence above it.
+                // In the spec: the line the failure went through and why; its evidence is among the test's actions.
                 val spec = File(dir, "tests/checkout.spec.ts").toURI().toString().replace("file:/", "file:///")
                 val specLines = server.fileSummary(UriParams(spec)).get(5, TimeUnit.SECONDS)?.lines.orEmpty()
                 val test = specLines.single { it.status != null }
@@ -1924,11 +1924,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     listOf(
                         Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
                         Triple(4, "Run with Piwi", "piwi.runTests"),
-                        Triple(4, "Screenshot", "piwi.openScreenshot"),
-                        Triple(4, "Trace", "piwi.openTrace"),
                     ),
                     specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
                 )
+                assertTrue(test.actions.orEmpty().map { it.title }.containsAll(listOf("Open the trace", "Open the screenshot")))
                 // Record here in Alt+Enter: steps in the test's body, nothing on the imports.
                 assertEquals(RecordPlaceResult("steps", "Piwi: record steps here…"), server.recordPlace(RecordPlaceParams(spec, 4)).get(5, TimeUnit.SECONDS))
                 assertEquals(RecordPlaceResult(null, null), server.recordPlace(RecordPlaceParams(spec, 0)).get(5, TimeUnit.SECONDS))

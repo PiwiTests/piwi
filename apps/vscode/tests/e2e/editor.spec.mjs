@@ -129,14 +129,15 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
-test('no row of lenses is cut short in an editor of the window’s width', async () => {
-  /** The rows of the active editor that are cut short: their text past their box, or their box past the code. */
+test('no row of lenses is cut short, in an editor of the window’s width or of half of it', async () => {
+  /**
+   * The rows of the active editor that are cut short: their text past their box, or their box past the code's area. The
+   * vertical scrollbar lies over that area, shown as the code scrolls, and a row's end under it stays readable.
+   */
   const cut = () =>
     page.evaluate(() => {
       const editor = document.activeElement?.closest('.monaco-editor');
-      const code = editor?.querySelector('.editor-scrollable');
-      const scrollbar = editor?.querySelector('.scrollbar.vertical')?.getBoundingClientRect().width ?? 0;
-      const right = (code?.getBoundingClientRect().right ?? 0) - scrollbar;
+      const right = editor?.querySelector('.editor-scrollable')?.getBoundingClientRect().right ?? 0;
       // A row scrolled out of view is not drawn.
       const rows = [...(editor?.querySelectorAll('.codelens-decoration') ?? [])].filter(
         (row) => row.getBoundingClientRect().width > 0,
@@ -148,13 +149,17 @@ test('no row of lenses is cut short in an editor of the window’s width', async
           .map((row) => row.textContent),
       };
     });
-  for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
-    await openFile(page, file);
-    await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
-    const { rows, cut: short } = await cut();
-    expect(rows, file).toBeGreaterThan(0);
-    expect(short, file).toEqual([]);
+  for (const split of [false, true]) {
+    if (split) await command(page, 'View: Split Editor Right');
+    for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
+      await openFile(page, file);
+      await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
+      const { rows, cut: short } = await cut();
+      expect(rows, `${file}${split ? ', split' : ''}`).toBeGreaterThan(0);
+      expect(short, `${file}${split ? ', split' : ''}`).toEqual([]);
+    }
   }
+  await command(page, 'View: Join All Editor Groups');
 });
 
 test('a spec’s editor title offers Record here…, and its Run button the spec’s runs', async () => {
