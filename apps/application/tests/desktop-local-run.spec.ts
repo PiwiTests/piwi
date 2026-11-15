@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
@@ -143,6 +143,42 @@ async function processStarted(page: Page) {
   await expect.poll(async () => (await runInvocations(page)).length, { timeout: 15_000 }).toBeGreaterThan(0);
 }
 
+/** A failed chromium result at `location`, as the reporter sends it. */
+function failedAt(title: string, location: string) {
+  return {
+    title,
+    status: 'failed',
+    duration: 1000,
+    location,
+    browser: { name: 'chromium', projectName: 'chromium' },
+    error: 'Error: boom',
+    retries: 0,
+    workerIndex: 0,
+    startedAt: Date.now(),
+  };
+}
+
+/** Reports a failed run of these results to its own project, and returns the run's id. */
+async function submitFailedRun(request: APIRequestContext, testCases: ReturnType<typeof failedAt>[]): Promise<number> {
+  const res = await retryPost(request, '/api/test-runs/submit', {
+    data: {
+      projectName: PROJECT.DESKTOP_LOCAL_RUN_UNNAMED,
+      status: 'failed',
+      startTime: new Date().toISOString(),
+      duration: 2000,
+      totalTests: testCases.length,
+      passedTests: 0,
+      failedTests: testCases.length,
+      skippedTests: 0,
+      testCases,
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+  const data = await res.json();
+  const proj = await (await request.get(`/api/projects/${data.projectId}`)).json();
+  return proj.testRuns[0].id as number;
+}
+
 test.describe('Desktop local run', () => {
   let runId: number;
   let projectId: number;
@@ -195,6 +231,29 @@ test.describe('Desktop local run', () => {
     const run = await (await request.get(`/api/test-runs/${runId}`)).json();
     type Case = { title: string; executionId: number };
     executionId = (run.testCases as Case[]).find((c) => c.title === 'checkout completes')!.executionId;
+  });
+
+  test('a test with no file path Playwright takes is left out, and the button says so', async ({ page, request }) => {
+    await installFakeBridge(page, { linked: true });
+    const runId = await submitFailedRun(request, [failedAt('pays', 'tests/pay.spec.ts:7:1'), failedAt('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run options' }).first().click();
+    await expect(page.getByText('Leaves out 1 of the 2 tests: Playwright cannot take their file paths')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Re-run 2 failed tests · 1 left out', exact: true }).click();
+    await processStarted(page);
+    expect((await runInvocations(page))[0]!.args!.args).toEqual(['tests/pay.spec.ts:7', '--project=chromium']);
+  });
+
+  test('with no test it can name, the button runs nothing and its menu says why', async ({ page, request }) => {
+    await installFakeBridge(page, { linked: true });
+    const runId = await submitFailedRun(request, [failedAt('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(page.getByRole('menu').getByText('Runs nothing')).toBeVisible();
+    expect(await runInvocations(page)).toHaveLength(0);
   });
 
   test('without the bridge the button does not exist', async ({ page }) => {
