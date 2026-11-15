@@ -43,7 +43,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   custom ranges, release cycles, sprints) carried by the URL; saved and shared dashboards with TV mode for a wall
   screen; the default branch as the default scope, per-project targets, and trend widgets for suite growth, flaky
   debt, time to fix and ownership. The same schedules deliver the Test Map's weekly gaps digest. Publishing a report
-  to Confluence waits for the wiki connection (see *Issue trackers, the rest*). Design record in
+  to Confluence waits for the wiki connection (see _Issue trackers, the rest_). Design record in
   [adr/analytics-and-reporting.md](adr/analytics-and-reporting.md); see
   [analytics](https://piwitests.dev/features/analytics), [dashboards](https://piwitests.dev/features/dashboards) and
   [quality reports](https://piwitests.dev/features/quality-reports).
@@ -194,6 +194,9 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   test's history across runs, would follow the same shape.
 - **Self-sufficient trace archives** — an export can carry the trace files, but reading them still needs a Playwright
   trace viewer. Bundling the viewer's assets would close that gap, at roughly 10 MB per export.
+- **Playwright for .NET** — an MIT NuGet package writing Piwi's run report from NUnit, MSTest and xUnit suites that
+  use Playwright, beside the ASP.NET Core instrumentation: run history, failure grouping, flaky scores and traces for
+  C# suites. Design record in [proposals/playwright-dotnet.md](proposals/playwright-dotnet.md).
 - More backend-log instrumentation packages beyond ASP.NET Core and Nitro.
 - Merging imported shards of one CI run into a single run (today each shard imports separately).
 - A dual ESM/CJS reporter build (the package is CommonJS-only today; named imports work everywhere, but a native ESM default import needs an interop shim).
