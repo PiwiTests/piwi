@@ -322,6 +322,11 @@ describe('the sessions kept', () => {
     );
     expect(spelled.workers[0]!.stop!.uri).toBe('file:///c%3A/shop/a.spec.ts');
     expect(spelled.workers[0]!.test!.uri).toBe(spec);
+    const waiting = { title: 'Click', uri: 'file:///C:/shop/a.spec.ts', line: 1, since: null, endable: true };
+    const pausing = spelledSession(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), (uri) =>
+      uri.replace('file:///C:', 'file:///c%3A'),
+    );
+    expect(pausing.workers[0]!.waiting!.uri).toBe('file:///c%3A/shop/a.spec.ts');
   });
 });
 
@@ -467,6 +472,11 @@ describe('what the controls offer', () => {
     expect(endChoice(waitingSessions, true, null)).toBe('stop');
     expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, slot: 0, waiting }]);
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    // The waiting line names its worker: that one ends, though another worker's stop could end too.
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 0 })).toEqual([
+      { ref: 'ed-1', worker: 0, slot: 0, waiting },
+    ]);
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 1 })).toBe('stop');
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
     expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(

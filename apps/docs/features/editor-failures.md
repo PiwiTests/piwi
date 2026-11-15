@@ -24,13 +24,14 @@ is in your workspace (often a page object), else the `test(…)` line, with the 
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
 reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
-On a failure, the light bulb lists Piwi's quick fixes, each titled `Piwi:` and its words. They edit the code; running
-the test, its trace, the context for an agent and its page in the dashboard are on the failure's node in the
-[failures view](#the-failures-view) and above a spec's line:
+On a failure, the light bulb lists Piwi's quick fixes, each titled `Piwi:` and its words. They edit the code but for
+the desktop app's jobs and **File an issue**; running the test, its trace, the context for an agent and its page in
+the dashboard are on the failure's node in the [failures view](#the-failures-view), and running it and its trace above
+the line a spec failed at:
 
 - **heal with …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
   [locator healing](/features/locator-healing) has a recommendation for the failing locator.
-- **run this test**, first once you rewrote the line it failed at, checks the edit.
+- **run this test** comes first once you rewrote the line it failed at, to check the edit.
 - **reproduce in the desktop app**, **find the breaking commit in the desktop app** and **run Flake Lab on its
   untested suspects in the desktop app**, for a test with an untested [flake suspect](./flake-lab), while the
   [desktop app](/features/desktop#jobs-from-your-editor) runs; **share on …** records the result.

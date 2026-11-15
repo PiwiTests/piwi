@@ -106,6 +106,7 @@ import {
   liveMenu,
   RunningLines,
   waitingMarks,
+  waitingWorkers,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -369,7 +370,7 @@ export function registerRunControl(
       if (edit) edits.add(uri, edit);
     }
     if (stopsOf(sessions).some((s) => s.stop.uri === uri)) drawStops();
-    if (running.tells(uri)) drawRunning();
+    if (running.tells(uri) || waitingWorkers(sessions).some((w) => w.waiting.uri === uri)) drawRunning();
   };
 
   /** The context keys of the menus and keys, for the sessions kept; the Piwi item shows the service's run line. */

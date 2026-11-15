@@ -26,7 +26,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the cursor for the caret and the window for the project. `packages/editor/tests/actions.test.ts` holds `package.json`
   to it.
 - **The command ids the service names are part of the protocol.** They are the ids of `PiwiCommand.command` in
-  `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
+  `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a test's action list: renaming one changes the service and
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
   and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
   freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`). A new

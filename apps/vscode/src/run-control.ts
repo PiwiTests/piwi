@@ -195,7 +195,10 @@ export function withSession(sessions: Sessions, session: RunSession): Map<string
   return next;
 }
 
-/** A session whose stops and tests name their files as `spell` spells a document's URI, which they are compared with. */
+/**
+ * A session whose stops, tests and waiting calls name their files as `spell` spells a document's URI, which they are
+ * compared with.
+ */
 export function spelledSession(session: RunSession, spell: (uri: string) => string): RunSession {
   return {
     ...session,
@@ -203,6 +206,7 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
       ...w,
       test: w.test && { ...w.test, uri: spell(w.test.uri) },
       stop: w.stop && { ...w.stop, uri: spell(w.stop.uri) },
+      waiting: w.waiting && { ...w.waiting, uri: w.waiting.uri === null ? null : spell(w.waiting.uri) },
     })),
   };
 }
@@ -1635,7 +1639,13 @@ export function waitingMarks(
  * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.
  */
 export function endChoice(sessions: Sessions, stopCanEnd: boolean, target: RunTarget | null): 'stop' | WaitingWorker[] {
-  if (stopCanEnd || target?.since !== undefined) return 'stop';
+  if (target?.since !== undefined) return 'stop';
+  // A command naming a waiting worker (its waiting line's hover) ends its test, whatever stop could end too.
+  if (target?.worker !== undefined) {
+    const named = waitingWorkers(sessions, target);
+    if (named.length) return named;
+  }
+  if (stopCanEnd) return 'stop';
   return waitingWorkers(sessions, target);
 }
 
