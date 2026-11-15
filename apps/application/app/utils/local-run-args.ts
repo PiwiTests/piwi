@@ -68,7 +68,7 @@ function elided(items: string[]): string[] {
 
 /**
  * The test filters of a step, and the same filters as its short preview shows them. A spec path that is empty or
- * starts with `-` is left out, as the copied command leaves it out, and so is an empty title.
+ * starts with `-` is left out, and so is an empty title.
  */
 function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {

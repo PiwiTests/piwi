@@ -205,7 +205,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
           >
             Link a folder to reproduce here
           </UButton>
-          <span v-if="linked" class="text-xs text-dimmed">
+          <span v-if="canReproduceHere" class="text-xs text-dimmed">
             Runs in a worktree of the failing commit — your checkout is never touched.
           </span>
         </div>

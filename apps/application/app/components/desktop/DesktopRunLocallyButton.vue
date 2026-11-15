@@ -93,9 +93,13 @@ watch(
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
-/** No case has a spec path Playwright can take (empty, or read as an option): only selecting by title runs them. */
+/** No case has a filter Playwright can take: a spec path that is empty or read as an option, or an empty title. */
 const noPlan = computed(() => plan.value.length === 0);
-const NO_PLAN_HINT = "Playwright cannot take these tests' file paths: select them by title";
+const noPlanHint = computed(() =>
+  options.value.mode === 'grep'
+    ? 'These tests have no title to select them by: select them by file'
+    : "Playwright cannot take these tests' file paths: select them by title",
+);
 const contextRun = computed(() => store.latestForCases(props.projectId, props.cases));
 const running = computed(() => contextRun.value?.status === 'running');
 
@@ -151,7 +155,7 @@ const face = computed(() => {
   if (!linked.value) {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
-  if (noPlan.value) return { ...idle, tooltip: NO_PLAN_HINT };
+  if (noPlan.value) return { ...idle, tooltip: noPlanHint.value };
   const command =
     plan.value.length === 1
       ? (plan.value[0]!.summary ?? plan.value[0]!.display)
@@ -213,7 +217,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     groups.push([
       { type: 'label', label: 'Tests not found in the linked folder' },
       { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   } else if (playwrightMissing.value) {
     groups.push([
@@ -226,7 +230,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           void checkEnv();
         },
       },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   }
 
@@ -242,7 +246,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       },
       {
         type: 'label',
-        label: noPlan.value ? NO_PLAN_HINT : commandPreview.value,
+        label: noPlan.value ? noPlanHint.value : commandPreview.value,
         class: 'font-mono text-[11px] font-normal',
         ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
       },
