@@ -89,6 +89,7 @@ import {
   workersNow,
   frameIsCurrent,
   waitedFor,
+  waitingMarks,
   waitingWorkers,
   endChoice,
   laneShown,
@@ -451,6 +452,16 @@ describe('what the controls offer', () => {
     const restarted = sessionsOf(session('ed-1', [worker(2, 'running', { pausing: true, waiting, parallelIndex: 0 })]));
     expect(waitingWorkers(restarted)).toEqual([{ ref: 'ed-1', worker: 2, slot: 0, waiting }]);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // Its line is marked in the code, with End the test for its worker, at the line it is at now.
+    expect(waitingMarks(restarted, spec, 10, (_uri, line) => line + 1)).toEqual([
+      {
+        line: 5,
+        text: "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' })",
+        target: { ref: 'ed-1', worker: 2 },
+      },
+    ]);
+    expect(waitingMarks(restarted, 'file:///elsewhere.spec.ts', 10, (_uri, line) => line)).toEqual([]);
+    expect(waitingMarks(restarted, spec, 4, (_uri, line) => line)).toEqual([]);
     // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
     expect(endChoice(waitingSessions, true, null)).toBe('stop');

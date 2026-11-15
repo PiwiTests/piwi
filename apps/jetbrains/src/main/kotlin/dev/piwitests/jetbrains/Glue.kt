@@ -70,6 +70,22 @@ object Glue {
         else -> EditorWords.words("hold.auto")
     }
 
+    /** A row of Run options…: the option it changes (`headed` or `holdFailures`), its label, its current value, and why. */
+    data class RunOptionRow(val option: String, val label: String, val value: String, val detail: String)
+
+    /** The rows of Run options…: Run headed, on or off, then Hold failures, with the current choice, as VS Code's. */
+    fun runOptionRows(headed: Boolean, hold: String): List<RunOptionRow> = listOf(
+        RunOptionRow(
+            "headed",
+            EditorWords.words("run-options.headed"),
+            if (headed) "On" else "Off",
+            EditorWords.words(if (headed) "run-options.headed.on" else "run-options.headed.off"),
+        ),
+        RunOptionRow("holdFailures", EditorWords.words("run-options.hold"), EditorWords.words("hold.${holdKey(hold)}.short"), holdFailuresLabel(hold)),
+    )
+
+    private fun holdKey(choice: String) = if (choice in HOLD_FAILURES_CHOICES) choice else "auto"
+
     /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
     fun holdFailuresOption(choice: String): Boolean? = when (choice) {
         "on" -> true
@@ -2936,6 +2952,20 @@ object Glue {
         session.workers.orEmpty().mapNotNull { w ->
             w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it, w.parallelIndex) }
         }
+    }
+
+    /** A line a pausing test waits at, marked in the code with End the test: its worker, its file, its line, its words. */
+    data class WaitingLine(val waiting: WaitingWorker, val uri: String, val line: Int, val text: String)
+
+    /**
+     * The lines where a pausing test waits in a call (`RunWorker.waiting`), each a line of its run's code:
+     * `Piwi: Worker 2 · Pausing · waits in Click getByRole('button')`, as VS Code's `waitingMarks`. A call the worker
+     * names no place of has none.
+     */
+    fun waitingLinesShown(sessions: Map<String, RunSession>): List<WaitingLine> = waitingWorkers(sessions).mapNotNull { w ->
+        val uri = w.waiting.uri ?: return@mapNotNull null
+        val line = w.waiting.line ?: return@mapNotNull null
+        WaitingLine(w, uri, line, "Piwi: ${workerName(w.slot)} · Pausing · waits in ${clipped(w.waiting.title)}")
     }
 
     /** The longest call the status bar names before it cuts it, in characters. */

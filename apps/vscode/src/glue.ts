@@ -2132,7 +2132,7 @@ export function withRunStart<T extends RunTestsArgs | RunSelectionParams>(args: 
 /** The choices in words, as **Piwi: Run options…** names them: `Run headed: on · Hold failures: Auto`. */
 export function runStartText(choices: RunStartChoices): string {
   const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!.label;
-  return `Run headed: ${choices.headed ? 'on' : 'off'} · Hold failures: ${hold}`;
+  return editorWords('run-options.state', { headed: choices.headed ? 'on' : 'off', hold });
 }
 
 /** The status bar item tooltip's line on the choices, with the link that changes them. */
@@ -2147,13 +2147,11 @@ export function runOptionPicks(
   const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!;
   return [
     {
-      label: 'Run headed',
+      label: editorWords('run-options.headed'),
       description: choices.headed ? 'On' : 'Off',
-      detail: choices.headed
-        ? 'Every test runs with its browser window shown. Pick to turn it off.'
-        : 'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
+      detail: editorWords(choices.headed ? 'run-options.headed.on' : 'run-options.headed.off'),
       option: 'headed',
     },
-    { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
+    { label: editorWords('run-options.hold'), description: hold.label, detail: hold.detail, option: 'holdFailures' },
   ];
 }

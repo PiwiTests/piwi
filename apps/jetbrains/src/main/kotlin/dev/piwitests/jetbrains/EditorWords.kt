@@ -3,8 +3,8 @@ package dev.piwitests.jetbrains
 /**
  * The words both editors write themselves, restating the editor service's `words.json`, which the VS Code extension
  * reads and `GlueTest` holds this copy to: a stop's controls and code actions with their short labels, a recording's
- * states, controls and edited block's message, a worker's and a CI lane's name, and Hold failures' choices and a run's
- * state. `{cursor}` is the caret here.
+ * states, controls and edited block's message, a worker's and a CI lane's name, Hold failures' choices and a run's state,
+ * and the run options. `{cursor}` is the caret here.
  */
 object EditorWords {
     val WORDS: Map<String, String> = linkedMapOf(
@@ -53,6 +53,12 @@ object EditorWords {
         "page.watch" to "Watch",
         "page.interact" to "Interact",
         "page.input-rule" to "At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker’s next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator.",
+        "run-options.title" to "Run options",
+        "run-options.headed" to "Run headed",
+        "run-options.headed.on" to "Every test runs with its browser window shown. Pick to turn it off.",
+        "run-options.headed.off" to "Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.",
+        "run-options.hold" to "Hold failures",
+        "run-options.state" to "Run headed: {headed} · Hold failures: {hold}",
     )
 
     /** The words of `key`, each `{name}` replaced by its value in `values`; `{cursor}` is the caret. */

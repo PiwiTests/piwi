@@ -1127,6 +1127,20 @@ class GlueTest {
         val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
         assertNull(Glue.runControls(going).waiting)
         assertEquals(emptyList<Glue.WaitingWorker>(), Glue.waitingWorkers(going))
+        // Its line is marked in the code, with End the test for its worker; a call with no place has none.
+        assertEquals(
+            listOf(
+                Glue.WaitingLine(
+                    Glue.WaitingWorker("ed-1", 2, waiting, 0),
+                    specUri,
+                    4,
+                    "Piwi: Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' })",
+                ),
+            ),
+            Glue.waitingLinesShown(restarted),
+        )
+        val nowhere = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting.copy(line = null))))
+        assertEquals(emptyList<Glue.WaitingLine>(), Glue.waitingLinesShown(nowhere))
     }
 
     @Test
@@ -2247,6 +2261,19 @@ class GlueTest {
         assertEquals(2, Glue.lineEndWithBreak(1, 6))
         assertEquals(5, Glue.lineEndWithBreak(4, 6))
         assertEquals(6, Glue.lineEndWithBreak(6, 6))
+    }
+
+    @Test
+    fun `Run options lists Run headed and Hold failures with their choices now, in VS Code's words`() {
+        assertEquals(
+            listOf(
+                Glue.RunOptionRow("headed", "Run headed", "Off", EditorWords.words("run-options.headed.off")),
+                Glue.RunOptionRow("holdFailures", "Hold failures", "Auto", EditorWords.words("hold.auto")),
+            ),
+            Glue.runOptionRows(headed = false, hold = "auto"),
+        )
+        assertEquals(listOf("On", "On"), Glue.runOptionRows(headed = true, hold = "on").map { it.value })
+        assertEquals("Auto", Glue.runOptionRows(headed = true, hold = "unknown")[1].value)
     }
 
     @Test

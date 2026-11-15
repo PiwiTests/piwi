@@ -208,7 +208,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.NewRecordedTest", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
-            setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
+            setOf("Piwi.OpenSettings", "Piwi.NodeSettings", "Piwi.RunOptions"),
         )
         val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
             .values.filter { it.size > 1 }.map { it.toSet() }.toSet()

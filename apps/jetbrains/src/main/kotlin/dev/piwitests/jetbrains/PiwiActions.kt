@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -523,6 +524,31 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
             .setSelectedValue(current, true)
             .setTitle("Hold failures from each run's start")
             .setItemChosenCallback { user.runHoldFailures = it }
+            .createPopup()
+            .showCenteredInCurrentWindow(project)
+    }
+}
+
+/**
+ * Piwi: Run options… — how every run Piwi starts in every project starts, as VS Code's: Run headed, which a pick turns
+ * on or off, and Hold failures, which a pick opens the choices of.
+ */
+class RunOptionsAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val user = PiwiUserSettings.state()
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(Glue.runOptionRows(user.runHeaded, user.runHoldFailures))
+            .setRenderer(textRenderer<Glue.RunOptionRow> { "${it.label} · ${it.value}" })
+            .setTitle(EditorWords.words("run-options.title"))
+            .setItemChosenCallback { row ->
+                if (row.option == "headed") user.runHeaded = !user.runHeaded
+                else ActionManager.getInstance().getAction("Piwi.RunHoldFailures")?.let {
+                    ActionManager.getInstance().tryToExecute(it, null, null, ActionPlaces.UNKNOWN, true)
+                }
+            }
             .createPopup()
             .showCenteredInCurrentWindow(project)
     }

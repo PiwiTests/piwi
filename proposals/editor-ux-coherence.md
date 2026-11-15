@@ -1220,7 +1220,7 @@ such action.
 | Write code… | - | - | a lens and a page's button, no glyph | `Actions.IntentionBulb`, built on a worker's page |
 | Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |
 | Run on my machine | `monitor-play` | – | – | – |
-| Run headed, Hold failures (start options) | – | – | `$(settings)` on Run options… | `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed ([NF3](#nf3)) |
+| Run headed, Hold failures (start options) | – | – | `$(settings)` on Run options… | `General.Settings` on Run options…, `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed ([NF3](#nf3)) |
 | Show the stopped test's browser | – | – | `$(browser)` | `browser.svg` |
 | Share with Playwright tools | – | – | `$(tools)` | `tools.svg` |
 | Reset the runs' MCP token | – | – | `$(key)` | `key.svg` |

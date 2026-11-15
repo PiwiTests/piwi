@@ -1606,6 +1606,30 @@ export function waitingWorkers(sessions: Sessions, target: RunTarget | null = nu
   );
 }
 
+/** A line where a pausing test waits, marked in the code with End the test for its run and worker (`target`). */
+export interface WaitingMark extends RunningMark {
+  target: { ref: string; worker: number };
+}
+
+/**
+ * The lines in the document `uri` of `lineCount` lines where a pausing test waits in a call (`RunWorker.waiting`), each
+ * at its line now (`forward`, as `RunningLines.marks`): `Worker 2 · Pausing · waits in Click getByRole('button')`.
+ */
+export function waitingMarks(
+  sessions: Sessions,
+  uri: string,
+  lineCount: number,
+  forward: (uri: string, line: number, ref: string) => number,
+): WaitingMark[] {
+  return waitingWorkers(sessions).flatMap((w) => {
+    if (w.waiting.uri !== uri || w.waiting.line === null) return [];
+    const line = forward(uri, w.waiting.line, w.ref);
+    if (line < 0 || line >= lineCount) return [];
+    const text = `${workerName(w.slot)} · Pausing · waits in ${w.waiting.title}`;
+    return [{ line, text, target: { ref: w.ref, worker: w.worker } }];
+  });
+}
+
 /**
  * What End the test answers: a stop, when the command names one (`since`, from a lens or a hover) or a stop can end;
  * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.

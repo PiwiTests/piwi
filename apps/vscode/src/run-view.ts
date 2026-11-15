@@ -105,6 +105,7 @@ import {
   linesAbove,
   liveMenu,
   RunningLines,
+  waitingMarks,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -262,6 +263,12 @@ export function registerRunControl(
     after: { margin: '0 0 0 3ch', color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' },
   });
   const running = new RunningLines();
+  /** A line where a pausing test waits: marked as a running line is, its hover offering End the test there. */
+  const waitingLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+    after: { margin: '0 0 0 3ch', color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' },
+  });
   /** The lines marked as running, by file, for the API `activate` returns. */
   const runningDrawn = new Map<string, number[]>();
   /** A held failure's line: the execution point in the dashboard's failure red. */
@@ -438,6 +445,25 @@ export function registerRunControl(
           uri,
           marks.map((mark) => mark.line),
         );
+      const waits = waitingMarks(sessions, uri, editor.document.lineCount, (file, line, ref) =>
+        edits.forward(file, line, sinceOf(ref)),
+      );
+      editor.setDecorations(
+        waitingLine,
+        waits.map((mark) => {
+          const end = editor.document.lineAt(mark.line).range.end;
+          const target = encodeURIComponent(JSON.stringify([mark.target]));
+          const hover = new vscode.MarkdownString(
+            `${markdown(mark.text)}\n\n[${editorWords('stop.end')}](command:${RUN_COMMANDS.end}?${target})`,
+          );
+          hover.isTrusted = { enabledCommands: [RUN_COMMANDS.end] };
+          return {
+            range: new vscode.Range(mark.line, 0, mark.line, end.character),
+            hoverMessage: hover,
+            renderOptions: { after: { contentText: `${mark.text} · ${editorWords('stop.end')}` } },
+          };
+        }),
+      );
     }
   };
 
@@ -1380,6 +1406,7 @@ export function registerRunControl(
     executionPoint,
     failurePoint,
     runningLine,
+    waitingLine,
     lensesChanged,
     caretDecoration,
     { dispose: () => counts.dispose() },
