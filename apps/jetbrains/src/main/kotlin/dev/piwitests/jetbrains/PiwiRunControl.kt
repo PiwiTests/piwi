@@ -1732,7 +1732,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (events.isNotEmpty()) laneInteractAt = stop
         if (Glue.actsOnPage(events) && shownStops.acted(stop)) draw()
         for (event in events) {
-            if (event.type == "mouse" && event.action == "move" && laneInputs.lastOrNull()?.let { it.type == "mouse" && it.action == "move" } == true) laneInputs.removeLast()
+            if (event.type == "mouse" && event.action == "move" && laneInputs.lastOrNull()?.let { it.type == "mouse" && it.action == "move" } == true) laneInputs.removeAt(laneInputs.lastIndex)
             laneInputs.add(event)
         }
         if (laneInputs.size > 50) {
