@@ -129,6 +129,25 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
+test('no row of lenses runs past the editor’s right edge', async () => {
+  for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
+    await openFile(page, file);
+    await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
+    // Each row, its lenses side by side, against the part of the editor that shows the code.
+    const { rows, past } = await page.evaluate(() => {
+      const editor = document.querySelector('.editor-instance .monaco-editor .overflow-guard');
+      const right = editor?.getBoundingClientRect().right ?? 0;
+      const all = [...document.querySelectorAll('.editor-instance .monaco-editor .codelens-decoration')];
+      return {
+        rows: all.length,
+        past: all.filter((row) => row.getBoundingClientRect().right > right + 1).map((row) => row.textContent),
+      };
+    });
+    expect(rows, file).toBeGreaterThan(0);
+    expect(past, file).toEqual([]);
+  }
+});
+
 test('a spec’s editor title offers Record here…, and its Run button the spec’s runs', async () => {
   await clearNotifications(page);
   await openFile(page, SPEC_FILE);

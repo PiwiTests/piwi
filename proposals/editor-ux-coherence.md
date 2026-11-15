@@ -72,7 +72,8 @@ newer latest run (LR9 in part: the test lines of a config with no instance at al
 fixtures both editors read (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, and a spec's test
 marks and lens rows), held to the same words by VS Code's `tests/golden.test.ts` and `GlueTest`, the marks and rows
 drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Code Vision providers on the 2024.1 test
-platform (VS Code's nightly snapshot and the layout checks remain). L4 in part since: the ASP.NET Core route manifest
+platform, and VS Code's nightly suite checking the layout (no row of lenses past the editor's edge, a flaky test's mark)
+(VS Code's nightly snapshot, for JetBrains to compare with, remains). L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
 1 failing`) that runs them.
