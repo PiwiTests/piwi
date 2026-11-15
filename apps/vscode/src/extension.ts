@@ -892,12 +892,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuFlakyRoot = view.flakyRoot ?? null;
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
+    // A recording in progress takes the item, its controls in the status menu, as the JetBrains plugin's item shows it.
+    // A test that waits for the person keeps the item, its warning and its words, over a recording.
+    const recorded = line?.calls ? null : recording?.status();
+    if (recorded) {
+      statusItem.text = recorded.text;
+      statusItem.tooltip = recorded.tooltip;
+      statusItem.accessibilityInformation = undefined;
+    }
     // A stop that waits for the person marks the item until it is answered; a run the item counts is never the alarm.
-    statusItem.backgroundColor = line?.calls
-      ? new vscode.ThemeColor('statusBarItem.warningBackground')
-      : view.error && !line
-        ? new vscode.ThemeColor('statusBarItem.errorBackground')
-        : undefined;
+    statusItem.backgroundColor = recorded
+      ? undefined
+      : line?.calls
+        ? new vscode.ThemeColor('statusBarItem.warningBackground')
+        : view.error && !line
+          ? new vscode.ThemeColor('statusBarItem.errorBackground')
+          : undefined;
     statusItem.show();
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
@@ -2144,7 +2154,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
   context.subscriptions.push(...registerDesktopJobs(lc));
   recording = registerRecording(context, lc);
-  context.subscriptions.push(recording);
+  context.subscriptions.push(
+    recording,
+    recording.onDidChangeStatus(() => render()),
+  );
   await lc.start();
   announceRunPairing();
   showTestExplorer();

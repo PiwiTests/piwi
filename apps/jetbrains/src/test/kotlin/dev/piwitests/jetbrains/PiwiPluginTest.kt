@@ -168,6 +168,31 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
+     * A running test's ring turns, an eighth of a turn a frame, and is drawn again at an editor's scale; a list draws it
+     * still, and the other outcomes stand still.
+     */
+    fun testTheRunningRingTurns() {
+        val running = PiwiIcons.outcome("running")
+        assertTrue(running is com.intellij.ui.AnimatedIcon)
+        // The ring's own size, however the test's IDE loads icons.
+        val ring = com.intellij.openapi.util.IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+        assertEquals(ring.iconWidth to ring.iconHeight, running.iconWidth to running.iconHeight)
+        assertFalse(PiwiIcons.outcome("passed") is com.intellij.ui.AnimatedIcon)
+        assertFalse(PiwiIcons.outcome("running", turning = false) is com.intellij.ui.AnimatedIcon)
+        val zoomed = (running as com.intellij.openapi.util.ScalableIcon).scale(2f)
+        assertTrue(zoomed is com.intellij.ui.AnimatedIcon)
+        assertEquals(2f, (zoomed as com.intellij.openapi.util.ScalableIcon).scale)
+        // It paints.
+        val image = java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = image.createGraphics()
+        try {
+            running.paintIcon(null, g, 0, 0)
+        } finally {
+            g.dispose()
+        }
+    }
+
+    /**
      * Every action draws a platform icon or a glyph Piwi draws, but a toggle (its menu row shows a check mark); a stop's
      * code actions draw the same in its popups (`PiwiIcons.stopAction`), and a glyph has one meaning.
      */

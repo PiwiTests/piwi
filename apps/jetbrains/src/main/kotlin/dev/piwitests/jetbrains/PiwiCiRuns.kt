@@ -258,8 +258,8 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {
-                // The test's outcome as its line's result icon draws it.
-                icon = PiwiIcons.outcome(value.status ?: "passed")
+                // The test's outcome as its line's result icon draws it, the running ring still in the list.
+                icon = PiwiIcons.outcome(value.status ?: "passed", turning = false)
                 append(value.text)
             }
         }

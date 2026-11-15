@@ -515,6 +515,8 @@ const ICON_FONT_GLYPHS = [
   { name: 'piwi-stop-live', codepoint: 0xe003, svg: pluginGlyph('stopLive.svg') },
   { name: 'piwi-reload', codepoint: 0xe004, svg: pluginGlyph('reload.svg') },
   { name: 'piwi-run-to-cursor', codepoint: 0xe005, svg: svgGlyph(RUN_TO_CURSOR, 'RUN_TO_CURSOR') },
+  { name: 'piwi-region', codepoint: 0xe006, svg: pluginGlyph('region.svg') },
+  { name: 'piwi-mock', codepoint: 0xe007, svg: pluginGlyph('mock.svg') },
 ];
 
 /** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */

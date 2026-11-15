@@ -36,8 +36,8 @@ Playwright Test suites in JavaScript and TypeScript.
 - **Tests recorded at the cursor.** **Piwi: Record here…** opens a browser through your project's own Playwright and
   writes what you do there into the test as you do it; **Piwi: Record a new test file…** records a whole spec. No
   instance needed.
-- **The status bar.** The latest run on the branch, what your local runs fixed since (`2 failing · 1 fixed locally`),
-  and the run you started from the editor, live while it runs. **Piwi: Compare with…** reads the failures against
+- **The status bar.** The latest run on the branch (`Piwi: 2 failing`), what your local runs fixed since in its tooltip,
+  a recording in progress, and the run you started from the editor, live while it runs. **Piwi: Compare with…** reads the failures against
   another branch, a run by its id, or your local runs only.
 - **Piwi's MCP server** for the editor's agent, with the connection the extension already has.
 
