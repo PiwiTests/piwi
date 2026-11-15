@@ -146,6 +146,7 @@ tasks {
         inputs.file("../../packages/editor/src/onboarding.json").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file("../../packages/editor/src/settings.json").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file("../../packages/editor/src/words.json").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.dir("../../packages/editor/tests/golden").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file("../../packages/editor/src/protocol.ts").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file(languageServer).optional().withPathSensitivity(PathSensitivity.RELATIVE)
     }

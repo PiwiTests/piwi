@@ -9,21 +9,23 @@
  *
  * A target whose installers are missing fails, naming them. A signature is copied when the build made one; with
  * `--signed` (a build with the update signing key) a missing one fails, since `latest-runner.json` lists only a
- * signed package.
+ * signed package, and so does a missing macOS update file. The macOS dmg has no update signature.
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** The packages each target's build makes: the folder the bundler writes, the end of the file, and the arch and
- * setup the release names it with. */
+ * setup the release names it with. `noUpdateSignature` marks a package the update signing key never signs: on macOS
+ * the bundler signs only the `.app.tar.gz` update file, not the dmg. `updateOnly` marks that update file, which a
+ * build without `app` in its bundles leaves out, and which a signed build must have. */
 const PACKAGES = {
   'x86_64-pc-windows-msvc': [
     { dir: 'msi', end: '.msi', ext: '.msi', arch: 'x64', setup: '' },
     { dir: 'nsis', end: '-setup.exe', ext: '.exe', arch: 'x64', setup: '-setup' },
   ],
   'aarch64-apple-darwin': [
-    { dir: 'dmg', end: '.dmg', ext: '.dmg', arch: 'aarch64', setup: '' },
+    { dir: 'dmg', end: '.dmg', ext: '.dmg', arch: 'aarch64', setup: '', noUpdateSignature: true },
     { dir: 'macos', end: '.app.tar.gz', ext: '.app.tar.gz', arch: 'aarch64', setup: '', updateOnly: true },
   ],
   'x86_64-unknown-linux-gnu': [
@@ -58,14 +60,13 @@ export function releaseFiles({ files, target, pattern, signed = false }) {
     const found = files.filter((file) => file.startsWith(`${pkg.dir}/`) && file.endsWith(pkg.end));
     if (found.length > 1) throw new Error(`more than one ${pkg.dir} package: ${found.join(', ')}`);
     if (found.length === 0) {
-      // The macOS update file is packed from the app bundle, which a build without `app` in its bundles leaves out.
-      if (!pkg.updateOnly) missing.push(`${pkg.dir}/*${pkg.end}`);
+      if (!pkg.updateOnly || signed) missing.push(`${pkg.dir}/*${pkg.end}`);
       continue;
     }
     const name = renderAssetName(pattern, pkg);
     out.push({ from: found[0], name });
     if (listed.has(`${found[0]}.sig`)) out.push({ from: `${found[0]}.sig`, name: `${name}.sig` });
-    else if (signed) missing.push(`${found[0]}.sig`);
+    else if (signed && !pkg.noUpdateSignature) missing.push(`${found[0]}.sig`);
   }
   if (missing.length) throw new Error(`the build made no ${missing.join(', ')} for ${target}`);
   return out;
