@@ -972,6 +972,29 @@ export function testHoverMarkdown(test: TestDecoration, uri: string, card: strin
   return links.length ? `${head}\n\n${links.join(' · ')}` : head;
 }
 
+/** The most lenses one line holds, as the JetBrains plugin's Code Vision slots (`Glue.CODE_VISION_SLOTS`). */
+export const LENSES_PER_LINE = 8;
+
+/**
+ * The lines CodeLens draws above the code of a document of `lineCount` lines, in the service's order: the file's line,
+ * then each line without a test status (a test's own line is drawn in the gutter and its hover), the first
+ * `LENSES_PER_LINE` of a line, but a blank title, a line outside the document and a line `stopped` at, which its stop's
+ * row draws. The JetBrains plugin's Code Vision draws the same rows (`Glue.codeVisionSlot`), a stopped line's too.
+ */
+export function lensLines(
+  summary: FileSummary,
+  lineCount: number,
+  stopped: ReadonlySet<number> = new Set(),
+): SummaryLine[] {
+  const perLine = new Map<number, number>();
+  return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].filter((l) => {
+    if (l.title.trim() === '' || l.line < 0 || l.line >= lineCount) return false;
+    const before = perLine.get(l.line) ?? 0;
+    perLine.set(l.line, before + 1);
+    return before < LENSES_PER_LINE && !stopped.has(l.line);
+  });
+}
+
 /** The decorations of a file's tests: the summary lines that carry a result. */
 export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   return lines.flatMap((l) =>

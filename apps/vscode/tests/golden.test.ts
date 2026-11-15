@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { FileSummary, RunSession, RunStatus, StatusResult } from '@piwitests/editor/protocol';
-import { statusBarView, testDecorations } from '../src/glue';
+import { lensLines, statusBarView, testDecorations } from '../src/glue';
 import { runNodes, workersNow, type RunNode } from '../src/run-control';
 
 /**
@@ -16,9 +16,11 @@ const golden = JSON.parse(
 const testLines = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/test-lines.json'), 'utf-8'),
 ) as {
+  spec: { text: string };
   summary: FileSummary;
   marks: Array<[number, string, string]>;
   failing: { test: [number, number]; line: number };
+  lenses: Array<[number, string[]]>;
 };
 
 /**
@@ -36,6 +38,13 @@ const flat = (nodes: RunNode[]): string[][] =>
   nodes.flatMap((n) => [[n.kind, n.label, n.description], ...n.children.map((c) => [c.kind, c.label, c.description])]);
 
 describe('the golden fixtures both editors read', () => {
+  test('the rows above a spec’s lines: each line’s lenses, in the service’s order', () => {
+    const rows = new Map<number, string[]>();
+    for (const l of lensLines(testLines.summary, testLines.spec.text.split('\n').length))
+      rows.set(l.line, [...(rows.get(l.line) ?? []), l.title]);
+    expect([...rows].sort(([a], [b]) => a - b)).toEqual(testLines.lenses);
+  });
+
   test('the marks of a spec’s tests: each test’s line, its result’s mark and its hover', () => {
     const decorations = testDecorations(testLines.summary.lines);
     expect(decorations.map((d) => [d.line, d.status, hoverWords(d.hover)])).toEqual(testLines.marks);

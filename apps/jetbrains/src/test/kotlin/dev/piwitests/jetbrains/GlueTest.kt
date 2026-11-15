@@ -1006,6 +1006,30 @@ class GlueTest {
     }
 
     /**
+     * The rows above a spec's lines, each line's entries in the service's order across Code Vision's slots, as the
+     * golden fixture holds them and VS Code's `lensLines` draws them.
+     */
+    @Test
+    fun `Code Vision draws the rows the golden fixture holds`() {
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/test-lines.json").readText(),
+        ).asJsonObject
+        val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
+        val rows = sortedMapOf<Int, MutableList<String>>()
+        for (slot in 0 until Glue.CODE_VISION_SLOTS) {
+            for (line in Glue.codeVisionSlot(summary, slot)) rows.getOrPut(line.line) { mutableListOf() } += line.title.orEmpty()
+        }
+        val expected = golden.getAsJsonArray("lenses").map { row ->
+            row.asJsonArray.let { it[0].asInt to it[1].asJsonArray.map { title -> title.asString } }
+        }
+        assertEquals(expected, rows.map { (line, titles) -> line to titles })
+        // A line holds as many entries as VS Code's lenses on a line.
+        val perLine = Regex("export const LENSES_PER_LINE = (\\d+);")
+            .find(java.io.File("../vscode/src/glue.ts").readText())?.groupValues?.get(1)?.toInt()
+        assertEquals(perLine, Glue.CODE_VISION_SLOTS)
+    }
+
+    /**
      * The golden fixtures both editors' pure halves read (`packages/editor/tests/golden/`): the same inputs give the same
      * words as in VS Code, whose `tests/golden.test.ts` reads the same file.
      */

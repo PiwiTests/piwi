@@ -340,5 +340,9 @@
   "failing": {
     "test": [3, 5],
     "line": 4
-  }
+  },
+  "lenses": [
+    [0, ["4 tests in Piwi · 1 failing"]],
+    [4, ["✗ Failed here · getByLabel('Coupon code') was not visible", "Run with Piwi"]]
+  ]
 }
