@@ -52,8 +52,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
   caret for the cursor and the project for the window. `packages/editor/tests/actions.test.ts` holds `plugin.xml` to it.
-- **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
-  D25 of `proposals/1.0-stabilization.md` in the same change
+- **An action or action group id is frozen at 1.0: keymaps and customized menus name it.** Renaming one breaks users'
+  keymaps, and a new one is registered in D25 of `proposals/1.0-stabilization.md` in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).
 - **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
   ([Run control](ARCHITECTURE.md#run-control))

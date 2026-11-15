@@ -382,7 +382,7 @@ object PiwiRecordFlow {
                 val cause = if (error is CompletionException || error is ExecutionException) error.cause ?: error else error
                 cause?.message?.trim()?.ifEmpty { null }?.removeSuffix(".") ?: "the request to the Piwi editor service failed"
             }
-            !request.isDone -> "the Piwi editor service did not answer"
+            !request.isDone -> return "Piwi could not start the recording. ${Glue.SERVICE_NO_ANSWER}"
             else -> "the Piwi editor service did not say where the cursor is"
         }
         return "Piwi could not start the recording: $reason."

@@ -533,11 +533,12 @@ object Glue {
 
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+    const val UNTRUSTED = "Piwi starts once you trust this project, with Trust project… in the safe mode banner at the " +
+        "top of an editor: it runs the project's tests and reads its .env."
 
     /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
     const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
-        ".env. Trusting it starts Piwi."
+        ".env. Trust project… in the safe mode banner at the top of an editor starts Piwi."
 
     /**
      * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
@@ -1020,9 +1021,10 @@ object Glue {
     /**
      * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `1 of 3 CI failures fixed, 2
      * still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the service's actions when
-     * something fails, and **Only on failure** when nothing does while `setting` is `always`. Null when `setting` keeps
-     * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its
-     * runs went whatever the setting.
+     * something fails, then **Only on failure** when nothing does while `setting` is `always`, and last **Settings…**,
+     * which opens Piwi's settings page, as VS Code's `runVerdict`. Null when `setting` keeps it quiet, or for a CI run of
+     * the branch when `scope` is `mine`; a run of each test several times says how its runs went whatever the setting,
+     * with the service's actions alone.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always", scope: String = "mineAndCi"): RunVerdict? {
         val words = ended.verdict ?: return null
@@ -1030,7 +1032,8 @@ object Glue {
         if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
         val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
         val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
-        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure)
+        val settings = if (words.always) emptyList() else listOf(EmptyLink.SETTINGS.label)
+        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure + settings)
     }
 
     /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */
@@ -1126,7 +1129,8 @@ object Glue {
     fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
 
     /**
-     * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
+     * One sentence on the connection, for the tool window and the settings page, in the words of the tool window's empty
+     * text: an instance that does not answer said so, never as a lost connection. With no status, why: the project waits
      * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
      */
     fun connectionSummary(
@@ -1145,7 +1149,7 @@ object Glue {
         val unproven = contexts.firstOrNull { it.problemKind == "desktop-unproven" }
         val c = contexts.firstOrNull { it.connected }
             ?: return if (unreachable != null) {
-                "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+                "The instance does not answer. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
             } else if (unproven != null) {
                 "Not connected. " + (unproven.problem ?: "") + hint
             } else {
@@ -1267,7 +1271,7 @@ object Glue {
 
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open the log; an instance still
      * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
      * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
      */
@@ -1275,7 +1279,7 @@ object Glue {
         "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
         "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
         "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
-        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
+        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY, EmptyLink.OPEN_LOG))
         "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
         else -> EmptyText(
             when {
@@ -1876,7 +1880,7 @@ object Glue {
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
             PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
-            PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
+            PickOutcome.NO_ANSWER -> "$went. $SERVICE_NO_ANSWER"
         }
     }
 

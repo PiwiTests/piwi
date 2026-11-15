@@ -260,7 +260,7 @@ class GlueTest {
             ),
             Glue.statusView(status, null),
         )
-        assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
+        assertEquals("The instance does not answer. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
         val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
         assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
     }
@@ -679,7 +679,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
-            "The picked locator was inserted in a new scratch file: the Piwi editor service did not answer.",
+            "The picked locator was inserted in a new scratch file. ${Glue.SERVICE_NO_ANSWER}",
             Glue.pickNotice(at, Glue.PickOutcome.NO_ANSWER, scratch = true),
         )
     }
@@ -2273,7 +2273,7 @@ class GlueTest {
             ),
         )
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
-        assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
+        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.OPEN_LOG), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
         assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
     }
 
@@ -3358,7 +3358,7 @@ class GlueTest {
                 true,
                 "Piwi: run #124",
                 "1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
-                listOf("Open the failures", "Open in dashboard", "Re-run failing"),
+                listOf("Open the failures", "Open in dashboard", "Re-run failing", "Settings…"),
             ),
             Glue.runVerdict(ended),
         )
@@ -3367,7 +3367,7 @@ class GlueTest {
     @Test
     fun `a run where nothing fails is an information, offering Only on failure`() {
         assertEquals(
-            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure")),
+            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure", "Settings…")),
             Glue.runVerdict(passing),
         )
     }

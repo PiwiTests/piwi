@@ -1549,6 +1549,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val dashboard = lane.dashboard ?: return@requestCiWatch
             PiwiNotifier.create(PiwiNotice.PROBLEM, StringUtil.escapeXmlEntities(why), NotificationType.WARNING)
                 .addAction(NotificationAction.createSimpleExpiring("Watch on the dashboard") { BrowserUtil.browse(dashboard) })
+                .also { if (result == null) PiwiCommands.withServiceFixes(project, it) }
                 .notify(project)
         }
     }

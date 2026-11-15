@@ -339,7 +339,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         )
         val wrapped = CompletableFuture<PageCandidatesResult>().apply { completeExceptionally(CompletionException(IllegalStateException("boom"))) }
         assertEquals("Piwi could not start the recording: boom.", PiwiRecordFlow.startFailure(wrapped))
-        assertEquals("Piwi could not start the recording: the Piwi editor service did not answer.", PiwiRecordFlow.startFailure(CompletableFuture<PageCandidatesResult>()))
+        assertEquals("Piwi could not start the recording. ${Glue.SERVICE_NO_ANSWER}", PiwiRecordFlow.startFailure(CompletableFuture<PageCandidatesResult>()))
         assertEquals(
             "Piwi could not start the recording: the Piwi editor service did not say where the cursor is.",
             PiwiRecordFlow.startFailure(CompletableFuture.completedFuture<PageCandidatesResult?>(null)),

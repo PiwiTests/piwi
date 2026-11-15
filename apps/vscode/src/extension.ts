@@ -61,6 +61,7 @@ import {
   type HubResult,
   type InitializationOptions,
   type Notice,
+  type NoticeKey,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
@@ -761,7 +762,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let status: StatusResult | null = null;
   /** The writes of `piwi.hiddenMessages`, one after the other, each adding its key to what the last one wrote. */
   let hiding: Promise<void> = Promise.resolve();
-  const hideMessage = (key: string) => {
+  const hideMessage = (key: NoticeKey) => {
     hiding = hiding.then(async () => {
       const piwi = vscode.workspace.getConfiguration('piwi');
       const hidden = withHiddenMessage(piwi.get('hiddenMessages'), key);
@@ -1131,7 +1132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const started = await startSendListener({
       port,
       token: () => sendStore.token,
-      onPayload: (payload) => insertFromPicker(lc, payload),
+      onPayload: (payload) => insertFromPicker(lc, payload, hideMessage),
       // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
       live: () =>
         liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir()), {
@@ -2222,7 +2223,11 @@ function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
  * flow is rendered for the cursor's place, and the import lines it needs that the file lacks go after the file's
  * imports, in the same edit.
  */
-async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
+async function insertFromPicker(
+  lc: LanguageClient,
+  payload: EditorSendPayload,
+  hideMessage: (key: NoticeKey) => void,
+): Promise<SendResult> {
   let notice: string | null = null;
   if (payload.kind === 'locator' && payload.at) {
     const at = payload.at;
@@ -2282,13 +2287,24 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
     }
     edit.replace(selection, text);
   });
-  if (inserted) {
-    void vscode.window.showInformationMessage(
-      notice ??
-        (payload.kind === 'locator'
-          ? 'Piwi: inserted the locator from Piwi Picker.'
-          : 'Piwi: inserted the recorded steps from Piwi Picker.'),
+  if (inserted && notice) void vscode.window.showInformationMessage(notice);
+  else if (inserted) {
+    // The plain confirmation of each pick, which the edit itself shows, may be hidden.
+    const shown = noticeShown(
+      {
+        message:
+          payload.kind === 'locator'
+            ? 'Piwi: inserted the locator from Piwi Picker.'
+            : 'Piwi: inserted the recorded steps from Piwi Picker.',
+        key: 'picker-inserted',
+      },
+      vscode.workspace.getConfiguration('piwi').get('hiddenMessages'),
     );
+    if (shown) {
+      void vscode.window
+        .showInformationMessage(shown.text, ...shown.actions)
+        .then((picked) => picked === DONT_SHOW_AGAIN && hideMessage('picker-inserted'));
+    }
   }
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }
