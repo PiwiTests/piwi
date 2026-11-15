@@ -1019,7 +1019,8 @@ jobs:
   # The base commit's build the performance job measures against. The build job cached it by its sha when that commit
   # ran on main; when it did not (main's change left the build alone, or a later push cancelled its run), it is built
   # here, alongside this pull request's own build, and cached for this pull request's runs only. Either way it reaches
-  # the performance job as this run's artifact, which lasts the run: a cache can be evicted between two jobs.
+  # the performance job as this run's artifact, kept a day as `build-output` is: a cache can be evicted between two
+  # jobs.
   perf-base:
     name: Performance base
     needs: changes
@@ -1079,6 +1080,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
+          compression-level: 1
 
   # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
   # perf-comment.yml once this run completes.
