@@ -487,8 +487,8 @@ the line it stands on now (the mark, the lens, the caret's match), and the caret
 the cursor, which is refused on a line written since. An event of several changes (the code a stop made, its undo) is
 read change by change in the document after them all (`linesAbove`), so the mark follows it.
 
-**The paused page.** A stop with no pause bar (`bar: false`) that the worker panel does not hold (`holds`: its slot
-with Watch on, in sight or hidden) asks `piwi/pausedPage` and shows the JPEG in the paused page webview beside the
+**The paused page.** A stop with no pause bar (`bar: false`) that the worker panel does not show (`watches`: its slot,
+in sight and watched) asks `piwi/pausedPage` and shows the JPEG in the paused page webview beside the
 editor, as **Piwi: Show the paused page** (`piwi.showPausedPage`) does at any stop. One page per worker: it is titled
 after the stop's worker as the worker panel is (`Piwi: worker N`), with the same tab icon (`workerPageIcon`). Both pages
 hold the stop's controls, the stopped line's row (`stopLensControls`: Resume, Step, Finish, Write code…), as a toolbar
@@ -541,11 +541,12 @@ from the state posted, the input made for the view before naming that one, so it
 and the strip's images it holds. A new slot or CI lane draws a new document; closing the panel forgets the layers. Interact is offered, and its input sent, only once the service accepted the
 watch (`accepted`, which the view's `live.input` follows). It stays on through the stops of the slot and the
 stretches between them (`laneKeepsInteract`), and going off gives back the stop it was last on for (`interactAt`), as
-on the paused page. A headless stop of the slot the panel holds opens no paused page, a new one revealing the panel
-without the focus, and watching a slot closes the paused page on that slot's stop; no stop's file opens over the
+on the paused page. A headless stop of the slot the panel watches, in sight, opens no paused page, and once the
+service accepts the panel's watch of a slot (`WorkerPanelHooks.watching`), the panel takes that slot's headless stop
+from the paused page, which closes with its Watch kept for its next stop (`takeSlot`); no stop's file opens over the
 panel. A press, a key, text, the wheel or a pick there make the slot the person's; hiding or closing the panel, or its
-watch ending (Watch off, a refused watch), shows the stops again (`WorkerPanelHooks`), and once it closes or its watch
-ends a held headless stop it showed goes to the paused page as a new stop, the view closed or not. Each watch starts with
+watch ending (Watch off, a refused watch), shows the stops again (`WorkerPanelHooks`), a held headless stop it showed
+offered to the paused page as a new stop is, the view closed or not. Each watch starts with
 Interact off, and Interact goes off with the watch (Watch off, a refused watch, the panel hidden or closed, the run's
 end), at another slot's view and at a stop that takes no input; the watch ends while the panel is hidden and starts
 again as it shows (`pausedPageViewChange`).

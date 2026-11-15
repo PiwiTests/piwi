@@ -127,7 +127,10 @@ function drawControls(items: ReadonlyArray<{ title: string; command: string }>) 
 }
 controls?.addEventListener('click', (e) => {
   const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-command]');
-  if (button) post({ type: 'control', command: button.dataset.command });
+  if (!button) return;
+  // After the toggles' messages already queued, naming the view it was pressed on.
+  const at = shown;
+  void toggled.then(() => vscode.postMessage({ type: 'control', command: button.dataset.command, shown: at }));
 });
 picture.addEventListener('click', (e) => {
   if (active() && !e.shiftKey) return;

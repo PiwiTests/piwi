@@ -103,14 +103,6 @@ export interface WorkerPanel extends vscode.Disposable {
   ciChanged(sessions: CiSessions): void;
   /** Whether the panel shows the slot `lane` of the run `ref`, in sight, and watches it. */
   watches(ref: string, lane: number): boolean;
-  /**
-   * Whether the panel is the page of the slot `lane` of the run `ref`: it shows that slot with Watch on, in sight and
-   * watching, or hidden, to watch again as it shows. One page per worker: the slot's stops show there, never on the
-   * paused page.
-   */
-  holds(ref: string, lane: number): boolean;
-  /** Show the panel in its own group without the focus: a new stop of the slot it holds is there. */
-  reveal(): void;
   /** The editor group the panel shows in while in sight; undefined otherwise. */
   column(): vscode.ViewColumn | undefined;
   /** The sessions changed: what the panel says of its slot follows, `stops` at their lines now. */
@@ -142,6 +134,11 @@ interface WorkerPanelHooks {
   acted(stop: ShownStop): void;
   /** The panel was hidden or closed, or stopped watching: the stops it showed may go to the paused page. */
   changed(): void;
+  /**
+   * The service accepted the panel's watch of the slot `lane` of the run `ref`: the slot's page is the panel from now
+   * on, its stop the paused page showed included.
+   */
+  watching(ref: string, lane: number): void;
 }
 
 export function createWorkerPanel(
@@ -465,6 +462,7 @@ export function createWorkerPanel(
       draw();
       // A section opened or closed while the watch started asks for its layer now.
       askLayers();
+      hooks.watching(params.ref, params.lane);
     } else {
       watching = null;
       note = answer?.message ?? NO_ANSWER;
@@ -720,13 +718,6 @@ export function createWorkerPanel(
     openTrace,
     watches(ref, slot) {
       return !!panel?.visible && !!watching && watching.ref === ref && watching.lane === slot;
-    },
-    holds(ref, slot) {
-      if (!panel || ciTarget || target?.ref !== ref || target.lane !== slot || !wantOn) return false;
-      return panel.visible ? !!watching : true;
-    },
-    reveal() {
-      if (panel && !panel.visible) panel.reveal(undefined, true);
     },
     column: () => (panel?.visible ? panel.viewColumn : undefined),
     changed(now, at) {

@@ -213,6 +213,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageCaption = ""
     /** The worker slot of the stop the Paused page tab showed last (a run's ref, a parallel index), which Interact is for. */
     private var pageSlot: Pair<String, Int>? = null
+    /** The Paused page tab closed as the Worker tab took its stop had Watch on: the next tab opens with it on. */
+    private var pageWatchKept = false
     @Volatile private var watchingPage: PageViewParams? = null
 
     /** When a control from the IDE last answered a stop: Resume's key stays Piwi's `Glue.RESUMED_MILLIS` after. */
@@ -693,15 +695,6 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val shownPage = livePage()
         if (shownPage == null) shownStops.view(null)
         val show = shownStops.changed(sessions, stops, watched = ::workerShows)
-        // A new stop of the slot the Worker tab holds selects it, as the Paused page tab would be.
-        if (show.open.any { !it.stop.bar && workerShows(it) } && selectsPage()) {
-            liveWorkerTab()?.let { tab ->
-                toolWindow()?.let { window ->
-                    window.contentManager.setSelectedContent(tab)
-                    window.show(null)
-                }
-            }
-        }
         wakeWhenWaited()
         show.open.forEach { unopened.add(Glue.stopKey(it)) }
         val byKey = stops.associateBy(Glue::stopKey)
@@ -974,6 +967,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val pageTab: String? = null,
     )
 
+    /** A stop's page: the Worker tab, selected, while it shows the stop's slot in sight; else the Paused page tab. */
+    fun showStopPage(stop: Glue.ShownStop) {
+        val tab = liveWorkerTab()
+        if (tab != null && workerShows(stop)) toolWindow()?.contentManager?.setSelectedContent(tab) else showPage(stop)
+    }
+
     /** A click at `x`, `y` of the Paused page tab's image, as a person's click reaches it, which the tests send. */
     internal fun clickPage(x: Int, y: Int) {
         (livePage()?.component as? PausedPagePanel)?.click(x, y)
@@ -1018,6 +1017,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         // One page per worker: the tab is named after the worker of the stop it shows, as the Worker tab is.
         content.displayName = Glue.workerName(stop.slot)
         val panel = content.component as PausedPagePanel
+        if (pageWatchKept) {
+            panel.liveWanted = true
+            pageWatchKept = false
+        }
         pageSlot = stop.ref to stop.slot
         panel.controls(key) { pageControls(stop) }
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks"), keep) { on -> watchPage(stop, on) }
@@ -1073,14 +1076,22 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * the one on the stopped line as the pause bar's pick does; the answer said under the caption while the tab shows
      * the same image. On the event thread.
      */
-    private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
+    private fun pickOnImage(
+        stop: Glue.ShownStop,
+        image: PausedImage,
+        panel: PausedPagePanel,
+        picture: BufferedImage,
+        x: Int,
+        y: Int,
+        shows: () -> Boolean = { pageStop == Glue.stopKey(stop) },
+    ) {
         val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
         panel.note("Picking the element under the click…")
         if (shownStops.acted(stop)) draw()
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
             ApplicationManager.getApplication().invokeLater({
-                if (pageStop == Glue.stopKey(stop)) panel.note(answer?.message ?: Glue.SERVICE_NO_ANSWER)
+                if (shows()) panel.note(answer?.message ?: Glue.SERVICE_NO_ANSWER)
             }, gone)
         }
     }
@@ -1211,11 +1222,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun showWorker(ref: String, lane: Int) {
         val window = toolWindow() ?: return
-        // One page per worker: the Worker tab takes the slot's stop from the Paused page tab.
-        if (pageSlot == ref to lane) livePage()?.let { window.contentManager.removeContent(it, true) }
         val content = workerTabIn(window, Glue.workerName(lane))
         val panel = content.component as PausedPagePanel
         if (laneTarget != ref to lane) {
+            // The input held goes, then the stop is given back, before the watch of the slot before ends.
+            panel.letGo()
             stopLaneView()
             stopCiView()
             ciTarget = null
@@ -1352,10 +1363,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 // Closed, the tab stops watching its worker; Watch a worker's test, or a CI run's Watch, opens it again.
                 setDisposer {
                     if (workerTab === this) {
+                        (component as? PausedPagePanel)?.letGo()
                         stopLaneView()
                         stopCiView()
                         laneTarget = null
                         ciTarget = null
+                        // Closed, the stops it showed go to the Paused page tab.
+                        ApplicationManager.getApplication().invokeLater({ draw() }, gone)
                     }
                 }
             }
@@ -1381,6 +1395,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val content = workerTabIn(window, Glue.ciLaneTitle(lane))
         val panel = content.component as PausedPagePanel
         if (ciTarget != lane) {
+            // The input held for a local slot goes, then its stop is given back, before its watch ends.
+            if (laneTarget != null) panel.letGo()
             stopLaneView()
             // Another CI lane takes the place of the one watched on the service's side: no word of the one before.
             if (ciTarget != null) {
@@ -1403,6 +1419,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 } else if (panel.liveWanted && watchingCi == null) watchCi(true)
             }
             panel.show(Glue.ciLaneCaption(ciSessions(), lane), null)
+            // The stops of the slot it showed go to the Paused page tab.
+            draw()
         }
         panel.liveWanted = true
         if (watchingCi == null) watchCi(true)
@@ -1595,7 +1613,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
         panel.watching(false)
         val (ref, lane) = laneTarget ?: return
-        if (!on || !laneInSight(panel)) return
+        if (!on || !laneInSight(panel)) {
+            // Watch off: the stops it showed go to the Paused page tab.
+            if (!on) draw()
+            return
+        }
         val asked = layersAsked()
         val params = LaneViewParams(ref, lane, true, asked)
         watchingLane = params
@@ -1608,10 +1630,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 panel.watching(true)
                 // A tab selected while the watch started asks for its layer now.
                 relayer()
+                takeSlot(ref, lane)
             } else {
                 stopLaneView()
                 panel.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
                 panel.liveWanted = false
+                // The stops it showed go to the Paused page tab.
+                draw()
             }
         }
     }
@@ -1638,9 +1663,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     if (frame.refused != null) panel.note(frame.refused)
                     else if (picture != null) {
                         panel.note(null)
-                        // The page's size the frame names, which Interact's input maps a point of the image to.
-                        panel.viewport = PausedImage("image/jpeg", null, frame.width, frame.height)
+                        // The page's size the frame names, which Interact's input and a pick map a point of the image to.
+                        if (frame.width != null && frame.height != null) panel.viewport = PausedImage("image/jpeg", null, frame.width, frame.height)
                         panel.frame(picture)
+                        // A click picks on a frame of the stop shown, as on the Paused page tab.
+                        val stop = Glue.laneShown(sessions[own.ref], own.lane, stops()).stop
+                        val shown = panel.viewport
+                        panel.pickWith(
+                            if (stop == null || shown == null || frame.since != stop.stop.since || !Glue.picksOnImage(stop.takes, shown)) null
+                            else { x: Int, y: Int -> pickOnImage(stop, shown, panel, picture, x, y) { laneStopKey == Glue.stopKey(stop) } },
+                        )
                     }
                 }
                 drawingLaneFrame.set(false)
@@ -1723,8 +1755,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         laneRelease = false
         val since = stop.stop.since ?: return
         if (batch.isEmpty() && !release) return
+        val key = Glue.stopKey(stop)
         queueWorkerCall({ remote.pageInput(PageInputParams(stop.ref, stop.worker, since, batch, release)) }) { result ->
-            if (result?.ok != true) (liveWorkerTab()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
+            if (result?.ok != true && laneStopKey == key) (liveWorkerTab()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
         }
     }
 
@@ -1734,8 +1767,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val stop = laneInteractAt ?: return
         laneInteractAt = null
         val params = DriveStopParams(stop.ref, stop.worker, stop.stop.since ?: return, false)
+        val key = Glue.stopKey(stop)
         queueWorkerCall({ remote.driveStop(params) }) { result ->
-            if (result?.ok != true) (liveWorkerTab()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
+            if (result?.ok != true && laneStopKey == key) (liveWorkerTab()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
         }
     }
 
@@ -1745,25 +1779,45 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     private fun laneAt(panel: PausedPagePanel, stop: Glue.ShownStop?) {
         val key = stop?.let(Glue::stopKey)
+        // An action runs in the test's window at the stop (a pick, a check): Escape is the page's while it does.
+        panel.acting = stop?.stop?.acting != null
         panel.controls(key) { pageControls(stop!!) }
         if (key == laneStopKey) return
         laneStopKey = key
+        // What was sent at the stop before goes first; what was held for it goes nowhere.
+        flushLaneInput()
+        panel.dropInput()
+        panel.pickWith(null)
         panel.input = { events -> if (stop != null) laneInput(stop, events) }
         panel.releaseInput = { if (stop != null) laneInput(stop, emptyList(), release = true) }
         panel.interactOff = { laneGiveBack() }
-        panel.acting = stop?.stop?.acting != null
+        panel.interactOn = { if (stop != null) laneInteractAt = stop }
+        // Interact carried to a stop that takes input is on for it, as the service carries who drives; at one that
+        // takes none, it goes off, giving back the stop it was on for.
+        if (stop != null && panel.interacting && "input" in stop.takes) laneInteractAt = stop
         panel.inputAt(if (stop == null) null else "input" in stop.takes, stop?.takes?.contains("input-clicks") ?: true)
     }
 
     /**
-     * Whether the Worker tab is the page of `stop`'s slot: it shows that slot with Watch on, in sight and watching, or
-     * out of sight, to watch again as it shows. One page per worker: the slot's stops show there, never in the Paused
+     * Whether the Worker tab shows `stop`'s slot, in sight, and watches it: the slot's stops show there, not in the Paused
      * page tab. On the event thread.
      */
     private fun workerShows(stop: Glue.ShownStop): Boolean {
         val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return false
-        if (ciTarget != null || laneTarget != stop.ref to stop.slot || !panel.liveWanted) return false
-        return !laneInSight(panel) || watchingLane != null
+        return ciTarget == null && laneTarget == stop.ref to stop.slot && watchingLane != null && laneInSight(panel)
+    }
+
+    /**
+     * One page per worker: once the Worker tab's watch of the slot `lane` of `ref` is accepted, it takes the headless
+     * stop of that slot the Paused page tab shows, the tab closing with its Watch kept for its next stop.
+     */
+    private fun takeSlot(ref: String, lane: Int) {
+        val shown = livePage() ?: return
+        val stop = stops().firstOrNull { Glue.stopKey(it) == pageStop } ?: return
+        if (stop.ref != ref || stop.slot != lane || stop.stop.bar) return
+        pageWatchKept = (shown.component as? PausedPagePanel)?.liveWanted == true
+        toolWindow()?.contentManager?.removeContent(shown, true)
+        draw()
     }
 
     private fun pageInput(stop: Glue.ShownStop, events: List<PageInput>) {
@@ -2533,6 +2587,8 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     var visibilityChanged: ((Boolean) -> Unit)? = null
     /** Interact went off, whatever turned it off: the stop it was last on for is given back. */
     var interactOff: (() -> Unit)? = null
+    /** Interact was turned on: the stop it is on for is the one given back as it goes off. */
+    var interactOn: (() -> Unit)? = null
     /**
      * An action runs in the test's window at the stop shown (a pick, a check: the stop's `acting`): Escape
      * on the image goes to the page, whose Escape it is, rather than giving the stop back.
@@ -2543,7 +2599,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private val live = JToggleButton(EditorWords.words("page.watch"), AllIcons.Actions.Show).apply {
         toolTipText = "Show the page of this stopped test as it changes. Nothing is stored or shared."
     }
-    private val interact = JToggleButton(EditorWords.words("page.interact"), AllIcons.General.Mouse).apply {
+    private val interact = JToggleButton(EditorWords.words("page.interact"), PiwiIcons.INTERACT).apply {
         toolTipText = EditorWords.words("page.input-rule")
         isEnabled = false
     }
@@ -2697,9 +2753,28 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     fun inputAt(acceptsInput: Boolean?, acceptsClickCounts: Boolean) {
         clickCounts = acceptsClickCounts
         interact.isVisible = live.isVisible
-        if (acceptsInput == false) letGo()
+        if (acceptsInput == false) stopInteracting()
         inputOffered = acceptsInput == true
         interact.isEnabled = isWatching && inputOffered
+    }
+
+    /**
+     * The input held for a stop that went on goes nowhere: the click held back, the press and the buttons and keys held
+     * are forgotten, never sent to the next stop.
+     */
+    fun dropInput() {
+        clickTimer.stop()
+        clickWaiting = null
+        pressed = null
+        held = null
+        modifiers = emptyList()
+        captured = false
+    }
+
+    /** What a click on the image picks, while its frame is of the stop shown; none otherwise. */
+    fun pickWith(pick: ((Int, Int) -> Unit)?) {
+        this.pick = pick.takeIf { image != null }
+        drawPick()
     }
 
     /** The image's accessible name, which says whose page it is: what the tests read. */
@@ -2862,7 +2937,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             release()
             drawPick()
             // Turned on, Interact only routes the input: the first click, key, wheel or pick drives the stop.
-            if (!interact.isSelected) interactOff?.invoke()
+            if (!interact.isSelected) interactOff?.invoke() else interactOn?.invoke()
         }
         addHierarchyListener { visibilityChanged?.invoke(isShowing) }
         val header = JPanel().apply {
@@ -3679,7 +3754,7 @@ class ShowPausedPageAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.showPage(it) }
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.showStopPage(it) }
     }
 }
 

@@ -2515,6 +2515,20 @@ describe('a worker’s page', () => {
     expect(lane).toContain(
       '<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls" hidden></div>',
     );
+    // At a stop of its slot, the worker panel's page holds the same row, which the script draws again from each state.
+    const laneAtStop = pausedPageHtml(
+      {
+        image: null,
+        caption: 'Worker 1 · Paused',
+        lane: true,
+        live: { shown: 2, on: true, input: false, interacting: false, clickCounts: true },
+        controls: { shown: 2, items },
+      },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(laneAtStop).toContain(`<button type="button" data-command="${RUN_COMMANDS.resume}">Resume</button>`);
+    expect(laneAtStop).not.toContain("type:'control'");
     expect(pausedPageHtml({ image: null, caption: 'The test went on.' }, 'n')).not.toContain('script-src');
   });
 

@@ -169,8 +169,8 @@ command starts (`RunSession.starting`, `piwi/commandStarted`, which JetBrains se
 runner), so the status line and an agent's `run_list` say it is starting and Stop ends it (LR13). The service names
 each run it builds (`RunCommand.name`, `RunSession.name`, `runName`), its task or Run tab title and its name in every
 chooser and the Watch chooser (`runTitle`), two of one name with their refs (LR16). LR4, LR13 and LR16 are left out of this document. M15 built: one page per
-worker in both editors, the paused page named after its worker and the worker view holding its slot's stops while it
-watches, in sight or not, watching a slot taking its stop from the paused page; both pages hold the stopped line's
+worker in both editors, the paused page named after its worker and the worker view showing its slot's stops while it
+watches in sight, an accepted watch taking the slot's stop from the paused page; both pages hold the stopped line's
 row, Resume, Step, Finish and Write code…, as a toolbar; Watch and Interact are toggles with their glyphs in the words
 both editors write (`page.watch`, `page.interact`) under one input rule (`page.input-rule`); VS Code's pages carry a tab
 icon, and every control an accessible name; JetBrains' Worker tab offers Interact at a stop (LR8, NF6, left out of
@@ -227,7 +227,7 @@ together the **home**; the **status item**, the **status popup** (JetBrains' men
 (the quick pick proposed for VS Code); **Tools → Piwi** (the `Piwi.Actions` group); the **result icon** (Piwi's gutter
 icon on a JetBrains test line) and the **IDE run icon** beside it; the **Testing view** (VS Code's, with Piwi's test
 controller); the **stop line** (VS Code's lens row and JetBrains' inlay above a stopped line); the **paused page** (VS
-Code's webview, JetBrains' Paused Page tab); the **editor service**; the **editor fixture**
+Code's webview and JetBrains' tab, each named after its worker); the **editor service**; the **editor fixture**
 (`apps/vscode/scripts/lib/editor-fixture.mjs`, the stub instance both screenshot scripts use); the **action catalog**,
 the **concept table** and the **outcome palette** (proposed in §2); the **live-run study**
 ([live-runs.md](../adr/live-runs.md)).
@@ -702,9 +702,7 @@ Piwi submenu; until then Watch and Pause and Watch sit in the status menu's run 
 beside Failures or in the Run and Debug container is open (§13); workers as a debug session's threads are
 [LI10](#li10)'s alternative. ([L1](#l1))
 
-### 8.5 The page
-
-### 8.6 What the study's model brings
+### 8.5 What the study's model brings
 
 <a id="lr9"></a>**LR9. The Testing view and the test lines take the developer's own run from the instance, so a run
 that reports to none shows no test running, and no line shows where a running test is.** The service sets a test's
@@ -1300,6 +1298,8 @@ such action.
 | Share live ([LR14](#lr14)) | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
 | Stop sharing live | `circle-stop` | `eye-off` | `$(piwi-stop-live)` | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
+| Interact | `hand` | `hand` | the hand, drawn in a worker's page, built | `interact.svg`, built |
+| Write code… | - | - | a lens and a page's button, no glyph | `Actions.IntentionBulb`, built on a worker's page |
 | Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |
 | Run on my machine | `monitor-play` | – | – | – |
 | Run headed, Hold failures (start options) | – | – | `$(settings)` on Run options… | `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed ([NF3](#nf3)) |

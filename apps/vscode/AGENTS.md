@@ -90,11 +90,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks**
   (`StopsShown.choose`, as the JetBrains plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **One page per worker: a headless stop shows on the worker panel while it holds the stop's slot with Watch on,
-  hidden or not (`WorkerPanel.holds`, a new stop revealing it), else on the paused page, titled after the worker too**;
-  a held stop the panel showed goes to the paused page once it closes or its watch ends, and watching a slot closes the
-  paused page on that slot's stop (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
-  `tests/run-control.test.ts`.
+- **One page per worker: a headless stop shows on the worker panel while it watches the stop's slot in sight, else on
+  the paused page, titled after the worker too; once the panel's watch of a slot is accepted, it takes that slot's
+  headless stop from the paused page** (`WorkerPanelHooks.watching`, `takeSlot`), and a held stop the panel showed goes
+  back to the paused page as the panel hides or closes or its watch ends (`StopsShown.changed`,
+  `WorkerPanelHooks.changed`). `tests/run-control.test.ts` checks `StopsShown`; the panels, the integration suite.
 - **Every command has its concept's codicon, present in VS Code 1.91, or Piwi's own glyph from `media/piwi-icons.woff`
   (`contributes.icons`, generated: never edited by hand), or is listed as waiting for one, and a glyph has one
   meaning.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`. Checked by `tests/menus.test.ts` ("the

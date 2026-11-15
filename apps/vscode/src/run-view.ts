@@ -281,7 +281,23 @@ export function registerRunControl(
   const acted = (stop: ShownStop) => {
     if (stopsShown.acted(stop)) changed();
   };
-  const workerPanel = createWorkerPanel(context, lc, { acted, changed: () => changed() });
+  /**
+   * One page per worker: once the worker panel watches a slot, it takes the headless stop of that slot the paused page
+   * shows, the paused page closing with its Watch kept for its next stop.
+   */
+  const takeSlot = (ref: string, lane: number) => {
+    const stop = pageShows;
+    if (!panel || !stop || stop.ref !== ref || stop.slot !== lane || stop.stop.bar) return;
+    const keep = wantLive;
+    panel.dispose();
+    wantLive = keep;
+    changed();
+  };
+  const workerPanel = createWorkerPanel(context, lc, {
+    acted,
+    changed: () => changed(),
+    watching: (ref, lane) => takeSlot(ref, lane),
+  });
   let page: PausedPageView | null = null;
   /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
@@ -783,9 +799,7 @@ export function registerRunControl(
     running.sessionsChanged(sessions);
     drawRunning();
     caretMoved();
-    // One page per worker: a stop of the slot the worker panel holds shows there, the panel shown again if hidden.
-    const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.holds(s.ref, s.slot) });
-    if (show.open.some((s) => !s.stop.bar && workerPanel.holds(s.ref, s.slot))) workerPanel.reveal();
+    const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.watches(s.ref, s.slot) });
     wakeWhenWaited();
     for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
     workerPanel.changed(sessions, now);
@@ -1331,8 +1345,6 @@ export function registerRunControl(
             placeHolder: pause ? 'Pause and watch which worker?' : 'Watch which worker?',
           });
     if (!chosen) return;
-    // One page per worker: the worker panel takes the slot's stop from the paused page.
-    if (pageShows?.ref === chosen.ref && pageShows.slot === chosen.lane) panel?.dispose();
     const answer = await workerPanel.open(chosen.ref, chosen.lane);
     if (!answer.ok) say(answer.message);
     else if (pause) await control({ ref: chosen.ref, worker: chosen.worker, action: 'pause' });
@@ -1458,6 +1470,8 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.showPage, async (arg?: unknown) => {
       const stop = await chooseStop(arg);
       if (stop === 'went-on') say('the test went on.');
+      // One page per worker: the worker panel in sight watching the stop's slot is its page already.
+      else if (stop && workerPanel.watches(stop.ref, stop.slot)) return;
       else if (stop) await openPage(stop);
       else say('no test is stopped.');
     }),

@@ -643,16 +643,17 @@ the actions a key runs: a keymap that gives the key to another action too (the V
 test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
-(`Glue.laneShown`). One page per worker: while it holds a slot with Watch on, in sight or not (`workerShows`, the
-`watched` of `Glue.StopsShown.changed`), a headless stop of that slot shows there, a new one selecting the tab while it
-is out of sight, and never opens the Paused page tab, which watching a slot closes on that slot's stop; a held stop it
-showed goes to the Paused page tab once it closes or its watch ends. The Paused page tab is named after its stop's
+(`Glue.laneShown`). One page per worker: while it watches a slot in sight (`workerShows`, the `watched` of
+`Glue.StopsShown.changed`), a headless stop of that slot shows there and opens no Paused page tab; once its watch is
+accepted it takes that slot's headless stop from the Paused page tab, which closes with its Watch kept for the next
+(`takeSlot`); a held stop it showed goes back to the Paused page tab as it hides or closes or its watch ends, each of
+which draws again. The Paused page tab is named after its stop's
 worker too (**Worker N**). At a stop of its slot the Worker tab offers Interact while the stop takes input, its input
 going to that stop (`laneInput`, sent in order on the worker calls' queue, the frame's size mapping a point), Interact
 staying on between stops and going off, the stop it last sent to given back, at one that takes none (`laneAt`,
 `PausedPagePanel.inputAt`, `laneGiveBack`). Both tabs hold the stopped line's row as a toolbar (`pageControls`, from
 `Glue.stopInlayLinks`: each the registered control acting on the stop, and Write code…), and draw Watch and Interact as
-toggle buttons with their glyphs (`Actions.Show`, `General.Mouse`) in the words both editors write (`page.watch`,
+toggle buttons with their glyphs (`Actions.Show`, and `icons/interact.svg`: Piwi Picker's hand) in the words both editors write (`page.watch`,
 `page.interact`, the input rule `page.input-rule` as Interact's tooltip). While the Worker tab is in sight (the tool
 window shows, with it selected: `Glue.selectsPausedPage`), the Paused page shows another worker's new page without
 being selected, so the Worker tab stays in sight.

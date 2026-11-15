@@ -2019,11 +2019,11 @@ export interface PausedPageView {
  */
 export const INPUT_RULE = editorWords('page.input-rule');
 
-/** Watch's glyph, the eye of Watch a worker's test, and Interact's, a pointer, drawn in the text's color. */
+/** Watch's glyph, the eye of Watch a worker's test, and Interact's, Piwi Picker's hand, drawn in the text's color. */
 const WATCH_GLYPH =
   '<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.6 3 1.9 5.3 1 8c.9 2.7 3.6 5 7 5s6.1-2.3 7-5c-.9-2.7-3.6-5-7-5zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
 const INTERACT_GLYPH =
-  '<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1v12l3.2-3 2.1 4.9 2-.9-2.1-4.8H12.5z"/></svg>';
+  '<svg class="glyph line" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.25 13.25V5.75a1.5 1.5 0 0 1 3 0V11.25"/><path d="M11.25 10.75V4.25a1.5 1.5 0 0 1 3 0v6.5"/><path d="M14.25 10.75V5.75a1.5 1.5 0 0 1 3 0V13.25"/><path d="M17.25 9.75a1.5 1.5 0 0 1 3 0V14.25a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L4.25 14.85a1.6 1.6 0 0 1 2.5-2L8.25 14.75"/></svg>';
 
 /** A toggle of the page: a checkbox named by its words, drawn as a button with its glyph, pressed while checked. */
 function toggleHtml(
@@ -2236,7 +2236,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}.glyph.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
