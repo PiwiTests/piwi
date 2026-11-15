@@ -346,15 +346,20 @@ export function testsReaching(codeIndex: CodeIndex | null, repoRelativePath: str
 
 /**
  * The routes a file handles that tests called, each at the 1-based line its handler's body starts at, with the tests
- * that called it (`CodeIndex.routes`); none from an instance that sends no routes.
+ * that called it (`CodeIndex.routes`), once each: the index names the file by its whole repository path, never by a
+ * suffix two files share. None from an instance that sends no routes.
  */
 export function routesHandledIn(
   codeIndex: CodeIndex | null,
   repoRelativePath: string,
 ): Array<{ route: string; line: number; tests: LocatorIndexTest[] }> {
   if (!codeIndex?.routes) return [];
+  const path = repoRelativePath.replace(/\\/g, '/');
+  const seen = new Set<string>();
   return codeIndex.routes.flatMap((r) => {
-    if (!sameFilePath(codeIndex.files[r.file] ?? '', repoRelativePath)) return [];
+    const key = `${r.route}\n${r.line}`;
+    if ((codeIndex.files[r.file] ?? '').replace(/\\/g, '/') !== path || seen.has(key)) return [];
+    seen.add(key);
     const tests = r.tests.flatMap((t) => codeIndex.tests[t] ?? []);
     return tests.length ? [{ route: r.route, line: r.line, tests }] : [];
   });

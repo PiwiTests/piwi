@@ -635,6 +635,10 @@ describe('coverage in the editor', () => {
   });
 
   test('puts a lens on each route a file handles that tests called, at its handler’s line', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'src/Web/Program.cs'),
+      Array.from({ length: 30 }, (_, i) => `// ${i + 1}`).join('\n'),
+    );
     const summary = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/Web/Program.cs') })) as FileSummary;
     expect(summary.lines).toContainEqual(
       expect.objectContaining({

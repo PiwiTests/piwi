@@ -181,7 +181,7 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
 }
 ```
 
-A route's `handler` is the source file of its action, minimal API delegate or hub, read from the assembly's portable PDB, and `line` the 1-based line the action's or delegate's body starts at: an expression body's own line, a block's opening brace. A hub has many methods, so its route has no line; a handler the PDB cannot place has neither.
+A route's `handler` is the source file of its action, minimal API delegate or hub, read from the assembly's portable PDB, and `line` the 1-based first line of the action's or delegate's body the PDB records: an expression body's own line, a block's opening brace in a Debug build, its first statement in an optimized one. A hub has many methods, so its route has no line; a handler the PDB cannot place has neither.
 
 | Endpoint                                              | Declared as                                                                                                              |
 |-------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|

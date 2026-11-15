@@ -599,3 +599,27 @@ describe('locatorLineTellsMore', () => {
     expect(locatorLineTellsMore(10, 7, spans)).toBe(true);
   });
 });
+
+describe('the routes a file handles', () => {
+  test('names a file by its whole repository path, each route and line once', async () => {
+    const { routesHandledIn } = await import('../src/analysis');
+    const test = { id: 1, title: 'pays', filePath: 'tests/pay.spec.ts', suitePath: null, status: 'passed' };
+    const index = {
+      files: ['src/Api/Program.cs', 'Program.cs'],
+      tests: [test],
+      reach: [],
+      routes: [
+        { file: 0, route: 'GET /api/orders/:id', line: 24, tests: [0] },
+        { file: 0, route: 'GET /api/orders/:id', line: 24, tests: [0] },
+        { file: 1, route: 'GET /admin', line: 8, tests: [0] },
+      ],
+      builtAt: null,
+      truncated: false,
+    } as never;
+    expect(routesHandledIn(index, 'src/Api/Program.cs').map((r) => [r.route, r.line])).toEqual([
+      ['GET /api/orders/:id', 24],
+    ]);
+    // A file named by its content root's path alone matches no other file of the same name.
+    expect(routesHandledIn(index, 'src/Admin/Program.cs')).toEqual([]);
+  });
+});

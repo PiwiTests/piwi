@@ -460,49 +460,58 @@ export interface CodeIndex {
 }
 
 /**
- * The routes of the indexed files that tests called, at the line the declared manifest gives their handler (a route
- * node's `attrs.line`); a route without one is left out.
+ * The routes of the indexed files that tests called, each at the line the declared manifest gives its handler's body
+ * in that file (the handler node's `attrs.lines`): the viewed branch's node, else the default branch's, never a pruned
+ * one. A route without a line is left out.
  */
 async function routesOfFiles(
   db: DrizzleDB,
   projectId: number,
+  branch: string | null,
   pairs: readonly CodeReachPair[],
   files: readonly string[],
   position: ReadonlyMap<number, number>,
 ): Promise<CodeIndex['routes']> {
   const fileAt = new Map(files.map((f, i) => [f, i]));
-  const testsOf = new Map<string, { file: number; route: string; tests: Set<number> }>();
+  const testsOf = new Map<string, { file: number; path: string; route: string; tests: Set<number> }>();
   for (const p of pairs) {
     const file = fileAt.get(p.file);
     const test = position.get(p.testCaseId);
     if (!p.route || file === undefined || test === undefined) continue;
     const key = `${file}\x00${p.route}`;
-    const entry = testsOf.get(key) ?? { file, route: p.route, tests: new Set<number>() };
+    const entry = testsOf.get(key) ?? { file, path: p.file, route: p.route, tests: new Set<number>() };
     entry.tests.add(test);
     testsOf.set(key, entry);
   }
-  const keys = [...new Set([...testsOf.values()].map((e) => e.route))];
-  const lines = new Map<string, number>();
+  const keys = [...new Set([...testsOf.values()].map((e) => e.path))];
+  // Per handler file, its routes' lines: the viewed branch's node wins over the default branch's.
+  const linesOf = new Map<string, { own: boolean; lines: Record<string, unknown> }>();
   for (let i = 0; i < keys.length; i += INSERT_CHUNK) {
     const nodes = await db
-      .select({ key: graphNodes.key, attrs: graphNodes.attrs })
+      .select({ key: graphNodes.key, branch: graphNodes.branch, attrs: graphNodes.attrs })
       .from(graphNodes)
       .where(
         and(
           eq(graphNodes.projectId, projectId),
-          eq(graphNodes.kind, 'route'),
+          eq(graphNodes.kind, 'handler'),
+          isNull(graphNodes.prunedAt),
           inArray(graphNodes.key, keys.slice(i, i + INSERT_CHUNK)),
+          branch ? or(isNull(graphNodes.branch), eq(graphNodes.branch, branch)) : isNull(graphNodes.branch),
         ),
       );
     for (const n of nodes) {
-      const line = (n.attrs as { line?: unknown } | null)?.line;
-      if (typeof line === 'number' && Number.isInteger(line) && line > 0 && !lines.has(n.key)) lines.set(n.key, line);
+      const lines = (n.attrs as { lines?: unknown } | null)?.lines;
+      if (!lines || typeof lines !== 'object') continue;
+      const own = n.branch !== null;
+      if (!linesOf.get(n.key)?.own) linesOf.set(n.key, { own, lines: lines as Record<string, unknown> });
     }
   }
   return [...testsOf.values()]
     .flatMap((e) => {
-      const line = lines.get(e.route);
-      return line ? [{ file: e.file, route: e.route, line, tests: [...e.tests].sort((a, b) => a - b) }] : [];
+      const line = linesOf.get(e.path)?.lines[e.route];
+      return typeof line === 'number' && Number.isInteger(line) && line > 0
+        ? [{ file: e.file, route: e.route, line, tests: [...e.tests].sort((a, b) => a - b) }]
+        : [];
     })
     .sort((a, b) => a.file - b.file || a.line - b.line || a.route.localeCompare(b.route));
 }
@@ -531,7 +540,9 @@ export async function getCodeIndex(db: DrizzleDB, projectId: number, branch?: st
       if (ids.length) reach.push({ file: i, tests: ids.sort((a, b) => a - b), ...REACH_KINDS[rank]! });
     });
   });
-  const routes = await routesOfFiles(db, projectId, pairs, kept, position);
+  // Graph nodes name a branch other than the default one; the default branch's are canonical (null).
+  const branchName = view.name && view.name !== view.defaultBranch ? view.name : null;
+  const routes = await routesOfFiles(db, projectId, branchName, pairs, kept, position);
   const [newest] = await db
     .select({ at: codeReach.lastSeenAt })
     .from(codeReach)

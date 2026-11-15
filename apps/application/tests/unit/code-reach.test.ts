@@ -65,14 +65,33 @@ beforeAll(async () => {
       kind: 'handled-by',
     },
   ]);
-  // The declared manifest gives the handler's line.
-  await db.insert(schema.graphNodes).values({
-    projectId: 1,
-    kind: 'route',
-    key: 'GET /api/products',
-    origin: 'manifest',
-    attrs: { declared: true, line: 12 },
-  });
+  // The declared manifest gives the handler's line, on the handler's node; a feature branch's own, and a pruned one.
+  await db.insert(schema.graphNodes).values([
+    {
+      projectId: 1,
+      kind: 'handler',
+      key: 'server/api/products.get.ts',
+      origin: 'manifest',
+      attrs: { declared: true, lines: { 'GET /api/products': 12 } },
+    },
+    {
+      projectId: 1,
+      kind: 'handler',
+      key: 'server/api/products.get.ts',
+      branch: 'feature/pay',
+      origin: 'manifest',
+      attrs: { declared: true, lines: { 'GET /api/products': 14 } },
+    },
+    {
+      projectId: 1,
+      kind: 'handler',
+      key: 'server/api/products.get.ts',
+      branch: 'old',
+      origin: 'manifest',
+      attrs: { declared: true, lines: { 'GET /api/products': 99 } },
+      prunedAt: new Date(T0),
+    },
+  ]);
 });
 
 describe('sanitizeCodeReach', () => {
@@ -123,6 +142,9 @@ describe('code reach', () => {
     expect(
       index.routes.map((r) => [index.files[r.file], r.route, r.line, r.tests.map((t) => index.tests[t]!.id)]),
     ).toEqual([['server/api/products.get.ts', 'GET /api/products', 12, [3]]]);
+    // A branch reads its own handler node's line; a pruned node gives none.
+    expect((await getCodeIndex(db as never, 1, 'feature/pay')).routes.map((r) => r.line)).toEqual([14]);
+    expect((await getCodeIndex(db as never, 1, 'old')).routes.map((r) => r.line)).toEqual([12]);
   });
 
   test('graph specs: file nodes with origin coverage, reaches edges from each test', () => {

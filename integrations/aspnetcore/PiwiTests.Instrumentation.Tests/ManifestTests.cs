@@ -169,7 +169,8 @@ public class ManifestTests
             ],
             manifest.RouteKeys);
         Assert.All(manifest.Routes, r => Assert.EndsWith(ControllersFile, r.Handler));
-        // Each action's line is where its body starts: an expression body's own line, an async method's opening brace.
+        // Each action's line is its body's first line the PDB records: an expression body's own line, and in this Debug
+        // build an async method's opening brace.
         Assert.Equal(
             LineOf("ManifestTestApp.cs", "public IActionResult Get(int id) => Ok(id);"),
             manifest.Route("GET", "/api/order-items/{id:int}").Line);

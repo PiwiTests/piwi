@@ -66,7 +66,7 @@ workers by lane with their tests and stops, and its page, each row's Watch, Paus
 run acting on it (LR7 in part: Hold failures on a run's row and run control as a Tools → Piwi submenu remain). L4 in
 part since: the ASP.NET Core route manifest names each handler's line, the instance keeps it on the route and the
 code index carries each route a file handles with the tests that called it, and both editors put a lens above each
-handler (`GET /api/orders/:id · 4 tests · 1 failing`) that runs them (RD7). L7 decided: Playwright for .NET gets an MIT
+handler (`GET /api/orders/:id · 4 tests · 1 failing`) that runs them. L7 decided: Playwright for .NET gets an MIT
 NuGet adapter, proposed in [playwright-dotnet.md](playwright-dotnet.md).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test

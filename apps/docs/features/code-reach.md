@@ -74,17 +74,19 @@ codeReachRoots: {
 Code a bundler or dev server adds (module wrappers, hot-reload hooks) counts for no file.
 
 With an instrumented backend (the [Nitro or ASP.NET Core packages](/guide/backend-logs)), the handler file of each
-route a test called counts as reached too.
+route a test called counts as reached too. The ASP.NET Core package also names each handler's line, from the build the
+tests called, so the [editors](./editors) put a lens above each handler tests called (`GET /api/orders/:id · 4 tests ·
+1 failing`), which runs them.
 
 ## Supported builds
 
-| Build | Source maps |
-| --- | --- |
-| Vite dev server, Nuxt dev included | none needed: modules are served by path |
-| Vite build | `build: { sourcemap: true }` |
-| Next.js dev, Turbopack or webpack | on by default |
-| Next.js build, Turbopack or webpack | `productionBrowserSourceMaps: true` |
-| webpack build | `devtool: 'source-map'` |
+| Build                               | Source maps                             |
+| ----------------------------------- | --------------------------------------- |
+| Vite dev server, Nuxt dev included  | none needed: modules are served by path |
+| Vite build                          | `build: { sourcemap: true }`            |
+| Next.js dev, Turbopack or webpack   | on by default                           |
+| Next.js build, Turbopack or webpack | `productionBrowserSourceMaps: true`     |
+| webpack build                       | `devtool: 'source-map'`                 |
 
 The map must be linked from the bundle: `sourcemap: 'hidden'` and webpack's `hidden-source-map` write the map but
 not the comment that names it, so they record nothing.
@@ -131,7 +133,7 @@ the Map view on one.
   a changed file no test reached still widens the run to the whole suite, since code reach misses top-level code,
   server code without [server coverage](./server-coverage) and type-only modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
-- **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
+- **[Locator preflight](./preflight)** calls a break _likely_ only when one of its tests reaches the changed file.
 - **[Coverage in the editor](./editor-coverage)** marks the lines tests ran and the ones none runs, in VS Code and the
   JetBrains IDEs.
 - **[Suspect lines](/guide/concepts#suspect-lines)**: the changed lines a failure's tests executed, on the failure

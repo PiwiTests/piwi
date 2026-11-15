@@ -3594,16 +3594,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
-    /** Each route the file handles that tests called, at its handler's line: `GET /api/orders/:id · 4 tests · 1 failing`. */
-    const routeLines = (repoRelative ? routesHandledIn(context.codeIndex, repoRelative) : []).map((r): SummaryLine => ({
-      line: r.line - 1,
-      title: [r.route, plural(r.tests.length, 'test'), testCounts(r.tests)].filter(Boolean).join(' · '),
-      command: run(
-        r.tests.map((t) => t.id),
-        r.tests.length === 1 ? 'that calls this route' : 'that call this route',
-        recordCoverage,
-      ),
-    }));
+    /**
+     * Each route the file handles that tests called, at its handler's line in the build the tests called (`GET
+     * /api/orders/:id · 4 tests · 1 failing`); none past the file's end.
+     */
+    const routeLines = (repoRelative ? routesHandledIn(context.codeIndex, repoRelative) : [])
+      .filter((r) => r.line <= lines.length)
+      .map((r): SummaryLine => ({
+        line: r.line - 1,
+        title: [r.route, plural(r.tests.length, 'test'), testCounts(r.tests)].filter(Boolean).join(' · '),
+        command: run(
+          r.tests.map((t) => t.id),
+          r.tests.length === 1 ? 'that calls this route' : 'that call this route',
+          recordCoverage,
+        ),
+      }));
     const codeLines = [...functionLines, ...routeLines].sort((a, b) => a.line - b.line);
     if (!page) {
       if (reachLine || codeLines.length) return { file: reachLine, lines: codeLines };
