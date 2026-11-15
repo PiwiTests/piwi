@@ -14,19 +14,23 @@ shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's k
 
 ### Keys
 
-`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. A JetBrains keymap where that chord is another action's
-takes the letter of its column, as the keymaps descending from it do: Visual Studio 2022, Visual Assist and ReSharper
-descend from Visual Studio, and the macOS keymaps from Mac OS X 10.5+.
+`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. They act in an editor of a JavaScript or TypeScript file,
+and in Piwi's failures, alone. A JetBrains keymap where that chord is another action's in those places takes the letter
+of its row, as do the keymaps descending from it; **Settings → Keymap** names `$default` Windows and `Mac OS X 10.5+`
+macOS.
 
-| Command | VS Code, and a JetBrains IDE's default keymap | Visual Studio | ReSharper | Mac OS X 10.5+ | Visual Studio OSX | ReSharper OSX |
-|---|---|---|---|---|---|---|
-| **Piwi: Run the test at the cursor** | `K` | `J` | `J` | `K` | `J` | `J` |
-| **Piwi: Re-run the failing tests** | `F` | `F` | `T` | `F` | `F` | `T` |
-| **Piwi: Record here…**, **Piwi: Stop recording** | `R` | `O` | `O` | `O` | `O` | `O` |
-| **Piwi: Open the failures** | `Z` | `Z` | `Z` | `Z` | `Z` | `Z` |
+| Keymap | Record here…, Stop recording | Re-run the failing tests | Run the test at the cursor | Open the failures |
+|---|---|---|---|---|
+| VS Code, and `$default` and every JetBrains keymap not below | `R` | `F` | `K` | `B` |
+| `Default for XWin`, `Default for GNOME`, `Default for KDE` | `R` | `F` | `K` | `G` |
+| `Mac OS X 10.5+`, `Eclipse (Mac OS X)`, `Sublime Text (Mac OS X)`, `VSCode OSX`, `macOS System Shortcuts` | `Z` | `F` | `K` | `B` |
+| `Visual Studio`, `Visual Studio 2022`, `Visual Assist` | `G` | `F` | `J` | `B` |
+| `ReSharper` | none | `T` | `J` | none |
+| `Visual Studio OSX`, `Visual Assist OSX` | `Z` | `F` | `J` | `B` |
+| `ReSharper OSX` | `Z` | `T` | `J` | `S` |
+| `TextMate` | `R` | `Y` | `K` | `B` |
 
-They share a chord only with an action of the database tool window, of a Java file or of a Kotlin script, which acts
-where they do not. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings →
+They share a key only with an action of the Database tool window, or of a Java, Kotlin script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings →
 Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## Connection

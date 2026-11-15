@@ -138,9 +138,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   runner's classes: they belong to the `JavaScript` plugin.
   ([Playwright runner](ARCHITECTURE.md#playwright-runner))
 - **Piwi's chords are the editor service's table (`packages/editor/src/keys.ts`)**: the VS Code extension's in the
-  `$default` keymap, and another letter where a bundled keymap gives that chord to another action, `replace-all` in
-  `plugin.xml`. `packages/editor/tests/keys.test.ts` checks them against `keymap-chords.json`; when `verifyIdes`
-  changes, run `scripts/keymap-chords.py` on the new IDEs. ([Keymaps](ARCHITECTURE.md#keymaps))
+  `$default` keymap, another letter (`replace-all`) or none (`remove`) where a bundled keymap gives that chord to
+  another action, and from the keyboard they act only in a JavaScript or TypeScript editor or the Piwi tool window
+  (`chordActsHere`). `packages/editor/tests/keys.test.ts` checks them against `keymap-chords.json`; for a new IDE
+  release, run `scripts/keymap-chords.py` on it. ([Keymaps](ARCHITECTURE.md#keymaps))
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
   takes the key.** From the keyboard, Resume, Step, Run to caret and Finish give way to a suspended debug session, Pause
   to a running one, Stop to any (`givesWayTo`); `PiwiRunActionPromoter` puts them first only while a run is live.

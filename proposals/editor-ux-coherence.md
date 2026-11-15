@@ -175,11 +175,13 @@ row, Resume, Step, Finish and Write code…, as a toolbar; Watch and Interact ar
 both editors write (`page.watch`, `page.interact`) under one input rule (`page.input-rule`); VS Code's pages carry a tab
 icon, and every control an accessible name; JetBrains' Worker tab offers Interact at a stop (LR8, NF6, left out of
 this document). M16 built: Piwi's chords are one table (`packages/editor/src/keys.ts`), `Ctrl+Alt+Shift` (`Cmd`) with
-R, F and K and Z for a new Open the failures in both editors, and another letter in the keymaps that give one to
-another action: Visual Studio's and ReSharper's, Mac OS X 10.5+'s Force Refresh; a test checks them against every
-keymap bundled with WebStorm, IDEA Ultimate and Rider (`apps/jetbrains/keymap-chords.json`, which
-`apps/jetbrains/scripts/keymap-chords.py` reads from the IDEs), sharing a chord only with an action that acts where
-Piwi's do not (AC12, left out of this document; #1117). Record here is a code action where the
+R, F and K and B for a new Open the failures in both editors, acting from the keyboard only in a JavaScript or
+TypeScript editor and in Piwi's failures, and another letter, or none, in the keymaps that give one to another action:
+the Visual Studio and ReSharper families', TextMate's, the Linux desktops' and Mac OS X 10.5+'s Force Refresh; a test
+checks them against every keymap bundled with WebStorm (2024.1 and 2026.3), IDEA Ultimate, Rider, PyCharm, PhpStorm,
+GoLand and RubyMine (`apps/jetbrains/keymap-chords.json`, which `apps/jetbrains/scripts/keymap-chords.py` reads from
+the IDEs), sharing a chord only with an action that acts elsewhere alone, and against AltGr's letters (AC12, left out
+of this document; #1117). The run-control keys stay set by each client, with no table (deferred). Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -212,8 +214,8 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
-- **Seven findings lead (§0)**, from one action spelled four ways to Rider's keys colliding with Piwi's and a JetBrains
-  plugin that misreports a stopped service.
+- **Seven findings lead (§0)**, from one action spelled four ways to a JetBrains plugin that misreports a stopped
+  service.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
@@ -804,8 +806,10 @@ Run to Cursor and Finish give way to a suspended debugger, Pause to a running on
 platform Pause action's key. **Lives in** `packages/editor` and both clients (FSL). **Replaces** chords Rider's Visual
 Studio-family and ReSharper keymaps already bind, keys set per client with no collision check. **Depends on**
 [LI1](#li1). **Revisits** no decision. Built with M16 but for the run-control keys, which each client still sets: the
-chords (`packages/editor/src/keys.ts`), held against both manifests and checked against every keymap bundled with
-WebStorm, IDEA Ultimate and Rider (`apps/jetbrains/keymap-chords.json`) and VS Code's.
+chords (`packages/editor/src/keys.ts`), held against both manifests and the docs' table of keys and checked against
+every keymap bundled with the JetBrains IDEs the plugin installs in (`apps/jetbrains/keymap-chords.json`) and VS
+Code's; they act from the keyboard only in a JavaScript or TypeScript editor and in Piwi's failures, so a chord shares
+its key only with an action acting elsewhere alone (`SHARED_CHORDS`).
 
 **Look (principles 2 and 3).**
 
@@ -1292,8 +1296,7 @@ such action.
 | A CI run of the branch | – | – | `$(cloud)` | `ciRun.svg` |
 | Pair | `link` | `link` | `$(link)` | `pair.svg` |
 | Open in dashboard | `external-link` | `external` | `$(link-external)` | `Ide.External_link_arrow` |
-| Latest run, run node | the Piwi mark | – | `$(piwi-mark)` (new) | `piwi.svg`, 16 px outline (new) |
-| Open the failures | – | – | `$(piwi-mark)`, built | `piwi.svg`, built for `Piwi.OpenFailures` |
+| Latest run, run node, Open the failures | the Piwi mark | – | `$(piwi-mark)`, built for Open the failures | `piwi.svg`, 16 px outline, built for `Piwi.OpenFailures` |
 | Cluster | `layers` | – | `$(layers)` | `layers.svg` |
 | Owner | `user` | – | `$(person)` | `General.User` |
 | Trace | `file-archive` | – | `$(file-zip)` | `FileTypes.Archive` |

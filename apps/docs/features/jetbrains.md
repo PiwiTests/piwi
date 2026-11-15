@@ -109,12 +109,12 @@ line** on the debugger's Show Execution Point key:
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
-The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
-shortcuts of your keymap while they apply and the debugger does not take them ([the
-controls](./editor-run-control#the-controls)): in the default keymap `F9` resumes, `F8` steps, `Alt+F9` runs to the
-caret (`Alt+Shift+9` in the Linux default keymaps) and `Shift+F8` finishes, and Pause has none; in the Visual Studio
-keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap**
-changes them (search `Piwi`).
+The shortcuts are those of VS Code ([Commands](./editors#commands)), but in a keymap that gives one to another action
+([Keys](/reference/editor-commands#keys)) and for a run's controls, which use the debugger's shortcuts of your keymap
+while they apply and the debugger does not take them ([the controls](./editor-run-control#the-controls)): in the
+default keymap `F9` resumes, `F8` steps, `Alt+F9` runs to the caret (`Alt+Shift+9` in the Linux default keymaps) and
+`Shift+F8` finishes, and Pause has none; in the Visual Studio keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and
+Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap** changes them (search `Piwi`).
 
 Each Piwi balloon is titled Piwi and filed by kind in **Settings → Appearance & Behavior → Notifications**: Piwi
 (results), Piwi requests (Debug in my editor, a run shared live: they stay until answered), Piwi suggestions, Piwi

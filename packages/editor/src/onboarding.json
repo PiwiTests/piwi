@@ -36,7 +36,10 @@
     {
       "id": "record",
       "title": "Record a test",
-      "text": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the {cursor}. No instance needed.",
+      "text": {
+        "vscode": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the {cursor}. No instance needed.",
+        "jetbrains": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+Z` in the macOS keymap) records at the {cursor}. No instance needed."
+      },
       "action": "Record a new test file…"
     },
     {

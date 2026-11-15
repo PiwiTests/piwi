@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataKey
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -420,7 +421,7 @@ class RerunFailingAction : AnAction(), DumbAware {
      * run read before the instance stopped answering too.
      */
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled =
+        e.presentation.isEnabled = chordActsHere(e) &&
             (e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failuresResult?.failing ?: 0) > 0
     }
 
@@ -428,6 +429,16 @@ class RerunFailingAction : AnAction(), DumbAware {
         PiwiCommands.rerunFailing(e.project ?: return)
     }
 }
+
+/**
+ * Whether one of Piwi's chords acts here: from a menu anywhere, from the keyboard only in an editor of a JavaScript or
+ * TypeScript file or in the Piwi tool window (`Glue.chordActsIn`), where the actions sharing its chord act not.
+ */
+internal fun chordActsHere(e: AnActionEvent): Boolean =
+    e.place != ActionPlaces.KEYBOARD_SHORTCUT || Glue.chordActsIn(
+        e.getData(CommonDataKeys.EDITOR)?.let { e.getData(CommonDataKeys.VIRTUAL_FILE)?.name },
+        e.getData(PlatformDataKeys.TOOL_WINDOW)?.id == PiwiFailuresToolWindowFactory.ID,
+    )
 
 /** Piwi: Run a saved selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction(), DumbAware {

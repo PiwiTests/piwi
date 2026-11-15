@@ -48,7 +48,7 @@ object OnboardingSteps {
         Step(
             id = "record",
             title = "Record a test",
-            text = "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the caret. No instance needed.",
+            text = "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+Z` in the macOS keymap) records at the caret. No instance needed.",
             label = "Record a new test file…",
             actionId = "Piwi.RecordNewFile",
             image = null,

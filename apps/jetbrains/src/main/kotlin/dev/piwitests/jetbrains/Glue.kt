@@ -2797,6 +2797,18 @@ object Glue {
         return if (among.any { it.ref != session.ref && name(it) == text }) "$text (${session.ref})" else text
     }
 
+    /** The files a chord of Piwi's acts in from the keyboard: JavaScript and TypeScript, as the specs Piwi runs. */
+    private val CHORD_FILES = setOf("js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts")
+
+    /**
+     * Whether a chord of Piwi's (`packages/editor/src/keys.ts`) acts from the keyboard: in an editor of a JavaScript or
+     * TypeScript file (`fileName`, null outside an editor) or in the Piwi tool window, where none of the actions it
+     * shares a chord with acts (`SHARED_CHORDS`: the Database tool window's, a Java, Kotlin script, Go or Terraform
+     * file's).
+     */
+    fun chordActsIn(fileName: String?, inPiwiWindow: Boolean): Boolean =
+        inPiwiWindow || fileName?.substringAfterLast('.', "")?.lowercase() in CHORD_FILES
+
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
     fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
         true -> "Turn hold failures off"

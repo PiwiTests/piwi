@@ -147,7 +147,7 @@ class StopRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.appliesWhen(recordingOf(e)?.stopping == false)
+        e.appliesWhen(chordActsHere(e) && recordingOf(e)?.stopping == false)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
