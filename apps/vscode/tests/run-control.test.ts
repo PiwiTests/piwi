@@ -2348,7 +2348,7 @@ describe('the Runs view', () => {
     const terminal = { ...session('terminal-1', []), terminal: true };
     const [first, second, ...rest] = runNodes(sessionsOf(run, terminal, session('ended', [], true)));
     expect(rest).toEqual([]);
-    expect(first).toMatchObject({ label: 'Run in shop (terminal-1)', kind: 'run-terminal', ref: 'terminal-1' });
+    expect(first).toMatchObject({ label: 'Run in shop (terminal-1)', kind: 'run-elsewhere', ref: 'terminal-1' });
     expect(second).toMatchObject({ label: 'Run #124', description: '4 of 9 · 1 failed', kind: 'run', ref: 'ed-1' });
     expect(second!.children.map((n) => [n.label, n.description, n.kind, n.worker, n.since])).toEqual([
       ['Worker 1', 'checkout › pays', 'worker-watchable', 0, undefined],
@@ -2364,6 +2364,17 @@ describe('the Runs view', () => {
       { url: 'https://piwi.test/test-runs/124' },
     ]);
     expect(runTargetArg(second!.children[1])).toEqual({ ref: 'ed-1', worker: 1, since: stopAt(spec, 4).since });
+  });
+
+  test('offers Resume alone at a failure, Watch alone on a test that cannot pause, and Stop on the editor’s own runs', () => {
+    const held = worker(0, 'stopped', { stop: { ...stopAt(spec, 4), reason: 'failure' } });
+    const pausing = worker(1, 'running', { watchable: true, pausing: true });
+    const [checkout, own] = runNodes(
+      sessionsOf(session('ed-1', [held, pausing]), { ...session('desktop-1', []), checkout: { commit: 'abc1234' } }),
+    );
+    expect(checkout!.kind).toBe('run-elsewhere');
+    expect(own!.kind).toBe('run');
+    expect(own!.children.map((n) => n.kind)).toEqual(['worker-held', 'worker-watch-only']);
   });
 });
 

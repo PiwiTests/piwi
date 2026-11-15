@@ -2968,9 +2968,9 @@ describe('runs as they happen', () => {
     pushRunEvent(61, 'test-stuck', { ...attempt, elapsedMs: 150_000, usualMs: 40_000 });
     const stuck = await waitFor(() => (latest()?.live?.stuck === 1 ? latest() : undefined));
     expect(stuck.liveTests).toEqual([
-      { testCaseId: 1, status: 'running', stuck: 'Stuck? running over 3 min, usually 40 s' },
+      { testCaseId: 1, status: 'running', stuck: 'Stuck? running over 2 min, usually 40 s' },
     ]);
-    expect((await testLine())?.title).toMatch(/^Stuck\? running over 3 min, usually 40 s, in your run #61 · /);
+    expect((await testLine())?.title).toMatch(/^Stuck\? running over 2 min, usually 40 s, in your run #61 · /);
 
     // A stop of the attempt hides it, and its going on shows it again.
     pushRunEvent(61, 'test-stopped', { ...attempt, stop: { kind: 'pause' } });
@@ -2978,6 +2978,16 @@ describe('runs as they happen', () => {
     expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
     pushRunEvent(61, 'test-resumed', attempt);
     await waitFor(() => (latest()?.live?.stuck === 1 ? true : undefined));
+
+    // The stream's catch-up replays the begin with what the instance said since: the attempt stays stuck.
+    pushRunEvent(61, 'test-begin', {
+      ...attempt,
+      filePath: 'tests/checkout.spec.ts',
+      stuck: { elapsedMs: 150_000, usualMs: 40_000 },
+      stop: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(latest()?.live?.stuck).toBe(1);
 
     // Its end ends it.
     pushRunEvent(61, 'test-completed', {

@@ -2473,7 +2473,6 @@ export function ciLaneRedraws(
   return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
 }
 
-/** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 /**
  * A row of the **Runs** view: a run in progress, one of its workers, or its page on the dashboard. It names its run
  * (`ref`), and a worker its `worker` and the stop it stands at (`since`), so the run commands take it as their target
@@ -2486,7 +2485,16 @@ export interface RunNode {
   tooltip: string;
   /** A codicon id. */
   icon: string;
-  kind: 'run' | 'run-terminal' | 'worker-running' | 'worker-watchable' | 'worker-stopped' | 'worker-between' | 'page';
+  kind:
+    | 'run'
+    | 'run-elsewhere'
+    | 'worker-running'
+    | 'worker-watchable'
+    | 'worker-watch-only'
+    | 'worker-stopped'
+    | 'worker-held'
+    | 'worker-between'
+    | 'page';
   ref: string;
   worker?: number;
   since?: string;
@@ -2498,7 +2506,9 @@ export interface RunNode {
 /**
  * The **Runs** view: each run in progress, newest first, named as the status bar names it, with how far it is, then
  * each of its workers by its lane with its test and whether it stands stopped there or runs, and its page on the
- * dashboard once its process names it. A run started in a terminal is the terminal's to stop (`run-terminal`).
+ * dashboard once its process names it. A run started in a terminal or a desktop app's job is stopped where it runs
+ * (`run-elsewhere`); a worker held at a failure takes Resume alone (`worker-held`), and one that cannot pause now is
+ * watched only (`worker-watch-only`).
  */
 export function runNodes(sessions: Sessions): RunNode[] {
   const live = [...sessions.values()].filter((s) => !s.ended);
@@ -2518,12 +2528,16 @@ export function runNodes(sessions: Sessions): RunNode[] {
         const stop = w.stop ? stopsOf(new Map([[session.ref, session]])).find((s) => s.worker === w.worker) : undefined;
         const kind =
           w.state === 'stopped'
-            ? 'worker-stopped'
+            ? w.stop?.reason === 'failure'
+              ? 'worker-held'
+              : 'worker-stopped'
             : w.state === 'between' || !test
               ? 'worker-between'
-              : w.watchable
-                ? 'worker-watchable'
-                : 'worker-running';
+              : !w.watchable
+                ? 'worker-running'
+                : w.pausing || w.test?.cannotPause
+                  ? 'worker-watch-only'
+                  : 'worker-watchable';
         const where = stop ? stopCaption(stop, sessions) : null;
         return {
           key: `${key}\n${w.parallelIndex}`,
@@ -2533,7 +2547,13 @@ export function runNodes(sessions: Sessions): RunNode[] {
             : 'between tests',
           tooltip: where ? `${name} · ${test}\n\n${where}` : test ? `${name} runs ${test}` : `${name} is between tests`,
           icon:
-            kind === 'worker-stopped' ? 'debug-pause' : kind === 'worker-between' ? 'circle-outline' : 'play-circle',
+            kind === 'worker-held'
+              ? 'error'
+              : kind === 'worker-stopped'
+                ? 'debug-pause'
+                : kind === 'worker-between'
+                  ? 'circle-outline'
+                  : 'play-circle',
           kind,
           ref: session.ref,
           worker: w.worker,
@@ -2568,7 +2588,7 @@ export function runNodes(sessions: Sessions): RunNode[] {
       description: [howFar, session.label ?? ''].filter(Boolean).join(' · '),
       tooltip: [title, howFar, session.hold ? holdText(session.hold) : ''].filter(Boolean).join('\n\n'),
       icon: 'loading~spin',
-      kind: session.terminal ? 'run-terminal' : 'run',
+      kind: session.terminal || session.checkout ? 'run-elsewhere' : 'run',
       ref: session.ref,
       open: null,
       children: [...workers, ...page],
@@ -2576,6 +2596,7 @@ export function runNodes(sessions: Sessions): RunNode[] {
   });
 }
 
+/** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 export interface CiNode {
   key: string;
   label: string;

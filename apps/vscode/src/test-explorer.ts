@@ -531,6 +531,10 @@ export class TestExplorer implements vscode.Disposable {
     }
     // A test of the editor's own run that may be stuck says so in the run's output, at its line, once.
     if (!followed.own) return;
+    // A test no longer stuck may be told again, once its next attempt is.
+    for (const item of followed.toldStuck.keys()) {
+      if (!followed.stuck.has(this.testOf.get(item)?.testCaseId ?? -1)) followed.toldStuck.delete(item);
+    }
     for (const [id, words] of followed.stuck) {
       for (const item of this.byCase.get(id) ?? []) {
         if (followed.profile && !followed.profile.tests.has(item)) continue;

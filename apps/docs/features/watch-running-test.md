@@ -31,7 +31,8 @@ machine: [what is sent](#what-is-sent-and-kept).
 While a run is in progress, VS Code's **Runs** view and the JetBrains **Runs** tab list each run with how far it is,
 each worker by its lane with its test and whether it stands stopped, and the run's page on the dashboard. A row opens
 the stopped line or the test, and its buttons (VS Code) or its right-click (JetBrains) offer **Watch**, **Pause and
-watch**, **Resume**, **Step** and, for a run the editor started, **Stop the run**.
+watch** on a test that can pause, **Resume**, **Step** except at a failure, and, for a run the editor started, **Stop
+the run**.
 
 ## A CI run of your branch
 

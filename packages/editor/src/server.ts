@@ -1862,7 +1862,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           alarm: statusAlarm(c, credentials.statusBarAlert ?? 'new'),
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
-          live: c.live ? liveAnswer(c.live, c.client!.runUrl(c.live.runId), c.liveStuck.size) : null,
+          live: c.live
+            ? liveAnswer(
+                c.live,
+                c.client!.runUrl(c.live.runId),
+                [...c.liveStuck.keys()].filter((id) => c.liveTests.get(id) === 'running').length,
+              )
+            : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
           ...(c.liveTests.size

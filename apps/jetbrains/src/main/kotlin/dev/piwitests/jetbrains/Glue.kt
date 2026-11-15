@@ -2607,10 +2607,11 @@ object Glue {
     }
 
     /**
-     * A row of the Runs tab, as VS Code's Runs view has it (`runNodes`): a run in progress (`run`, `run-terminal` for one
-     * started in a terminal, which the terminal stops), one of its workers (`worker-running`, `worker-watchable`,
-     * `worker-stopped`, `worker-between`) with its watch target and stop, or its page (`page`). A row opens its stop's
-     * line, its test's, or the page.
+     * A row of the Runs tab, as VS Code's Runs view has it (`runNodes`): a run in progress (`run`, `run-elsewhere` for one
+     * started in a terminal or a desktop app's job, stopped where it runs), one of its workers (`worker-running`,
+     * `worker-watchable`, `worker-watch-only` for a test that cannot pause now, `worker-stopped`, `worker-held` at a
+     * failure, which takes Resume alone, `worker-between`) with its watch target and stop, or its page (`page`). A row
+     * opens its stop's line, its test's, or the page.
      */
     data class RunRow(
         val key: String,
@@ -2643,7 +2644,7 @@ object Glue {
             }
             val run = RunRow(
                 key = ref,
-                kind = if (session.terminal) "run-terminal" else "run",
+                kind = if (session.terminal || session.checkout != null) "run-elsewhere" else "run",
                 text = runLabel(session, live),
                 detail = listOf(howFar, session.label.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
                 ref = ref,
@@ -2651,10 +2652,11 @@ object Glue {
             val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
                 val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }
                 val kind = when {
-                    w.state == "stopped" -> "worker-stopped"
+                    w.state == "stopped" -> if (w.stop?.let(::isFailure) == true) "worker-held" else "worker-stopped"
                     w.state == "between" || test == null -> "worker-between"
-                    w.watchable -> "worker-watchable"
-                    else -> "worker-running"
+                    !w.watchable -> "worker-running"
+                    w.pausing || w.test?.cannotPause != null -> "worker-watch-only"
+                    else -> "worker-watchable"
                 }
                 val stop = stops.firstOrNull { it.ref == ref && it.worker == w.worker }
                 RunRow(

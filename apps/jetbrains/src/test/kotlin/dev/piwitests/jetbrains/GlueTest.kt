@@ -1024,14 +1024,14 @@ class GlueTest {
         val rows = Glue.runRows(sessions)
         assertEquals(
             listOf(
-                listOf("run-terminal", "terminal-1"),
+                listOf("run-elsewhere", "terminal-1"),
                 listOf("run", "Run #124", "4 of 9 · 1 failed"),
                 listOf("worker-watchable", "Worker 1", "checkout › pays"),
                 listOf("worker-stopped", "Worker 2", "checkout › pays · stopped"),
                 listOf("worker-between", "Worker 3", "between tests"),
                 listOf("page", "Open run #124", "on the dashboard"),
             ),
-            rows.map { r -> if (r.kind == "run-terminal") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
+            rows.map { r -> if (r.kind == "run-elsewhere") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
         )
         // A stopped worker names its stop and opens its line, a running one its test's, the page the dashboard.
         assertEquals(4, rows[3].line)
@@ -1039,6 +1039,19 @@ class GlueTest {
         assertEquals(2, rows[2].line)
         assertEquals(1, rows[3].worker?.worker)
         assertEquals("https://piwi.test/test-runs/124", rows[5].url)
+    }
+
+    @Test
+    fun `the Runs tab offers Resume alone at a failure, Watch alone on a test that cannot pause, Stop on the IDE's own runs`() {
+        val held = RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 4).copy(reason = "failure"), watchable = true)
+        val pausing = RunWorker(1, 1, "running", runTest(), watchable = true, pausing = true)
+        val rows = Glue.runRows(
+            mapOf(
+                "ed-1" to session("ed-1", held, pausing),
+                "desktop-1" to session("desktop-1").copy(checkout = RunCheckout("abc1234")),
+            ),
+        )
+        assertEquals(listOf("run-elsewhere", "run", "worker-held", "worker-watch-only"), rows.map { it.kind })
     }
 
     @Test

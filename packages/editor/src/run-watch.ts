@@ -53,9 +53,13 @@ const MAX_CI_FOLLOWED = 200;
 
 const LIVE_ORDER: LiveTestStatus[] = ['running', 'failed', 'flaky', 'passed', 'skipped'];
 
-/** An attempt of the live run that runs now: its test, whether it stands stopped, and what the instance said if stuck. */
+/**
+ * An attempt of the live run that runs now: its test, its retry, whether it stands stopped, and what the instance said
+ * if stuck.
+ */
 interface RunningAttempt {
   testCaseId: number;
+  retry: number;
   stopped: boolean;
   stuck: { elapsedMs: number; usualMs: number } | null;
 }
@@ -69,14 +73,20 @@ function attemptKey(data: Record<string, unknown>): string {
   return [data.title, data.location, data.browser ?? '', repeat].map((part) => String(part ?? '')).join('\n');
 }
 
-/** A time as the stuck words say it: `40 s`, `4 min`. */
-function stuckTime(ms: number): string {
-  return ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s` : `${Math.round(ms / 60_000)} min`;
+/** A time as the stuck words say it, rounded down (`over`) or to the nearest: `40 s`, `4 min`. */
+function stuckTime(ms: number, round: (n: number) => number): string {
+  return ms < 60_000 ? `${Math.max(1, round(ms / 1000))} s` : `${round(ms / 60_000)} min`;
 }
 
 /** What a test's line and the Testing view say of a stuck attempt: `Stuck? running over 4 min, usually 40 s`. */
 export function stuckWords(stuck: { elapsedMs: number; usualMs: number }): string {
-  return `Stuck? running over ${stuckTime(stuck.elapsedMs)}, usually ${stuckTime(stuck.usualMs)}`;
+  return `Stuck? running over ${stuckTime(stuck.elapsedMs, Math.floor)}, usually ${stuckTime(stuck.usualMs, Math.round)}`;
+}
+
+/** What the instance said of an attempt that may be stuck, as an event or its begin payload carries it; else null. */
+function stuckOf(value: unknown): { elapsedMs: number; usualMs: number } | null {
+  const { elapsedMs, usualMs } = (value ?? {}) as { elapsedMs?: unknown; usualMs?: unknown };
+  return typeof elapsedMs === 'number' && typeof usualMs === 'number' ? { elapsedMs, usualMs } : null;
 }
 
 /** A ref for a run the editor starts: `ed-` and 8 random hexadecimal characters. */
@@ -934,8 +944,12 @@ export class RunWatch {
       LIVE_ORDER.find((s) => states.has(s))!,
     );
     const running = this.running.get(context) ?? this.running.set(context, new Map()).get(context)!;
-    if (status === 'running') running.set(attemptKey(event.data), { testCaseId: id, stopped: false, stuck: null });
-    else running.delete(attemptKey(event.data));
+    const key = attemptKey(event.data);
+    const retry = typeof event.data.retries === 'number' ? event.data.retries : 0;
+    // A begin the stream's catch-up replays carries what the instance said of the attempt since: its stop, if stuck.
+    if (status === 'running') {
+      running.set(key, { testCaseId: id, retry, stopped: !!event.data.stop, stuck: stuckOf(event.data.stuck) });
+    } else if ((running.get(key)?.retry ?? 0) <= retry) running.delete(key);
     this.stuckChanged(context);
     this.progress();
   }
@@ -950,9 +964,9 @@ export class RunWatch {
     if (event.type === 'test-stopped') attempt.stopped = true;
     else if (event.type === 'test-resumed') attempt.stopped = false;
     else {
-      const { elapsedMs, usualMs } = event.data;
-      if (typeof elapsedMs !== 'number' || typeof usualMs !== 'number') return;
-      attempt.stuck = { elapsedMs, usualMs };
+      const stuck = stuckOf(event.data);
+      if (!stuck) return;
+      attempt.stuck = stuck;
     }
     this.stuckChanged(context);
     this.progress();

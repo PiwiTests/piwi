@@ -58,8 +58,8 @@ shard ([Test search](/reference/test-search)).
 ## In your editor
 
 In VS Code and a JetBrains IDE, the [editor extensions](./editors) say it of the run they follow: the test's line
-reads `Stuck? running over 7 min, usually 41 s, in your run #130`, VS Code's Testing view writes that line in the run's
-output once, and the [status bar item](./editor-status-bar) counts them (`Piwi: run #130 · 4 of 9 · 1 stuck?`). A test
+reads `Stuck? running over 7 min, usually 41 s, in your run #130`, VS Code's Testing view writes that line in the output of
+a run you started, once, and the [status bar item](./editor-status-bar) counts them (`Piwi: run #130 · 4 of 9 · 1 stuck?`). A test
 that stands stopped is not counted until it goes on.
 
 ## The notification

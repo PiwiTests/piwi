@@ -34,7 +34,7 @@ import javax.swing.JList
  * far it is, each of its workers with its test and whether it stands stopped, and its page on the dashboard
  * (`Glue.runRows`, tested by `GlueTest`). A row opens its stop's line, its test's or the page on a double click or
  * Enter; its right-click offers the registered run actions that act on it (Watch, Pause and watch, Resume, Step, Stop
- * the run). Drawn by `PiwiRunSessions` on the event thread.
+ * the run), each where it applies. Drawn by `PiwiRunSessions` on the event thread.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunsTab(private val project: Project) : Disposable {
@@ -44,12 +44,16 @@ class PiwiRunsTab(private val project: Project) : Disposable {
     /** The runs listed when the person closed the tab: it opens again for another run only. */
     private var closedWith: Set<String> = emptySet()
 
+    /** The runs the tab lists now, which its closing keeps in `closedWith`. */
+    private var listed: Set<String> = emptySet()
+
     /** The sessions changed: the tab is added, drawn again or removed. On the event thread. */
     fun changed(sessions: Map<String, RunSession>) {
         val window = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID) ?: return
         val live = tab?.takeIf { window.contentManager.getIndexOfContent(it) >= 0 }
         val rows = Glue.runRows(sessions)
         val runs = rows.filter { it.kind.startsWith("run") }.map { it.key }.toSet()
+        listed = runs
         if (runs.isEmpty()) {
             live?.let { window.contentManager.removeContent(it, true) }
             tab = null
@@ -66,7 +70,7 @@ class PiwiRunsTab(private val project: Project) : Disposable {
         val content = ContentFactory.getInstance().createContent(JBScrollPane(shown), tabName(runs.size), false).apply {
             isCloseable = true
             setDisposer {
-                if (tab === this) closedWith = runs
+                if (tab === this) closedWith = listed
                 if (rowsList === shown) rowsList = null
             }
         }
@@ -129,13 +133,17 @@ class PiwiRunsTab(private val project: Project) : Disposable {
         val worker = row.worker
         val stop = row.stop
         when (row.kind) {
-            "worker-watchable" -> if (worker != null) {
+            "worker-watchable", "worker-watch-only" -> if (worker != null) {
                 registeredWith("Piwi.WatchWorker") { it.add(PiwiRunSessions.WORKER, worker) }?.let(::add)
-                registeredWith("Piwi.PauseAndWatch") { it.add(PiwiRunSessions.WORKER, worker) }?.let(::add)
+                if (row.kind == "worker-watchable") {
+                    registeredWith("Piwi.PauseAndWatch") { it.add(PiwiRunSessions.WORKER, worker) }?.let(::add)
+                }
             }
-            "worker-stopped" -> if (stop != null) {
+            "worker-stopped", "worker-held" -> if (stop != null) {
                 registeredWith("Piwi.ResumeRun") { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
-                registeredWith("Piwi.StepRun") { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
+                if (row.kind == "worker-stopped") {
+                    registeredWith("Piwi.StepRun") { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
+                }
             }
             "run" -> registeredWith("Piwi.StopRun") { it.add(PiwiRunSessions.RUN, row.ref) }?.let(::add)
         }
@@ -157,7 +165,7 @@ private class RunRowRenderer : ColoredListCellRenderer<Glue.RunRow>() {
     override fun customizeCellRenderer(list: JList<out Glue.RunRow>, value: Glue.RunRow?, index: Int, selected: Boolean, hasFocus: Boolean) {
         value ?: return
         when (value.kind) {
-            "run", "run-terminal" -> {
+            "run", "run-elsewhere" -> {
                 icon = PiwiIcons.RUNNING
                 append(value.text, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
@@ -167,6 +175,7 @@ private class RunRowRenderer : ColoredListCellRenderer<Glue.RunRow>() {
             }
             else -> {
                 icon = when (value.kind) {
+                    "worker-held" -> AllIcons.General.Error
                     "worker-stopped" -> AllIcons.Actions.Pause
                     "worker-between" -> AllIcons.RunConfigurations.TestNotRan
                     else -> AllIcons.Actions.Execute

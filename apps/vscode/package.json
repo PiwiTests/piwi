@@ -1367,7 +1367,7 @@
         },
         {
           "command": "piwi.watchWorker",
-          "when": "view == piwi.liveRuns && viewItem == worker-watchable",
+          "when": "view == piwi.liveRuns && viewItem =~ /^worker-watch/",
           "group": "inline@1"
         },
         {
@@ -1377,7 +1377,7 @@
         },
         {
           "command": "piwi.resumeRun",
-          "when": "view == piwi.liveRuns && viewItem == worker-stopped",
+          "when": "view == piwi.liveRuns && viewItem =~ /^worker-(stopped|held)$/",
           "group": "inline@1"
         },
         {
@@ -1386,14 +1386,9 @@
           "group": "inline@2"
         },
         {
-          "command": "piwi.pauseRun",
-          "when": "view == piwi.liveRuns && viewItem =~ /^run/",
-          "group": "inline@1"
-        },
-        {
           "command": "piwi.stopRun",
           "when": "view == piwi.liveRuns && viewItem == run",
-          "group": "inline@2"
+          "group": "inline@1"
         }
       ],
       "piwi.editorContext": [
