@@ -24,7 +24,7 @@ import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
 import { refreshOpenHealActions } from './pr-state';
 import { listOutcomes } from '../outcomes';
 import { recordHealBranchRun } from './branch-runs';
-import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
+import { buildRerunCommand } from '#shared/retry-command';
 import {
   healBranchName,
   healDedupeKey,
@@ -171,10 +171,7 @@ function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]):
     .map((e) => byExecution.get(e.executionId))
     .filter((r): r is HealCandidateRow => !!r)
     .map((r) => ({ filePath: r.filePath, title: r.title }));
-  const fileCmd = buildRetryCommand(cases, { mode: 'file' });
-  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title).filter(Boolean))].slice(0, 5));
-  if (!fileCmd && !grep) return '';
-  return `${fileCmd || 'npx playwright test'}${grep}`;
+  return cases.length > 0 ? buildRerunCommand(cases) : '';
 }
 
 async function countOpenHealActions(db: DbClient, projectId: number): Promise<number> {
