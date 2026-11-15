@@ -48,7 +48,7 @@ terminal is followed too, when the editor is open: [Runs started outside Piwi](.
 
 ## Stop it and write the fix there
 
-Set a breakpoint on the line you are working on and run the test. It stops before that line's call, in a headed
+Set a breakpoint on the line you are working on and debug the test (**Debug the test at the cursor**). It stops before that line's call, in a headed
 browser with Piwi's pause bar, or, headless, with the page shown in the editor. **Pick a locator**, **Record** and
 **Assert** (in the headed browser) and **Mock a request** write their code where the stopped statement stands now, after the edits you made
 since the run started ([Code from a pause](./editor-stop-code)); **End the test** skips the rest of it

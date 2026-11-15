@@ -206,8 +206,10 @@ object PiwiCommands {
     fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
-            val breakpoints = service.breakpoints()
             val user = service.user()
+            // A plain Run pauses at the breakpoints with `always` alone; a Debug with Piwi run with `debug` too.
+            val takes = Glue.takesBreakpoints(Glue.breakpointsMode(user.breakpoints), args)
+            val breakpoints = if (takes) service.breakpoints() else emptyList()
             val started = Glue.withRunStart(args, user.runHeaded, user.runHoldFailures)
             val withBreakpoints = if (breakpoints.isEmpty()) started else started.copy(breakpoints = breakpoints.map { it.place })
             val server = service.server()
@@ -219,7 +221,7 @@ object PiwiCommands {
                     "Piwi has no command for these tests: the instance knows none of them, or no instance is connected."
                 else -> null
             }
-            if (refusal == null) startRun(project, command!!, breakpoints) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
+            if (refusal == null) startRun(project, command!!, breakpoints, takes) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
         }
     }
 
@@ -250,17 +252,18 @@ object PiwiCommands {
     /**
      * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri` (`piwi/testAt`), as [runTests]
      * does: by its id when Piwi knows it, else by its location, and with `repeat` by its location, that many times; or
-     * with `wholeSpec` every test of the spec as saved, by its path. The spec is saved first, since a run reads it from
-     * the disk; a balloon says when there is nothing to run.
+     * with `wholeSpec` every test of the spec as saved, by its path; with `debug`, as Debug with Piwi. The spec is saved
+     * first, since a run reads it from the disk; a balloon says when there is nothing to run.
      */
-    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null) {
+    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null, debug: Boolean = false) {
         background(project, "Piwi: finding the test") {
             val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
             val args = if (wholeSpec) {
                 // Every test of the spec as saved, by its path, known to the instance or not.
                 found?.spec?.location?.let { RunTestsArgs(uri, emptyList(), locations = listOf(it)) }
             } else {
-                Glue.testAtRun(uri, found, repeat)
+                // Debug with Piwi: headed, each failure held at its line, the IDE's breakpoints taken.
+                Glue.testAtRun(uri, found, repeat)?.let { if (debug) it.copy(headed = true, holdFailures = true, debugging = true) else it }
             }
             if (args != null) {
                 saveSpec(project, uri)
@@ -290,7 +293,12 @@ object PiwiCommands {
      * (`PIWI_EDITOR_SEND`). Call it off the event thread. Whether it starts: false for a command with nothing to run, and
      * in an untrusted project.
      */
-    fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>): Boolean {
+    fun startRun(
+        project: Project,
+        command: RunCommand,
+        breakpoints: List<Glue.RunBreakpoint>,
+        takes: Boolean = Glue.breakpointsMode(project.service<PiwiProjectService>().user().breakpoints) == "always",
+    ): Boolean {
         val cwd = command.cwd ?: return false
         val line = command.command?.takeIf { it.isNotBlank() } ?: return false
         if (!project.service<PiwiProjectService>().trusted()) {
@@ -299,7 +307,7 @@ object PiwiCommands {
         }
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
         PiwiGetStarted.done("run")
-        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
+        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints, takes) }
         val base = command.env
         val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
         val address = if (pauses) PiwiSendHandler.runPairing() else null

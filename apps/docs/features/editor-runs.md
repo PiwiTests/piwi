@@ -22,6 +22,8 @@ and its results over the latest CI run's [failures](./editor-failures).
   [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know, such as one just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call,
   with or without an instance.
+- **Piwi: Debug the test at the cursor** (**Debug the test at the caret**) runs it as **Debug with Piwi** does:
+  headed, at [your breakpoints](./editor-breakpoints), holding each failure at its line.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the test at the caret ×3**) runs that test three times as a
   [verification](#when-your-run-ends).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
@@ -71,7 +73,7 @@ hides the result icon and its list.
 </figure>
 
 **Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
-Playwright config with your breakpoints, **Debug with Piwi** runs them headed, holding each failure at its line, and
+Playwright config, **Debug with Piwi** runs them headed at your breakpoints, holding each failure at its line, and
 **Verify ×3 with Piwi** runs them three times. From a failed test's actions, **Debug with Piwi** runs it as
 [Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
 they begin, offline too. A test the run gave Piwi no

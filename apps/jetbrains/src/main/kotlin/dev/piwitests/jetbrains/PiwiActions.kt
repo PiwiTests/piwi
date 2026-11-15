@@ -173,11 +173,15 @@ class RunTestsForFileAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Run the test at the caret (`wholeSpec` false), Verify the test at the caret ×3 (`repeat`) or Run this spec,
- * through `piwi/testAt`, in the Run tool window with the IDE's breakpoints, which a verification leaves out. Offered in
- * a spec file of a project with a Playwright config.
+ * Piwi: Run the test at the caret (`wholeSpec` false), Debug it (`debug`: headed, holding its failures, at the IDE's
+ * breakpoints), Verify the test at the caret ×3 (`repeat`) or Run this spec, through `piwi/testAt`, in the Run tool
+ * window. Offered in a spec file of a project with a Playwright config.
  */
-abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repeat: Int? = null) : AnAction(), DumbAware {
+abstract class RunInSpecAction(
+    private val wholeSpec: Boolean,
+    private val repeat: Int? = null,
+    private val debug: Boolean = false,
+) : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -195,11 +199,13 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repea
         val line = e.getData(TEST_LINE)
         // A popup's test whose text was deleted has no line left: nothing runs.
         if (line != null && line < 0) return
-        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat)
+        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat, debug)
     }
 }
 
 class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+class DebugTestAtCursorAction : RunInSpecAction(wholeSpec = false, debug = true)
 
 /** The 0-based line of the test a popup's run acts on (the result icon's), which the run reads before the caret's. */
 val TEST_LINE: DataKey<Int> = DataKey.create("piwi.testLine")
@@ -472,9 +478,9 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
                             val service = project.service<PiwiProjectService>()
-                            val breakpoints = service.breakpoints()
-                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val user = service.user()
+                            val breakpoints = if (Glue.breakpointsMode(user.breakpoints) == "always") service.breakpoints() else emptyList()
+                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val params = Glue.withRunStart(
                                 RunSelectionParams(uri, picked.key, places),
                                 user.runHeaded,

@@ -20,7 +20,7 @@ Playwright Test suites in JavaScript and TypeScript.
   the error, its call chain and the failure screenshot are in the hover.
 - **The Failures view.** The run's failures as a tree in the Piwi panel, grouped by spec, cluster or owner, with your
   runs since; each test re-runs, opens its trace or its page in one click, and **Re-run the failing tests** runs them
-  all. A run started there pauses at your breakpoints in the browser, where a locator you pick replaces the one on
+  all. A run debugged there pauses at your breakpoints in the browser, where a locator you pick replaces the one on
   that line, and the editor marks the paused line, then steps the run, runs it to the cursor or resumes it with the
   debugger's keys. From the paused line, it writes an assertion or a mock of a request the page made, and counts the
   matches of the locator at the cursor on the paused page; a headless test's page shows beside the editor, where a

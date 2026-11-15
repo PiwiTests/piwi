@@ -27,6 +27,7 @@
  * whose Stop sharing asks to confirm. While the worker panel watches a slot, the line of the call its test is in is
  * dimmed, the call after it (`piwi/runningLine`, `RunningLines`). The pure half is `run-control.ts`.
  */
+import type { BreakpointsMode } from './glue';
 import { setContextKey } from './context-keys';
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -160,8 +161,10 @@ import { createWorkerPanel, workerPageIcon } from './worker-panel';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
-  /** The editor's breakpoints a run pauses at, as a run's start reads them. */
+  /** The editor's enabled breakpoints, which a run that takes them pauses at (none with `piwi.breakpoints` `never`). */
   breakpoints(): RunBreakpoint[];
+  /** Which runs take them (`piwi.breakpoints`): a run started elsewhere, and one a terminal starts, with `always` alone. */
+  breakpointsMode(): BreakpointsMode;
   /** Ends the process of the run of `ref`; false when no task of this window runs it. */
   terminate(ref: string): boolean;
   /** The sessions changed, once their controls are drawn: the status item says what they hold. */
@@ -180,7 +183,7 @@ export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
   heard(session: RunSession): void;
   /** A run started with these breakpoints: they are not sent to it again, and its lines are the documents' now. */
-  started(ref: string, breakpoints: readonly RunBreakpoint[]): void;
+  started(ref: string, breakpoints: readonly RunBreakpoint[], takes: boolean): void;
   /**
    * The breakpoints may read otherwise (the service started, the Playwright configs changed): the service hears them,
    * as each live run does where they differ.
@@ -784,15 +787,17 @@ export function registerRunControl(
   /** The editor's breakpoints as last sent to the service (`piwi/setBreakpoints`), as text. */
   let editorSent = '';
   /**
-   * The editor's breakpoints to each live run whose breakpoints differ, as lines of its code, and to the service as
-   * they stand, for a run a terminal starts.
+   * The editor's breakpoints to each live run that takes them whose breakpoints differ, as lines of its code (none to
+   * one that takes none), and to the service as they stand, for a run a terminal starts, which takes them with
+   * `always` alone.
    */
   const sendBreakpoints = () => {
     const breakpoints = options.breakpoints();
-    for (const update of breakpointUpdates(sessions, breakpoints, runs, edits)) {
+    const always = options.breakpointsMode() === 'always';
+    for (const update of breakpointUpdates(sessions, breakpoints, runs, edits, always)) {
       void lc.sendNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, update);
     }
-    const editor: SetBreakpointsParams = { places: placesOf(breakpoints) };
+    const editor: SetBreakpointsParams = { places: always ? placesOf(breakpoints) : [] };
     const text = JSON.stringify(editor);
     if (text === editorSent) return;
     editorSent = text;
@@ -1567,8 +1572,8 @@ export function registerRunControl(
       // Breakpoints changed between the run's start and its first worker.
       if (fresh) sendBreakpoints();
     },
-    started(ref, breakpoints) {
-      remember(runs, ref, runStarted(edits.now(), breakpoints));
+    started(ref, breakpoints, takes) {
+      remember(runs, ref, runStarted(edits.now(), breakpoints, takes));
       clearTimeout(starting.get(ref));
       const timer = setTimeout(() => {
         starting.delete(ref);

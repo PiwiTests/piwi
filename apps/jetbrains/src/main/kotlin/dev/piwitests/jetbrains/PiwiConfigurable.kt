@@ -102,13 +102,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                         .comment("A CI failure or a teammate's never turns it red unless you choose any")
                 }
                 row {
-                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
-                        .bindSelected({ user.breakpoints }, { user.breakpoints = it })
+                    comboBox(Glue.BREAKPOINTS_CHOICES, ChoiceRenderer("breakpoints"))
+                        .label("The runs that pause at the editor's breakpoints, with the picker:", LabelPosition.TOP)
+                        .bindItem({ Glue.breakpointsMode(user.breakpoints) }, { user.breakpoints = it ?: "debug" })
                         .comment(
-                            "A run with a breakpoint in a test or page object pauses before the action on that line, " +
-                                "headless unless the runs start headed: its page shows in the Paused page tab. Needs " +
-                                "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
-                                "older reporter, or one whose version Piwi cannot read, the run starts headed",
+                            "Debug with Piwi alone by default, as the IDE's own Run and Debug. A run with a breakpoint in " +
+                                "a test or page object pauses before the action on that line, headless unless the runs " +
+                                "start headed: its page shows in the Paused page tab. Needs @piwitests/reporter 0.48.0 or " +
+                                "later, and 0.62.0 or later to stop headless: with an older reporter, or one whose version " +
+                                "Piwi cannot read, the run starts headed",
                         )
                 }
                 row {

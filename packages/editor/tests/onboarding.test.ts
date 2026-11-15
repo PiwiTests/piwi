@@ -16,9 +16,9 @@ describe('the onboarding script', () => {
 
   test('says each step in each editor’s words', () => {
     const run = ONBOARDING.steps.find((s) => s.id === 'breakpoint')!;
-    expect(stepText(run, 'vscode')).toContain('run the test at the cursor');
-    expect(stepText(run, 'jetbrains')).toContain('run the test at the caret');
-    expect(stepButton(run, 'jetbrains')!.label).toBe('Run the test at the caret');
+    expect(stepText(run, 'vscode')).toContain('debug the test at the cursor');
+    expect(stepText(run, 'jetbrains')).toContain('debug the test at the caret');
+    expect(stepButton(run, 'jetbrains')!.label).toBe('Debug the test at the caret');
     const mcp = ONBOARDING.steps.find((s) => s.provided)!;
     expect(stepText(mcp, 'vscode', true)).toBe(mcp.provided);
     expect(stepText(mcp, 'jetbrains', true)).toBe(stepText(mcp, 'jetbrains'));

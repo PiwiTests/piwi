@@ -181,6 +181,8 @@ data class RunTestsArgs(
     val debug: DebugRun? = null,
     val headed: Boolean? = null,
     val holdFailures: Boolean? = null,
+    /** A Debug with Piwi run, which pauses at the IDE's breakpoints while `breakpoints` is `debug`; `debug` is one too. */
+    val debugging: Boolean? = null,
 )
 
 /**

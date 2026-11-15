@@ -131,7 +131,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         var runNotifications: String = "failures",
         var runNotificationsScope: String = "mineAndCi",
         var statusBarAlert: String = "new",
-        var breakpoints: Boolean = true,
+        var breakpoints: String = "debug",
         var runHeaded: Boolean = false,
         var runHoldFailures: String = "auto",
         var playwrightRunner: Boolean = false,
@@ -593,7 +593,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * read action: call it off the event thread.
      */
     fun breakpoints(): List<Glue.RunBreakpoint> {
-        if (!user().breakpoints) return emptyList()
+        if (Glue.breakpointsMode(user().breakpoints) == "never") return emptyList()
         val roots = status?.contexts.orEmpty().mapNotNull { it.root }
         if (roots.isEmpty()) return emptyList()
         val found = ApplicationManager.getApplication().runReadAction(

@@ -51,6 +51,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Refresh the latest run', vscode: 'piwi.refreshRun', jetbrains: ['Piwi.RefreshRun'] },
   { title: 'Run the tests that reach this file', vscode: 'piwi.runTestsForFile', jetbrains: ['Piwi.RunTestsForFile'] },
   { title: 'Run the test at the {cursor}', vscode: 'piwi.runTestAtCursor', jetbrains: ['Piwi.RunTestAtCursor'] },
+  { title: 'Debug the test at the {cursor}', vscode: 'piwi.debugTestAtCursor', jetbrains: ['Piwi.DebugTestAtCursor'] },
   {
     title: 'Verify the test at the {cursor} ×3',
     vscode: 'piwi.verifyTestAtCursor',

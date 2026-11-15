@@ -218,6 +218,7 @@
             "completionEvents": [
               "onCommand:piwi.rerunFailing",
               "onCommand:piwi.runTestAtCursor",
+              "onCommand:piwi.debugTestAtCursor",
               "onCommand:piwi.verifyTestAtCursor",
               "onCommand:piwi.runSpec",
               "onCommand:piwi.runTest"
@@ -226,7 +227,7 @@
           {
             "id": "breakpoint",
             "title": "Stop at a breakpoint, and write code there",
-            "description": "Set a breakpoint on a line of a test or a page object, then run the test at the cursor: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.\n[Run the test at the cursor](command:piwi.runTestAtCursor)",
+            "description": "Set a breakpoint on a line of a test or a page object, then debug the test at the cursor: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.\n[Debug the test at the cursor](command:piwi.debugTestAtCursor)",
             "media": {
               "image": "dist/walkthrough/vscode-run-control-paused-page.png",
               "altText": "Stop at a breakpoint, and write code there"
@@ -373,6 +374,12 @@
         "command": "piwi.runTestAtCursor",
         "title": "Run the test at the cursor",
         "icon": "$(run)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.debugTestAtCursor",
+        "title": "Debug the test at the cursor",
+        "icon": "$(debug-alt)",
         "category": "Piwi"
       },
       {
@@ -919,6 +926,10 @@
           "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
+          "command": "piwi.debugTestAtCursor",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
           "command": "piwi.verifyTestAtCursor",
           "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
@@ -1356,18 +1367,23 @@
           "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
-          "command": "piwi.verifyTestAtCursor",
+          "command": "piwi.debugTestAtCursor",
           "group": "1_run@2",
           "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
-          "command": "piwi.runSpec",
+          "command": "piwi.verifyTestAtCursor",
           "group": "1_run@3",
           "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
-          "command": "piwi.runTestsForFile",
+          "command": "piwi.runSpec",
           "group": "1_run@4",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runTestsForFile",
+          "group": "1_run@5",
           "when": "piwi.active && resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /^\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|html|json|yaml|yml|properties|po|resx|cs|cshtml|razor)$/"
         },
         {
@@ -1595,9 +1611,24 @@
             ]
           },
           "piwi.breakpoints": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "type": "string",
+            "enum": [
+              "debug",
+              "always",
+              "never"
+            ],
+            "enumItemLabels": [
+              "Debug with Piwi",
+              "Every run",
+              "Never"
+            ],
+            "enumDescriptions": [
+              "Debug with Piwi pauses at the editor's breakpoints; a plain Run pauses at none.",
+              "Every run Piwi starts, and a run started in a terminal, pauses at them.",
+              "No run pauses at them."
+            ],
+            "default": "debug",
+            "markdownDescription": "Which runs Piwi starts pause at the editor's breakpoints: **Debug with Piwi** alone by default, as the editor's own Run and Debug. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
             "order": 3,
             "scope": "application"
           },

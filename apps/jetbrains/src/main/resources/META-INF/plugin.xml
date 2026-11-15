@@ -35,8 +35,8 @@
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
       <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
-          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. That run
-          pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
+          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. A run you
+          debug pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
           with the debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the
           page made.</li>
     </ul>
@@ -121,11 +121,14 @@
             <group id="Piwi.Run" text="Run" compact="true">
                 <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
                         text="Run the test at the caret" icon="AllIcons.Actions.Execute"
-                        description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
+                        description="Run the test whose test(…) call holds the caret, in the Run tool window">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
                     <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift J" replace-all="true"/>
                     <keyboard-shortcut keymap="Visual Studio OSX" first-keystroke="meta alt shift J" replace-all="true"/>
                 </action>
+                <action id="Piwi.DebugTestAtCursor" class="dev.piwitests.jetbrains.DebugTestAtCursorAction"
+                        text="Debug the test at the caret" icon="AllIcons.Actions.StartDebugger"
+                        description="Run the test whose test(…) call holds the caret headed, stopping at the breakpoints and holding its failures"/>
                 <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                         text="Verify the test at the caret ×3"
                         icon="AllIcons.Actions.Rerun"
@@ -133,7 +136,7 @@
                 </action>
                 <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
                         icon="AllIcons.Actions.RunAll"
-                        description="Run every test of this spec as it stands, in the Run tool window, with the breakpoints">
+                        description="Run every test of this spec as it stands, in the Run tool window">
                 </action>
                 <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                         text="Run the tests that reach this file" description="Run them in the Run tool window">
@@ -425,6 +428,7 @@
         <group id="Piwi.EditorPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" icon="/icons/piwi.svg" popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <reference ref="Piwi.RunTestAtCursor"/>
+            <reference ref="Piwi.DebugTestAtCursor"/>
             <reference ref="Piwi.VerifyTestAtCursor"/>
             <reference ref="Piwi.RunSpec"/>
             <reference ref="Piwi.RunTestsForFile"/>

@@ -53,9 +53,9 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
 
 ## What it takes from the editor
 
-- **The breakpoints.** It starts with the editor's breakpoints as they are, then takes them as you change them, while
-  `piwi.breakpoints` (**Pause the runs Piwi starts at the editor's breakpoints** in a JetBrains IDE) is on. Without
-  any, it runs as it would, and **Pause** stops it.
+- **The breakpoints**, with `piwi.breakpoints` set to **Every run** ([the setting](./editor-breakpoints#the-setting)):
+  it starts with the editor's breakpoints as they are, then takes them as you change them. Otherwise, or without any,
+  it runs as it would, and **Pause** stops it.
 - **The controls**: Pause, Resume, Step, Run to the cursor, Finish and [End the test](./end-the-test), and the code a stop
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
 - **Record and Assert** in the test's window, through the editor's recorder, and **Pick a locator**, which goes

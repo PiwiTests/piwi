@@ -44,7 +44,9 @@ VS Code's failures view lists finished runs alone, which no share outlives, and 
 Pick an element first, Piwi Picker's own tools under Pick, Report a bug and Replay under Record, and side by side Runs
 under Run control, Tested elements under Dashboard and Agent context under Agents, the gear Connection; and the tray of
 Piwi Desktop and Piwi Runner takes the menu's order, the run control first, the app, Agents and Connection, then its
-own options, with Check for updates in both and each row's glyph (X3).
+own options, with Check for updates in both and each row's glyph (X3). M8 built since: a plain Run pauses at no breakpoint, Debug with Piwi does, as the IDE's own Run and Debug
+(`piwi.breakpoints` `debug`, its default; `always` and `never` beside it; `RunTestsArgs.debugging`), the runs a
+terminal starts with `always` alone (TL17).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -139,7 +141,7 @@ M8: Debug with Piwi in both editors, Piwi's run control rather than a debug sess
 dashboard's Debug in my editor run for a failed test (stopping once at its line, with no consent prompt) and a headed
 run holding its failures otherwise; VS Code's Debug profile in the Testing view; and **Debug with Piwi** on the
 failure nodes of both editors, from the run the service builds (`WorkspaceFailure.debug`) (TL17 in part: the IDE run
-icon waits on M9, and whether a plain Run still stops at breakpoints stays open). M7 continued: the failure nodes of
+icon waits on M9). M7 continued: the failure nodes of
 both editors gain **Verify ×3 with Piwi** and **Go to the test**, from what the service finds of the failure's test
 (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11), and every quick fix carries Piwi's name, the service's
 (`piwiActionTitle`) and the clients' recorded-locator ones alike. M9:
@@ -239,7 +241,7 @@ step moves the document to `adr/`.
 
 **Summary.**
 
-- **What is left.** Most of the plan's quick wins are built; the steps left center on Debug with Piwi (M8), the Rider layer (M17) and the debug-session decision (L3).
+- **What is left.** Most of the plan's quick wins are built; the steps left center on the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -247,7 +249,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the five medium and seven large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the four medium and seven large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -271,8 +273,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 
 ## 0. The findings that matter most
 
-1. **Whether a plain Run still stops at Piwi's breakpoints is open, and Rider's IDE run icon is unchecked**
-   ([TL17](#tl17), [TL3](#tl3)).
+1. **Rider's IDE run icon is unchecked** ([TL3](#tl3)).
 
 2. **No check opens Rider** to see a spec beside the solution or a C# file ([RD3](#rd3), [RD4](#rd4)).
 
@@ -392,19 +393,6 @@ the Gutter Icons page, a descriptor whose switch the annotator reads. ([M9](#m9)
 ### 5.2 One role per surface
 
 ### 5.6 Debug
-
-<a id="tl17"></a>**TL17. Neither editor can debug a test from its line or its failure: VS Code has no Debug profile, the
-dashboard's stop-at-the-failing-line run is reachable only through its link, and every plain Run stops at breakpoints.**
-`apps/vscode/src/test-explorer.ts:127-135` creates Run-kind profiles only, so Debug Test reaches nothing.
-`RunTestsArgs.debug` (`packages/editor/src/protocol.ts:334-339`) runs one test headed and stops once at the failing
-line, but only the dashboard's Debug in my editor starts it; the failure nodes and the failure's quick fix offer Run but
-no Debug (`packages/editor/src/server.ts:2689-2701`). Every run but Verify ×3 passes the breakpoints while
-`piwi.breakpoints` is on, its default, and `withBreakpoints` makes it headed (`server.ts:3434-3457`). To stop a CI
-failure at its line, a developer goes through the dashboard and a consent prompt, while yesterday's breakpoint pauses
-Run with Piwi. **(seen)** Fix: Debug with Piwi, the dashboard's run for a failure and a headed run otherwise, as VS
-Code's Debug profile and in each test's action list, on [TL3](#tl3)'s icon and on failure nodes (§13), with no consent prompt; whether plain Run still stops is open (`piwi.breakpoints` keeps its key, and a new value
-could keep stops for Debug). It is Piwi's run control, not an IDE debug session ([LI10](#li10)). ([M8](#m8),
-[LI7](#li7))
 
 ### 5.7 The IDE's own test UI
 
@@ -722,7 +710,7 @@ Piwi builds the dashboard's Debug in my editor run (`RunTestsArgs.debug`) for a 
 history, flaky rate, owner and quarantine. **Lives in** `packages/editor` and both clients (FSL). **Replaces** anonymous
 gutter actions, a click that opens a browser, five names for run. **Depends on** [LI1](#li1). **Revisits**
 [developer-loop-audit.md](developer-loop-audit.md) P1 (Run and Verify ×3 on the result icon built, the run line marker
-left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps [M8](#m8),
+left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps M8 (built),
 [M9](#m9), [L5](#l5).
 
 <a id="li8"></a>
@@ -737,7 +725,7 @@ Piwi's coverage bar hidden while the IDE shows its own. Piwi's own marks stay fo
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 (a results-only Testing view, built) and §6.4 (offer
-the IDE's Playwright runner, not built). Steps [M8](#m8), [M9](#m9), [L2](#l2).
+the IDE's Playwright runner, not built). Steps M8 (built), [M9](#m9), [L2](#l2).
 
 <a id="li9"></a>
 
@@ -942,7 +930,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
@@ -988,10 +975,9 @@ whether M14's places are interim.
 8. **Where VS Code's Runs view lives**: in the Piwi panel beside Failures, matching JetBrains' Runs tab (this document's
    lean), or in Run and Debug, where developers looked at a stop? Whether JetBrains draws its run views in Swing or JCEF
    is the live-run study's open question 9.
-9. **Plain Run and breakpoints**: does plain Run keep stopping at breakpoints, or leave stops to Debug with Piwi?
-   `piwi.breakpoints` is a boolean, on by default (`apps/vscode/package.json:1146-1150`), and frozen in D25: a value
-   that limits stops to Debug runs needs a default for existing installs. Headedness is the live-run study's question
-   10; its P6 holds failures for an editor's debug run.
+9. **Plain Run and breakpoints**, decided: a plain Run pauses at none, Debug with Piwi does (`piwi.breakpoints` `debug`,
+   its default; `always` keeps every run stopping, an old `true` read as it), as the IDE's own Run and Debug.
+   Headedness is the live-run study's question 10; its P6 holds failures for an editor's debug run.
 10. **A CI run on the status line**: the study puts the developer's own run first (P5) and lists CI runs of the branch
     read-only (P10). Does a CI run ever take the line while none of the developer's own is live?
 11. **Team or personal settings**: which does a team share (`failureSeverity` in particular)? The new switches go into

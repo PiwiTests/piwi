@@ -55,6 +55,7 @@ script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes t
 | Command | What it does |
 |---|---|
 | **Piwi: Run the test at the cursor** | Run the test whose `test(…)` call holds the cursor: [Run tests](/features/editor-runs#run-tests) |
+| **Piwi: Debug the test at the cursor** | Run it headed, at your [breakpoints](/features/editor-breakpoints), holding each failure at its line |
 | **Piwi: Verify the test at the cursor ×3** | Run it three times without retries and say how many runs passed |
 | **Piwi: Run this spec** | Run every test of the spec as it stands |
 | **Piwi: Run the tests that reach this file** | Run the tests that reach the active file through [code reach](/features/code-reach) |

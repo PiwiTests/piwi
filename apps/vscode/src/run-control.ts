@@ -173,7 +173,7 @@ export type Sessions = ReadonlyMap<string, RunSession>;
  * A session heard, with what the runs were given (`runs`, by ref): the sessions kept with it (`withSession`), and
  * whether it is new to them (`fresh`). A run new to them that was not started here, or a rerun of a command under the
  * ref of a run that ended (VS Code's **Tasks: Rerun Last Task**), maps its lines from `now`, the edits since its start;
- * a run that ended is forgotten.
+ * a run that ended keeps only whether it took the breakpoints (`ended`), which its rerun takes as it did.
  */
 export function heardSession(
   sessions: Sessions,
@@ -182,8 +182,9 @@ export function heardSession(
   now: number,
 ): { sessions: Map<string, RunSession>; fresh: boolean } {
   const fresh = !session.ended && !sessions.has(session.ref);
-  if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(now, null));
-  if (session.ended) runs.delete(session.ref);
+  const kept = runs.get(session.ref);
+  if (fresh && (!kept || kept.ended)) remember(runs, session.ref, runStarted(now, null, kept?.takes));
+  if (session.ended && kept) remember(runs, session.ref, { ...runStarted(now, null, kept.takes), ended: true });
   return { sessions: withSession(sessions, session), fresh };
 }
 
@@ -1930,15 +1931,30 @@ export interface RunBreakpoints {
   since: number;
   lines: Map<string, EditorBreakpoint>;
   sent: string;
+  /**
+   * Whether the run pauses at the editor's breakpoints (`runTakesBreakpoints`), as it started here; absent for a run
+   * heard of but not started here, which takes them only while `piwi.breakpoints` is `always`.
+   */
+  takes?: boolean;
+  /** The run ended: what is kept of it is `takes`, for a rerun under its ref. */
+  ended?: true;
 }
 
-/** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
-export function runStarted(since: number, breakpoints: readonly RunBreakpoint[] | null): RunBreakpoints {
+/**
+ * A run started at `since` with `breakpoints`, which it takes or not (`takes`); one heard of but not started here was
+ * given none Piwi knows.
+ */
+export function runStarted(
+  since: number,
+  breakpoints: readonly RunBreakpoint[] | null,
+  takes?: boolean,
+): RunBreakpoints {
   const places = (breakpoints ?? []).map((b) => ({ uri: b.uri, line: b.line }));
   return {
     since,
     lines: new Map((breakpoints ?? []).map((b, i) => [b.id, places[i]!])),
     sent: breakpoints ? JSON.stringify(places) : '',
+    ...(takes === undefined ? {} : { takes }),
   };
 }
 
@@ -1970,14 +1986,16 @@ export function runPlaces(
 
 /**
  * The `piwi/setRunBreakpoints` the live runs need for the editor's `breakpoints`: one per run whose places
- * (`runPlaces`) differ from those it has (`runs`, by ref: the ones its command started with, else the last sent),
- * which `runs` then records. A run heard of without its start maps from now.
+ * (`runPlaces`, none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: the ones its command
+ * started with, else the last sent), which `runs` then records; none to a run that takes none and was given none. A
+ * run heard of without its start maps from now, and takes them as `heardTakes` says.
  */
 export function breakpointUpdates(
   sessions: Sessions,
   breakpoints: readonly RunBreakpoint[],
   runs: Map<string, RunBreakpoints>,
   edits: EditLog,
+  heardTakes = true,
 ): SetRunBreakpointsParams[] {
   const updates: SetRunBreakpointsParams[] = [];
   for (const ref of sessions.keys()) {
@@ -1986,7 +2004,10 @@ export function breakpointUpdates(
       run = runStarted(edits.now(), null);
       remember(runs, ref, run);
     }
-    const places = runPlaces(run, breakpoints, edits);
+    const takes = run.takes ?? heardTakes;
+    // A run that takes none and was given none keeps the breakpoints its command names, if any.
+    if (!takes && run.sent === '') continue;
+    const places = takes ? runPlaces(run, breakpoints, edits) : [];
     const text = JSON.stringify(places);
     if (run.sent === text) continue;
     run.sent = text;

@@ -298,7 +298,7 @@ describe('the sessions kept', () => {
     let kept: Map<string, RunSession> = new Map();
     ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [worker(0, 'running')]), log.now()));
     ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [], true), log.now()));
-    expect(runs.has('ed-1')).toBe(false);
+    expect(runs.get('ed-1')?.ended).toBe(true);
     // Three lines written above the stopped line between the runs, and saved: the rerun runs them.
     log.add(spec, lineEditOf(change([1, 0], [1, 0], '  // one\n  // two\n  // three\n'))!);
     const rerun = heardSession(
@@ -1793,6 +1793,42 @@ describe('the breakpoints sent to a run', () => {
       { ref: 'ed-1', places: [] },
       { ref: 'ed-2', places: [] },
     ]);
+  });
+
+  test('go to a run that takes them alone: a plain Run gets none, one started elsewhere gets them with always', () => {
+    const edits = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    const live = sessionsOf(
+      session('ed-debug', [worker(0, 'running')]),
+      session('ed-plain', [worker(0, 'running')]),
+      session('terminal-1', [worker(0, 'running')]),
+    );
+    remember(runs, 'ed-debug', runStarted(edits.now(), [], true));
+    remember(runs, 'ed-plain', runStarted(edits.now(), [], false));
+    // With `debug`: the Debug with Piwi run alone.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'ed-debug', places }]);
+    // With `always`: the run started elsewhere too, the plain Run still as it started.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, true)).toEqual([{ ref: 'terminal-1', places }]);
+    // Back to `debug`: the run started elsewhere loses them.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'terminal-1', places: [] }]);
+  });
+
+  test('a rerun under the ref of a run that ended takes the breakpoints as that run did', () => {
+    const edits = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    remember(runs, 'ed-debug', runStarted(edits.now(), [], true));
+    remember(runs, 'ed-plain', runStarted(edits.now(), [], false));
+    let live = sessionsOf(session('ed-debug', [worker(0, 'running')]), session('ed-plain', [worker(0, 'running')]));
+    for (const ref of ['ed-debug', 'ed-plain']) {
+      live = heardSession(live, runs, { ...session(ref, []), ended: true }, edits.now()).sessions;
+    }
+    for (const ref of ['ed-debug', 'ed-plain']) {
+      const heard = heardSession(live, runs, session(ref, [worker(0, 'running')]), edits.now());
+      expect(heard.fresh).toBe(true);
+      live = heard.sessions;
+    }
+    // With `debug`: the rerun of the Debug with Piwi run gets them; the plain one's keeps its command's, none.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'ed-debug', places }]);
   });
 
   test('keep the line a run has for a breakpoint that moved with an edit, and map a new one back', () => {
