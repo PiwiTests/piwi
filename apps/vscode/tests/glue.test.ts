@@ -643,6 +643,17 @@ describe('statusBarView', () => {
       }),
     ).toBe('tests');
     expect(filesRedraw(testing, run({}))).toBe('all');
+    // So does a test of a run the editor follows, as its worker tells it: paused at a stop.
+    expect(
+      filesRedraw(testing, {
+        contexts: [
+          {
+            ...testing.contexts[0]!,
+            runTests: [{ uri: 'file:///w/tests/cart.spec.ts', title: ['adds a mug'], status: 'paused' }],
+          },
+        ],
+      }),
+    ).toBe('tests');
     expect(filesRedraw(null, latest)).toBe('all');
     expect(filesRedraw(null, null)).toBe('none');
     // The failures view's first node follows the editor's own run alone.
@@ -2474,6 +2485,8 @@ describe('the Testing view', () => {
     expect(testOutcome('flaky', null)).toEqual({ state: 'passed' });
     expect(testOutcome('skipped', null)).toEqual({ state: 'skipped' });
     expect(testOutcome('running', null)).toEqual({ state: 'started' });
+    // A test at a stop of the editor's own run still runs.
+    expect(testOutcome('paused', null)).toEqual({ state: 'started' });
     expect(testOutcome('unknown', null)).toBeNull();
     expect(testOutcome(null, null)).toBeNull();
     const failure = {

@@ -89,9 +89,10 @@ export interface TestAction {
 
 /**
  * A test's latest result: `failed` when it failed in the latest run the service reads; `running` while the run in
- * progress the service follows runs it, and that run's result as soon as it ends the test.
+ * progress the service follows runs it, and that run's result as soon as it ends the test; `paused` while it stands at
+ * a stop of a run the editor follows, `failed` while its failure is held there.
  */
-export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'unknown';
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'paused' | 'unknown';
 
 /**
  * Where and why a test failed. The lines above `line` (the reason, the screenshot, the trace) are
@@ -933,6 +934,12 @@ export interface RunStatus {
    */
   liveTests?: LiveTest[];
   /**
+   * The tests of this config's runs the editor follows (`piwi/runSessionChanged`), as their workers tell them, which
+   * their lines show: each one running or standing at a stop, then each one's result in a run that names no page on an
+   * instance, until another run of the config begins; absent while none.
+   */
+  runTests?: RunLineTest[];
+  /**
    * The version of `@piwitests/reporter` the project installs, read from `node_modules` at each refresh; null when
    * none is found.
    */
@@ -944,6 +951,19 @@ export interface RunStatus {
    * index knows.
    */
   branches?: string[];
+}
+
+/**
+ * A test of a run the editor follows, as its line shows it: `running`, `paused` while it stands at a stop, `failed`
+ * while its failure is held too, then its result.
+ */
+export type RunLineStatus = 'running' | 'paused' | 'failed' | 'passed' | 'skipped';
+
+/** A test of a run the editor follows: its spec, its titles (`RunTest.title`) and its state. */
+export interface RunLineTest {
+  uri: string;
+  title: string[];
+  status: RunLineStatus;
 }
 
 /** A test of the run in progress: `running` once it began, then its result. */

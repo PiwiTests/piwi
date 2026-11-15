@@ -43,6 +43,17 @@ describe('the outcome marks', () => {
     );
   });
 
+  test('mark a test at a stop in the pause bar’s violet, the same in both editors', () => {
+    const resume = /'background:(#[0-9a-f]{6});color:#fff;border:1px solid/.exec(
+      read('packages/picker-dom/src/overlay-pause.ts'),
+    )?.[1];
+    expect(resume).toMatch(/^#[0-9a-f]{6}$/);
+    expect(disc(read('apps/vscode/media/test-paused.svg'))).toBe(resume);
+    expect(read('apps/jetbrains/src/main/resources/icons/testPaused.svg')).toBe(
+      read('apps/vscode/media/test-paused.svg'),
+    );
+  });
+
   test('mark a recording with the same glyphs in both editors', () => {
     for (const [vscode, jetbrains] of [
       ['recording', 'recording'],

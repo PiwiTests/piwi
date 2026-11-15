@@ -382,13 +382,21 @@ data class LiveRun(
 data class LiveTest(val testCaseId: Int = 0, val status: String? = null, val stuck: String? = null)
 
 /**
+ * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`) and its `status`
+ * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result).
+ */
+data class RunLineTest(val uri: String = "", val title: List<String> = emptyList(), val status: String = "running")
+
+/**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
  * them, `failingTests` the tests among them, `alarm` whether the status item shows its alarm (the credentials'
  * `statusBarAlert` chooses), `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
- * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
+ * tests `live` began or ended until the latest run is read once it ended, `runTests` the tests of the runs the IDE
+ * follows as their workers tell them (running or at a stop, then each result of a run that names no page on an
+ * instance, until another run of the config begins), `reporterVersion` the version of
  * `@piwitests/reporter` the project installs (null when none is found), `baseline` the baseline chosen and what it
  * found, `branches` the branches a baseline can be chosen from, the default branch first.
  */
@@ -406,6 +414,7 @@ data class RunStatus(
     val stream: String? = null,
     val updatedAt: String? = null,
     val liveTests: List<LiveTest>? = null,
+    val runTests: List<RunLineTest>? = null,
     val reporterVersion: String? = null,
     val baseline: Baseline? = null,
     val branches: List<String>? = null,

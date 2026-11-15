@@ -205,6 +205,7 @@ import {
 import { expectModuleOf, importInsertion, testImportOf } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
+import { OwnRunTests, type OwnRunTest } from './own-run-tests.js';
 import { RunSessions } from './run-sessions.js';
 import { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 import { ClientLaneView, ClientPageView } from './client-page-view.js';
@@ -1833,6 +1834,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return marks.notRun.has(at) ? `**Piwi coverage** · no test runs this line\n\n${COVERAGE_MARKS_EXPLAINED}` : null;
   };
 
+  /** The tests of the runs the editor follows, as their workers tell them, which the test lines show. */
+  const ownRunTests = new OwnRunTests();
+  /** The runs the editor follows now (`RunSessions.current`), once they are. */
+  let followedSessions: () => RunSession[] = () => [];
+  /**
+   * What a test's line says of it from the editor's own run: `paused, line 14, in your run #124`, `passed in your run
+   * (Verify ×3)`, the run's number when the instance streams it.
+   */
+  const ownRunWords = (context: PiwiContext, own: OwnRunTest): string => {
+    const label = runLabels.get(own.ref);
+    const id = context.live?.own && context.live.ref === own.ref ? ` #${context.live.runId}` : '';
+    return `${own.words} in ${label ? `run${id} (${label})` : `your run${id}`}`;
+  };
+  /** A test of the spec at `file` as the editor's own runs of `context` have it now. */
+  const ownTestOf = (context: PiwiContext, file: string, call: TestCall): OwnRunTest | undefined =>
+    ownRunTests.stateOf(context.root, file, [...call.suite, call.title], followedSessions());
+
   const runStatus = (): RunStatusResult => ({
     contexts: contexts
       .filter((c) => c.client && c.project)
@@ -1872,6 +1890,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
+          ...(() => {
+            const runTests = ownRunTests.testsOf(c.root, followedSessions());
+            return runTests.length ? { runTests } : {};
+          })(),
           ...(c.liveTests.size
             ? {
                 liveTests: [...c.liveTests].map(([testCaseId, status]) => {
@@ -2198,6 +2220,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The run line the client holds (`piwi/runLineChanged`), as last sent. */
   let lineSent = JSON.stringify(null);
   /** Send the run line once it changed, after the change the session brings is heard. */
+  /** The tests the editor's own runs show on their lines changed, or may have: the run status says so once. */
+  let runTestsPending = false;
+  const runTestsChanged = () => {
+    if (runTestsPending) return;
+    runTestsPending = true;
+    queueMicrotask(() => {
+      runTestsPending = false;
+      sendRunStatus();
+    });
+  };
   const lineChanged = () =>
     queueMicrotask(() => {
       const line = runLine(runSessions.current(), runSessions.sharingWindow);
@@ -2242,6 +2274,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     workerHost: () => clientName,
     notify: (session) => {
       adoptOutsideRun(session);
+      ownRunTests.sessionChanged(session);
+      runTestsChanged();
       clientPageView?.changed();
       clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
@@ -2280,6 +2314,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     heard: (ref, worker, what, root) => {
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
+      ownRunTests.heard(ref, worker, what, root);
+      if (what.type === 'test-end' || what.type === 'left' || what.type === 'ended') runTestsChanged();
       const tell = (event: Omit<RunTestEvent, 'ref' | 'worker' | 'root'>) =>
         void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, root, ...event });
       if (what.type === 'test-begin') tell({ type: 'test-begin', test: what.test });
@@ -2296,6 +2332,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     traceViewer: options.traceViewer ?? startTraceViewer,
     ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
   });
+  followedSessions = () => runSessions.current();
   clientPageView = new ClientPageView(
     runSessions,
     (frame) => connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
@@ -3331,11 +3368,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     status: TestLineStatus | null;
     /** The duration of the result `status` stands for, in ms; null for a run in progress or one Piwi does not say. */
     duration: number | null;
+    /** The test as the editor's own run has it, when `status` is that run's. */
+    own?: OwnRunTest;
   }> => {
     const { failingNow, fixedNow } = byCase(context.failures);
     return testCalls(lines).map((call) => {
       const found = caseOfCall(cases, call);
-      if (!found) return { call, status: null, duration: null };
+      const own = ownTestOf(context, file, call);
+      if (!found) return { call, status: own?.status ?? null, duration: null, ...(own ? { own } : {}) };
       const failed = failingNow.get(found.id);
       const fixed = failed ? undefined : fixedNow.get(found.id);
       const at = failed ? pass.place(context, failed) : null;
@@ -3356,11 +3396,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             return !!site && site.state !== 'gone' && samePath(site.file, file) && site.line - 1 === line;
           }),
       };
-      const live = lineLiveState(context, found.id);
+      // A test running or at a stop of the editor's own run, as its worker tells it; else its state in the run the
+      // instance streams; else its result in an own run no instance reads.
+      const instanceLive = lineLiveState(context, found.id);
+      const shown = own && (own.live || !instanceLive) ? own : undefined;
+      const live = shown?.status ?? instanceLive;
       const status = live ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
       // The failure's own, the catalog's latest run's for a result the catalog gives, none for a run in progress.
       const duration = live ? null : failed ? (failed.duration ?? null) : fixed ? null : (found.lastDuration ?? null);
-      return { call, found, failed, fixed, failure, status, duration: duration === null ? null : Math.round(duration) };
+      return {
+        call,
+        found,
+        failed,
+        fixed,
+        failure,
+        status,
+        duration: duration === null ? null : Math.round(duration),
+        ...(shown ? { own: shown } : {}),
+      };
     });
   };
 
@@ -3409,21 +3462,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
       const placeOf = recordPlacer(text);
-      for (const { call, found, failed, fixed, failure, status: testStatus } of specTests(
+      for (const { call, found, failed, fixed, failure, status: testStatus, own } of specTests(
         context,
         file,
         lines,
         cases,
         pass,
       )) {
-        if (!found) continue;
+        // A test the catalog does not know shows on its line only what the editor's own run says of it.
+        if (!found) {
+          if (own) {
+            out.push({ line: call.line, title: ownRunWords(context, own), status: own.status, endLine: call.endLine });
+          }
+          continue;
+        }
         const i = call.line;
         spans.push({ id: found.id, from: call.line, to: call.endLine ?? call.line });
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
         const label = context.live?.own && context.live.ref ? runLabels.get(context.live.ref) : undefined;
-        const verdict = testVerdict(context, found, failed, fixed, failure, label);
+        const verdict = own ? ownRunWords(context, own) : testVerdict(context, found, failed, fixed, failure, label);
         // A test the catalog has no run of has no pass rate to give.
         const passRate =
           runs > 0

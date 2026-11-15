@@ -65,8 +65,10 @@ names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part)
 workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
 run acting on it, and a run's row says and turns over its Hold failures (LR7 in part: run control as a Tools → Piwi
 submenu remains); a run the Testing view started shows each test's result as its worker ends it, from the run's own
-events (`piwi/runTest`), an instance or not (LR9 in part: the test lines of a run that reports to no instance and the
-pause or failed glyph while a test waits remain). L6 in part since: golden fixtures both editors' pure halves read
+events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
+running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
+failed while its failure is held, then its result in a run that reaches no instance, until the config's next run (LR9
+in part: the test lines of a config with no instance at all remain). L6 in part since: golden fixtures both editors' pure halves read
 (`packages/editor/tests/golden/`: the status bar's text and the Runs rows), held to the same words by VS Code's
 `tests/golden.test.ts` and `GlueTest`. L4 in part since: the ASP.NET Core route manifest names each handler's line,
 the instance keeps it on the handler file and the code index carries each route a file handles with the tests that
@@ -1048,7 +1050,8 @@ such action.
 
 The last seven rows are `STATUS_COLORS` (`apps/application/shared/status-colors.ts:36-45`) with the dashboard's
 `getStatusIcon` glyphs (`apps/application/app/utils/index.ts:311-331`). The outcome palette adds four states with no key
-there: unknown (JetBrains draws `TestNotRan`, VS Code nothing), paused, a held failure and recording.
+there: unknown (JetBrains draws `TestNotRan`, VS Code nothing), paused (built: `test-paused.svg` and `testPaused.svg`,
+two bars on the pause bar's violet `#7c3aed`), a held failure (built: the failed mark) and recording.
 
 Every platform constant is to be checked on 241 and 262, and every codicon against the 1.91 engines floor, before use. A
 first pass found each AllIcons constant above mapped to a New UI icon in both platforms' `PlatformIconMappings.json`,

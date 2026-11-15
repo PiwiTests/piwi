@@ -718,13 +718,15 @@ export function runsInFiles(runs: RunStatusResult | null): string {
 
 /**
  * What a change of the runs from `before` to `after` draws again in the files: `none` when only the run in progress
- * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`), which
- * only a test's line shows; `all` when anything else the files show changed, such as the latest run or its baseline.
+ * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`, and
+ * `runTests` as the runs the editor follows tell them), which only a test's line shows; `all` when anything else the files show changed, such as the latest run or its baseline.
  */
 export function filesRedraw(before: RunStatusResult | null, after: RunStatusResult | null): 'none' | 'tests' | 'all' {
   if (runsInFiles(before) === runsInFiles(after)) return 'none';
   const withoutTests = (runs: RunStatusResult | null) =>
-    runsInFiles(runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined })) });
+    runsInFiles(
+      runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined, runTests: undefined })) },
+    );
   return withoutTests(before) === withoutTests(after) ? 'tests' : 'all';
 }
 
@@ -2049,6 +2051,7 @@ export function testOutcome(status: TestLineStatus | null, failure: TestFailure 
     case 'skipped':
       return { state: 'skipped' };
     case 'running':
+    case 'paused':
       return { state: 'started' };
     case 'failed':
       return { state: 'failed', message: failureMessage(failure), line: failure?.line ?? null };

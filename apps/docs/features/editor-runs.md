@@ -18,7 +18,7 @@ and its results over the latest CI run's [failures](./editor-failures).
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS, another [key](/reference/editor-commands#keys) in some JetBrains keymaps) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
-  on a spec and under VS Code's editor title Run button (the caret in a JetBrains IDE), saving the spec first. **Run** in VS Code's test hover runs it, as
+  on a spec and under VS Code's editor title Run button, saving the spec first. **Run** in VS Code's test hover runs it, as
   [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know, such as one just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call,
   with or without an instance.
@@ -27,14 +27,13 @@ and its results over the latest CI run's [failures](./editor-failures).
 - **Piwi: Verify the test at the cursor ×3** (**Verify the test at the caret ×3**) runs that test three times as a
   [verification](#when-your-run-ends).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
-  [code reach](/features/code-reach); also in the editor's and the file tree's **Piwi** submenu.
+  [code reach](/features/code-reach), from the editor's and the file tree's **Piwi** submenu too.
 - **Piwi: Run a saved selection…** runs a [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
-folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** restarts it), in the Run tool
-window in a JetBrains IDE, its tests in a test tree beside the output as they run (**Rerun** restarts it), or in the
-IDE's Playwright runner (Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**, offered once, that
-keeps every control of a Piwi run, through the runner's Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
+folder: as a task in VS Code (**Tasks: Rerun Last Task** restarts it), in the Run tool window in a JetBrains IDE, its
+tests in a test tree as they run (**Rerun** restarts it), or in the IDE's Playwright runner (Debug, **Rerun Failed
+Tests**), a choice of **Settings → Tools → Piwi** that keeps every control of a Piwi run. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints and the editor pause it:
 [Pause and step from the editor](./editor-run-control).
 
@@ -95,8 +94,9 @@ or a commit is noticed within seconds: the editor reads that run again and compa
 files with the new `HEAD`.
 
 A run started from the editor is its own wherever it runs: the status bar follows it, the gutter shows each test as
-running, then its result, and its failures read _your run #124_ once it ends. The editor learns the command's end and
-exit code from the process it started, in every shell, a rerun included. When no run on the instance carries its ref,
+running, paused (two bars on violet) at a stop or failed while its failure is held, then its result, and its failures
+read _your run #124_ once it ends. A run reaching no instance keeps its results there until the config's next run. The editor learns the command's exit code
+from the process it started, in every shell. When no run on the instance carries its ref,
 it says why: its reporter sent nothing (its lines in the output name the server address, the key, or a refusal), or
 the config has no Piwi reporter: `The run ended (exit code 1) but did not
 reach https://piwi.example.com: is the Piwi reporter in the Playwright config?`

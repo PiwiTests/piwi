@@ -29,6 +29,12 @@ object PiwiIcons {
      */
     val RUNNING_STILL: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
 
+    /**
+     * A test that stands at a stop of a run the IDE follows: two bars on the pause bar's violet, as VS Code's mark;
+     * `status-mark-colors.test.ts` holds its colors.
+     */
+    val PAUSED: Icon = IconLoader.getIcon("/icons/testPaused.svg", PiwiIcons::class.java)
+
     /** The running ring turning, as VS Code's mark spins: the result icon's, eight frames a second as the IDE's spinner. */
     val RUNNING: Icon = TurningRing(RUNNING_STILL)
 
@@ -112,6 +118,7 @@ object PiwiIcons {
         "passed" -> AllIcons.RunConfigurations.TestPassed
         "skipped" -> AllIcons.RunConfigurations.TestIgnored
         "running" -> if (turning) RUNNING else RUNNING_STILL
+        "paused" -> PAUSED
         else -> AllIcons.RunConfigurations.TestNotRan
     }
 

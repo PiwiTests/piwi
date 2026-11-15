@@ -149,6 +149,7 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/ci-watch.ts`: the client's watch of a CI run's lane through the instance (`piwi/ciWatch`, `piwi/ciFrame`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
+- `src/own-run-tests.ts`: the tests of the runs the service follows, as their test lines show them.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
 - `src/trace-viewer.ts`: **Open the trace so far**: the checks a trace file a worker names passes, and Playwright's trace
   viewer started on it from the project's own Playwright.
@@ -568,6 +569,15 @@ result:
 `piwi/fileSummary` gives that result as the test line's `status`, and `piwi/runStatus` gives it in `liveTests`, so the
 clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
 its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
+
+The runs the service follows tell a test's line more (`src/own-run-tests.ts`, `OwnRunTests`), by the test's spec and
+titles, so an edit since the run started moves nothing. A test running or standing at a stop of one of them, from the
+run sessions, takes its line before the instance's stream does: `running`, `paused` at a stop (`paused, line 14, in
+your run`), `failed` while its failure is held. Its results, as each worker's `test-end` says them, show only for a run
+that names no page on an instance (`RunSession.page`), whose results no stream brings: while it runs, then until
+another run of its config begins. A test the catalog does not know gets a line of that state alone. `piwi/runStatus`
+gives these tests in `runTests`, which the clients compare as they compare `liveTests`. A config without an instance
+has no test lines (`piwi/fileSummary` answers none).
 
 The stream's `test-stuck` (once per attempt, `elapsedMs` and `usualMs`), `test-stopped` and `test-resumed` name an
 attempt as its `test-begin` did (`attemptKey`: title, place, browser, repetition). A running attempt the instance said

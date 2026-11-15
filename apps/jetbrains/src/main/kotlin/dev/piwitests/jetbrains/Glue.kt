@@ -886,7 +886,7 @@ object Glue {
     /**
      * What a change of the runs from `before` to `after` draws again: nothing when only the run in progress moved
      * ([runsInFiles]); the files whose tests show a result when only the tests of the run in progress began or ended
-     * (`liveTests`), which only a test's line shows; every file Piwi reads when anything else the files show changed,
+     * (`liveTests`, and `runTests` as the runs the IDE follows tell them), which only a test's line shows; every file Piwi reads when anything else the files show changed,
      * such as the latest run or its baseline.
      */
     fun redraw(before: RunStatusResult?, after: RunStatusResult?): Redraw {
@@ -900,7 +900,7 @@ object Glue {
     }
 
     private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
-        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null) })
+        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null, runTests = null) })
 
     /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {

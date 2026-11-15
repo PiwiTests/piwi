@@ -344,8 +344,11 @@ one write after the other); a key that setting holds is not shown (`noticeShown`
 A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result. The
 ring spins in twelve steps a second (a CSS animation inside the SVG), and holds still when the system asks for less motion; VS Code's own
 `workbench.reduceMotion` does not reach an image.
-`runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a
-second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the latest run changes.
+A test standing at a stop of a run the editor follows has the `paused` icon (`media/test-paused.svg`, two bars on the
+pause bar's violet), and a held failure the `failed` one.
+`runsInFiles` keeps the run's `liveTests` and the followed runs' `runTests`, so the files are drawn again as their tests
+begin, stop and end, at most once a second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the
+latest run changes.
 
 ### Test runs as tasks
 

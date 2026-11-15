@@ -108,9 +108,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
 - **The outcome marks (`media/test-*.svg`), the failing and recording tints and their scrollbar marks
   (`contributes.colors`) and the held failure's arrow (`media/failure-point.svg`) restate `STATUS_COLORS`' fills**, the
-  flaky and running marks byte for byte the JetBrains plugin's (VS Code's running ring adds the style that spins it),
-  as are the recording marks (`media/recording*.svg`), the tints at the alphas its color schemes blend at. Checked by
-  `apps/application/tests/unit/status-mark-colors.test.ts`.
+  flaky, running and paused marks byte for byte the JetBrains plugin's (VS Code's running ring adds the style that
+  spins it; the paused mark takes the pause bar's violet), as are the recording marks (`media/recording*.svg`), the
+  tints at the alphas its color schemes blend at. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **The coverage marks default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`**, the run and not-run marks the
   dashboard's, as do the JetBrains color schemes. Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
 

@@ -3632,6 +3632,11 @@ class GlueTest {
         assertEquals(Glue.Redraw.NONE, Glue.redraw(null, null))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(latest, testing))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(testing, ended))
+        // A test of a run the IDE follows, as its worker tells it, draws the tests' lines again too.
+        val paused = ended.copy(
+            contexts = ended.contexts!!.map { it.copy(runTests = listOf(RunLineTest("file:///w/tests/cart.spec.ts", listOf("adds a mug"), "paused"))) },
+        )
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(ended, paused))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
         // Another baseline is another run in the files.
