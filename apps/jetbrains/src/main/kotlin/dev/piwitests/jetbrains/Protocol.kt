@@ -382,10 +382,16 @@ data class LiveRun(
 data class LiveTest(val testCaseId: Int = 0, val status: String? = null, val stuck: String? = null)
 
 /**
- * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`) and its `status`
- * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result).
+ * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`), its `status`
+ * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result) and the `words` its line says
+ * of it, which change with the stop it stands at though the status stays.
  */
-data class RunLineTest(val uri: String = "", val title: List<String> = emptyList(), val status: String = "running")
+data class RunLineTest(
+    val uri: String = "",
+    val title: List<String> = emptyList(),
+    val status: String = "running",
+    val words: String = "",
+)
 
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.

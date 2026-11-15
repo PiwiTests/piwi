@@ -3448,8 +3448,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * alone, and nothing for a test none of them ran.
    */
   const ownRunSummary = (context: PiwiContext, file: string, uri: string): FileSummary => {
-    const relative = relativeTo(context.root, file);
-    if (!relative || !SPEC_FILE.test(relative)) return { file: null, lines: [] };
+    if (!relativeTo(context.root, file)) return { file: null, lines: [] };
     const document = documents.get(uri);
     const text = document ? document.getText() : (readText(file) ?? '');
     const lines: SummaryLine[] = testCalls(text.split(/\r?\n/)).flatMap((call) => {

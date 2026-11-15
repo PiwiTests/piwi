@@ -58,15 +58,36 @@ test('a spec’s test lines with no instance: running, at a stop, then the resul
       endLine: 3,
     });
     // The run status names the test, for the client to draw the spec again.
-    const named = await waitFor(() => [...statuses].reverse().find((s) => s.runTests?.length)?.runTests);
-    expect(named).toEqual([{ root: dir, tests: [{ uri: spec(), title: ['cart', 'adds a mug'], status: 'running' }] }]);
+    const told = (words: string) =>
+      waitFor(() =>
+        [...statuses].reverse().find((s) => s.runTests?.[0]?.tests[0]?.words === words) ? true : undefined,
+      );
+    await told('running');
+    expect(statuses[statuses.length - 1]?.runTests).toEqual([
+      { root: dir, tests: [{ uri: spec(), title: ['cart', 'adds a mug'], status: 'running', words: 'running' }] },
+    ]);
 
     worker.stopAt(1, 30);
     expect((await lineSaying('paused')).title).toBe('stopped at a breakpoint, line 30 of cart.page.ts, in your run');
 
+    // Held at its failure, then failed: the state stays `failed`, the words change, and the client is told each time.
     worker.send({ type: 'running', stop: 1 });
+    await svc.client.sendRequest('piwi/holdRun', { ref, on: true });
+    worker.send({
+      type: 'stopped',
+      stop: 2,
+      reason: 'failure',
+      title: 'Failed: Timed out',
+      place: { file: 'tests/cart.spec.ts', line: 4, column: 3 },
+      locator: null,
+      bar: false,
+    });
+    expect((await lineSaying('failed')).title).toBe('held at its failure, line 4, in your run');
+    await told('held at its failure, line 4,');
+    worker.send({ type: 'running', stop: 2 });
     worker.send({ type: 'test-end', testId: 'id-adds a mug', status: 'failed', pausedMs: 0 });
-    expect((await lineSaying('failed')).title).toBe('failed in your run');
+    await told('failed');
+    expect((await summary()).lines).toEqual([{ line: 3, title: 'failed in your run', status: 'failed', endLine: 3 }]);
 
     // The run ends: its result stays on the line, the run reaching no instance.
     await svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 1 });

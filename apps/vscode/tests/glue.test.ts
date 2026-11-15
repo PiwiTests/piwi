@@ -651,7 +651,14 @@ describe('statusBarView', () => {
         contexts: [
           {
             ...testing.contexts[0]!,
-            runTests: [{ uri: 'file:///w/tests/cart.spec.ts', title: ['adds a mug'], status: 'paused' }],
+            runTests: [
+              {
+                uri: 'file:///w/tests/cart.spec.ts',
+                title: ['adds a mug'],
+                status: 'paused',
+                words: 'paused, line 4,',
+              },
+            ],
           },
         ],
       }),
@@ -661,7 +668,12 @@ describe('statusBarView', () => {
       filesRedraw(testing, {
         ...testing,
         runTests: [
-          { root: '/w2', tests: [{ uri: 'file:///w2/tests/cart.spec.ts', title: ['adds a mug'], status: 'running' }] },
+          {
+            root: '/w2',
+            tests: [
+              { uri: 'file:///w2/tests/cart.spec.ts', title: ['adds a mug'], status: 'running', words: 'running' },
+            ],
+          },
         ],
       }),
     ).toBe('tests');

@@ -959,11 +959,15 @@ export interface RunStatus {
  */
 export type RunLineStatus = 'running' | 'paused' | 'failed' | 'passed' | 'skipped';
 
-/** A test of a run the editor follows: its spec, its titles (`RunTest.title`) and its state. */
+/**
+ * A test of a run the editor follows: its spec, its titles (`RunTest.title`), its state and the words its line says of
+ * it (`paused, line 14,`), which change with the stop it stands at though the state stays.
+ */
 export interface RunLineTest {
   uri: string;
   title: string[];
   status: RunLineStatus;
+  words: string;
 }
 
 /** A test of the run in progress: `running` once it began, then its result. */

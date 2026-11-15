@@ -164,7 +164,7 @@ export class OwnRunTests {
     for (const { test } of this.keptOf(root)?.results.values() ?? []) add(test);
     return [...tests].flatMap(([key, test]) => {
       const state = this.stateOfKey(root, key, uriToPath(test.uri)!, sessions);
-      return state ? [{ uri: test.uri, title: test.title, status: state.status }] : [];
+      return state ? [{ uri: test.uri, title: test.title, status: state.status, words: state.words }] : [];
     });
   }
 }
