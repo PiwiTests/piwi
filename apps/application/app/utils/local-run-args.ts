@@ -66,7 +66,10 @@ function elided(items: string[]): string[] {
   return [...items.slice(0, SUMMARY_FILTERS), `… ${items.length - SUMMARY_FILTERS} more`];
 }
 
-/** The test filters of a step, and the same filters as its short preview shows them. */
+/**
+ * The test filters of a step, and the same filters as its short preview shows them. A spec path that starts with
+ * `-` is left out, as the copied command leaves it out.
+ */
 function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {
     const escaped = cases.map((c) => escapeGrep(c.title));
@@ -80,7 +83,8 @@ function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summar
   const specs: string[] = [];
   for (const c of cases) {
     const spec = mode === 'file-line' && c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath);
-    if (seen.has(spec)) continue;
+    // Playwright reads an argument that starts with `-` as an option.
+    if (spec.startsWith('-') || seen.has(spec)) continue;
     seen.add(spec);
     specs.push(spec);
   }
@@ -164,6 +168,8 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
   const steps: LocalRunStep[] = [];
   for (const [project, projectCases] of groupByProject(cases)) {
     const specs = specArgs(projectCases, mode);
+    // A step left with no filter would run every test of its project.
+    if (specs.args.length === 0) continue;
     const flags: string[] = [];
     if (project) flags.push(`--project=${project}`);
     flags.push(...RUN_MODE_FLAGS[runMode]);

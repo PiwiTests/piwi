@@ -220,6 +220,28 @@ describe('Copy as command', () => {
   });
 });
 
+describe('a spec path that starts with a dash', () => {
+  test('is left out, so Playwright never reads it as an option', () => {
+    const plan = buildLocalRunPlan([CASE, { ...CASE, filePath: '--ui', line: 1 }, { ...CASE, filePath: '-x.spec.ts' }]);
+    expect(plan.map((step) => step.args)).toEqual([['tests/checkout.spec.ts:42', '--project=chromium']]);
+    expect(buildReproduceArgs([{ ...CASE, filePath: '--project=other', line: null }, CASE])).toEqual([
+      'tests/checkout.spec.ts:42',
+      '--project=chromium',
+    ]);
+  });
+
+  test('drops a step left with no filter, rather than run its whole project', () => {
+    const plan = buildLocalRunPlan([CASE, { ...CASE, filePath: '--headed', projectName: 'firefox' }], { mode: 'file' });
+    expect(plan.map((step) => step.args)).toEqual([['tests/checkout.spec.ts', '--project=chromium']]);
+    expect(buildLocalRunPlan([{ ...CASE, filePath: '--headed' }])).toEqual([]);
+  });
+
+  test('is still filtered by title in grep mode', () => {
+    const [step] = buildLocalRunPlan([{ ...CASE, filePath: '--headed' }], { mode: 'grep' });
+    expect(step!.args).toEqual(['--grep', 'checkout completes', '--project=chromium']);
+  });
+});
+
 describe('the summary of a local run step', () => {
   const cases = (n: number) =>
     Array.from({ length: n }, (_, i) => ({
@@ -238,15 +260,6 @@ describe('the summary of a local run step', () => {
     const [step] = buildLocalRunPlan(cases(143), { runMode: 'headed' });
     expect(step!.summary).toBe(
       'playwright test tests/s0.spec.ts:1 tests/s1.spec.ts:2 tests/s2.spec.ts:3 … 140 more --project=chromium --headed',
-    );
-  });
-
-  test('counts a spec path that starts with a dash as a filter', () => {
-    const list = cases(10);
-    list[0] = { ...list[0]!, filePath: '-odd.spec.ts' };
-    const [step] = buildLocalRunPlan(list);
-    expect(step!.summary).toBe(
-      'playwright test -odd.spec.ts:1 tests/s1.spec.ts:2 tests/s2.spec.ts:3 … 7 more --project=chromium',
     );
   });
 
