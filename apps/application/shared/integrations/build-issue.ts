@@ -107,6 +107,8 @@ export interface IssueFacts {
   patch: string | null;
   locatorEdits: LocatorEditFact[];
   verifyCommand: string | null;
+  /** The titles of the tests the verify command leaves out, listed under it. */
+  verifyLeftOut?: string[];
   reproduceScript: string | null;
 
   /** Issues that tracked the same kind of failure before. */
@@ -288,6 +290,17 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
     whatToDo.push(
       { type: 'paragraph', inlines: [{ text: `${t(locale, 'label.verify')}:`, strong: true }] },
       { type: 'code', text: facts.verifyCommand },
+      ...(facts.verifyLeftOut?.length
+        ? [
+            {
+              type: 'paragraph' as const,
+              inlines: [
+                `${t(locale, 'label.verifyLeftOut', { count: facts.verifyLeftOut.length })} `,
+                ...codeList(facts.verifyLeftOut),
+              ],
+            },
+          ]
+        : []),
     );
   if (facts.reproduceScript)
     whatToDo.push(

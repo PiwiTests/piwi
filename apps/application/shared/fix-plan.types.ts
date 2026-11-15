@@ -104,6 +104,11 @@ export interface FixPlan {
      * re-run of the cluster runs them (`clusterRerunCases`).
      */
     cases: RetryCase[];
+    /**
+     * The cases the command cannot name: a test whose file path and title cannot both be passed on, when the others
+     * need a filter it lacks (`buildRerunPlan`). Empty in the usual case; every case when the command is empty.
+     */
+    leftOut: RetryCase[];
     /** What happens on the dashboard when it passes. */
     expectation: string;
     /** The trailer to put in the fix's commit message, so the fix is tied to this cluster. */

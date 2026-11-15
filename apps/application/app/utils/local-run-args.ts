@@ -68,12 +68,18 @@ function elided(items: string[]): string[] {
 }
 
 /**
- * The test filters of a step, and the same filters as its short preview shows them. A spec path Playwright would not
- * take as the filter it names (`isSpecFilter`) is left out, and so is a blank title.
+ * The cases a local run in `mode` names: by title, those with a title that is not blank; by file, those with a spec
+ * path Playwright takes as the filter it names (`isSpecFilter`). The others are left out of its plan.
  */
-function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
+export function localRunNamedCases(cases: RetryCase[], mode: RetryMode = 'file-line'): RetryCase[] {
+  return cases.filter((c) => (mode === 'grep' ? c.title.trim() !== '' : isSpecFilter(specPattern(c.filePath))));
+}
+
+/** The test filters of a step, and the same filters as its short preview shows them (see `localRunNamedCases`). */
+function specArgs(allCases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
+  const cases = localRunNamedCases(allCases, mode);
   if (mode === 'grep') {
-    const escaped = cases.filter((c) => c.title.trim()).map((c) => escapeGrep(c.title));
+    const escaped = cases.map((c) => escapeGrep(c.title));
     if (escaped.length === 0) return { args: [], summary: [] };
     // One argument, so a title that starts with `-` is never read as an option.
     const grep = (titles: string[]) => `--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`;
@@ -83,7 +89,6 @@ function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summar
   const specs: string[] = [];
   for (const c of cases) {
     const file = specPattern(c.filePath);
-    if (!isSpecFilter(file)) continue;
     const spec = mode === 'file-line' && c.line ? `${file}:${c.line}` : file;
     if (seen.has(spec)) continue;
     seen.add(spec);

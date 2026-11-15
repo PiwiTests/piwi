@@ -134,6 +134,8 @@ export interface HealActionPayload {
   draft: boolean;
   /** Command that runs exactly the affected tests, shown in the PR body. */
   verifyCommand: string;
+  /** The titles of the affected tests the verify command cannot name, listed under it in the PR body. */
+  verifyLeftOut?: string[];
   edits: HealEditPayload[];
 }
 

@@ -60,6 +60,7 @@ export const PROJECT = {
   DESKTOP_IMPORT_PREV: 'desktop-import-prev-test',
   DESKTOP_LOCAL_IMPORT: 'desktop-local-import-test',
   DESKTOP_LOCAL_RUN: 'desktop-local-run-test',
+  DESKTOP_LOCAL_RUN_UNNAMED: 'desktop-local-run-unnamed-test',
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
