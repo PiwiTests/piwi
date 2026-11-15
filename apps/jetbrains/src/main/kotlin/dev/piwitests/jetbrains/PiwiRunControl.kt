@@ -2107,6 +2107,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /** Turn the Hold failures of the run `ref` over, a Runs tab row's; nothing for a run that holds none. */
+    fun holdFailures(ref: String) {
+        sessions[ref]?.hold?.let { holdRun(ref, !it.on) }
+    }
+
     private fun holdRun(ref: String, on: Boolean) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.holdRun(HoldRunParams(ref, on))
@@ -2529,7 +2534,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** The stop a popup's actions act on, which the registered controls and code actions read before the caret. */
         val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
 
-        /** The run a control acts on, the Run tab's: its stops alone; the run Stop the run ends, the Runs tab's row's. */
+        /**
+         * The run a control acts on, the Run tab's: its stops alone; the run Stop the run ends and Hold failures turns
+         * over, the Runs tab's row's.
+         */
         val RUN: DataKey<String> = DataKey.create("piwi.run")
 
         /** The worker Watch and Pause and watch act on, a Runs tab's row's, rather than one chosen. */
@@ -3951,7 +3959,9 @@ class HoldFailuresAction : RunControlAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        sessions(e)?.holdFailures()
+        val sessions = sessions(e) ?: return
+        e.getData(PiwiRunSessions.RUN)?.let { return sessions.holdFailures(it) }
+        sessions.holdFailures()
     }
 }
 

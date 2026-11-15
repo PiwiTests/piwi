@@ -34,7 +34,7 @@ import javax.swing.JList
  * far it is, each of its workers with its test and whether it stands stopped, and its page on the dashboard
  * (`Glue.runRows`, tested by `GlueTest`). A row opens its stop's line, its test's or the page on a double click or
  * Enter; its right-click offers the registered run actions that act on it (Watch, Pause and watch, Resume, Step, Stop
- * the run), each where it applies. Drawn by `PiwiRunSessions` on the event thread.
+ * the run, Hold failures), each where it applies. Drawn by `PiwiRunSessions` on the event thread.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunsTab(private val project: Project) : Disposable {
@@ -145,7 +145,10 @@ class PiwiRunsTab(private val project: Project) : Disposable {
                     registeredWith("Piwi.StepRun") { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
                 }
             }
-            "run" -> registeredWith("Piwi.StopRun") { it.add(PiwiRunSessions.RUN, row.ref) }?.let(::add)
+            "run", "run-elsewhere" -> {
+                if (row.kind == "run") registeredWith("Piwi.StopRun") { it.add(PiwiRunSessions.RUN, row.ref) }?.let(::add)
+                if (row.hold != null) registeredWith("Piwi.HoldFailures") { it.add(PiwiRunSessions.RUN, row.ref) }?.let(::add)
+            }
         }
     }
 

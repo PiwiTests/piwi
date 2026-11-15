@@ -2498,6 +2498,8 @@ export interface RunNode {
   ref: string;
   worker?: number;
   since?: string;
+  /** A run's **Hold failures**, on or off; absent for a run nobody attends and for any other row. */
+  hold?: boolean;
   /** What a click opens: a place in a file, or a page on the dashboard; null for nothing. */
   open: { uri: string; line: number; character: number } | { url: string } | null;
   children: RunNode[];
@@ -2585,11 +2587,19 @@ export function runNodes(sessions: Sessions): RunNode[] {
     return {
       key,
       label: runLabel(session, live),
-      description: [howFar, session.label ?? ''].filter(Boolean).join(' · '),
+      // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+      description: [
+        howFar,
+        session.label ?? '',
+        session.hold?.on ? editorWords('hold.run.on', { by: '' }).split(':')[0]! : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
       tooltip: [title, howFar, session.hold ? holdText(session.hold) : ''].filter(Boolean).join('\n\n'),
       icon: 'loading~spin',
       kind: session.terminal || session.checkout ? 'run-elsewhere' : 'run',
       ref: session.ref,
+      ...(session.hold ? { hold: session.hold.on } : {}),
       open: null,
       children: [...workers, ...page],
     };

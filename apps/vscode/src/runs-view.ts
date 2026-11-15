@@ -29,7 +29,8 @@ export function registerRunsView(): RunsView {
       item.description = node.description;
       item.tooltip = node.tooltip;
       item.iconPath = new vscode.ThemeIcon(node.icon);
-      item.contextValue = node.kind;
+      // A run that holds failures or can is `run hold`, so its menu offers Hold failures.
+      item.contextValue = node.hold === undefined ? node.kind : `${node.kind} hold`;
       const open = node.open;
       if (open && 'url' in open) {
         item.command = { command: 'piwi.openInDashboard', title: node.label, arguments: [open.url] };

@@ -2624,6 +2624,8 @@ object Glue {
         val uri: String? = null,
         val line: Int = 0,
         val url: String? = null,
+        /** A run's Hold failures, on or off; null for a run nobody attends and for any other row. */
+        val hold: Boolean? = null,
     )
 
     /**
@@ -2646,8 +2648,14 @@ object Glue {
                 key = ref,
                 kind = if (session.terminal || session.checkout != null) "run-elsewhere" else "run",
                 text = runLabel(session, live),
-                detail = listOf(howFar, session.label.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
+                // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+                detail = listOf(
+                    howFar,
+                    session.label.orEmpty(),
+                    if (session.hold?.on == true) EditorWords.words("hold.run.on", "by" to "").substringBefore(":") else "",
+                ).filter { it.isNotEmpty() }.joinToString(" · "),
                 ref = ref,
+                hold = session.hold?.on,
             )
             val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
                 val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }

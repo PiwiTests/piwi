@@ -1018,7 +1018,7 @@ class GlueTest {
         )
         val sessions = mapOf(
             "ed-1" to run,
-            "terminal-1" to session("terminal-1").copy(terminal = true),
+            "terminal-1" to session("terminal-1").copy(terminal = true, hold = RunHoldFailures(on = true)),
             "ended" to session("ended").copy(ended = true),
         )
         val rows = Glue.runRows(sessions)
@@ -1033,6 +1033,9 @@ class GlueTest {
             ),
             rows.map { r -> if (r.kind == "run-elsewhere") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
         )
+        assertEquals("Hold failures on", rows[0].detail)
+        assertEquals(true, rows[0].hold)
+        assertEquals(null, rows[1].hold)
         // A stopped worker names its stop and opens its line, a running one its test's, the page the dashboard.
         assertEquals(4, rows[3].line)
         assertEquals(Glue.stopsOf(sessions).single().stop.since, rows[3].stop?.stop?.since)
