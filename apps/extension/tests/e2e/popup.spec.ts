@@ -459,7 +459,8 @@ function seedRefusedConnection(page: Page): Promise<void> {
 
 /**
  * The popup with a connection kept, its project row and the connection's line shown, and the Runs tile, which the
- * paired editor's runs show (`runs.spec.ts` shows it for real): the tallest it is without a recording.
+ * paired editor's runs show (`runs.spec.ts` shows it for real): the tallest it is without a recording. Measured in
+ * DejaVu Sans, the wide font a Linux without other fonts falls back to, as CI draws it.
  */
 async function connectedPopupHeight(page: Page, extensionId: string): Promise<number> {
   await page.setViewportSize({ width: 480, height: 600 });
@@ -472,6 +473,7 @@ async function connectedPopupHeight(page: Page, extensionId: string): Promise<nu
   await expect(page.locator('#runs')).toBeVisible();
   // Tested elements running on the page, as its tile shows it then.
   await page.locator('#coverage-overlay').evaluate((tile) => tile.classList.add('running'));
+  await page.addStyleTag({ content: 'body { font-family: "DejaVu Sans", sans-serif !important; }' });
   return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
 }
 

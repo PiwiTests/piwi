@@ -381,7 +381,7 @@
     "message": "Bug-Report abspielen"
   },
   "popup_replayBugHint": {
-    "message": "Seine Schritte hier abspielen, mit Cursor"
+    "message": "Hier abspielen, mit Cursor"
   },
   "popup_record": {
     "message": "Aufzeichnen"
@@ -441,7 +441,7 @@
     "message": "Agenten"
   },
   "popup_devtoolsNote": {
-    "message": "Die Locator-Konsole, die Session, Netzwerk-Mocks, Viewports, die Playwright-Ansicht und Anmeldung speichern sind in DevTools, im Piwi-Panel."
+    "message": "Locator-Konsole, Session, Netzwerk-Mocks, Viewports, Playwright-Ansicht und Anmeldung speichern: in DevTools, im Piwi-Panel."
   },
   "popup_running": {
     "message": "läuft"
