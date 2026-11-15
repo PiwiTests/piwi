@@ -195,19 +195,16 @@ describe('proxy indirection', () => {
     on: () => {},
   } as unknown as Page;
 
-  // The page fixture installs the wrappers synchronously (`instrumentPage`
-  // runs before its first await), so the locator is wrapped by the time this
-  // returns and the benches below read a real capture proxy.
+  // The page fixture wraps the page's locator methods before its first await (`instrumentPage`), so the fake page
+  // hands out a real capture proxy as soon as the fixture starts. What the fixture awaits next reads a browser this
+  // page does not have, so how the fixture ends is ignored.
   const pageFixture = piwiFixtures.page as unknown as (
     args: { page: Page },
     use: (page: Page) => Promise<void>,
   ) => Promise<void>;
-  let wrapped: Locator | null = null;
-  void pageFixture({ page }, async (instrumented) => {
-    wrapped = instrumented.getByTestId('open-42');
-  });
-  if (wrapped === null) throw new Error('the page fixture did not wrap the locator synchronously');
-  const proxied = wrapped as Locator;
+  pageFixture({ page }, async () => {}).catch(() => {});
+  const proxied = page.getByTestId('open-42');
+  if (proxied === raw) throw new Error('the page fixture did not wrap the page synchronously');
 
   bench('property read on a bare locator', () => {
     void (raw as unknown as Record<string, unknown>).click;

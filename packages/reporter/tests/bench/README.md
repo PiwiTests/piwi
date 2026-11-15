@@ -137,15 +137,19 @@ Micro, per captured operation:
 
 | | mean |
 |---|---|
-| `captureCallerLocation()` | 55 µs |
-| └ `new Error().stack` (capture half) | 38 µs |
-| └ walking the stack (parse half) | 4.9 µs |
-| `generateAlternatives()` | 2.4 µs |
-| `JSON.stringify` of the origin args | 0.3 µs |
-| dedupe + serialize 40 snapshots (per test, at teardown) | 68 µs |
-| locator property read, bare → through the proxy | 0.09 µs → 0.16 µs |
+| `captureCallerLocation()` | 30 µs |
+| └ `new Error().stack` (capture half) | 22 µs |
+| └ walking the stack (parse half) | 3.2 µs |
+| `generateAlternatives()` | 3.4 µs |
+| `JSON.stringify` of the origin args | 0.2 µs |
+| dedupe + serialize 40 snapshots (per test, at teardown) | 60 µs |
+| locator property read, bare → through the proxy | 0.07 µs → 0.13 µs |
+| 20 instrumented actions, sink open, flushed at teardown (per test) | 1.7 ms |
 
-The Node-side total is ~60 µs per operation — three orders of magnitude below the browser round trips above, so it
-never shows up in the end-to-end numbers. Within it, materializing the stack for the call-site location is ~85% of the
-cost and the parsing this package controls is the rest. That location is what keys the per-call-site dedupe, so it is
-taken on every action whether or not a probe follows it.
+This package's own Node-side code is ~35 µs per operation. Within it, materializing the stack for the call-site
+location is about three quarters of the cost and the parsing this package controls is the rest. That location is what
+keys the per-call-site dedupe, so it is taken on every action whether or not a probe follows it.
+
+That is not what a probe costs the worker. A CPU profile of a worker running `full` against `fixtures` at 200 rows
+spends ~5 ms per locator probe in Playwright's in-process client and server: the probe's own `locator.evaluate`
+resolves the selector again in 6–8 protocol commands, each with a captured stack.
