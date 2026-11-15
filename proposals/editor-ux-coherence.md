@@ -243,7 +243,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the seven medium and seven large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the six medium and seven large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -915,7 +915,9 @@ an editor whose source is the desktop app opens pages through `piwi://open/<page
 Open' there (the study's P5) and offers Back to the failure in the editor. A test holds every label to the table, and
 the docs' hand-offs table is generated from it. **Lives in** a table beside the concept table (FSL). **Replaces** one
 destination under two names, 'Connect' meaning two things. **Depends on** [LI2](#li2). **Revisits**
-[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card. Step [M24](#m24).
+[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card. Its step, editors
+opening the desktop app's pages through `piwi://open`, was dropped: the hand-off over HTTP already brings the app's
+window forward.
 
 ## 11. Defects filed
 
@@ -946,7 +948,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
-| <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends | `ide` | none ([LI20](#li20)) |
 
 ### Large
 
