@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.util.ScalableIcon
 import com.intellij.ui.AnimatedIcon
 import javax.swing.Icon
 
@@ -24,17 +25,28 @@ object PiwiIcons {
 
     /**
      * A running test: a ring on the outcome palette's running color, apart from the IDE's run triangle that starts a
-     * test, turning a twelfth of a turn twelve times a second as VS Code's mark spins.
+     * test, still in a list, whose renderer does not animate.
      */
-    val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java).let { ring ->
-        AnimatedIcon(RUNNING_FRAME_MILLIS, *Array(RUNNING_FRAMES) { Turned(ring, it * 360.0 / RUNNING_FRAMES) })
-    }
+    val RUNNING_STILL: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
 
-    /** The running ring's frames, a turn's twelfths, and how long each shows. */
-    private const val RUNNING_FRAMES = 12
+    /** The running ring turning, as VS Code's mark spins: the result icon's, eight frames a second as the IDE's spinner. */
+    val RUNNING: Icon = TurningRing(RUNNING_STILL)
+
+    /** The running ring's frames, an eighth of a turn each, and how long each shows. */
+    private const val RUNNING_FRAMES = 8
     private const val RUNNING_FRAME_MILLIS = 1000 / RUNNING_FRAMES
 
-    /** `icon` turned by `degrees` about its center. */
+    /** `ring` turning about its center, drawn again at each scale an editor asks for (a zoomed editor's gutter). */
+    private class TurningRing(private val ring: Icon, private val scale: Float = 1f) :
+        AnimatedIcon(RUNNING_FRAME_MILLIS, *Array<Icon>(RUNNING_FRAMES) { Turned(ring, it * 360.0 / RUNNING_FRAMES) }),
+        ScalableIcon {
+        override fun getScale(): Float = scale
+
+        override fun scale(scaleFactor: Float): Icon =
+            TurningRing(if (ring is ScalableIcon) ring.scale(scaleFactor) else ring, scaleFactor)
+    }
+
+    /** `icon` turned by `degrees` about its center, smoothly. */
     private class Turned(private val icon: Icon, private val degrees: Double) : Icon {
         override fun getIconWidth() = icon.iconWidth
 
@@ -43,6 +55,8 @@ object PiwiIcons {
         override fun paintIcon(c: java.awt.Component?, g: java.awt.Graphics, x: Int, y: Int) {
             val turned = g.create() as java.awt.Graphics2D
             try {
+                turned.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                turned.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
                 turned.rotate(Math.toRadians(degrees), x + iconWidth / 2.0, y + iconHeight / 2.0)
                 icon.paintIcon(c, turned, x, y)
             } finally {
@@ -88,13 +102,16 @@ object PiwiIcons {
         "flaky" to FLAKY,
     )
 
-    /** A test's outcome as its line's result icon draws it, which the CI run tab draws too. */
-    fun outcome(status: String?): Icon = when (status) {
+    /**
+     * A test's outcome as its line's result icon draws it, which the CI run tab draws too, its running ring still
+     * (`turning` false) in a list.
+     */
+    fun outcome(status: String?, turning: Boolean = true): Icon = when (status) {
         "failed" -> FAILED
         "flaky" -> FLAKY
         "passed" -> AllIcons.RunConfigurations.TestPassed
         "skipped" -> AllIcons.RunConfigurations.TestIgnored
-        "running" -> RUNNING
+        "running" -> if (turning) RUNNING else RUNNING_STILL
         else -> AllIcons.RunConfigurations.TestNotRan
     }
 

@@ -161,6 +161,11 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
     const action = EDITOR_ACTIONS.find((a) => a.vscode === command);
     return action ? actionTitle(action, 'vscode') : command;
   };
+  const recordingRows = [
+    !!state.recording && 'piwi.stopRecording',
+    state.recording === 'paused' && 'piwi.resumeRecording',
+    state.recording === 'recording' && 'piwi.pauseRecording',
+  ];
   const sections: Array<[string, Array<string | false>]> = [
     [
       '',
@@ -174,9 +179,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
           none: false as const,
         }[state.action],
         state.action === 'restart' && 'piwi.openLog',
-        !!state.recording && 'piwi.stopRecording',
-        state.recording === 'paused' && 'piwi.resumeRecording',
-        state.recording === 'recording' && 'piwi.pauseRecording',
+        ...recordingRows,
       ],
     ],
     [
@@ -1457,7 +1460,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.edited', words)}`,
       actions: [resume, { title: editorWords('recording.keep-edits'), command: 'piwi.stopRecording' }],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
+      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click, then Stop recording keeps your edits.`,
     };
   }
   if (state === 'paused') {
@@ -1465,7 +1468,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.paused', words)}`,
       actions: [stop, resume],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused. Click to stop.`,
+      tooltip: `The recording into ${file} is paused. Click for Stop recording and Resume.`,
     };
   }
   if (state === 'starting') {
@@ -1473,14 +1476,14 @@ export function recordingView(
       title: `$(loading~spin) ${editorWords('recording.block.starting')}`,
       actions: [stop],
       status: `$(loading~spin) ${editorWords('recording.status.starting')}`,
-      tooltip: `Recording into ${file}. Click to stop.`,
+      tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
     };
   }
   return {
     title: `$(record) ${editorWords('recording.block.recording', words)}`,
     actions: [stop, { title: editorWords('recording.pause'), command: 'piwi.pauseRecording' }],
     status: `$(record) ${editorWords('recording.status.recording', words)}`,
-    tooltip: `Recording into ${file}. Click to stop.`,
+    tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
   };
 }
 

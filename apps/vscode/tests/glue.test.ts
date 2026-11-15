@@ -1594,7 +1594,7 @@ describe('the recording’s controls', () => {
         { title: 'Pause', command: 'piwi.pauseRecording' },
       ],
       status: '$(record) Piwi: recording · 6 steps',
-      tooltip: 'Recording into checkout.spec.ts. Click to stop.',
+      tooltip: 'Recording into checkout.spec.ts. Click for Stop recording and Pause.',
     });
     expect(recordingView('paused', 1, false, 'a.spec.ts')).toMatchObject({
       title: '$(circle-large-outline) Paused · 1 step',

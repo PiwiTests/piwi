@@ -322,8 +322,9 @@ UI's `#6C707E`, with a `_dark` copy in `#CED0D6`): Connect, Disconnect, Pair, Pa
 request, Share live and Stop sharing, Run the tests that reach this file, Reset the runs' MCP server token, Show the
 stopped test's browser, Share with Playwright tools and a CI run. The exceptions are the two toggles, whose menu rows
 show a check mark. The icons drawn in code come from `PiwiIcons`: the flaky and running marks (Piwi's, on the outcome
-palette, held to `STATUS_COLORS` by `status-mark-colors.test.ts`; the running ring turns, twelve frames of an `AnimatedIcon`, as
-VS Code's spins) on the result icon and the CI run tab, the failed mark
+palette, held to `STATUS_COLORS` by `status-mark-colors.test.ts`; the running ring turns on the result icon, eight frames a
+second of a scalable `AnimatedIcon`, and stands still in the CI run tab's list) on the result icon and the CI run tab, the
+failed mark
 (`TestError`) on the result icon, the status item, the tree and a held failure, Connect and Share live on the status
 item, Open in dashboard's external link, a CI run's cloud, the hand-offs of this menu (an archive, an image, a desktop,
 a branch) and the stop's code actions in its popups. `PiwiPluginTest` checks that every action but the toggles has one,

@@ -167,7 +167,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(PiwiStatusBarWidget.RUN_ACTIONS.toList(), runControl.getChildren(null).map { ActionManager.getInstance().getId(it) })
     }
 
-    /** A running test's ring turns, a twelfth of a turn a frame, as VS Code's spins; the other outcomes stand still. */
+    /**
+     * A running test's ring turns, an eighth of a turn a frame, and is drawn again at an editor's scale; a list draws it
+     * still, and the other outcomes stand still.
+     */
     fun testTheRunningRingTurns() {
         val running = PiwiIcons.outcome("running")
         assertTrue(running is com.intellij.ui.AnimatedIcon)
@@ -175,7 +178,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val ring = com.intellij.openapi.util.IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
         assertEquals(ring.iconWidth to ring.iconHeight, running.iconWidth to running.iconHeight)
         assertFalse(PiwiIcons.outcome("passed") is com.intellij.ui.AnimatedIcon)
-        // Each frame paints.
+        assertFalse(PiwiIcons.outcome("running", turning = false) is com.intellij.ui.AnimatedIcon)
+        val zoomed = (running as com.intellij.openapi.util.ScalableIcon).scale(2f)
+        assertTrue(zoomed is com.intellij.ui.AnimatedIcon)
+        assertEquals(2f, (zoomed as com.intellij.openapi.util.ScalableIcon).scale)
+        // It paints.
         val image = java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val g = image.createGraphics()
         try {

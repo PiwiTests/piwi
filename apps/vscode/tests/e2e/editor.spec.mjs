@@ -70,10 +70,10 @@ test.afterEach(async ({}, testInfo) => {
   await page?.keyboard.press('Escape');
 });
 
-test('the status bar item counts what still fails and what the local run fixed', async () => {
+test('the status bar item counts what still fails', async () => {
   const item = page.locator('.statusbar-item', { hasText: 'Piwi:' }).first();
   await expect(item).toHaveText(/2 failing/);
-  await expect(item).toHaveText(/1 fixed/);
+  await expect(item).not.toHaveText(/fixed/);
 });
 
 test('the Problems panel lists the run’s two failures at their lines, with their reasons', async () => {

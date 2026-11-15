@@ -32,7 +32,7 @@ its node (TL7 in part). M5 built since, and M4 and M13 in part: JetBrains' runni
 VS Code draws Assert a region and Mock a request with the plugin's glyphs from its icon font (`$(piwi-region)`,
 `$(piwi-mock)`), every tool draws Share live with one broadcast, and Stop following leaves Watch's eye (X2, LR14 in
 part); VS Code's running run takes the loader rather than Verify ×3's glyph (LR18), and the status item's other parts
-were built with M13 (LR2, HM17). The status item's last two parts built since: a recording takes VS Code's Piwi item,
+were built with M13 (LR2, HM17). Two of the status item's last parts built since: a recording takes VS Code's Piwi item,
 its controls in the status menu, as JetBrains' item shows it (LR1), and the alarm reads `Piwi: 2 failing`, the counts
 fixed locally and flaky in its tooltip (HM2). Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
@@ -228,13 +228,13 @@ step moves the document to `adr/`.
 
 **Summary.**
 
-- **What is left.** Most of the plan's quick wins are built; the steps left center on the concept table (M4), the
-  status menu (M3, M13), the rest of each test line's action list and Debug with Piwi (M7, M8), the Rider layer (M17)
-  and the debug-session decision (L3).
+- **What is left.** Most of the plan's quick wins are built; the steps left center on a run's share where it is listed (M4),
+  the other tools' menus and the unreachable glyph (M3, M13), the rest of each test line's action list and Debug with
+  Piwi (M7, M8), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
-- **One finding leads (§0)**: no check opens Rider.
+- **Two findings lead (§0)**: what a test's own line still lacks, and no check that opens Rider.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
@@ -262,7 +262,11 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 
 ## 0. The findings that matter most
 
-1. **No check opens Rider** to see a spec beside the solution or a C# file ([RD3](#rd3), [RD4](#rd4)).
+1. **A test's own line offers no recording into it, and whether a plain Run still stops at Piwi's breakpoints is
+   open**: the action list runs, debugs, verifies and opens the evidence; Rider's IDE run icon is unchecked ([TL2](#tl2),
+   [TL17](#tl17), [TL3](#tl3)).
+
+2. **No check opens Rider** to see a spec beside the solution or a C# file ([RD3](#rd3), [RD4](#rd4)).
 
 The rest of this document is the evidence behind these and the smaller findings (§3 to §9 and §14), the larger
 items (§10), the defects still open (§11) and the ranked plan (§12).
@@ -659,7 +663,7 @@ four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
 makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Built: the catalog's ids and one title per
 action, held against both manifests (`packages/editor/src/actions.ts`). Its short labels and the words table are step
-M22's (built), its chords M16's ([LI15](#li15)); its concept and menus come with [M4](#m4) and [M3](#m3).
+M22's (built), its chords M16's ([LI15](#li15)); its concept came with M4's glyphs (built) and its menus come with [M3](#m3).
 
 <a id="li15"></a>
 
@@ -687,13 +691,13 @@ an action acting elsewhere alone (`SHARED_CHORDS`). The run-control keys, which 
 A concept table gives each concept its glyph in every tool's set (Appendix A).
 `apps/application/scripts/generate-brand-assets.mjs`, which already writes both editors' Piwi mark, also writes what the
 platforms lack, drawn once from Piwi Picker's outline set (`apps/extension/src/shared/icons.ts`): record, plug,
-flaky, region, mock, broadcast and the rest Appendix A marks (new), with `_dark` and `expui/` variants, and their VS Code
+flaky, region, mock, broadcast and the rest Appendix A lists, with `_dark` and `expui/` variants, and their VS Code
 glyphs in the icon font beside `$(piwi-mark)`. A test reads every manifest and icon map and fails on a missing or different glyph. **Lives in**
 `packages/editor` or `apps/application/shared` (§13), FSL; the pause bar's glyphs are drawn anew in picker-dom (MIT).
 **Replaces** the film strip for record, the person for Connect, four glyphs with two meanings. **Depends on** nothing.
 **Revisits** [editor-local-runs.md](../adr/editor-local-runs.md) 6b and 6c (each editor chose its tree icons) and the
 status item's icons, which [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M7 asked for without naming
-any. Steps [M4](#m4).
+any. Built with M4.
 
 <a id="li3"></a>
 

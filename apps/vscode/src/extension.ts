@@ -893,7 +893,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
     // A recording in progress takes the item, its controls in the status menu, as the JetBrains plugin's item shows it.
-    const recorded = recording?.status();
+    // A test that waits for the person keeps the item, its warning and its words, over a recording.
+    const recorded = line?.calls ? null : recording?.status();
     if (recorded) {
       statusItem.text = recorded.text;
       statusItem.tooltip = recorded.tooltip;
