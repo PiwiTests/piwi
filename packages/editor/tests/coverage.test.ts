@@ -115,6 +115,7 @@ const CODE_INDEX: CodeIndex = {
     { file: 2, tests: [0], origin: 'server', runtime: 'server', via: 'route' },
     { file: 3, tests: [0], origin: 'client', runtime: 'browser', via: 'coverage' },
   ],
+  routes: [{ file: 2, route: 'GET /api/orders/:id', line: 24, tests: [0] }],
   builtAt: null,
   truncated: false,
 };
@@ -631,6 +632,20 @@ describe('coverage in the editor', () => {
       blob: basketBlob,
       label: '7 of 8 lines run by 2 tests',
     });
+  });
+
+  test('puts a lens on each route a file handles that tests called, at its handler’s line', async () => {
+    const summary = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/Web/Program.cs') })) as FileSummary;
+    expect(summary.lines).toContainEqual(
+      expect.objectContaining({
+        line: 23,
+        title: expect.stringMatching(/^GET \/api\/orders\/:id · 1 test/),
+        command: expect.objectContaining({
+          title: 'Run the test that calls this route with Piwi',
+          command: 'piwi.runTests',
+        }),
+      }),
+    );
   });
 
   test('puts a lens on each function that ran, which runs its tests recording the backend’s coverage', async () => {

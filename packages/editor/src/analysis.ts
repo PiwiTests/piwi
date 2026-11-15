@@ -344,6 +344,22 @@ export function testsReaching(codeIndex: CodeIndex | null, repoRelativePath: str
   return [...out.values()];
 }
 
+/**
+ * The routes a file handles that tests called, each at the 1-based line its handler's body starts at, with the tests
+ * that called it (`CodeIndex.routes`); none from an instance that sends no routes.
+ */
+export function routesHandledIn(
+  codeIndex: CodeIndex | null,
+  repoRelativePath: string,
+): Array<{ route: string; line: number; tests: LocatorIndexTest[] }> {
+  if (!codeIndex?.routes) return [];
+  return codeIndex.routes.flatMap((r) => {
+    if (!sameFilePath(codeIndex.files[r.file] ?? '', repoRelativePath)) return [];
+    const tests = r.tests.flatMap((t) => codeIndex.tests[t] ?? []);
+    return tests.length ? [{ route: r.route, line: r.line, tests }] : [];
+  });
+}
+
 /** The breaks an application file's unsaved changes cause, from its diff against the committed version. */
 export function breaksOfChange(
   diff: DiffFile,
