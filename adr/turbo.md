@@ -129,6 +129,14 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 - **Launch flags against the reset's mouse move** (`--disable-frame-rate-limit`, `--disable-gpu-vsync`): a move on
   `about:blank` takes one frame, 16.7 ms median, with or without them in headless Chromium, which has no switch left
   for frame-aligned mouse input.
+- **A context pool**, in place of context reuse: while a test runs, the worker creates the context and page of the
+  next test out of sight of Playwright's artifacts recorder, and hands them out as the next test starts, so every test
+  still gets a new context with no reset. Traces, failure screenshots and isolation came out right. Against stock, on
+  Flashwright's suites (5 runs): `fast` 1.14× with the pool against 1.00× with reuse on 15 trivial tests, 1.15×
+  against 1.09× on the shop, but 1.05× against 1.18× on TodoMVC and 1.02× against 1.07× on the inventory page; `max`
+  with the pool came out lower on three suites of four (TodoMVC 1.18× against 1.56×). Not profiled; the likely causes
+  are that a new context loads the app again in a new renderer each test, where a reused tab keeps it, and that
+  creating the next context competes with the running test for the CPU. Not shipped.
 - **Clearing Cache Storage from a document of each origin** instead of through a CDP session: no measurable change on
   four suites (noop 0.89× vs 0.90×, TodoMVC 1.18× vs 1.16×, Shop 1.07× vs 1.08×, Inventory 0.95× vs 0.94×).
   Reverted to the simpler CDP session.
