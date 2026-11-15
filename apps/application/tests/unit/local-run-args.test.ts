@@ -6,7 +6,6 @@ import {
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
-  localRunStepSummary,
 } from '../../app/utils/local-run-args';
 import { desktopArgsAttended } from '../../app/utils/desktop-run-view';
 import { buildRetryCommand } from '#shared/retry-command';
@@ -221,7 +220,7 @@ describe('Copy as command', () => {
   });
 });
 
-describe('localRunStepSummary', () => {
+describe('the summary of a local run step', () => {
   const cases = (n: number) =>
     Array.from({ length: n }, (_, i) => ({
       ...CASE,
@@ -232,20 +231,37 @@ describe('localRunStepSummary', () => {
 
   test('keeps a short command whole', () => {
     const [step] = buildLocalRunPlan(cases(4), { trace: true });
-    expect(localRunStepSummary(step!)).toBe(step!.display);
+    expect(step!.summary).toBe(step!.display);
   });
 
   test('shows three spec filters, counts the rest and keeps the options', () => {
     const [step] = buildLocalRunPlan(cases(143), { runMode: 'headed' });
-    expect(localRunStepSummary(step!)).toBe(
+    expect(step!.summary).toBe(
       'playwright test tests/s0.spec.ts:1 tests/s1.spec.ts:2 tests/s2.spec.ts:3 … 140 more --project=chromium --headed',
+    );
+  });
+
+  test('counts a spec path that starts with a dash as a filter', () => {
+    const list = cases(10);
+    list[0] = { ...list[0]!, filePath: '-odd.spec.ts' };
+    const [step] = buildLocalRunPlan(list);
+    expect(step!.summary).toBe(
+      'playwright test -odd.spec.ts:1 tests/s1.spec.ts:2 tests/s2.spec.ts:3 … 7 more --project=chromium',
     );
   });
 
   test('shows three titles of a grep pattern and counts the rest', () => {
     const [step] = buildLocalRunPlan(cases(10), { mode: 'grep' });
-    expect(localRunStepSummary(step!)).toBe(
-      'playwright test --grep "(test 0|test 1|test 2|… 7 more)" --project=chromium',
+    expect(step!.summary).toBe('playwright test --grep "(test 0|test 1|test 2|… 7 more)" --project=chromium');
+  });
+
+  test('counts and quotes grep titles that hold a backslash or a quote', () => {
+    const list = cases(6);
+    list[0] = { ...list[0]!, title: 'say "hi"' };
+    list[1] = { ...list[1]!, title: 'ends with \\' };
+    const [step] = buildLocalRunPlan(list, { mode: 'grep' });
+    expect(step!.summary).toBe(
+      'playwright test --grep "(say \\"hi\\"|ends with \\\\|test 2|… 3 more)" --project=chromium',
     );
   });
 });

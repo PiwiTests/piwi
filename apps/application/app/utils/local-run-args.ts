@@ -37,6 +37,8 @@ export interface LocalRunStep {
   args: string[];
   /** Human-readable preview of the step. */
   display: string;
+  /** The preview cut to fit a menu or a tooltip: at most three test filters, then how many more it holds. */
+  summary?: string;
 }
 
 const RUN_MODE_FLAGS: Record<LocalRunMode, string[]> = {
@@ -56,10 +58,23 @@ function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {
   return groups;
 }
 
-function specArgs(cases: RetryCase[], mode: RetryMode): string[] {
+/** How many test filters a short command shows before it counts the rest. */
+const SUMMARY_FILTERS = 3;
+
+function elided(items: string[]): string[] {
+  if (items.length <= SUMMARY_FILTERS + 1) return items;
+  return [...items.slice(0, SUMMARY_FILTERS), `… ${items.length - SUMMARY_FILTERS} more`];
+}
+
+/** The test filters of a step, and the same filters as its short preview shows them. */
+function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {
     const escaped = cases.map((c) => escapeGrep(c.title));
-    return ['--grep', escaped.length === 1 ? escaped[0]! : `(${escaped.join('|')})`];
+    const pattern = (titles: string[]) => (titles.length === 1 ? titles[0]! : `(${titles.join('|')})`);
+    return {
+      args: ['--grep', pattern(escaped)],
+      summary: ['--grep', displayArg(pattern(elided(escaped)))],
+    };
   }
   const seen = new Set<string>();
   const specs: string[] = [];
@@ -69,7 +84,7 @@ function specArgs(cases: RetryCase[], mode: RetryMode): string[] {
     seen.add(spec);
     specs.push(spec);
   }
-  return specs;
+  return { args: specs, summary: elided(specs.map(displayArg)) };
 }
 
 /** Quote an argument for display only — execution never goes through a shell. */
@@ -85,7 +100,7 @@ function displayArg(arg: string): string {
  * exactly the probe a bisect needs.
  */
 export function buildReproduceArgs(cases: RetryCase[]): string[] {
-  const args = specArgs(cases, 'file-line');
+  const args = specArgs(cases, 'file-line').args;
   const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
   for (const project of projects) args.push(`--project=${project}`);
   return args;
@@ -140,28 +155,6 @@ export function stopsAtFirstFailure(options: LocalRunOptions): boolean {
   return !!options.stopAtFirstFailure && Math.floor(options.repeatEach ?? 1) > 1;
 }
 
-/** How many test filters a short command shows before it counts the rest. */
-const SUMMARY_FILTERS = 3;
-
-function elided(items: string[]): string[] {
-  if (items.length <= SUMMARY_FILTERS + 1) return items;
-  return [...items.slice(0, SUMMARY_FILTERS), `… ${items.length - SUMMARY_FILTERS} more`];
-}
-
-/**
- * A step's command cut to fit a menu or a tooltip: at most three of its spec filters, or of the titles of its
- * `--grep` pattern, then how many more it holds. The options stay whole.
- */
-export function localRunStepSummary(step: Pick<LocalRunStep, 'args'>): string {
-  const firstFlag = step.args.findIndex((arg) => arg.startsWith('-'));
-  const specs = firstFlag === -1 ? step.args : step.args.slice(0, firstFlag);
-  const rest = step.args.slice(specs.length).map((arg, i, all) => {
-    const grouped = all[i - 1] === '--grep' && /^\(.*\)$/.test(arg) ? arg.slice(1, -1).split(/(?<!\\)\|/) : null;
-    return grouped && grouped.length > SUMMARY_FILTERS + 1 ? `"(${elided(grouped).join('|')})"` : displayArg(arg);
-  });
-  return ['playwright', 'test', ...elided(specs.map(displayArg)), ...rest].join(' ');
-}
-
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
   if (cases.length === 0) return [];
   const mode = options.mode ?? 'file-line';
@@ -170,14 +163,20 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
 
   const steps: LocalRunStep[] = [];
   for (const [project, projectCases] of groupByProject(cases)) {
-    const args = specArgs(projectCases, mode);
-    if (project) args.push(`--project=${project}`);
-    args.push(...RUN_MODE_FLAGS[runMode]);
-    if (options.trace) args.push('--trace=on');
+    const specs = specArgs(projectCases, mode);
+    const flags: string[] = [];
+    if (project) flags.push(`--project=${project}`);
+    flags.push(...RUN_MODE_FLAGS[runMode]);
+    if (options.trace) flags.push('--trace=on');
     // Each repetition reports its own result, as the editors' repeat does.
-    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
-    if (stopsAtFirstFailure(options)) args.push('--max-failures=1');
-    steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
+    if (repeatEach > 1) flags.push(`--repeat-each=${repeatEach}`, '--retries=0');
+    if (stopsAtFirstFailure(options)) flags.push('--max-failures=1');
+    const args = [...specs.args, ...flags];
+    steps.push({
+      args,
+      display: ['playwright', 'test', ...args.map(displayArg)].join(' '),
+      summary: ['playwright', 'test', ...specs.summary, ...flags.map(displayArg)].join(' '),
+    });
   }
   return steps;
 }

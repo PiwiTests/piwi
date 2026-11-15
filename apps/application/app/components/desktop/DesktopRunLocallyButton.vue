@@ -21,7 +21,6 @@ import {
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
-  localRunStepSummary,
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
@@ -150,7 +149,9 @@ const face = computed(() => {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
   const command =
-    plan.value.length === 1 ? localRunStepSummary(plan.value[0]!) : `${plan.value.length} commands, one per project`;
+    plan.value.length === 1
+      ? (plan.value[0]!.summary ?? plan.value[0]!.display)
+      : `${plan.value.length} commands, one per project`;
   return {
     ...idle,
     tooltip: `${command} · ${runModeLabel.value} · in ${link.value?.path}`,
@@ -190,7 +191,7 @@ const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 /** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
-  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map(localRunStepSummary);
+  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.summary ?? step.display);
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
