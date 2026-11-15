@@ -6,6 +6,7 @@ import {
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
+  localRunStepSummary,
 } from '../../app/utils/local-run-args';
 import { desktopArgsAttended } from '../../app/utils/desktop-run-view';
 import { buildRetryCommand } from '#shared/retry-command';
@@ -217,5 +218,34 @@ describe('Copy as command', () => {
   test('a debug run copies its flag, a plain one copies none', () => {
     expect(buildRetryCommand([CASE], { options: localRunCopyOptions({ runMode: 'debug' }) })).toContain(' --debug');
     expect(buildRetryCommand([CASE], { options: localRunCopyOptions({}) })).toBe(buildRetryCommand([CASE]));
+  });
+});
+
+describe('localRunStepSummary', () => {
+  const cases = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      ...CASE,
+      filePath: `tests/s${i}.spec.ts`,
+      title: `test ${i}`,
+      line: i + 1,
+    }));
+
+  test('keeps a short command whole', () => {
+    const [step] = buildLocalRunPlan(cases(4), { trace: true });
+    expect(localRunStepSummary(step!)).toBe(step!.display);
+  });
+
+  test('shows three spec filters, counts the rest and keeps the options', () => {
+    const [step] = buildLocalRunPlan(cases(143), { runMode: 'headed' });
+    expect(localRunStepSummary(step!)).toBe(
+      'playwright test tests/s0.spec.ts:1 tests/s1.spec.ts:2 tests/s2.spec.ts:3 … 140 more --project=chromium --headed',
+    );
+  });
+
+  test('shows three titles of a grep pattern and counts the rest', () => {
+    const [step] = buildLocalRunPlan(cases(10), { mode: 'grep' });
+    expect(localRunStepSummary(step!)).toBe(
+      'playwright test --grep "(test 0|test 1|test 2|… 7 more)" --project=chromium',
+    );
   });
 });

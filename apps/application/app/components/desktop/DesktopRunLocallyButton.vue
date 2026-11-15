@@ -6,8 +6,9 @@
  * opens the setup dialog while configuration is broken. It doubles as the
  * status of a run of these same tests: while one is active (or just finished)
  * clicking it opens the runs tray and never stops anything. The chevron menu
- * shows the exact command and holds one-off runs, the other test sets of the
- * page, option toggles and fix-it entries. The options start from the
+ * shows the command (at most three test filters, the dialog has it whole) and
+ * holds one-off runs, the other test sets of the page, option toggles and
+ * fix-it entries. The options start from the
  * project's defaults (its Local folder settings) and the button's preset; a
  * choice here applies to this button only. Renders nothing without the IPC
  * bridge (plain browsers, web deployments), so pages can mount it
@@ -20,6 +21,7 @@ import {
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
+  localRunStepSummary,
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
@@ -147,7 +149,8 @@ const face = computed(() => {
   if (!linked.value) {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
-  const command = plan.value.length === 1 ? plan.value[0]!.display : `${plan.value.length} commands, one per project`;
+  const command =
+    plan.value.length === 1 ? localRunStepSummary(plan.value[0]!) : `${plan.value.length} commands, one per project`;
   return {
     ...idle,
     tooltip: `${command} · ${runModeLabel.value} · in ${link.value?.path}`,
@@ -184,10 +187,10 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
-/** The commands a run from here spawns, at most four, as the menu shows them. */
+/** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
-  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.display);
+  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map(localRunStepSummary);
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
@@ -228,7 +231,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         type: 'label',
         label: commandPreview.value,
         class: 'font-mono text-[11px] font-normal',
-        ui: { itemLabel: 'whitespace-pre-wrap! break-all' },
+        ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
       },
     ]);
 

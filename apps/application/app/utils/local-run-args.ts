@@ -140,6 +140,28 @@ export function stopsAtFirstFailure(options: LocalRunOptions): boolean {
   return !!options.stopAtFirstFailure && Math.floor(options.repeatEach ?? 1) > 1;
 }
 
+/** How many test filters a short command shows before it counts the rest. */
+const SUMMARY_FILTERS = 3;
+
+function elided(items: string[]): string[] {
+  if (items.length <= SUMMARY_FILTERS + 1) return items;
+  return [...items.slice(0, SUMMARY_FILTERS), `… ${items.length - SUMMARY_FILTERS} more`];
+}
+
+/**
+ * A step's command cut to fit a menu or a tooltip: at most three of its spec filters, or of the titles of its
+ * `--grep` pattern, then how many more it holds. The options stay whole.
+ */
+export function localRunStepSummary(step: Pick<LocalRunStep, 'args'>): string {
+  const firstFlag = step.args.findIndex((arg) => arg.startsWith('-'));
+  const specs = firstFlag === -1 ? step.args : step.args.slice(0, firstFlag);
+  const rest = step.args.slice(specs.length).map((arg, i, all) => {
+    const grouped = all[i - 1] === '--grep' && /^\(.*\)$/.test(arg) ? arg.slice(1, -1).split(/(?<!\\)\|/) : null;
+    return grouped && grouped.length > SUMMARY_FILTERS + 1 ? `"(${elided(grouped).join('|')})"` : displayArg(arg);
+  });
+  return ['playwright', 'test', ...elided(specs.map(displayArg)), ...rest].join(' ');
+}
+
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
   if (cases.length === 0) return [];
   const mode = options.mode ?? 'file-line';
