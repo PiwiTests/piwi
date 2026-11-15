@@ -1385,6 +1385,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:piwitests.piwi'),
     ),
     vscode.commands.registerCommand('piwi.openLog', () => lc.outputChannel.show()),
+    // The Failures view of the Piwi panel, as JetBrains' Open the failures opens its tool window's.
+    vscode.commands.registerCommand('piwi.openFailures', () => vscode.commands.executeCommand('piwi.failures.focus')),
     vscode.commands.registerCommand('piwi.getStarted', () =>
       vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
     ),

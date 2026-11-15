@@ -298,6 +298,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openFailures",
+        "title": "Open the failures",
+        "category": "Piwi",
+        "icon": "$(piwi-mark)"
+      },
+      {
         "command": "piwi.openDocumentation",
         "title": "Open the documentation",
         "icon": "$(question)",
