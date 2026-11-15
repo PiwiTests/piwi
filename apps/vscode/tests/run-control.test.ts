@@ -2365,7 +2365,7 @@ describe('the Runs view', () => {
       page: { id: 124, url: 'https://piwi.test/test-runs/124' },
       progress: { total: 9, done: 4, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null },
     };
-    const terminal = { ...session('terminal-1', []), terminal: true, hold: { on: true } };
+    const terminal = { ...session('terminal-1', []), terminal: true, hold: { on: true, by: 'start' as const } };
     const [first, second, ...rest] = runNodes(sessionsOf(run, terminal, session('ended', [], true)));
     expect(rest).toEqual([]);
     expect(first).toMatchObject({
