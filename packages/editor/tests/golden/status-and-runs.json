@@ -221,7 +221,8 @@
           ["worker-stopped", "Worker 2", "checkout › pays · stopped"],
           ["worker-between", "Worker 3", "between tests"],
           ["page", "Open run #124", "on the dashboard"]
-        ]
+        ],
+        "workers": ["Worker 1 · cart › adds a mug", "Worker 2 · checkout › pays · stopped", "Worker 3 · between tests"]
       }
     ]
   }

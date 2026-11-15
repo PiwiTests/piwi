@@ -1026,6 +1026,8 @@ class GlueTest {
             val rows = Glue.runRows(sessions.associateBy { it.ref ?: "" }).map { listOf(it.kind, it.text, it.detail) }
             val expected = case.getAsJsonArray("rows").map { row -> row.asJsonArray.map { it.asString } }
             assertEquals(case.get("name").asString, expected, rows)
+            val workers = case.getAsJsonArray("workers").map { it.asString }
+            assertEquals(case.get("name").asString, workers, Glue.workersNowText(sessions.associateBy { it.ref ?: "" })?.split("\n").orEmpty())
         }
     }
 

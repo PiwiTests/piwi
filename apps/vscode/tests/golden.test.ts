@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { RunSession, RunStatus, StatusResult } from '@piwitests/editor/protocol';
 import { statusBarView } from '../src/glue';
-import { runNodes, type RunNode } from '../src/run-control';
+import { runNodes, workersNow, type RunNode } from '../src/run-control';
 
 /**
  * The golden fixtures both editors' pure halves read (`packages/editor/tests/golden/`): the same inputs give the same
@@ -27,9 +27,18 @@ describe('the golden fixtures both editors read', () => {
       expect(withoutIcon(statusBarView(status, { contexts: [c.runs] }).text)).toBe(c.text);
     });
   }
-  for (const c of golden.runs.cases as Array<{ name: string; sessions: RunSession[]; rows: string[][] }>) {
+  for (const c of golden.runs.cases as Array<{
+    name: string;
+    sessions: RunSession[];
+    rows: string[][];
+    workers: string[];
+  }>) {
+    const sessions = new Map(c.sessions.map((s) => [s.ref, s]));
     test(`the Runs view: ${c.name}`, () => {
-      expect(flat(runNodes(new Map(c.sessions.map((s) => [s.ref, s]))))).toEqual(c.rows);
+      expect(flat(runNodes(sessions))).toEqual(c.rows);
+    });
+    test(`the workers the status tooltip lists: ${c.name}`, () => {
+      expect(workersNow(sessions)).toEqual(c.workers);
     });
   }
 });
