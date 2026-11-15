@@ -52,6 +52,7 @@ import {
   RUN_REF_ENV,
   TERMINAL_REF_PREFIX,
   checkoutCommitOf,
+  isPageOfInstance,
   isUnattendedRef,
 } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
@@ -396,6 +397,7 @@ import {
   type ScreenshotResult,
   type SelectionsParams,
   type SelectionsResult,
+  type RunSession,
   type RunTestEvent,
   type RunTestsArgs,
   type StatusResult,
@@ -2167,12 +2169,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The runs the service built, as their workers tell them on the run channel. */
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
+  /**
+   * A run the developer started outside the editor (a terminal's, the IDE's test runner's), once its own process names
+   * its page on a context's instance: the run watch follows it as the developer's own, and tells its verdict as it ends.
+   */
+  const adoptOutsideRun = (session: RunSession) => {
+    if (session.ended || !session.page || !session.root || !(session.terminal || session.runner)) return;
+    const context = contexts.find((c) => c.root === session.root);
+    const serverUrl = context?.client?.connection.serverUrl;
+    if (!context || !serverUrl || !isPageOfInstance(session.page.url, [serverUrl])) return;
+    runWatch.adopt(context, session.page.id, session.ref, session.runner ? 'runner' : 'terminal');
+  };
+
   const runSessions = new RunSessions({
     // A run's page is linked under the instances the configs connect to, the desktop app's included.
     instances: () => contexts.map((c) => c.client?.connection.serverUrl),
     // The workers' lines name the editor (`Visual Studio Code`), as it named itself at `initialize`.
     workerHost: () => clientName,
     notify: (session) => {
+      adoptOutsideRun(session);
       clientPageView?.changed();
       clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);

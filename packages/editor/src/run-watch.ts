@@ -202,12 +202,18 @@ function titleList(titles: string[], count: number): string {
   return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
 }
 
+/** Where a run the developer started outside the editor ran, after its number in its verdict's title. */
+const OUTSIDE_WORDS: Partial<Record<RunEnded['origin'], string>> = {
+  terminal: ' in a terminal',
+  runner: " in the IDE's test runner",
+};
+
 /** The verdict both clients show of a run that ended (`RunEnded.verdict`), from what it counted and changed. */
 export function verdictWords(ended: Omit<RunEnded, 'verdict'>): VerdictWords {
   const title =
     ended.origin === 'ci'
       ? `CI run #${ended.runId}${ended.branch ? ` on ${ended.branch}` : ''}`
-      : `run #${ended.runId}`;
+      : `run #${ended.runId}${OUTSIDE_WORDS[ended.origin] ?? ''}`;
   if (ended.repeat) {
     return {
       title,
@@ -371,6 +377,11 @@ interface RefWatch {
    * more before it carries the ref but is not the command's.
    */
   builtAt: number | null;
+  /**
+   * Who started its runs: a command the service built (`editor`), else a run the developer started in a terminal or in
+   * the IDE's test runner, adopted by the page its own process named (`adopt`).
+   */
+  origin: 'editor' | 'terminal' | 'runner';
 }
 
 /** How long before its command was built a run with a ref the service did not make may have started. */
@@ -522,6 +533,7 @@ export class RunWatch {
       repeat,
       commandRef: null,
       builtAt: borrowed ? Date.now() : null,
+      origin: 'editor',
     };
     this.watches.set(ref, w);
     for (const [oldest, dropped] of this.watches) {
@@ -530,6 +542,47 @@ export class RunWatch {
       this.watches.delete(oldest);
     }
     this.lookLater(w);
+  }
+
+  /**
+   * A run the developer started outside the editor, in a terminal or in the IDE's test runner (`origin`), whose own
+   * process named its page on the context's instance (`RunSession.page`) under its run channel's `ref`: followed as the
+   * developer's own, and its verdict told as it ends, as a command's run is. Nothing is asked of the instance before
+   * the page is named, and a run already adopted under the ref changes nothing.
+   */
+  adopt(context: PiwiContext, runId: number, ref: string, origin: 'terminal' | 'runner'): void {
+    if (this.disposed || !context.client || !context.project) return;
+    const held = this.watches.get(ref);
+    if (held && held.context === context && held.carried.has(runId)) return;
+    const w: RefWatch = {
+      context,
+      ref,
+      serverUrl: context.client.connection.serverUrl,
+      projectId: context.project.id,
+      known: new Set(),
+      carried: new Set(),
+      found: null,
+      until: 0,
+      timer: null,
+      repeat: null,
+      commandRef: null,
+      builtAt: null,
+      origin,
+    };
+    if (held?.timer) clearTimeout(held.timer);
+    this.watches.delete(ref);
+    this.watches.set(ref, w);
+    for (const [oldest, dropped] of this.watches) {
+      if (this.watches.size <= MAX_WATCHES) break;
+      if (dropped.timer) clearTimeout(dropped.timer);
+      this.watches.delete(oldest);
+    }
+    void context.client
+      .runDetails(runId)
+      .then((run) => {
+        if (run && run.id === runId && this.watches.get(ref) === w && this.current(w)) this.found(w, run);
+      })
+      .catch(() => undefined);
   }
 
   /**
@@ -627,7 +680,8 @@ export class RunWatch {
   /** A run of the context's project ended: the editor's own, or a CI run of the branch it followed, is told. */
   private ended(context: PiwiContext, runId: number, before: BranchFailures | null): void {
     const ci = this.ciKey(context, runId);
-    if (context.ownRuns.has(runId)) void this.tell(context, runId, before, 'editor');
+    if (context.ownRuns.has(runId))
+      void this.tell(context, runId, before, this.watchOf(context, runId)?.origin ?? 'editor');
     else if (ci && this.ciFollowed.delete(ci)) void this.tell(context, runId, before, 'ci');
   }
 

@@ -10,6 +10,7 @@ import {
   unreachedNotice,
   verdictWords,
 } from '../src/run-watch';
+import type { RunEnded } from '../src/protocol';
 import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
@@ -159,6 +160,9 @@ describe('the verdict both clients show of a run that ended', () => {
       actions: ['failures', 'dashboard', 'rerun'],
     });
     expect(verdictWords({ ...ci, branch: undefined }).title).toBe('CI run #130');
+    expect(verdictWords({ ...ci, origin: 'runner', branch: undefined }).title).toBe(
+      "run #130 in the IDE's test runner",
+    );
     expect(verdictWords(ci).text).toBe('9 passed, 0 failed');
   });
 
@@ -170,6 +174,63 @@ describe('the verdict both clients show of a run that ended', () => {
       always: true,
       actions: ['failures', 'dashboard'],
     });
+  });
+});
+
+describe('a run started outside the editor', () => {
+  test('is followed as the developer’s own once its process names its page, and its verdict says where it ran', async () => {
+    let status = 'running';
+    const connection = { serverUrl: 'http://piwi.test', apiKey: 'pd_key', project: 'shop' };
+    const run = (id: number) => ({
+      id,
+      status,
+      branch: 'main',
+      startTime: '2026-09-27T12:00:00.000Z',
+      metadata: {},
+      totalTests: 2,
+      passedTests: status === 'running' ? 0 : 2,
+      failedTests: 0,
+      flakyTests: 0,
+      skippedTests: 0,
+    });
+    const client = {
+      connection,
+      runDetails: (id: number) => Promise.resolve(run(id)),
+      runUrl: (id: number) => `${connection.serverUrl}/test-runs/${id}`,
+    };
+    const context = {
+      root: '/w',
+      client,
+      project: { id: 7 },
+      live: null,
+      liveTests: new Map(),
+      ownRuns: new Set(),
+      failures: null,
+      runBranch: 'main',
+      checkedOutBranch: 'main',
+    } as unknown as PiwiContext;
+    const runStreams = { follow: () => () => {} } as unknown as RunStreams;
+    const told: RunEnded[] = [];
+    const watch = new RunWatch({
+      contexts: () => [context],
+      changed: () => {},
+      notice: () => {},
+      runStreams,
+      runEnded: (ended) => void told.push(ended),
+    });
+    watch.adopt(context, 9, 'terminal-41-1700000000000', 'terminal');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(context.live).toMatchObject({ runId: 9, own: true });
+    expect(context.ownRuns.has(9)).toBe(true);
+    // Adopted again under its ref, as each session change names the page: nothing is asked again.
+    watch.adopt(context, 9, 'terminal-41-1700000000000', 'terminal');
+    status = 'passed';
+    watch.end(context, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(told).toHaveLength(1);
+    expect(told[0]).toMatchObject({ runId: 9, origin: 'terminal', ref: 'terminal-41-1700000000000' });
+    expect(told[0]!.verdict.title).toBe('run #9 in a terminal');
+    watch.dispose();
   });
 });
 

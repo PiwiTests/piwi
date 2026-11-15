@@ -572,7 +572,7 @@ its own result, and its title names the CI run after it (`passed in its latest r
 Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
 `RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
 run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it
-(`origin`: `editor` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
+(`origin`: `editor`, `terminal`, `runner` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
 keeps that command (`RefWatch.carried`), the run's counts, and:
 
 - `fixed`: the tests failing before that it passed; for a CI run, those the baseline it replaced failed, once it is the
@@ -581,8 +581,8 @@ keeps that command (`RefWatch.carried`), the run's counts, and:
 - `newFailures`: the tests it failed that were not failing before;
 - `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
   (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none;
-- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `CI run #130 on
-  feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
+- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `run #125 in a
+  terminal`, `run #126 in the IDE's test runner`, `CI run #130 on feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
   `2 fixed · …`), else its counts, or how a run of each test several times went; whether something fails, whether it
   is said whatever the client's run notifications setting (a repeated run), and its actions' ids (`failures`,
   `dashboard`, `rerun`). The clients add their own setting's actions, and leave a CI run's unsaid while their run
@@ -717,6 +717,11 @@ The service looks for the run carrying the ref in two ways:
 
 It keeps the run found in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are
 `source: 'own'` in `piwi/failures`.
+
+A run the developer started in a terminal or in the IDE's test runner (`RunSession.terminal`, `RunSession.runner`) is
+the developer's own too, once its own process names its page on the context's instance (`RunSession.page`): the run
+watch adopts it under its run channel's ref (`RunWatch.adopt`, from the sessions' `notify`), asking the instance
+nothing before, follows it, and tells its verdict as it ends with its origin (`RefWatch.origin`).
 
 A client says when the command ended (`piwi/commandEnded`, with its exit code). The service then reads the run once
 more, and when no run carries the ref 5 s later, it sends `piwi/notice`. The instance is not asked for the ref again.

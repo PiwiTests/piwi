@@ -52,7 +52,10 @@ Coverage view (`piwi/coverageFiles`), and JetBrains paints Piwi's marks beside t
 tests that ran the line (`piwi/coverageTests`), go to the next line no test runs, hide the marks or edit their colors
 (TL18); a run in JetBrains' Run tab draws its tests in the IDE's test tree as its workers begin and end them
 (`piwi/runTest`), and such a run offers the IDE's Playwright runner once (TL19); with the Run, Debug and Coverage
-profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's actions (TL1).
+profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's actions (TL1). M21 built since: a run the developer started in a
+terminal or in the IDE's test runner is followed as the developer's own once its process names its page on the
+instance, and its verdict says where it ran (`run #125 in a terminal`), from the service's words as every verdict
+(HM16).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -102,7 +105,7 @@ VS Code offers **Don't Show Again** on it, kept in `piwi.hiddenMessages`. M21 in
 once for both clients (`RunEnded.verdict`, `verdictWords`), the run it names, its text, whether it fails, whether it is
 said whatever the setting and its actions' ids, for the editor's runs and the CI runs of the branch it followed
 (`RunEnded.origin`), which a scope on the run notifications setting leaves out (`piwi.runNotificationsScope` and its
-JetBrains twin) (HM16 in part: the terminal and IDE runner's runs wait on the study's P7), and a test held at its
+JetBrains twin) (HM16 in part, its rest built with M21 below), and a test held at its
 failure or at `page.pause()` while the editor is in the background calls once, VS Code with a notification offering
 Resume and Go to the stopped line, JetBrains with `AppIcon.requestAttention`, raising the IDE from another application
 while 'Focus application on breakpoint' is on, as the service marks the stop (`RunStop.calls`), the status item marked
@@ -255,7 +258,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the four medium and six large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and six large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -328,7 +331,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 5. **The IDE's own places first, with Run, Debug and Coverage meaning what the IDE means; Piwi's own marks only for what
    the IDE cannot show.** ([TL3](#tl3), [LR3](#lr3), [AC3](#ac3))
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
-   client lacks.** ([HM8](#hm8), [HM16](#hm16))
+   client lacks.** ([HM8](#hm8), HM16 built)
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
    has an icon and a when clause.** ([LI1](#li1))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
@@ -456,16 +459,6 @@ same links per state, and their unit tests hold the words; nothing opens either 
 **(read)** Fix: each state checked on the editor fixture in both. ([LI5](#li5), [L6](#l6))
 
 ### 7.4 Notifications
-
-<a id="hm16"></a>**HM16. The end-of-run verdict comes only for runs Piwi started, and each client words it on its own.**
-`piwi/runEnded` goes to `context.ownRuns` alone (`packages/editor/src/run-watch.ts:740`), and a terminal run records the
-origin `local` with no editor ref (`packages/reporter/src/internal/collect/metadata-collector.ts:135-147`): a terminal
-run stopped at the editor's breakpoints, the IDE's gutter Run and a CI run of the branch all end with no verdict. The
-verdict is built twice (`apps/vscode/src/glue.ts:766-806`, `Glue.kt:884-925`), which both editor guides rule out.
-**(read)** Fix: `RunEnded` for every run the editor followed, with its origin, terminal and IDE-runner runs matched by
-the run ref the reporter records from the live-run study's P5, once its P7 gives every local run a hub; a scope, mine or
-mine and CI, on `piwi.runNotifications` and its JetBrains twin; the text and action ids from the service ('CI run #130
-on feature-x · 2 new failures'). ([M21](#m21), [LI14](#li14))
 
 ## 8. Live runs in the editors: where they sit
 
@@ -754,7 +747,7 @@ started here, or local edits, produced (§13). **Lives in** `packages/editor` (F
 `Glue.statusView`, `testResultHover` and `testResultTooltip`, `connectionSummary`, two verdict builders. **Depends on**
 nothing. **Revisits** no decision: it applies `apps/vscode/AGENTS.md`'s rule that a client holds no logic the other
 needs, which the status popup of [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M7 put in the client.
-Steps M13 (built), [M21](#m21), M22 (built).
+Steps M13, M21 and M22 (built).
 
 **Settings and first steps (principles 7 and 8).**
 
@@ -810,7 +803,7 @@ verdict's words for every run the editor followed, a terminal run's once the stu
 Attention on a live run, built, is the study's P6; in a background editor its interrupt is
 `AppIcon.requestAttention` or a VS Code notification. **Lives in** both clients and `RunEnded` (FSL). **Replaces** one
 'Piwi' title on every balloon, run notices that do not lead to their setting, two hand-worded verdicts. **Depends on**
-[LI6](#li6). **Revisits** no decision of its own. Steps [M21](#m21).
+[LI6](#li6). **Revisits** no decision of its own. Steps M21 (built).
 
 **Rider and .NET (principles 5 and 9).**
 
@@ -914,7 +907,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
-| <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
 
 ### Large
