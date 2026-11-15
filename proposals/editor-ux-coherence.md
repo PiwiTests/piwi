@@ -521,7 +521,8 @@ beside Failures or in the Run and Debug container is decided: the Piwi panel (§
 A test's line takes its state from the run's own events, an instance or not, but the line of the call a running test
 is at is marked only for a lane being watched (`piwi/runningLine`), where a CI run's positions are marked for every lane
 (`apps/vscode/src/ci-view.ts`). **(read)** This is live-runs E2, of the study's P4. Fix: the running line marked for
-each test of the developer's own run as it runs. ([L1](#l1))
+each test of the developer's own run as it runs, from a `position` message every worker sends, proposed in
+[running-line-every-lane.md](running-line-every-lane.md). ([L1](#l1))
 
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
