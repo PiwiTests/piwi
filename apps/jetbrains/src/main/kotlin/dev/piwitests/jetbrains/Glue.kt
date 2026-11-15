@@ -524,10 +524,8 @@ object Glue {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING)
             }
-            failing > 0 -> {
-                val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
-            }
+            // The tests failing alone: what was fixed locally and the flaky tests are the tooltip's.
+            failing > 0 -> StatusView("Piwi: $failing failing", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
             r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.statusText ?: r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)

@@ -663,11 +663,11 @@ export function statusBarView(
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  // The tests failing alone: what was fixed locally and the flaky tests are the tooltip's.
   if (failing > 0) {
-    const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
     return {
       ...view,
-      text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
+      text: `$(error) Piwi: ${failing} failing`,
       error: !!run?.alarm,
     };
   }

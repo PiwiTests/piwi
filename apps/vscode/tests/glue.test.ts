@@ -419,7 +419,7 @@ describe('statusBarView', () => {
     };
     // CI failures the developer did not cause: counted, never the alarm.
     expect(statusBarView(connected, failing(false))).toMatchObject({
-      text: '$(error) Piwi: 3 failing · 2 flaky',
+      text: '$(error) Piwi: 3 failing',
       action: 'refresh',
       error: false,
     });
@@ -435,7 +435,7 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
     };
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
-    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: false });
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing', error: false });
     expect(view.tooltip).toBe(
       `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
@@ -678,7 +678,7 @@ describe('statusBarView', () => {
     test('speaks for the config of the active file, the deepest that holds it', () => {
       const view = statusBarView(several, runs, false, Date.now(), '/w/apps/admin/tests/users.spec.ts');
       expect(view).toMatchObject({
-        text: '$(error) Piwi: 2 failing · 2 flaky',
+        text: '$(error) Piwi: 2 failing',
         url: 'http://piwi/test-runs/300',
         error: false,
       });
