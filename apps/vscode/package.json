@@ -113,6 +113,13 @@
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E007"
         }
+      },
+      "piwi-unreachable": {
+        "description": "A Piwi instance that does not answer",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E008"
+        }
       }
     },
     "viewsContainers": {

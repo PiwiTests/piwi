@@ -36,7 +36,11 @@ VS Code draws Assert a region and Mock a request with the plugin's glyphs from i
 part); VS Code's running run takes the loader rather than Verify ×3's glyph (LR18), and the status item's other parts
 were built with M13 (LR2, HM17). Two of the status item's last parts built since: a recording takes VS Code's Piwi item,
 its controls in the status menu, as JetBrains' item shows it (LR1), and the alarm reads `Piwi: 2 failing`, the counts
-fixed locally and flaky in its tooltip (HM2). Also built since, with their findings: Q25 (the JetBrains plugin's labels
+fixed locally and flaky in its tooltip (HM2). M4 and M13 built since: an instance that does not answer wears one
+glyph in both status items, a cloud struck through (`$(piwi-unreachable)`, `unreachable.svg`) (HM4), and JetBrains' run
+tab opens a shared run's page and copies its link after its controls, as the status popup does;
+VS Code's failures view lists finished runs alone, which no share outlives, and its status menu lists the shared ones
+(LR14). Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
 its own (HM9, ST18), and Q13's run notices on failures only by default and a run's balloon titled by its run, VS Code's
@@ -230,8 +234,8 @@ step moves the document to `adr/`.
 
 **Summary.**
 
-- **What is left.** Most of the plan's quick wins are built; the steps left center on a run's share where it is listed (M4),
-  the other tools' menus and the unreachable glyph (M3, M13), Debug with Piwi (M8), the Rider layer (M17) and the debug-session decision (L3).
+- **What is left.** Most of the plan's quick wins are built; the steps left center on the other tools' menus (M3),
+  Debug with Piwi (M8), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -239,7 +243,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the nine medium and seven large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the six medium and seven large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -474,11 +478,6 @@ and the views computed by the editor service ([LI6](#li6)), one notification pol
 
 ### 7.1 The status item
 
-<a id="hm4"></a>**HM4. An instance that does not answer wears a glyph of its own in each editor.** Every other
-status state takes one glyph in both, the Piwi mark for the neutral one alone, and the status in the dashboard's words
-from the service, but `Piwi: unreachable` is `$(server)` in VS Code and `Actions.OfflineMode` in JetBrains
-(`PiwiStatusBar.kt`). **(read)** Fix: one glyph for it, from the concept table. ([M13](#m13), [LI6](#li6))
-
 ### 7.2 The homes
 
 <a id="hm8"></a>**HM8. No check on the editor fixture covers a state of the Piwi tool window.** Both clients word an
@@ -562,12 +561,6 @@ instance publishes `test-stuck` (`apps/application/server/utils/stuck-tests.ts:7
 (`packages/editor/src/run-watch.ts:622-643`). **(read)** Fix: `Stuck? running 4 min, usually 40 s` with Open the run
 page in the gutter tooltip and the Testing view, and `· 1 stuck?` on the status line, never for a stopped worker.
 ([L1](#l1))
-
-<a id="lr14"></a>**LR14. A run shared live offers Copy, Open and Stop sharing in some lists only.** Every tool draws
-one broadcast for Share live (VS Code's `$(broadcast)`, JetBrains' `live.svg`, the Runs window's and the dashboard's
-`radio`, the same shape), and the status menu, the JetBrains status popup and the Runs window offer the share's actions,
-but VS Code's failures view run node and JetBrains' run tab do not. **(read)** Fix: Copy, Open and Stop sharing
-wherever the run is listed. ([M4](#m4))
 
 ### 8.7 Words deferred to the study
 
@@ -760,7 +753,7 @@ and tab, filled by P4 (progress), P5 (Run #N, origin), P6 (each worker's test, H
 (CI runs, read-only). Page: one page per worker with its controls, built. **Lives in** both clients and `packages/editor` (FSL). **Replaces** up to nine icon-only status
 items, a clipped stop line, run controls missing from the debugger's places. **Depends on** [LI1](#li1), [LI6](#li6),
 the study's phases. **Revisits** [run-control.md](../adr/run-control.md) §3.2 and its Status, which gave up the Run
-tab's toolbar because `RunContentExecutor` fixes it: Piwi builds the descriptor itself. Steps [M13](#m13),
+tab's toolbar because `RunContentExecutor` fixes it: Piwi builds the descriptor itself. Steps M13 (built),
 [L1](#l1).
 
 <a id="li10"></a>
@@ -791,7 +784,7 @@ started here, or local edits, produced (§13). **Lives in** `packages/editor` (F
 `Glue.statusView`, `testResultHover` and `testResultTooltip`, `connectionSummary`, two verdict builders. **Depends on**
 nothing. **Revisits** no decision: it applies `apps/vscode/AGENTS.md`'s rule that a client holds no logic the other
 needs, which the status popup of [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M7 put in the client.
-Steps [M13](#m13), [M21](#m21), M22 (built).
+Steps M13 (built), [M21](#m21), M22 (built).
 
 **Settings and first steps (principles 7 and 8).**
 
@@ -922,7 +915,9 @@ an editor whose source is the desktop app opens pages through `piwi://open/<page
 Open' there (the study's P5) and offers Back to the failure in the editor. A test holds every label to the table, and
 the docs' hand-offs table is generated from it. **Lives in** a table beside the concept table (FSL). **Replaces** one
 destination under two names, 'Connect' meaning two things. **Depends on** [LI2](#li2). **Revisits**
-[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card. Step [M24](#m24).
+[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card. Its step, editors
+opening the desktop app's pages through `piwi://open`, was dropped: the hand-off over HTTP already brings the app's
+window forward.
 
 ## 11. Defects filed
 
@@ -948,14 +943,11 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
-| <a id="m4"></a>M4 | **The share's actions wherever a run is listed**: Copy, Open and Stop sharing on VS Code's run node and JetBrains' run tab, as the status menu and the Runs window offer them | `ide` | [LR14](#lr14) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
-| <a id="m13"></a>M13 | **One glyph for an instance that does not answer**, from the concept table, in both status items | `ide` | [HM4](#hm4) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
-| <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends | `ide` | none ([LI20](#li20)) |
 
 ### Large
 
@@ -971,8 +963,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-On the action catalog, one Piwi menu (M3); M4 draws the glyphs
-Appendix A still marks, and M5 animates the running ring. M13 finishes the glance; M17 closes #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
+On the action catalog, one Piwi menu (M3); M17 closes #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
 ## 13. Open questions
@@ -1049,6 +1040,7 @@ such action.
 |---|---|---|---|---|
 | Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
+| An instance that does not answer | – | – | `$(piwi-unreachable)` | `unreachable.svg` |
 | Get started | – | – | `$(book)` | `AllIcons.General.ShowInfos` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
@@ -1065,7 +1057,7 @@ such action.
 | Assert | `check-circle` | `check-circle` | `$(pass)` | `General.InspectionsOK` |
 | Assert a region | `scan` | `viewport` | `$(piwi-region)` | `region.svg` |
 | Mock a request | `network` | `network` | `$(piwi-mock)` | `mock.svg` |
-| Share live ([LR14](#lr14)) | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
+| Share live | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
 | Stop sharing live | `circle-stop` | `eye-off` | `$(piwi-stop-live)` | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
 | Interact | `hand` | `hand` | the hand, drawn in a worker's page, built | `interact.svg`, built |
