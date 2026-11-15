@@ -9,21 +9,22 @@
  *
  * A target whose installers are missing fails, naming them. A signature is copied when the build made one; with
  * `--signed` (a build with the update signing key) a missing one fails, since `latest-runner.json` lists only a
- * signed package.
+ * signed package; the macOS dmg is never signed.
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** The packages each target's build makes: the folder the bundler writes, the end of the file, and the arch and
- * setup the release names it with. */
+ * setup the release names it with. `unsigned` marks a package the update signing key never signs: on macOS the
+ * bundler signs only the `.app.tar.gz` update file, not the dmg. */
 const PACKAGES = {
   'x86_64-pc-windows-msvc': [
     { dir: 'msi', end: '.msi', ext: '.msi', arch: 'x64', setup: '' },
     { dir: 'nsis', end: '-setup.exe', ext: '.exe', arch: 'x64', setup: '-setup' },
   ],
   'aarch64-apple-darwin': [
-    { dir: 'dmg', end: '.dmg', ext: '.dmg', arch: 'aarch64', setup: '' },
+    { dir: 'dmg', end: '.dmg', ext: '.dmg', arch: 'aarch64', setup: '', unsigned: true },
     { dir: 'macos', end: '.app.tar.gz', ext: '.app.tar.gz', arch: 'aarch64', setup: '', updateOnly: true },
   ],
   'x86_64-unknown-linux-gnu': [
@@ -65,7 +66,7 @@ export function releaseFiles({ files, target, pattern, signed = false }) {
     const name = renderAssetName(pattern, pkg);
     out.push({ from: found[0], name });
     if (listed.has(`${found[0]}.sig`)) out.push({ from: `${found[0]}.sig`, name: `${name}.sig` });
-    else if (signed) missing.push(`${found[0]}.sig`);
+    else if (signed && !pkg.unsigned) missing.push(`${found[0]}.sig`);
   }
   if (missing.length) throw new Error(`the build made no ${missing.join(', ')} for ${target}`);
   return out;
