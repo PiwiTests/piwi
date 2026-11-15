@@ -85,11 +85,14 @@ function quoteAll(values: string[]): string[] {
 
 /**
  * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option,
- * and one whose path holds nothing but `.` and `/` (empty included) matches every file, or, with a `:<line>`, that
- * line of every file.
+ * and one whose path, or whose `/pattern/flags` form, holds nothing but `.` and `/` (empty included) matches every
+ * file, or, with a `:<line>[:<column>]`, that line of every file.
  */
 export function isSpecFilter(spec: string): boolean {
-  return !spec.startsWith('-') && !spec.startsWith(':') && !/^[./]*(?::\d+)?$/.test(spec);
+  if (spec.startsWith('-') || spec.startsWith(':')) return false;
+  const file = spec.replace(/(?::\d+){1,2}$/, '');
+  const pattern = /^\/(.*)\/[gi]*$/.exec(file)?.[1] ?? file;
+  return !/^[./]*$/.test(file) && !/^[./]*$/.test(pattern);
 }
 
 /**
@@ -301,17 +304,27 @@ export function buildRetryArgs(allCases: RetryCase[]): string {
  * It is the same on every shell and a single command, so it can be copied,
  * handed to `git bisect run` across commits, or shown as the command that
  * verifies a fix. Past {@link MAX_CMD_LENGTH} it drops the titles and runs the
- * files whole. Without cases it runs the whole suite; with cases that name no
- * file and no title it can pass on (see {@link isSpecFilter}), or too many titles
- * and no file, it is empty, since it would run every test.
+ * files whole. Without cases it runs the whole suite.
+ *
+ * A test runs only when it matches both a file and the title pattern, so each
+ * filter is kept only when every case passes it on: the titles are dropped when
+ * one of them cannot name its test (see {@link isTitleFilter}), and the files
+ * when one cannot (see {@link isSpecFilter}) and the titles name them all. When
+ * neither names every case, the files it can name run whole; when it names no
+ * case at all, or only by titles too long to pass on, it is empty, since it would
+ * run every test.
  */
 export function buildRerunCommand(cases: RetryCase[]): string {
   const base = 'npx playwright test';
   if (cases.length === 0) return base;
-  const files = quoteSpecs([...new Set(cases.map((c) => specPattern(c.filePath)))]);
-  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]);
+  const byFile = cases.filter((c) => quoteSpecs([specPattern(c.filePath)]).length > 0);
+  const allByFile = byFile.length === cases.length;
+  const allByTitle = cases.every((c) => isTitleFilter(c.title));
+  const named = allByFile || allByTitle ? cases : byFile;
+  const files = allByFile || !allByTitle ? quoteSpecs([...new Set(byFile.map((c) => specPattern(c.filePath)))]) : [];
+  const grep = allByTitle ? buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]) : '';
   if (files.length === 0 && !grep) return '';
-  const projects = projectFlags(caseProjects(cases));
+  const projects = projectFlags(caseProjects(named));
   const head = [base, ...files].join(' ');
   const withTitles = `${head}${grep}${projects}`;
   if (withTitles.length <= MAX_CMD_LENGTH) return withTitles;

@@ -389,8 +389,11 @@ describe('a filter that matches more than it names', () => {
   });
 
   test('a path made only of `.` and `/` is left out, with or without a line', () => {
-    for (const spec of ['.', '/', './', '/:2', '..:3', '']) expect(isSpecFilter(spec)).toBe(false);
-    for (const spec of ['a.spec.ts', 'tests/a.spec.ts:2', '.github/a.spec.ts']) expect(isSpecFilter(spec)).toBe(true);
+    for (const spec of ['.', '/', './', '/:2', '..:3', '', '.:5:7', '/./i', '//g'])
+      expect(isSpecFilter(spec)).toBe(false);
+    for (const spec of ['a.spec.ts', 'tests/a.spec.ts:2', '.github/a.spec.ts', './tests/a.spec.ts:3:1', '/tests/']) {
+      expect(isSpecFilter(spec)).toBe(true);
+    }
     expect(buildRetryCommand([{ filePath: '\\', title: 't', line: 2, projectName: null }])).toBe('');
     expect(buildRetryArgs([{ filePath: '.', title: 't', line: null, projectName: null }])).toBe('');
   });

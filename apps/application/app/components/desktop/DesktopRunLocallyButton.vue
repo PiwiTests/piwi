@@ -117,6 +117,8 @@ const flashRun = computed(() => {
   return now.value - run.finishedAt < FLASH_MS ? run : null;
 });
 
+/** What the face adds when the plan leaves tests out: a page's own label counts every test it was given. */
+const leftOutSuffix = computed(() => (leftOut.value > 0 && !noPlan.value ? `${leftOut.value} left out` : ''));
 /** The tests a run from here runs: the cases its plan names, or all of them while it names none. */
 const testCount = computed(() => (noPlan.value ? props.cases.length : namedCases.value.length));
 const testsLabel = computed(() => `${testCount.value} test${testCount.value === 1 ? '' : 's'}`);
@@ -153,7 +155,7 @@ const face = computed(() => {
     };
   }
   const idle = {
-    label: optionsSuffix.value ? `${idleLabel.value} · ${optionsSuffix.value}` : idleLabel.value,
+    label: [idleLabel.value, leftOutSuffix.value, optionsSuffix.value].filter(Boolean).join(' · '),
     color: props.primary ? ('primary' as const) : ('neutral' as const),
     variant: props.primary ? ('solid' as const) : ('outline' as const),
     icon: 'i-lucide-play',

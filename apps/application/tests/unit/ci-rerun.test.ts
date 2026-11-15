@@ -54,6 +54,16 @@ describe('buildRerunCommand', () => {
     );
   });
 
+  test('keeps every case: a title that cannot name its test drops the titles, a path that cannot the files', () => {
+    const a = { filePath: 'a.spec.ts', title: '$', line: 1, projectName: null };
+    const b = { filePath: 'b.spec.ts', title: 'pays', line: 2, projectName: null };
+    expect(buildRerunCommand([a, b])).toBe('npx playwright test "a.spec.ts" "b.spec.ts"');
+    expect(buildRerunCommand([{ ...a, filePath: '.', title: 'refunds' }, b])).toBe(
+      'npx playwright test -g "refunds|pays"',
+    );
+    expect(buildRerunCommand([{ ...a, filePath: '.' }, b])).toBe('npx playwright test "b.spec.ts"');
+  });
+
   test('is empty when only titles name the tests and they would make the command too long', () => {
     const cases = Array.from({ length: 200 }, (_, i) => ({
       filePath: '',
