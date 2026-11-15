@@ -159,6 +159,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `PiwiRunSessions.draw` opens, drawing again as a wait ends (an `Alarm`), after a refusal and after acting that ends a
   wait, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service sends.
   ([Run control](ARCHITECTURE.md#run-control))
+- **One page per worker, as in the VS Code extension: a headless stop shows in the Worker tab while it holds the
+  stop's slot with Watch on, in sight or not (`workerShows`, a new stop selecting it), else in the Paused page tab,
+  named after the worker too**; watching a slot closes the Paused page tab on that slot's stop. Both tabs hold the
+  stopped line's row as a toolbar (`pageControls`), and the Worker tab offers Interact at a stop that takes input.
+  Checked by `GlueTest` and `PiwiRunControlTest`.
 - **An action at a stop from a key or a menu acts, for a control within `Glue.RESUMED_MILLIS` of an answer, until
   another stop of that slot opens or its run holds the slot no more, on a stop of the answered slot or on none, whatever
   the caret says; else on the stop at the caret's line; else on the only stop whose file or page the person was shown;

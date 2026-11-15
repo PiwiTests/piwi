@@ -50,6 +50,9 @@ object EditorWords {
         "hold.run.on" to "Hold failures on: a failed test waits at its line{by}",
         "hold.run.off" to "Hold failures off{by}",
         "hold.run.by-agent" to ", as an agent set it",
+        "page.watch" to "Watch",
+        "page.interact" to "Interact",
+        "page.input-rule" to "At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker’s next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator.",
     )
 
     /** The words of `key`, each `{name}` replaced by its value in `values`; `{cursor}` is the caret. */

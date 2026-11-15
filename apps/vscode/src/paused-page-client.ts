@@ -107,6 +107,28 @@ live.addEventListener('change', () => {
   toggle({ type: 'view', on: live.checked });
 });
 interact.addEventListener('change', () => toggle({ type: 'interact', on: interact.checked }));
+/** The stop's controls as a toolbar, drawn again only as they change, so a focused button keeps the focus. */
+const controls = document.getElementById('controls');
+let controlsDrawn = '';
+function drawControls(items: ReadonlyArray<{ title: string; command: string }>) {
+  const key = JSON.stringify(items);
+  if (!controls || key === controlsDrawn) return;
+  controlsDrawn = key;
+  controls.replaceChildren(
+    ...items.map((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.command = item.command;
+      button.textContent = item.title;
+      return button;
+    }),
+  );
+  controls.hidden = !items.length;
+}
+controls?.addEventListener('click', (e) => {
+  const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-command]');
+  if (button) post({ type: 'control', command: button.dataset.command });
+});
 picture.addEventListener('click', (e) => {
   if (active() && !e.shiftKey) return;
   if (!view?.pick) return;
@@ -208,6 +230,7 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
   }
   note.textContent = view.note ?? '';
   document.getElementById('caption')!.textContent = view.caption;
+  drawControls(view.controls?.items ?? []);
   picture.classList.toggle('pick', !!view.pick && !active());
   picture.classList.toggle('stale', !!view.stale);
   if (view.image?.data) {

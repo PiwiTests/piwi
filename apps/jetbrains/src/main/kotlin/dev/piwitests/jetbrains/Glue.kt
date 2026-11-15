@@ -2139,6 +2139,8 @@ object Glue {
         private val heard = HashSet<String>()
         private val files = HashSet<String>()
         private val seen = HashSet<String>()
+        /** The headless stops the Worker tab showed, offered to the Paused page tab as new ones once it shows them no more. */
+        private val panel = HashSet<String>()
         private var held: Set<String> = emptySet()
 
         /** The stop the Paused page tab shows, or showed last; null while it is closed. */
@@ -2173,11 +2175,15 @@ object Glue {
             stamps[field] = ++changes
         }
 
-        /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
+        /**
+         * The sessions changed, with their stops held now at the lines they stand on (`stops`, in order); `watched` tells
+         * a stop the Worker tab shows, which has no other page, as VS Code's `StopsShown.changed`.
+         */
         fun changed(
             sessions: Map<String, RunSession>,
             stops: List<ShownStop>,
             now: Long = System.currentTimeMillis(),
+            watched: (ShownStop) -> Boolean = { false },
         ): StopsChange {
             val slots = sessions.values.flatMap { s -> s.workers.orEmpty().map { slotKey(s.ref ?: "", it.parallelIndex) } }.toSet()
             if (reserved?.let { it.until <= now || it.slot !in slots } == true) reserved = null
@@ -2186,16 +2192,21 @@ object Glue {
             heard.retainAll(held)
             files.retainAll(held)
             seen.retainAll(held)
+            panel.retainAll(held)
             val open = stops.filter { stopKey(it) !in heard }
             open.forEach { heard.add(stopKey(it)) }
-            val shown = viewed ?: return StopsChange(open, open.firstOrNull { !it.stop.bar })
+            val paged = { s: ShownStop -> !s.stop.bar && !watched(s) }
+            // The stops new to the page: those heard now, and those the Worker tab showed until now.
+            val offered = stops.filter { it in open || (stopKey(it) in panel && !watched(it)) }
+            for (s in stops) if (!s.stop.bar && watched(s)) panel.add(stopKey(s)) else panel.remove(stopKey(s))
+            val shown = viewed ?: return StopsChange(open, offered.firstOrNull(paged))
             if (stopKey(shown) in held) return StopsChange(open, null)
             val waited = reserved?.takeIf { it.slot == slotKey(shown) }
             if (waited != null) {
                 val next = stops.firstOrNull { slotKey(it) == waited.slot && stopKey(it) != waited.key } ?: return StopsChange(open, null)
-                if (!next.stop.bar) return StopsChange(open, next)
+                if (paged(next)) return StopsChange(open, next)
             }
-            return StopsChange(open, open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar })
+            return StopsChange(open, offered.firstOrNull(paged) ?: stops.firstOrNull(paged))
         }
 
         /** The Paused page tab shows `stop`'s page; null once it is closed. */

@@ -154,7 +154,7 @@ import {
   runPageTarget,
 } from './run-control';
 import { placesOf } from './breakpoints';
-import { createWorkerPanel } from './worker-panel';
+import { createWorkerPanel, workerPageIcon } from './worker-panel';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
@@ -513,7 +513,10 @@ export function registerRunControl(
   const actingOnPage = () => !!pageStop && !!stops().find((s) => stopKey(s) === pageStop)?.stop.acting;
 
   const showPage = (shown: PausedPageView) => {
-    const view = { ...shown, acting: actingOnPage() };
+    // The stop's controls while the page shows a stop, named by the view they were drawn for.
+    const stop = pageShows;
+    const controls = stop ? { shown: shown.live?.shown ?? pickable, items: stopLensControls(stop) } : null;
+    const view = { ...shown, acting: actingOnPage(), controls };
     const same = view.live && page?.live?.shown === view.live.shown;
     page = view;
     if (!panel) return;
@@ -581,6 +584,7 @@ export function registerRunControl(
 
   const pageMessage = async (message: unknown) => {
     const m = message as Record<string, unknown> | null;
+    if (m?.type === 'control') return void pageControl(m);
     if (!m || !page?.live || m.shown !== page.live.shown) return void pickOnPage(message);
     if (m.type === 'ready') return void panel?.webview.postMessage({ type: 'state', view: page });
     if (m.type === 'view' && typeof m.on === 'boolean') {
@@ -619,6 +623,14 @@ export function registerRunControl(
       showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
+  /** A control pressed on the paused page: its command, among the stop's, run for the stop the page shows. */
+  const pageControl = async (m: Record<string, unknown>) => {
+    const stop = pageShows;
+    const item = page?.controls?.items.find((c) => c.command === m.command);
+    if (!stop || !item || m.shown !== page?.controls?.shown) return;
+    await vscode.commands.executeCommand(item.command, targetOf(stop));
+  };
+
   /**
    * The page of a stop in the paused page view, opened beside the editor without focus, asked of its worker. The view
    * uses the stop's live-view capability when offered, with a still image for every reporter.
@@ -636,10 +648,11 @@ export function registerRunControl(
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         'piwi.pausedPage',
-        'Piwi: paused page',
+        editorWords('worker.title', { n: stop.slot + 1 }),
         { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
         { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')] },
       );
+      panel.iconPath = workerPageIcon(context.extensionUri);
       panel.webview.onDidReceiveMessage((message: unknown) => void pageMessage(message));
       let visible = panel.visible;
       panel.onDidChangeViewState(() => {
@@ -666,6 +679,8 @@ export function registerRunControl(
     } else if (!panel.visible) {
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
+    // One page per worker: the page is named after the worker of the stop it shows, as the worker panel is.
+    panel.title = editorWords('worker.title', { n: stop.slot + 1 });
     pageCaption = stopCaption(stop, sessions);
     const shown = ++pickable;
     const live = stop.takes.includes('view')
@@ -768,7 +783,9 @@ export function registerRunControl(
     running.sessionsChanged(sessions);
     drawRunning();
     caretMoved();
-    const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.watches(s.ref, s.slot) });
+    // One page per worker: a stop of the slot the worker panel holds shows there, the panel shown again if hidden.
+    const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.holds(s.ref, s.slot) });
+    if (show.open.some((s) => !s.stop.bar && workerPanel.holds(s.ref, s.slot))) workerPanel.reveal();
     wakeWhenWaited();
     for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
     workerPanel.changed(sessions, now);
@@ -1314,6 +1331,8 @@ export function registerRunControl(
             placeHolder: pause ? 'Pause and watch which worker?' : 'Watch which worker?',
           });
     if (!chosen) return;
+    // One page per worker: the worker panel takes the slot's stop from the paused page.
+    if (pageShows?.ref === chosen.ref && pageShows.slot === chosen.lane) panel?.dispose();
     const answer = await workerPanel.open(chosen.ref, chosen.lane);
     if (!answer.ok) say(answer.message);
     else if (pause) await control({ ref: chosen.ref, worker: chosen.worker, action: 'pause' });

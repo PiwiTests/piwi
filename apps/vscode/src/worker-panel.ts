@@ -79,6 +79,7 @@ import {
   pausedPageHtml,
   pausedPageViewChange,
   picksOnImage,
+  stopLensControls,
   traceAnswerText,
   TraceAsks,
   withLaneLayer,
@@ -102,6 +103,14 @@ export interface WorkerPanel extends vscode.Disposable {
   ciChanged(sessions: CiSessions): void;
   /** Whether the panel shows the slot `lane` of the run `ref`, in sight, and watches it. */
   watches(ref: string, lane: number): boolean;
+  /**
+   * Whether the panel is the page of the slot `lane` of the run `ref`: it shows that slot with Watch on, in sight and
+   * watching, or hidden, to watch again as it shows. One page per worker: the slot's stops show there, never on the
+   * paused page.
+   */
+  holds(ref: string, lane: number): boolean;
+  /** Show the panel in its own group without the focus: a new stop of the slot it holds is there. */
+  reveal(): void;
   /** The editor group the panel shows in while in sight; undefined otherwise. */
   column(): vscode.ViewColumn | undefined;
   /** The sessions changed: what the panel says of its slot follows, `stops` at their lines now. */
@@ -118,6 +127,14 @@ export interface WorkerPanel extends vscode.Disposable {
 }
 
 const NO_ANSWER = 'The editor service did not answer.';
+
+/** A worker's page's tab icon, the paused page's and the worker panel's: Watch's eye, in each theme's color. */
+export function workerPageIcon(extensionUri: vscode.Uri): { light: vscode.Uri; dark: vscode.Uri } {
+  return {
+    light: vscode.Uri.joinPath(extensionUri, 'media', 'worker-page.svg'),
+    dark: vscode.Uri.joinPath(extensionUri, 'media', 'worker-page-dark.svg'),
+  };
+}
 
 /** What the run view hears of the panel. */
 interface WorkerPanelHooks {
@@ -243,6 +260,8 @@ export function createWorkerPanel(
       acting: !!stop?.stop.acting,
       layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
       trace: lane.worker && canOpenTrace(lane.worker) ? { asking: traceAsks.asking(target) } : null,
+      // At a stop, its controls, as on the paused page.
+      controls: stop ? { shown, items: stopLensControls(stop) } : null,
     };
     offerTrace();
     if (!panel) return;
@@ -492,6 +511,17 @@ export function createWorkerPanel(
       return askLayers();
     }
     if (m.type === 'text') return void askText();
+    if (m.type === 'control') {
+      const stop = lane.stop;
+      const item = view.controls?.items.find((c) => c.command === m.command);
+      if (stop && item)
+        await vscode.commands.executeCommand(item.command, {
+          ref: stop.ref,
+          worker: stop.worker,
+          since: stop.stop.since,
+        });
+      return;
+    }
     if (m.type === 'trace') return void openTrace();
     if (m.type === 'view' && typeof m.on === 'boolean') {
       wantOn = m.on;
@@ -544,6 +574,7 @@ export function createWorkerPanel(
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')],
       },
     );
+    made.iconPath = workerPageIcon(context.extensionUri);
     made.webview.onDidReceiveMessage((m: unknown) => void message(m));
     let visible = made.visible;
     made.onDidChangeViewState(() => {
@@ -689,6 +720,13 @@ export function createWorkerPanel(
     openTrace,
     watches(ref, slot) {
       return !!panel?.visible && !!watching && watching.ref === ref && watching.lane === slot;
+    },
+    holds(ref, slot) {
+      if (!panel || ciTarget || target?.ref !== ref || target.lane !== slot || !wantOn) return false;
+      return panel.visible ? !!watching : true;
+    },
+    reveal() {
+      if (panel && !panel.visible) panel.reveal(undefined, true);
     },
     column: () => (panel?.visible ? panel.viewColumn : undefined),
     changed(now, at) {

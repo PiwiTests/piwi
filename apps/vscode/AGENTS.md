@@ -90,8 +90,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks**
   (`StopsShown.choose`, as the JetBrains plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
-  closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
+- **One page per worker: a headless stop shows on the worker panel while it holds the stop's slot with Watch on,
+  hidden or not (`WorkerPanel.holds`, a new stop revealing it), else on the paused page, titled after the worker too**;
+  a held stop the panel showed goes to the paused page once it closes or its watch ends, and watching a slot closes the
+  paused page on that slot's stop (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
   `tests/run-control.test.ts`.
 - **Every command has its concept's codicon, present in VS Code 1.91, or Piwi's own glyph from `media/piwi-icons.woff`
   (`contributes.icons`, generated: never edited by hand), or is listed as waiting for one, and a glyph has one

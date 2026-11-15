@@ -97,6 +97,7 @@ import {
   liveTarget,
   liveText,
   OPEN_TRACE_TITLE,
+  INPUT_RULE,
   openTraceOffered,
   openTraceParams,
   TraceAsks,
@@ -2476,11 +2477,57 @@ describe('the CI runs of the branch', () => {
       'n0nce',
       'vscode-webview://x/paused-page.js',
     );
-    expect(html).toContain('<input id="live" type="checkbox"> Watch</label>');
-    expect(html).toContain('<label hidden><input id="interact" type="checkbox" disabled> Interact</label>');
+    expect(html).toMatch(
+      /<label class="toggle"><input id="live" type="checkbox" aria-label="Watch"><svg[^]*?<span>Watch<\/span><\/label>/,
+    );
+    expect(html).toContain(
+      '<label class="toggle" hidden><input id="interact" type="checkbox" disabled aria-label="Interact">',
+    );
     expect(html).toContain('read-only');
     expect(html).toContain('alt="The page of the CI worker\'s test"');
     expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('a worker’s page', () => {
+  test('holds the stop’s controls as a toolbar, the paused page’s and the worker panel’s alike, and none away from a stop', () => {
+    const items = [
+      { title: 'Resume', command: RUN_COMMANDS.resume },
+      { title: 'Step', command: RUN_COMMANDS.step },
+    ];
+    const still = pausedPageHtml({ image: null, caption: 'Paused', controls: { shown: 3, items } }, 'n');
+    expect(still).toContain(
+      `<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls"><button type="button" data-command="${RUN_COMMANDS.resume}">Resume</button><button type="button" data-command="${RUN_COMMANDS.step}">Step</button></div>`,
+    );
+    // A page with no live view nor pick still runs the one script a press needs, naming the view it was drawn for.
+    expect(still).toContain("script-src 'nonce-n'");
+    expect(still).toContain("vscode.postMessage({type:'control',command:b.dataset.command,shown:3})");
+    const lane = pausedPageHtml(
+      {
+        image: null,
+        caption: 'Worker 1 · running',
+        lane: true,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+      },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(lane).toContain(
+      '<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls" hidden></div>',
+    );
+    expect(pausedPageHtml({ image: null, caption: 'The test went on.' }, 'n')).not.toContain('script-src');
+  });
+
+  test('says one input rule on every page that takes input', () => {
+    const live = { shown: 1, on: false, input: true, interacting: false, clickCounts: true };
+    const stop = pausedPageHtml({ image: null, caption: 'Paused', live }, 'n', 'https://webview/paused-page.js');
+    const lane = pausedPageHtml(
+      { image: null, caption: 'Worker 1', lane: true, live },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(stop).toContain(INPUT_RULE);
+    expect(lane).toContain(INPUT_RULE);
   });
 });
 
@@ -2496,7 +2543,7 @@ describe('the worker panel’s Open the trace so far', () => {
   test('draw the button beside Watch and Interact while the slot’s worker can open its trace, off while it is asked', () => {
     const shown = pausedPageHtml({ ...view, trace: { asking: false } }, 'n', script);
     expect(shown).toContain(
-      `Interact</label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
+      `<span>Interact</span></label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
     );
     expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toContain(
       '>Open the trace so far</button>',
