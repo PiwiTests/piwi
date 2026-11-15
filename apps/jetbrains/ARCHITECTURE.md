@@ -368,8 +368,8 @@ reference.
 The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel`, since the
 platform's text presentations take no color. It shows:
 
-- an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
-  instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared, the recording
+- an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), a cloud struck through for the
+  instance unreachable (`PiwiIcons.UNREACHABLE`, VS Code's glyph too), an `AllIcons` icon for a failing or passed run, Share live's broadcast while a run is shared, the recording
   glyph (`PiwiIcons.recording`, red, or the gray ring while paused) while a recording runs, `AnimatedIcon.Default` for
   a recording opening the browser or stopping, a run in progress or a read, and for the runs' line one icon per state
   (`lineIcon`: the failed icon at a held failure and once the runs failed, the pause's at a stop or a Pause on its way,
@@ -600,7 +600,8 @@ is stopped) and the run controls in the Run menu (`Piwi.RunMenu`), each a `PiwiL
 started in the console has a Run tab built as the platform's `RunContentExecutor` builds one (`PiwiRunTab`: Rerun on
 its key, a Stop that kills the process clicked again while it ends), titled after the run's name (`RunCommand.name`),
 with `Piwi.RunControl`'s actions but its Stop in its toolbar, each wrapped (`registeredWith`) to act on the tab's run
-alone (`PiwiRunSessions.RUN`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
+alone (`PiwiRunSessions.RUN`), then, while the run is shared live, Open the run page and Copy the run page's link,
+as the status popup's entries on a share (`SharedPage`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
 runner's runs as their process starts. The choosers name a run by `Glue.runTitle` (`Run #78 · checkout.spec.ts:12`),
 with its ref while another of the list reads the same, the Watch chooser a worker's run only while several runs have
 workers to watch.

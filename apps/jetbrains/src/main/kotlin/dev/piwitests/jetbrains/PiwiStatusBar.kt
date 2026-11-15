@@ -185,7 +185,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private fun icon(icon: Glue.StatusIcon): Icon = when (icon) {
         Glue.StatusIcon.PIWI -> PiwiIcons.PIWI
         Glue.StatusIcon.CONNECT -> PiwiIcons.CONNECT
-        Glue.StatusIcon.UNREACHABLE -> AllIcons.Actions.OfflineMode
+        Glue.StatusIcon.UNREACHABLE -> PiwiIcons.UNREACHABLE
         Glue.StatusIcon.RUNNING -> AnimatedIcon.Default.INSTANCE
         Glue.StatusIcon.FAILING -> PiwiIcons.FAILED
         Glue.StatusIcon.PASSED -> AllIcons.RunConfigurations.TestPassed

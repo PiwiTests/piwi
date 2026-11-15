@@ -172,6 +172,7 @@ describe("the commands' glyphs", () => {
       'piwi-run-to-cursor',
       'piwi-region',
       'piwi-mock',
+      'piwi-unreachable',
     ]);
     for (const id of Object.keys(icons)) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
     for (const icon of Object.values(icons)) {
