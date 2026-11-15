@@ -16,7 +16,8 @@ export interface PiwiCommand {
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
    * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`),
-   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`) or `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
+   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`), `piwi.desktopJob` (arguments: `[DesktopJobParams]`) or
+   * `piwi.record` (arguments: `[uri, line]`, Record here at that 0-based line).
    */
   command:
     | 'piwi.openInDashboard'
@@ -26,7 +27,8 @@ export interface PiwiCommand {
     | 'piwi.runCommand'
     | 'piwi.copyText'
     | 'piwi.copyAgentContext'
-    | 'piwi.desktopJob';
+    | 'piwi.desktopJob'
+    | 'piwi.record';
   arguments: unknown[];
 }
 
@@ -76,7 +78,7 @@ export interface SummaryLine {
  * Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`.
  */
 export interface TestAction {
-  group: 'run' | 'evidence' | 'agent' | 'lab';
+  group: 'run' | 'record' | 'evidence' | 'agent' | 'lab';
   section: string;
   kind?: 'run' | 'verify' | 'debug';
   title: string;
@@ -1284,12 +1286,19 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /** File an issue: the page of the failure's cluster, where the dashboard files one; absent without a cluster. */
+  issueUrl?: string;
+  /**
+   * The test has a flake suspect no experiment tested yet: the failure's node offers Run Flake Lab on its untested
+   * suspects in the desktop app while it runs.
+   */
+  untestedSuspects?: true;
   /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */
   test?: { uri: string; line: number };
-  /** Verify the test ×3: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
+  /** Verify ×3 with Piwi: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
   verify?: RunTestsArgs;
   /**
-   * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
+   * Debug with Piwi: the run that stops once at the line it failed through, on its project, as the dashboard's
    * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
    * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, where its spec holds no one test of its
    * title (as are `test` and `verify`), and where the run would be refused: the title or project is not one Piwi takes,

@@ -68,6 +68,8 @@ function contextValue(node: FailureNode, desktop: boolean, result: FailuresResul
     f.verify ? 'verify' : null,
     f.test ? 'test' : null,
     desktop && f.source === 'ci' && f.state !== 'fixed-locally' ? 'desktop' : null,
+    desktop && f.source === 'ci' && f.state !== 'fixed-locally' && f.untestedSuspects ? 'flakelab' : null,
+    f.issueUrl ? 'issue' : null,
   ]
     .filter(Boolean)
     .join('.');

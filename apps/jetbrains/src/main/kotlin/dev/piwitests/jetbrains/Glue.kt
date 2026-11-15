@@ -827,7 +827,7 @@ object Glue {
         else -> null
     }
 
-    /** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+    /** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
     fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
         val uri = failure.uri ?: return null
         val id = failure.testCaseId ?: return null

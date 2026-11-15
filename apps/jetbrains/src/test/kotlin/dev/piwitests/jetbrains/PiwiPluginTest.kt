@@ -1641,7 +1641,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
-    /** **Debug this failure**, **Verify the test ×3** and **Go to the test** are offered where the service built them. */
+    /** **Debug with Piwi**, **Verify ×3 with Piwi** and **Go to the test** are offered where the service built them. */
     fun testAFailuresTestActionsApplyWhereTheServiceBuiltThem() {
         val failure = WorkspaceFailure(uri = "file:///w/tests/a.spec.ts", line = 3, title = "pays", executionId = 9)
         val debug = RunTestsArgs("file:///w/tests/a.spec.ts", emptyList())
@@ -1649,7 +1649,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(action.applies(project, failure.copy(debug = debug)))
         assertFalse(action.applies(project, failure))
         assertNotNull(action.templatePresentation.icon)
-        // Verify the test ×3 and Go to the test, where the service found the failure's test.
+        // Verify ×3 with Piwi and Go to the test, where the service found the failure's test.
         val manager = ActionManager.getInstance()
         val verify = manager.getAction("Piwi.Failure.Verify") as VerifyFailureAction
         val goTo = manager.getAction("Piwi.Failure.GoToTest") as GoToFailureTestAction
@@ -1662,7 +1662,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     /**
      * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
-     * actions, then its evidence and its context for an agent, a separator between groups; either click opens them.
+     * actions, Record steps in this test as Record here, then its evidence and its context for an agent, a separator
+     * between groups; either click opens them.
      */
     fun testATestsResultIconOffersTheServicesActionsInTheirGroups() {
         myFixture.configureByText("cart.spec.ts", "test('adds', async () => {});\n")
@@ -1678,6 +1679,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
                 TestAction("run", "", "debug", "Debug with Piwi", command("Debug with Piwi", "piwi.runTests")),
                 TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
+                TestAction(
+                    "record",
+                    "Record",
+                    null,
+                    "Record steps in this test…",
+                    PiwiCommand("Record steps in this test…", "piwi.record", listOf("file:///w/cart.spec.ts", 3)),
+                ),
                 TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
                 TestAction(
                     "evidence",
@@ -1700,6 +1708,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "Run with Piwi",
                 "Debug with Piwi",
                 "Verify ×3 with Piwi",
+                "— Record",
+                "Record steps in this test…",
                 "— Evidence",
                 "Open the trace",
                 "Open in dashboard",
@@ -1708,10 +1718,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
             ),
             entries,
         )
-        // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
+        // Run, Verify ×3, Record here and Open in dashboard are the registered actions, their keys shown.
         val manager = ActionManager.getInstance()
         fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
-        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(2), registered(5)))
+        assertEquals(
+            listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RecordHere", "Piwi.OpenInDashboard"),
+            listOf(registered(0), registered(2), registered(4), registered(7)),
+        )
+        assertEquals(3, PiwiTestAnnotator.recordLine(PiwiCommand(null, "piwi.record", listOf("file:///w/a.spec.ts", com.google.gson.JsonPrimitive(3)))))
         assertEquals(AllIcons.Actions.StartDebugger, children[1].templatePresentation.icon)
         // A left click opens the same list, never the browser, while the IDE indexes too.
         assertTrue(gutter.isNavigateAction)
@@ -1805,7 +1819,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(
                     listOf(
                         Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
-                        Triple(4, "Run this test", "piwi.runTests"),
+                        Triple(4, "Run with Piwi", "piwi.runTests"),
                         Triple(4, "Screenshot", "piwi.openScreenshot"),
                         Triple(4, "Trace", "piwi.openTrace"),
                     ),

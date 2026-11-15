@@ -287,12 +287,15 @@ reference.
   quick pick and runs the one chosen.
 
 **Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
-config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
-(`root`). **Debug this failure** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
+config's alone from its node (`failingRuns`). **Run with Piwi** runs `failureRunArgs`. Both name the failure's config
+(`root`). **Debug with Piwi** (`piwi.debugFailure`, on a failure whose `contextValue` says `debug`) runs the run the
 service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
-debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`). **Verify the test ×3**
+debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`). **Verify ×3 with Piwi**
 (`piwi.verifyFailure`) runs `WorkspaceFailure.verify`, and **Go to the test** (`piwi.goToFailureTest`) opens
-`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`.
+`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`. On a CI failure while the
+desktop app runs (`desktop`), **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and,
+where `WorkspaceFailure.untestedSuspects` says (`flakelab`), **Run Flake Lab on its untested suspects in the desktop
+app** pass the job to `piwi.desktopJob`; **File an issue** (`piwi.fileIssue`, `issue`) opens `WorkspaceFailure.issueUrl`.
 
 **The rest of the view.**
 
@@ -398,7 +401,7 @@ application-scoped), and the status bar item's tooltip ends with them (`runStart
 ### Breakpoints
 
 Every test run passes the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows
-(on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
+(on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run with Piwi**,
 **Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
 tests**) and **Run a saved selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
 a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). A run with breakpoints stays headless unless

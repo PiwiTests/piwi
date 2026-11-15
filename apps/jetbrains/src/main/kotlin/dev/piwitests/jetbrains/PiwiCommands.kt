@@ -76,7 +76,20 @@ object PiwiCommands {
                 PiwiNotifier.confirm(project, "Copied. Paste it to your agent.")
             }
             "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
+            "piwi.record" -> {
+                val file = arg<String>(arguments.getOrNull(0))
+                    ?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() }
+                val line = arg<Int>(arguments.getOrNull(1))
+                if (file != null && line != null) recordAt(project, file, line)
+            }
         }
+    }
+
+    /** Record here at the start of the 0-based `line` of `file`, opened in an editor first. */
+    private fun recordAt(project: Project, file: com.intellij.openapi.vfs.VirtualFile, line: Int) {
+        val editor = FileEditorManager.getInstance(project)
+            .openTextEditor(com.intellij.openapi.fileEditor.OpenFileDescriptor(project, file, line, 0), true) ?: return
+        PiwiRecordFlow.recordHere(project, editor, file, line)
     }
 
     /**

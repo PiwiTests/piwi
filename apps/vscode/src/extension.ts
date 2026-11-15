@@ -1378,7 +1378,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /** Pass a failure of the failures view to the desktop app. */
-  const desktopJobOf = async (target: FailureNode, kind: 'reproduce' | 'bisect') => {
+  const desktopJobOf = async (target: FailureNode, kind: 'reproduce' | 'bisect' | 'flake-lab') => {
     const failure = failureOf(target);
     const inside = (root: string) => !!failure && failure.uri.startsWith(`${vscode.Uri.file(root).toString()}/`);
     const root =
@@ -1389,6 +1389,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     await vscode.commands.executeCommand('piwi.desktopJob', {
       root: root.root,
       executionId: failure.executionId,
+      ...(kind === 'flake-lab' && failure.testCaseId !== undefined ? { testCaseId: failure.testCaseId } : {}),
       kind,
     } satisfies DesktopJobParams);
   };
@@ -1505,7 +1506,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.runTests', async (args: RunTestsArgs) => {
       await runTests(args);
     }),
-    // Debug this failure: the run the service built for it (`WorkspaceFailure.debug`), once every file is saved.
+    // Debug with Piwi: the run the service built for it (`WorkspaceFailure.debug`), once every file is saved.
     vscode.commands.registerCommand('piwi.debugFailure', async (target: FailureNode) => {
       const debug = failureOf(target)?.debug;
       if (!debug) {
@@ -1515,7 +1516,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       // Every file as saved, a page object's stop included; the service says why it refuses.
       if (await vscode.workspace.saveAll(false)) await runTests(debug, true);
     }),
-    // Verify the test ×3: the failure's test by its location, three times (`WorkspaceFailure.verify`), every file saved.
+    // Verify ×3 with Piwi: the failure's test by its location, three times (`WorkspaceFailure.verify`), every file saved.
     vscode.commands.registerCommand('piwi.verifyFailure', async (target: FailureNode) => {
       const verify = failureOf(target)?.verify;
       if (!verify) {
@@ -1634,6 +1635,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       desktopJobOf(target, 'reproduce'),
     ),
     vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
+    vscode.commands.registerCommand('piwi.flakeLabInDesktop', (target: FailureNode) =>
+      desktopJobOf(target, 'flake-lab'),
+    ),
+    // File an issue: the page of the failure's cluster, where the dashboard files one.
+    vscode.commands.registerCommand('piwi.fileIssue', async (target: FailureNode) => {
+      const url = failureOf(target)?.issueUrl;
+      if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+    }),
     // A flaky test's Flakiness tab and the Flake Lab commands it can run, as the service lists them.
     vscode.commands.registerCommand('piwi.lookIntoFlake', async (node?: FailureNode) => {
       const actions = node?.actions ?? [];

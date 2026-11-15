@@ -969,8 +969,9 @@ export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLab
 
 /**
  * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run, Debug with Piwi and Verify ×3 at the
- * test's line; the failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context
- * for an agent; the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ * test's line; Record steps in this test at `recordAt`, the line of its body Record here writes steps after (none when
+ * null); the failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context for
+ * an agent; the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
  * Debug with Piwi runs `debugRun`, a failed test's run as the dashboard's Debug in my editor does (`debugRunOf`), else
  * the test headed, holding its failures.
  */
@@ -983,6 +984,7 @@ export function testActions(
   failed: { executionId: number; screenshot: unknown; traces: unknown[] } | null,
   lab: SummaryLine[],
   debugRun: RunTestsArgs | null = null,
+  recordAt: number | null = null,
 ): TestAction[] {
   const debug: RunTestsArgs = debugRun ?? { uri, testIds: [testCaseId], headed: true, holdFailures: true };
   const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
@@ -1013,6 +1015,19 @@ export function testActions(
         arguments: [{ uri, testIds: [], locations: [`${relative}:${line + 1}`], repeat: 3 } satisfies RunTestsArgs],
       },
     },
+    ...(recordAt !== null
+      ? [
+          {
+            group: 'record' as const,
+            title: 'Record steps in this test…',
+            command: {
+              title: 'Record steps in this test…',
+              command: 'piwi.record' as const,
+              arguments: [uri, recordAt],
+            },
+          },
+        ]
+      : []),
     ...(evidence && failed?.traces.length
       ? [
           {
@@ -1053,6 +1068,7 @@ export function testActions(
 /** The words of each group of a test's actions, on the separator before it (`TestAction.section`). */
 const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
   run: '',
+  record: 'Record',
   evidence: 'Evidence',
   agent: 'Agent',
   lab: 'Flake Lab',
@@ -1060,10 +1076,10 @@ const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
 
 /**
  * A code action's title as the light bulb lists it among the editor's own: under Piwi's name, its words after it
- * starting lower-case (`Piwi: use getByRole(…)`, `Piwi: run this test`); Heal's `Heal: use …` as `Piwi: heal with …`.
+ * starting lower-case (`Piwi: use getByRole(…)`), a title naming Piwi as it is (`Run with Piwi`); Heal's `Heal: use …` as `Piwi: heal with …`.
  */
 export function piwiActionTitle(title: string): string {
-  if (title.startsWith('Piwi: ')) return title;
+  if (/\bPiwi\b/.test(title)) return title;
   const heal = /^Heal: use (.+)$/.exec(title);
   if (heal) return `Piwi: heal with ${heal[1]}`;
   return `Piwi: ${title.charAt(0).toLowerCase()}${title.slice(1)}`;

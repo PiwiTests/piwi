@@ -332,13 +332,15 @@ that each of Piwi's resolves to a file, and lists the actions that share a glyph
 
 **Re-run the failing tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
-(`Glue.failingRuns`). **Run this test** runs `Glue.failureRunArgs`. Both name the failure's config
-(`WorkspaceFailure.root`). **Debug this failure** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
+(`Glue.failingRuns`). **Run with Piwi** runs `Glue.failureRunArgs`. Both name the failure's config
+(`WorkspaceFailure.root`). **Debug with Piwi** (`Piwi.Failure.Debug`, `DebugFailureAction`) runs the run the service
 built for it (`WorkspaceFailure.debug`) once the files are saved, quietly (the service says why it refuses a debug
 run); so does **Debug with Piwi** among a test's actions on the result icon (`TestAction.kind` `debug`,
-`PiwiCommands.debug`). **Verify the test ×3** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
-the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. A run that names its own start keeps it
-(`Glue.withRunStart`).
+`PiwiCommands.debug`). **Verify ×3 with Piwi** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
+the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. On a CI failure while the desktop app runs,
+`Piwi.Failure.Reproduce`, `Piwi.Failure.FindBreakingCommit` and, where `WorkspaceFailure.untestedSuspects` says,
+`Piwi.Failure.FlakeLab` pass the job to the app; `Piwi.Failure.FileIssue` opens `WorkspaceFailure.issueUrl`. A run that
+names its own start keeps it (`Glue.withRunStart`).
 
 ### Compare with
 
@@ -524,7 +526,7 @@ built. **Tools → Piwi → Turn headed runs on or off** (`Piwi.RunHeaded`, a `T
 
 ### Breakpoints
 
-Every test run passes the IDE's breakpoints to the service: `PiwiCommands.runTests` (Code Vision, **Run this test**,
+Every test run passes the IDE's breakpoints to the service: `PiwiCommands.runTests` (Code Vision, **Run with Piwi**,
 **Run the test at the caret**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**)
 and **Run a saved selection…**. The breakpoints come from `PiwiProjectService.breakpoints`:
 

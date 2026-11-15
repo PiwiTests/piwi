@@ -240,7 +240,7 @@ describe("a test's actions", () => {
   });
 });
 
-describe('Debug this failure', () => {
+describe('Debug with Piwi', () => {
   test('is offered on a failure the service built a debug run for, never in the palette', () => {
     const entry = menus['view/item/context']!.find((e) => e.command === 'piwi.debugFailure')!;
     const offered = (contextValue: string) =>
@@ -253,7 +253,7 @@ describe('Debug this failure', () => {
   });
 });
 
-describe('Verify the test ×3 and Go to the test', () => {
+describe('Verify ×3 with Piwi and Go to the test', () => {
   test.each([
     ['piwi.verifyFailure', 'verify'],
     ['piwi.goToFailureTest', 'test'],

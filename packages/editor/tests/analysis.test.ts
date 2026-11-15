@@ -563,8 +563,12 @@ describe('withoutComments', () => {
 
 describe('piwiActionTitle', () => {
   test('names a quick fix Piwi, its words after the colon in lower case', () => {
-    expect(piwiActionTitle('Run this test')).toBe('Piwi: run this test');
     expect(piwiActionTitle('Open the trace')).toBe('Piwi: open the trace');
+  });
+
+  test('keeps a title that names Piwi as it is', () => {
+    expect(piwiActionTitle('Run with Piwi')).toBe('Run with Piwi');
+    expect(piwiActionTitle('Piwi: record steps here…')).toBe('Piwi: record steps here…');
   });
 
   test('reads a heal as heal with its locator', () => {

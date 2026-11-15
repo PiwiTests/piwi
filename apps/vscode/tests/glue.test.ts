@@ -1965,7 +1965,7 @@ describe('the failures view', () => {
     expect(failingRuns(null)).toEqual([]);
   });
 
-  test('Run this test names the failure’s config', () => {
+  test('Run with Piwi names the failure’s config', () => {
     expect(failureRunArgs({ ...failing, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts' })).toEqual({
       uri: 'file:///w/shared/pages/admin.ts',
       root: '/w/apps/admin',
@@ -2068,7 +2068,7 @@ describe('the verdict of a run started from the editor', () => {
 });
 
 describe('a test’s actions from its gutter', () => {
-  const SECTIONS = { run: '', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
+  const SECTIONS = { run: '', record: 'Record', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
   const action = (group: TestAction['group'], title: string): TestAction => ({
     group,
     section: SECTIONS[group],

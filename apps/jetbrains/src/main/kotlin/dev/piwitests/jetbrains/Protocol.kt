@@ -33,9 +33,9 @@ data class SummaryLine(
 )
 
 /**
- * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
- * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
- * it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
+ * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `record`, `evidence`, `agent`,
+ * `lab`), whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action
+ * that does it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
  */
 data class TestAction(
     val group: String = "run",
@@ -574,11 +574,15 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** File an issue: the page of the failure's cluster, where the dashboard files one; null without a cluster. */
+    val issueUrl: String? = null,
+    /** Whether its test has a flake suspect no experiment tested yet, which Flake Lab in the desktop app runs. */
+    val untestedSuspects: Boolean? = null,
     /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
     val test: EditorBreakpoint? = null,
-    /** Verify the test ×3: its run by its location, three times; null where `test` is. */
+    /** Verify ×3 with Piwi: its run by its location, three times; null where `test` is. */
     val verify: RunTestsArgs? = null,
-    /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
+    /** Debug with Piwi: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
     val debug: RunTestsArgs? = null,
 )
 

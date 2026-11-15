@@ -169,6 +169,10 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                     url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
                         it.add(DASHBOARD_URL, url)
                     }
+                    // Record steps in this test is Record here, at the line the service names.
+                    action.command?.command == "piwi.record" -> recordLine(action.command)?.let { at ->
+                        registeredWith("Piwi.RecordHere", action.title) { it.add(RECORD_LINE, at) }
+                    }
                     else -> action.command?.let { command ->
                         object : DumbAwareAction(action.title, null, testActionIcon(command.command)) {
                             override fun actionPerformed(e: AnActionEvent) {
@@ -188,6 +192,10 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     }
 
     companion object {
+        /** The 0-based line a `piwi.record` command names (its second argument). */
+        fun recordLine(command: PiwiCommand): Int? = (command.arguments?.getOrNull(1) as? Number)?.toInt()
+            ?: (command.arguments?.getOrNull(1) as? com.google.gson.JsonPrimitive)?.takeIf { it.isNumber }?.asInt
+
         /** The glyph of a test action that runs a command, by its command, as the Piwi tool window draws each. */
         fun testActionIcon(command: String?): Icon = when (command) {
             "piwi.openInDashboard" -> PiwiIcons.OPEN_IN_DASHBOARD

@@ -133,6 +133,12 @@ object PiwiIcons {
     val TRACE: Icon = AllIcons.FileTypes.Archive
     val SCREENSHOT: Icon = AllIcons.FileTypes.Image
     val REPRODUCE: Icon = AllIcons.Nodes.Desktop
+
+    /** Flake Lab: a flask. */
+    val FLAKE_LAB: Icon = piwi("flask")
+
+    /** An issue to file: a circle with a dot, as VS Code's codicon. */
+    val ISSUE: Icon = piwi("issue")
     val BISECT: Icon = AllIcons.Vcs.Branch
 
     /** A stop's code actions, as `plugin.xml` draws `Piwi.PickAtStop` and the others. */
