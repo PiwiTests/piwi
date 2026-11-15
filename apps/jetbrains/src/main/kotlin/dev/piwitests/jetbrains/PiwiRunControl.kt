@@ -2447,8 +2447,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         processes.clear()
         val shown = drawn.values.toList()
         drawn.clear()
-        val running = drawnRunning.values.toList()
+        val running = drawnRunning.values.toList() + drawnWaiting.values.toList()
         drawnRunning.clear()
+        drawnWaiting.clear()
         val count = caretInlay
         caretInlay = null
         val remove = {

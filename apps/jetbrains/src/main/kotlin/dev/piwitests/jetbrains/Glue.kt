@@ -2483,7 +2483,8 @@ object Glue {
 
     /**
      * The running lines to mark: each of a run still live whose slot's worker still runs that test and stands at no
-     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after.
+     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after. A worker a
+     * Pause waits for in a call has its waiting line instead ([waitingLinesShown]).
      */
     fun runningLinesShown(lines: Map<Pair<String, Int>, RunningLine>, sessions: Map<String, RunSession>): List<RunningLine> =
         lines.values.filter { line ->
@@ -2491,7 +2492,8 @@ object Glue {
             val session = sessions[line.ref]?.takeIf { !it.ended } ?: return@filter false
             val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == line.lane } ?: return@filter false
             val test = worker.test ?: return@filter false
-            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test)
+            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test) &&
+                !(worker.pausing && worker.waiting?.line != null)
         }
 
     /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */

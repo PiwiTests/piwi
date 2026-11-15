@@ -427,9 +427,11 @@ export function registerRunControl(
     runningDrawn.clear();
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
-      const marks = running.marks(uri, editor.document.lineCount, (file, line, ref) =>
-        edits.forward(file, line, sinceOf(ref)),
-      );
+      const forward = (file: string, line: number, ref: string) => edits.forward(file, line, sinceOf(ref));
+      // A worker a Pause waits for in a call has its waiting line instead of its running line.
+      const waits = waitingMarks(sessions, uri, editor.document.lineCount, forward);
+      const waited = new Set(waits.map((mark) => mark.line));
+      const marks = running.marks(uri, editor.document.lineCount, forward).filter((mark) => !waited.has(mark.line));
       editor.setDecorations(
         runningLine,
         marks.map((mark) => {
@@ -445,9 +447,6 @@ export function registerRunControl(
           uri,
           marks.map((mark) => mark.line),
         );
-      const waits = waitingMarks(sessions, uri, editor.document.lineCount, (file, line, ref) =>
-        edits.forward(file, line, sinceOf(ref)),
-      );
       editor.setDecorations(
         waitingLine,
         waits.map((mark) => {
