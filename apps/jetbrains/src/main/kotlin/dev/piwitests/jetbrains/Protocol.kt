@@ -1032,6 +1032,18 @@ data class RunTest(
 )
 
 /**
+ * `piwi/runTest`: a worker of a run began a test (`test-begin`, with `test`), or ended the test it began last
+ * (`test-end`, with Playwright's `status` of it), each once, as it happens.
+ */
+data class RunTestEvent(
+    val ref: String? = null,
+    val worker: Int = 0,
+    val type: String? = null,
+    val test: RunTest? = null,
+    val status: String? = null,
+)
+
+/**
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
  * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, for a viewer outside the

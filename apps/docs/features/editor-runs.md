@@ -32,9 +32,9 @@ and its results over the latest CI run's [failures](./editor-failures).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
 folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** restarts it), in the Run tool
-window in a JetBrains IDE (**Rerun** restarts it), or in the IDE's Playwright runner (test tree, Debug, **Rerun
-Failed Tests**), a choice of **Settings → Tools → Piwi** that keeps every control of a Piwi run, through the runner's
-Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
+window in a JetBrains IDE, its tests in a test tree beside the output as they run (**Rerun** restarts it), or in the
+IDE's Playwright runner (Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**, offered once, that
+keeps every control of a Piwi run, through the runner's Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints and the editor pause it:
 [Pause and step from the editor](./editor-run-control).
 
@@ -74,9 +74,8 @@ hides the result icon and its list.
 
 **Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
 Playwright config, **Debug with Piwi** runs them headed at your breakpoints, holding each failure at its line, and
-**Verify ×3 with Piwi** runs them three times. **Run with Piwi** under Run with Coverage runs them too, then lists the
-files their tests reach, with the lines run of each, in VS Code's Test Coverage view
-([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as
+**Verify ×3 with Piwi** runs them three times. Under Run with Coverage, **Run with Piwi** then lists the files its tests
+reach in the Test Coverage view ([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as
 [Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
 they begin, offline too. A test the run gave Piwi no
 result for, such as one the instance does not know, passes when the command exited with 0, else is an error. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins

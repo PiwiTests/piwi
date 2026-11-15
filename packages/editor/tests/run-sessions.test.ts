@@ -269,6 +269,17 @@ describe('a run’s session, with a client that answers stops', () => {
       await waitFor(() => (svc.latest(ref)?.workers[0]?.state === 'running' ? true : undefined));
       worker.send({ type: 'test-end', testId: 'id-adds a mug', status: 'passed', pausedMs: 1200 });
       await waitFor(() => (svc.latest(ref)?.workers[0]?.state === 'between' ? true : undefined));
+      // The client heard the test begin and end, for a test tree of the run.
+      await waitFor(() => (svc.tests.some((t) => t.ref === ref && t.type === 'test-end') ? true : undefined));
+      expect(svc.tests.filter((t) => t.ref === ref)).toEqual([
+        {
+          ref,
+          worker: 3,
+          type: 'test-begin',
+          test: expect.objectContaining({ id: 'id-adds a mug', title: ['cart', 'adds a mug'], line: 2 }),
+        },
+        { ref, worker: 3, type: 'test-end', status: 'passed' },
+      ]);
 
       // The client says the command ended: the run ends with it, and the worker's connection closes.
       await svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });

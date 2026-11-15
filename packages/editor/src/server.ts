@@ -290,6 +290,7 @@ import {
   HOLD_RUN_REQUEST,
   STOP_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
+  RUN_TEST_NOTIFICATION,
   RUN_LINE_NOTIFICATION,
   type RunLineParams,
   SET_BREAKPOINTS_NOTIFICATION,
@@ -2203,9 +2204,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         ? stopActions.regionRefused(stop, region.refused)
         : stopActions.region(stop, region.locator, region.snapshot),
     // An agent following the runs through the MCP server hears what each worker says, and a debug run its stops.
+    // So does the client, for a test tree of the run: each test as it begins and ends.
     heard: (ref, worker, what, root) => {
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
+      if (what.type === 'test-begin') {
+        void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, type: what.type, test: what.test });
+      } else if (what.type === 'test-end') {
+        void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, type: what.type, status: what.status });
+      }
     },
     // The run runs a file as it stood on disk when it started: one written since keeps each line as it is.
     runText: (ref, file) => {

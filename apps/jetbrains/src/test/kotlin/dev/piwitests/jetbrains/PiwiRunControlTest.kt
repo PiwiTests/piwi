@@ -25,6 +25,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
@@ -1667,6 +1668,30 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         }
+    }
+
+    /** A run's tab draws its tests in the IDE's test tree as its workers begin and end them, its output beside them. */
+    fun testARunTabDrawsTheRunsTestsAsItsWorkersBeginAndEndThem() {
+        val spec = file("tests/cart.spec.ts", "test('adds a mug', async () => {});\n")
+        val handler = NopProcessHandler()
+        val (view, relay) = PiwiRunTab.testConsole(project, handler, "Piwi: cart.spec.ts", { _, _ -> null }, "ed-tree")
+        relay.startNotify()
+        handler.startNotify()
+        val trees = project.service<PiwiRunTestTrees>()
+        trees.heard(RunTestEvent("ed-tree", 0, "test-begin", RunTest("a", listOf("cart", "adds a mug"), uri(spec), 0, "chromium")))
+        trees.heard(RunTestEvent("ed-tree", 1, "test-begin", RunTest("b", listOf("cart", "removes it"), uri(spec), 0, "chromium")))
+        trees.heard(RunTestEvent("ed-tree", 0, "test-end", status = "passed"))
+        trees.heard(RunTestEvent("ed-tree", 1, "test-end", status = "failed"))
+        handler.destroyProcess()
+        val console = view as com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+        val root = console.resultsViewer.testsRootNode
+        val tests = waitFor("the run's two tests ended") {
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            root.allTests.filter { it.isLeaf }.takeIf { leaves -> leaves.size == 2 && leaves.none { it.isInProgress } }
+        }
+        assertEquals(listOf("adds a mug" to true, "removes it" to false), tests.map { it.name to it.isPassed })
+        assertEquals(listOf("cart.spec.ts", "cart"), generateSequence(tests[0].parent) { it.parent }.takeWhile { it != root }.map { it.name }.toList().reversed())
+        Disposer.dispose(view)
     }
 
     /**

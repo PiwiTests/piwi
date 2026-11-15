@@ -3640,6 +3640,47 @@ class GlueTest {
     }
 
     @Test
+    fun `a run's test events draw its tests under their spec and describe blocks, each attempt ended by its worker`() {
+        val tree = Glue.RunTestTree()
+        fun begin(worker: Int, vararg title: String, retry: Int = 0) = tree.lines(
+            RunTestEvent("ed-1", worker, "test-begin", RunTest("id", title.toList(), "file:///w/tests/cart.spec.ts", 3, "chromium", retry)),
+        )
+        fun end(worker: Int, status: String) = tree.lines(RunTestEvent("ed-1", worker, "test-end", status = status))
+        assertEquals(
+            listOf(
+                "##teamcity[testSuiteStarted nodeId='1' parentNodeId='0' name='cart.spec.ts' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testSuiteStarted nodeId='2' parentNodeId='1' name='cart' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testStarted nodeId='3' parentNodeId='2' name='adds a |'mug|'' locationHint='file:///w/tests/cart.spec.ts:4']",
+            ),
+            begin(0, "cart", "adds a 'mug'"),
+        )
+        // Another worker's test of the same block, at once: the suites are there already.
+        assertEquals(
+            listOf("##teamcity[testStarted nodeId='4' parentNodeId='2' name='removes it' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            begin(1, "cart", "removes it"),
+        )
+        assertEquals(
+            listOf("##teamcity[testFailed nodeId='4' message='Timed out']", "##teamcity[testFinished nodeId='4']"),
+            end(1, "timedOut"),
+        )
+        assertEquals(listOf("##teamcity[testFinished nodeId='3']"), end(0, "passed"))
+        // An end with no test begun by its worker adds nothing; a retry is a node of its own.
+        assertEquals(emptyList<String>(), end(0, "passed"))
+        assertEquals(
+            listOf("##teamcity[testStarted nodeId='5' parentNodeId='2' name='removes it (retry 1)' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            begin(1, "cart", "removes it", retry = 1),
+        )
+        assertEquals(
+            listOf("##teamcity[testIgnored nodeId='5']", "##teamcity[testFinished nodeId='5']"),
+            end(1, "skipped"),
+        )
+        assertEquals(
+            listOf("##teamcity[testSuiteFinished nodeId='2']", "##teamcity[testSuiteFinished nodeId='1']"),
+            tree.finish(),
+        )
+    }
+
+    @Test
     fun `the next line no test runs is after the clicked one, from the top again past the last`() {
         val coverage = CoverageResult(notRun = listOf(LineSpan(11, 11), LineSpan(4, 5)))
         assertEquals(11, Glue.nextNotRunLine(coverage, 8))

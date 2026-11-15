@@ -608,7 +608,12 @@ started in the console has a Run tab built as the platform's `RunContentExecutor
 its key, a Stop that kills the process clicked again while it ends), titled after the run's name (`RunCommand.name`),
 with `Piwi.RunControl`'s actions but its Stop in its toolbar, each wrapped (`registeredWith`) to act on the tab's run
 alone (`PiwiRunSessions.RUN`), then, while the run is shared live, Open the run page and Copy the run page's link,
-as the status popup's entries on a share (`SharedPage`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
+as the status popup's entries on a share (`SharedPage`). Its console is the platform's test runner's
+(`SMTestRunnerConnectionUtil`, by node id): it reads a relay of the run's process (`TestTreeRelay`), which passes the
+output on and writes between its lines the service messages `Glue.RunTestTree` makes of the run's `piwi/runTest`
+events (`PiwiRunTestTrees`, by ref): a suite per spec and `describe` block, a node per attempt, each test's location
+for the IDE's navigation (`FileUrlProvider`). Such a run offers the IDE's Playwright runner once per installation
+(`offerRunner`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
 runner's runs as their process starts. The choosers name a run by `Glue.runTitle` (`Run #78 · checkout.spec.ts:12`),
 with its ref while another of the list reads the same, the Watch chooser a worker's run only while several runs have
 workers to watch.

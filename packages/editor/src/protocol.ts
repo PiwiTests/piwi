@@ -2275,6 +2275,22 @@ export interface RunLive {
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
 
 /**
+ * `piwi/runTest` (notification, server to client): a worker of a run began a test (`test-begin`, with the test), or
+ * ended the test it began last (`test-end`, with Playwright's status of it: `passed`, `failed`, `timedOut`, `skipped`,
+ * `interrupted`), as its run connection says it. Each comes once, as it happens, for a client that draws a test tree of
+ * the run; the session (`piwi/runSessionChanged`) holds only what each worker runs now.
+ */
+export interface RunTestEvent {
+  ref: string;
+  worker: number;
+  type: 'test-begin' | 'test-end';
+  test?: RunTest;
+  status?: string;
+}
+
+export const RUN_TEST_NOTIFICATION = 'piwi/runTest';
+
+/**
  * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the
  * others answer a stop: `step` goes on and stops before the next call, `resume` goes on to the next breakpoint,
  * `finish` goes on with no breakpoint more in this attempt, `run-to` goes on and stops at the first call on `place`'s

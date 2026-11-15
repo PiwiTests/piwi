@@ -324,8 +324,31 @@ object PiwiCommands {
             }, project.disposed)
             return true
         }
+        if (args != null && PlaywrightRunnerGate.available()) offerRunner(project)
         run(project, cwd, line, env, command.ref, command.label, command.name)
         return true
+    }
+
+    /** The key under which the IDE's Playwright runner was offered, once per installation. */
+    private const val RUNNER_OFFERED = "piwi.playwrightRunnerOffered"
+
+    /**
+     * Once per installation, at a run the IDE's Playwright runner could take while the plugin's console runs it: offer
+     * the runner, which **Settings → Tools → Piwi** switches on too.
+     */
+    private fun offerRunner(project: Project) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (properties.getBoolean(RUNNER_OFFERED)) return
+        properties.setValue(RUNNER_OFFERED, true)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.RUNNER_OFFER)
+            .addAction(
+                NotificationAction.createSimpleExpiring("Use the IDE's Playwright runner") {
+                    val before = PiwiUserSettings.state().copy()
+                    PiwiUserSettings.state().playwrightRunner = true
+                    PiwiUserSettings.changed(before)
+                },
+            )
+            .notify(project)
     }
 
     /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread, then run `then`. */
