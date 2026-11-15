@@ -102,6 +102,25 @@ describe("Piwi Runner's release files", () => {
     expect(releaseFiles({ files, target: 'x86_64-pc-windows-msvc', pattern })).toHaveLength(3);
   });
 
+  test('requires only the update file signature of a signed macOS build', () => {
+    const files = [
+      'dmg/Piwi Runner_0.69.0_aarch64.dmg',
+      'macos/Piwi Runner.app.tar.gz',
+      'macos/Piwi Runner.app.tar.gz.sig',
+    ];
+    expect(releaseFiles({ files, target: 'aarch64-apple-darwin', pattern, signed: true }).map((f) => f.name)).toEqual([
+      'Piwi-Runner_aarch64.dmg',
+      'Piwi-Runner_aarch64.app.tar.gz',
+      'Piwi-Runner_aarch64.app.tar.gz.sig',
+    ]);
+    expect(() =>
+      releaseFiles({ files: files.slice(0, 2), target: 'aarch64-apple-darwin', pattern, signed: true }),
+    ).toThrow('the build made no macos/Piwi Runner.app.tar.gz.sig for aarch64-apple-darwin');
+    expect(() =>
+      releaseFiles({ files: files.slice(0, 1), target: 'aarch64-apple-darwin', pattern, signed: true }),
+    ).toThrow('the build made no macos/*.app.tar.gz for aarch64-apple-darwin');
+  });
+
   test('fills the workflow pattern, and refuses one it cannot fill', () => {
     expect(pattern).toBe('Piwi-Runner_[arch][setup][ext]');
     expect(() => renderAssetName('Piwi-Runner_[version]_[arch][ext]', { arch: 'x64', setup: '', ext: '.msi' })).toThrow(

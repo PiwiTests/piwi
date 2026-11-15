@@ -3,9 +3,9 @@ name: Publish Piwi Runner installers
 # Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and attaches the installers to the
 # GitHub Release release-please created for the tag, beside the desktop app's (release.yml calls it). Runner is the
 # desktop crate built with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and
-# window. On a tag with the update signing key, the packages carry update signatures and the `manifest` job writes
-# `latest-runner.json` from them, Runner's own update manifest beside the desktop app's `latest.json`. Off a tag it
-# builds the installers and keeps them as the run's artifacts.
+# window. On a tag with the update signing key, the packages carry update signatures (all but the macOS dmg) and the
+# `manifest` job writes `latest-runner.json` from them, Runner's own update manifest beside the desktop app's
+# `latest.json`. Off a tag it builds the installers and keeps them as the run's artifacts.
 on:
   workflow_call:
     secrets:
@@ -117,7 +117,7 @@ jobs:
 
       # tauri-action only builds: with no release id it uploads nothing, and the steps below upload the files. With the
       # signing key, a tag's build also merges runner.updater.conf.json (its endpoint is latest-runner.json), and the
-      # bundler signs each package.
+      # bundler signs each package but the macOS dmg.
       - name: Build Piwi Runner
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
@@ -173,7 +173,8 @@ jobs:
           exit 1
 
       # The installers and their signatures under the names the release carries (apps/runner/scripts/release-files.mjs),
-      # on every build, so a pull request's dry run checks them too. A signed build must have every signature.
+      # on every build, so a pull request's dry run checks them too. A signed build must have every update signature
+      # (the macOS dmg has none).
       - name: Stage the release files
         shell: bash
         env:
