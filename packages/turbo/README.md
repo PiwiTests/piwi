@@ -46,10 +46,10 @@ import { test, expect } from '@piwitests/turbo/test';
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
 
-On the package's reference suite, against a typical unoptimized setup, `safe` took 5% off the wall time and 19% off the
-CPU time, and `fast` 8% and 50%. Context reuse changed little there, a suite whose time is mostly waiting on its API. On
-Flashwright's benchmark suites it took 3–20% off the app suites, and added 2–8% to a suite of trivial tests and to one
-of very large pages, where Playwright's reset of a context takes longer than a new context.
+On the package's reference suite, against a typical unoptimized setup, `safe` took 4% off the wall time and 7% off the
+CPU time, and `fast` 6% and 53%. Context reuse changed little there, a suite whose time is mostly waiting on its API. On
+Flashwright's benchmark suites it took 15% and 4% off two app suites, changed nothing on one of very large pages, and
+added 4% to a suite of trivial tests, where Playwright's reset of a context takes longer than a new context.
 
 ### Sign-in and third-party requests
 

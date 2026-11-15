@@ -76,9 +76,9 @@ the page it last acted on. Name `failureScreenshots: false` to keep that one.
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests. |
 | `max` | `fast`, plus the [experimental hooks](#experimental-hooks). |
 
-A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off.
-An option you name beside the preset wins over it. On the package's reference suite, against a typical unoptimized
-setup, `safe` took 5% off a run's wall time and 19% off its CPU time, and `fast` 8% and 50%.
+A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
+option you name beside the preset wins over it. On the package's reference suite, against a typical unoptimized setup,
+`safe` took 4% off a run's wall time and 7% off its CPU time, and `fast` 6% and 53%.
 
 ## Sign-in and third-party requests
 
@@ -91,19 +91,19 @@ These need your paths and URLs, so no preset sets them.
   scripts that hold the `load` event. Routes a test adds with `page.route` run first; never block a script the app
   needs. Like any route, it turns off Chromium's HTTP cache for the context.
 
-On the reference suite, these two took a run from 81 s to 48 s each. All the public levers together, with four
-workers, took it to 16 s.
+On the reference suite, these two took a run from 81 s to 48 s each. With reduced motion, retained traces and four
+workers, they took it to 16 s.
 
 ## Context reuse
 
 `fast` keeps one browser context per worker and resets it between tests, instead of creating a context for each test:
-Playwright's own `reuseContext`, plus turbo's reset of offline mode, extra HTTP headers, permissions, geolocation,
-HTTP credentials, the CDP sessions a test opened and, on Chromium, Cache Storage, which Playwright's reset leaves
-behind. The browser keeps the HTTP credentials it sent to an origin for the context's life. The package's tests check each kind of state a test
-can leave. It needs video off, and `reuseContext: false` turns it off. On Flashwright's benchmark suites it took 3–20%
-off the app suites, and added 2–8% to a suite of trivial tests and to one of very large pages, where Playwright's reset
-of a context takes longer than a new context: turn it off for such a suite. On a suite whose time is mostly waiting on
-its API it changes little.
+Playwright's own `reuseContext`, plus turbo's reset of offline mode, extra HTTP headers, permissions, geolocation, HTTP
+credentials, the CDP sessions a test opened and, on Chromium, Cache Storage, which Playwright's reset leaves behind. The
+browser keeps the HTTP credentials it sent to an origin for the context's life. The package's tests check each kind of
+state a test can leave. It needs video off, and `reuseContext: false` turns it off. On Flashwright's benchmark suites it
+took 15% and 4% off two app suites, changed nothing on one of very large pages, and added 4% to a suite of trivial
+tests, where Playwright's reset of a context takes longer than a new context: turn it off for such a suite. On a suite
+whose time is mostly waiting on its API it changes little.
 
 ## Advanced: the levers one by one
 
@@ -120,10 +120,8 @@ Every preset is a set of these options; name one to override it.
 | `reuseContext` | One browser context per worker, reset between tests. |
 | `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given. The runner loads Playwright before the config: set `NODE_COMPILE_CACHE` in the environment to cache its start too. Skipped when coverage is collected or a compile cache is already set. |
 
-`lightTraces` halved the CPU time of a suite that traces every test. On Piwi's own suite, one CI shard of 242 tests,
-`trace: 'on-first-retry'` and `reducedMotion` took 13% off the wall time and 28% off the CPU time, and
-`failureScreenshots` another 5% of each. A faster suite can surface races that slower runs hid: measure on your own
-suite before keeping any of these.
+`lightTraces` cut the CPU time of a suite that traces every test by 46%, and its artifacts by 97%. A faster suite can
+surface races that slower runs hid: measure on your own suite before keeping any of these.
 
 ## Experimental hooks
 
