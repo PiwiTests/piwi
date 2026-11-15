@@ -42,6 +42,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A word both editors write themselves comes from `packages/editor/src/words.json`, restated in `EditorWords.WORDS`**
   (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
+- **The words both editors compute from the same answer are held equal by the golden fixtures**
+  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows): `GlueTest` and the VS Code extension's
+  `tests/golden.test.ts` read the same file, so a change to either side's words changes the fixture and the other side.
 - **The settings page's group titles and choice labels are the editor service's settings registry**
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's

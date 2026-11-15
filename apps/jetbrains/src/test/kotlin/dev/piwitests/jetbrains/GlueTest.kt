@@ -1005,6 +1005,30 @@ class GlueTest {
         )
     }
 
+    /**
+     * The golden fixtures both editors' pure halves read (`packages/editor/tests/golden/`): the same inputs give the same
+     * words as in VS Code, whose `tests/golden.test.ts` reads the same file.
+     */
+    @Test
+    fun `the golden fixtures give the words VS Code gives`() {
+        val gson = com.google.gson.Gson()
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/status-and-runs.json").readText(),
+        ).asJsonObject
+        val status = golden.getAsJsonObject("status")
+        val context = gson.fromJson(status.get("context"), ContextStatus::class.java)
+        for (case in status.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val runs = RunStatusResult(listOf(gson.fromJson(case.get("runs"), RunStatus::class.java)))
+            assertEquals(case.get("name").asString, case.get("text").asString, Glue.statusView(StatusResult(listOf(context)), runs).text)
+        }
+        for (case in golden.getAsJsonObject("runs").getAsJsonArray("cases").map { it.asJsonObject }) {
+            val sessions = case.getAsJsonArray("sessions").map { gson.fromJson(it, RunSession::class.java) }
+            val rows = Glue.runRows(sessions.associateBy { it.ref ?: "" }).map { listOf(it.kind, it.text, it.detail) }
+            val expected = case.getAsJsonArray("rows").map { row -> row.asJsonArray.map { it.asString } }
+            assertEquals(case.get("name").asString, expected, rows)
+        }
+    }
+
     @Test
     fun `the Runs tab lists each run in progress, its workers by lane with their tests, and its page`() {
         val run = session(

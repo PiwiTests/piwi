@@ -16,6 +16,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A word both editors write themselves is read from `@piwitests/editor/words`** (`words.json`: a stop's controls and
   code actions, a recording's states, a worker's name, the choices of Hold failures), never written here again; the
   JetBrains plugin restates the file and `GlueTest` holds its copy to it.
+- **The words both editors compute from the same answer are held equal by the golden fixtures**
+  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows): `tests/golden.test.ts` here and `GlueTest`
+  read the same file, so a change to either side's words changes the fixture and the other side.
 - **A setting is registered in the editor service's settings registry first** (`packages/editor/src/settings.json`: its
   group, order, scope, type, default and choice labels); `package.json`'s groups follow it, a team's option
   window-scoped and a person's application-scoped, written to the user's settings. Checked by `tests/settings.test.ts`.

@@ -1,0 +1,228 @@
+{
+  "status": {
+    "context": {
+      "root": "/w",
+      "connected": true,
+      "serverUrl": "http://piwi",
+      "source": "dotenv",
+      "projectId": 7,
+      "projectName": "Acme",
+      "branch": "main"
+    },
+    "cases": [
+      {
+        "name": "the latest run, passed",
+        "runs": {
+          "root": "/w",
+          "branch": "feature/pay",
+          "run": {
+            "id": 41,
+            "status": "passed",
+            "totalTests": 120,
+            "passedTests": 118,
+            "failedTests": 0,
+            "flakyTests": 2,
+            "skippedTests": 0,
+            "url": "http://piwi/test-runs/41"
+          },
+          "failingTests": 0
+        },
+        "text": "Piwi: 118 passed · 2 flaky"
+      },
+      {
+        "name": "the latest run, failing",
+        "runs": {
+          "root": "/w",
+          "branch": "feature/pay",
+          "run": {
+            "id": 41,
+            "status": "failed",
+            "totalTests": 120,
+            "passedTests": 115,
+            "failedTests": 3,
+            "flakyTests": 0,
+            "skippedTests": 2,
+            "url": "http://piwi/test-runs/41"
+          },
+          "failingTests": 3
+        },
+        "text": "Piwi: 3 failing"
+      },
+      {
+        "name": "the editor's own run in progress",
+        "runs": {
+          "root": "/w",
+          "branch": "feature/pay",
+          "failingTests": 0,
+          "live": {
+            "runId": 124,
+            "status": "running",
+            "done": 4,
+            "total": 9,
+            "failed": 1,
+            "startedAt": "2026-09-27T11:00:00.000Z",
+            "own": true
+          }
+        },
+        "text": "Piwi: run #124 · 4 of 9 · 1 failed · yours"
+      },
+      {
+        "name": "an agent's run in progress",
+        "runs": {
+          "root": "/w",
+          "branch": "feature/pay",
+          "failingTests": 0,
+          "live": {
+            "runId": 124,
+            "status": "running",
+            "done": 4,
+            "total": 9,
+            "failed": 0,
+            "startedAt": "2026-09-27T11:00:00.000Z",
+            "own": true,
+            "label": "Started by Claude Code"
+          }
+        },
+        "text": "Piwi: run #124 · 4 of 9 · Started by Claude Code"
+      },
+      {
+        "name": "a CI run of the branch, a test of it stuck",
+        "runs": {
+          "root": "/w",
+          "branch": "feature/pay",
+          "failingTests": 0,
+          "live": {
+            "runId": 130,
+            "status": "running",
+            "done": 2,
+            "total": 9,
+            "failed": 0,
+            "startedAt": "2026-09-27T11:00:00.000Z",
+            "own": false,
+            "ci": true,
+            "branch": "feature/pay",
+            "stuck": 1
+          }
+        },
+        "text": "Piwi: CI run #130 on feature/pay · 2 of 9 · 1 stuck?"
+      }
+    ]
+  },
+  "runs": {
+    "cases": [
+      {
+        "name": "a run of the editor, its workers, its page; a terminal's run holding its failures",
+        "sessions": [
+          {
+            "ref": "ed-1",
+            "root": "/work/shop",
+            "ended": false,
+            "page": {
+              "id": 124,
+              "url": "https://piwi.test/test-runs/124"
+            },
+            "progress": {
+              "total": 9,
+              "done": 4,
+              "failed": 1,
+              "flaky": 0,
+              "skipped": 0,
+              "status": "running",
+              "failure": null
+            },
+            "workers": [
+              {
+                "worker": 1,
+                "parallelIndex": 1,
+                "state": "stopped",
+                "test": {
+                  "id": "t1",
+                  "title": ["checkout", "pays"],
+                  "uri": "file:///work/shop/tests/checkout.spec.ts",
+                  "line": 2,
+                  "project": "chromium",
+                  "retry": 0,
+                  "cannotPause": null
+                },
+                "stop": {
+                  "reason": "breakpoint",
+                  "title": "Click",
+                  "uri": "file:///work/shop/tests/checkout.spec.ts",
+                  "line": 4,
+                  "character": 4,
+                  "locator": null,
+                  "bar": true,
+                  "since": "2026-10-25T10:00:04.000Z"
+                },
+                "takes": [],
+                "watchable": true,
+                "layers": false,
+                "showsWindow": false,
+                "pausing": false,
+                "waiting": null
+              },
+              {
+                "worker": 0,
+                "parallelIndex": 0,
+                "state": "running",
+                "test": {
+                  "id": "t2",
+                  "title": ["cart", "adds a mug"],
+                  "uri": "file:///work/shop/tests/cart.spec.ts",
+                  "line": 7,
+                  "project": "chromium",
+                  "retry": 0,
+                  "cannotPause": null
+                },
+                "stop": null,
+                "takes": [],
+                "watchable": true,
+                "layers": false,
+                "showsWindow": false,
+                "pausing": false,
+                "waiting": null
+              },
+              {
+                "worker": 2,
+                "parallelIndex": 2,
+                "state": "between",
+                "test": null,
+                "stop": null,
+                "takes": [],
+                "watchable": false,
+                "layers": false,
+                "showsWindow": false,
+                "pausing": false,
+                "waiting": null
+              }
+            ]
+          },
+          {
+            "ref": "terminal-1",
+            "root": "/work/shop",
+            "ended": false,
+            "terminal": true,
+            "hold": {
+              "on": true
+            },
+            "workers": []
+          },
+          {
+            "ref": "gone",
+            "root": "/work/shop",
+            "ended": true,
+            "workers": []
+          }
+        ],
+        "rows": [
+          ["run-elsewhere", "Run in shop (terminal-1)", "Hold failures on"],
+          ["run", "Run #124", "4 of 9 · 1 failed"],
+          ["worker-watchable", "Worker 1", "cart › adds a mug"],
+          ["worker-stopped", "Worker 2", "checkout › pays · stopped"],
+          ["worker-between", "Worker 3", "between tests"],
+          ["page", "Open run #124", "on the dashboard"]
+        ]
+      }
+    ]
+  }
+}
