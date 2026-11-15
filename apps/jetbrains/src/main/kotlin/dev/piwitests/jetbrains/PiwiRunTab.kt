@@ -9,6 +9,7 @@ import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
 import com.intellij.execution.ui.actions.CloseAction
 import com.intellij.icons.AllIcons
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -16,10 +17,12 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonShortcuts
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.awt.BorderLayout
+import java.awt.datatransfer.StringSelection
 import javax.swing.JPanel
 
 /**
@@ -48,6 +51,8 @@ object PiwiRunTab {
         if (ref != null) {
             actions.addSeparator()
             controls(ref).forEach(actions::add)
+            actions.add(SharedPage(project, ref, copy = false))
+            actions.add(SharedPage(project, ref, copy = true))
         }
         actions.addSeparator()
         actions.add(CloseAction(executor, descriptor, project))
@@ -65,6 +70,33 @@ object PiwiRunTab {
         val group = manager.getAction("Piwi.RunControl") as? DefaultActionGroup ?: return emptyList()
         return group.childActionsOrStubs.mapNotNull { manager.getId(it) }.filter { it != "Piwi.StopRun" }.mapNotNull { id ->
             registeredWith(id) { it.add(PiwiRunSessions.RUN, ref) }
+        }
+    }
+
+    /**
+     * Open the run page, or copy its link, while the run of `ref` is shared live and its page known, as the status
+     * popup's entries on a share do (`Glue.liveMenu`); `Piwi.StopSharingRun` among the controls stops it.
+     */
+    private class SharedPage(private val project: Project, private val ref: String, private val copy: Boolean) : DumbAwareAction(
+        if (copy) "Copy the run page's link" else "Open the run page",
+        null,
+        if (copy) AllIcons.Actions.Copy else AllIcons.General.Web,
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        private fun page(): String? {
+            val runs = project.getServiceIfCreated(PiwiRunSessions::class.java) ?: return null
+            val kind = if (copy) Glue.LiveEntryKind.COPY_LINK else Glue.LiveEntryKind.OPEN_PAGE
+            return Glue.liveMenu(runs.sessions, runs.windowShared).firstOrNull { it.ref == ref && it.kind == kind }?.url
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = page() != null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val url = page() ?: return
+            if (copy) CopyPasteManager.getInstance().setContents(StringSelection(url)) else BrowserUtil.browse(url)
         }
     }
 

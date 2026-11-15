@@ -134,6 +134,9 @@ object PiwiIcons {
     val SCREENSHOT: Icon = AllIcons.FileTypes.Image
     val REPRODUCE: Icon = AllIcons.Nodes.Desktop
 
+    /** An instance that does not answer: a cloud struck through, as VS Code's `$(piwi-unreachable)`. */
+    val UNREACHABLE: Icon = piwi("unreachable")
+
     /** Flake Lab: a flask. */
     val FLAKE_LAB: Icon = piwi("flask")
 
