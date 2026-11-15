@@ -84,10 +84,11 @@ line** on the debugger's Show Execution Point key:
 - **[Recording](./editor-recording)** starts from **Record here…**, Alt+Enter or Alt+Insert, and **New → Playwright test
   (recorded)…** on a folder of a Playwright config; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
-  started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
-  the caret**, **Finish** and **End the test**; they are also in the status bar item's menu, after each stop to go to, and
-  under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in the Piwi tool window's **Paused page**
-  tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
+  started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Finish** and **Write code…**, the
+  other controls in its context menu; they are also in the status bar item's menu, after each stop to go to, and
+  under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in its worker's tab of
+  the Piwi tool window (**Worker 1**), with the same controls, where a click on the image picks the locator of the
+  element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[A running test](./watch-running-test)**: while the **Worker** tab watches one, an inlay after the line of

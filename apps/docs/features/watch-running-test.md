@@ -20,8 +20,8 @@ machine: [what is sent](#what-is-sent-and-kept).
 
 | Where | Open it | At a stop |
 |---|---|---|
-| VS Code | **Piwi: Watch a worker's test**, or the status bar's menu during a run: `Piwi: worker 2` beside the editor | A headless stop shows there, with **Interact** and the pick on a click, instead of the paused page |
-| JetBrains IDEs | **Tools → Piwi → Watch a worker's test**: the Piwi tool window's **Worker 2** tab | The tab only watches: a headless stop opens the **Paused page** beside it, for **Interact**, unless that tab holds another stop |
+| VS Code | **Piwi: Watch a worker's test**, or the status bar's menu during a run: `Piwi: worker 2` beside the editor | While it watches in sight, a headless stop shows there, not on the paused page, with its controls, **Interact** and the pick on a click |
+| JetBrains IDEs | **Tools → Piwi → Watch a worker's test**: the Piwi tool window's **Worker 2** tab | While it watches in sight, a headless stop shows there, not on the **Worker 2** page tab, with its controls and **Interact** |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | Its controls above the view; the stopped worker scrolls into view |
 | Desktop app | **Watch** on a running row of its own runs opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 

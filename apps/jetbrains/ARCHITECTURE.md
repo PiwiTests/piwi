@@ -643,9 +643,20 @@ the actions a key runs: a keymap that gives the key to another action too (the V
 test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
-(`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused page's, which takes the input, as any
-other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
-`Glue.selectsPausedPage`), the Paused page shows a new page without being selected, so the Worker tab stays in sight.
+(`Glue.laneShown`). One page per worker: while it watches a slot in sight (`workerShows`, the `watched` of
+`Glue.StopsShown.changed`), a headless stop of that slot shows there and opens no Paused page tab; once its watch is
+accepted it takes that slot's headless stop from the Paused page tab, which closes with its Watch kept for the next
+(`takeSlot`); a held stop it showed goes back to the Paused page tab as it hides or closes or its watch ends, each of
+which draws again. The Paused page tab is named after its stop's
+worker too (**Worker N**). At a stop of its slot the Worker tab offers Interact while the stop takes input, its input
+going to that stop (`laneInput`, sent in order on the worker calls' queue, the frame's size mapping a point), Interact
+staying on between stops and going off, the stop it last sent to given back, at one that takes none (`laneAt`,
+`PausedPagePanel.inputAt`, `laneGiveBack`). Both tabs hold the stopped line's row as a toolbar (`pageControls`, from
+`Glue.stopInlayLinks`: each the registered control acting on the stop, and Write code…), and draw Watch and Interact as
+toggle buttons with their glyphs (`Actions.Show`, and `icons/interact.svg`: Piwi Picker's hand) in the words both editors write (`page.watch`,
+`page.interact`, the input rule `page.input-rule` as Interact's tooltip). While the Worker tab is in sight (the tool
+window shows, with it selected: `Glue.selectsPausedPage`), the Paused page shows another worker's new page without
+being selected, so the Worker tab stays in sight.
 The watch goes on while the Worker tab or the Page tab is in sight, ends once neither is, and starts again as one
 shows (`laneSightChanged`, decided once the tool window's change of tabs is done); the run's end turns Watch off.
 
@@ -682,7 +693,7 @@ where a pick goes, the answer said under the image.
 
 For a stop taking `view`, **Watch** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
-checkboxes keep **Interact** off until chosen; input goes through `piwi/pageInput`, at most one batch in flight, with
+toggles keep **Interact** off until chosen; input goes through `piwi/pageInput`, at most one batch in flight, with
 coalesced pointer moves, and a release only after the input queued before it. A stop without `input-clicks` gets a
 click with its count, a left click waiting 250 ms for a second one, and a drag once the pointer moves 4 pixels, as the
 Runs window's `ViewInputBatcher` sends them. While interacting, the image takes the Undo, Redo and Select All
@@ -697,7 +708,7 @@ drives the stop no more. A watch ending sends what was queued for it, in order, 
 (`stopPageView`); where Interact is on as it ends (Watch off, the tab hidden or closed, a watch refused, another
 slot's stop), Interact goes off first (`PausedPagePanel.letGo`), so the input held, the give-back and the watch-off
 reach the service in that order. Escape while Interact is on lets go of the input held, then turns Interact off and
-focuses its checkbox, but goes to the page while an action runs in the test's window there (`PausedPagePanel.acting`,
+focuses its toggle, but goes to the page while an action runs in the test's window there (`PausedPagePanel.acting`,
 from the stop's `acting`). Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
 worker's new stop does not.
 Watch is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
@@ -706,7 +717,7 @@ and taking input then. It goes off as it is unchecked or Escape is pressed, as W
 the tab hides (between stops too: `PausedPagePanel.ended` keeps a listener for it) or closes, at another slot's stop,
 at a stop that takes no input (`PausedPagePanel.watching` and `configureLive` with `keepInteract`) and as its run ends
 or every run goes away (`PiwiRunSessions.runGone`, queued from `heard` before the draw, so a rerun under the ref starts
-with it off). The Worker tab has no Interact. No Picker pairing or port forwarding is needed for the panel, and older
+with it off). No Picker pairing or port forwarding is needed for the panel, and older
 reporters keep the still image.
 
 **Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to

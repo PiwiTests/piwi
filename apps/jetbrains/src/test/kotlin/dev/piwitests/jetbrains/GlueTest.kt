@@ -1145,11 +1145,13 @@ class GlueTest {
     private class Pushes(private val unopened: Set<Int> = emptySet(), private val closed: Set<Int> = emptySet()) {
         val shown = Glue.StopsShown()
         var now = 0L
+        /** The slots the Worker tab holds: their stops are its, never the Paused page tab's. */
+        var watched = emptySet<Int>()
 
         fun push(vararg workers: RunWorker): Pair<List<Pair<Int, Boolean>>, Pair<Int, Int>?> {
             now += 100
             val sessions = mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))
-            val change = shown.changed(sessions, Glue.stopsOf(sessions), now)
+            val change = shown.changed(sessions, Glue.stopsOf(sessions), now) { it.slot in watched }
             val opened = change.open.filter { it.stop.line !in unopened }.map { stop ->
                 val focus = shown.focusFor(stop, now)
                 shown.opened(stop, focus, focus || stop.stop.line !in closed)
@@ -1310,12 +1312,16 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE gives a stop of the slot the Worker tab watches the Paused page for its input, but not the focus`() {
-        // The Worker tab only watches slot 1: its stop is any other worker's to the focus and the Paused page tab.
+    fun `the IDE shows a stop of the slot the Worker tab holds there alone, and in the Paused page once it holds it no more`() {
+        // One page per worker: the Worker tab holds slot 1, so its stop opens its file but no Paused page tab.
         val pushes = Pushes()
+        pushes.watched = setOf(1)
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
         pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(none to null, pushes.push(runningWorker(0), stoppedAt(1, 5)))
+        // Closed, or its watch ended, the stop it held goes to the Paused page tab as a new one.
+        pushes.watched = emptySet()
         assertEquals(none to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
     }
 

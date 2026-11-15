@@ -79,6 +79,7 @@ import {
   pausedPageHtml,
   pausedPageViewChange,
   picksOnImage,
+  stopLensControls,
   traceAnswerText,
   TraceAsks,
   withLaneLayer,
@@ -119,12 +120,25 @@ export interface WorkerPanel extends vscode.Disposable {
 
 const NO_ANSWER = 'The editor service did not answer.';
 
+/** A worker's page's tab icon, the paused page's and the worker panel's: Watch's eye, in each theme's color. */
+export function workerPageIcon(extensionUri: vscode.Uri): { light: vscode.Uri; dark: vscode.Uri } {
+  return {
+    light: vscode.Uri.joinPath(extensionUri, 'media', 'worker-page.svg'),
+    dark: vscode.Uri.joinPath(extensionUri, 'media', 'worker-page-dark.svg'),
+  };
+}
+
 /** What the run view hears of the panel. */
 interface WorkerPanelHooks {
   /** The person sent a press, a key, text, the wheel or a pick to `stop`'s page (`actsOnPage`). */
   acted(stop: ShownStop): void;
   /** The panel was hidden or closed, or stopped watching: the stops it showed may go to the paused page. */
   changed(): void;
+  /**
+   * The service accepted the panel's watch of the slot `lane` of the run `ref`: the slot's page is the panel from now
+   * on, its stop the paused page showed included.
+   */
+  watching(ref: string, lane: number): void;
 }
 
 export function createWorkerPanel(
@@ -243,6 +257,8 @@ export function createWorkerPanel(
       acting: !!stop?.stop.acting,
       layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
       trace: lane.worker && canOpenTrace(lane.worker) ? { asking: traceAsks.asking(target) } : null,
+      // At a stop, its controls, as on the paused page.
+      controls: stop ? { shown, items: stopLensControls(stop) } : null,
     };
     offerTrace();
     if (!panel) return;
@@ -446,6 +462,7 @@ export function createWorkerPanel(
       draw();
       // A section opened or closed while the watch started asks for its layer now.
       askLayers();
+      hooks.watching(params.ref, params.lane);
     } else {
       watching = null;
       note = answer?.message ?? NO_ANSWER;
@@ -492,6 +509,17 @@ export function createWorkerPanel(
       return askLayers();
     }
     if (m.type === 'text') return void askText();
+    if (m.type === 'control') {
+      const stop = lane.stop;
+      const item = view.controls?.items.find((c) => c.command === m.command);
+      if (stop && item)
+        await vscode.commands.executeCommand(item.command, {
+          ref: stop.ref,
+          worker: stop.worker,
+          since: stop.stop.since,
+        });
+      return;
+    }
     if (m.type === 'trace') return void openTrace();
     if (m.type === 'view' && typeof m.on === 'boolean') {
       wantOn = m.on;
@@ -544,6 +572,7 @@ export function createWorkerPanel(
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')],
       },
     );
+    made.iconPath = workerPageIcon(context.extensionUri);
     made.webview.onDidReceiveMessage((m: unknown) => void message(m));
     let visible = made.visible;
     made.onDidChangeViewState(() => {

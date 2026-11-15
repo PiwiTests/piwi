@@ -50,7 +50,7 @@ import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.ImageIO
 import javax.swing.ImageIcon
-import javax.swing.JCheckBox
+import javax.swing.JToggleButton
 import javax.swing.JLabel
 
 /**
@@ -1148,26 +1148,90 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals(PausedPageParams("ed-2", 0), pages.single())
             assertEquals("Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · unread.page.ts:4", shown.pageCaption)
             assertEquals(4, shown.pageImage!!.width)
-            assertEquals(PiwiRunSessions.PAUSED_PAGE, window.contentManager.selectedContent?.displayName)
+            // One page per worker: the tab is named after the stop's worker, and holds the stopped line's row.
+            assertEquals("Worker 1", window.contentManager.selectedContent?.displayName)
+            assertEquals(listOf("Resume", "Step", "Finish"), shown.pageControls)
             hear(RunSession("ed-2", ended = true))
             assertEquals("The run ended.", sessions.shown().pageCaption)
             assertNull(sessions.shown().pageImage)
             // The tab closes, and the next stop opens it again.
-            val tab = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE)
+            assertEquals(emptyList<String>(), sessions.shown().pageControls)
+            val tab = window.contentManager.findContent("Worker 1")
             assertTrue(tab.isCloseable)
             window.contentManager.removeContent(tab, true)
-            assertNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
+            assertNull(window.contentManager.findContent("Worker 1"))
             hear(RunSession("ed-3", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), unread.copy(since = "2026-10-25T10:00:02.000Z")))))
-            waitFor("the paused page again") { window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE) }
+            waitFor("the paused page again") { window.contentManager.findContent("Worker 1") }
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }
     }
 
     /**
+     * The Worker tab offers Interact at a stop of its slot that takes input, once its watch is accepted, as the Paused
+     * page tab does, with the stop's controls; not while the worker runs, nor at a stop that takes none.
+     */
+    /**
+     * One page per worker: once the Worker tab's watch of a slot is accepted, it takes the slot's headless stop from the
+     * Paused page tab, which closes; Watch off gives the stop back to the Paused page tab.
+     */
+    fun testTheWorkerTabTakesItsSlotsStopFromThePausedPageAndGivesItBackAsWatchGoesOff() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        sessions.inSight = { true }
+        try {
+            val spec = file("tests/coupon.spec.ts", coupon)
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:11.000Z")
+            hear(RunSession("ed-12", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, watchable = true))))
+            waitFor("the paused page") { sessions.shown().pageTab }
+            sessions.showWorker("ed-12", 0)
+            waitFor("the watch") { lanes.lastOrNull()?.takeIf { it.ref == "ed-12" && it.on } }
+            waitFor("the stop taken") { sessions.shown().takeIf { it.pageTab == null } }
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
+            val worker = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            UIUtil.findComponentsOfType(worker, JToggleButton::class.java).single { it.text == "Watch" }.doClick()
+            waitFor("the stop given back") { sessions.shown().pageTab }
+        } finally {
+            sessions.inSight = { it.isShowing }
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    fun testTheWorkerTabOffersInteractAtAStopThatTakesInput() {
+        val spec = file("tests/coupon.spec.ts", coupon)
+        hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "running", test(), watchable = true))))
+        watched("ed-8", 0) { window ->
+            assertFalse(sessions.shown().workerInteract)
+            assertEquals(emptyList<String>(), sessions.shown().workerControls)
+            val input = listOf("view", "input")
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:09.000Z")
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, watchable = true, takes = input))))
+            assertTrue(sessions.shown().workerInteract)
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val interact = UIUtil.findComponentsOfType(panel, JToggleButton::class.java).single { it.text == "Interact" }
+            interact.doClick()
+            assertTrue(panel.interacting)
+            // Carried to the slot's next stop that takes input, Interact is on for it: going off gives that one back.
+            val next = stop.copy(since = "2026-10-25T10:00:10.000Z")
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), next, watchable = true, takes = input))))
+            assertTrue(panel.interacting)
+            interact.doClick()
+            assertEquals(DriveStopParams("ed-8", 0, next.since!!, false), waitFor("the next stop given back") { drives.lastOrNull() })
+            // At a stop that takes none, it goes off, giving back the stop it was on for, and is offered no more.
+            interact.doClick()
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop.copy(since = "2026-10-25T10:00:11.000Z"), watchable = true))))
+            assertFalse(panel.interacting)
+            assertFalse(sessions.shown().workerInteract)
+            waitFor("the stop given back again") { drives.takeIf { it.size == 2 } }
+            assertEquals(DriveStopParams("ed-8", 0, next.since!!, false), drives.last())
+        }
+    }
+
+    /**
      * Watch a worker's test opens the Worker tab on a worker whose reporter shows its running test, its caption following
-     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused page, selected
-     * while the tool window does not show, and the run's end turns Watch off.
+     * the worker through its stop and the run's end; a headless stop of its worker out of sight opens the Paused page
+     * tab, selected while the tool window does not show, and the run's end turns Watch off.
      */
     fun testAWorkersTestIsWatchedInTheWorkerTab() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
@@ -1183,12 +1247,14 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
             hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop, watchable = true))))
             assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
+            // Out of sight, the Worker tab shows the stop with the stopped line's row, and the Paused page tab, named
+            // after the worker too, takes it, selected while the tool window does not show. The Worker tab in sight
+            // keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
             waitFor("the paused page asked") { pages.lastOrNull()?.takeIf { it.ref == "ed-7" } }
-            assertNotNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
-            // The headless tool window never shows, so nobody sees the Worker tab: the Paused page is selected. The
-            // Worker tab in sight keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
+            assertEquals("Worker 2", sessions.shown().pageTab)
             assertFalse(window.isVisible)
-            assertEquals(PiwiRunSessions.PAUSED_PAGE, sessions.shown().selectedTab)
+            assertEquals("Worker 2", sessions.shown().selectedTab)
             hear(RunSession("ed-7", ended = true))
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
             assertFalse(sessions.shown().workerWatch)
@@ -1334,8 +1400,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val first = "2026-10-28T10:00:01.000Z"
             hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "stopped", test(), at(first), takes = live))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val interact = UIUtil.findComponentsOfType(panel, JCheckBox::class.java).single { it.text == "Interact" }
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val interact = UIUtil.findComponentsOfType(panel, JToggleButton::class.java).single { it.text == "Interact" }
             // A tool window out of sight watches no page: Watch on and the watch accepted are played here.
             panel.liveWanted = true
             panel.watching(true)
@@ -1400,8 +1466,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
             hear(RunSession("ed-10", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JToggleButton::class.java)
             val interact = boxes.single { it.text == "Interact" }
             boxes.single { it.text == "Watch" }.doClick()
             waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
@@ -1442,8 +1508,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
             hear(RunSession("ed-11", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JToggleButton::class.java)
             val live = boxes.single { it.text == "Watch" }
             val interact = boxes.single { it.text == "Interact" }
             val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }

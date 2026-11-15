@@ -40,5 +40,8 @@
   "hold.off.short": "Off",
   "hold.run.on": "Hold failures on: a failed test waits at its line{by}",
   "hold.run.off": "Hold failures off{by}",
-  "hold.run.by-agent": ", as an agent set it"
+  "hold.run.by-agent": ", as an agent set it",
+  "page.watch": "Watch",
+  "page.interact": "Interact",
+  "page.input-rule": "At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker’s next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator."
 }

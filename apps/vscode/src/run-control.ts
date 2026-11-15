@@ -2006,6 +2006,41 @@ export interface PausedPageView {
    * (`canOpenTrace`), off while an ask waits for the service's answer (`asking`); null or absent otherwise.
    */
   trace?: { asking: boolean } | null;
+  /**
+   * The stop's controls on the page, as the stopped line's row (`stopLensControls`): Resume, Step, Finish and Write
+   * code…, each a command run for the stop the page shows; `shown` tells a press on a page no longer shown apart.
+   */
+  controls?: { shown: number; items: StopControl[] } | null;
+}
+
+/**
+ * How input reaches a page, the same on every page that takes it: Interact sends clicks, scrolling and typing, the
+ * first driving the stop, and stays on for the worker's next stops while Watch is on.
+ */
+export const INPUT_RULE = editorWords('page.input-rule');
+
+/** Watch's glyph, the eye of Watch a worker's test, and Interact's, Piwi Picker's hand, drawn in the text's color. */
+const WATCH_GLYPH =
+  '<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.6 3 1.9 5.3 1 8c.9 2.7 3.6 5 7 5s6.1-2.3 7-5c-.9-2.7-3.6-5-7-5zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
+const INTERACT_GLYPH =
+  '<svg class="glyph line" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.25 13.25V5.75a1.5 1.5 0 0 1 3 0V11.25"/><path d="M11.25 10.75V4.25a1.5 1.5 0 0 1 3 0v6.5"/><path d="M14.25 10.75V5.75a1.5 1.5 0 0 1 3 0V13.25"/><path d="M17.25 9.75a1.5 1.5 0 0 1 3 0V14.25a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L4.25 14.85a1.6 1.6 0 0 1 2.5-2L8.25 14.75"/></svg>';
+
+/** A toggle of the page: a checkbox named by its words, drawn as a button with its glyph, pressed while checked. */
+function toggleHtml(
+  id: 'live' | 'interact',
+  words: string,
+  glyph: string,
+  attrs: { hidden?: boolean; disabled?: boolean },
+) {
+  return `<label class="toggle"${attrs.hidden ? ' hidden' : ''}><input id="${id}" type="checkbox"${attrs.disabled ? ' disabled' : ''} aria-label="${words}">${glyph}<span>${words}</span></label>`;
+}
+
+/** The stop's controls on the page: a toolbar of buttons, empty and hidden away from a stop. */
+function controlsHtml(controls: PausedPageView['controls']): string {
+  const items = controls?.items ?? [];
+  return `<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls"${items.length ? '' : ' hidden'}>${items
+    .map((c) => `<button type="button" data-command="${escapeHtml(c.command)}">${escapeHtml(c.title)}</button>`)
+    .join('')}</div>`;
 }
 
 /** What **Open the trace so far** says it does, as its tooltip. */
@@ -2193,24 +2228,26 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
   const pick = src && view.pick ? view.pick : null;
   const live = view.live && scriptUri ? view.live : null;
   const layers = live && view.lane ? (view.layers ?? { text: false, filmstrip: false, note: null }) : null;
-  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live ? `; script-src 'nonce-${nonce}'` : ''}`;
+  const controls = view.controls?.items.length ? view.controls : null;
+  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live || controls ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}.glyph.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.ci
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label hidden><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
+        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
         : view.lane
-          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label><button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-          : `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+          ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { disabled: true })}<button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
+          : `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: !live.input, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of this stopped test as it changes. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
       : '',
+    controlsHtml(view.controls),
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live
       ? '<p id="note" class="note" role="status"></p>'
@@ -2225,8 +2262,16 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     layers ? layersHtml(layers) : '',
     live
       ? `<script nonce="${nonce}" src="${escapeHtml(scriptUri!)}"></script>`
-      : pick
-        ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+      : pick || controls
+        ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();${
+            pick
+              ? `const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));`
+              : ''
+          }${
+            controls
+              ? `document.getElementById('controls').addEventListener('click',(e)=>{const b=e.target.closest('button[data-command]');if(b)vscode.postMessage({type:'control',command:b.dataset.command,shown:${controls.shown}});});`
+              : ''
+          }</script>`
         : '',
     '</body>',
     '</html>',

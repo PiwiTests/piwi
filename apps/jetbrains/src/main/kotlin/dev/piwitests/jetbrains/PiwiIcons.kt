@@ -31,6 +31,9 @@ object PiwiIcons {
      * Piwi's mark, the tool window's, the status item's, a notification's and the language server widget's: the filled
      * one in the classic UI, the outline one in the New UI (`PiwiIconMappings.json`).
      */
+    /** Interact, the hand of Piwi Picker's and the desktop app's Interact, on a worker's page. */
+    val INTERACT: Icon = IconLoader.getIcon("/icons/interact.svg", PiwiIcons::class.java)
+
     val PIWI: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiIcons::class.java)
 
     /** The mark with a red dot, the tool window's while tests fail. */

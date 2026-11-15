@@ -388,7 +388,7 @@ const SCENES = {
   async 'run-control-paused-page'(page, workspace) {
     const image = await pageImage(checkoutPage({ coupon: 'MORNING10' }));
     await stopAt(page, workspace, APPLY_STOP, image);
-    await page.locator('.tab', { hasText: 'Piwi: paused page' }).first().waitFor({ timeout: 30_000 });
+    await page.locator('.tab', { hasText: 'Piwi: worker 1' }).first().waitFor({ timeout: 30_000 });
     await page.frameLocator('iframe.webview').frameLocator('#active-frame').locator('img').waitFor({ timeout: 30_000 });
     // The editor and the page side by side, across the window.
     await showPanel(page, false);

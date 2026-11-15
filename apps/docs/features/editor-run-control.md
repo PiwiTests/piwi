@@ -77,23 +77,22 @@ The run's code is your files as they stood when it started. The mark follows lin
 ## A headless run
 
 A run Piwi starts follows your config, headless by default, unless you turn
-[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
-Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to the cursor** from the editor
-waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
-opens it at any stop.
+[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens its worker's page (`Piwi: worker 1` beside VS Code's editor, the JetBrains tool window's
+**Worker 1** tab) with the line's controls, unless that worker's [watch](./watch-running-test) shows it. It keeps its
+stop until it goes on, after a **Step** or **Run to the cursor** from the editor waits up to 10 seconds for the next,
+and **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**) opens it at any stop.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
+  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: worker 1 tab showing the cart page with the coupon typed in">
   <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
 </figure>
 
 Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: it replaces the
 stopped line's, and the tab shows the result or refusal.
 
-**Watch** updates the paused page until you hide or close the tab, resume or switch stops, and
+**Watch** updates the page until you hide or close the tab, resume or switch stops, and
 [**Interact**](./watch-running-test#interact) plays your input on it, taking the stop.
-The preview uses the editor's connection: no Piwi Picker, pairing, live-view setting or port forwarding. Older reporters
-keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
+It needs no Piwi Picker ([remote development](/guide/remote-development)), and older reporters keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
 
 ## Share with Playwright tools
 

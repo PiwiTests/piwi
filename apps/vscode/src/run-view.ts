@@ -154,7 +154,7 @@ import {
   runPageTarget,
 } from './run-control';
 import { placesOf } from './breakpoints';
-import { createWorkerPanel } from './worker-panel';
+import { createWorkerPanel, workerPageIcon } from './worker-panel';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
@@ -281,7 +281,23 @@ export function registerRunControl(
   const acted = (stop: ShownStop) => {
     if (stopsShown.acted(stop)) changed();
   };
-  const workerPanel = createWorkerPanel(context, lc, { acted, changed: () => changed() });
+  /**
+   * One page per worker: once the worker panel watches a slot, it takes the headless stop of that slot the paused page
+   * shows, the paused page closing with its Watch kept for its next stop.
+   */
+  const takeSlot = (ref: string, lane: number) => {
+    const stop = pageShows;
+    if (!panel || !stop || stop.ref !== ref || stop.slot !== lane || stop.stop.bar) return;
+    const keep = wantLive;
+    panel.dispose();
+    wantLive = keep;
+    changed();
+  };
+  const workerPanel = createWorkerPanel(context, lc, {
+    acted,
+    changed: () => changed(),
+    watching: (ref, lane) => takeSlot(ref, lane),
+  });
   let page: PausedPageView | null = null;
   /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
@@ -513,7 +529,10 @@ export function registerRunControl(
   const actingOnPage = () => !!pageStop && !!stops().find((s) => stopKey(s) === pageStop)?.stop.acting;
 
   const showPage = (shown: PausedPageView) => {
-    const view = { ...shown, acting: actingOnPage() };
+    // The stop's controls while the page shows a stop, named by the view they were drawn for.
+    const stop = pageShows;
+    const controls = stop ? { shown: shown.live?.shown ?? pickable, items: stopLensControls(stop) } : null;
+    const view = { ...shown, acting: actingOnPage(), controls };
     const same = view.live && page?.live?.shown === view.live.shown;
     page = view;
     if (!panel) return;
@@ -581,6 +600,7 @@ export function registerRunControl(
 
   const pageMessage = async (message: unknown) => {
     const m = message as Record<string, unknown> | null;
+    if (m?.type === 'control') return void pageControl(m);
     if (!m || !page?.live || m.shown !== page.live.shown) return void pickOnPage(message);
     if (m.type === 'ready') return void panel?.webview.postMessage({ type: 'state', view: page });
     if (m.type === 'view' && typeof m.on === 'boolean') {
@@ -619,6 +639,14 @@ export function registerRunControl(
       showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
+  /** A control pressed on the paused page: its command, among the stop's, run for the stop the page shows. */
+  const pageControl = async (m: Record<string, unknown>) => {
+    const stop = pageShows;
+    const item = page?.controls?.items.find((c) => c.command === m.command);
+    if (!stop || !item || m.shown !== page?.controls?.shown) return;
+    await vscode.commands.executeCommand(item.command, targetOf(stop));
+  };
+
   /**
    * The page of a stop in the paused page view, opened beside the editor without focus, asked of its worker. The view
    * uses the stop's live-view capability when offered, with a still image for every reporter.
@@ -636,10 +664,11 @@ export function registerRunControl(
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         'piwi.pausedPage',
-        'Piwi: paused page',
+        editorWords('worker.title', { n: stop.slot + 1 }),
         { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
         { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')] },
       );
+      panel.iconPath = workerPageIcon(context.extensionUri);
       panel.webview.onDidReceiveMessage((message: unknown) => void pageMessage(message));
       let visible = panel.visible;
       panel.onDidChangeViewState(() => {
@@ -666,6 +695,8 @@ export function registerRunControl(
     } else if (!panel.visible) {
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
+    // One page per worker: the page is named after the worker of the stop it shows, as the worker panel is.
+    panel.title = editorWords('worker.title', { n: stop.slot + 1 });
     pageCaption = stopCaption(stop, sessions);
     const shown = ++pickable;
     const live = stop.takes.includes('view')
@@ -1439,6 +1470,8 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.showPage, async (arg?: unknown) => {
       const stop = await chooseStop(arg);
       if (stop === 'went-on') say('the test went on.');
+      // One page per worker: the worker panel in sight watching the stop's slot is its page already.
+      else if (stop && workerPanel.watches(stop.ref, stop.slot)) return;
       else if (stop) await openPage(stop);
       else say('no test is stopped.');
     }),
