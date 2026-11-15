@@ -89,7 +89,7 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
     const own = new OwnRunTests();
     const mug = runTest(MUG);
     own.heard('ed-1', 0, { type: 'test-begin', test: mug }, ROOT);
-    own.heard('ed-1', 0, { type: 'test-end', status: 'passed' }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'passed', ok: true }, ROOT);
     // While the run goes on, the test's line says how it ended.
     expect(own.stateOf(ROOT, SPEC, MUG, [session('ed-1', [worker(0, null)])])).toEqual({
       status: 'passed',
@@ -108,11 +108,22 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
     expect(own.stateOf(ROOT, SPEC, MUG, [])).toBeUndefined();
   });
 
+  test('a test marked to fail passes by failing, and fails by passing', () => {
+    const own = new OwnRunTests();
+    own.heard('ed-1', 0, { type: 'test-begin', test: runTest(MUG, 'chromium') }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'failed', ok: true }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])?.status).toBe('passed');
+    // In another Playwright project it passes, unexpectedly: the test failed.
+    own.heard('ed-1', 1, { type: 'test-begin', test: runTest(MUG, 'firefox') }, ROOT);
+    own.heard('ed-1', 1, { type: 'test-end', status: 'passed', ok: false }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])?.status).toBe('failed');
+  });
+
   test('a result over the Playwright projects, the last attempt’s, an interrupted one leaving the one before', () => {
     const own = new OwnRunTests();
     const end = (worker: number, test: RunTest, status: string) => {
       own.heard('ed-1', worker, { type: 'test-begin', test }, ROOT);
-      own.heard('ed-1', worker, { type: 'test-end', status }, ROOT);
+      own.heard('ed-1', worker, { type: 'test-end', status, ok: status === 'passed' }, ROOT);
     };
     end(0, runTest(MUG, 'chromium'), 'failed');
     // Its retry passes.
@@ -133,10 +144,10 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
   test('the newest run’s result first, and the kept results gone with a newer latest run', () => {
     const own = new OwnRunTests();
     own.heard('ed-1', 0, { type: 'test-begin', test: runTest(MUG) }, ROOT);
-    own.heard('ed-1', 0, { type: 'test-end', status: 'passed' }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'passed', ok: true }, ROOT);
     // A second run of the config, while the first goes on, fails the test.
     own.heard('ed-2', 0, { type: 'test-begin', test: runTest(MUG) }, ROOT);
-    own.heard('ed-2', 0, { type: 'test-end', status: 'failed' }, ROOT);
+    own.heard('ed-2', 0, { type: 'test-end', status: 'failed', ok: false }, ROOT);
     expect(own.stateOf(ROOT, SPEC, MUG, [])).toMatchObject({ status: 'failed', ref: 'ed-2' });
     own.heard('ed-1', null, { type: 'ended' }, ROOT);
     own.heard('ed-2', null, { type: 'ended' }, ROOT);
@@ -160,7 +171,7 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
     const own = new OwnRunTests();
     own.sessionChanged(session('ed-1', [], { page: { id: 42, url: 'https://piwi.example.com/test-runs/42' } }));
     own.heard('ed-1', 0, { type: 'test-begin', test: runTest(MUG) }, ROOT);
-    own.heard('ed-1', 0, { type: 'test-end', status: 'failed' }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'failed', ok: false }, ROOT);
     expect(own.stateOf(ROOT, SPEC, MUG, [])).toBeUndefined();
     own.heard('ed-1', null, { type: 'ended' }, ROOT);
     expect(own.stateOf(ROOT, SPEC, MUG, [])).toBeUndefined();

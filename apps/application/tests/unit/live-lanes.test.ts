@@ -113,14 +113,15 @@ describe('RunLanes', () => {
     expect(lanes.lanesOf(7)[0]).toMatchObject({ state: 'between', done: 2, failed: 1 });
   });
 
-  test('a test.fail() attempt counts as the run counts it: failed as expected is a pass', () => {
+  test('a test.fail() attempt counts as the run stores it, its status already read against what it expected', () => {
+    // The reporter and the import store a `test.fail()` test that failed as `passed`, one that passed as `failed`.
     const lanes = new RunLanes();
-    const [failedAsExpected] = lanes.hear(7, completed('failed', { expectedStatus: 'failed' }));
+    const [failedAsExpected] = lanes.hear(7, completed('passed', { expectedStatus: 'failed' }));
     expect(failedAsExpected).toMatchObject({ done: 1, failed: 0 });
     const annotated = { title: 'refunds', testAnnotations: [{ type: 'fail' }] };
-    const [byAnnotation] = lanes.hear(7, completed('failed', annotated));
+    const [byAnnotation] = lanes.hear(7, completed('passed', annotated));
     expect(byAnnotation).toMatchObject({ done: 2, failed: 0 });
-    const [passedUnexpectedly] = lanes.hear(7, completed('passed', { title: 'voids', expectedStatus: 'failed' }));
+    const [passedUnexpectedly] = lanes.hear(7, completed('failed', { title: 'voids', expectedStatus: 'failed' }));
     expect(passedUnexpectedly).toMatchObject({ done: 3, failed: 1 });
   });
 

@@ -2339,21 +2339,36 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   });
 
   test('each attempt’s result from the run’s own events, a failure at its test’s line; none for one cut short', () => {
-    expect(attemptOutcome('passed', runTest())).toEqual({ state: 'passed' });
-    expect(attemptOutcome('skipped', runTest())).toEqual({ state: 'skipped' });
-    expect(attemptOutcome('failed', runTest())).toEqual({ state: 'failed', message: 'Failed in this run.', line: 2 });
-    expect(attemptOutcome('timedOut', runTest(1))).toEqual({
+    expect(attemptOutcome('passed', runTest(), true)).toEqual({ state: 'passed' });
+    expect(attemptOutcome('skipped', runTest(), false)).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('failed', runTest(), false)).toEqual({
+      state: 'failed',
+      message: 'Failed in this run.',
+      line: 2,
+    });
+    expect(attemptOutcome('timedOut', runTest(1), false)).toEqual({
       state: 'failed',
       message: 'Timed out in this run (attempt 2).',
       line: 2,
     });
-    expect(attemptOutcome('interrupted', runTest())).toBeNull();
+    // A worker that left: its test ended `interrupted`, with no `ok`, and leaves the result to the run's end.
+    expect(attemptOutcome('interrupted', runTest(), undefined)).toBeNull();
+    // A `test.fail()` test passes by failing and fails by passing, as the service reads it (`ok`).
+    expect(attemptOutcome('failed', runTest(), true)).toEqual({ state: 'passed' });
+    expect(attemptOutcome('passed', runTest(1), false)).toEqual({
+      state: 'failed',
+      message: 'Expected to fail, but passed in this run (attempt 2).',
+      line: 2,
+    });
+    // A skip and an interruption are what they are, whatever `ok` says.
+    expect(attemptOutcome('skipped', runTest(), true)).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('interrupted', runTest(), true)).toBeNull();
     // A test run in several projects fails when one of them failed it.
-    const failed = attemptOutcome('failed', runTest())!;
+    const failed = attemptOutcome('failed', runTest(), false)!;
     expect(combinedOutcome([failed, { state: 'passed' }])).toBe(failed);
     expect(combinedOutcome([{ state: 'skipped' }, { state: 'passed' }])).toEqual({ state: 'passed' });
     expect(combinedOutcome([{ state: 'skipped' }])).toEqual({ state: 'skipped' });
-    expect(attemptOutcome(undefined, runTest())).toBeNull();
+    expect(attemptOutcome(undefined, runTest(), undefined)).toBeNull();
   });
 });
 

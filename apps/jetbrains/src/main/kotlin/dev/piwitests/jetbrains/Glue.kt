@@ -3412,7 +3412,8 @@ object Glue {
      * The service messages (`##teamcity[…]`, by node id) that draw a run's tests in the IDE's test tree from its
      * `piwi/runTest` events: a suite per Playwright project, in it per spec file (by its path in the config's folder) and
      * per `describe` block, opened the first time a test of it begins; a node per attempt of a test, a retry named so,
-     * which the worker's next `test-end` ends with its status, an interrupted test as ignored. Not thread-safe: one
+     * which the worker's next `test-end` ends with its status, read against the one it was expected to end with (`ok`: a
+     * `test.fail()` test that failed passes, one that passed fails), an interrupted test as ignored. Not thread-safe: one
      * caller at a time.
      */
     class RunTestTree {
@@ -3427,13 +3428,13 @@ object Glue {
         fun lines(event: RunTestEvent): List<String> {
             if (event.type == "test-end") {
                 val node = running.remove(event.worker) ?: return emptyList()
-                return when (event.status) {
-                    "passed" -> listOf(message("testFinished", "nodeId" to node))
-                    "skipped" -> listOf(message("testIgnored", "nodeId" to node), message("testFinished", "nodeId" to node))
-                    "interrupted" -> listOf(
+                return when {
+                    event.status == "skipped" -> listOf(message("testIgnored", "nodeId" to node), message("testFinished", "nodeId" to node))
+                    event.status == "interrupted" -> listOf(
                         message("testIgnored", "nodeId" to node, "message" to "Interrupted"),
                         message("testFinished", "nodeId" to node),
                     )
+                    event.ok == true -> listOf(message("testFinished", "nodeId" to node))
                     else -> listOf(
                         message("testFailed", "nodeId" to node, "message" to failedWords(event.status)),
                         message("testFinished", "nodeId" to node),
@@ -3479,7 +3480,7 @@ object Glue {
 
         private fun failedWords(status: String?) = when (status) {
             "timedOut" -> "Timed out"
-            "interrupted" -> "Interrupted"
+            "passed" -> "Expected to fail, but passed"
             else -> "Failed"
         }
 

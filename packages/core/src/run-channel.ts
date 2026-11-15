@@ -552,8 +552,11 @@ export type RunToHub =
    * place, time or end signal) once it waits in none: between calls, or past the test's function.
    */
   | { type: 'waiting'; title: string | null; place: Place | null; ms: number | null; endable: boolean }
-  /** The test ended: its status as Playwright gives it, and how long it stood stopped. */
-  | { type: 'test-end'; testId: string; status: string; pausedMs: number }
+  /**
+   * The test ended: its status as Playwright gives it, how long it stood stopped, and the status it was expected to end
+   * with (Playwright's `expectedStatus`: `failed` for a `test.fail()` test), which an older reporter does not send.
+   */
+  | { type: 'test-end'; testId: string; status: string; pausedMs: number; expectedStatus?: string }
   /** The answer to a `request`: an image of the stopped page, null when there is none. */
   | { type: 'answer'; request: number; what: 'image'; value: PausedImage | null }
   /** The answer to an intent's `request`: whether it started in the test's window, or why not. */
@@ -1113,12 +1116,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       return { type: 'waiting', title: title.slice(0, MAX_WAITING_TITLE), place, ms, endable };
     }
     case 'test-end': {
-      const { testId, status, pausedMs } = value;
-      if (typeof testId !== 'string' || !testId || typeof status !== 'string' || !/^[a-zA-Z]{1,32}$/.test(status)) {
-        return null;
-      }
+      const { testId, status, pausedMs, expectedStatus } = value;
+      const isStatus = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z]{1,32}$/.test(s);
+      if (typeof testId !== 'string' || !testId || !isStatus(status)) return null;
       if (typeof pausedMs !== 'number' || !Number.isFinite(pausedMs) || pausedMs < 0) return null;
-      return { type: 'test-end', testId, status, pausedMs };
+      // An expected status it cannot read is left out: the status alone tells then.
+      return { type: 'test-end', testId, status, pausedMs, ...(isStatus(expectedStatus) ? { expectedStatus } : {}) };
     }
     case 'answer': {
       const { request, what, value: answered } = value;

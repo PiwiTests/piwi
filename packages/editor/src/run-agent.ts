@@ -820,7 +820,7 @@ export class RunAgent {
       case 'test-begin':
         return add('test-begin', { test: testOf(what.test, log.root) });
       case 'test-end':
-        return add('test-end', { status: what.status });
+        return add('test-end', { status: what.status, ok: what.ok });
       case 'stopped': {
         const stop = stopOf(what.stop, log.root);
         return add('stopped', stop.fields, stop.error ? { error: stop.error } : undefined);
@@ -1339,9 +1339,17 @@ export class RunAgent {
       return this.result({ ok: true, message: `${answer.message} The run ended.`, state: 'ended', next: came.seq });
     }
     if (came.kind === 'test-end') {
+      const status = String(came.fields.status);
+      // A `test.fail()` test passes by failing and fails by passing (`ok`).
+      const ended =
+        came.fields.ok === false && status === 'passed'
+          ? 'passed, though it is expected to fail'
+          : came.fields.ok === true && status === 'failed'
+            ? 'failed, as it is expected to'
+            : status;
       return this.result({
         ok: true,
-        message: `${answer.message} The test ended: ${String(came.fields.status)}.`,
+        message: `${answer.message} The test ended: ${ended}.`,
         state: this.state(now, log, ref),
         next: came.seq,
       });

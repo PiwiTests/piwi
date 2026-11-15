@@ -1686,8 +1686,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         relay.startNotify()
         handler.startNotify()
         trees.heard(begin(1, "b", "removes it"))
-        trees.heard(RunTestEvent("ed-tree", base.path, 0, "test-end", status = "passed"))
-        trees.heard(RunTestEvent("ed-tree", base.path, 1, "test-end", status = "failed"))
+        trees.heard(RunTestEvent("ed-tree", base.path, 0, "test-end", status = "passed", ok = true))
+        trees.heard(RunTestEvent("ed-tree", base.path, 1, "test-end", status = "failed", ok = false))
         handler.destroyProcess()
         val console = view as com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
         val root = console.resultsViewer.testsRootNode

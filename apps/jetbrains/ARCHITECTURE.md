@@ -616,7 +616,8 @@ test runner's (`SMTestRunnerConnectionUtil`, by node id): it reads a relay of th
 made as the process starts so it keeps the events heard before the tab shows, which passes the output on and writes
 between its lines the service messages `Glue.RunTestTree` makes of the run's `piwi/runTest` events
 (`PiwiRunTestTrees`, by ref), after `enteredTheMatrix`: a suite per Playwright project, spec (by its path in the
-config's folder) and `describe` block, a node per attempt, an interrupted test ignored, each test's location for the
+config's folder) and `describe` block, a node per attempt, passed or failed as the service reads its status against the one it was expected to end
+with (`ok`: a `test.fail()` test passes by failing), an interrupted test ignored, each test's location for the
 IDE's navigation (`FileUrlProvider`). Any other command's console is a text console. Such a run offers the IDE's
 Playwright runner once per installation (`offerRunner`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
 runner's runs as their process starts. The choosers name a run by `Glue.runTitle` (`Run #78 · checkout.spec.ts:12`),
