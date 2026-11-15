@@ -371,10 +371,15 @@ data class LiveRun(
     val branch: String? = null,
     /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
     val label: String? = null,
+    /** How many of its tests run much longer than they pass (`LiveTest.stuck`); null for none. */
+    val stuck: Int? = null,
 )
 
-/** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
-data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
+/**
+ * A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`; `stuck` what
+ * the instance said of a running attempt that runs much longer than it passes, while it is not stopped.
+ */
+data class LiveTest(val testCaseId: Int = 0, val status: String? = null, val stuck: String? = null)
 
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.

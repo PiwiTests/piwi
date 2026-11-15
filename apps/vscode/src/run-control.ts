@@ -2473,6 +2473,129 @@ export function ciLaneRedraws(
   return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
 }
 
+/**
+ * A row of the **Runs** view: a run in progress, one of its workers, or its page on the dashboard. It names its run
+ * (`ref`), and a worker its `worker` and the stop it stands at (`since`), so the run commands take it as their target
+ * (`runTargetArg`) from the view's menus; `kind` is the menus' `viewItem`.
+ */
+export interface RunNode {
+  key: string;
+  label: string;
+  description: string;
+  tooltip: string;
+  /** A codicon id. */
+  icon: string;
+  kind:
+    | 'run'
+    | 'run-elsewhere'
+    | 'worker-running'
+    | 'worker-watchable'
+    | 'worker-watch-only'
+    | 'worker-stopped'
+    | 'worker-held'
+    | 'worker-between'
+    | 'page';
+  ref: string;
+  worker?: number;
+  since?: string;
+  /** What a click opens: a place in a file, or a page on the dashboard; null for nothing. */
+  open: { uri: string; line: number; character: number } | { url: string } | null;
+  children: RunNode[];
+}
+
+/**
+ * The **Runs** view: each run in progress, newest first, named as the status bar names it, with how far it is, then
+ * each of its workers by its lane with its test and whether it stands stopped there or runs, and its page on the
+ * dashboard once its process names it. A run started in a terminal or a desktop app's job is stopped where it runs
+ * (`run-elsewhere`); a worker held at a failure takes Resume alone (`worker-held`), and one that cannot pause now is
+ * watched only (`worker-watch-only`).
+ */
+export function runNodes(sessions: Sessions): RunNode[] {
+  const live = [...sessions.values()].filter((s) => !s.ended);
+  return live.reverse().map((session): RunNode => {
+    const key = session.ref;
+    const progress = session.progress;
+    const howFar = session.starting
+      ? 'starting'
+      : progress
+        ? countWords(progress.done, progress.total, progress.failed, progress.flaky, progress.endedAtStop ?? 0)
+        : '';
+    const workers = [...session.workers]
+      .sort((a, b) => a.parallelIndex - b.parallelIndex)
+      .map((w): RunNode => {
+        const name = workerName(w.parallelIndex);
+        const test = w.test ? testTitle(w.test) : null;
+        const stop = w.stop ? stopsOf(new Map([[session.ref, session]])).find((s) => s.worker === w.worker) : undefined;
+        const kind =
+          w.state === 'stopped'
+            ? w.stop?.reason === 'failure'
+              ? 'worker-held'
+              : 'worker-stopped'
+            : w.state === 'between' || !test
+              ? 'worker-between'
+              : !w.watchable
+                ? 'worker-running'
+                : w.pausing || w.test?.cannotPause
+                  ? 'worker-watch-only'
+                  : 'worker-watchable';
+        const where = stop ? stopCaption(stop, sessions) : null;
+        return {
+          key: `${key}\n${w.parallelIndex}`,
+          label: name,
+          description: test
+            ? `${test}${w.state === 'stopped' ? ' · stopped' : w.pausing ? ' · pausing' : ''}`
+            : 'between tests',
+          tooltip: where ? `${name} · ${test}\n\n${where}` : test ? `${name} runs ${test}` : `${name} is between tests`,
+          icon:
+            kind === 'worker-held'
+              ? 'error'
+              : kind === 'worker-stopped'
+                ? 'debug-pause'
+                : kind === 'worker-between'
+                  ? 'circle-outline'
+                  : 'play-circle',
+          kind,
+          ref: session.ref,
+          worker: w.worker,
+          ...(w.stop ? { since: w.stop.since } : {}),
+          open: w.stop
+            ? { uri: w.stop.uri, line: w.stop.line, character: 0 }
+            : w.test
+              ? { uri: w.test.uri, line: w.test.line, character: 0 }
+              : null,
+          children: [],
+        };
+      });
+    const page: RunNode[] = session.page
+      ? [
+          {
+            key: `${key}\npage`,
+            label: `Open run #${session.page.id}`,
+            description: 'on the dashboard',
+            tooltip: `Open run #${session.page.id} on the dashboard: ${session.page.url}`,
+            icon: 'globe',
+            kind: 'page',
+            ref: session.ref,
+            open: { url: session.page.url },
+            children: [],
+          },
+        ]
+      : [];
+    const title = runTitle(session, live);
+    return {
+      key,
+      label: runLabel(session, live),
+      description: [howFar, session.label ?? ''].filter(Boolean).join(' · '),
+      tooltip: [title, howFar, session.hold ? holdText(session.hold) : ''].filter(Boolean).join('\n\n'),
+      icon: 'loading~spin',
+      kind: session.terminal || session.checkout ? 'run-elsewhere' : 'run',
+      ref: session.ref,
+      open: null,
+      children: [...workers, ...page],
+    };
+  });
+}
+
 /** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 export interface CiNode {
   key: string;

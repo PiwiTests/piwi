@@ -356,14 +356,22 @@ object Glue {
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
     /**
-     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own, or
-     * who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
+     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours` for the
+     * editor's own, or who started it when a person did not (` · Started by Claude Code`); another's names its branch
+     * (`CI run #130 on feature-x`), as VS Code's `liveText`.
      */
-    private fun liveText(live: LiveRun): String {
-        val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" +
-            if (live.own) " · ${live.label ?: "yours"}" else ""
+    private fun liveText(live: LiveRun): String =
+        "Piwi: ${othersRun(live, "run")} · ${liveCount(live)}" + if (live.own) " · ${live.label ?: "yours"}" else ""
+
+    /** A run in progress the editor did not start, as both status lines name it: `CI run #130 on feature-x`. */
+    private fun othersRun(live: LiveRun, run: String): String {
+        val named = "${if (live.ci) "CI ${run.lowercase()}" else run} #${live.runId}"
+        return if (live.own || live.branch == null) named else "$named on ${live.branch}"
     }
+
+    /** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
+    private fun liveCount(live: LiveRun): String =
+        countWords(live.done, live.total, live.failed) + if ((live.stuck ?: 0) > 0) " · ${live.stuck} stuck?" else ""
 
     /**
      * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a
@@ -398,10 +406,9 @@ object Glue {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            live.ci -> "CI run #${live.runId}"
-            else -> "Run #${live.runId}"
+            else -> othersRun(live, "Run")
         }
-        return "\n$run is running: ${countWords(live.done, live.total, live.failed)}"
+        return "\n$run is running: ${liveCount(live)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -2596,6 +2603,83 @@ object Glue {
                     val run = if (runs.size > 1) "${runTitle(session, runs)} · " else ""
                     WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $run$doing")
                 }
+        }
+    }
+
+    /**
+     * A row of the Runs tab, as VS Code's Runs view has it (`runNodes`): a run in progress (`run`, `run-elsewhere` for one
+     * started in a terminal or a desktop app's job, stopped where it runs), one of its workers (`worker-running`,
+     * `worker-watchable`, `worker-watch-only` for a test that cannot pause now, `worker-stopped`, `worker-held` at a
+     * failure, which takes Resume alone, `worker-between`) with its watch target and stop, or its page (`page`). A row
+     * opens its stop's line, its test's, or the page.
+     */
+    data class RunRow(
+        val key: String,
+        val kind: String,
+        val text: String,
+        val detail: String,
+        val ref: String,
+        val worker: WatchTarget? = null,
+        val stop: ShownStop? = null,
+        val uri: String? = null,
+        val line: Int = 0,
+        val url: String? = null,
+    )
+
+    /**
+     * The Runs tab: each run in progress, newest first, named as the status bar names it with how far it is, then each
+     * of its workers by its lane with its test and whether it stands stopped, and its page on the dashboard once its
+     * process names it, as VS Code's `runNodes`.
+     */
+    fun runRows(sessions: Map<String, RunSession>): List<RunRow> {
+        val live = sessions.values.filter { !it.ended }
+        val stops = stopsOf(sessions)
+        return live.reversed().flatMap { session ->
+            val ref = session.ref ?: ""
+            val progress = session.progress
+            val howFar = when {
+                session.starting -> "starting"
+                progress != null -> countWords(progress.done, progress.total, progress.failed, progress.flaky, progress.endedAtStop ?: 0)
+                else -> ""
+            }
+            val run = RunRow(
+                key = ref,
+                kind = if (session.terminal || session.checkout != null) "run-elsewhere" else "run",
+                text = runLabel(session, live),
+                detail = listOf(howFar, session.label.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
+                ref = ref,
+            )
+            val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }
+                val kind = when {
+                    w.state == "stopped" -> if (w.stop?.let(::isFailure) == true) "worker-held" else "worker-stopped"
+                    w.state == "between" || test == null -> "worker-between"
+                    !w.watchable -> "worker-running"
+                    w.pausing || w.test?.cannotPause != null -> "worker-watch-only"
+                    else -> "worker-watchable"
+                }
+                val stop = stops.firstOrNull { it.ref == ref && it.worker == w.worker }
+                RunRow(
+                    key = "$ref\n${w.parallelIndex}",
+                    kind = kind,
+                    text = workerName(w.parallelIndex),
+                    detail = when {
+                        test == null -> "between tests"
+                        w.state == "stopped" -> "$test · stopped"
+                        w.pausing -> "$test · pausing"
+                        else -> test
+                    },
+                    ref = ref,
+                    worker = WatchTarget(ref, w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · ${test ?: "between tests"}"),
+                    stop = stop,
+                    uri = w.stop?.uri ?: w.test?.uri,
+                    line = w.stop?.line ?: w.test?.line ?: 0,
+                )
+            }
+            val page = session.page?.let {
+                listOf(RunRow("$ref\npage", "page", "Open run #${it.id}", "on the dashboard", ref, url = it.url))
+            }.orEmpty()
+            listOf(run) + workers + page
         }
     }
 

@@ -400,6 +400,18 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // Another's run names its branch, the developer's own the short form.
+        val ci = Glue.statusView(connected, live(failed, inProgress.copy(own = false, ci = true, failed = 0, branch = "feature-x")))
+        assertEquals("Piwi: CI run #124 on feature-x · 4 of 9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 on feature-x is running: 4 of 9\n"))
+        assertEquals(
+            "Piwi: run #124 · 4 of 9 · 1 failed · yours",
+            Glue.statusView(connected, live(failed, inProgress.copy(branch = "feature-x"))).text,
+        )
+        // A test that may be stuck counts beside the run's results.
+        val stuck = Glue.statusView(connected, live(failed, inProgress.copy(stuck = 1)))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours", stuck.text)
+        assertEquals(true, stuck.tooltip.contains("\nYour run #124 is running: 4 of 9 · 1 failed · 1 stuck?\n"))
         // An agent's run is never the person's own.
         val agent = Glue.statusView(connected, live(failed, inProgress.copy(label = "Started by Claude Code")))
         assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code", agent.text)
@@ -991,6 +1003,55 @@ class GlueTest {
             "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow are not shared.",
             Glue.stopSharingQuestion(null),
         )
+    }
+
+    @Test
+    fun `the Runs tab lists each run in progress, its workers by lane with their tests, and its page`() {
+        val run = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 4), watchable = true),
+            RunWorker(0, 0, "running", runTest(), watchable = true),
+            RunWorker(2, 2, "between"),
+        ).copy(
+            page = RunPage(124, "https://piwi.test/test-runs/124"),
+            progress = RunProgress(total = 9, done = 4, failed = 1),
+        )
+        val sessions = mapOf(
+            "ed-1" to run,
+            "terminal-1" to session("terminal-1").copy(terminal = true),
+            "ended" to session("ended").copy(ended = true),
+        )
+        val rows = Glue.runRows(sessions)
+        assertEquals(
+            listOf(
+                listOf("run-elsewhere", "terminal-1"),
+                listOf("run", "Run #124", "4 of 9 · 1 failed"),
+                listOf("worker-watchable", "Worker 1", "checkout › pays"),
+                listOf("worker-stopped", "Worker 2", "checkout › pays · stopped"),
+                listOf("worker-between", "Worker 3", "between tests"),
+                listOf("page", "Open run #124", "on the dashboard"),
+            ),
+            rows.map { r -> if (r.kind == "run-elsewhere") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
+        )
+        // A stopped worker names its stop and opens its line, a running one its test's, the page the dashboard.
+        assertEquals(4, rows[3].line)
+        assertEquals(Glue.stopsOf(sessions).single().stop.since, rows[3].stop?.stop?.since)
+        assertEquals(2, rows[2].line)
+        assertEquals(1, rows[3].worker?.worker)
+        assertEquals("https://piwi.test/test-runs/124", rows[5].url)
+    }
+
+    @Test
+    fun `the Runs tab offers Resume alone at a failure, Watch alone on a test that cannot pause, Stop on the IDE's own runs`() {
+        val held = RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 4).copy(reason = "failure"), watchable = true)
+        val pausing = RunWorker(1, 1, "running", runTest(), watchable = true, pausing = true)
+        val rows = Glue.runRows(
+            mapOf(
+                "ed-1" to session("ed-1", held, pausing),
+                "desktop-1" to session("desktop-1").copy(checkout = RunCheckout("abc1234")),
+            ),
+        )
+        assertEquals(listOf("run-elsewhere", "run", "worker-held", "worker-watch-only"), rows.map { it.kind })
     }
 
     @Test

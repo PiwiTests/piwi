@@ -53,6 +53,42 @@ const MAX_CI_FOLLOWED = 200;
 
 const LIVE_ORDER: LiveTestStatus[] = ['running', 'failed', 'flaky', 'passed', 'skipped'];
 
+/**
+ * An attempt of the live run that runs now: its test, its retry, whether it stands stopped, and what the instance said
+ * if stuck.
+ */
+interface RunningAttempt {
+  testCaseId: number;
+  retry: number;
+  stopped: boolean;
+  stuck: { elapsedMs: number; usualMs: number } | null;
+}
+
+/**
+ * An attempt as the run's stream names it in every event about it (`test-begin`, `test-stuck`, `test-stopped`,
+ * `test-resumed`, `test-completed`): its title, place, browser and repetition. A retry is the same attempt again.
+ */
+function attemptKey(data: Record<string, unknown>): string {
+  const repeat = typeof data.repeatEachIndex === 'number' ? data.repeatEachIndex : 0;
+  return [data.title, data.location, data.browser ?? '', repeat].map((part) => String(part ?? '')).join('\n');
+}
+
+/** A time as the stuck words say it, rounded down (`over`) or to the nearest: `40 s`, `4 min`. */
+function stuckTime(ms: number, round: (n: number) => number): string {
+  return ms < 60_000 ? `${Math.max(1, round(ms / 1000))} s` : `${round(ms / 60_000)} min`;
+}
+
+/** What a test's line and the Testing view say of a stuck attempt: `Stuck? running over 4 min, usually 40 s`. */
+export function stuckWords(stuck: { elapsedMs: number; usualMs: number }): string {
+  return `Stuck? running over ${stuckTime(stuck.elapsedMs, Math.floor)}, usually ${stuckTime(stuck.usualMs, Math.round)}`;
+}
+
+/** What the instance said of an attempt that may be stuck, as an event or its begin payload carries it; else null. */
+function stuckOf(value: unknown): { elapsedMs: number; usualMs: number } | null {
+  const { elapsedMs, usualMs } = (value ?? {}) as { elapsedMs?: unknown; usualMs?: unknown };
+  return typeof elapsedMs === 'number' && typeof usualMs === 'number' ? { elapsedMs, usualMs } : null;
+}
+
 /** A ref for a run the editor starts: `ed-` and 8 random hexadecimal characters. */
 export function newRunRef(): string {
   return `ed-${randomBytes(4).toString('hex')}`;
@@ -455,6 +491,8 @@ export class RunWatch {
   private readonly settling = new Map<PiwiContext, { timer: ReturnType<typeof setTimeout>; ended: Set<number> }>();
   /** The results of the live run's tests, per test and Playwright project, which make `liveTests`. */
   private readonly attempts = new Map<PiwiContext, Map<number, Map<string, LiveTestStatus>>>();
+  /** The live run's attempts that run now, by `attemptKey`, which make `liveStuck`. */
+  private readonly running = new Map<PiwiContext, Map<string, RunningAttempt>>();
   /** The runs of the editor's own whose verdict was said, by instance. */
   private readonly told = new Set<string>();
   /**
@@ -863,6 +901,9 @@ export class RunWatch {
     const status = typeof event.data.status === 'string' ? event.data.status : null;
     const counts = countsOf(event.data);
     if (event.type === 'test-begin' || event.type === 'test-completed') void this.testEvent(context, runId, event);
+    if (event.type === 'test-stuck' || event.type === 'test-stopped' || event.type === 'test-resumed') {
+      this.attemptEvent(context, event);
+    }
     if (event.type === 'test-completed') this.tally(context, runId, event.data);
     if (counts) {
       if (followed.countsTimer) clearTimeout(followed.countsTimer);
@@ -902,7 +943,45 @@ export class RunWatch {
       id,
       LIVE_ORDER.find((s) => states.has(s))!,
     );
+    const running = this.running.get(context) ?? this.running.set(context, new Map()).get(context)!;
+    const key = attemptKey(event.data);
+    const retry = typeof event.data.retries === 'number' ? event.data.retries : 0;
+    // A begin the stream's catch-up replays carries what the instance said of the attempt since: its stop, if stuck.
+    if (status === 'running') {
+      running.set(key, { testCaseId: id, retry, stopped: !!event.data.stop, stuck: stuckOf(event.data.stuck) });
+    } else if ((running.get(key)?.retry ?? 0) <= retry) running.delete(key);
+    this.stuckChanged(context);
     this.progress();
+  }
+
+  /**
+   * The instance said an attempt of the live run may be stuck (`test-stuck`, once per attempt), or that it stopped or
+   * went on: an attempt is stuck only while it runs, never while it stands stopped.
+   */
+  private attemptEvent(context: PiwiContext, event: RunEvent): void {
+    const attempt = this.running.get(context)?.get(attemptKey(event.data));
+    if (!attempt) return;
+    if (event.type === 'test-stopped') attempt.stopped = true;
+    else if (event.type === 'test-resumed') attempt.stopped = false;
+    else {
+      const stuck = stuckOf(event.data);
+      if (!stuck) return;
+      attempt.stuck = stuck;
+    }
+    this.stuckChanged(context);
+    this.progress();
+  }
+
+  /** `liveStuck` from the attempts that run now: each test's longest stuck attempt that is not stopped. */
+  private stuckChanged(context: PiwiContext): void {
+    const longest = new Map<number, { elapsedMs: number; usualMs: number }>();
+    for (const attempt of this.running.get(context)?.values() ?? []) {
+      if (!attempt.stuck || attempt.stopped) continue;
+      const held = longest.get(attempt.testCaseId);
+      if (!held || attempt.stuck.elapsedMs > held.elapsedMs) longest.set(attempt.testCaseId, attempt.stuck);
+    }
+    if (!longest.size && !context.liveStuck.size) return;
+    context.liveStuck = new Map([...longest].map(([id, stuck]) => [id, stuckWords(stuck)]));
   }
 
   /**
@@ -925,7 +1004,9 @@ export class RunWatch {
   /** The context's tests show the latest run's results again. */
   private clearTests(context: PiwiContext): void {
     this.attempts.delete(context);
+    this.running.delete(context);
     if (context.liveTests.size) context.liveTests = new Map();
+    if (context.liveStuck.size) context.liveStuck = new Map();
   }
 
   /** The counts after a test's end, from the run's details when no event brings them, at most every 5 s. */

@@ -101,6 +101,10 @@ interface Followed {
   profile: ProfileRun | null;
   /** The last result of each test the run began or ended, by its id. */
   results: Map<number, LiveTestStatus>;
+  /** What the instance said of each test that may be stuck while it runs (`LiveTest.stuck`), by its id. */
+  stuck: Map<number, string>;
+  /** The stuck words each item was told in the run's output, once each. */
+  toldStuck: Map<vscode.TestItem, string>;
   /** The state each item was last shown in. */
   shown: Map<vscode.TestItem, string>;
   /** The editor's own run: its tests show as running; another run's show their results alone. */
@@ -224,7 +228,11 @@ export class TestExplorer implements vscode.Disposable {
       }
       if (!c.live) continue;
       followed ??= this.follow(c.root, c.live);
-      for (const t of c.liveTests ?? []) followed.results.set(t.testCaseId, t.status);
+      followed.stuck.clear();
+      for (const t of c.liveTests ?? []) {
+        followed.results.set(t.testCaseId, t.status);
+        if (t.stuck) followed.stuck.set(t.testCaseId, t.stuck);
+      }
       this.progress(followed);
     }
     if (!ended.length && !full && resultsKey(runs) === this.published) return;
@@ -447,6 +455,8 @@ export class TestExplorer implements vscode.Disposable {
       run,
       profile,
       results: new Map(),
+      stuck: new Map(),
+      toldStuck: new Map(),
       shown: new Map(),
       own: live.own,
       ref: live.ref ?? null,
@@ -517,6 +527,21 @@ export class TestExplorer implements vscode.Disposable {
             ? { state: 'failed' as const, message: `Failed in run #${followed.runId}.`, line: null }
             : testOutcome(status, null);
         if (outcome) this.show(followed.run, item, outcome);
+      }
+    }
+    // A test of the editor's own run that may be stuck says so in the run's output, at its line, once.
+    if (!followed.own) return;
+    // A test no longer stuck may be told again, once its next attempt is.
+    for (const item of followed.toldStuck.keys()) {
+      if (!followed.stuck.has(this.testOf.get(item)?.testCaseId ?? -1)) followed.toldStuck.delete(item);
+    }
+    for (const [id, words] of followed.stuck) {
+      for (const item of this.byCase.get(id) ?? []) {
+        if (followed.profile && !followed.profile.tests.has(item)) continue;
+        if (followed.toldStuck.get(item) === words) continue;
+        followed.toldStuck.set(item, words);
+        const at = item.uri && item.range ? new vscode.Location(item.uri, item.range.start) : undefined;
+        followed.run.appendOutput(`${item.label}: ${words}, in run #${followed.runId}\r\n`, at, item);
       }
     }
   }

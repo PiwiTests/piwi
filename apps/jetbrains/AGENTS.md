@@ -201,7 +201,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
 - **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
-  is about (`STOP`, `TEST_LINE`, `RECORD_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
+  is about (`STOP`, `RUN`, `WORKER`, `TEST_LINE`, `RECORD_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
   gets an id in D25.
 - **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
   on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`
@@ -252,7 +252,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiProjectService.kt`: one project's state: the pushed answers, the configs found, the credentials, the settings.
 - `Protocol.kt`: the protocol for lsp4j. `Glue.kt`: the pure half.
 - `PiwiTestAnnotator.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor shows on a file.
-- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`: the **Piwi** tool window and the status bar item.
+- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiRunsTab.kt`: the **Piwi** tool window, the status bar item, and
+  the tool window's **Runs** tab.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused

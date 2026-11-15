@@ -158,6 +158,7 @@ import {
 } from './run-control';
 import { placesOf } from './breakpoints';
 import { createWorkerPanel, workerPageIcon } from './worker-panel';
+import { registerRunsView } from './runs-view';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
@@ -238,6 +239,7 @@ export function registerRunControl(
   options: RunControlOptions,
 ): RunControl {
   let sessions = new Map<string, RunSession>();
+  const runsView = registerRunsView();
   /** What each run was given of the breakpoints, and where the edits are mapped from for it, by ref. */
   const runs = new Map<string, RunBreakpoints>();
   /** The runs started here that no worker connected for yet, until they do or a while passes. */
@@ -834,6 +836,7 @@ export function registerRunControl(
     wakeWhenWaited();
     for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
     workerPanel.changed(sessions, now);
+    runsView.changed(sessions);
     if (show.page) void openPage(show.page);
     else if (panel && pageStop && !keys.has(pageStop)) {
       stopPageView();
@@ -1382,6 +1385,7 @@ export function registerRunControl(
   };
 
   const disposables: vscode.Disposable[] = [
+    runsView,
     {
       dispose: () => {
         stopPageView();

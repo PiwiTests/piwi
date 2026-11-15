@@ -703,6 +703,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * event thread.
      */
     private fun draw() {
+        project.service<PiwiRunsTab>().changed(sessions)
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
@@ -2528,8 +2529,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** The stop a popup's actions act on, which the registered controls and code actions read before the caret. */
         val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
 
-        /** The run a control acts on, the Run tab's: its stops alone. */
+        /** The run a control acts on, the Run tab's: its stops alone; the run Stop the run ends, the Runs tab's row's. */
         val RUN: DataKey<String> = DataKey.create("piwi.run")
+
+        /** The worker Watch and Pause and watch act on, a Runs tab's row's, rather than one chosen. */
+        val WORKER: DataKey<Glue.WatchTarget> = DataKey.create("piwi.worker")
 
         /** Each control's registered action. */
         val CONTROL_IDS = mapOf(
@@ -3726,6 +3730,7 @@ class StopRunAction : RunControlAction() {
         val stop = { ref: String ->
             if (!sessions.stopRun(ref)) PiwiCommands.notify(project, "The run was not started from this IDE: stop it where it runs.")
         }
+        e.getData(PiwiRunSessions.RUN)?.let { return stop(it) }
         val live = sessions.sessions.values.filter { !it.terminal && it.checkout == null }
         if (live.size < 2) return live.firstOrNull()?.ref?.let(stop) ?: Unit
         JBPopupFactory.getInstance()
@@ -3855,6 +3860,7 @@ class WatchWorkerAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
+        e.getData(PiwiRunSessions.WORKER)?.let { return sessions.showWorker(it.ref, it.lane) }
         chooseWorker(e, "Watch which worker?", Glue.watchableWorkers(sessions.sessions)) { sessions.showWorker(it.ref, it.lane) }
     }
 }
@@ -3865,6 +3871,7 @@ class PauseAndWatchAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
+        e.getData(PiwiRunSessions.WORKER)?.let { return sessions.pauseAndWatch(it) }
         val targets = Glue.watchableWorkers(sessions.sessions, pausable = true)
         if (targets.isEmpty()) {
             e.project?.let { PiwiCommands.notify(it, "No running test can be paused and watched.") }

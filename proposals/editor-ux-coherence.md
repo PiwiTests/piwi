@@ -56,8 +56,14 @@ profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's action
 terminal or in the IDE's test runner is followed as the developer's own once its process names its page on the
 instance, and its verdict says where it ran (`run #125 in a terminal`), from the service's words as every verdict
 (HM16). L5 built since: a test's card, `piwi/testCard`, in VS Code's hover and on a click of
-JetBrains' result icon: its last twenty results as a strip, each to its run, how they went, its last failure, its
-owner, tags and quarantine, with Run, Open in dashboard and More… (TL21).
+JetBrains' result icon: its latest runs as a strip, each to its run, how they went, its last failure, its
+owner, tags and quarantine, with Run, Open in dashboard and More… (TL21). L1 in part since: a test the instance says
+may be stuck says so on its line (`Stuck? running over 4 min, usually 40 s, in your run #130`), in VS Code's Testing
+view's output and on both status lines (`· 1 stuck?`), never while it stands stopped (LR12); another's run in progress
+names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part); a Runs view in the Piwi panel
+(`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
+workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
+run acting on it (LR7 in part: Hold failures on a run's row and run control as a Tools → Piwi submenu remain).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -509,15 +515,9 @@ pause or failed glyph while it waits, and the running line marked. ([L1](#l1))
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
 run reads `Piwi: run #131 · 4 of 9` in both status bars and `running in run #131` beside a test's result. **(read)**
-Fix: the run's origin in the status line and the tooltips (`CI run #130 on feature-x`), the short form for the
-developer's own run; and CI runs as read-only rows of the Runs view and tab. ([L1](#l1))
-
-<a id="lr12"></a>**LR12. Stuck? never reaches the editors: a test held for minutes reads as plain "running".** The
-instance publishes `test-stuck` (`apps/application/server/utils/stuck-tests.ts:71`), leaving a test's stopped time out
-(`:30`); the editor service reads only test-begin, test-completed and the run's state
-(`packages/editor/src/run-watch.ts:622-643`). **(read)** Fix: `Stuck? running 4 min, usually 40 s` with Open the run
-page in the gutter tooltip and the Testing view, and `· 1 stuck?` on the status line, never for a stopped worker.
-([L1](#l1))
+Fix: CI runs as read-only rows of the Runs view and tab, and the run's origin in the tooltips (a teammate's
+machine, the desktop app), which the instance does not send yet; the status line and the tooltips name another's run's
+branch (`CI run #130 on feature-x`), the developer's own the short form. ([L1](#l1))
 
 ### 8.7 Words deferred to the study
 
@@ -905,13 +905,13 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Large
 
-| Step              | Change                                                                                                                                                                                                                                                                          | Scope  | Findings                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------- |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide`  | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [LR12](#lr12), [NF10](#nf10) |
-| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide`  | [LR3](#lr3)                                                           |
-| <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`)                                                                             | `ide`  | [RD7](#rd7), [RD8](#rd8)                                              |
-| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide`  | none ([LI19](#li19))                                                  |
-| <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter                                                                                                                                                              | `docs` | none ([LI17](#li17))                                                  |
+| Step              | Change                                                                                                                                                                                                                                                                          | Scope  | Findings                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide`  | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [NF10](#nf10) |
+| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide`  | [LR3](#lr3)                                            |
+| <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`)                                                                             | `ide`  | [RD7](#rd7), [RD8](#rd8)                               |
+| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide`  | none ([LI19](#li19))                                   |
+| <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter                                                                                                                                                              | `docs` | none ([LI17](#li17))                                   |
 
 ### Sequence
 
