@@ -124,6 +124,12 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
     }
     // A run the editor starts is local: no variable a CI provider sets is left.
     for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
+    // Listed as starting from its command's start, before its own process reaches the service.
+    void ide.client.sendNotification('piwi/commandStarted', { ref });
+    await waitFor(() => ide.latest(ref)?.starting || undefined);
+    const starting = await call('run_list');
+    expect(starting.piwi.runs.find((r: { run: string }) => r.run === ref)).toMatchObject({ starting: true });
+    expect(starting.piwi.message).toContain('1 run is starting.');
     let output = '';
     let child: ChildProcess | null = null;
     const exited = new Promise<number | null>((resolve) => {

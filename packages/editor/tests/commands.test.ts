@@ -7,6 +7,8 @@ import {
   playwrightArgsOf,
   playwrightTestCommand,
   repeatArgs,
+  runName,
+  commandName,
   shellWord,
   verificationCommand,
 } from '../src/commands';
@@ -166,5 +168,36 @@ describe('flakeCommand', () => {
     expect(flakeCommand(12, 'verify')).toBe('npx @piwitests/reporter flake verify 12');
     expect(flakeCommand(-1, 'reproduce')).toBeNull();
     expect(flakeCommand(1.5, 'verify')).toBeNull();
+  });
+});
+
+describe('runName', () => {
+  test('names a run by its first test file and how many more, else the title it greps, else every test', () => {
+    expect(runName(['tests/checkout.spec.ts:12'])).toBe('checkout.spec.ts:12');
+    expect(runName(['tests/a.spec.ts', 'tests/b.spec.ts', 'tests/c.spec.ts', '--headed'])).toBe('a.spec.ts and 2 more');
+    expect(runName(['-g', 'pays by card', '--workers=1'])).toBe('pays by card');
+    expect(runName(['--project=chromium'])).toBe('every test');
+  });
+
+  test('reads the arguments as the service builds them', () => {
+    expect(runName(['tests/my flows/a.spec.ts:3'])).toBe('a.spec.ts:3');
+    expect(runName(['app/[[]id]/page.spec.ts:3', 'c[+][+].spec.ts'])).toBe('page.spec.ts:3 and 1 more');
+    expect(runName(['tests/[[]id].spec.ts'])).toBe('[id].spec.ts');
+    expect(runName(['--grep=pays by card', '--project', 'chromium'])).toBe('pays by card');
+    expect(runName(['--project', 'setup.spec.ts', '--grep=pays'])).toBe('pays');
+    expect(runName(['tests/checkout.spec.ts:12', '--repeat-each', '3'])).toBe('checkout.spec.ts:12 ×3');
+    expect(runName(['tests/checkout.spec.ts:12', '--repeat-each=1'])).toBe('checkout.spec.ts:12');
+    expect(runName(['checkout', 'tests/e2e/'])).toBe('checkout and 1 more');
+    expect(runName(['--grep=(?:^| )(?:pays|refunds)$'])).toBe('tests by title');
+  });
+
+  test('names a command by its words, a chain of playwright test whole, any other up to its first option', () => {
+    expect(commandName('npx @piwitests/reporter flake 42')).toBe('piwi flake 42');
+    expect(commandName('npx @piwitests/reporter flake verify 3 --server-url http://x && echo')).toBe(
+      'piwi flake verify 3',
+    );
+    expect(commandName('npx playwright test a.spec.ts --repeat-each=10 && npx playwright test b.spec.ts')).toBe(
+      'playwright test a.spec.ts --repeat-each=10 && playwright test b.spec.ts',
+    );
   });
 });

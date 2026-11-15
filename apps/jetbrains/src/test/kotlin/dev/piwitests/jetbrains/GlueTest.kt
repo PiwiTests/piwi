@@ -75,6 +75,22 @@ class GlueTest {
     }
 
     @Test
+    fun `a run is named by what it runs, with its number once it has one, as VS Code names it`() {
+        val named = RunSession(ref = "ed-1", root = "/w/shop", name = "checkout.spec.ts:12")
+        assertEquals("checkout.spec.ts:12", Glue.runLabel(named))
+        assertEquals("checkout.spec.ts:12", Glue.runTitle(named))
+        val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
+        assertEquals("Run #78", Glue.runLabel(numbered))
+        assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
+        // Two runs of one name in one list are told apart by their refs.
+        val again = named.copy(ref = "ed-2")
+        assertEquals("checkout.spec.ts:12 (ed-2)", Glue.runTitle(again, listOf(named, again)))
+        assertEquals("checkout.spec.ts:12 (ed-1)", Glue.runLabel(named, listOf(named, again)))
+        assertEquals("checkout.spec.ts:12", Glue.runLabel(named, listOf(named, numbered.copy(ref = "ed-3"))))
+    }
+
+    @Test
     fun `the Connect panel says where the project reads from, the key Apply saves, and what the browser answered`() {
         assertEquals("Mugs, linked to this folder", Glue.linkedProjectLabel("Mugs"))
         assertEquals("The one linked to this folder in the desktop app, none yet", Glue.linkedProjectLabel(null))
@@ -933,6 +949,12 @@ class GlueTest {
                 "Stop sharing this project's runs",
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
+        )
+        // What a run runs keeps its own case inside the sentence.
+        val greps = other.copy(name = "Pays by card")
+        assertEquals(
+            "Stop sharing Pays by card",
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to greps), windowShared = false).last().label,
         )
         assertEquals(
             listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs")),

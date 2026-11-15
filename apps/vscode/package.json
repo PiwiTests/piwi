@@ -1013,17 +1013,17 @@
         {
           "command": "piwi.record",
           "group": "navigation@1",
-          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/ && !piwi.recording && !piwi.runStopped"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/ && !piwi.recording && !piwi.runStopped && !piwi.runPausable"
         },
         {
           "command": "piwi.pauseRun",
-          "group": "9_run@1",
-          "when": "piwi.runPausable"
+          "group": "navigation@1",
+          "when": "!piwi.recording && piwi.runPausable && !piwi.runStopped"
         },
         {
           "command": "piwi.stepRun",
-          "group": "9_run@2",
-          "when": "piwi.runStopped && !piwi.runFailed"
+          "group": "navigation@2",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
         },
         {
           "command": "piwi.runToCursor",
@@ -1032,8 +1032,8 @@
         },
         {
           "command": "piwi.finishRun",
-          "group": "9_run@4",
-          "when": "piwi.runStopped && !piwi.runFailed"
+          "group": "navigation@3",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
         },
         {
           "command": "piwi.endTest",
@@ -1052,8 +1052,8 @@
         },
         {
           "command": "piwi.stopRun",
-          "group": "9_run@8",
-          "when": "piwi.runActive"
+          "group": "navigation@4",
+          "when": "!piwi.recording && piwi.runStoppable"
         },
         {
           "command": "piwi.pauseRecording",
@@ -1084,6 +1084,36 @@
         }
       ],
       "editor/context": [
+        {
+          "command": "piwi.resumeRun",
+          "group": "0_piwi_run@1",
+          "when": "!piwi.recording && piwi.runStopped"
+        },
+        {
+          "command": "piwi.stepRun",
+          "group": "0_piwi_run@2",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
+        },
+        {
+          "command": "piwi.runToCursor",
+          "group": "0_piwi_run@3",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
+        },
+        {
+          "command": "piwi.finishRun",
+          "group": "0_piwi_run@4",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
+        },
+        {
+          "command": "piwi.endTest",
+          "group": "0_piwi_run@5",
+          "when": "!piwi.recording && piwi.runCanEnd"
+        },
+        {
+          "command": "piwi.showStop",
+          "group": "0_piwi_run@6",
+          "when": "!piwi.recording && piwi.runStopped"
+        },
         {
           "submenu": "piwi.editorContext",
           "group": "piwi@1",

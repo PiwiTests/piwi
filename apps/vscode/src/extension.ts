@@ -967,6 +967,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // command with the same ref, which the service follows as a rerun of a run it knows.
   /** The refs of the tasks started from Piwi whose process has not started yet: their start was already sent. */
   const pendingStarts = new Set<string>();
+  /** The tasks VS Code is starting, by ref, which a Stop ends once they started. */
+  const executing = new Map<string, Thenable<vscode.TaskExecution>>();
   /** Run a test command as a task: whether VS Code started it. */
   const runAsTask = async (
     command: RunCommand & { ref: string },
@@ -976,9 +978,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
+      // The run's name (`RunCommand.name`), as its other places say it; a command the service did not register, its line.
       command.label
-        ? `${runTaskName(command.args, command.command)} · ${command.label}`
-        : runTaskName(command.args, command.command),
+        ? `${runTaskName(command.args, command.command, command.name)} · ${command.label}`
+        : runTaskName(command.args, command.command, command.name),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -989,8 +992,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     };
     pendingStarts.add(command.ref);
     void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref: command.ref } satisfies CommandStartedParams);
+    const execution = vscode.tasks.executeTask(task);
+    executing.set(command.ref, execution);
     try {
-      await vscode.tasks.executeTask(task);
+      await execution;
       return true;
     } catch (err) {
       pendingStarts.delete(command.ref);
@@ -1002,6 +1007,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         exitCode: null,
       } satisfies CommandEndedParams);
       return false;
+    } finally {
+      if (executing.get(command.ref) === execution) executing.delete(command.ref);
     }
   };
   /** The ref of a test run's task; null for another task. */
@@ -1014,6 +1021,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const ref = taskRef(e.execution);
       if (!ref || pendingStarts.delete(ref)) return;
       void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref } satisfies CommandStartedParams);
+    }),
+    // A task that ended before its process started (its terminal closed first) ends its command all the same.
+    vscode.tasks.onDidEndTask((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref || !pendingStarts.delete(ref)) return;
+      explorer?.taskEnded(ref, null);
+      void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, { ref, exitCode: null } satisfies CommandEndedParams);
     }),
     vscode.tasks.onDidEndTaskProcess((e) => {
       const ref = taskRef(e.execution);
@@ -1182,8 +1196,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /** Ends the task of the run `ref` started in this window: whether there was one. */
   const terminateRun = (ref: string): boolean => {
     const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
-    execution?.terminate();
-    return !!execution;
+    if (execution) {
+      execution.terminate();
+      return true;
+    }
+    // A task VS Code is still starting ends as soon as it started.
+    const starting = executing.get(ref);
+    starting?.then(
+      (started) => started.terminate(),
+      () => {},
+    );
+    return !!starting;
   };
 
   /** The CI runs of the branch while they run, read-only. */
@@ -1198,6 +1221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     changed: () => {
       if (status || runs) render();
     },
+    stopsDrawn: () => lensesChanged.fire(),
   });
   context.subscriptions.push(runControl);
   runSessions = () => runControl.sessions();
@@ -1803,8 +1827,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         async provideCodeLenses(document) {
           const summary = await summaryOf(document);
           if (!summary) return [];
-          // A test's line is drawn in the gutter and its hover, not as a lens above it.
-          return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
+          // A test's line is drawn in the gutter and its hover, not as a lens above it; a stopped line, by its stop's row.
+          const stopped = new Set(runControl.executionPoints(document.uri.toString()));
+          const lines = summary.lines.filter((l) => !l.status && !stopped.has(l.line));
+          return [...(summary.file ? [summary.file] : []), ...lines].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {

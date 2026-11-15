@@ -80,6 +80,8 @@ describe('a run nobody attends', () => {
         PIWI_RUN_CHANNEL: expect.stringMatching(/#[\w-]{16,}$/),
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      // Named by its words: it is no single playwright test.
+      name: 'piwi flake 12',
     });
     expect(await attached(followed)).toMatchObject({ type: 'attached', holds: [] });
     expect(await waitFor(() => svc.latest(followed.ref!))).not.toHaveProperty('hold');

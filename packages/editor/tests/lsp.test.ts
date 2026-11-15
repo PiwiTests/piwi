@@ -1481,6 +1481,7 @@ describe('the Piwi language server', () => {
         PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      name: 'checkout.spec.ts:3',
     });
   });
 
@@ -1702,6 +1703,7 @@ describe('the Piwi language server', () => {
         PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      name: 'checkout.spec.ts:3',
     });
   });
 
@@ -2060,6 +2062,7 @@ describe('breakpoints', () => {
         PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      name: 'checkout.spec.ts:3',
       notice: 'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
     });
     const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
@@ -5141,6 +5144,7 @@ describe('a test the instance does not know yet', () => {
         PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      name: 'checkout.spec.ts:5',
     });
     // Without a location, a test is run by its id, which needs an instance.
     expect(await runArgs({ testIds: [1] })).toBeNull();
@@ -5163,6 +5167,7 @@ describe('a test the instance does not know yet', () => {
       // On the run channel, nobody attending it: no breakpoint, no record channel.
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      name: 'checkout.spec.ts:5 ×3',
     });
     expect(await runArgs({ locations: ['tests/checkout.spec.ts:5'], repeat: 0 })).toBeNull();
 

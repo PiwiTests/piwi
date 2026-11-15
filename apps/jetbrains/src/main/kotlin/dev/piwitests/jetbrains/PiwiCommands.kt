@@ -3,7 +3,6 @@ package dev.piwitests.jetbrains
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.intellij.execution.ExecutionException
-import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.filters.Filter
 import com.intellij.execution.filters.OpenFileHyperlinkInfo
@@ -296,11 +295,11 @@ object PiwiCommands {
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
                 val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
                     .getOrDefault(false)
-                if (!started) run(project, cwd, line, env, ref, command.label)
+                if (!started) run(project, cwd, line, env, ref, command.label, command.name)
             }, project.disposed)
             return true
         }
-        run(project, cwd, line, env, command.ref, command.label)
+        run(project, cwd, line, env, command.ref, command.label, command.name)
         return true
     }
 
@@ -354,7 +353,15 @@ object PiwiCommands {
      * once the process ended and the service heard so: the rerun's workers start a session of their own. Its tab says
      * who started it when a person did not (`label`).
      */
-    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null, label: String? = null) {
+    fun run(
+        project: Project,
+        cwd: String,
+        command: String,
+        env: Map<String, String>? = null,
+        ref: String? = null,
+        label: String? = null,
+        name: String? = null,
+    ) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
@@ -383,21 +390,25 @@ object PiwiCommands {
                     if (ref == null) ended.complete(Unit) else commandEnded(project, CommandEndedParams(ref, event.exitCode)) { ended.complete(Unit) }
                 }
             })
-            // Stop, among the run's controls, ends it.
-            if (ref != null && !project.isDisposed) project.service<PiwiRunSessions>().track(ref, handler)
+            // Stop, among the run's controls, ends it; the service lists the run as starting until it reports.
+            if (ref != null && !project.isDisposed) {
+                project.service<PiwiRunSessions>().track(ref, handler)
+                project.service<PiwiRunSessions>().remote.commandStarted(CommandStartedParams(ref))
+            }
             ApplicationManager.getApplication().invokeLater {
                 if (project.isDisposed) {
                     handler.destroyProcess()
                 } else {
-                    RunContentExecutor(project, handler)
-                        .withTitle(Glue.labeledRunName(Glue.runTabName(command), label))
-                        .withFilter(RunOutputLinks(project, cwd))
-                        .withActivateToolWindow(true)
-                        .withRerun {
-                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label) }
-                            handler.destroyProcess()
-                        }
-                        .run()
+                    PiwiRunTab.show(
+                        project,
+                        handler,
+                        Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
+                        RunOutputLinks(project, cwd),
+                        ref,
+                    ) {
+                        ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
+                        handler.destroyProcess()
+                    }
                 }
             }
         }

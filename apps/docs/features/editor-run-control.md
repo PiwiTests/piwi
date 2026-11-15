@@ -31,10 +31,10 @@ applies and the debugger does not take them. On macOS, `Cmd+F10` runs to the cur
 test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Within two seconds
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
-- **In VS Code**, the controls are in the Piwi item's menu while they apply, after **Go to the stopped line**, in the
-  palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, others under `…`).
-- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's menu,
-  whose text says why and where a test stopped.
+Each editor puts them where its debugger keeps its own, and in the status item's menu, whose text says why and where
+a test stopped: [Editor commands](/reference/editor-commands#where-the-run-controls-are) lists the places. From its
+start, before a web server or a global setup lets Playwright report, the item says the run is starting, and **Stop**
+ends it.
 
 The item's line comes from the run, so it counts offline and with the desktop app
 ([Follow a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
@@ -53,11 +53,11 @@ line, and marks it:
 an arrow in the gutter, the debugger's execution point color, and above it the call, as Playwright names it, with the
 controls:
 
-`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to the cursor  Finish  End the test
+`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Finish  Write code…
 
-It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. VS Code's CodeLens holds Resume, Step, Finish and **Write code…**, its hover all controls;
+It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. Both editors' line holds Resume, Step, Finish and **Write code…** (Resume alone at a failure), VS Code's lenses giving way; VS Code's hover holds all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
-the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
+the arrow's click and the inlay's context menu list the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>

@@ -112,9 +112,20 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
         assertEquals(listOf("Piwi.RunSpec", "Piwi.RunTestsForFile", null, "Piwi.RecordNewFile"), ids("Piwi.ProjectViewPopup"))
         assertTrue(actions.getAction("Piwi.ProjectViewPopup") is com.intellij.openapi.actionSystem.CompactActionGroup)
-        for ((menu, piwi) in listOf("EditorPopupMenu" to "Piwi.EditorPopup", "ProjectViewPopupMenu" to "Piwi.ProjectViewPopup")) {
-            assertEquals(menu, listOf(piwi), ids(menu).filter { it?.startsWith("Piwi.") == true })
+        // The editor's context menu: a stop's controls first, while a run is live, then the Piwi submenu; the Run menu: the
+        // run's controls, while a run is live.
+        for ((menu, piwi) in listOf(
+            "EditorPopupMenu" to listOf("Piwi.EditorRunControl", "Piwi.EditorPopup"),
+            "ProjectViewPopupMenu" to listOf("Piwi.ProjectViewPopup"),
+            "RunMenu" to listOf("Piwi.RunMenu"),
+        )) {
+            assertEquals(menu, piwi, ids(menu).filter { it?.startsWith("Piwi.") == true })
         }
+        assertEquals(
+            listOf("Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowStop", null),
+            ids("Piwi.EditorRunControl"),
+        )
+        assertTrue(actions.getAction("Piwi.EditorRunControl") is PiwiLiveRunGroup)
         // Each Piwi menu shows Piwi's mark before its name.
         for (menu in listOf("Piwi.Actions", "Piwi.EditorPopup", "Piwi.ProjectViewPopup")) {
             assertNotNull(menu, actions.getAction(menu).templatePresentation.icon)
