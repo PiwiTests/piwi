@@ -1441,7 +1441,7 @@ export const MCP_TOOL_DEFS = [
     permission: 'run:control',
     description: md(
       'Re-run exactly a failure cluster’s affected tests in CI.',
-      'It is the cluster page’s **Re-run in CI**: it runs one of the project’s CI actions that accepts tests (the project’s default for re-runs unless `action` names another) with the project’s source-control token, or sends one request to its CI server when the action targets one, and returns the provider, the action id and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no CI action or token is configured, `action` matches no CI action that accepts tests, or the cluster has no supported repository.',
+      'It is the cluster page’s **Re-run in CI**: it runs one of the project’s CI actions that accepts tests (the project’s default for re-runs unless `action` names another) with the project’s source-control token, or sends one request to its CI server when the action targets one, and returns the provider, the action id and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no CI action or token is configured, `action` matches no CI action that accepts tests, none of the cluster’s tests has a file path a re-run can name, or the cluster has no supported repository.',
       'Requires `run:control` (Maintainer and above on the project).',
     ),
     inputSchema: {

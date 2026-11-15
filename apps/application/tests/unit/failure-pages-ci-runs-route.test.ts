@@ -32,7 +32,6 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
 // CI re-run and a Flake Lab CI target are configured for the project.
 vi.mock('../../server/utils/ci-rerun', () => ({
   ciRerunAvailability: ci.rerun,
-  executionRerunInfo: ci.rerun,
   flakeLabCiAvailability: ci.flakeLab,
 }));
 vi.mock('../../server/utils/ai-provider', () => ({ resolveAiConfig: async () => null }));

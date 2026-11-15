@@ -136,7 +136,7 @@ describe('a CI re-run dispatch', () => {
   test('is unavailable before the click when no affected test has a file path it can name', async () => {
     await seed(GITHUB);
     const nameless = [{ filePath: '', title: 'pays', line: 12, projectName: 'chromium' }];
-    expect(await ciRerunAvailability(db as never, 1, 1, null, nameless)).toMatchObject({
+    expect(await ciRerunAvailability(db as never, 1, 1, null, async () => nameless)).toMatchObject({
       available: false,
       reason: 'None of these tests has a file path a re-run can name.',
     });

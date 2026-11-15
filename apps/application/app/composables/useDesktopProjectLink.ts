@@ -56,6 +56,7 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
   watch(
     () => toValue(projectId),
     () => {
+      loaded.value = false;
       if (available.value) void refresh();
     },
   );

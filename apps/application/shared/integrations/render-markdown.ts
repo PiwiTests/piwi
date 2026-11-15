@@ -7,6 +7,7 @@
  * The fence and table style matches `shared/export/render-markdown.ts` so a
  * body pasted from either place reads the same.
  */
+import { markdownCode } from '#shared/utils/markdown-code';
 import type { DocNode, IssueDocument, Inline } from './document';
 
 /** A fenced code block, with any triple-backtick in the body escaped. */
@@ -23,7 +24,7 @@ function cell(text: string): string {
 function renderInline(inline: Inline): string {
   if (typeof inline === 'string') return inline;
   let text = inline.text;
-  if (inline.code) text = `\`${text}\``;
+  if (inline.code) text = markdownCode(text);
   if (inline.strong) text = `**${text}**`;
   if (inline.href) text = `[${text}](${inline.href})`;
   return text;

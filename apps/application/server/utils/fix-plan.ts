@@ -177,7 +177,8 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     verify: {
       command: verifyCommand,
       cases: rerunCases,
-      leftOut: verifyLeftOut,
+      // One entry per test: a test that failed in several projects is several cases.
+      leftOut: [...new Map(verifyLeftOut.map((c) => [`${c.filePath}\0${c.title}`, c])).values()],
       expectation:
         'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open. Put the commit trailer in the commit message of the fix and report the change as a fix attempt, so the fix is tied to it.',
       commitTrailer: clusterTrailerLine(cluster.id),

@@ -4,6 +4,7 @@
  * live in `server/utils/scm/`.
  */
 import type { HealActionPayload, HealEditPayload } from '#shared/auto-heal';
+import { markdownCode } from '#shared/utils/markdown-code';
 
 /** Marks the PR auto-heal owns, so a later run can find and adopt it. */
 export const HEAL_PR_MARKER = '<!-- piwi-dashboard:auto-heal -->';
@@ -92,9 +93,8 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
     lines.push('```');
     lines.push('');
     if (payload.verifyLeftOut?.length) {
-      lines.push(
-        `The command leaves out ${payload.verifyLeftOut.map((t) => `\`${t}\``).join(', ')}: run them yourself.`,
-      );
+      const them = payload.verifyLeftOut.length === 1 ? 'it' : 'them';
+      lines.push(`The command leaves out ${payload.verifyLeftOut.map(markdownCode).join(', ')}: run ${them} yourself.`);
       lines.push('');
     }
   }

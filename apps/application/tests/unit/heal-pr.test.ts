@@ -59,7 +59,7 @@ describe('buildHealPrBody', () => {
 
   test('lists the tests the verify command leaves out', () => {
     const body = buildHealPrBody({ ...payload([edit()]), verifyLeftOut: ['refunds'] }, 'https://piwi.example.com');
-    expect(body).toContain('The command leaves out `refunds`: run them yourself.');
+    expect(body).toContain('The command leaves out `refunds`: run it yourself.');
   });
 
   test('leaves out the Verify section without a verify command', () => {

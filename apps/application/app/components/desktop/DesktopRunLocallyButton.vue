@@ -160,6 +160,7 @@ const face = computed(() => {
     variant: props.primary ? ('solid' as const) : ('outline' as const),
     icon: 'i-lucide-play',
   };
+  if (!linkLoaded.value) return { ...idle, tooltip: 'Reading the linked folder…' };
   if (!linked.value) {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
@@ -381,7 +382,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         icon: 'i-lucide-clipboard',
         description:
           copyLeavesOut.value > 0
-            ? `Leaves out ${copyLeavesOut.value} more test${copyLeavesOut.value === 1 ? '' : 's'}: a shell would misread ${copyLeavesOut.value === 1 ? 'its title or path' : 'their titles or paths'}`
+            ? `Names ${copyLeavesOut.value} test${copyLeavesOut.value === 1 ? '' : 's'} fewer than the run: a shell would misread ${copyLeavesOut.value === 1 ? 'its title or path' : 'their titles or paths'}`
             : undefined,
         disabled: !copyCommand.value,
         onSelect: () => void copy(copyCommand.value, { toast: 'Command copied' }),
@@ -448,6 +449,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           icon="i-lucide-chevron-down"
           aria-label="Run options"
+          :disabled="!linkLoaded"
           class="relative"
         >
           <span v-if="attention && linkLoaded" class="absolute -top-1 -right-1 size-2 rounded-full bg-warning" />

@@ -38,9 +38,9 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     clusterRow && mayDispatch
-      ? clusterRerunCases(db, id)
-          .then((cases) => ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId, null, cases))
-          .catch(() => null)
+      ? ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId, null, () => clusterRerunCases(db, id)).catch(
+          () => null,
+        )
       : Promise.resolve(null),
   ]);
 

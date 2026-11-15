@@ -204,15 +204,15 @@ async function dispatchReadiness(
  * the same checks the dispatch route enforces, so the button never offers an
  * action the POST would reject. `actionId` names the action to use (an id or
  * an exact name); without it the project's default for re-runs applies. With
- * `cases`, the re-run is also unavailable when none of them can be named
- * (`withRetryCases`).
+ * `cases`, read only when the re-run is otherwise available, it is also
+ * unavailable when none of them can be named (`withRetryCases`).
  */
 export async function ciRerunAvailability(
   db: DbClient,
   projectId: number,
   lastSeenRunId: number,
   actionId?: string | null,
-  cases?: RetryCase[],
+  cases?: () => Promise<RetryCase[]>,
 ): Promise<CiRerunAvailability> {
   const ready = await dispatchReadiness(db, projectId, lastSeenRunId, 'tests', actionId);
   const availability: CiRerunAvailability = {
@@ -223,7 +223,7 @@ export async function ciRerunAvailability(
     hasToken: ready.hasToken,
     action: actionRef(ready.action),
   };
-  return cases ? withRetryCases(availability, cases) : availability;
+  return cases && availability.available ? withRetryCases(availability, await cases()) : availability;
 }
 
 /** The branch a re-run runs on: the branch of the run it re-runs, when that run has one. */
@@ -392,12 +392,8 @@ export async function rerunClusterInCi(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return { ok: false, error: 'not-found', message: 'Failure cluster not found' };
 
-  const availability = await ciRerunAvailability(
-    db,
-    cluster.projectId,
-    cluster.lastSeenRunId,
-    options.actionId,
-    await clusterRerunCases(db, cluster.id),
+  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId, options.actionId, () =>
+    clusterRerunCases(db, cluster.id),
   );
   if (!availability.available) {
     return {
@@ -432,7 +428,9 @@ export async function rerunClusterInCi(
 export async function executionRerunInfo(db: DbClient, executionId: number) {
   const target = await executionRerunTarget(db, executionId);
   if (!target) return null;
-  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, [target.rerunCase]);
+  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, async () => [
+    target.rerunCase,
+  ]);
   return { ...availability, lastDispatch: await clusterLastDispatch(db, target.clusterId) };
 }
 
@@ -450,7 +448,9 @@ export async function rerunExecutionInCi(
   const target = await executionRerunTarget(db, executionId);
   if (!target) return { ok: false, error: 'not-found', message: 'Test run case not found' };
 
-  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, [target.rerunCase]);
+  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, async () => [
+    target.rerunCase,
+  ]);
   if (!availability.available) {
     return {
       ok: false,

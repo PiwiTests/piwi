@@ -197,3 +197,12 @@ describe('ticket content', () => {
     expect(envOnly).toContain('Counted in the prod environment.');
   });
 });
+
+describe('the verify command', () => {
+  test('lists the tests it leaves out under it, as code that holds a backtick', () => {
+    const md = renderMarkdown(buildIssue(facts({ verifyLeftOut: ['refunds', 'shows `total`'] })).document);
+    expect(md).toContain('The command leaves out these tests, run them yourself: `refunds`, `` shows `total` ``');
+    const one = renderMarkdown(buildIssue(facts({ verifyLeftOut: ['refunds'] })).document);
+    expect(one).toContain('The command leaves out this test, run it yourself: `refunds`');
+  });
+});
