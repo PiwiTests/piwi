@@ -270,9 +270,9 @@ each rule below ends with the section to read there.
 ### Interface
 
 - **The popup and the settings page stay plain TypeScript and DOM, no UI framework.** (see "The popup")
-- **The popup must fit Chrome's 600-pixel popup height in every language** (`popup.spec.ts`): a new tile goes under
-  More tools or into DevTools, with its hint under its label, never only a tooltip. Runs takes More tools' free cell,
-  so it adds no height. (see "The popup")
+- **The popup must fit Chrome's 600-pixel popup height in every language** (`popup.spec.ts`): its tiles stand in the
+  sections of Piwi's menu (Pick, Record, Run control, Dashboard, Agents), a new tile in its section or in DevTools,
+  with its hint under its label, never only a tooltip. (see "The popup")
 - **A panel with a backdrop is modal through `holdFocus`; one that leaves the page usable is `role="region"`, never a
   dialog.** A bar on the page stops animating under `prefers-reduced-motion: reduce`. (see "Content-script
   structure")

@@ -521,9 +521,25 @@
     "message": "Check the catalog here",
     "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
   },
-  "popup_moreTools": {
-    "message": "More tools",
-    "description": "Popup: small heading above the compact tiles of the other tools (multi-pick, assertions, lint overlay, agent context, test functions). Short."
+  "popup_sectionPick": {
+    "message": "Pick",
+    "description": "Popup: small heading above Piwi Picker's own tools (multi-pick, assertions, lint overlay, test functions), the first section of Piwi's menu here. Short."
+  },
+  "popup_sectionRecord": {
+    "message": "Record",
+    "description": "Popup: small heading above Report a bug and Replay a bug report, the Record section of Piwi's menu. Short."
+  },
+  "popup_sectionRunControl": {
+    "message": "Run control",
+    "description": "Popup: small heading above the Runs tile, the Run control section of Piwi's menu, as the editors name it. In a column a third of the popup wide: about 20 characters at most."
+  },
+  "popup_sectionDashboard": {
+    "message": "Dashboard",
+    "description": "Popup: small heading above the Tested elements tile, the Dashboard section of Piwi's menu (what the connected instance knows). About 20 characters at most."
+  },
+  "popup_sectionAgents": {
+    "message": "Agents",
+    "description": "Popup: small heading above the Agent context tile, the Agents section of Piwi's menu. About 20 characters at most."
   },
   "popup_devtoolsNote": {
     "message": "The locator console, the session, network mocks, viewports, Playwright view and Save login are in DevTools, in the Piwi panel.",

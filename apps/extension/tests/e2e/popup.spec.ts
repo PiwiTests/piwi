@@ -80,7 +80,7 @@ test.describe('popup.html', () => {
     });
 
     await page.keyboard.press('3');
-    await page.keyboard.press('7');
+    await page.keyboard.press('6');
     await page.keyboard.press('Control+5');
     await page.keyboard.press('8');
 

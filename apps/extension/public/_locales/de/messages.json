@@ -422,8 +422,20 @@
   "popup_testFunctionsHint": {
     "message": "Katalog hier prüfen"
   },
-  "popup_moreTools": {
-    "message": "Weitere Werkzeuge"
+  "popup_sectionPick": {
+    "message": "Wählen"
+  },
+  "popup_sectionRecord": {
+    "message": "Aufzeichnen"
+  },
+  "popup_sectionRunControl": {
+    "message": "Laufsteuerung"
+  },
+  "popup_sectionDashboard": {
+    "message": "Dashboard"
+  },
+  "popup_sectionAgents": {
+    "message": "Agenten"
   },
   "popup_devtoolsNote": {
     "message": "Die Locator-Konsole, die Session, Netzwerk-Mocks, Viewports, die Playwright-Ansicht und Anmeldung speichern sind in DevTools, im Piwi-Panel."

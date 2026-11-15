@@ -422,8 +422,20 @@
   "popup_testFunctionsHint": {
     "message": "Votre catalogue ici"
   },
-  "popup_moreTools": {
-    "message": "Autres outils"
+  "popup_sectionPick": {
+    "message": "Choisir"
+  },
+  "popup_sectionRecord": {
+    "message": "Enregistrer"
+  },
+  "popup_sectionRunControl": {
+    "message": "Pilotage"
+  },
+  "popup_sectionDashboard": {
+    "message": "Tableau de bord"
+  },
+  "popup_sectionAgents": {
+    "message": "Agents"
   },
   "popup_devtoolsNote": {
     "message": "La console de locators, la session, les mocks réseau, les viewports, la vue Playwright et Sauvegarder la connexion sont dans DevTools, dans le panneau Piwi."

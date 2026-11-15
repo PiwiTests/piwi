@@ -27,14 +27,14 @@ viewports.
 | [Multi-pick](./pick-an-element#multi-pick) | `3` | the shared pattern of a list's rows or cards |
 | [Lint overlay](./lint-overlay) | `5` | the elements that would make bad locator targets |
 | [Assertions](./pick-an-element#assertion-suggester) | `4` | `expect(...)` lines for an element |
-| [Agent context](./pick-an-element#copy-context-for-agent) | `6` | one block about an element for a coding agent |
+| [Agent context](./pick-an-element#copy-context-for-agent) | `7` | one block about an element for a coding agent |
 | [Record actions](./record-actions) | `1` | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | `B` | a failing test and a report of a bug you reproduce |
 | [Replay a bug report](./replay-a-bug-report) | `R` | a bug report's steps played again in a tab, to see whether the bug shows there |
 | [Developer tools](./devtools) | | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
 | [Runs window](./runs-window) | `U` | pause, step and resume the tests your editor runs, and watch a headless one live |
 | [Matching functions](./record-actions#matching-functions) | | a recording that calls your own functions |
-| [Test functions](./test-functions#using-the-catalog) | `7` | which of your functions work on this page |
+| [Test functions](./test-functions#using-the-catalog) | `6` | which of your functions work on this page |
 | [Tested elements](./tested-elements) | `T` | which elements of this page your tests reach |
 
 ## Where it is
@@ -70,7 +70,7 @@ With a connection, the popup's **Tested elements** outlines what your tests reac
 ## Runs from the editor
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup's
-**Runs** tile, under **More tools**, opens the [Runs window](./runs-window).
+**Runs** tile, under **Run control**, opens the [Runs window](./runs-window).
 
 ## Languages
 

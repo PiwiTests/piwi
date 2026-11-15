@@ -422,8 +422,20 @@
   "popup_testFunctionsHint": {
     "message": "Seu catálogo aqui"
   },
-  "popup_moreTools": {
-    "message": "Mais ferramentas"
+  "popup_sectionPick": {
+    "message": "Escolher"
+  },
+  "popup_sectionRecord": {
+    "message": "Gravar"
+  },
+  "popup_sectionRunControl": {
+    "message": "Controle de execução"
+  },
+  "popup_sectionDashboard": {
+    "message": "Painel"
+  },
+  "popup_sectionAgents": {
+    "message": "Agentes"
   },
   "popup_devtoolsNote": {
     "message": "O console de locators, a sessão, os mocks de rede, os viewports, a visão do Playwright e Salvar o login estão no DevTools, no painel Piwi."

@@ -40,7 +40,10 @@ fixed locally and flaky in its tooltip (HM2). M4 and M13 built since: an instanc
 glyph in both status items, a cloud struck through (`$(piwi-unreachable)`, `unreachable.svg`) (HM4), and JetBrains' run
 tab opens a shared run's page and copies its link after its controls, as the status popup does;
 VS Code's failures view lists finished runs alone, which no share outlives, and its status menu lists the shared ones
-(LR14). Also built since, with their findings: Q25 (the JetBrains plugin's labels
+(LR14). M3 in part since: Piwi Picker's popup stands its tiles in the menu's sections, in its order: Record actions and
+Pick an element first, Piwi Picker's own tools under Pick, Report a bug and Replay under Record, and side by side Runs
+under Run control, Tested elements under Dashboard and Agent context under Agents, the gear Connection (X3 in part).
+Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
 its own (HM9, ST18), and Q13's run notices on failures only by default and a run's balloon titled by its run, VS Code's
@@ -325,9 +328,10 @@ These rules hold them together; each larger item of §10 carries one or more.
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
    `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([RD4](#rd4))
 
-<a id="x3"></a>**X3. Piwi Picker's popup and the desktop app's tray keep lists of their own.** The status item opens one Piwi
-menu in both editors, but neither Piwi Picker nor the tray takes its order and words. **(read)** Fix: Piwi Picker and
-the tray take [LI4](#li4)'s order and words. ([M3](#m3), [LI4](#li4))
+<a id="x3"></a>**X3. The tray of Piwi Desktop and Piwi Runner keeps a list of its own.** The status item opens one Piwi menu
+in both editors, and Piwi Picker's popup stands in its sections, but the tray takes neither its order nor its words.
+**(read)** Fix: the tray takes [LI4](#li4)'s sections, with Check for updates and icons alike in Piwi Desktop and Piwi
+Runner. ([M3](#m3), [LI4](#li4))
 
 **What 1.0 allows.** [1.0-stabilization.md](1.0-stabilization.md) D25 lists every command, setting and action id of both
 editors, their action groups, views and submenus, held to the manifests by
@@ -942,7 +946,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
+| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): the tray of Piwi Desktop and Piwi Runner takes its sections, with Check for updates and icons alike in both | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
