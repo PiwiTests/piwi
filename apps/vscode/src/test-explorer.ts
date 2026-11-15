@@ -518,7 +518,7 @@ export class TestExplorer implements vscode.Disposable {
     const profile = [...this.profiles].find((p) => p.parts.some((part) => part.ref === event.ref));
     if (!test || !profile) return;
     const item = this.itemAt(test.uri, test.line);
-    const outcome = attemptOutcome(event.status, test);
+    const outcome = attemptOutcome(event.status, test, event.ok);
     if (!item || !outcome || !profile.tests.has(item)) return;
     // Each project's last attempt counts: the test fails when one of them failed (`combinedOutcome`).
     const projects = profile.attempts.get(item) ?? profile.attempts.set(item, new Map()).get(item)!;

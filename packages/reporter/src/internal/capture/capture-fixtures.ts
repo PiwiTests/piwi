@@ -4039,13 +4039,14 @@ function testBegin(testInfo: TestInfo, cannotPause: string | null): RunToHub {
   };
 }
 
-/** The run channel's word that a test ended, with how long it stood stopped. */
+/** The run channel's word that a test ended, with how long it stood stopped and the status it was expected to end with. */
 function testEnd(sink: CaptureSink, testInfo: TestInfo): RunToHub {
   return {
     type: 'test-end',
     testId: testInfo.testId,
     status: testInfo.status ?? 'passed',
     pausedMs: sink.stops.reduce((sum, stop) => sum + stop.duration, 0),
+    expectedStatus: testInfo.expectedStatus,
   };
 }
 

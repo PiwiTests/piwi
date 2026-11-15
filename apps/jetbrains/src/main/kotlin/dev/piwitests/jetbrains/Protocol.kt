@@ -1095,6 +1095,11 @@ data class RunTestEvent(
     val type: String? = null,
     val test: RunTest? = null,
     val status: String? = null,
+    /**
+     * Of a `test-end`: whether `status` is the one the test was expected to end with (a `test.fail()` test that failed
+     * is ok, one that passed is not); null when the run's reporter does not say, and `status` alone tells.
+     */
+    val ok: Boolean? = null,
 )
 
 /**

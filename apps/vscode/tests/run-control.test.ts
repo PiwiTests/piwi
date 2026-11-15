@@ -2348,6 +2348,15 @@ describe("this window's runs shared live, and a teammate's ask", () => {
       line: 2,
     });
     expect(attemptOutcome('interrupted', runTest())).toBeNull();
+    // A `test.fail()` test passes by failing and fails by passing, as the service reads it (`ok`).
+    expect(attemptOutcome('failed', runTest(), true)).toEqual({ state: 'passed' });
+    expect(attemptOutcome('passed', runTest(1), false)).toEqual({
+      state: 'failed',
+      message: 'Passed in this run (attempt 2), though it is expected to fail.',
+      line: 2,
+    });
+    expect(attemptOutcome('timedOut', runTest(), false)).toMatchObject({ state: 'failed' });
+    expect(attemptOutcome('skipped', runTest(), true)).toEqual({ state: 'skipped' });
     // A test run in several projects fails when one of them failed it.
     const failed = attemptOutcome('failed', runTest())!;
     expect(combinedOutcome([failed, { state: 'passed' }])).toBe(failed);

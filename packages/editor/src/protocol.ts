@@ -2365,6 +2365,12 @@ export interface RunTestEvent {
   type: 'test-begin' | 'test-end';
   test?: RunTest;
   status?: string;
+  /**
+   * Of a `test-end`: whether `status` is the one the test was expected to end with (Playwright's `expectedStatus`): a
+   * `test.fail()` test that failed is ok, one that passed is not. Absent when the run's reporter does not say, or for
+   * a worker that left: `status` alone tells then.
+   */
+  ok?: boolean;
 }
 
 export const RUN_TEST_NOTIFICATION = 'piwi/runTest';

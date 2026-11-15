@@ -3766,6 +3766,31 @@ class GlueTest {
     }
 
     @Test
+    fun `a test marked to fail passes in a run's test tree by failing, and fails by passing`() {
+        val tree = Glue.RunTestTree()
+        fun begin(worker: Int) = tree.lines(
+            RunTestEvent("ed-1", "/w", worker, "test-begin", RunTest("id", listOf("pays"), "file:///w/tests/cart.spec.ts", 3, "chromium", 0)),
+        )
+        fun end(worker: Int, status: String, ok: Boolean?) = tree.lines(RunTestEvent("ed-1", "/w", worker, "test-end", status = status, ok = ok))
+        begin(0)
+        assertEquals(listOf("##teamcity[testFinished nodeId='3']"), end(0, "failed", ok = true))
+        begin(0)
+        assertEquals(
+            listOf(
+                "##teamcity[testFailed nodeId='4' message='Passed, though it is expected to fail']",
+                "##teamcity[testFinished nodeId='4']",
+            ),
+            end(0, "passed", ok = false),
+        )
+        // A reporter that does not say what it expected: the status alone tells.
+        begin(0)
+        assertEquals(
+            listOf("##teamcity[testFailed nodeId='5' message='Failed']", "##teamcity[testFinished nodeId='5']"),
+            end(0, "failed", ok = null),
+        )
+    }
+
+    @Test
     fun `a run's test events draw its tests under their project, spec and describe blocks, each attempt ended by its worker`() {
         val tree = Glue.RunTestTree()
         fun begin(worker: Int, vararg title: String, retry: Int = 0) = tree.lines(

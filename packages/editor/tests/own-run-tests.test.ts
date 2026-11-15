@@ -108,6 +108,16 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
     expect(own.stateOf(ROOT, SPEC, MUG, [])).toBeUndefined();
   });
 
+  test('a test marked to fail passes by failing, and fails by passing', () => {
+    const own = new OwnRunTests();
+    own.heard('ed-1', 0, { type: 'test-begin', test: runTest(MUG, 'chromium') }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'failed', ok: true }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])?.status).toBe('passed');
+    own.heard('ed-1', 0, { type: 'test-begin', test: { ...runTest(MUG, 'chromium'), retry: 1 } }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'passed', ok: false }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])?.status).toBe('failed');
+  });
+
   test('a result over the Playwright projects, the last attempt’s, an interrupted one leaving the one before', () => {
     const own = new OwnRunTests();
     const end = (worker: number, test: RunTest, status: string) => {

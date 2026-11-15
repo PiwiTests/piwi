@@ -39,7 +39,7 @@ export class OwnRunTests {
   heard(
     ref: string,
     worker: number | null,
-    what: { type: string; test?: RunTest; status?: string },
+    what: { type: string; test?: RunTest; status?: string; ok?: boolean },
     root: string | null,
   ): void {
     if (what.type === 'ended') return this.ended(ref, root);
@@ -62,11 +62,15 @@ export class OwnRunTests {
     const key = test && testKeyOf(test);
     if (!test || !run || !key) return;
     const status = what.type === 'left' ? 'interrupted' : what.status;
+    // A test that ended as it was expected to passes: a `test.fail()` test that failed (`ok`, when the reporter says).
+    const ok = what.type === 'left' ? undefined : what.ok;
     const result: Result | null =
-      status === 'passed' || status === 'skipped'
+      status === 'skipped'
         ? status
-        : status === 'failed' || status === 'timedOut'
-          ? 'failed'
+        : status === 'passed' || status === 'failed' || status === 'timedOut'
+          ? (ok ?? status === 'passed')
+            ? 'passed'
+            : 'failed'
           : // An interrupted attempt leaves the attempt before it.
             null;
     if (!result) return;

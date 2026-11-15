@@ -8,7 +8,7 @@ import type * as net from 'node:net';
 import { describe, expect, test } from 'vitest';
 import { RUN_TAKES, type RunMainToHub, type RunToHub } from '@piwitests/core/run-channel';
 import type { RunSession } from '../src/protocol';
-import { RunSessions } from '../src/run-sessions';
+import { RunSessions, type RunHeard } from '../src/run-sessions';
 import { last, waitFor } from './run-fixtures';
 
 function fakeSocket() {
@@ -26,8 +26,10 @@ function fakeSocket() {
 
 function harness() {
   const sent: RunSession[] = [];
+  const heard: RunHeard[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
+    heard: (_ref, _worker, what) => void heard.push(what),
     answersStops: () => true,
     notice: () => {},
     rootOf: () => '/work/shop',
@@ -84,8 +86,27 @@ function harness() {
   };
   /** The workers of the session as the client heard them last. */
   const workers = () => last(sent)?.workers ?? [];
-  return { sessions, sent, join, main, workers };
+  return { sessions, sent, heard, join, main, workers };
 }
+
+describe('a test’s end as the session hears it', () => {
+  test('says whether the test ended as it was expected to, when the reporter says what it expected', async () => {
+    const { join, heard } = harness();
+    const worker = join(0, 0);
+    worker.begin('t0');
+    worker.read({ type: 'test-end', testId: 't0', status: 'failed', pausedMs: 0, expectedStatus: 'failed' });
+    worker.begin('t1');
+    worker.read({ type: 'test-end', testId: 't1', status: 'passed', pausedMs: 0, expectedStatus: 'failed' });
+    worker.begin('t2');
+    worker.read({ type: 'test-end', testId: 't2', status: 'passed', pausedMs: 0 });
+    const ends = heard.filter((what) => what.type === 'test-end');
+    expect(ends).toEqual([
+      { type: 'test-end', status: 'failed', pausedMs: 0, ok: true },
+      { type: 'test-end', status: 'passed', pausedMs: 0, ok: false },
+      { type: 'test-end', status: 'passed', pausedMs: 0 },
+    ]);
+  });
+});
 
 describe('the lane state a session says', () => {
   test('the worker Playwright starts again in a lane takes it between tests, then runs its next test', async () => {

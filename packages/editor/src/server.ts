@@ -2339,7 +2339,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const tell = (event: Omit<RunTestEvent, 'ref' | 'worker' | 'root'>) =>
         void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, root, ...event });
       if (what.type === 'test-begin') tell({ type: 'test-begin', test: what.test });
-      else if (what.type === 'test-end') tell({ type: 'test-end', status: what.status });
+      else if (what.type === 'test-end') {
+        tell({ type: 'test-end', status: what.status, ...(what.ok === undefined ? {} : { ok: what.ok }) });
+      }
       // A worker gone before its test ended (it crashed, or the run was stopped): that test was interrupted.
       else if (what.type === 'left') tell({ type: 'test-end', status: 'interrupted' });
     },

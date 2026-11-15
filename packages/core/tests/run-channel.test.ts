@@ -144,6 +144,10 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...end, status: 'pass ed' }))).toBeNull();
       expect(parseRunToHub(line({ ...end, pausedMs: -1 }))).toBeNull();
       expect(parseRunToHub(line({ ...end, pausedMs: null }))).toBeNull();
+      // The status a `test.fail()` test was expected to end with; an older reporter sends none.
+      expect(parseRunToHub(line({ ...end, expectedStatus: 'failed' }))).toEqual({ ...end, expectedStatus: 'failed' });
+      expect(parseRunToHub(line({ ...end, expectedStatus: 'fail ed' }))).toBeNull();
+      expect(parseRunToHub(line({ ...end, expectedStatus: null }))).toBeNull();
     });
 
     test('reads a stop and its end, a reason it does not know as a plain stop', () => {

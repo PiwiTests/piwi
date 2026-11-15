@@ -144,7 +144,11 @@ export type RunHeard =
   | { type: 'joined' }
   | { type: 'left' }
   | { type: 'test-begin'; test: RunTest }
-  | { type: 'test-end'; status: string; pausedMs: number }
+  /**
+   * The test ended, with Playwright's status, and whether that is the status it was expected to end with (`ok`: a
+   * `test.fail()` test that failed is ok, one that passed is not), absent from a reporter that does not say.
+   */
+  | { type: 'test-end'; status: string; pausedMs: number; ok?: boolean }
   | { type: 'stopped'; stop: RunStop }
   | { type: 'running'; since: string }
   | { type: 'event'; event: RunEvent }
@@ -2522,17 +2526,29 @@ export class RunSessions {
         this.changed(session, true);
         return this.options.heard?.(session.ref, worker.index, { type: 'running', since }, session.root);
       }
-      case 'test-end':
-        this.hear(session, worker, { type: 'test-end', test: message.testId, status: message.status });
+      case 'test-end': {
+        const expected = message.expectedStatus;
+        this.hear(session, worker, {
+          type: 'test-end',
+          test: message.testId,
+          status: message.status,
+          ...(expected === undefined ? {} : { expected }),
+        });
         worker.view = null;
         worker.askedBy = null;
         this.changed(session);
         return this.options.heard?.(
           session.ref,
           worker.index,
-          { type: 'test-end', status: message.status, pausedMs: message.pausedMs },
+          {
+            type: 'test-end',
+            status: message.status,
+            pausedMs: message.pausedMs,
+            ...(expected === undefined ? {} : { ok: message.status === expected }),
+          },
           session.root,
         );
+      }
       case 'event':
         return this.options.heard?.(session.ref, worker.index, { type: 'event', event: message.event }, session.root);
       case 'lane-frame': {
