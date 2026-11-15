@@ -84,17 +84,24 @@ internal sealed class PiwiSourceFiles : IDisposable
     }
 
     /// <summary>The source file of <paramref name="method"/>, following an async or iterator method into its state machine.</summary>
-    internal string? MethodFile(MethodBase method)
+    internal string? MethodFile(MethodBase method) => MethodPlace(method)?.File;
+
+    /// <summary>
+    /// The source file of <paramref name="method"/> and the 1-based line its body starts at (its first visible sequence
+    /// point; an expression body's own line), following an async or iterator method into its state machine. The line
+    /// is null when the PDB names the file but no visible statement.
+    /// </summary>
+    internal (string File, int? Line)? MethodPlace(MethodBase method)
     {
-        var document = Document(method);
-        if (document is null && method.GetCustomAttribute<StateMachineAttribute>()?.StateMachineType is { } machine)
+        var place = Document(method);
+        if (place?.Line is null && method.GetCustomAttribute<StateMachineAttribute>()?.StateMachineType is { } machine)
         {
             var moveNext = machine.GetMethod("MoveNext", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (moveNext is not null)
-                document = Document(moveNext);
+            if (moveNext is not null && Document(moveNext) is { } inMachine)
+                place = place is null || inMachine.Document == place.Value.Document ? inMachine : place;
         }
 
-        return document is null ? null : Relative(document);
+        return place is null || Relative(place.Value.Document) is not { } file ? null : (file, place.Value.Line);
     }
 
     /// <summary>The source file of the first method declared by <paramref name="type"/> that has one.</summary>
@@ -117,7 +124,8 @@ internal sealed class PiwiSourceFiles : IDisposable
         return null;
     }
 
-    private string? Document(MethodBase method)
+    /// <summary>The source document of <paramref name="method"/> as the PDB records it, and the line of its first visible sequence point.</summary>
+    private (string Document, int? Line)? Document(MethodBase method)
     {
         try
         {
@@ -127,18 +135,19 @@ internal sealed class PiwiSourceFiles : IDisposable
             var handle = (MethodDefinitionHandle)MetadataTokens.EntityHandle(method.MetadataToken);
             var info = reader.GetMethodDebugInformation(handle);
             var document = info.Document;
-            if (document.IsNil)
+            int? line = null;
+            foreach (var point in info.GetSequencePoints())
             {
-                foreach (var point in info.GetSequencePoints())
-                {
-                    if (point.IsHidden)
-                        continue;
+                if (point.IsHidden)
+                    continue;
+                if (document.IsNil)
                     document = point.Document;
-                    break;
-                }
+                if (point.Document == document)
+                    line = point.StartLine;
+                break;
             }
 
-            return document.IsNil ? null : reader.GetString(reader.GetDocument(document).Name);
+            return document.IsNil ? null : (reader.GetString(reader.GetDocument(document).Name), line);
         }
         catch (Exception e) when (e is BadImageFormatException or InvalidCastException or InvalidOperationException
                                       or ArgumentException or IOException or UnauthorizedAccessException)

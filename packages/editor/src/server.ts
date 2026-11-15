@@ -98,6 +98,7 @@ import {
   caseOfCall,
   caseOfCallOrTitle,
   withoutComments,
+  routesHandledIn,
   testsReaching,
   timeoutEdit,
   timeoutMessage,
@@ -3593,8 +3594,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
+    /**
+     * Each route the file handles that tests called, at its handler's line in the build the tests called (`GET
+     * /api/orders/:id · 4 tests · 1 failing`); none past the file's end.
+     */
+    const routeLines = (repoRelative ? routesHandledIn(context.codeIndex, repoRelative) : [])
+      .filter((r) => r.line <= lines.length)
+      .map((r): SummaryLine => ({
+        line: r.line - 1,
+        title: [r.route, plural(r.tests.length, 'test'), testCounts(r.tests)].filter(Boolean).join(' · '),
+        command: run(
+          r.tests.map((t) => t.id),
+          r.tests.length === 1 ? 'that calls this route' : 'that call this route',
+          recordCoverage,
+        ),
+      }));
+    const codeLines = [...functionLines, ...routeLines].sort((a, b) => a.line - b.line);
     if (!page) {
-      if (reachLine || functionLines.length) return { file: reachLine, lines: functionLines };
+      if (reachLine || codeLines.length) return { file: reachLine, lines: codeLines };
       // A file no test reaches whose changes the pull request will count as uncovered says so at its top.
       const uncovered = await within(
         uncoveredOf(params.uri).catch(() => null),
@@ -3635,7 +3652,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         page.tests.length === 1 ? 'that acts on this page' : 'that act on this page',
       ),
     };
-    return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
+    return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...codeLines] };
   };
 
   connection.onRequest(TESTS_FOR_FILE_REQUEST, async (params: TestsForFileParams): Promise<TestsForFile> => {

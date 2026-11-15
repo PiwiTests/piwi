@@ -9,7 +9,7 @@ lang: en-US
 <Needs reporter fixtures backend editor />
 
 With [coverage](/guide/concepts#coverage) recorded, the [editor extensions](./editors) mark the lines of an
-application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and in
+application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and
 the JetBrains IDEs, Rider included. A lens above each function names the tests that ran it and runs them; the hover on
 a line lists them.
 
@@ -24,22 +24,20 @@ The marks show what the reporter records, per test:
   top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
   with its lens above it, and no line is marked as not run; with `'lines'`, its lines are marked as a server file's.
 
-Nothing else is needed in the editor. Test files, files no recorded coverage names lines of, and projects without
-coverage show nothing.
+Nothing else is needed in the editor; test files and files without recorded coverage show no marks.
 
-The editor asks the instance for a file's coverage when you open it, and, when the project's code reach can tell, only
-for a file it says coverage recorded. It asks again on a refresh and when a run ends, and the
-instance sends an answer again only when it changed. Typing asks nothing: the marks are placed on your edits
-locally.
+The editor asks the instance for a file's coverage when you open it (only a file code reach says coverage
+recorded, when it can tell), on a refresh and when a run ends; the instance answers again only when it changed. Typing
+asks nothing: the marks follow your edits locally.
 
 ## The marks
 
-| Mark | Meaning |
-|---|---|
-| Solid, teal | A test ran the line. The hover names the tests. |
-| Solid, slate | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
-| Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again. |
-| Solid, orange | In a file no test reaches, the line changed since the default branch: an [uncovered change](#uncovered-changes). |
+| Mark          | Meaning                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Solid, teal   | A test ran the line. The hover names the tests.                                                                          |
+| Solid, slate  | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
+| Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again.                         |
+| Solid, orange | In a file no test reaches, the line changed since the default branch: an [uncovered change](#uncovered-changes).         |
 
 Teal and slate are the colors the dashboard marks a file's source in. The hover on a marked line ends by saying what
 the marks mean.

@@ -618,11 +618,21 @@ export function buildManifestGraph(
         )
       : (before?.responses ?? []);
     const patterns = withPattern(before?.patterns, route.pattern);
-    addNode({ kind: 'route', key, origin, attrs: { declared: true, responses, patterns } });
     const handler = route.handler?.trim();
+    addNode({ kind: 'route', key, origin, attrs: { declared: true, responses, patterns } });
     if (handler) {
       const handlerKey = handlerNodeKey(handler);
-      addNode({ kind: 'handler', key: handlerKey, origin, attrs: { declared: true } });
+      // Each route the file handles at the line its handler's body starts at, which an editor's lens names it at.
+      const lines = {
+        ...((nodes.get(`handler\x00${handlerKey}`)?.attrs as { lines?: Record<string, number> } | null)?.lines ?? {}),
+        ...(Number.isInteger(route.line) && route.line! > 0 ? { [key]: route.line! } : {}),
+      };
+      addNode({
+        kind: 'handler',
+        key: handlerKey,
+        origin,
+        attrs: Object.keys(lines).length ? { declared: true, lines } : { declared: true },
+      });
       addEdge({ fromKind: 'route', fromKey: key, toKind: 'handler', toKey: handlerKey, kind: 'handled-by', origin });
     }
   }

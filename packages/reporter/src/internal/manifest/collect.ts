@@ -19,11 +19,12 @@ import { backendRequest } from '../transport/backend-request.js';
  * the dashboard with their source.
  */
 
-/** A declared route: method, pattern, optional handler file and documented codes. */
+/** A declared route: method, pattern, optional handler file and the line its body starts at, and documented codes. */
 interface ReporterManifestRoute {
   method: string;
   pattern: string;
   handler?: string | null;
+  line?: number;
   responses?: number[];
 }
 
@@ -69,6 +70,10 @@ export function parseManifestJson(text: string): ReporterManifest | null {
           method: r.method as string,
           pattern: r.pattern as string,
           handler: typeof r.handler === 'string' ? r.handler : undefined,
+          line:
+            typeof r.handler === 'string' && Number.isInteger(r.line) && (r.line as number) > 0
+              ? (r.line as number)
+              : undefined,
           responses: Array.isArray(r.responses)
             ? (r.responses as unknown[]).filter((c): c is number => Number.isInteger(c))
             : undefined,

@@ -51,6 +51,11 @@ export interface CodeIndex {
     runtime?: 'browser' | 'server';
     via?: 'coverage' | 'route';
   }>;
+  /**
+   * The routes a file handles that tests called, at the 1-based line the declared manifest gives their handler's body
+   * (`route`: `GET /api/orders/:id`), with the tests that called it; absent from an older instance.
+   */
+  routes?: Array<{ file: number; route: string; line: number; tests: number[] }>;
   builtAt: string | null;
   truncated: boolean;
 }

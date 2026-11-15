@@ -68,7 +68,10 @@ submenu remains); a run the Testing view started shows each test's result as its
 events (`piwi/runTest`), an instance or not (LR9 in part: the test lines of a run that reports to no instance and the
 pause or failed glyph while a test waits remain). L6 in part since: golden fixtures both editors' pure halves read
 (`packages/editor/tests/golden/`: the status bar's text and the Runs rows), held to the same words by VS Code's
-`tests/golden.test.ts` and `GlueTest`.
+`tests/golden.test.ts` and `GlueTest`. L4 in part since: the ASP.NET Core route manifest names each handler's line,
+the instance keeps it on the handler file and the code index carries each route a file handles with the tests that
+called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests · 1 failing`) that runs them.
+L7 decided: Playwright for .NET gets an MIT NuGet adapter, proposed in [playwright-dotnet.md](playwright-dotnet.md).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -271,7 +274,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and five large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and four large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -502,7 +505,7 @@ the editors list the workers only as lines of the status tooltips (`Glue.workers
 id: `piwi.runs` names the MCP provider), shown while a run is live, with the Runs window's rows (the run, then Worker N
 with its test, its state, Watch and Pause and Watch, a stop with its place and controls), and run control as a Tools →
 Piwi submenu; until then Watch and Pause and Watch sit in the status menu's run section. Whether VS Code's view sits
-beside Failures or in the Run and Debug container is open (§13); workers as a debug session's threads are
+beside Failures or in the Run and Debug container is decided: the Piwi panel (§13); workers as a debug session's threads are
 [LI10](#li10)'s alternative. ([L1](#l1))
 
 ### 8.5 What the study's model brings
@@ -529,7 +532,7 @@ branch (`CI run #130 on feature-x`), the developer's own the short form. ([L1](#
 ## 9. Rider
 
 Rider runs the same plugin as WebStorm, with other keymaps, another project model and a .NET backend beside the specs.
-What differs is RD3, RD4, RD7 and RD8 below and one finding filed elsewhere:
+What differs is RD3, RD4 and RD8 below and one finding filed elsewhere:
 
 | What differs in Rider                                        | Where             |
 | ------------------------------------------------------------ | ----------------- |
@@ -553,17 +556,11 @@ visible; only a run settles it. **(read)** Fix: `editor-coverage.md` claims for 
 a Rider scene on `examples/sample-app/backends/aspnetcore` checks [RD3](#rd3), a controller's marks, lens and
 diagnostics, and [AC3](#ac3). ([M17](#m17))
 
-<a id="rd7"></a>**RD7. A C# controller, like any application file, gets one "Reached by N tests" line above its usings
-and nothing per action or endpoint.** `packages/editor/src/server.ts:3230-3239` puts the line at `line: 0`, and the
-route manifest keeps only each handler's file
-(`integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore/PiwiRouteManifest.cs:26`). **(read)** Fix: an optional
-`line` per manifest route, read in the same PDB pass, and a lens per action
-(`GET /api/orders/{id} · 4 tests · 1 failing`) in both editors. ([L4](#l4))
-
 <a id="rd8"></a>**RD8. The dashboard prints .NET stack frames and route handlers as plain text, with no Open in IDE link
 to Rider.** Server-log stacks are a `<pre>`
 (`apps/application/app/components/test-case/TestCaseNetworkRequests.vue:568-571`). **(read)** Fix: `OpenInIdeLink` on
-`in <path>:line N` frames and on Test Map handler nodes, at the handler's line once [RD7](#rd7) adds it. ([L4](#l4))
+`in <path>:line N` frames and on Test Map handler nodes, at the handler's line the manifest gives. Skipped for now: a
+frame's absolute build path has no reliable mapping to a repository file. ([L4](#l4))
 
 The Rider checks still open are §13's question on Rider's C# surfaces; each needs a Rider scene ([M17](#m17)), not new
 tooling.
@@ -825,13 +822,13 @@ this plan, which leaves Rider out of capture. Step [M17](#m17).
 ### LI17. The .NET side: endpoint reach, cross-stack debugging, and Playwright for .NET
 
 Each manifest route gains its handler's line, read in the PDB pass `PiwiSourceFiles` already makes, for a lens per
-action that runs its tests in both editors ([RD7](#rd7)) and Open in IDE on .NET frames ([RD8](#rd8)). Later, beyond
+action that runs its tests in both editors (built) and Open in IDE on .NET frames ([RD8](#rd8)). Later, beyond
 this plan's steps, Rider's Debug in my editor could offer to attach the .NET debugger at the failing request's handler.
-Last, the maintainer decides: Playwright for .NET, Java and Python a stated non-goal, or a NuGet adapter writing Piwi's
-report from NUnit, MSTest and xUnit. **Lives in** `integrations/aspnetcore` for the field and any adapter (MIT, written
+Last, Playwright for .NET: the maintainer chose an MIT NuGet adapter writing Piwi's report from NUnit, MSTest and
+xUnit, proposed in [playwright-dotnet.md](playwright-dotnet.md); Java and Python stay outside. **Lives in** `integrations/aspnetcore` for the field and any adapter (MIT, written
 there), the editors and the dashboard for the rest (FSL). **Replaces** one 'Reached by N tests' line above a
 controller's usings. **Depends on** [LI16](#li16). **Revisits** [ROADMAP.md](../ROADMAP.md)'s non-goals, which name
-other frameworks, not Playwright in other languages. Steps [L4](#l4), [L7](#l7).
+other frameworks, not Playwright in other languages. Steps [L4](#l4) and L7 (decided).
 
 **Agents (principle 5).**
 
@@ -910,13 +907,12 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Large
 
-| Step              | Change                                                                                                                                                                                                                                                                          | Scope  | Findings                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide`  | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [NF10](#nf10) |
-| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide`  | [LR3](#lr3)                                            |
-| <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`)                                                                             | `ide`  | [RD7](#rd7), [RD8](#rd8)                               |
-| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide`  | none ([LI19](#li19))                                   |
-| <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter                                                                                                                                                              | `docs` | none ([LI17](#li17))                                   |
+| Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [NF10](#nf10) |
+| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
+| <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
+| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |
 
 ### Sequence
 
@@ -943,8 +939,8 @@ whether M14's places are interim.
    refresh.
 7. **What turns the status item to its alarm**, decided: failures new against the baseline that the
    editor's own run produced, both conditions, with `piwi.statusBarAlert` (`new`, `any`, `never`) and its JetBrains twin.
-8. **Where VS Code's Runs view lives**: in the Piwi panel beside Failures, matching JetBrains' Runs tab (this document's
-   lean), or in Run and Debug, where developers looked at a stop? Whether JetBrains draws its run views in Swing or JCEF
+8. **Where VS Code's Runs view lives**, decided: in the Piwi panel beside Failures and CI Runs, matching JetBrains' Runs
+   tab (`piwi.liveRuns`). Whether JetBrains draws its run views in Swing or JCEF
    is the live-run study's open question 9.
 9. **Plain Run and breakpoints**, decided: a plain Run pauses at none, Debug with Piwi does (`piwi.breakpoints` `debug`,
    its default; `always` keeps every run stopping, an old `true` read as it), as the IDE's own Run and Debug.
