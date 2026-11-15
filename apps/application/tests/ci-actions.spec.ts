@@ -73,6 +73,34 @@ test.describe.serial('CI actions', () => {
     expect(project.ciRerun.actions.map((a) => a.target.type)).toEqual(['github']);
   });
 
+  test('a label in the action editor toggles its own control, and every control has its own id', async ({
+    page,
+    request,
+  }) => {
+    await request.patch(`/api/projects/${projectId}`, {
+      data: { ciRerun: { enabled: true, actions: [], defaults: {} } },
+    });
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
+    await waitForHydration(page);
+
+    const enabled = page.getByTestId('ci-actions-enabled');
+    await expect(enabled).toBeChecked();
+    await page.getByTestId('ci-action-add').click();
+    const editor = page.getByTestId('ci-action-editor');
+
+    await editor.getByText('Flake Lab', { exact: true }).click();
+    await expect(editor.getByRole('checkbox', { name: 'Flake Lab', exact: true })).toBeChecked();
+    await editor.getByText('Default for Flake Lab', { exact: true }).click();
+    await expect(editor.getByRole('switch', { name: 'Default for Flake Lab', exact: true })).toBeChecked();
+    await expect(enabled).toBeChecked();
+
+    const repeated = await page.evaluate(() => {
+      const ids = [...document.querySelectorAll('[id]')].map((element) => element.id);
+      return [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
+    });
+    expect(repeated).toEqual([]);
+  });
+
   test('add an action, duplicate it, make it the default, save and reload', async ({ page, request }) => {
     await request.patch(`/api/projects/${projectId}`, { data: { ciRerun: null } });
     await page.goto(`/projects/${projectId}?tab=settings&section=ci`);

@@ -133,14 +133,12 @@ async function removeToken() {
           <USwitch v-model="state.gateStatus" label="Post the gate verdict as a commit status" />
         </UFormField>
 
-        <UFormField
+        <SettingsFieldGroup
           v-if="showGeneratedSpecs"
-          name="generatedSpecs"
+          label="Generated specs"
+          help="bug-report.spec"
           description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
         >
-          <template #label>
-            <span class="inline-flex items-center gap-1">Generated specs <HelpHint topic="bug-report.spec" /></span>
-          </template>
           <div class="grid gap-2 sm:grid-cols-2">
             <UInput
               v-model="state.generatedSpecs.bugsFolder"
@@ -155,7 +153,7 @@ async function removeToken() {
               aria-label="Test import"
             />
           </div>
-        </UFormField>
+        </SettingsFieldGroup>
       </div>
 
       <template #footer>
