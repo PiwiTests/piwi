@@ -38,7 +38,7 @@ were built with M13 (LR2, HM17). Two of the status item's last parts built since
 its controls in the status menu, as JetBrains' item shows it (LR1), and the alarm reads `Piwi: 2 failing`, the counts
 fixed locally and flaky in its tooltip (HM2). M4 and M13 built since: an instance that does not answer wears one
 glyph in both status items, a cloud struck through (`$(piwi-unreachable)`, `unreachable.svg`) (HM4), and JetBrains' run
-tab opens a shared run's page and copies its link beside its Share live and Stop sharing, as the status popup does;
+tab opens a shared run's page and copies its link after its controls, as the status popup does;
 VS Code's failures view lists finished runs alone, which no share outlives, and its status menu lists the shared ones
 (LR14). Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
@@ -1039,7 +1039,7 @@ such action.
 |---|---|---|---|---|
 | Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
-| An instance that does not answer | `cloud-off` | – | `$(piwi-unreachable)` | `unreachable.svg` |
+| An instance that does not answer | – | – | `$(piwi-unreachable)` | `unreachable.svg` |
 | Get started | – | – | `$(book)` | `AllIcons.General.ShowInfos` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |

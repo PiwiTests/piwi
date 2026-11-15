@@ -368,8 +368,8 @@ reference.
 The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel`, since the
 platform's text presentations take no color. It shows:
 
-- an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), an `AllIcons` icon for the
-  instance unreachable and for a failing or passed run, Share live's broadcast while a run is shared, the recording
+- an icon (`Glue.StatusIcon`): the plugin's, Connect's plug (`PiwiIcons.CONNECT`), a cloud struck through for the
+  instance unreachable (`PiwiIcons.UNREACHABLE`, VS Code's glyph too), an `AllIcons` icon for a failing or passed run, Share live's broadcast while a run is shared, the recording
   glyph (`PiwiIcons.recording`, red, or the gray ring while paused) while a recording runs, `AnimatedIcon.Default` for
   a recording opening the browser or stopping, a run in progress or a read, and for the runs' line one icon per state
   (`lineIcon`: the failed icon at a held failure and once the runs failed, the pause's at a stop or a Pause on its way,

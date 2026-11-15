@@ -65,8 +65,9 @@ title bars, a view's inline row and a quick pick, not in the palette or a contex
 their command's glyph in the choice among them (`STOP_ACTIONS.icon`). `tests/menus.test.ts` holds both. Piwi's own
 glyphs are those of the product icon font the brand asset generator writes (`media/piwi-icons.woff`,
 `contributes.icons`, ids of two segments as VS Code takes them): `$(piwi-mark)`, which the idle status item and the
-failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing and reload glyphs
-(`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-stop-live)`, `$(piwi-reload)`), and Run to the cursor's
+failures view's run draw, the JetBrains plugin's flaky, Pause and watch, Stop sharing, reload, Assert a region, Mock a
+request and unreachable glyphs (`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-stop-live)`, `$(piwi-reload)`,
+`$(piwi-region)`, `$(piwi-mock)`, `$(piwi-unreachable)`), and Run to the cursor's
 (`$(piwi-run-to-cursor)`, an arrow into a text caret as the JetBrains platform draws it), at one line weight.
 
 ## Service, lenses and credentials
