@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -49,6 +51,7 @@ public class ManifestTests
             ],
             manifest.RouteKeys);
         Assert.All(manifest.Routes, r => Assert.EndsWith(ThisFile, r.Handler));
+        Assert.Equal(LineOf("ManifestTests.cs", "e.MapGet(\"/api/items\", () => \"list\");"), manifest.Route("GET", "/api/items").Line);
         Assert.Empty(manifest.Pages);
     }
 
@@ -166,6 +169,22 @@ public class ManifestTests
             ],
             manifest.RouteKeys);
         Assert.All(manifest.Routes, r => Assert.EndsWith(ControllersFile, r.Handler));
+        // Each action's line is where its body starts: an expression body's own line, an async method's opening brace.
+        Assert.Equal(
+            LineOf("ManifestTestApp.cs", "public IActionResult Get(int id) => Ok(id);"),
+            manifest.Route("GET", "/api/order-items/{id:int}").Line);
+        Assert.Equal(
+            LineOf("ManifestTestApp.cs", "public async Task<IActionResult> RecentlyShipped()") + 1,
+            manifest.Route("GET", "/api/order-items/recently-shipped").Line);
+    }
+
+    /// <summary>The 1-based line of this folder's <paramref name="file"/> that first holds <paramref name="text"/>.</summary>
+    private static int LineOf(string file, string text, [CallerFilePath] string caller = "")
+    {
+        var lines = File.ReadAllLines(Path.Combine(Path.GetDirectoryName(caller)!, file));
+        var index = Array.FindIndex(lines, l => l.Contains(text, StringComparison.Ordinal));
+        Assert.True(index >= 0, $"{file} holds no line with {text}");
+        return index + 1;
     }
 
     [Fact]

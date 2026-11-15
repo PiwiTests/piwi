@@ -22,8 +22,8 @@ using Microsoft.Extensions.Options;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
 
-/// <summary>A declared route: its method, path pattern and the source file of its handler.</summary>
-internal sealed record ManifestRoute(string Method, string Pattern, string? Handler);
+/// <summary>A declared route: its method, path pattern, and the source file of its handler and the 1-based line its body starts at.</summary>
+internal sealed record ManifestRoute(string Method, string Pattern, string? Handler, int? Line = null);
 
 /// <summary>A declared page: its path pattern and the file that renders it.</summary>
 internal sealed record ManifestPage(string Pattern, string? Name);
@@ -120,14 +120,14 @@ internal static class PiwiRouteManifest
                 continue;
             }
 
-            var handler = sources is null ? null : HandlerFile(endpoint, sources);
+            var handler = sources is null ? null : HandlerPlace(endpoint, sources);
             foreach (var method in DeclaredMethods(endpoint))
             {
                 var key = $"{method} {path}";
                 if (!routes.TryGetValue(key, out var existing))
-                    routes[key] = new ManifestRoute(method, path, handler);
+                    routes[key] = new ManifestRoute(method, path, handler?.File, handler?.Line);
                 else if (existing.Handler is null && handler is not null)
-                    routes[key] = existing with { Handler = handler };
+                    routes[key] = existing with { Handler = handler.Value.File, Line = handler.Value.Line };
             }
         }
 
@@ -367,15 +367,20 @@ internal static class PiwiRouteManifest
         return false;
     }
 
-    /// <summary>The source file of the controller action, minimal API delegate or SignalR hub behind a route.</summary>
-    private static string? HandlerFile(Endpoint endpoint, PiwiSourceFiles sources)
+    /// <summary>
+    /// The source file of the controller action, minimal API delegate or SignalR hub behind a route, and the line the
+    /// action's or delegate's body starts at (a hub, which has many methods, has none).
+    /// </summary>
+    private static (string File, int? Line)? HandlerPlace(Endpoint endpoint, PiwiSourceFiles sources)
     {
         var method = endpoint.Metadata.GetMetadata<ControllerActionDescriptor>()?.MethodInfo
             ?? endpoint.Metadata.GetMetadata<MethodInfo>();
         if (method is not null)
-            return sources.MethodFile(method);
+            return sources.MethodPlace(method);
 
-        return endpoint.Metadata.GetMetadata<HubMetadata>() is { } hub ? sources.TypeFile(hub.HubType) : null;
+        return endpoint.Metadata.GetMetadata<HubMetadata>() is { } hub && sources.TypeFile(hub.HubType) is { } file
+            ? (file, null)
+            : null;
     }
 
     /// <summary>Serializes the manifest to the <c>{ "routes": [...], "pages": [...] }</c> JSON the reporter reads.</summary>
@@ -393,6 +398,8 @@ internal static class PiwiRouteManifest
                 writer.WriteString("pattern", route.Pattern);
                 if (route.Handler is not null)
                     writer.WriteString("handler", route.Handler);
+                if (route.Handler is not null && route.Line is { } line)
+                    writer.WriteNumber("line", line);
                 writer.WriteEndObject();
             }
 
