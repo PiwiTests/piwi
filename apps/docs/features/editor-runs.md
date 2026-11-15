@@ -103,13 +103,14 @@ reach https://piwi.example.com: is the Piwi reporter in the Playwright config?`
 
 ## When your run ends
 
-Once a run you started from the editor is read, a notification (a balloon titled by its run in JetBrains) says what it
-changed: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`
-and new failures, with **Open the failures**, **Open in dashboard** and **Re-run failing**. The `piwi.runNotifications`
-setting (**Settings → Tools → Piwi** in JetBrains) shows it when a test fails, the default, always (a passing run then
-offers **Only on failure**), or never; **Settings** opens it in VS Code.
+Once a run you started from the editor, [a terminal](./terminal-runs) (`run #125 in a terminal`) or the IDE's test
+runner is read, a notification says what it changed:
+`Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)` and new
+failures, with **Open the failures**, **Open in dashboard** and **Re-run failing**. The `piwi.runNotifications` setting
+(**Settings → Tools → Piwi** in JetBrains) shows it when a test fails, the default, always (a passing run then offers
+**Only on failure**), or never; **Settings** opens it in VS Code.
 
-A CI run of your checked-out branch says the same once it ends, against the run it replaced:
+A CI run of your branch says the same once it ends, against the run it replaced:
 `Piwi: CI run #130 on feature-x · 2 fixed · 1 new failure (cart.spec.ts › adds)`. The `piwi.runNotificationsScope`
 setting, **The runs it says it for** in JetBrains, keeps it to the runs you started.
 

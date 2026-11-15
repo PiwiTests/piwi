@@ -525,7 +525,10 @@ data class CiFrame(
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
-    /** `editor`, a command built for this IDE; `ci`, a CI run of the branch the service followed. */
+    /**
+     * `editor`, a command built for this IDE; `terminal` or `runner`, a run started in a terminal or in the IDE's own
+     * test runner that followed the IDE; `ci`, a CI run of the branch the service followed.
+     */
     val origin: String = "editor",
     /** The branch a CI run ran on. */
     val branch: String? = null,

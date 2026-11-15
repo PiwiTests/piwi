@@ -1148,10 +1148,12 @@ export interface RunEnded {
   root: string;
   runId: number;
   /**
-   * Who started it: `editor`, a command the service built for this editor; `ci`, a CI run of the branch the editor
-   * followed (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
+   * Who started it: `editor`, a command the service built for this editor; `terminal` or `runner`, a run the developer
+   * started in a terminal or in the IDE's own test runner, which followed the editor (`RunSession.terminal`,
+   * `RunSession.runner`) and named its page on the instance; `ci`, a CI run of the branch the editor followed
+   * (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
    */
-  origin: 'editor' | 'ci';
+  origin: 'editor' | 'terminal' | 'runner' | 'ci';
   /** The branch a CI run ran on, which its verdict names. */
   branch?: string;
   /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
