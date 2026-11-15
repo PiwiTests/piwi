@@ -287,7 +287,7 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         /** The lines changed since the default branch, in a file no test reaches: uncovered changes. */
         val UNCOVERED: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_UNCOVERED_CHANGE")
 
-        /** Each mark's entry on the Piwi color page (`PiwiColorSettingsPage`), which Edit the colors… selects. */
+        /** Each mark's entry on the Piwi color page (`PiwiColorSettingsPage`), which Edit the colors… selects too. */
         val COLOR_NAMES = mapOf(
             Glue.CoverageKind.RUN to "Coverage//Lines the tests ran",
             Glue.CoverageKind.NOT_RUN to "Coverage//Lines no test runs",
@@ -307,7 +307,8 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
 /**
  * A coverage mark at the right of the gutter's marker area, beside the IDE's own coverage at its left, in the error
  * stripe color of its key (else its background), so a color scheme restyles it; dashed for the lines changed since the
- * coverage run. Hovered, it shows its tooltip: what it says of its lines and what the marks mean; clicked, its `menu`.
+ * coverage run. Hovered, it shows its tooltip: what it says of its lines and what the marks mean; clicked on the bar
+ * itself, its `menu`, a click elsewhere in the gutter left to the gutter.
  */
 internal class CoverageGutterMark(
     val key: TextAttributesKey,
@@ -319,7 +320,13 @@ internal class CoverageGutterMark(
 
     override fun getTooltipText(): String = tooltip
 
-    override fun canDoAction(e: MouseEvent): Boolean = true
+    /** Where the bar was last painted across the gutter, which a click must hit. */
+    @Volatile private var painted: IntRange? = null
+
+    override fun canDoAction(e: MouseEvent): Boolean {
+        val bar = painted ?: return false
+        return e.x in (bar.first - JBUI.scale(2))..(bar.last + JBUI.scale(2))
+    }
 
     override fun doAction(editor: Editor, e: MouseEvent) {
         menu(editor, e)
@@ -330,6 +337,7 @@ internal class CoverageGutterMark(
         val attributes = editor.colorsScheme.getAttributes(key) ?: return
         g.color = attributes.errorStripeColor ?: attributes.backgroundColor ?: return
         val width = minOf(r.width, JBUI.scale(3)).coerceAtLeast(1)
+        painted = r.x until r.x + width
         if (!dashed) {
             g.fillRect(r.x, r.y, width, r.height)
             return

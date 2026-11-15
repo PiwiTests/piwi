@@ -274,11 +274,12 @@ describe('a run’s session, with a client that answers stops', () => {
       expect(svc.tests.filter((t) => t.ref === ref)).toEqual([
         {
           ref,
+          root: dir,
           worker: 3,
           type: 'test-begin',
           test: expect.objectContaining({ id: 'id-adds a mug', title: ['cart', 'adds a mug'], line: 2 }),
         },
-        { ref, worker: 3, type: 'test-end', status: 'passed' },
+        { ref, root: dir, worker: 3, type: 'test-end', status: 'passed' },
       ]);
 
       // The client says the command ended: the run ends with it, and the worker's connection closes.

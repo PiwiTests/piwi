@@ -821,6 +821,19 @@ export class PiwiContext {
   }
 
   /**
+   * A file's coverage, read for a list of many files: the answer held when it is not stale, else read once and kept out
+   * of the files' cache, whose open files' answers the list would push out.
+   */
+  async coverageOnce(repoRelative: string): Promise<FileCoverage | null> {
+    const kept = this.coverages.get(`${this.coverageBranch() ?? ''}\n${repoRelative}`);
+    if (kept?.read) return kept.read;
+    if (kept && !kept.stale) return kept.value;
+    const entry: CoverageEntry = { value: null, etag: null, read: null, stale: false, again: false };
+    await this.readCoverage(entry, repoRelative, this.coverageBranch());
+    return entry.value;
+  }
+
+  /**
    * Mark every file's coverage to be read again on its next ask, and once more after a read on its way: a refresh, or a
    * run that ended, may have recorded new coverage.
    */

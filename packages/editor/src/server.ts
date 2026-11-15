@@ -117,7 +117,9 @@ import {
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
+  coverageOfTests,
   coveredFiles,
+  recordedRuntime,
   coverageNote,
   coverageResult,
   coverageVersions,
@@ -394,6 +396,7 @@ import {
   type ScreenshotResult,
   type SelectionsParams,
   type SelectionsResult,
+  type RunTestEvent,
   type RunTestsArgs,
   type StatusResult,
   type StopRecordingParams,
@@ -2208,11 +2211,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     heard: (ref, worker, what, root) => {
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
-      if (what.type === 'test-begin') {
-        void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, type: what.type, test: what.test });
-      } else if (what.type === 'test-end') {
-        void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, type: what.type, status: what.status });
-      }
+      const tell = (event: Omit<RunTestEvent, 'ref' | 'worker' | 'root'>) =>
+        void connection.sendNotification(RUN_TEST_NOTIFICATION, { ref, worker, root, ...event });
+      if (what.type === 'test-begin') tell({ type: 'test-begin', test: what.test });
+      else if (what.type === 'test-end') tell({ type: 'test-end', status: what.status });
+      // A worker gone before its test ended (it crashed, or the run was stopped): that test was interrupted.
+      else if (what.type === 'left') tell({ type: 'test-end', status: 'interrupted' });
     },
     // The run runs a file as it stood on disk when it started: one written since keeps each line as it is.
     runText: (ref, file) => {
@@ -3490,12 +3494,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     for (const t of covered?.coverage.tests ?? []) if (!reached.has(t.id)) reached.set(t.id, t);
     const tests = [...reached.values()];
     // A run from a file's coverage lens records the coverage of its runtime, so it refreshes the marks.
-    const fragments = covered?.coverage.fragments ?? [];
-    const recordCoverage = fragments.some((f) => f.runtime === 'server')
-      ? 'server'
-      : fragments.some((f) => f.runtime === 'browser')
-        ? 'browser'
-        : undefined;
+    const recordCoverage = recordedRuntime(covered?.coverage);
     const page = repoRelative
       ? (pageSummary(context.index, repoRelative) ?? pageSummary(context.index, relative ?? ''))
       : null;
@@ -3710,6 +3709,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return result;
   });
 
+  /**
+   * The marks of an application file of `context` as the tests of `testIds` alone recorded it (all its tests without
+   * them), read outside the open files' caches; null when none of that coverage names its lines.
+   */
+  const coverageOfRun = async (
+    context: PiwiContext,
+    file: string,
+    testIds: ReadonlySet<number> | null,
+  ): Promise<CoverageResult | null> => {
+    const repoRelative = relativeTo(context.repoRoot, file);
+    const read = repoRelative ? await context.coverageOnce(repoRelative) : null;
+    const coverage = read && testIds ? coverageOfTests(read, testIds) : read;
+    const text = readText(file);
+    if (!coverage?.fragments.length || text === null) return null;
+    const versions = coverageVersions(coverage);
+    const chosen = await chooseVersion(
+      versions,
+      text,
+      () => readSaved(file),
+      (blob) => blobTexts.textOf(context.repoRoot, blob),
+      (seen, blob) => blobTexts.remember(seen, blob),
+    );
+    const result = coverageResult(pathToFileURL(file).href, coverageMarks(coverage, versions, chosen, text));
+    return result.state === 'exact' || result.state === 'mapped' ? result : null;
+  };
+
   connection.onRequest(COVERAGE_FILES_REQUEST, async (params: CoverageFilesParams): Promise<CoverageFilesResult> => {
     const context = contexts.find((c) => c.root === params.root);
     if (!context?.client || !context.project || !context.coverageRoute) return { files: [], truncated: false };
@@ -3718,22 +3743,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     context.staleCoverage();
     if (!context.codeIndex) return { files: [], truncated: false };
     const wanted = params.testIds?.length ? new Set(params.testIds) : null;
-    const uris = coveredFiles(context.codeIndex, wanted)
+    const candidates = coveredFiles(context.codeIndex, wanted)
       .map((relative) => path.join(context.repoRoot, relative))
-      .filter((file) => fs.existsSync(file))
-      .map((file) => pathToFileURL(file).href)
-      .filter((uri) => coverageTarget(uri)?.context === context);
-    const read = uris.slice(0, MAX_COVERAGE_FILES);
+      .filter((file) => !isTestCode(context, relativeTo(context.root, file)));
+    const read: string[] = [];
+    let at = 0;
+    for (; at < candidates.length && read.length < MAX_COVERAGE_FILES; at++) {
+      if (fs.existsSync(candidates[at]!)) read.push(candidates[at]!);
+    }
     const files: CoverageResult[] = [];
     // A few files at a time: each is a request to the instance.
     for (let i = 0; i < read.length; i += COVERAGE_FILES_AT_ONCE) {
       const batch = read.slice(i, i + COVERAGE_FILES_AT_ONCE);
-      const results = await Promise.all(batch.map((uri) => coverageNow(uri).catch(() => null)));
-      for (const result of results) {
-        if (result && (result.state === 'exact' || result.state === 'mapped')) files.push(result);
-      }
+      const results = await Promise.all(batch.map((file) => coverageOfRun(context, file, wanted).catch(() => null)));
+      for (const result of results) if (result) files.push(result);
     }
-    return { files, truncated: uris.length > read.length };
+    return { files, truncated: at < candidates.length };
   });
 
   connection.onRequest(COVERAGE_TESTS_REQUEST, async (params: CoverageTestsParams): Promise<CoverageTestsResult> => {
@@ -3746,8 +3771,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const ids = [
       ...new Set((marks.executed.get(params.line + 1) ?? []).flatMap((i) => found.coverage.tests[i]?.id ?? [])),
     ];
+    // The run records the coverage of the file's runtime, as its coverage lens's does, so the marks show it.
+    const coverage = recordedRuntime(found.coverage);
     return ids.length
-      ? { args: { uri: params.uri, root: target.context.root, testIds: ids }, count: ids.length }
+      ? {
+          args: { uri: params.uri, root: target.context.root, testIds: ids, ...(coverage ? { coverage } : {}) },
+          count: ids.length,
+        }
       : { args: null, count: 0 };
   });
 

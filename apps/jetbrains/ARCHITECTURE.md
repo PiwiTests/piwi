@@ -210,10 +210,11 @@ file's scroll bar keeps its own marks, and a background set on any key tints its
 `apps/application/tests/unit/coverage-mark-colors.test.ts`).
 
 **Tooltips.** The bar is also an `ActiveGutterRenderer`. Hovered, the bar and the scroll bar mark show
-`Glue.coverageMarkTooltip`: what the lines are and what the marks mean. Clicked, the bar opens its menu (`showMenu`):
+`Glue.coverageMarkTooltip`: what the lines are and what the marks mean. Clicked on the bar itself (`painted`, the x range
+it was drawn at), it opens its menu (`showMenu`):
 **Run the tests that ran this line** on a run mark (`piwi/coverageTests`), **Go to the next line no test runs**
 (`Glue.nextNotRunLine`), **Hide the coverage marks** and **Edit the colors…**, which opens the Piwi color page at the
-mark's key (`ColorAndFontOptions.selectOrEditColor`, `COLOR_NAMES`). The
+mark's key (`ColorAndFontOptions.selectOrEditColor`, `COLOR_NAMES`, which the color page's descriptors are named by). The
 service's hover names the tests behind a line; the lines on a function come in `piwi/fileSummary`, through Code Vision.
 
 **Updates.**
@@ -608,12 +609,14 @@ started in the console has a Run tab built as the platform's `RunContentExecutor
 its key, a Stop that kills the process clicked again while it ends), titled after the run's name (`RunCommand.name`),
 with `Piwi.RunControl`'s actions but its Stop in its toolbar, each wrapped (`registeredWith`) to act on the tab's run
 alone (`PiwiRunSessions.RUN`), then, while the run is shared live, Open the run page and Copy the run page's link,
-as the status popup's entries on a share (`SharedPage`). Its console is the platform's test runner's
-(`SMTestRunnerConnectionUtil`, by node id): it reads a relay of the run's process (`TestTreeRelay`), which passes the
-output on and writes between its lines the service messages `Glue.RunTestTree` makes of the run's `piwi/runTest`
-events (`PiwiRunTestTrees`, by ref): a suite per spec and `describe` block, a node per attempt, each test's location
-for the IDE's navigation (`FileUrlProvider`). Such a run offers the IDE's Playwright runner once per installation
-(`offerRunner`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
+as the status popup's entries on a share (`SharedPage`). A test run's console (one with a ref) is the platform's
+test runner's (`SMTestRunnerConnectionUtil`, by node id): it reads a relay of the run's process (`TestTreeRelay`),
+made as the process starts so it keeps the events heard before the tab shows, which passes the output on and writes
+between its lines the service messages `Glue.RunTestTree` makes of the run's `piwi/runTest` events
+(`PiwiRunTestTrees`, by ref), after `enteredTheMatrix`: a suite per Playwright project, spec (by its path in the
+config's folder) and `describe` block, a node per attempt, an interrupted test ignored, each test's location for the
+IDE's navigation (`FileUrlProvider`). Any other command's console is a text console. Such a run offers the IDE's
+Playwright runner once per installation (`offerRunner`). The plugin tells the service as its command starts (`piwi/commandStarted`), the IDE's
 runner's runs as their process starts. The choosers name a run by `Glue.runTitle` (`Run #78 · checkout.spec.ts:12`),
 with its ref while another of the list reads the same, the Watch chooser a worker's run only while several runs have
 workers to watch.

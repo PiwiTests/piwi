@@ -1037,6 +1037,8 @@ data class RunTest(
  */
 data class RunTestEvent(
     val ref: String? = null,
+    /** The folder of the run's Playwright config; null when no context holds it. */
+    val root: String? = null,
     val worker: Int = 0,
     val type: String? = null,
     val test: RunTest? = null,

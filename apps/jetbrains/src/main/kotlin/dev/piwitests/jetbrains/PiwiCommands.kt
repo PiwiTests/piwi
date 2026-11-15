@@ -461,6 +461,12 @@ object PiwiCommands {
                     if (ref == null) ended.complete(Unit) else commandEnded(project, CommandEndedParams(ref, event.exitCode)) { ended.complete(Unit) }
                 }
             })
+            // A test run's tree takes its tests' events from now on, kept until its tab shows it.
+            val relay = if (ref != null && !project.isDisposed) {
+                TestTreeRelay(handler).also { project.service<PiwiRunTestTrees>().follow(ref, it) }
+            } else {
+                null
+            }
             // Stop, among the run's controls, ends it; the service lists the run as starting until it reports.
             if (ref != null && !project.isDisposed) {
                 project.service<PiwiRunSessions>().track(ref, handler)
@@ -473,6 +479,7 @@ object PiwiCommands {
                     PiwiRunTab.show(
                         project,
                         handler,
+                        relay,
                         Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
                         RunOutputLinks(project, cwd),
                         ref,

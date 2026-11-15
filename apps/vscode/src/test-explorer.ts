@@ -88,6 +88,10 @@ interface ProfileRun {
   starting: boolean;
   /** A run of the Coverage profile: before it ends, the coverage of what its tests reach shows in the coverage view. */
   coverage: boolean;
+  /** Its test run ended: once, by its last command or by Stop while its coverage was read. */
+  ended: boolean;
+  /** Stop was asked. */
+  cancelled: () => boolean;
 }
 
 /** The run in progress of a Playwright config, as its own test run, or as the one of the profile that started it. */
@@ -130,6 +134,8 @@ export class TestExplorer implements vscode.Disposable {
   /** What the published results stand for (`resultsKey`); null before the first. */
   private published: string | null = null;
   private readonly profiles = new Set<ProfileRun>();
+  /** The Coverage profile runs whose coverage is being read, after their last command. */
+  private readonly reading = new Set<ProfileRun>();
   /** The `piwi/coverageFiles` answer each file of the coverage view stands for. */
   private readonly coverageOf = new WeakMap<vscode.FileCoverage, CoverageResult>();
   /** The exit codes of commands that ended while a profile run was starting them, by ref, until it takes them. */
@@ -295,8 +301,9 @@ export class TestExplorer implements vscode.Disposable {
     for (const followed of this.followed.values()) if (!followed.profile) followed.run.end();
     for (const profile of this.profiles) {
       for (const part of profile.parts) if (part.timer) clearTimeout(part.timer);
-      profile.run.end();
+      this.endProfile(profile);
     }
+    for (const profile of this.reading) this.endProfile(profile);
     this.followed.clear();
     this.profiles.clear();
     for (const d of this.disposables) d.dispose();
@@ -554,21 +561,44 @@ export class TestExplorer implements vscode.Disposable {
       }
     }
     if (!profile.coverage) {
-      profile.run.end();
+      this.endProfile(profile);
       return;
     }
-    void this.showCoverage(profile).finally(() => profile.run.end());
+    this.reading.add(profile);
+    void this.showCoverage(profile).finally(() => {
+      this.reading.delete(profile);
+      this.endProfile(profile);
+    });
   }
 
-  /** The coverage Piwi holds of the files a Coverage profile run's tests reach, per Playwright config, in its test run. */
+  /** End a profile run's test run, once. */
+  private endProfile(profile: ProfileRun): void {
+    if (profile.ended) return;
+    profile.ended = true;
+    profile.run.end();
+  }
+
+  /**
+   * The coverage Piwi holds of the files a Coverage profile run's tests reach, per Playwright config, as those tests
+   * recorded it, in its test run; a test the instance does not know yet is said to have none.
+   */
   private async showCoverage(profile: ProfileRun): Promise<void> {
     const byRoot = new Map<string, number[]>();
+    let unknown = 0;
     for (const test of profile.tests.values()) {
-      if (test.testCaseId !== null) byRoot.set(test.root, [...(byRoot.get(test.root) ?? []), test.testCaseId]);
+      if (test.testCaseId === null) unknown++;
+      else byRoot.set(test.root, [...(byRoot.get(test.root) ?? []), test.testCaseId]);
+    }
+    if (unknown) {
+      profile.run.appendOutput(
+        `Piwi: no coverage of ${unknown === 1 ? '1 test' : `${unknown} tests`} the instance does not know yet.\r\n`,
+      );
     }
     for (const [root, testIds] of byRoot) {
+      if (profile.cancelled()) return;
       const params: CoverageFilesParams = { root, testIds };
       const answer = await this.lc.sendRequest<CoverageFilesResult>(COVERAGE_FILES_REQUEST, params).catch(() => null);
+      if (profile.ended) return;
       for (const result of answer?.files ?? []) {
         const { count } = testCoverageOf(result);
         const file = new vscode.FileCoverage(
@@ -609,7 +639,16 @@ export class TestExplorer implements vscode.Disposable {
       return;
     }
     for (const item of picked.keys()) run.enqueued(item);
-    const profile: ProfileRun = { run, tests: picked, shown: new Set(), parts: [], starting: true, coverage };
+    const profile: ProfileRun = {
+      run,
+      tests: picked,
+      shown: new Set(),
+      parts: [],
+      starting: true,
+      coverage,
+      ended: false,
+      cancelled: () => token.isCancellationRequested,
+    };
     // Followed from the start: a command's run, or its end, may come while the next command starts.
     this.profiles.add(profile);
     token.onCancellationRequested(() => this.cancelProfile(profile));
@@ -660,13 +699,15 @@ export class TestExplorer implements vscode.Disposable {
    * for skipped. A run its command started may go on reaching the instance; the published results show it.
    */
   private cancelProfile(profile: ProfileRun): void {
+    // Stopped while its coverage is read: it ends now, without it.
+    if (this.reading.has(profile)) return this.endProfile(profile);
     if (!this.profiles.has(profile)) return;
     this.terminate(profile.parts.flatMap((p) => (p.ref ? [p.ref] : [])));
     this.profiles.delete(profile);
     for (const part of profile.parts) if (part.timer) clearTimeout(part.timer);
     for (const followed of this.followed.values()) if (followed.profile === profile) followed.profile = null;
     for (const item of profile.tests.keys()) if (!profile.shown.has(item)) profile.run.skipped(item);
-    profile.run.end();
+    this.endProfile(profile);
   }
 
   /** Terminate the tasks of these commands. */

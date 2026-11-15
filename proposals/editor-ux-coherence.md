@@ -47,8 +47,8 @@ Piwi Desktop and Piwi Runner takes the menu's order, the run control first, the 
 own options, with Check for updates in both and each row's glyph (X3). M8 built since: a plain Run pauses at no breakpoint, Debug with Piwi does, as the IDE's own Run and Debug
 (`piwi.breakpoints` `debug`, its default; `always` and `never` beside it; `RunTestsArgs.debugging`), the runs a
 terminal starts with `always` alone (TL17), and **Debug the test at the cursor** in both editors. L2 built since:
-VS Code's Testing view runs a Coverage profile that shows the files its tests reach in the Test Coverage view
-(`piwi/coverageFiles`), and JetBrains paints Piwi's marks beside the IDE's coverage, a click on one offering to run the
+VS Code's Testing view runs a Coverage profile that shows its tests' coverage of the files they reach in the Test
+Coverage view (`piwi/coverageFiles`), and JetBrains paints Piwi's marks beside the IDE's coverage, a click on one offering to run the
 tests that ran the line (`piwi/coverageTests`), go to the next line no test runs, hide the marks or edit their colors
 (TL18); a run in JetBrains' Run tab draws its tests in the IDE's test tree as its workers begin and end them
 (`piwi/runTest`), and such a run offers the IDE's Playwright runner once (TL19); with the Run, Debug and Coverage
@@ -702,7 +702,7 @@ left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/serve
 VS Code: Run, Debug and Coverage profiles, the instance's coverage as `FileCoverage` (`loadDetailedCoverage`), and
 durations, descriptions and TestTags from `SpecTest`. JetBrains: an SMTRunner console fed by the run channel in
 [LI9](#li9)'s Run tab, so every Piwi run gets the IDE's test tree; the result icon a switchable Gutter Icons entry;
-Piwi's coverage bar hidden while the IDE shows its own. Piwi's own marks stay for flaky, quarantine, history and
+Piwi's coverage bar beside the IDE's own, not over it. Piwi's own marks stay for flaky, quarantine, history and
 [live-view-next.md](live-view-next.md) Part 6's CI position. **Lives in** both clients and the service (FSL).
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**

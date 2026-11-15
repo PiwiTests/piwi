@@ -717,17 +717,32 @@ describe('coverage in the editor', () => {
     expect(all.files.map((f) => f.uri)).not.toContain(uri('src/Web/Program.cs'));
     const removing = (await client.sendRequest('piwi/coverageFiles', { root, testIds: [12] })) as CoverageFilesResult;
     expect(removing.files.map((f) => f.uri)).toEqual([uri(BASKET_FILE)]);
+    // A file's marks are those of the tests asked about alone: the first test ran four of its eight lines.
+    const adding = (await client.sendRequest('piwi/coverageFiles', { root, testIds: [11] })) as CoverageFilesResult;
+    expect(adding.files.find((f) => f.uri === uri(BASKET_FILE))).toMatchObject({
+      executed: [
+        { start: 7, end: 8, tests: 1 },
+        { start: 12, end: 13, tests: 1 },
+      ],
+      notRun: [
+        { start: 10, end: 10 },
+        { start: 16, end: 18 },
+      ],
+      executedLines: 4,
+      executableLines: 8,
+      label: '4 of 8 lines run by 1 test',
+    });
     expect(await client.sendRequest('piwi/coverageFiles', { root: '/elsewhere' })).toEqual({
       files: [],
       truncated: false,
     });
 
     expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 7 })).toEqual({
-      args: { uri: uri(BASKET_FILE), root, testIds: [11, 12] },
+      args: { uri: uri(BASKET_FILE), root, testIds: [11, 12], coverage: 'server' },
       count: 2,
     });
     expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 16 })).toEqual({
-      args: { uri: uri(BASKET_FILE), root, testIds: [12] },
+      args: { uri: uri(BASKET_FILE), root, testIds: [12], coverage: 'server' },
       count: 1,
     });
     expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 10 })).toEqual({

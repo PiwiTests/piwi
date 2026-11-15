@@ -2277,11 +2277,13 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
 /**
  * `piwi/runTest` (notification, server to client): a worker of a run began a test (`test-begin`, with the test), or
  * ended the test it began last (`test-end`, with Playwright's status of it: `passed`, `failed`, `timedOut`, `skipped`,
- * `interrupted`), as its run connection says it. Each comes once, as it happens, for a client that draws a test tree of
+ * `interrupted`, the last too for a worker that left before it said), as its run connection says it. Each comes once, as it happens, for a client that draws a test tree of
  * the run; the session (`piwi/runSessionChanged`) holds only what each worker runs now.
  */
 export interface RunTestEvent {
   ref: string;
+  /** The folder of the run's Playwright config, as `piwi/status` names it; null when no context holds it. */
+  root: string | null;
   worker: number;
   type: 'test-begin' | 'test-end';
   test?: RunTest;

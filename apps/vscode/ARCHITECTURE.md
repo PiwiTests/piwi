@@ -941,8 +941,9 @@ run control rather than a debug session), **Run with Piwi** of the Coverage kind
 picked tests through `runTests`
 (`testRunsOf`: one run per config, by id when every test has one, else by location). A run that names its own start
 keeps it (`withRunStart`). Before a Coverage run ends, `showCoverage` adds a `FileCoverage` for each file
-`piwi/coverageFiles` names for its tests (`testCoverageOf`: the lines run of the executable ones), whose statements
-`loadDetailedCoverage` gives from the same answer. The commands are queued in their
+`piwi/coverageFiles` names for its tests, with their coverage alone (`testCoverageOf`: the lines run of the executable
+ones), whose statements `loadDetailedCoverage` gives from the same answer; its output says how many tests the
+instance does not know yet, which have none, and Stop while it reads ends it at once (`reading`, `endProfile`). The commands are queued in their
 test run, which:
 
 - follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);

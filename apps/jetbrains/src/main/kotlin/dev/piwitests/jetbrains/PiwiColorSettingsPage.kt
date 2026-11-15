@@ -25,10 +25,8 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             AttributesDescriptor("Line it failed at", PiwiTestAnnotator.FAILING_LINE),
             AttributesDescriptor("Lines being recorded", PiwiRecordings.BLOCK),
             AttributesDescriptor("Line a run is stopped at", PiwiRunSessions.EXECUTION_POINT),
-            AttributesDescriptor("Coverage//Lines the tests ran", PiwiCoverageMarks.RUN),
-            AttributesDescriptor("Coverage//Lines no test runs", PiwiCoverageMarks.NOT_RUN),
-            AttributesDescriptor("Coverage//Lines changed since the coverage run", PiwiCoverageMarks.CHANGED),
-            AttributesDescriptor("Coverage//Uncovered changes, in a file no test reaches", PiwiCoverageMarks.UNCOVERED),
+            *Glue.CoverageKind.entries.map { AttributesDescriptor(PiwiCoverageMarks.COLOR_NAMES.getValue(it), PiwiCoverageMarks.keyOf(it)) }
+                .toTypedArray(),
         )
 
     override fun getColorDescriptors(): Array<ColorDescriptor> = ColorDescriptor.EMPTY_ARRAY

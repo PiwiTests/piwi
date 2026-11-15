@@ -24,8 +24,8 @@ The marks show what the reporter records, per test:
   top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
   with its lens above it, and no line is marked as not run; with `'lines'`, its lines are marked as a server file's.
 
-Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
-coverage show nothing of it.
+Nothing else is needed in the editor. Test files, files no recorded coverage names lines of, and projects without
+coverage show nothing.
 
 The editor asks the instance for a file's coverage when you open it, and, when the project's code reach can tell, only
 for a file it says coverage recorded. It asks again on a refresh and when a run ends, and the
@@ -48,8 +48,8 @@ In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageR
 `piwi.coverageChangedBorder` and `piwi.uncoveredChangeBorder`, which a theme or `workbench.colorCustomizations` can
 restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are in the gutter, beside the
 IDE's own coverage, and, all but the lines run, in the scroll bar; hovering either shows what the lines are and what
-the marks mean; a click on a mark runs the tests that ran its line, goes to the next line no test runs, hides the
-marks or edits their colors (**Settings → Editor → Color Scheme → Piwi → Coverage**: the error stripe color is the
+the marks mean; a click on a run mark runs the tests that ran its line, and on any mark goes to the next line no test
+runs, hides the marks or edits their colors (**Settings → Editor → Color Scheme → Piwi → Coverage**: the error stripe color is the
 mark's, and a background tints the lines).
 
 ## Changed since the coverage run

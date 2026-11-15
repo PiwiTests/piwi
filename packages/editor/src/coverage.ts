@@ -110,6 +110,33 @@ export function mayHaveCoverage(codeIndex: CodeIndex | null, repoRelative: strin
 }
 
 /**
+ * The coverage a run of a file's tests records so it refreshes the file's marks: its backend's when a server runtime
+ * recorded it, else the browser's; none when no coverage names it.
+ */
+export function recordedRuntime(coverage: FileCoverage | null | undefined): 'server' | 'browser' | undefined {
+  const fragments = coverage?.fragments ?? [];
+  if (fragments.some((f) => f.runtime === 'server')) return 'server';
+  return fragments.some((f) => f.runtime === 'browser') ? 'browser' : undefined;
+}
+
+/**
+ * A file's coverage as the tests of these catalog ids alone recorded it: their fragments, each naming them alone, and
+ * the executable lines of each version as they are.
+ */
+export function coverageOfTests(coverage: FileCoverage, testIds: ReadonlySet<number>): FileCoverage {
+  const kept = coverage.tests.flatMap((t, i) => (testIds.has(t.id) ? [i] : []));
+  const position = new Map(kept.map((old, i) => [old, i]));
+  return {
+    ...coverage,
+    tests: kept.map((i) => coverage.tests[i]!),
+    fragments: coverage.fragments.flatMap((f) => {
+      const tests = f.tests.flatMap((t) => (position.has(t) ? [position.get(t)!] : []));
+      return tests.length ? [{ ...f, tests }] : [];
+    }),
+  };
+}
+
+/**
  * The files the tests' recorded coverage names, by the code index (`via: 'coverage'`, or not said by an older instance),
  * repository-relative and each once; with `testIds`, those the tests of these catalog ids reach alone.
  */

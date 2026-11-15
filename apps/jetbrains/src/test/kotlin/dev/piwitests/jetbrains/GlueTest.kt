@@ -3640,42 +3640,54 @@ class GlueTest {
     }
 
     @Test
-    fun `a run's test events draw its tests under their spec and describe blocks, each attempt ended by its worker`() {
+    fun `a run's test events draw its tests under their project, spec and describe blocks, each attempt ended by its worker`() {
         val tree = Glue.RunTestTree()
         fun begin(worker: Int, vararg title: String, retry: Int = 0) = tree.lines(
-            RunTestEvent("ed-1", worker, "test-begin", RunTest("id", title.toList(), "file:///w/tests/cart.spec.ts", 3, "chromium", retry)),
+            RunTestEvent("ed-1", "/w", worker, "test-begin", RunTest("id", title.toList(), "file:///w/tests/cart.spec.ts", 3, "chromium", retry)),
         )
-        fun end(worker: Int, status: String) = tree.lines(RunTestEvent("ed-1", worker, "test-end", status = status))
+        fun end(worker: Int, status: String) = tree.lines(RunTestEvent("ed-1", "/w", worker, "test-end", status = status))
+        assertEquals(listOf("##teamcity[enteredTheMatrix]"), tree.start())
         assertEquals(
             listOf(
-                "##teamcity[testSuiteStarted nodeId='1' parentNodeId='0' name='cart.spec.ts' locationHint='file:///w/tests/cart.spec.ts']",
-                "##teamcity[testSuiteStarted nodeId='2' parentNodeId='1' name='cart' locationHint='file:///w/tests/cart.spec.ts']",
-                "##teamcity[testStarted nodeId='3' parentNodeId='2' name='adds a |'mug|'' locationHint='file:///w/tests/cart.spec.ts:4']",
+                "##teamcity[testSuiteStarted nodeId='1' parentNodeId='0' name='chromium']",
+                "##teamcity[testSuiteStarted nodeId='2' parentNodeId='1' name='tests/cart.spec.ts' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testSuiteStarted nodeId='3' parentNodeId='2' name='cart' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testStarted nodeId='4' parentNodeId='3' name='adds a |'mug|'' locationHint='file:///w/tests/cart.spec.ts:4']",
             ),
             begin(0, "cart", "adds a 'mug'"),
         )
         // Another worker's test of the same block, at once: the suites are there already.
         assertEquals(
-            listOf("##teamcity[testStarted nodeId='4' parentNodeId='2' name='removes it' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            listOf("##teamcity[testStarted nodeId='5' parentNodeId='3' name='removes it' locationHint='file:///w/tests/cart.spec.ts:4']"),
             begin(1, "cart", "removes it"),
         )
         assertEquals(
-            listOf("##teamcity[testFailed nodeId='4' message='Timed out']", "##teamcity[testFinished nodeId='4']"),
+            listOf("##teamcity[testFailed nodeId='5' message='Timed out']", "##teamcity[testFinished nodeId='5']"),
             end(1, "timedOut"),
         )
-        assertEquals(listOf("##teamcity[testFinished nodeId='3']"), end(0, "passed"))
+        assertEquals(listOf("##teamcity[testFinished nodeId='4']"), end(0, "passed"))
         // An end with no test begun by its worker adds nothing; a retry is a node of its own.
         assertEquals(emptyList<String>(), end(0, "passed"))
         assertEquals(
-            listOf("##teamcity[testStarted nodeId='5' parentNodeId='2' name='removes it (retry 1)' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            listOf("##teamcity[testStarted nodeId='6' parentNodeId='3' name='removes it (retry 1)' locationHint='file:///w/tests/cart.spec.ts:4']"),
             begin(1, "cart", "removes it", retry = 1),
         )
         assertEquals(
-            listOf("##teamcity[testIgnored nodeId='5']", "##teamcity[testFinished nodeId='5']"),
+            listOf("##teamcity[testIgnored nodeId='6']", "##teamcity[testFinished nodeId='6']"),
             end(1, "skipped"),
         )
+        // A worker gone mid-test: its test was interrupted, not failed.
+        begin(2, "cart", "pays")
         assertEquals(
-            listOf("##teamcity[testSuiteFinished nodeId='2']", "##teamcity[testSuiteFinished nodeId='1']"),
+            listOf("##teamcity[testIgnored nodeId='7' message='Interrupted']", "##teamcity[testFinished nodeId='7']"),
+            end(2, "interrupted"),
+        )
+        assertEquals(
+            listOf(
+                "##teamcity[testSuiteFinished nodeId='3']",
+                "##teamcity[testSuiteFinished nodeId='2']",
+                "##teamcity[testSuiteFinished nodeId='1']",
+            ),
             tree.finish(),
         )
     }
