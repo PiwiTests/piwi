@@ -697,7 +697,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Test card',
         summary:
-          'Hover a test in VS Code or click its result in a JetBrains IDE: its last twenty results as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine.',
+          'Hover a test in VS Code or click its result in a JetBrains IDE: its last twenty runs as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine.',
         needs: ['editor'],
         where: "The test's hover in VS Code; a click on its result icon in a JetBrains IDE",
         doc: 'features/editor-test-card',

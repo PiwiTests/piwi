@@ -565,8 +565,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   // While the Testing view lists Piwi's tests, its gutter shows their results; with it or with `piwi.gutterIcons` off,
-  // the test's line keeps the hover alone, and a flaky test, which no Piwi icon marks, says so after its line.
-  const testHover = vscode.window.createTextEditorDecorationType({});
+  // a flaky test, which no Piwi icon marks, says so after its line.
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
       contentText: '  flaky',
@@ -580,9 +579,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingLineOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());
+  context.subscriptions.push(failingBackground, failingLine, flakyMark, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
-  // A test's hover on its line: its card from the service, else its result in one line, with its links.
+  // A test's hover on its line, the gutter's icons shown or not: its card from the service, else its result in one
+  // line, with its links.
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
       ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].map((language) => ({
@@ -616,17 +616,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const tests = testDecorations(lines);
     // `piwi.failingTestTint` off leaves a failing test and its failing line untinted; the gutter still marks them.
     const tinted = vscode.workspace.getConfiguration('piwi').get<boolean>('failingTestTint') ?? true;
-    // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, the test's line keeps the hover.
+    // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, Piwi draws no icon.
     const icons = !explorer && (vscode.workspace.getConfiguration('piwi').get<boolean>('gutterIcons') ?? true);
     gutter.set(document.uri.toString(), tests);
-    // The test's hover is its card, which the hover provider below asks the service for as it shows.
-    const hovered = (shown: TestDecoration[]) =>
-      shown.filter((t) => t.line < document.lineCount).map((t) => ({ range: document.lineAt(t.line).range }));
+    const rangesOf = (shown: TestDecoration[]) =>
+      shown.filter((t) => t.line < document.lineCount).map((t) => document.lineAt(t.line).range);
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
-        editor.setDecorations(type, icons ? hovered(tests.filter((t) => t.status === status)) : []);
+        editor.setDecorations(type, icons ? rangesOf(tests.filter((t) => t.status === status)) : []);
       }
-      editor.setDecorations(testHover, icons ? [] : hovered(tests));
       editor.setDecorations(
         flakyMark,
         !icons

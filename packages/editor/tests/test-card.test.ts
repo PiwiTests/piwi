@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { TestExecution } from '../src/piwi-client';
-import { agoWords, cardStatus, durationWords, testCard } from '../src/test-card';
+import { agoWords, cardStatus, durationWords, median, runResults, testCard } from '../src/test-card';
 
 const NOW = Date.parse('2026-11-15T12:00:00.000Z');
 
@@ -23,7 +23,9 @@ describe("a test's card", () => {
   test('reads each execution as the strip shows it: a retry that passed is flaky, a timeout a failure', () => {
     expect(cardStatus(execution(1, 'passed'))).toBe('passed');
     expect(cardStatus(execution(1, 'passed', { passedAfterFailure: true }))).toBe('flaky');
+    expect(cardStatus(execution(1, 'timedout'))).toBe('failed');
     expect(cardStatus(execution(1, 'timedOut'))).toBe('failed');
+    expect(cardStatus(execution(1, 'interrupted'))).toBeNull();
     expect(cardStatus(execution(1, 'skipped'))).toBe('skipped');
     expect(cardStatus(execution(1, 'didnotrun'))).toBeNull();
   });
@@ -60,6 +62,40 @@ describe("a test's card", () => {
     );
   });
 
+  test('reads one result per run from its final attempts, whatever its retries, repetitions and projects', () => {
+    const runs = runResults([
+      execution(4, 'failed', { retries: 0, browserName: 'chromium' }),
+      execution(4, 'passed', { retries: 1, browserName: 'chromium' }),
+      execution(4, 'passed', { browserName: 'firefox' }),
+      execution(3, 'passed', { repeatEachIndex: 0 }),
+      execution(3, 'failed', { repeatEachIndex: 1, error: '\u001b[31mError: boom\u001b[39m' }),
+      execution(2, 'skipped', { browserName: 'chromium' }),
+      execution(2, 'skipped', { browserName: 'firefox' }),
+      execution(1, 'interrupted'),
+    ]);
+    expect(runs.map((r) => [r.shown.runId, r.status])).toEqual([
+      [4, 'passed'],
+      [3, 'failed'],
+      [2, 'skipped'],
+    ]);
+    const card = testCard({
+      ...input,
+      executions: [execution(3, 'failed', { error: '\u001b[31mError: boom\u001b[39m' })],
+    });
+    expect(card.markdown).toContain('`Error: boom`');
+  });
+
+  test('takes the median of the runs that passed or failed', () => {
+    expect(median([])).toBeNull();
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+    const card = testCard({
+      ...input,
+      executions: [execution(2, 'skipped', { duration: 0 }), execution(1, 'passed', { duration: 900 })],
+    });
+    expect(card.markdown).toContain('Passed 1 of the last 1 run · median 900 ms');
+  });
+
   test('says when it has no result yet, and escapes what the test names', () => {
     const card = testCard({ ...input, title: 'a <b> test', owner: null, tags: [], executions: [] });
     expect(card.markdown).toBe('**Piwi** · a \\<b\\> test\n\nNo result yet');
@@ -73,7 +109,9 @@ describe("a test's card", () => {
 
   test('says durations and times as the dashboard does', () => {
     expect(durationWords(850)).toBe('850 ms');
+    expect(durationWords(999.6)).toBe('1.0 s');
     expect(durationWords(1400)).toBe('1.4 s');
+    expect(durationWords(59_960)).toBe('1 min');
     expect(durationWords(125_000)).toBe('2 min');
     expect(agoWords('2026-11-15T11:59:45.000Z', NOW)).toBe('just now');
     expect(agoWords('2026-11-15T11:30:00.000Z', NOW)).toBe('30 min ago');

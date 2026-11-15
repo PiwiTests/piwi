@@ -3812,9 +3812,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const kept = histories.get(key);
     if (kept && Date.now() - kept.at < TEST_HISTORY_MS) return kept.read;
     const read = client.testHistory(testCaseId).then((answer) => answer.items ?? []);
+    const entry = { at: Date.now(), read };
     histories.delete(key);
-    histories.set(key, { at: Date.now(), read });
-    read.catch(() => histories.delete(key));
+    histories.set(key, entry);
+    read.catch(() => {
+      if (histories.get(key) === entry) histories.delete(key);
+    });
     for (const oldest of histories.keys()) {
       if (histories.size <= MAX_HISTORIES) break;
       histories.delete(oldest);
@@ -3822,14 +3825,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return read;
   };
 
-  connection.onRequest(TEST_CARD_REQUEST, async (params: TestCardParams): Promise<TestCard | null> => {
+  connection.onRequest(TEST_CARD_REQUEST, async (params: TestCardParams, token): Promise<TestCard | null> => {
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!context?.client || !context.project || !relative) return null;
     const found = (await context.casesOf(relative).catch(() => [])).find((c) => c.id === params.testCaseId);
-    if (!found) return null;
-    const executions = await historyOf(context, found.id).catch(() => []);
+    if (!found || token.isCancellationRequested) return null;
+    // No card when its history cannot be read.
+    const executions = await historyOf(context, found.id).catch(() => null);
+    if (!executions || token.isCancellationRequested) return null;
     const title = [...(found.suitePath ? found.suitePath.split('\x1f') : []), found.title].join(' › ');
     return testCard({
       testCaseId: found.id,
