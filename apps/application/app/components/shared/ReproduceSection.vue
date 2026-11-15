@@ -31,10 +31,9 @@ const recipeBash = computed(() => reproScript(props.reproduce, 'bash'));
 const recipePowershell = computed(() => reproScript(props.reproduce, 'powershell'));
 
 // The one command a reader most wants — the exact test invocation — leads; the
-// full checkout/install/bisect recipe folds behind a disclosure.
-const runStep = computed(
-  () => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? props.reproduce.steps.at(-1) ?? null,
-);
+// full checkout/install/bisect recipe folds behind a disclosure. A recipe with no
+// run step leads with its notes, which say why.
+const runStep = computed(() => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? null);
 const showFull = ref(false);
 
 const toast = useToast();
@@ -160,6 +159,9 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         :powershell="runStep.powershell"
         storage-key="piwi-repro-shell"
       />
+      <template v-else>
+        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-muted">{{ note }}</p>
+      </template>
 
       <!-- The full recipe (checkout, install, pin, browser) folds behind here. -->
       <UButton
@@ -183,7 +185,9 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
           </span>
         </div>
-        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        <template v-if="runStep">
+          <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        </template>
       </div>
 
       <!-- Desktop: run the recipe for real, in a throwaway worktree. -->

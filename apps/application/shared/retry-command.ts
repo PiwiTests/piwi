@@ -87,7 +87,7 @@ function quoteAll(values: string[]): string[] {
  * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option, an
  * empty one matches every file, and a bare `:<line>` that line of every file.
  */
-function isSpecFilter(spec: string): boolean {
+export function isSpecFilter(spec: string): boolean {
   return spec !== '' && !spec.startsWith('-') && !spec.startsWith(':');
 }
 
@@ -95,6 +95,9 @@ function isSpecFilter(spec: string): boolean {
 function quoteSpecs(values: string[]): string[] {
   return quoteAll(values.filter(isSpecFilter));
 }
+
+/** What a copy of a retry command says when no case has a file path or title a command can name. */
+export const NO_RETRY_COMMAND = 'No test here has a file path or title a command can name.';
 
 /** What a re-run dispatch answers when no case has a file path its arguments can name. */
 export const NO_RETRY_ARGS = 'None of these tests has a file path a re-run can name.';
@@ -115,11 +118,11 @@ function projectFlags(projects: string[]): string {
 
 /**
  * The ` -g "<title|title>"` flag that narrows a `playwright test` run to these
- * titles, or an empty string without titles. An empty title, which every test
+ * titles, or an empty string without titles. A blank title, which every test
  * matches, is left out. See {@link titleGrepPattern}.
  */
 export function buildTitleGrepFlag(titles: string[]): string {
-  const named = titles.filter(Boolean);
+  const named = titles.filter((title) => title.trim());
   if (named.length === 0) return '';
   return ` -g "${named.map(titleGrepPattern).join('|')}"`;
 }
@@ -223,7 +226,7 @@ export function buildRetryCommand(
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else {
-      const patterns = projectCases.map((c) => titleGrepPattern(c.title)).filter(Boolean);
+      const patterns = projectCases.filter((c) => c.title.trim()).map((c) => titleGrepPattern(c.title));
       if (patterns.length === 0) continue;
       const grepArg = patterns.length === 1 ? patterns[0]! : `(${patterns.join('|')})`;
       cmd = `${baseCmd} --grep "${grepArg}"`;
@@ -268,9 +271,12 @@ export function buildRetryCommand(
  * `playwright test` prefix, so it can be handed to CI as the value of a
  * workflow input / pipeline variable that a job appends to its own command.
  * Always `file-line` shaped; a case without a line contributes its file path.
- * Cases from several projects run each spec in each of those projects.
+ * Cases from several projects run each spec in each of those projects. A case
+ * with no file path Playwright takes (see {@link isSpecFilter}) is left out,
+ * with its project.
  */
-export function buildRetryArgs(cases: RetryCase[]): string {
+export function buildRetryArgs(allCases: RetryCase[]): string {
+  const cases = allCases.filter((c) => isSpecFilter(specPattern(c.filePath)));
   if (cases.length === 0) return '';
   const specs = [
     ...new Set(cases.map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath)))),

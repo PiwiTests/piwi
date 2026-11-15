@@ -356,3 +356,21 @@ describe('a filter that would match every test', () => {
     expect(buildRetryArgs([{ ...empty, filePath: '-x.spec.ts' }])).toBe('');
   });
 });
+
+describe('a test left out of a retry', () => {
+  test('takes its project with it', () => {
+    expect(
+      buildRetryArgs([
+        { filePath: 'tests/a.spec.ts', title: 'a', line: null, projectName: 'p1' },
+        { filePath: '', title: 'b', line: null, projectName: 'p2' },
+      ]),
+    ).toBe('"tests/a.spec.ts" --project="p1"');
+  });
+
+  test('a blank title is left out like an empty one', () => {
+    expect(buildRetryCommand([{ filePath: '', title: '  ', line: null, projectName: null }], { mode: 'grep' })).toBe(
+      '',
+    );
+    expect(buildTitleGrepFlag([' ', 'pays'])).toBe(' -g "pays"');
+  });
+});

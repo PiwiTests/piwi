@@ -278,6 +278,26 @@ describe('a filter that would match every test', () => {
   });
 });
 
+describe('a test with no spec path Playwright takes', () => {
+  test('leaves a reproduction without its project', () => {
+    expect(
+      buildReproduceArgs([
+        { ...CASE, projectName: 'p1' },
+        { ...CASE, filePath: ':x', projectName: 'p2' },
+      ]),
+    ).toEqual(['tests/checkout.spec.ts:42', '--project=p1']);
+  });
+
+  test('a path that starts with `:` is left out of a local run, as the copied command leaves it out', () => {
+    expect(buildLocalRunPlan([{ ...CASE, filePath: ':x' }])).toEqual([]);
+  });
+
+  test('a blank title selects nothing', () => {
+    expect(buildLocalRunPlan([{ ...CASE, title: '   ' }], { mode: 'grep' })).toEqual([]);
+    expect(buildBisectArgs([{ ...CASE, filePath: '', title: ' ' }])).toEqual([]);
+  });
+});
+
 describe('a title that starts with a dash', () => {
   test('is passed in the --grep argument itself, never as an argument of its own', () => {
     const [step] = buildLocalRunPlan([{ ...CASE, title: '-1 item is shown' }], { mode: 'grep' });
