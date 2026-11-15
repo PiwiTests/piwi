@@ -105,6 +105,8 @@ import {
   linesAbove,
   liveMenu,
   RunningLines,
+  waitingMarks,
+  waitingWorkers,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -262,6 +264,12 @@ export function registerRunControl(
     after: { margin: '0 0 0 3ch', color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' },
   });
   const running = new RunningLines();
+  /** A line where a pausing test waits: marked as a running line is, its hover offering End the test there. */
+  const waitingLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+    after: { margin: '0 0 0 3ch', color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' },
+  });
   /** The lines marked as running, by file, for the API `activate` returns. */
   const runningDrawn = new Map<string, number[]>();
   /** A held failure's line: the execution point in the dashboard's failure red. */
@@ -362,7 +370,7 @@ export function registerRunControl(
       if (edit) edits.add(uri, edit);
     }
     if (stopsOf(sessions).some((s) => s.stop.uri === uri)) drawStops();
-    if (running.tells(uri)) drawRunning();
+    if (running.tells(uri) || waitingWorkers(sessions).some((w) => w.waiting.uri === uri)) drawRunning();
   };
 
   /** The context keys of the menus and keys, for the sessions kept; the Piwi item shows the service's run line. */
@@ -420,9 +428,11 @@ export function registerRunControl(
     runningDrawn.clear();
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
-      const marks = running.marks(uri, editor.document.lineCount, (file, line, ref) =>
-        edits.forward(file, line, sinceOf(ref)),
-      );
+      const forward = (file: string, line: number, ref: string) => edits.forward(file, line, sinceOf(ref));
+      // A worker a Pause waits for in a call has its waiting line instead of its running line.
+      const waits = waitingMarks(sessions, uri, editor.document.lineCount, forward);
+      const waited = new Set(waits.map((mark) => mark.line));
+      const marks = running.marks(uri, editor.document.lineCount, forward).filter((mark) => !waited.has(mark.line));
       editor.setDecorations(
         runningLine,
         marks.map((mark) => {
@@ -438,6 +448,22 @@ export function registerRunControl(
           uri,
           marks.map((mark) => mark.line),
         );
+      editor.setDecorations(
+        waitingLine,
+        waits.map((mark) => {
+          const end = editor.document.lineAt(mark.line).range.end;
+          const target = encodeURIComponent(JSON.stringify([mark.target]));
+          const hover = new vscode.MarkdownString(
+            `${markdown(mark.text)}\n\n[${editorWords('stop.end')}](command:${RUN_COMMANDS.end}?${target})`,
+          );
+          hover.isTrusted = { enabledCommands: [RUN_COMMANDS.end] };
+          return {
+            range: new vscode.Range(mark.line, 0, mark.line, end.character),
+            hoverMessage: hover,
+            renderOptions: { after: { contentText: `${mark.text} · ${editorWords('stop.end')}` } },
+          };
+        }),
+      );
     }
   };
 
@@ -1380,6 +1406,7 @@ export function registerRunControl(
     executionPoint,
     failurePoint,
     runningLine,
+    waitingLine,
     lensesChanged,
     caretDecoration,
     { dispose: () => counts.dispose() },

@@ -63,7 +63,7 @@ script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes t
 | **Piwi: Re-run the failing tests** | Run every test that still fails: [Re-run the failing tests](/features/editor-runs#re-run-the-failing-tests) |
 | **Piwi: Turn headed runs on or off** | Run every test Piwi starts in this window headed, or headless: [How a run starts](/features/editor-runs#how-a-run-starts) |
 | **Piwi: Hold failures from each run's start…** | Auto, On or Off: whether a failed test of each run waits at its line for an answer |
-| **Piwi: Run options…** | VS Code: choose between the two above |
+| **Piwi: Run options…** | Both options above in one list, with their choices now: a pick turns Run headed on or off, or opens Hold failures |
 
 ## The failures and the dashboard
 

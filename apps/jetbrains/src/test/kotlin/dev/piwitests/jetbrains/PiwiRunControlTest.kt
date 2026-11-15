@@ -633,6 +633,24 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(emptyList<Int>(), inlayLine())
     }
 
+    /** The line a Pause waits at is marked with End the test while the worker waits there, and goes as it stops. */
+    fun testTheLineAPauseWaitsAtIsMarkedUntilTheTestStops() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        myFixture.openFileInEditor(file)
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Apply' })", uri(file), 5, "2026-10-25T10:00:00.000Z", true)
+        fun inlayLines() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
+            .filter { it.renderer is WaitingLineInlay }.map { myFixture.editor.document.getLineNumber(it.offset) }
+        hear(RunSession("ed-wait", base.path, listOf(RunWorker(0, 1, "running", test(), pausing = true, waiting = waiting))))
+        assertEquals(listOf("Piwi: Worker 2 · Pausing · waits in Click getByRole('button', { name: 'Apply' })"), sessions.waitingShown())
+        assertEquals(listOf(5), inlayLines())
+        // The worker stopped: the line goes.
+        val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(file), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
+        hear(RunSession("ed-wait", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop))))
+        assertEquals(emptyList<String>(), sessions.waitingShown())
+        assertEquals(emptyList<Int>(), inlayLines())
+        hear(RunSession("ed-wait", ended = true))
+    }
+
     /** A running line of a slot the Worker tab watches no more is not taken, however late it comes. */
     fun testARunningLineOfASlotNoLongerWatchedIsNotTaken() {
         val file = file("tests/coupon.spec.ts", coupon)

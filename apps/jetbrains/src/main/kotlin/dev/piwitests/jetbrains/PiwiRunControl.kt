@@ -283,6 +283,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** What is drawn of each running line, by run and slot. On the event thread. */
     private val drawnRunning = HashMap<Pair<String, Int>, DrawnRunning>()
 
+    /** The waiting lines marked, by run and worker. On the event thread. */
+    private val drawnWaiting = HashMap<Pair<String, Int>, DrawnRunning>()
+
     /** What the Page tab writes of the watched slot (`Glue.PageOutput`); under its own lock. */
     private val pageOutput = Glue.PageOutput()
     /** The Page tab and its console while the tool window holds it. On the event thread. */
@@ -435,13 +438,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         editors.addEditorFactoryListener(
             object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
-                    val running = synchronized(lock) { runningLines.isNotEmpty() }
+                    val running = synchronized(lock) { runningLines.isNotEmpty() || Glue.waitingWorkers(sessions).isNotEmpty() }
                     if (drawn.isNotEmpty() || running) ApplicationManager.getApplication().invokeLater({ draw() }, gone)
                 }
 
                 override fun editorReleased(event: EditorFactoryEvent) {
                     drawn.values.forEach { it.inlays.remove(event.editor) }
                     drawnRunning.values.forEach { it.inlays.remove(event.editor) }
+                    drawnWaiting.values.forEach { it.inlays.remove(event.editor) }
                 }
             },
             this,
@@ -756,6 +760,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }
         }
         drawRunning()
+        drawWaiting()
     }
 
     /**
@@ -802,6 +807,36 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }
         }
     }
+
+    /**
+     * Mark each line where a pausing test waits (`Glue.waitingLinesShown`) at the line it stands on now with an inlay
+     * after it in each editor of its file, its End the test a link that ends that worker's test there; a line goes as
+     * the test stops or goes on. On the event thread.
+     */
+    private fun drawWaiting() {
+        val shown = synchronized(lock) {
+            Glue.waitingLinesShown(sessions).map { it to edits.forward(Glue.fileKey(it.uri), it.line, sinceOf(it.waiting.ref)) }
+        }
+        val keys = shown.map { (line, _) -> line.waiting.ref to line.waiting.worker }.toSet()
+        for (key in drawnWaiting.keys - keys) drawnWaiting.remove(key)?.dispose()
+        for ((line, at) in shown) {
+            val key = line.waiting.ref to line.waiting.worker
+            drawnWaiting[key]?.takeIf { it.uri != line.uri || it.line != at || it.text != line.text }?.let { drawnWaiting.remove(key)?.dispose() }
+            val file = fileOf(line.uri) ?: continue
+            val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: continue
+            if (at < 0 || at >= document.lineCount) continue
+            val drawnLine = drawnWaiting.getOrPut(key) { DrawnRunning(line.uri, at, line.text) }
+            for (editor in EditorFactory.getInstance().getEditors(document, project)) {
+                if (drawnLine.inlays[editor]?.isValid == true) continue
+                editor.inlayModel.addAfterLineEndElement(document.getLineEndOffset(at), false, WaitingLineInlay(line.text, line.waiting))
+                    ?.let { drawnLine.inlays[editor] = it }
+            }
+        }
+    }
+
+    /** The texts of the waiting lines' inlays drawn now, which the tests read. On the event thread. */
+    internal fun waitingShown(): List<String> =
+        drawnWaiting.values.flatMap { it.inlays.values }.filter { it.isValid }.map { (it.renderer as WaitingLineInlay).text }
 
     /** How many editors the running lines' inlays are held for, which the tests read. On the event thread. */
     internal fun runningEditors(): Int = drawnRunning.values.sumOf { it.inlays.size }
@@ -2412,8 +2447,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         processes.clear()
         val shown = drawn.values.toList()
         drawn.clear()
-        val running = drawnRunning.values.toList()
+        val running = drawnRunning.values.toList() + drawnWaiting.values.toList()
         drawnRunning.clear()
+        drawnWaiting.clear()
         val count = caretInlay
         caretInlay = null
         val remove = {
@@ -3504,6 +3540,32 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
 /** The call a watched slot's test is in, at the end of its line, drawn as the count at the caret is. */
 internal class RunningLineInlay(val text: String) : EditorCustomElementRenderer by CaretCountInlay(text)
 
+/** A line where a pausing test waits: its words in the inlay hints' color, then End the test as a link. */
+internal class WaitingLineInlay(val text: String, val waiting: Glue.WaitingWorker) : EditorCustomElementRenderer {
+    private val link = EditorWords.words("stop.end")
+
+    private fun font(editor: Editor) = editor.colorsScheme.getFont(EditorFontType.ITALIC)
+
+    private fun width(editor: Editor, s: String) = editor.contentComponent.getFontMetrics(font(editor)).stringWidth(s)
+
+    private fun lead(editor: Editor) = width(editor, "   ") + width(editor, "$text · ")
+
+    override fun calcWidthInPixels(inlay: Inlay<*>): Int = lead(inlay.editor) + width(inlay.editor, link)
+
+    override fun paint(inlay: Inlay<*>, g: Graphics, targetRegion: Rectangle, textAttributes: TextAttributes) {
+        val editor = inlay.editor
+        g.font = font(editor)
+        g.color = editor.colorsScheme.getAttributes(DefaultLanguageHighlighterColors.INLAY_TEXT_WITHOUT_BACKGROUND)?.foregroundColor
+            ?: editor.colorsScheme.defaultForeground
+        g.drawString("$text · ", targetRegion.x + width(editor, "   "), targetRegion.y + editor.ascent)
+        g.color = com.intellij.util.ui.JBUI.CurrentTheme.Link.Foreground.ENABLED
+        g.drawString(link, targetRegion.x + lead(editor), targetRegion.y + editor.ascent)
+    }
+
+    /** Whether the point `x` of the editor is on End the test. */
+    fun onLink(inlay: Inlay<*>, x: Int): Boolean = inlay.bounds?.let { x >= it.x + lead(inlay.editor) } ?: false
+}
+
 /** The count at the end of the caret's line, in the inlay hints' color. */
 internal class CaretCountInlay(val text: String) : EditorCustomElementRenderer {
     private fun font(editor: Editor) = editor.colorsScheme.getFont(EditorFontType.ITALIC)
@@ -3546,9 +3608,22 @@ private class StopInlayMouse(private val project: Project) : EditorMouseListener
         return renderer.controlAt(inlay, event.mouseEvent.x)?.let { renderer to it }
     }
 
+    /** The waiting test whose End the test link the pointer is on. */
+    private fun waitingAt(event: EditorMouseEvent): Glue.WaitingWorker? {
+        if (event.editor.project != project) return null
+        val inlay = event.inlay ?: return null
+        val renderer = inlay.renderer as? WaitingLineInlay ?: return null
+        return renderer.waiting.takeIf { renderer.onLink(inlay, event.mouseEvent.x) }
+    }
+
     override fun mouseClicked(event: EditorMouseEvent) {
-        val (renderer, control) = controlAt(event) ?: return
         val sessions = project.getServiceIfCreated(PiwiRunSessions::class.java) ?: return
+        waitingAt(event)?.let { waiting ->
+            event.consume()
+            sessions.giveUp(waiting)
+            return
+        }
+        val (renderer, control) = controlAt(event) ?: return
         event.consume()
         sessions.perform(renderer.stop, control, event.editor)
     }
@@ -3556,7 +3631,7 @@ private class StopInlayMouse(private val project: Project) : EditorMouseListener
     override fun mouseMoved(event: EditorMouseEvent) {
         if (event.editor.project != project) return
         val editor = event.editor as? EditorEx ?: return
-        val over = controlAt(event) != null
+        val over = controlAt(event) != null || waitingAt(event) != null
         if ((hovering[editor] ?: false) == over) return
         hovering[editor] = over
         editor.setCustomCursor(StopInlayMouse::class.java, if (over) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else null)

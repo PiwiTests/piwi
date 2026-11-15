@@ -70,6 +70,22 @@ object Glue {
         else -> EditorWords.words("hold.auto")
     }
 
+    /** A row of Run options…: the option it changes (`headed` or `holdFailures`), its label, its current value, and why. */
+    data class RunOptionRow(val option: String, val label: String, val value: String, val detail: String)
+
+    /** The rows of Run options…: Run headed, on or off, then Hold failures, with the current choice, as VS Code's. */
+    fun runOptionRows(headed: Boolean, hold: String): List<RunOptionRow> = listOf(
+        RunOptionRow(
+            "headed",
+            EditorWords.words("run-options.headed"),
+            if (headed) "On" else "Off",
+            EditorWords.words(if (headed) "run-options.headed.on" else "run-options.headed.off"),
+        ),
+        RunOptionRow("holdFailures", EditorWords.words("run-options.hold"), EditorWords.words("hold.${holdKey(hold)}.short"), holdFailuresLabel(hold)),
+    )
+
+    private fun holdKey(choice: String) = if (choice in HOLD_FAILURES_CHOICES) choice else "auto"
+
     /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
     fun holdFailuresOption(choice: String): Boolean? = when (choice) {
         "on" -> true
@@ -1202,8 +1218,8 @@ object Glue {
     /** The tool window's text while no service answers: why, and the links that start it or show its log. */
     fun serviceDownText(trusted: Boolean, startProblem: String?, stopped: Boolean): EmptyText = when {
         !trusted -> EmptyText(WAITING_FOR_TRUST)
-        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG))
-        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES)
+        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG.link))
+        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES.map { it.link })
         else -> EmptyText(NOT_STARTED)
     }
 
@@ -1255,40 +1271,46 @@ object Glue {
         }
     }
 
-    /** An action the Piwi tool window's empty text links, by its id. */
+    /** An action the Piwi tool window's empty text links: its label, and the id of the action it runs. */
+    data class Link(val label: String, val actionId: String)
+
+    /** An action the Piwi tool window's empty text links while no service answers, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         RESTART_SERVICE("Restart the editor service", "Piwi.RestartService"),
         OPEN_LOG("Open the log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
-        RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
-        COMPARE("Compare with…", "Piwi.CompareWith"),
-        RECORD_NEW_FILE("Record a new test file…", "Piwi.RecordNewFile"),
+        ;
+
+        val link get() = Link(label, actionId)
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
-    data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
+    data class EmptyText(val text: String, val links: List<Link> = emptyList())
 
     /**
-     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open
-     * the log; an instance still being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare
-     * with…; no connection, with Connect… and Record a new test file…, which needs none; else no failure in the run read
-     * (`runId`).
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
+     * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
+     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
+     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
      */
-    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
-        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
-        "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
-        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY, EmptyLink.OPEN_LOG))
-        "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
-        else -> EmptyText(
-            when {
-                baselineNoRun != null -> baselineNoRun
-                runId != null -> "No failure in run #$runId"
-                else -> "No failure in the latest run"
-            },
-        )
+    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
+        val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
+        return when (view?.state) {
+            "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", links)
+            "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
+            "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
+            "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
+            "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            else -> EmptyText(
+                when {
+                    baselineNoRun != null -> baselineNoRun
+                    runId != null -> "No failure in run #$runId"
+                    else -> "No failure in the latest run"
+                },
+                links,
+            )
+        }
     }
 
     /** What Disconnect says when nothing is saved to forget. */
@@ -2461,7 +2483,8 @@ object Glue {
 
     /**
      * The running lines to mark: each of a run still live whose slot's worker still runs that test and stands at no
-     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after.
+     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after. A worker a
+     * Pause waits for in a call has its waiting line instead ([waitingLinesShown]).
      */
     fun runningLinesShown(lines: Map<Pair<String, Int>, RunningLine>, sessions: Map<String, RunSession>): List<RunningLine> =
         lines.values.filter { line ->
@@ -2469,7 +2492,8 @@ object Glue {
             val session = sessions[line.ref]?.takeIf { !it.ended } ?: return@filter false
             val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == line.lane } ?: return@filter false
             val test = worker.test ?: return@filter false
-            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test)
+            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test) &&
+                !(worker.pausing && worker.waiting?.line != null)
         }
 
     /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */
@@ -2930,6 +2954,20 @@ object Glue {
         session.workers.orEmpty().mapNotNull { w ->
             w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it, w.parallelIndex) }
         }
+    }
+
+    /** A line a pausing test waits at, marked in the code with End the test: its worker, its file, its line, its words. */
+    data class WaitingLine(val waiting: WaitingWorker, val uri: String, val line: Int, val text: String)
+
+    /**
+     * The lines where a pausing test waits in a call (`RunWorker.waiting`), each a line of its run's code:
+     * `Piwi: Worker 2 · Pausing · waits in Click getByRole('button')`, as VS Code's `waitingMarks`. A call the worker
+     * names no place of has none.
+     */
+    fun waitingLinesShown(sessions: Map<String, RunSession>): List<WaitingLine> = waitingWorkers(sessions).mapNotNull { w ->
+        val uri = w.waiting.uri ?: return@mapNotNull null
+        val line = w.waiting.line ?: return@mapNotNull null
+        WaitingLine(w, uri, line, "Piwi: ${workerName(w.slot)} · Pausing · waits in ${clipped(w.waiting.title)}")
     }
 
     /** The longest call the status bar names before it cuts it, in characters. */

@@ -654,7 +654,15 @@ data class FailuresParams(val grouping: String? = null)
  * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
  * and the sentence it shows for it; null beside failures.
  */
-data class FailuresView(val state: String = "failures", val message: String? = null)
+data class FailuresView(
+    val state: String = "failures",
+    val message: String? = null,
+    /** The actions the state's text links, in order, by their label and their id in each editor. */
+    val links: List<FailuresViewLink> = emptyList(),
+)
+
+/** An action a failures view's state links: its label, and the command or action that runs it in each editor. */
+data class FailuresViewLink(val label: String = "", val vscode: String = "", val jetbrains: String = "")
 
 /**
  * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures

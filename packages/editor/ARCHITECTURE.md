@@ -270,7 +270,7 @@ A summary line or a quick fix names a client command to run. The summary lines u
 
 `piwi/runId` reads a run id typed for **A run by id…** (`118`, `#118`): 1 to 2147483647, the range of an instance's run
 ids. `piwi/agentContext` answers the block that **Copy context for agent** copies: for a failure the view names, or that
-the quick fix (`piwi.copyAgentContext`) names once picked.
+a test's action list (`piwi.copyAgentContext`) names once picked.
 
 ### The failures answer
 
@@ -416,7 +416,7 @@ message (`Local failure: …`, `Local failure, edited since your run #42: …`),
 A failure whose line changed since its run:
 
 - is an information, `Edited since run #120: …`, with `data.edited`;
-- has **Run this test** (`piwi.runTests`) first among its quick fixes (every failure has it);
+- has **Run this test** (`piwi.runTests`) first among its quick fixes, the only failure that has it there;
 - has `state: 'edited'` in `TestFailure` and in `piwi/failures`;
 - shows `✎ edited since run #120` above the line.
 
@@ -1707,9 +1707,9 @@ spec or a file the locator index calls locators from.
   unsaved change, compared with `HEAD`, breaks locators the suite uses (`breaksOfChange`). Quick fix: update every call
   site.
 - `ci-failure`: a failure of the latest run ([Failure diagnostics](#failure-diagnostics-and-runs-laid-over)). Quick
-  fixes: heal the locator, **Run this test**, open the trace, the desktop jobs, apply the fix plan (then run its
-  verification), file an issue when the failure has no linked ticket, **Copy context for agent**, open the failure in
-  the dashboard.
+  fixes, which edit but for the last two: heal the locator, **Run this test** once the line was edited, apply the fix
+  plan (then run its verification), and the desktop jobs and file an issue when the failure has no linked ticket,
+  which no other place offers; its trace, its context and its page are the failure node's.
 
 ### Completion
 

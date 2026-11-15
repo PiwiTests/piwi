@@ -139,7 +139,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
     jetbrains: ['Piwi.StopSharingWindowLive'],
   },
   { title: 'Get started', vscode: 'piwi.getStarted', jetbrains: ['Piwi.GetStarted'] },
-  { title: 'Run options…', vscode: 'piwi.runOptions' },
+  { title: 'Run options…', vscode: 'piwi.runOptions', jetbrains: ['Piwi.RunOptions'] },
   { title: "Open the branch's run in progress", vscode: 'piwi.openLiveRun' },
   { title: 'Run tests', vscode: 'piwi.runTests' },
   { title: 'Group the failures by…', vscode: 'piwi.groupFailuresBy', jetbrains: ['Piwi.GroupFailuresBy'] },

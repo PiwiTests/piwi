@@ -150,6 +150,9 @@
                     <keyboard-shortcut keymap="TextMate" first-keystroke="meta alt shift J" replace-all="true"/>
                     <synonym text="Rerun failed tests"/>
                 </action>
+                <action id="Piwi.RunOptions" class="dev.piwitests.jetbrains.RunOptionsAction" text="Run options…"
+                        icon="AllIcons.General.Settings"
+                        description="Run headed and Hold failures, for every run Piwi starts in every project"/>
                 <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
                         description="Run every test Piwi starts headed, in every project, with its browser window shown"/>
                 <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"

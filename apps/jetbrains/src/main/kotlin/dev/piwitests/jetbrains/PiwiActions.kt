@@ -514,15 +514,57 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
+        choose(e.project ?: return)
+    }
+
+    companion object {
+        /** The choices of Hold failures from each run's start, the current one selected, in the project's window. */
+        fun choose(project: Project) {
+            val user = PiwiUserSettings.state()
+            val current = user.runHoldFailures
+            JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
+                .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
+                .setSelectedValue(current, true)
+                .setTitle("Hold failures from each run's start")
+                .setItemChosenCallback { user.runHoldFailures = it }
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
+    }
+}
+
+/**
+ * Piwi: Run options… — how every run Piwi starts in every project starts, as VS Code's: Run headed, which a pick turns
+ * on or off, and Hold failures, which a pick opens the choices of.
+ */
+class RunOptionsAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val user = PiwiUserSettings.state()
-        val current = user.runHoldFailures
         JBPopupFactory.getInstance()
-            .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
-            .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
-            .setSelectedValue(current, true)
-            .setTitle("Hold failures from each run's start")
-            .setItemChosenCallback { user.runHoldFailures = it }
+            .createPopupChooserBuilder(Glue.runOptionRows(user.runHeaded, user.runHoldFailures))
+            .setRenderer(
+                object : com.intellij.ui.ColoredListCellRenderer<Glue.RunOptionRow>() {
+                    override fun customizeCellRenderer(
+                        list: javax.swing.JList<out Glue.RunOptionRow>,
+                        value: Glue.RunOptionRow?,
+                        index: Int,
+                        selected: Boolean,
+                        hasFocus: Boolean,
+                    ) {
+                        value ?: return
+                        append("${value.label} · ${value.value}")
+                        append("   ${value.detail}", com.intellij.ui.SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    }
+                },
+            )
+            .setTitle(EditorWords.words("run-options.title"))
+            .setItemChosenCallback { row ->
+                if (row.option == "headed") user.runHeaded = !user.runHeaded else RunHoldFailuresAction.choose(project)
+            }
             .createPopup()
             .showCenteredInCurrentWindow(project)
     }

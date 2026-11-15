@@ -195,7 +195,10 @@ export function withSession(sessions: Sessions, session: RunSession): Map<string
   return next;
 }
 
-/** A session whose stops and tests name their files as `spell` spells a document's URI, which they are compared with. */
+/**
+ * A session whose stops, tests and waiting calls name their files as `spell` spells a document's URI, which they are
+ * compared with.
+ */
 export function spelledSession(session: RunSession, spell: (uri: string) => string): RunSession {
   return {
     ...session,
@@ -203,6 +206,7 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
       ...w,
       test: w.test && { ...w.test, uri: spell(w.test.uri) },
       stop: w.stop && { ...w.stop, uri: spell(w.stop.uri) },
+      waiting: w.waiting && { ...w.waiting, uri: w.waiting.uri === null ? null : spell(w.waiting.uri) },
     })),
   };
 }
@@ -1606,12 +1610,42 @@ export function waitingWorkers(sessions: Sessions, target: RunTarget | null = nu
   );
 }
 
+/** A line where a pausing test waits, marked in the code with End the test for its run and worker (`target`). */
+export interface WaitingMark extends RunningMark {
+  target: { ref: string; worker: number };
+}
+
+/**
+ * The lines in the document `uri` of `lineCount` lines where a pausing test waits in a call (`RunWorker.waiting`), each
+ * at its line now (`forward`, as `RunningLines.marks`): `Worker 2 · Pausing · waits in Click getByRole('button')`.
+ */
+export function waitingMarks(
+  sessions: Sessions,
+  uri: string,
+  lineCount: number,
+  forward: (uri: string, line: number, ref: string) => number,
+): WaitingMark[] {
+  return waitingWorkers(sessions).flatMap((w) => {
+    if (w.waiting.uri !== uri || w.waiting.line === null) return [];
+    const line = forward(uri, w.waiting.line, w.ref);
+    if (line < 0 || line >= lineCount) return [];
+    const text = `${workerName(w.slot)} · Pausing · waits in ${w.waiting.title}`;
+    return [{ line, text, target: { ref: w.ref, worker: w.worker } }];
+  });
+}
+
 /**
  * What End the test answers: a stop, when the command names one (`since`, from a lens or a hover) or a stop can end;
  * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.
  */
 export function endChoice(sessions: Sessions, stopCanEnd: boolean, target: RunTarget | null): 'stop' | WaitingWorker[] {
-  if (stopCanEnd || target?.since !== undefined) return 'stop';
+  if (target?.since !== undefined) return 'stop';
+  // A command naming a waiting worker (its waiting line's hover) ends its test, whatever stop could end too.
+  if (target?.worker !== undefined) {
+    const named = waitingWorkers(sessions, target);
+    if (named.length) return named;
+  }
+  if (stopCanEnd) return 'stop';
   return waitingWorkers(sessions, target);
 }
 

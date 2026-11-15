@@ -115,7 +115,7 @@ const tests = {
     assert.equal(failure.message, "locator('.cart-row').nth(2) was not found (removes a row, run #41)");
   },
 
-  async 'its quick fixes heal in place and open the evidence'() {
+  async "its quick fixes edit in place, and its evidence is the failure node's"() {
     await vscode.window.showTextDocument(pageObject);
     const failure = vscode.languages.getDiagnostics(pageObject).find((d) => d.code?.value === 'ci-failure');
     const actions = await waitFor(async () => {
@@ -129,11 +129,15 @@ const tests = {
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
     assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: open the trace'), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: open the failure in the dashboard'), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: copy context for agent'), titles.join(' | '));
-    const copy = actions.find((a) => a.title === 'Piwi: copy context for agent');
-    await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
+    // A quick fix edits: the trace, the dashboard and the context for an agent are the failure node's.
+    for (const title of [
+      'Piwi: open the trace',
+      'Piwi: open the failure in the dashboard',
+      'Piwi: copy context for agent',
+    ]) {
+      assert.ok(!titles.includes(title), titles.join(' | '));
+    }
+    await vscode.commands.executeCommand('piwi.copyAgentContext', { uri: pageObject.toString(), executionId: 900 });
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
     const heal = actions.find((a) => a.title.startsWith('Piwi: heal with'));

@@ -89,6 +89,7 @@ import {
   workersNow,
   frameIsCurrent,
   waitedFor,
+  waitingMarks,
   waitingWorkers,
   endChoice,
   laneShown,
@@ -321,6 +322,11 @@ describe('the sessions kept', () => {
     );
     expect(spelled.workers[0]!.stop!.uri).toBe('file:///c%3A/shop/a.spec.ts');
     expect(spelled.workers[0]!.test!.uri).toBe(spec);
+    const waiting = { title: 'Click', uri: 'file:///C:/shop/a.spec.ts', line: 1, since: null, endable: true };
+    const pausing = spelledSession(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), (uri) =>
+      uri.replace('file:///C:', 'file:///c%3A'),
+    );
+    expect(pausing.workers[0]!.waiting!.uri).toBe('file:///c%3A/shop/a.spec.ts');
   });
 });
 
@@ -451,11 +457,26 @@ describe('what the controls offer', () => {
     const restarted = sessionsOf(session('ed-1', [worker(2, 'running', { pausing: true, waiting, parallelIndex: 0 })]));
     expect(waitingWorkers(restarted)).toEqual([{ ref: 'ed-1', worker: 2, slot: 0, waiting }]);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // Its line is marked in the code, with End the test for its worker, at the line it is at now.
+    expect(waitingMarks(restarted, spec, 10, (_uri, line) => line + 1)).toEqual([
+      {
+        line: 5,
+        text: "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' })",
+        target: { ref: 'ed-1', worker: 2 },
+      },
+    ]);
+    expect(waitingMarks(restarted, 'file:///elsewhere.spec.ts', 10, (_uri, line) => line)).toEqual([]);
+    expect(waitingMarks(restarted, spec, 4, (_uri, line) => line)).toEqual([]);
     // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
     expect(endChoice(waitingSessions, true, null)).toBe('stop');
     expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, slot: 0, waiting }]);
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    // The waiting line names its worker: that one ends, though another worker's stop could end too.
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 0 })).toEqual([
+      { ref: 'ed-1', worker: 0, slot: 0, waiting },
+    ]);
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 1 })).toBe('stop');
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
     expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(

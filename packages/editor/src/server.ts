@@ -2963,32 +2963,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
-        // First on a failure whose line changed since the run, after the heal otherwise.
-        fixes.splice(data.edited ? 0 : fixes.length, 0, {
-          title: 'Run this test',
-          kind: CodeActionKind.QuickFix,
-          diagnostics: [diagnostic],
-          command: {
+        // A quick fix edits, but for checking an edit of the line that failed, first, the desktop app's jobs and File an
+        // issue: running the test otherwise, its trace, its context and its page are the failure node's.
+        if (data.edited) {
+          fixes.unshift({
             title: 'Run this test',
-            command: 'piwi.runTests',
-            arguments: [
-              { uri: params.textDocument.uri, root: owner.root, testIds: [failure.testCaseId] } satisfies RunTestsArgs,
-            ],
-          },
-        });
-        actions.push(...fixes);
-        if (failure.traces.length) {
-          actions.push({
-            title: 'Open the trace',
             kind: CodeActionKind.QuickFix,
             diagnostics: [diagnostic],
             command: {
-              title: 'Open the trace',
-              command: 'piwi.openTrace',
-              arguments: [{ uri: params.textDocument.uri, executionId: failure.executionId } satisfies TraceParams],
+              title: 'Run this test',
+              command: 'piwi.runTests',
+              arguments: [
+                {
+                  uri: params.textDocument.uri,
+                  root: owner.root,
+                  testIds: [failure.testCaseId],
+                } satisfies RunTestsArgs,
+              ],
             },
           });
         }
+        actions.push(...fixes);
         actions.push(...desktopJobActions(owner, failure, diagnostic));
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
@@ -3031,30 +3026,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               title: 'File an issue',
               command: 'piwi.openInDashboard',
               arguments: [owner.client.clusterUrl(failure.clusterId)],
-            },
-          });
-        }
-        if (owner.client) {
-          actions.push({
-            title: 'Copy context for agent',
-            kind: CodeActionKind.QuickFix,
-            diagnostics: [diagnostic],
-            command: {
-              title: 'Copy context for agent',
-              command: 'piwi.copyAgentContext',
-              arguments: [
-                { uri: params.textDocument.uri, executionId: failure.executionId } satisfies AgentContextParams,
-              ],
-            },
-          });
-          actions.push({
-            title: 'Open the failure in the dashboard',
-            kind: CodeActionKind.QuickFix,
-            diagnostics: [diagnostic],
-            command: {
-              title: 'Open the failure in the dashboard',
-              command: 'piwi.openInDashboard',
-              arguments: [owner.client.executionUrl(failure.executionId)],
             },
           });
         }

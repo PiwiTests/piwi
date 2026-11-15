@@ -208,7 +208,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.NewRecordedTest", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
-            setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
+            setOf("Piwi.OpenSettings", "Piwi.NodeSettings", "Piwi.RunOptions"),
         )
         val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
             .values.filter { it.size > 1 }.map { it.toSet() }.toSet()
@@ -376,7 +376,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             waitUntil { service.serviceStopped }
             assertNull(service.status)
             assertEquals(
-                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES),
+                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES.map { it.link }),
                 Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
             )
         } finally {

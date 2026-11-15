@@ -19,7 +19,7 @@ describe('the words both editors write', () => {
 
   test('leave only the values a client fills in', () => {
     const named = new Set(Object.values(CLIENT_WORDS).flatMap((w) => [...w.matchAll(/\{(\w+)\}/g)].map((m) => m[1])));
-    expect([...named].sort()).toEqual(['by', 'cursor', 'lane', 'n', 'shard', 'steps']);
+    expect([...named].sort()).toEqual(['by', 'cursor', 'headed', 'hold', 'lane', 'n', 'shard', 'steps']);
   });
 
   test('fill each value they name, and keep one they are not given', () => {

@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { MAX_RUN_ID, parseBaselineChoice, runIdOf } from '../src/context';
 import {
@@ -530,8 +532,11 @@ describe('failuresView', () => {
   });
 
   test('says nothing beside failures, and names the branch whose latest run has none', () => {
-    expect(failuresView([ctx()], 1)).toEqual({ state: 'failures', message: null });
-    expect(failuresView([ctx()], 0)).toEqual({ state: 'clear', message: 'No failure in the latest run of main.' });
+    expect(failuresView([ctx()], 1)).toMatchObject({ state: 'failures', message: null });
+    expect(failuresView([ctx()], 0)).toMatchObject({
+      state: 'clear',
+      message: 'No failure in the latest run of main.',
+    });
   });
 
   test('counts no failure fixed locally, so Re-run Failing goes once the last failing test passed', () => {
@@ -547,7 +552,7 @@ describe('failuresView', () => {
       problemKind: 'unreachable',
       problem: 'Could not reach https://piwi.corp: connect ECONNREFUSED',
     });
-    expect(failuresView([down], 0)).toEqual({
+    expect(failuresView([down], 0)).toMatchObject({
       state: 'unreachable',
       message: 'Could not reach https://piwi.corp: connect ECONNREFUSED. Piwi tries again on its own.',
     });
@@ -558,30 +563,91 @@ describe('failuresView', () => {
     const problem = "The desktop app's token is not sent to http://127.0.0.1:3000: restart or update the desktop app.";
     expect(
       failuresView([ctx({ connected: false, hasRun: false, problemKind: 'desktop-unproven', problem })], 0),
-    ).toEqual({ state: 'desktop-unproven', message: problem });
+    ).toMatchObject({ state: 'desktop-unproven', message: problem });
   });
 
   test('tells a project with no run from one with no failure, and names a baseline that found none', () => {
-    expect(failuresView([ctx({ hasRun: false })], 0)).toEqual({
+    expect(failuresView([ctx({ hasRun: false })], 0)).toMatchObject({
       state: 'norun',
       message: 'No run of Acme Mugs yet. Run the tests with the Piwi reporter.',
     });
-    expect(failuresView([ctx({ hasRun: false, baseline: 'release (no run)' })], 0)).toEqual({
+    expect(failuresView([ctx({ hasRun: false, baseline: 'release (no run)' })], 0)).toMatchObject({
       state: 'norun',
       message: 'Baseline: release (no run). Compare with another run.',
     });
   });
 
   test('says an instance is still being read rather than asking to connect', () => {
-    expect(failuresView([ctx({ connected: false, loading: true, hasRun: false })], 0)).toEqual({
+    expect(failuresView([ctx({ connected: false, loading: true, hasRun: false })], 0)).toMatchObject({
       state: 'loading',
       message: 'Piwi is reading the instance…',
     });
+  });
+
+  test('links the actions of each state, by their catalog titles in both editors', () => {
+    const links = (view: ReturnType<typeof failuresView>) => view.links.map((l) => [l.label, l.vscode, l.jetbrains]);
+    expect(links(failuresView([ctx()], 1))).toEqual([]);
+    expect(links(failuresView([ctx()], 0))).toEqual([['Refresh the latest run', 'piwi.refreshRun', 'Piwi.RefreshRun']]);
+    expect(links(failuresView([ctx({ connected: false, hasRun: false, problemKind: 'unreachable' })], 0))).toEqual([
+      ['Retry', 'piwi.refresh', 'Piwi.Refresh'],
+      ['Open settings', 'piwi.openSettings', 'Piwi.OpenSettings'],
+    ]);
+    expect(links(failuresView([ctx({ connected: false, hasRun: false, problemKind: 'desktop-unproven' })], 0))).toEqual(
+      [
+        ['Retry', 'piwi.refresh', 'Piwi.Refresh'],
+        ['Open the log', 'piwi.openLog', 'Piwi.OpenLog'],
+      ],
+    );
+    expect(links(failuresView([ctx({ hasRun: false })], 0))).toEqual([
+      ['Compare with…', 'piwi.compareWith', 'Piwi.CompareWith'],
+      ['Get started', 'piwi.getStarted', 'Piwi.GetStarted'],
+    ]);
+    expect(links(failuresView([ctx({ connected: false, hasRun: false })], 0))).toEqual([
+      ['Connect…', 'piwi.connect', 'Piwi.Connect'],
+      ['Record a new test file…', 'piwi.recordFile', 'Piwi.RecordNewFile'],
+    ]);
   });
 
   test('a context with a run comes before one that does not answer', () => {
     const down = ctx({ connected: false, hasRun: false, problemKind: 'unreachable', problem: 'down' });
     expect(failuresView([down, ctx()], 0).state).toBe('clear');
     expect(failuresView([down, ctx({ hasRun: false })], 0).state).toBe('unreachable');
+  });
+});
+
+describe('VS Code’s welcomes of the failures view', () => {
+  test('link the actions the service links for each state, by its labels', () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'apps', 'vscode', 'package.json'), 'utf-8'),
+    ) as {
+      contributes: { viewsWelcome: Array<{ view: string; contents: string; when: string }> };
+    };
+    const base = {
+      connected: true,
+      hasRun: true,
+      loading: false,
+      problemKind: null,
+      problem: null,
+      branch: 'main',
+      projectName: 'Acme',
+      baseline: null,
+    } as const;
+    const views = [
+      failuresView([base], 0),
+      failuresView([{ ...base, connected: false, hasRun: false, problemKind: 'unreachable' }], 0),
+      failuresView([{ ...base, connected: false, hasRun: false, problemKind: 'desktop-unproven' }], 0),
+      failuresView([{ ...base, hasRun: false }], 0),
+      failuresView([{ ...base, connected: false, hasRun: false }], 0),
+    ];
+    for (const view of views) {
+      const welcome = manifest.contributes.viewsWelcome.find(
+        (w) => w.view === 'piwi.failures' && w.when === `piwi.failuresView == ${view.state}`,
+      );
+      const links = [...(welcome?.contents ?? '').matchAll(/\[([^\]]+)\]\(command:([\w.]+)\)/g)].map((m) => [
+        m[1],
+        m[2],
+      ]);
+      expect(links, view.state).toEqual(view.links.map((l) => [l.label, l.vscode]));
+    }
   });
 });

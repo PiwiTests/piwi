@@ -995,20 +995,12 @@ describe('the Piwi language server', () => {
       edit?: { changes: Record<string, Array<{ newText: string }>> };
       command?: { command: string; arguments: unknown[] };
     }>;
+    // A quick fix edits: running the test, its trace, its context and its page are the failure node's.
     expect(actions.map((a) => a.title)).toEqual([
       "Piwi: heal with getByRole('row', { name: /Mug/ })",
-      'Piwi: run this test',
-      'Piwi: open the trace',
       'Piwi: apply the fix plan (1 file), then run its verification',
-      'Piwi: copy context for agent',
-      'Piwi: open the failure in the dashboard',
     ]);
-    expect(actions[1]!.command).toEqual({
-      title: 'Run this test',
-      command: 'piwi.runTests',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
-    });
-    const apply = actions[3] as unknown as {
+    const apply = actions[1] as unknown as {
       edit: { changes: Record<string, Array<{ newText: string }>> };
       command: { command: string; arguments: unknown[] };
     };
@@ -1028,13 +1020,11 @@ describe('the Piwi language server', () => {
         },
       ],
     });
-    // The context is gathered once the action is picked.
-    expect(actions[4]!.command).toEqual({
-      title: 'Copy context for agent',
-      command: 'piwi.copyAgentContext',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
-    });
-    const gathered = (await client.sendRequest('piwi/agentContext', actions[4]!.command!.arguments[0])) as {
+    // The context is gathered once the failure node's Copy context for agent is picked.
+    const gathered = (await client.sendRequest('piwi/agentContext', {
+      uri: uri('tests/pages/checkout.page.ts'),
+      executionId: 900,
+    })) as {
       text: string;
     };
     const context = gathered.text.split('\n');
@@ -1048,13 +1038,8 @@ describe('the Piwi language server', () => {
     expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
-    expect(actions[2]!.command).toEqual({
-      title: 'Open the trace',
-      command: 'piwi.openTrace',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
-    });
     // A client that previews annotated edits gets the plan as a confirmed change; this one does not.
-    expect(JSON.stringify(actions[3])).not.toContain('annotationId');
+    expect(JSON.stringify(actions[1])).not.toContain('annotationId');
 
     const hover = (await client.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
@@ -1179,7 +1164,7 @@ describe('the Piwi language server', () => {
       runLabel: 'Run #41 · CI · main · 1 failing',
       failing: 1,
       rerun: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
-      view: { state: 'failures', message: null },
+      view: { state: 'failures', message: null, links: [] },
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],
