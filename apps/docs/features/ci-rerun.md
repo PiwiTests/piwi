@@ -21,7 +21,7 @@ Integrations, beside **Issue tracker**): a list of named [CI actions](#ci-action
 what it sends.
 
 Its buttons show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once an action serves the
-run; through the repository, an SCM token must be set too.
+run (through the repository, with an SCM token) and a test has a path Playwright takes.
 
 *Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run the same tests on your
 machine. On a run's page, its menu adds run options the browser remembers (headed, trace, repeat each up to 10 without

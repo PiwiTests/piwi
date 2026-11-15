@@ -50,6 +50,10 @@ export const en = {
   'label.rootCause': 'Root cause',
   'label.failingLocator': 'Failing locator',
   'label.verify': 'Verify',
+  'label.verifyLeftOut': {
+    one: 'The command leaves out this test, run it yourself:',
+    other: 'The command leaves out these tests, run them yourself:',
+  },
   'label.reproduce': 'Reproduce',
   'label.category': 'Category',
 
