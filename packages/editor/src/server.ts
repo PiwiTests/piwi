@@ -3499,7 +3499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       /** The lines each test's call spans in the spec, by its id. */
       const spans: Array<{ id: number; from: number; to: number }> = [];
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
-      /** The reason and the evidence of each failure, above its failing line: first on that line. */
+      /** The reason of each failure and Run with Piwi, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
       const placeOf = recordPlacer(text);
       for (const { call, found, failed, fixed, failure, status: testStatus, own } of specTests(

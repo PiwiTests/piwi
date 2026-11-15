@@ -131,8 +131,8 @@ test('the spec’s lens counts the spec’s own tests', async () => {
 
 test('no row of lenses is cut short, in an editor of the window’s width or of half of it', async () => {
   /**
-   * The rows of the active editor that are cut short: their text past their box, or their box past the code's area. The
-   * vertical scrollbar lies over that area, shown as the code scrolls, and a row's end under it stays readable.
+   * The rows of the active editor, and those cut short: their text past their box, or their box past the code's area,
+   * the vertical scrollbar's band included.
    */
   const cut = () =>
     page.evaluate(() => {
@@ -144,6 +144,7 @@ test('no row of lenses is cut short, in an editor of the window’s width or of 
       );
       return {
         rows: rows.length,
+        texts: rows.map((row) => row.textContent),
         cut: rows
           .filter((row) => row.scrollWidth > row.clientWidth + 1 || row.getBoundingClientRect().right > right + 1)
           .map((row) => row.textContent),
@@ -153,10 +154,13 @@ test('no row of lenses is cut short, in an editor of the window’s width or of 
     if (split) await command(page, 'View: Split Editor Right');
     for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
       await openFile(page, file);
-      await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
-      const { rows, cut: short } = await cut();
-      expect(rows, `${file}${split ? ', split' : ''}`).toBeGreaterThan(0);
+      // The active editor's rows once it drew them, the other group's showing already.
+      await expect.poll(async () => (await cut()).rows, `${file}${split ? ', split' : ''}`).toBeGreaterThan(0);
+      const { texts, cut: short } = await cut();
       expect(short, `${file}${split ? ', split' : ''}`).toEqual([]);
+      // A failing line's row holds its reason and Run with Piwi, its evidence among the test's actions.
+      if (file === SPEC_FILE)
+        expect(texts).toContainEqual(expect.stringMatching(/^✗ Failed here · .+\s\|\sRun with Piwi$/));
     }
   }
   await command(page, 'View: Join All Editor Groups');

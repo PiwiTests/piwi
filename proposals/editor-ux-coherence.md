@@ -75,7 +75,7 @@ drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Co
 platform, and VS Code's nightly suite checking the layout, at the window's width and in an editor half as wide: no
 row of lenses cut short, a failing line's row holding its reason and Run with Piwi (its screenshot and trace among the
 test's actions, #1474), a flaky test's mark. Left: VS Code's nightly snapshot for JetBrains to compare with. NF10
-decided: the CI runs keep their own view and tab. L4 in part since: the ASP.NET Core route manifest
+decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
 1 failing`) that runs them.
@@ -712,8 +712,8 @@ debug session: VS Code's `editor/title` strip in the debug toolbar's order and a
 JetBrains' `RunMenu`, `EditorPopupMenu` and a Run tab per console run, named after its target with Pause and Step (the
 study's P6), as a `RunContentDescriptor` Piwi builds. In the code: a stop line of the paused text and four controls, Go
 to the stopped line, a starting state with Stop; the red execution point at a held failure is built. List: a Runs view
-and tab, filled by P4 (progress), P5 (Run #N, origin), P6 (each worker's test, Hold failures), P9 (Share live) and P10
-(CI runs, read-only). Page: one page per worker with its controls, built. **Lives in** both clients and `packages/editor` (FSL). **Replaces** up to nine icon-only status
+and tab, filled by P4 (progress), P5 (Run #N, origin), P6 (each worker's test, Hold failures) and P9 (Share live); the
+CI runs (P10, read-only) keep their own view and tab (NF10, decided). Page: one page per worker with its controls, built. **Lives in** both clients and `packages/editor` (FSL). **Replaces** up to nine icon-only status
 items, a clipped stop line, run controls missing from the debugger's places. **Depends on** [LI1](#li1), [LI6](#li6),
 the study's phases. **Revisits** [run-control.md](../adr/run-control.md) §3.2 and its Status, which gave up the Run
 tab's toolbar because `RunContentExecutor` fixes it: Piwi builds the descriptor itself. Steps M13 (built),
@@ -913,7 +913,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10)               |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the CI list kept apart (decided)                                                                      | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10)               |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
 | <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |
@@ -978,8 +978,10 @@ whether M14's places are interim.
 
 The reviews at `b0ff6772` read the code that built the plan and the live-run study's phases against §2's principles.
 Each finding they made is built or decided, the Status paragraph says which; the defects among them were filed as #1315
-and #1255, both closed.
+and #1255, both closed. The last one:
 
+<a id="nf10"></a>**NF10. The CI list sits outside §8.4's places.** Decided: the CI runs keep their own view and tab
+(`apps/vscode/src/ci-view.ts`, `PiwiCiRuns.kt`), apart from the developer's Runs view and tab (§13, question 8).
 
 ## Appendix A. The concept table, first draft
 
