@@ -3096,7 +3096,7 @@ dependencies = [
 
 [[package]]
 name = "piwi-desktop"
-version = "0.70.0"
+version = "0.71.0"
 dependencies = [
  "auto-launch",
  "dunce",
