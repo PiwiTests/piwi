@@ -75,6 +75,10 @@ the form in every test, a trace of every test, the default worker count):
 | `reducedMotion` alone                                                          | −4%         | −46%                    | −76%      |
 | `signIn`, `blockRequests`, reduced motion, traces of failures and four workers | 80 s → 16 s | 84 s → 30 s             | −100%     |
 
+On one CI shard of Piwi's own dashboard suite, 244 tests run as its CI runs them (two workers, two retries), `max`
+took the wall time from 178 s to 137 s and the CPU time from 518 s to 359 s, and raised peak memory from 3.2 GB to
+5.6 GB (see [context reuse](#context-reuse)).
+
 What each experimental hook measured on its own, and how every figure was measured, are in the
 [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 
@@ -98,8 +102,10 @@ is cleared as the next test starts. Playwright resets the rest: pages, cookies, 
 workers, routes, init scripts, bindings, the clock, the viewport and emulated media. `tests/e2e/reuse-isolation.ts`
 checks each of them. The browser keeps the HTTP credentials it sent to an origin for the context's life: tests that
 sign in to one origin with different credentials need `test.use({ reuseContextWithReset: false })` in their file.
-Reuse happens through `@piwitests/turbo/test`, or `PW_TEST_REUSE_CONTEXT`, and needs video off. Turn it off with
-`reuseContext: false`, for a suite of very short tests or very large pages.
+Reuse happens through `@piwitests/turbo/test`, or `PW_TEST_REUSE_CONTEXT`, and needs video off. Each worker keeps one
+page, and so one browser renderer, for the whole run: on Piwi's own suite, whose pages are large, each grew to about
+1.6 GB. Turn reuse off with `reuseContext: false` for a suite of very short tests, for very large pages, or on a
+machine short of memory.
 
 ## A faster start: `piwi-turbo`
 

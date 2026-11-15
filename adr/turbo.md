@@ -54,8 +54,9 @@ tell a real gain from noise.
   time of every process (Chromium included), peak memory (PSS), artifact size, and where the test time went. Its
   reference workload is an orders console with a slow API, third-party scripts, animations and a 1,200-row table,
   tested by 42 tests.
-- **Piwi's own suite**: one CI shard of 242 tests, 4 or 5 runs per configuration, with a local change to its fixtures
-  that was not committed.
+- **Piwi's own suite**: one CI shard (shard 1 of 5: 242 tests at first, 244 by the last series), run as its CI runs
+  it, 4 or 5 runs per configuration, with a local change to its fixtures that was not committed: turbo's `test` under
+  Piwi's capture fixtures.
 - **Flashwright's benchmark suites** (generated workloads such as 15 trivial tests, TodoMVC, a shop with saved
   sign-in and a slow API, and an inventory page of about 8,500 elements), run with Flashwright's own harness from its
   repository and an adapter kept outside this repository: 5 or 6 interleaved runs per configuration, each reported as
@@ -69,7 +70,8 @@ renderers: the browser process exits before its zygotes, which the kernel then h
 CPU, and the full reference run measured 37 s of the at least 85 s its processes used. And with an even number of
 configurations, its rotating rounds never changed their order. The benchmark now runs the command under a subreaper
 and follows a balanced Latin square; the reference-workload figures below were measured again with it, but for the
-one noted. Piwi's suite was not run again, so its CPU figures are left out.
+one noted. On Piwi's suite only `max` as a whole was measured again (below): the earlier series' CPU figures are left
+out.
 
 ### What shipped, and what it measured
 
@@ -111,6 +113,26 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 | TodoMVC | 1.52× | 1.38× | 1.16× | 0.99× |
 | Shop | 1.36× | 1.32× | 1.12× | 1.07× |
 | Inventory | 1.10× | 1.07× | 1.02× | 1.03× |
+
+On Piwi's own suite, as merged: one CI shard of 244 tests with its CI settings (two workers, the built server, two
+retries), 5 interleaved rounds, each change the median of the per-round ratios against stock:
+
+| | stock | `max` | `max` through `piwi-turbo` |
+|---|---:|---:|---:|
+| Wall time | 178 s | 137 s (−29%) | 126 s (−30%) |
+| CPU time, every process | 518 s | 359 s (−32%) | 350 s (−33%) |
+| Peak memory (PSS) | 3.2 GB | 5.6 GB (+79%) | 6.3 GB (+92%) |
+| Flaky tests, over 5 runs | 0 | 3 | 1 |
+
+Summed across the workers, navigation went from 121 s to 65 s, actions from 102 s to 74 s and the creation of browser
+contexts from 6.8 s to 0.3 s. `piwi-turbo`'s saving, about half a second per process start, is within the noise of a
+two-minute run: most of the 11 s between the two `max` medians is their flaky runs, each of which waited out a 30 s
+assertion. The four flaky results were one test, which failed its first attempt in 4 of the 10 `max` runs and in none
+of stock's: its page asked for a branch's newest coverage in the second between the server marking the branch's
+earlier commit superseded and storing the newer commit's totals (issue #1464). A reused context with its static assets
+cached loads the page fast enough to land in that window; a new context did not. At the run's peak, sampled by
+process, the two Chromium renderers held 3.3 GB: with a reused context, each worker keeps one page, and so one
+renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken down.
 
 ### Tried and dropped
 
@@ -188,6 +210,9 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
   pages, service workers, hover state and animation speed; a new kind of state needs a new pair. The browser keeps the
   HTTP credentials it sent to an origin for the context's life, and `fastReset` does not see mouse input a test sends
   through its own CDP session.
+- **Context reuse trades memory for time.** Each worker keeps one page, and so one renderer, for the whole run: on
+  Piwi's suite, whose pages are large, each grew to about 1.6 GB, and `max` raised the run's peak memory by 79%. A
+  suite whose machines are short of memory turns `reuseContext` off.
 - **`fast` is slower than stock on a suite of very short tests**, where Playwright's reset of a context (three
   navigations and a mouse move that waits for a frame) takes longer than a new context. Without the experimental hooks
   turbo cannot shorten that reset.
