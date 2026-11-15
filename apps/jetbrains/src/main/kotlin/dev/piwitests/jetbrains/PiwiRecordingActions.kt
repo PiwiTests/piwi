@@ -64,10 +64,10 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
-/** Piwi: Record here… — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 /** The 0-based line a popup's Record here starts at (a test's Record steps in this test), which it takes over the caret's. */
 val RECORD_LINE: DataKey<Int> = DataKey.create("piwi.recordLine")
 
+/** Piwi: Record here… — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

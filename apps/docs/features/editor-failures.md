@@ -24,7 +24,7 @@ is in your workspace (often a page object), else the `test(…)` line, with the 
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
 reason unless a Piwi problem says it, **Run with Piwi**, **Screenshot** and **Trace** above it.
 
-On a failure, the light bulb lists Piwi's quick fixes, each titled `Piwi:` and its words. They edit the code; running
+On a failure, the light bulb lists Piwi's quick fixes, each under Piwi's name. They edit the code; running
 the test, its trace, the context for an agent, its page in the dashboard, the desktop app's jobs and **File an issue**
 are on the failure's node in the [failures view](#the-failures-view), and running it and its trace above the line a
 spec failed at:
@@ -104,7 +104,7 @@ Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) 
 **Debug with Piwi**, **Verify ×3 with Piwi**, **Open the screenshot**, **Copy context for agent**, and, on a CI
 failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the desktop app**,
 **Find the breaking commit in the desktop app** and, for a test with an untested [flake suspect](./flake-lab), **Run
-Flake Lab on its untested suspects in the desktop app** (**Share on …** in its notification records the result), and,
+Flake Lab on its untested suspects in the desktop app** (**Share on …** in a job's notification records its result), and,
 on a failure with a [cluster](/features/failure-clusters), **File an issue**. **Heal** stays a quick fix on the line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the

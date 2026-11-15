@@ -169,9 +169,11 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                     url != null -> registeredWith("Piwi.OpenInDashboard", action.title, PiwiIcons.OPEN_IN_DASHBOARD) {
                         it.add(DASHBOARD_URL, url)
                     }
-                    // Record steps in this test is Record here, at the line the service names.
+                    // Record steps in this test is Record here, at the line the service names, moved as the test's line moved.
                     action.command?.command == "piwi.record" -> recordLine(action.command)?.let { at ->
-                        registeredWith("Piwi.RecordHere", action.title) { it.add(RECORD_LINE, at) }
+                        registeredWith("Piwi.RecordHere", action.title) { data ->
+                            data.add(RECORD_LINE, lineNow()?.let { at + it - line.line } ?: -1)
+                        }
                     }
                     else -> action.command?.let { command ->
                         object : DumbAwareAction(action.title, null, testActionIcon(command.command)) {

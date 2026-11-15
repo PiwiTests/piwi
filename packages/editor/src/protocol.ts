@@ -66,16 +66,18 @@ export interface SummaryLine {
   problem?: boolean;
   /**
    * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
-   * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
+   * it and verify it, record steps in it, its evidence, its context for an agent, then its Flake Lab commands. Absent
+   * on other lines.
    */
   actions?: TestAction[];
 }
 
 /**
  * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
- * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
- * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
- * Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`.
+ * separator before it: none for the first group (`run`), `Record`, `Evidence`, `Agent`, `Flake Lab`. `kind` names the
+ * client's own action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor;
+ * `verify`: Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`, `piwi.record`
+ * as the client's Record here.
  */
 export interface TestAction {
   group: 'run' | 'record' | 'evidence' | 'agent' | 'lab';

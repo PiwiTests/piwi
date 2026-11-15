@@ -38,7 +38,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`,
+ * `piwi.record`).
  */
 object PiwiCommands {
     private val gson = Gson()

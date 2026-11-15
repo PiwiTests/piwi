@@ -199,7 +199,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
 - **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
-  is about (`STOP`, `TEST_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
+  is about (`STOP`, `TEST_LINE`, `RECORD_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
   gets an id in D25.
 - **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
   on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`

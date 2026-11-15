@@ -123,7 +123,7 @@ tells the views, starts the service for the open files and offers the first-run 
 - **What the platform draws.** The platform's LSP client renders the service's diagnostics, quick fixes and hover in
   open files.
 - **Client commands.** `LspCommandsSupport` runs the client commands the service names, through `PiwiCommands.kt`.
-  `piwi.desktopJob` (from a quick fix or a flaky test's Code Vision line) and the job's updates
+  `piwi.desktopJob` (from a flaky test's Code Vision line or its actions) and the job's updates
   (`piwi/desktopJobChanged`, shown with a button that shares the verdict) are there too.
 - **The plugin's own requests.** They go through the service's lsp4j proxy, which the platform hands only to a
   request's sender: `Lsp4jAccess` takes it from a `sendRequestSync` that sends nothing, never from `getLsp4jServer()`
@@ -144,7 +144,9 @@ latest result from `piwi/fileSummary`:
   with the service's words between its groups (`TestAction.section`): **Run with Piwi** and **Verify ×3 with Piwi**,
   the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather
   than the caret's, at the line a range marker follows through edits, **Open in dashboard** the registered
-  `Piwi.OpenInDashboard` with the test's page (`DASHBOARD_URL`), then its trace and screenshot, its context for an
+  `Piwi.OpenInDashboard` with the test's page (`DASHBOARD_URL`), **Record steps in this test…** the registered
+  `Piwi.RecordHere` at the line the service names (`RECORD_LINE`), moved as the test's line moved, then its trace and
+  screenshot, its context for an
   agent and its Flake Lab commands through `PiwiCommands.execute`, each with the Piwi tool window's glyph
   (`testActionIcon`); without a list, the click runs what the line names (Open in dashboard);
 - the `PIWI_FAILING_TEST` background over a failing test;
@@ -320,7 +322,7 @@ icon that has a New UI glyph on 2024.1 and 2026.3 (checked by hand against each 
 no mapped platform icon says the concept, one Piwi draws in `src/main/resources/icons/` (16 px, 1 px strokes in the New
 UI's `#6C707E`, with a `_dark` copy in `#CED0D6`): Connect, Disconnect, Pair, Pause and watch, Assert a region, Mock a
 request, Share live and Stop sharing, Run the tests that reach this file, Reset the runs' MCP server token, Show the
-stopped test's browser, Share with Playwright tools and a CI run. The exceptions are the two toggles, whose menu rows
+stopped test's browser, Share with Playwright tools, a CI run, Flake Lab and File an issue. The exceptions are the two toggles, whose menu rows
 show a check mark. The icons drawn in code come from `PiwiIcons`: the flaky and running marks (Piwi's, on the outcome
 palette, held to `STATUS_COLORS` by `status-mark-colors.test.ts`; the running ring turns on the result icon, eight frames a
 second of a scalable `AnimatedIcon`, and stands still in the CI run tab's list) on the result icon and the CI run tab, the
