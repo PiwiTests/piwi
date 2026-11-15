@@ -6,12 +6,21 @@ import { expect, test } from '@playwright/test';
 const cli = join(__dirname, '..', '..', 'dist', 'cli.js');
 const project = join(__dirname, 'cli-project');
 
-/** Runs `piwi-turbo` in the CLI project, with a cache in the test's output folder and none of this run's variables. */
+/**
+ * Runs `piwi-turbo` in the CLI project, with a cache in the test's output folder, and without this run's Playwright
+ * variables or a compile cache or coverage set by the caller.
+ */
 function run(args: string[], cacheDir: string, env: NodeJS.ProcessEnv = {}) {
-  const inherited = Object.entries(process.env).filter(([key]) => !/^(TEST_|PW_|PWTEST|PLAYWRIGHT|PIWI_)/.test(key));
+  const inherited = Object.entries(process.env).filter(
+    ([key]) =>
+      !/^(TEST_|PW_|PWTEST|PLAYWRIGHT|PIWI_|NODE_COMPILE_CACHE$|NODE_DISABLE_COMPILE_CACHE$|NODE_V8_COVERAGE$)/.test(
+        key,
+      ),
+  );
   const result = spawnSync(process.execPath, [cli, ...args], {
     cwd: project,
     encoding: 'utf8',
+    timeout: 60_000,
     env: {
       ...Object.fromEntries(inherited),
       PIWI_TURBO_DEBUG: '1',
@@ -38,8 +47,10 @@ test('runs the tests in the spare worker, with the environment Playwright gives 
 
   const warm = run(['test'], cache);
   expect(warm.status, warm.output).toBe(0);
-  expect(warm.output).toMatch(/spare worker \d+ handed off/);
   expect(warm.output).toContain('2 passed');
+  const handedOff = warm.output.match(/spare worker (\d+) handed off/)?.[1];
+  expect(handedOff, warm.output).toBeDefined();
+  expect(warm.output).toContain(`worker pid ${handedOff}`);
 });
 
 test('forks a worker as usual when the config changes a variable the spare read as it loaded', () => {

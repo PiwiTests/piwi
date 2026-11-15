@@ -76,6 +76,7 @@ export function startSpareWorker(playwrightDir: string, coreDir: string, log?: (
     stdio: start.stdio,
     execArgv: start.execArgv,
   });
+  log?.(`spare worker ${spare.pid} started`);
   let state: 'waiting' | 'handed off' | 'gone' = 'waiting';
   let envRead: Set<string> | undefined;
   const onMessage = (message: SpareLoaded) => {

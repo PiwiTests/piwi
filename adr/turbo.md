@@ -1,7 +1,7 @@
 # Faster Playwright runs without a fork
 
 - Status: accepted
-- Date: 2026-11-14
+- Date: 2026-11-15
 
 ## Context
 
@@ -173,9 +173,11 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 - **The gap to Flashwright narrows on short runs only.** Flashwright measured 1.8× to 3× stock on its suites here,
   turbo's `max` 1.1× to 1.5×. Per run of 15 trivial tests, most of the remaining CPU difference was Node loading
   Playwright's bundles: 409 against 189 ms in the runner and 283 against 138 ms in the worker. A package cannot change
-  how Playwright is bundled; `piwi-turbo` caches the compiled bundles and loads the first worker's ahead, which took
-  `max` from 1.16× to 1.59× stock on 15 trivial tests, and a single test from 0.98× to 1.59× (Flashwright: 2.3× and
-  3.1×). Its saving is per command, so a long suite gains a few percent.
+  how Playwright is bundled; `piwi-turbo` caches the compiled bundles and loads the first worker's ahead. In the
+  series that measured it (stock 2,074 ms for 15 trivial tests and 1,152 ms for one), it took `max` from 1.16× to 1.59×
+  stock on the 15 tests and from 0.98× to 1.59× on one, where Flashwright measured 2.3× and 3.1×. Its saving is per
+  command, so a long suite gains a few percent. Starting it through `npx` adds about 200 ms (`npx playwright
+  --version` 770 to 932 ms against 564 to 690 ms with `node`, 3 runs each).
 - **`piwi-turbo` helps only the runs that go through it**: IDE extensions and tools that start `playwright`
   themselves do not. The spare worker relies on Playwright's worker entry (`lib/worker/workerProcessEntry.js`), the
   options of its worker fork and the variables it adds (`PLAYWRIGHT_TEST`, `FORCE_COLOR`, `DEBUG_COLORS`); when one of
