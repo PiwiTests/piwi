@@ -780,9 +780,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * A spec's tests drawn in the gutter from the service's answer, as the golden fixture of `packages/editor/tests/golden/`
-     * holds them: each test's line, its result's icon and its tooltip, the words VS Code's `tests/golden.test.ts` holds
-     * its test decorations to. A line with no result draws no icon.
+     * A spec's tests drawn in the gutter, and the rows above its lines drawn by Code Vision, from the service's answer,
+     * as the golden fixture of `packages/editor/tests/golden/` holds them: each test's line, its result's icon and its
+     * tooltip, its backgrounds, and each line's entries, the words VS Code's `tests/golden.test.ts` holds its test
+     * decorations and lenses to. A line with no result draws no icon.
      */
     fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
         val golden = com.google.gson.JsonParser.parseString(
@@ -846,6 +847,20 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val failedAt = failing.get("line").asInt
             assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
             assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            // The rows above the lines, as the registered Code Vision providers draw them, slot after slot.
+            val providers = DaemonBoundCodeVisionProvider.extensionPoint.extensionList.filterIsInstance<PiwiCodeVisionProvider>()
+            val rows = sortedMapOf<Int, MutableList<String>>()
+            for (provider in providers) {
+                val entries = com.intellij.openapi.application.runReadAction { provider.computeForEditor(myFixture.editor, psiFile) }
+                for ((range, entry) in entries) {
+                    rows.getOrPut(document.getLineNumber(range.startOffset)) { mutableListOf() } +=
+                        (entry as com.intellij.codeInsight.codeVision.ui.model.ClickableTextCodeVisionEntry).text
+                }
+            }
+            val lenses = golden.getAsJsonArray("lenses").map { row ->
+                row.asJsonArray.let { it[0].asInt to it[1].asJsonArray.map { title -> title.asString } }
+            }
+            assertEquals(lenses, rows.map { (line, titles) -> line to titles })
             assertEquals(listOf(virtual.toNioPath().toUri().toString()), asked.distinct())
             service.showsTests(virtual, false)
         } finally {

@@ -972,6 +972,18 @@ export function testHoverMarkdown(test: TestDecoration, uri: string, card: strin
   return links.length ? `${head}\n\n${links.join(' · ')}` : head;
 }
 
+/**
+ * The lines CodeLens draws above the code, in the service's order: the file's line, then each line without a test
+ * status (a test's own line is drawn in the gutter and its hover), but those `stopped` at, which their stop's row
+ * draws, and a blank title. The JetBrains plugin's Code Vision draws the same rows (`Glue.codeVisionSlot`).
+ */
+export function lensLines(summary: FileSummary, stopped: ReadonlySet<number> = new Set()): SummaryLine[] {
+  return [
+    ...(summary.file ? [summary.file] : []),
+    ...summary.lines.filter((l) => !l.status && !stopped.has(l.line)),
+  ].filter((l) => l.title.trim() !== '');
+}
+
 /** The decorations of a file's tests: the summary lines that carry a result. */
 export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   return lines.flatMap((l) =>
