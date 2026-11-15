@@ -72,7 +72,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - It measures the pull request's build against its base commit's build. The `build` job caches that build by its sha
   when it runs on `main`. When the base commit has none, the `perf-base` job builds it alongside the pull request's own
-  build, cached for the pull request's runs only.
+  build, cached for the pull request's runs only. Either way `perf-base` hands it to the `measure` jobs as the run's
+  `perf-base-output` artifact, so an eviction of the cache between the jobs fails nothing.
 - The pages are split across two `measure` jobs that run at once. Each measures both builds on its own pages, so every
   comparison is made on one machine. A `report` job joins their results into the job summary and the `perf-results`
   artifact.
