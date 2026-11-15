@@ -2950,10 +2950,10 @@ describe('runs as they happen', () => {
 
   test('a test of the run the instance says may be stuck says so while it runs, never while it stands stopped', async () => {
     const command = await runTests();
-    runDetails.set(61, editorRun(61, command.ref, 'running', '2026-09-27T15:00:00.000Z'));
-    refRuns.set(command.ref!, { id: 61, status: 'running' });
-    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 61));
-    await waitFor(() => (runStreams.get(61)?.size ? true : undefined));
+    runDetails.set(67, editorRun(67, command.ref, 'running', '2026-09-27T15:00:00.000Z'));
+    refRuns.set(command.ref!, { id: 67, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 67));
+    await waitFor(() => (runStreams.get(67)?.size ? true : undefined));
     const testLine = async () => {
       const summary = (await runsClient.sendRequest('piwi/fileSummary', {
         uri: uri('tests/checkout.spec.ts'),
@@ -2963,24 +2963,24 @@ describe('runs as they happen', () => {
     const latest = () => statuses[statuses.length - 1]?.contexts[0];
     const attempt = { title: 'pays', location: 'tests/checkout.spec.ts:3:5', browser: 'chromium', repeatEachIndex: 0 };
 
-    pushRunEvent(61, 'test-begin', { ...attempt, filePath: 'tests/checkout.spec.ts' });
+    pushRunEvent(67, 'test-begin', { ...attempt, filePath: 'tests/checkout.spec.ts' });
     await waitFor(() => (latest()?.liveTests?.length ? true : undefined));
-    pushRunEvent(61, 'test-stuck', { ...attempt, elapsedMs: 150_000, usualMs: 40_000 });
+    pushRunEvent(67, 'test-stuck', { ...attempt, elapsedMs: 150_000, usualMs: 40_000 });
     const stuck = await waitFor(() => (latest()?.live?.stuck === 1 ? latest() : undefined));
     expect(stuck.liveTests).toEqual([
       { testCaseId: 1, status: 'running', stuck: 'Stuck? running over 2 min, usually 40 s' },
     ]);
-    expect((await testLine())?.title).toMatch(/^Stuck\? running over 2 min, usually 40 s, in your run #61 · /);
+    expect((await testLine())?.title).toMatch(/^Stuck\? running over 2 min, usually 40 s, in your run #67 · /);
 
     // A stop of the attempt hides it, and its going on shows it again.
-    pushRunEvent(61, 'test-stopped', { ...attempt, stop: { kind: 'pause' } });
+    pushRunEvent(67, 'test-stopped', { ...attempt, stop: { kind: 'pause' } });
     await waitFor(() => (latest()?.live && latest()?.live?.stuck === undefined ? true : undefined));
     expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
-    pushRunEvent(61, 'test-resumed', attempt);
+    pushRunEvent(67, 'test-resumed', attempt);
     await waitFor(() => (latest()?.live?.stuck === 1 ? true : undefined));
 
     // The stream's catch-up replays the begin with what the instance said since: the attempt stays stuck.
-    pushRunEvent(61, 'test-begin', {
+    pushRunEvent(67, 'test-begin', {
       ...attempt,
       filePath: 'tests/checkout.spec.ts',
       stuck: { elapsedMs: 150_000, usualMs: 40_000 },
@@ -2990,7 +2990,7 @@ describe('runs as they happen', () => {
     expect(latest()?.live?.stuck).toBe(1);
 
     // Its end ends it.
-    pushRunEvent(61, 'test-completed', {
+    pushRunEvent(67, 'test-completed', {
       ...attempt,
       filePath: 'tests/checkout.spec.ts',
       testCaseId: 1,
@@ -2999,6 +2999,12 @@ describe('runs as they happen', () => {
     await waitFor(() => (latest()?.liveTests?.[0]?.status === 'passed' ? true : undefined));
     expect(latest()?.live?.stuck).toBeUndefined();
     expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'passed' }]);
+
+    // The run ends and is read.
+    runDetails.set(67, { ...runDetails.get(67), status: 'passed', passedTests: 2 });
+    const seen = statuses.length;
+    pushRunEvent(67, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
   });
 
   test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
