@@ -14,7 +14,7 @@ import { compareWorkers, workerNumber } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
-import { buildRetryCommand, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
+import { buildRetryCommand, NO_RETRY_COMMAND, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -684,6 +684,7 @@ const selectionCommand = computed(() =>
 const { copy: copySelection } = useCopy();
 function copySelectionCommand() {
   if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
+  else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
 }
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),

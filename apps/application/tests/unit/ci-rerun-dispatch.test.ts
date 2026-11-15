@@ -133,6 +133,18 @@ describe('a CI re-run dispatch', () => {
     });
   });
 
+  test('dispatches nothing when no affected test has a file path the arguments can name', async () => {
+    await seed(GITHUB);
+    await db.update(schema.testCases).set({ filePath: '' });
+    const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: 'unavailable',
+      message: 'None of these tests has a file path a re-run can name.',
+    });
+    expect(dispatched).toHaveLength(0);
+  });
+
   test('keeps the pipeline id GitLab answers with', async () => {
     await seed(GITLAB);
     answer = { pipelineId: '9001' };

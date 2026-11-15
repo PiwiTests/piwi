@@ -46,6 +46,24 @@ describe('buildRerunCommand', () => {
     ).toBe('npx playwright test "a.spec.ts" "b.spec.ts" -g "a|b"');
   });
 
+  test('is empty when the cases name no file and no title, rather than run every test', () => {
+    expect(buildRerunCommand([{ filePath: '', title: '', line: 3, projectName: 'chromium' }])).toBe('');
+    expect(buildRerunCommand([{ filePath: '-u', title: '', line: null, projectName: null }])).toBe('');
+    expect(buildRerunCommand([{ filePath: '', title: 'pays', line: null, projectName: null }])).toBe(
+      'npx playwright test -g "pays"',
+    );
+  });
+
+  test('is empty when only titles name the tests and they would make the command too long', () => {
+    const cases = Array.from({ length: 200 }, (_, i) => ({
+      filePath: '',
+      title: `a long title for the test number ${i}`,
+      line: i + 1,
+      projectName: null,
+    }));
+    expect(buildRerunCommand(cases)).toBe('');
+  });
+
   test('drops the titles when they would make the command too long', () => {
     const cases = Array.from({ length: 200 }, (_, i) => ({
       filePath: 'tests/long.spec.ts',

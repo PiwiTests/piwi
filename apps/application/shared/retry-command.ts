@@ -83,10 +83,24 @@ function quoteAll(values: string[]): string[] {
   return values.map(quoteShellArg).filter((arg): arg is string => arg !== null);
 }
 
-/** The quoted spec paths of `values`: one that starts with `-` would be read as an option, so it is left out too. */
-function quoteSpecs(values: string[]): string[] {
-  return quoteAll(values.filter((value) => !value.startsWith('-')));
+/**
+ * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option, an
+ * empty one matches every file, and a bare `:<line>` that line of every file.
+ */
+export function isSpecFilter(spec: string): boolean {
+  return spec !== '' && !spec.startsWith('-') && !spec.startsWith(':');
 }
+
+/** The quoted spec paths of `values` that Playwright takes as test filters (see {@link isSpecFilter}). */
+function quoteSpecs(values: string[]): string[] {
+  return quoteAll(values.filter(isSpecFilter));
+}
+
+/** What a copy of a retry command says when no case has a file path or title a command can name. */
+export const NO_RETRY_COMMAND = 'No test here has a file path or title a command can name.';
+
+/** What a re-run dispatch answers when no case has a file path its arguments can name. */
+export const NO_RETRY_ARGS = 'None of these tests has a file path a re-run can name.';
 
 /** ` --project="<name>"`, or nothing when the name cannot be quoted safely (the tests then run in every project). */
 function projectFlag(project: string): string {
@@ -104,11 +118,13 @@ function projectFlags(projects: string[]): string {
 
 /**
  * The ` -g "<title|title>"` flag that narrows a `playwright test` run to these
- * titles, or an empty string without titles. See {@link titleGrepPattern}.
+ * titles, or an empty string without titles. A blank title, which every test
+ * matches, is left out. See {@link titleGrepPattern}.
  */
 export function buildTitleGrepFlag(titles: string[]): string {
-  if (titles.length === 0) return '';
-  return ` -g "${titles.map(titleGrepPattern).join('|')}"`;
+  const named = titles.filter((title) => title.trim());
+  if (named.length === 0) return '';
+  return ` -g "${named.map(titleGrepPattern).join('|')}"`;
 }
 
 // Playwright's CLI file filter is matched as a regex against forward-slash paths,
@@ -210,7 +226,8 @@ export function buildRetryCommand(
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else {
-      const patterns = projectCases.map((c) => titleGrepPattern(c.title));
+      const patterns = projectCases.filter((c) => c.title.trim()).map((c) => titleGrepPattern(c.title));
+      if (patterns.length === 0) continue;
       const grepArg = patterns.length === 1 ? patterns[0]! : `(${patterns.join('|')})`;
       cmd = `${baseCmd} --grep "${grepArg}"`;
     }
@@ -254,9 +271,12 @@ export function buildRetryCommand(
  * `playwright test` prefix, so it can be handed to CI as the value of a
  * workflow input / pipeline variable that a job appends to its own command.
  * Always `file-line` shaped; a case without a line contributes its file path.
- * Cases from several projects run each spec in each of those projects.
+ * Cases from several projects run each spec in each of those projects. A case
+ * with no file path Playwright takes (see {@link isSpecFilter}) is left out,
+ * with its project.
  */
-export function buildRetryArgs(cases: RetryCase[]): string {
+export function buildRetryArgs(allCases: RetryCase[]): string {
+  const cases = allCases.filter((c) => isSpecFilter(specPattern(c.filePath)));
   if (cases.length === 0) return '';
   const specs = [
     ...new Set(cases.map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath)))),
@@ -272,16 +292,21 @@ export function buildRetryArgs(cases: RetryCase[]): string {
  * It is the same on every shell and a single command, so it can be copied,
  * handed to `git bisect run` across commits, or shown as the command that
  * verifies a fix. Past {@link MAX_CMD_LENGTH} it drops the titles and runs the
- * files whole. Without cases it runs the whole suite.
+ * files whole. Without cases it runs the whole suite; with cases that name no
+ * file and no title it can pass on (see {@link isSpecFilter}), or too many titles
+ * and no file, it is empty, since it would run every test.
  */
 export function buildRerunCommand(cases: RetryCase[]): string {
   const base = 'npx playwright test';
   if (cases.length === 0) return base;
   const files = quoteSpecs([...new Set(cases.map((c) => specPattern(c.filePath)))]);
+  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]);
+  if (files.length === 0 && !grep) return '';
   const projects = projectFlags(caseProjects(cases));
   const head = [base, ...files].join(' ');
-  const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
-  return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+  const withTitles = `${head}${grep}${projects}`;
+  if (withTitles.length <= MAX_CMD_LENGTH) return withTitles;
+  return files.length > 0 ? `${head}${projects}` : '';
 }
 
 /**

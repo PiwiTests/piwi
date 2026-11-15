@@ -29,6 +29,15 @@ test('recipe — full checkout, pinned install, browser install and test command
   expect(recipe.notes).toEqual([]);
 });
 
+test('recipe — a test with no file path a command can name gets no run step, rather than one that runs every test', () => {
+  const recipe = buildReproRecipe({ ...baseInput, cases: [{ ...baseInput.cases[0]!, filePath: '-x.spec.ts' }] });
+  expect(recipe.steps.map((s) => s.step)).not.toContain('Run the failing test');
+  expect(recipe.notes).toEqual([
+    'No failing test has a file path a command can name, so the step that runs it is left out.',
+  ]);
+  expect(buildReproRecipe({ ...baseInput, cases: [] }).steps.at(-1)!.bash).toBe('npx playwright test');
+});
+
 test('recipe — every step returns both shell forms', () => {
   const recipe = buildReproRecipe(baseInput);
   for (const step of recipe.steps) {
@@ -129,11 +138,12 @@ test('bisect — same commit on both ends has nothing to bisect', () => {
   expect(result.reason).toContain('nothing to bisect');
 });
 
-test('bisect — empty verify command falls back to playwright test', () => {
+test('bisect — without a verify command, none is built rather than one that runs every test', () => {
   const result = buildBisectScript({ good: 'aaa', bad: 'bbb', verifyCommand: '' });
-  expect(result.available).toBe(true);
-  if (!result.available) throw new Error('expected available');
-  expect(result.bash).toContain('git bisect run npx playwright test');
+  expect(result).toEqual({
+    available: false,
+    reason: 'The failing tests have no file path or title a command can name, so no bisect is built for them.',
+  });
 });
 
 test('reporter values that are not what they name stay out of the script', () => {
