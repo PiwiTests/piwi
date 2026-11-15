@@ -1795,6 +1795,29 @@ class GlueTest {
     private fun at(key: String, line: Int, uri: String = specUri) = Glue.RunBreakpoint(EditorBreakpoint(uri, line), key)
 
     @Test
+    fun `the breakpoints go to a run that takes them alone, and a run heard of takes them with always`() {
+        val places = listOf(EditorBreakpoint(specUri, 4))
+        val edits = Glue.EditLog()
+        val runs = LinkedHashMap<String, Glue.RunBreakpoints>()
+        val live = mapOf("ed-debug" to session("ed-debug"), "ed-plain" to session("ed-plain"), "terminal-1" to session("terminal-1"))
+        Glue.remember(runs, "ed-debug", Glue.runStarted(edits.now(), emptyList(), takes = true))
+        Glue.remember(runs, "ed-plain", Glue.runStarted(edits.now(), emptyList(), takes = false))
+        // With `debug`: the Debug with Piwi run alone; the run heard of keeps what its command names.
+        assertEquals(
+            listOf(SetRunBreakpointsParams("ed-debug", places)),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = false),
+        )
+        assertEquals(
+            listOf(SetRunBreakpointsParams("terminal-1", places)),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = true),
+        )
+        assertEquals(
+            listOf(SetRunBreakpointsParams("terminal-1", emptyList())),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = false),
+        )
+    }
+
+    @Test
     fun `the breakpoints go to each live run whose breakpoints differ, once`() {
         val places = listOf(EditorBreakpoint(specUri, 4))
         val edits = Glue.EditLog()
@@ -2399,6 +2422,7 @@ class GlueTest {
         val failure = plain.copy(debug = DebugRun(EditorBreakpoint("file:///a.spec.ts", 4), "pays"))
         assertEquals(listOf(false, true, true), listOf(plain, debugging, failure).map { Glue.takesBreakpoints("debug", it) })
         assertEquals(listOf(true, true), listOf(plain, debugging).map { Glue.takesBreakpoints("always", it) })
+        assertEquals(false, Glue.takesBreakpoints("always", plain.copy(repeat = 3)))
         assertEquals(listOf(false, false), listOf(plain, debugging).map { Glue.takesBreakpoints("never", it) })
     }
 

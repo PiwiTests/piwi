@@ -105,7 +105,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
             listOf(
-                "Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
+                "Piwi.RunTestAtCursor", "Piwi.DebugTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
                 "Piwi.RecordHere", "Piwi.RecordNewFile", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
             ),
             ids("Piwi.EditorPopup"),
@@ -225,6 +225,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
             setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
             setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify"),
+            setOf("Piwi.DebugTestAtCursor", "Piwi.Failure.Debug"),
             setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
             setOf(
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",

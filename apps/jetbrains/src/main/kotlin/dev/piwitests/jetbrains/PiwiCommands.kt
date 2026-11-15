@@ -252,17 +252,18 @@ object PiwiCommands {
     /**
      * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri` (`piwi/testAt`), as [runTests]
      * does: by its id when Piwi knows it, else by its location, and with `repeat` by its location, that many times; or
-     * with `wholeSpec` every test of the spec as saved, by its path. The spec is saved first, since a run reads it from
-     * the disk; a balloon says when there is nothing to run.
+     * with `wholeSpec` every test of the spec as saved, by its path; with `debug`, as Debug with Piwi. The spec is saved
+     * first, since a run reads it from the disk; a balloon says when there is nothing to run.
      */
-    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null) {
+    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null, debug: Boolean = false) {
         background(project, "Piwi: finding the test") {
             val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
             val args = if (wholeSpec) {
                 // Every test of the spec as saved, by its path, known to the instance or not.
                 found?.spec?.location?.let { RunTestsArgs(uri, emptyList(), locations = listOf(it)) }
             } else {
-                Glue.testAtRun(uri, found, repeat)
+                // Debug with Piwi: headed, each failure held at its line, the IDE's breakpoints taken.
+                Glue.testAtRun(uri, found, repeat)?.let { if (debug) it.copy(headed = true, holdFailures = true, debugging = true) else it }
             }
             if (args != null) {
                 saveSpec(project, uri)

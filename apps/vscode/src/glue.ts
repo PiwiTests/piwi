@@ -928,8 +928,12 @@ export function breakpointsMode(value: unknown): BreakpointsMode {
   return 'debug';
 }
 
-/** Whether a run pauses at the editor's breakpoints: every run with `always`, a Debug with Piwi run with `debug`. */
+/**
+ * Whether a run pauses at the editor's breakpoints: every run with `always`, a Debug with Piwi run with `debug`; never a
+ * repeated run (Verify ×3), which nobody attends.
+ */
 export function runTakesBreakpoints(mode: BreakpointsMode, args: RunTestsArgs | null): boolean {
+  if (args?.repeat) return false;
   return mode === 'always' || (mode === 'debug' && !!(args?.debugging || args?.debug));
 }
 

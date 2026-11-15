@@ -3215,6 +3215,8 @@ object Glue {
         var sent: String?,
         /** Whether it pauses at the IDE's breakpoints ([takesBreakpoints]); null for a run not started here. */
         val takes: Boolean? = null,
+        /** The run ended: what is kept of it is [takes], for a rerun under its ref. */
+        val ended: Boolean = false,
     )
 
     /**
@@ -3241,9 +3243,12 @@ object Glue {
         else -> "debug"
     }
 
-    /** Whether a run pauses at the IDE's breakpoints: every run with `always`, a Debug with Piwi run with `debug`. */
+    /**
+     * Whether a run pauses at the IDE's breakpoints: every run with `always`, a Debug with Piwi run with `debug`; never a
+     * repeated run (Verify ×3), which nobody attends.
+     */
     fun takesBreakpoints(mode: String, args: RunTestsArgs?): Boolean =
-        mode == "always" || (mode == "debug" && (args?.debugging == true || args?.debug != null))
+        args?.repeat == null && (mode == "always" || (mode == "debug" && (args?.debugging == true || args?.debug != null)))
 
     /** Keep what a run was given, the oldest of more than [MAX_BREAKPOINT_RUNS] runs forgotten. */
     fun <T> remember(runs: LinkedHashMap<String, T>, ref: String, value: T) {
@@ -3272,8 +3277,8 @@ object Glue {
     /**
      * The `piwi/setRunBreakpoints` the live runs need for the IDE's `breakpoints`: one per run whose places
      * ([runPlaces], none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: those its
-     * command started with, else the last sent), which `runs` then records. A run heard of without its start maps from
-     * now, and takes them as `heardTakes` says.
+     * command started with, else the last sent), which `runs` then records; none to a run that takes none and was given
+     * none. A run heard of without its start maps from now, and takes them as `heardTakes` says.
      */
     fun breakpointUpdates(
         sessions: Map<String, RunSession>,
@@ -3283,7 +3288,10 @@ object Glue {
         heardTakes: Boolean = true,
     ): List<SetRunBreakpointsParams> = sessions.keys.mapNotNull { ref ->
         val run = runs[ref] ?: runStarted(edits.now(), null).also { remember(runs, ref, it) }
-        val places = if (run.takes ?: heardTakes) runPlaces(run, breakpoints, edits) else emptyList()
+        val takes = run.takes ?: heardTakes
+        // A run that takes none and was given none keeps the breakpoints its command names, if any.
+        if (!takes && run.sent == null) return@mapNotNull null
+        val places = if (takes) runPlaces(run, breakpoints, edits) else emptyList()
         val text = breakpointsText(places)
         if (run.sent == text) return@mapNotNull null
         run.sent = text

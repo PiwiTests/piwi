@@ -1647,8 +1647,19 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             )
             Thread.sleep(300)
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertTrue("a plain Run takes none", breakpoints.filter { it.ref == "ed-plain" }.all { it.places.isEmpty() })
-            assertTrue("a terminal's run takes none", editorBreakpoints.all { it.places.isEmpty() })
+            assertTrue("a plain Run is sent none", breakpoints.none { it.ref == "ed-plain" })
+            assertTrue("a terminal's run takes none", editorBreakpoints.none { it.places.isNotEmpty() })
+            // A rerun of each (the Run tool window's Rerun) takes them as its run did.
+            val before = breakpoints.size
+            for (ref in listOf("ed-debug", "ed-plain")) {
+                hear(RunSession(ref, base.path, emptyList(), ended = true))
+                hear(running(ref))
+            }
+            assertEquals(
+                SetRunBreakpointsParams("ed-debug", listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the rerun's breakpoint") { breakpoints.drop(before).firstOrNull { it.ref == "ed-debug" } },
+            )
+            assertTrue("a plain Run's rerun is sent none", breakpoints.none { it.ref == "ed-plain" })
         } finally {
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()

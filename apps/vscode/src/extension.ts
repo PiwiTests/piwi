@@ -1366,7 +1366,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * notification after a recording names the line its block ends on), else the cursor's. By its id when Piwi knows it,
    * else by its location; with `repeat`, by its location, that many times.
    */
-  const runTestAt = async (at: unknown, repeat?: number) => {
+  const runTestAt = async (at: unknown, repeat?: number, debug = false) => {
     const editor = cursorEditor();
     const target =
       testLineArg(at) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
@@ -1377,7 +1377,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const found = await lc
       .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri: target.uri, line: target.line, character: 0 })
       .catch(() => null);
-    const args = testAtRun(target.uri, found, repeat);
+    const run = testAtRun(target.uri, found, repeat);
+    // Debug with Piwi: headed, each failure held at its line, the editor's breakpoints taken.
+    const args = run && debug ? { ...run, headed: true, holdFailures: true, debugging: true } : run;
     if (!args) {
       void vscode.window.showInformationMessage('Piwi: the cursor is in no test.');
       return;
@@ -1690,6 +1692,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await runTests({ uri, testIds: found.tests.map((t) => t.id) });
     }),
     vscode.commands.registerCommand('piwi.runTestAtCursor', (at?: unknown) => runTestAt(at)),
+    vscode.commands.registerCommand('piwi.debugTestAtCursor', (at?: unknown) => runTestAt(at, undefined, true)),
     vscode.commands.registerCommand('piwi.verifyTestAtCursor', (at?: unknown) => runTestAt(at, VERIFY_REPEAT)),
     // A test's actions from its gutter (the Testing view's, or the line number's with the view off), in the service's
     // order: Run and Verify ×3 as the commands at the cursor run them, at the test's line; every other its command.

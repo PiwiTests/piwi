@@ -36,6 +36,7 @@ describe("the editor's context menu", () => {
     const entries = menus['piwi.editorContext']!.map((e) => [e.group!.split('@')[0], e.command]);
     expect(entries).toEqual([
       ['1_run', 'piwi.runTestAtCursor'],
+      ['1_run', 'piwi.debugTestAtCursor'],
       ['1_run', 'piwi.verifyTestAtCursor'],
       ['1_run', 'piwi.runSpec'],
       ['1_run', 'piwi.runTestsForFile'],
@@ -200,6 +201,7 @@ describe("the commands' glyphs", () => {
       ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
       ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
       ['piwi.verifyTestAtCursor', 'piwi.verifyFailure'],
+      ['piwi.debugTestAtCursor', 'piwi.debugFailure'],
       ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
       ['piwi.holdFailures', 'piwi.setRunHoldFailures'],
       ['piwi.toggleFollowEditor', 'piwi.stopFollowingEditor'],

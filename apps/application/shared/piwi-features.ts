@@ -706,7 +706,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Runs started outside Piwi',
         summary:
-          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it takes its controls as a run Piwi started does, and its breakpoints with piwi.breakpoints set to Every run.",
         needs: ['fixtures'],
         where:
           "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
@@ -716,7 +716,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Breakpoints in the browser',
         summary:
-          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
+          "Set a breakpoint in VS Code or a JetBrains IDE: the next test you debug with Piwi pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
         needs: ['fixtures', 'editor'],
         where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-breakpoints',

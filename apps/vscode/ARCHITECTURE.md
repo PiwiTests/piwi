@@ -383,7 +383,9 @@ spec):
 - **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);
 - **Piwi: Run this spec** (`piwi.runSpec`), on a spec, with or without an instance.
 
-Each asks `piwi/testAt` for the cursor and saves the spec when it has unsaved changes. Then it runs through `runTests`
+Each asks `piwi/testAt` for the cursor and saves the spec when it has unsaved changes, as **Piwi: Debug the test at
+the cursor** (`piwi.debugTestAtCursor`, in the editor's **Piwi** submenu and the palette) does before it runs the test
+as Debug with Piwi. Then it runs through `runTests`
 (`runTestAt`, `runSpec`): the test by its id when Piwi knows it, else by its location (`testAtRun` in `src/glue.ts`); to
 verify, by its location, three times (`VERIFY_REPEAT`); the spec, every test of it by its path
 (`TestAtResult.spec.location`). When there is no test, a message says so. The first two commands take a `{ uri, line }`

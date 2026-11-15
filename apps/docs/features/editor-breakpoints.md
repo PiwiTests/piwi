@@ -8,8 +8,8 @@ lang: en-US
 
 <Needs reporter fixtures editor />
 
-A breakpoint you set with the editor's own gutter click pauses the next test run the [editor extensions](./editors)
-start, in the browser, right before the call on its line that acts on, reads or checks the page: a navigation, a
+A breakpoint you set with the editor's own gutter click pauses the next test you debug with the [editor
+extensions](./editors) (**Debug the test at the cursor**), in the browser, right before the call on its line that acts on, reads or checks the page: a navigation, a
 click, a key press, an assertion. Piwi's bar at the top of the page lets you look at the page, step through the calls,
 or pick a better locator, which lands back on that line in the editor. The stop is Playwright's own debugger
 (`context.debugger`) without its Inspector: Piwi's bar answers it, and no JavaScript debugger attaches.

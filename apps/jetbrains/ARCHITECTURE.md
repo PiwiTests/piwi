@@ -507,6 +507,7 @@ or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is 
 `Piwi.Connection`. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
 
 - **Run the test at the caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
+- **Debug the test at the caret** (`Piwi.DebugTestAtCursor`), as Debug with Piwi;
 - **Verify the test at the caret ×3** (`Piwi.VerifyTestAtCursor`);
 - **Run this spec** (`Piwi.RunSpec`).
 

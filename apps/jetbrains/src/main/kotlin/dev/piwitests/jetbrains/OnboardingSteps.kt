@@ -40,9 +40,9 @@ object OnboardingSteps {
         Step(
             id = "breakpoint",
             title = "Stop at a breakpoint, and write code there",
-            text = "Set a breakpoint on a line of a test or a page object, then run the test at the caret: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.",
-            label = "Run the test at the caret",
-            actionId = "Piwi.RunTestAtCursor",
+            text = "Set a breakpoint on a line of a test or a page object, then debug the test at the caret: the run stops before that line's action, its page shows beside the editor, and picking a locator, recording or asserting writes the code at the stop.",
+            label = "Debug the test at the caret",
+            actionId = "Piwi.DebugTestAtCursor",
             image = null,
         ),
         Step(

@@ -566,11 +566,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val fresh = synchronized(lock) {
             val fresh = !session.ended && ref !in sessions
             starting.remove(ref)
-            // A run not started here maps its lines from when it is first heard.
-            if (fresh && ref !in runs) Glue.remember(runs, ref, Glue.runStarted(edits.now(), null))
+            // A run not started here, or a rerun under the ref of one that ended, maps its lines from when it is first
+            // heard, and a rerun takes the breakpoints as the run did.
+            val kept = runs[ref]
+            if (fresh && (kept == null || kept.ended)) {
+                Glue.remember(runs, ref, Glue.runStarted(edits.now(), null, kept?.takes))
+            }
             sessions = Glue.withSession(sessions, session)
             if (session.ended) {
-                runs.remove(ref)
+                if (kept != null) {
+                    Glue.remember(runs, ref, Glue.RunBreakpoints(edits.now(), HashMap(), null, kept.takes, ended = true))
+                }
                 forgetEdits()
             }
             fresh

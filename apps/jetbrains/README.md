@@ -32,8 +32,8 @@ Playwright Test suites in JavaScript and TypeScript.
   change that renames a string your tests find elements by, each with a quick fix.
 - **Tests recorded at the caret.** **Tools → Piwi → Record here…** opens a browser through your project's own
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
-- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. That run
-  pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
+- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. A run you
+  debug pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
   debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the page made, and a
   headless test's page shows in the Piwi tool window, where a click picks the locator.
 

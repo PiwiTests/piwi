@@ -141,7 +141,7 @@ M8: Debug with Piwi in both editors, Piwi's run control rather than a debug sess
 dashboard's Debug in my editor run for a failed test (stopping once at its line, with no consent prompt) and a headed
 run holding its failures otherwise; VS Code's Debug profile in the Testing view; and **Debug with Piwi** on the
 failure nodes of both editors, from the run the service builds (`WorkspaceFailure.debug`) (TL17 in part: the IDE run
-icon waits on M9, and whether a plain Run still stops at breakpoints stays open). M7 continued: the failure nodes of
+icon waits on M9). M7 continued: the failure nodes of
 both editors gain **Verify ×3 with Piwi** and **Go to the test**, from what the service finds of the failure's test
 (`WorkspaceFailure.verify`, `WorkspaceFailure.test`) (HM11), and every quick fix carries Piwi's name, the service's
 (`piwiActionTitle`) and the clients' recorded-locator ones alike. M9:
@@ -976,10 +976,8 @@ whether M14's places are interim.
    lean), or in Run and Debug, where developers looked at a stop? Whether JetBrains draws its run views in Swing or JCEF
    is the live-run study's open question 9.
 9. **Plain Run and breakpoints**, decided: a plain Run pauses at none, Debug with Piwi does (`piwi.breakpoints` `debug`,
-   its default), as the IDE's own Run and Debug. The question was: does plain Run keep stopping at breakpoints, or leave stops to Debug with Piwi?
-   `piwi.breakpoints` is a boolean, on by default (`apps/vscode/package.json:1146-1150`), and frozen in D25: a value
-   that limits stops to Debug runs needs a default for existing installs. Headedness is the live-run study's question
-   10; its P6 holds failures for an editor's debug run.
+   its default; `always` keeps every run stopping, an old `true` read as it), as the IDE's own Run and Debug.
+   Headedness is the live-run study's question 10; its P6 holds failures for an editor's debug run.
 10. **A CI run on the status line**: the study puts the developer's own run first (P5) and lists CI runs of the branch
     read-only (P10). Does a CI run ever take the line while none of the developer's own is live?
 11. **Team or personal settings**: which does a team share (`failureSeverity` in particular)? The new switches go into

@@ -2088,6 +2088,7 @@ describe('which runs pause at the breakpoints', () => {
     const failure = { ...plain, debug: { stop: { uri: plain.uri, line: 4 }, title: 'pays' } };
     expect([plain, debugging, failure].map((args) => runTakesBreakpoints('debug', args))).toEqual([false, true, true]);
     expect([plain, debugging].map((args) => runTakesBreakpoints('always', args))).toEqual([true, true]);
+    expect(runTakesBreakpoints('always', { ...plain, repeat: 3 })).toBe(false);
     expect([plain, debugging].map((args) => runTakesBreakpoints('never', args))).toEqual([false, false]);
   });
 });
