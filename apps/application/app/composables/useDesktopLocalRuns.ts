@@ -28,6 +28,7 @@ import {
   buildBisectArgs,
   buildLocalRunPlan,
   buildReproduceArgs,
+  canBisect,
   type LocalRunMode,
   type LocalRunOptions,
   type LocalRunStep,
@@ -1197,7 +1198,7 @@ export function useDesktopLocalRuns() {
     /** The editor's job this run answers. */
     jobRequestId?: string | null;
   }): LocalRun | null {
-    if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
+    if (!tauriCore() || input.projectId == null || buildReproduceArgs(input.cases).length === 0) return null;
     return spawn({
       kind: 'reproduce',
       jobRequestId: input.jobRequestId ?? null,
@@ -1231,7 +1232,7 @@ export function useDesktopLocalRuns() {
     /** The editor's job this run answers. */
     jobRequestId?: string | null;
   }): LocalRun | null {
-    if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
+    if (!tauriCore() || input.projectId == null || !canBisect(input.cases, input.flakeTestCaseId)) return null;
     return spawn({
       kind: 'bisect',
       jobRequestId: input.jobRequestId ?? null,

@@ -15,6 +15,7 @@
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
+import { buildReproduceArgs, canBisect } from '~/utils/local-run-args';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
 const props = defineProps<{
@@ -30,10 +31,9 @@ const recipeBash = computed(() => reproScript(props.reproduce, 'bash'));
 const recipePowershell = computed(() => reproScript(props.reproduce, 'powershell'));
 
 // The one command a reader most wants — the exact test invocation — leads; the
-// full checkout/install/bisect recipe folds behind a disclosure.
-const runStep = computed(
-  () => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? props.reproduce.steps.at(-1) ?? null,
-);
+// full checkout/install/bisect recipe folds behind a disclosure. A recipe with no
+// run step leads with its notes, which say why.
+const runStep = computed(() => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? null);
 const showFull = ref(false);
 
 const toast = useToast();
@@ -65,9 +65,16 @@ const linked = computed(() => desktop.value && !!link.value?.exists);
 
 /** The failing commit a reproduction would check out. */
 const commit = computed(() => props.context?.commit ?? props.reproduce.commit ?? null);
-const canReproduceHere = computed(() => linked.value && !!commit.value && (props.context?.cases.length ?? 0) > 0);
+const canReproduceHere = computed(
+  () => linked.value && !!commit.value && buildReproduceArgs(props.context?.cases ?? []).length > 0,
+);
 const canBisectHere = computed(
-  () => linked.value && props.bisect.available && !!props.context?.good && !!props.context?.bad,
+  () =>
+    linked.value &&
+    props.bisect.available &&
+    !!props.context?.good &&
+    !!props.context?.bad &&
+    canBisect(props.context.cases, props.context.flakeArm?.testCaseId),
 );
 
 async function linkFolder() {
@@ -152,6 +159,9 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         :powershell="runStep.powershell"
         storage-key="piwi-repro-shell"
       />
+      <template v-else>
+        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-muted">{{ note }}</p>
+      </template>
 
       <!-- The full recipe (checkout, install, pin, browser) folds behind here. -->
       <UButton
@@ -175,7 +185,9 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
           </span>
         </div>
-        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        <template v-if="runStep">
+          <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        </template>
       </div>
 
       <!-- Desktop: run the recipe for real, in a throwaway worktree. -->
@@ -202,7 +214,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
           >
             Link a folder to reproduce here
           </UButton>
-          <span v-if="linked" class="text-xs text-dimmed">
+          <span v-if="canReproduceHere" class="text-xs text-dimmed">
             Runs in a worktree of the failing commit — your checkout is never touched.
           </span>
         </div>

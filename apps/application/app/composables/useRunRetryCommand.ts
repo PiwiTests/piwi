@@ -1,6 +1,6 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildRetryCommand, retryCaseOf, retryProjects } from '~/utils/retry-command';
+import { buildRetryCommand, NO_RETRY_COMMAND, retryCaseOf, retryProjects } from '~/utils/retry-command';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 
 /**
@@ -57,8 +57,10 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
   );
 
   const { copy, copied } = useCopy();
+  const toast = useToast();
   function copyCommand() {
     if (command.value) copy(command.value, { toast: 'Retry command copied' });
+    else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
   }
 
   const title = computed(() => (copied.value ? 'Copied!' : copyPreview(command.value)));

@@ -6,8 +6,9 @@
  * opens the setup dialog while configuration is broken. It doubles as the
  * status of a run of these same tests: while one is active (or just finished)
  * clicking it opens the runs tray and never stops anything. The chevron menu
- * shows the exact command and holds one-off runs, the other test sets of the
- * page, option toggles and fix-it entries. The options start from the
+ * shows the command (at most three test filters, the dialog has it whole) and
+ * holds one-off runs, the other test sets of the page, option toggles and
+ * fix-it entries. The options start from the
  * project's defaults (its Local folder settings) and the button's preset; a
  * choice here applies to this button only. Renders nothing without the IPC
  * bridge (plain browsers, web deployments), so pages can mount it
@@ -92,6 +93,13 @@ watch(
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
+/** No case has a filter Playwright can take: a spec path that is empty or read as an option, or an empty title. */
+const noPlan = computed(() => plan.value.length === 0);
+const noPlanHint = computed(() =>
+  options.value.mode === 'grep'
+    ? 'These tests have no title to select them by: select them by file'
+    : "Playwright cannot take these tests' file paths: select them by title",
+);
 const contextRun = computed(() => store.latestForCases(props.projectId, props.cases));
 const running = computed(() => contextRun.value?.status === 'running');
 
@@ -147,7 +155,11 @@ const face = computed(() => {
   if (!linked.value) {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
-  const command = plan.value.length === 1 ? plan.value[0]!.display : `${plan.value.length} commands, one per project`;
+  if (noPlan.value) return { ...idle, tooltip: noPlanHint.value };
+  const command =
+    plan.value.length === 1
+      ? (plan.value[0]!.summary ?? plan.value[0]!.display)
+      : `${plan.value.length} commands, one per project`;
   return {
     ...idle,
     tooltip: `${command} · ${runModeLabel.value} · in ${link.value?.path}`,
@@ -175,6 +187,7 @@ function onPrimaryClick() {
     modalOpen.value = true;
     return;
   }
+  if (noPlan.value) return;
   runNow();
 }
 
@@ -184,10 +197,15 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
-/** The commands a run from here spawns, at most four, as the menu shows them. */
+/** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+const copyCommand = computed(() =>
+  buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
+);
+
+/** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
-  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.display);
+  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.summary ?? step.display);
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
@@ -204,7 +222,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     groups.push([
       { type: 'label', label: 'Tests not found in the linked folder' },
       { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   } else if (playwrightMissing.value) {
     groups.push([
@@ -217,18 +235,25 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           void checkEnv();
         },
       },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   }
 
   if (linked.value) {
     groups.push([
-      { type: 'label', label: plan.value.length === 1 ? 'Runs this command' : 'Runs these commands, one by one' },
       {
         type: 'label',
-        label: commandPreview.value,
+        label: noPlan.value
+          ? 'Runs nothing'
+          : plan.value.length === 1
+            ? 'Runs this command'
+            : 'Runs these commands, one by one',
+      },
+      {
+        type: 'label',
+        label: noPlan.value ? noPlanHint.value : commandPreview.value,
         class: 'font-mono text-[11px] font-normal',
-        ui: { itemLabel: 'whitespace-pre-wrap! break-all' },
+        ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
       },
     ]);
 
@@ -239,7 +264,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         icon: mode.icon,
         type: 'checkbox' as const,
         checked: options.value.runMode === mode.value,
-        disabled: running.value,
+        disabled: running.value || noPlan.value,
         onSelect: () => runNow({ runMode: mode.value }),
       })),
     ]);
@@ -327,14 +352,8 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Copy as command',
         icon: 'i-lucide-clipboard',
-        onSelect: () =>
-          void copy(
-            buildRetryCommand(props.cases, {
-              mode: options.value.mode,
-              options: localRunCopyOptions(options.value),
-            }),
-            { toast: 'Command copied' },
-          ),
+        disabled: !copyCommand.value,
+        onSelect: () => void copy(copyCommand.value, { toast: 'Command copied' }),
       },
       {
         label: 'Project defaults…',
@@ -380,7 +399,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy"
+          :disabled="busy || (noPlan && !attention && !running && !flashRun)"
           @click="onPrimaryClick"
         >
           {{ face.label }}

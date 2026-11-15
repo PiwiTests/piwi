@@ -15,7 +15,7 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
-import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, NO_RETRY_ARGS, toPosixPath, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
   ciServerValues,
@@ -331,17 +331,27 @@ export async function dispatchClusterRerun(
   });
 }
 
+/** No case has a file path a re-run's arguments can name: the re-run is unavailable, not a failed dispatch. */
+class NoRetryArgsError extends Error {
+  constructor() {
+    super(NO_RETRY_ARGS);
+  }
+}
+
 /** Dispatch a CI re-run of these cases, through the action the project's settings pick for the run. */
 async function dispatchRerunOf(
   db: DbClient,
   input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null },
 ): Promise<DispatchedRerun> {
   const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
+  const args = buildRetryArgs(input.cases);
+  // Empty arguments would re-run the whole suite.
+  if (!args) throw new NoRetryArgsError();
   return dispatchWithAction(db, {
     projectId: input.projectId,
     runId: input.runId,
     action,
-    args: buildRetryArgs(input.cases),
+    args,
     id: randomBytes(8).toString('hex'),
     cases: input.cases,
   });
@@ -393,7 +403,7 @@ export async function rerunClusterInCi(
   } catch (e) {
     return {
       ok: false,
-      error: 'dispatch-failed',
+      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }
@@ -449,7 +459,7 @@ export async function rerunExecutionInCi(
   } catch (e) {
     return {
       ok: false,
-      error: 'dispatch-failed',
+      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }

@@ -10,6 +10,8 @@ import type { RetryCase } from '#shared/retry-command';
 export {
   buildRetryCommand,
   escapeGrep,
+  isSpecFilter,
+  NO_RETRY_COMMAND,
   RETRY_OPTION_LIMITS,
   retryProjects,
   specPattern,

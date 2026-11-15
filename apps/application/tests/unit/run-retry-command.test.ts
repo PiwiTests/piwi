@@ -10,6 +10,7 @@ async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown)
   vi.stubGlobal('toValue', toValue);
   vi.stubGlobal('useState', (_key: string, init: () => unknown) => ref(init()));
   vi.stubGlobal('useCopy', () => ({ copy: () => {}, copied: ref(false) }));
+  vi.stubGlobal('useToast', () => ({ add: () => {} }));
   vi.stubGlobal('copyPreview', (text: string) => text);
   vi.stubGlobal('isFailedStatus', isFailedStatus);
   vi.stubGlobal('statusPaletteKey', statusPaletteKey);

@@ -660,7 +660,7 @@ async function answerFailure(w: AnswerWriter): Promise<DemoAnswer> {
 
   const fix = await writeFix(w, cluster, execution.id);
   const repro = cluster ? await buildExecutionReproduce(db, execution.id) : null;
-  if (cluster && repro?.reproduce.steps.length) {
+  if (cluster && repro?.reproduce.steps.some((step) => step.step === 'Run the failing test')) {
     const { steps, commit } = repro.reproduce;
     w.read('get_fix_plan', { clusterId: cluster.id }, 'Read how to reproduce the failure', {
       clusterId: cluster.id,
