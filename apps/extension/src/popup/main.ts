@@ -100,8 +100,8 @@ const KEY_TO_ACTION_ID: Record<string, string> = {
   '3': 'multi-pick',
   '4': 'assertion-panel',
   '5': 'lint-overlay',
-  '6': 'agent-context-panel',
-  '7': 'test-function-panel',
+  '6': 'test-function-panel',
+  '7': 'agent-context-panel',
   t: 'coverage-overlay',
   b: 'report-bug',
   r: 'replay-bug',
@@ -199,7 +199,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   const override = await getActiveProjectOverride(tabUrl);
 
   connected = isConnected(connection);
-  coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
+  coverageHint.textContent = connected ? t('popup_testedElementsShort') : t('popup_testedElementsConnectShort');
   if (!connected) {
     // Connected to an instance that has no pattern yet: only the offer to add this site.
     const reachable = connection.instanceUrl.trim() !== '' && connection.serverSyncedAt > 0;

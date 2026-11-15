@@ -20,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 # always on in debug builds). It stays dormant unless the app is launched with
 # `--devtools` or `PIWI_DEBUG` set — see `run()` in src/lib.rs — so a normal
 # shipped launch is unchanged, but a user chasing a bug can open the inspector.
-tauri = { version = "2", features = ["tray-icon", "devtools"] }
+tauri = { version = "2", features = ["tray-icon", "devtools", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

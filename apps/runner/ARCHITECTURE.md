@@ -72,7 +72,8 @@ Closing the window and the app menu's Quit (Cmd+Q on macOS) ask for confirmation
 and a request that arrives brings it back (`desktop_bring_to_front`). Start on login launches it with `--hidden`, in the
 tray. The window's `RunnerBackgroundSettings` holds the same two toggles, through `desktop_get_service_settings`,
 `desktop_set_run_in_background` and `desktop_set_start_on_login`, for a desktop with no tray host; the shell keeps
-the tray's checks in step (`BackgroundMenu`). The tray's **Check for updates…** asks in native dialogs before it installs, and restarts through the same
+the tray's checks in step (`BackgroundMenu`). The tray takes the desktop app's rows it has, in its order and with its glyphs (`tray_item`, `MenuIcon`). The tray's
+**Check for updates…** asks in native dialogs before it installs, and restarts through the same
 question about runs going (`updates::check_from_tray`). The ways out that cannot be
 held, Quit from the Dock on macOS and logging out or shutting down on macOS and Windows, reach only `RunEvent::Exit`,
 with no hook before it: they stop Runner's runs without asking (`shut_down` still runs). On Linux the

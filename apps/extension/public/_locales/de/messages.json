@@ -270,11 +270,14 @@
   "popup_testedElements": {
     "message": "Getestete Elemente"
   },
-  "popup_testedElementsHint": {
-    "message": "Was Ihre Tests auf dieser Seite erreichen und was nicht"
-  },
   "popup_testedElementsConnect": {
     "message": "Verbinden Sie Piwi, um zu sehen, was Ihre Tests erreichen"
+  },
+  "popup_testedElementsShort": {
+    "message": "Was Ihre Tests hier erreichen"
+  },
+  "popup_testedElementsConnectShort": {
+    "message": "Verbinden Sie Piwi dafür"
   },
   "devtools_playwrightView": {
     "message": "Playwright-Ansicht"
@@ -378,7 +381,7 @@
     "message": "Bug-Report abspielen"
   },
   "popup_replayBugHint": {
-    "message": "Seine Schritte hier abspielen, mit Cursor"
+    "message": "Hier abspielen, mit Cursor"
   },
   "popup_record": {
     "message": "Aufzeichnen"
@@ -422,11 +425,23 @@
   "popup_testFunctionsHint": {
     "message": "Katalog hier prüfen"
   },
-  "popup_moreTools": {
-    "message": "Weitere Werkzeuge"
+  "popup_sectionPick": {
+    "message": "Wählen"
+  },
+  "popup_sectionRecord": {
+    "message": "Aufzeichnen"
+  },
+  "popup_sectionRunControl": {
+    "message": "Laufsteuerung"
+  },
+  "popup_sectionDashboard": {
+    "message": "Dashboard"
+  },
+  "popup_sectionAgents": {
+    "message": "Agenten"
   },
   "popup_devtoolsNote": {
-    "message": "Die Locator-Konsole, die Session, Netzwerk-Mocks, Viewports, die Playwright-Ansicht und Anmeldung speichern sind in DevTools, im Piwi-Panel."
+    "message": "Locator-Konsole, Session, Netzwerk-Mocks, Viewports, Playwright-Ansicht und Anmeldung speichern: in DevTools, im Piwi-Panel."
   },
   "popup_running": {
     "message": "läuft"

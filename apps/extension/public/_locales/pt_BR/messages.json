@@ -270,11 +270,14 @@
   "popup_testedElements": {
     "message": "Elementos testados"
   },
-  "popup_testedElementsHint": {
-    "message": "O que seus testes alcançam nesta página, e o que deixam de fora"
-  },
   "popup_testedElementsConnect": {
     "message": "Conecte o Piwi para ver o que seus testes alcançam"
+  },
+  "popup_testedElementsShort": {
+    "message": "O que seus testes alcançam aqui"
+  },
+  "popup_testedElementsConnectShort": {
+    "message": "Conecte o Piwi para ver"
   },
   "devtools_playwrightView": {
     "message": "Visão do Playwright"
@@ -422,8 +425,20 @@
   "popup_testFunctionsHint": {
     "message": "Seu catálogo aqui"
   },
-  "popup_moreTools": {
-    "message": "Mais ferramentas"
+  "popup_sectionPick": {
+    "message": "Escolher"
+  },
+  "popup_sectionRecord": {
+    "message": "Gravar"
+  },
+  "popup_sectionRunControl": {
+    "message": "Controle de execução"
+  },
+  "popup_sectionDashboard": {
+    "message": "Painel"
+  },
+  "popup_sectionAgents": {
+    "message": "Agentes"
   },
   "popup_devtoolsNote": {
     "message": "O console de locators, a sessão, os mocks de rede, os viewports, a visão do Playwright e Salvar o login estão no DevTools, no painel Piwi."

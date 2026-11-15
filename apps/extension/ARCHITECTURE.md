@@ -216,15 +216,17 @@ recorder attaches there on `pageshow` (`persisted`), or lets go of the page when
 `src/popup/` holds the toolbar popup: plain TypeScript and DOM, no UI framework. Keep it that way unless the popup's
 own complexity genuinely outgrows it.
 
-- It holds the tools that act on the page, for testers and developers alike: **Record actions** and **Pick an element**
-  first, then **Report a bug** and **Replay a bug report**, **Tested elements**, and the other page tools as compact
-  tiles under **More tools**.
+- It holds the tools that act on the page, for testers and developers alike, in the sections of Piwi's menu as the
+  editors order them: **Record actions** and **Pick an element** first, then Piwi Picker's own tools under **Pick**
+  (Multi-pick, Assertions, Lint overlay, Test functions), **Report a bug** and **Replay a bug report** under
+  **Record**, and side by side **Runs** under **Run control**, **Tested elements** under **Dashboard** and **Agent
+  context** under **Agents**; the gear is Connection. The digits follow the tiles' order.
 - Every tile shows its one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks the compact
   tiles).
 - The developer tools that have a home in DevTools are there, not here (see "DevTools"). Pick, Lint and Tested elements
   are also in the Piwi panel's toolbar. The popup ends with a line saying so.
-- **Runs** fills More tools' free cell, shown only while a hub of the paired editor answers (see "The Runs window"), so
-  it adds no height.
+- **Runs** and its section's name show only while a hub of the paired editor answers (see "The Runs window"); the
+  Run control cell takes no column otherwise.
 - A gear button opens the settings (`chrome.runtime.openOptionsPage()`).
 - Once connected, an **Active project** select shows which mapped project applies to the current tab's site, and
   overrides it. The connection's line sits under it (`#connection-health`, see "Connection health").

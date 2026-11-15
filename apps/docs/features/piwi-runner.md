@@ -67,13 +67,13 @@ editor starts, not Piwi Runner's.
 ## In the tray
 
 Closing the window leaves Piwi Runner in the system tray, still connected, so the instance can reach it; a request brings the
-window forward. The tray menu has:
+window forward. The tray menu has, with the [desktop app](./desktop)'s glyphs and in its order:
 
-- **Open Piwi Runner** (on Windows and macOS, a click on the icon does the same) and **Show logs**;
+- **Open Piwi Runner** (on Windows and macOS, a click on the icon does the same);
 - **Run in background**, on by default: turned off, closing the window quits the app, once you agree to stop the runs
   still going;
 - **Start on login**, which launches it in the tray when you sign in;
-- **Check for updates…**;
+- **Check for updates…** and **Show logs**;
 - **Quit Piwi Runner**, which stops its runs, after asking.
 
 The window has the same two settings, for a desktop that shows no tray icon (GNOME without an AppIndicator

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::MenuBuilder;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -28,7 +28,7 @@ use tauri_plugin_window_state::StateFlags;
 use crate::mcp_clients::ServerInfo;
 use crate::{
     app_menu_action, append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray,
-    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
+    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs, tray_item, MenuIcon,
     quit_after_confirming, random_hex_32, reapply_splash_status, reveal_log, run_app_menu_action, show_splash_status,
     shut_down, supervise_server, toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed,
     RunInBackground, ServerGaveUp, ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID,
@@ -204,17 +204,23 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
     Ok(menu)
 }
 
-/// The tray icon: a click opens the window, and its menu holds Open, Show logs, Run in background, Start on login and
-/// Quit, and Check for updates in a build that can update itself.
+/// Put the tray's tooltip back, once an update the tray started failed.
+fn idle_tooltip(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(TRAY_TOOLTIP));
+    }
+}
+
+/// The tray icon: a click opens the window, and its menu holds, in the desktop app's order and with its glyphs, Open,
+/// Run in background and Start on login, Check for updates in a build that can update itself, Show logs and Quit.
 fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
-    let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
-    let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+    let open_i = tray_item(app, "open", &format!("Open {APP_NAME}"), MenuIcon::App)?;
+    let logs_i = tray_item(app, "show_logs", "Show logs", MenuIcon::Logs)?;
     let (bg_i, login_i) = background_menu_items(app)?;
-    let update_i = MenuItemBuilder::with_id("check_update", "Check for updates…").build(app)?;
-    let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+    let update_i = tray_item(app, "check_update", "Check for updates…", MenuIcon::Update)?;
+    let quit_i = tray_item(app, "quit", &format!("Quit {APP_NAME}"), MenuIcon::Quit)?;
     let mut menu = MenuBuilder::new(app)
         .item(&open_i)
-        .item(&logs_i)
         .separator()
         .item(&bg_i)
         .item(&login_i)
@@ -222,7 +228,7 @@ fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
     if can_update {
         menu = menu.item(&update_i);
     }
-    let menu = menu.item(&quit_i).build()?;
+    let menu = menu.item(&logs_i).separator().item(&quit_i).build()?;
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip(TRAY_TOOLTIP)
         .menu(&menu)
@@ -248,7 +254,7 @@ fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
             "show_logs" => reveal_log(app),
             TRAY_RUN_BG_ID => toggle_run_in_background(app),
             TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
-            "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP),
+            "check_update" => updates::check_from_tray(app, idle_tooltip),
             "quit" => quit_after_confirming(app, APP_NAME),
             _ => {}
         });

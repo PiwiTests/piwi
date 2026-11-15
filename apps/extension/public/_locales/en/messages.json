@@ -329,13 +329,17 @@
     "message": "Tested elements",
     "description": "Popup tile: shows on the page which elements the project’s tests reach. Short."
   },
-  "popup_testedElementsHint": {
-    "message": "What your tests reach on this page, and what they miss",
-    "description": "Popup tile hint, under “Tested elements”. One line."
-  },
   "popup_testedElementsConnect": {
     "message": "Connect to your Piwi instance to see what your tests reach",
     "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
+  },
+  "popup_testedElementsShort": {
+    "message": "What your tests reach here",
+    "description": "Popup: the hint under “Tested elements”, in its tile a third of the popup wide under Dashboard: two short lines at most, about 36 characters."
+  },
+  "popup_testedElementsConnectShort": {
+    "message": "Connect Piwi to see it",
+    "description": "Popup: the hint under “Tested elements” when no Piwi instance is set up, in its tile a third of the popup wide: two short lines at most, about 36 characters."
   },
   "devtools_playwrightView": {
     "message": "Playwright view",
@@ -507,11 +511,11 @@
   },
   "popup_agentContext": {
     "message": "Agent context",
-    "description": "Popup tile: describes an element for an AI coding agent. At most about 16 characters: the tile is half the popup wide."
+    "description": "Popup tile: describes an element for an AI coding agent, under Agents. At most about 16 characters: the tile is a third of the popup wide while Runs shows, else half."
   },
   "popup_agentContextHint": {
     "message": "Summary for an AI",
-    "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
+    "description": "Popup tile hint, in a tile a third of the popup wide while Runs shows, else half: two short lines at most, about 20 characters each."
   },
   "popup_testFunctions": {
     "message": "Test functions",
@@ -521,9 +525,25 @@
     "message": "Check the catalog here",
     "description": "Popup tile hint, in a tile half the popup wide. At most about 22 characters."
   },
-  "popup_moreTools": {
-    "message": "More tools",
-    "description": "Popup: small heading above the compact tiles of the other tools (multi-pick, assertions, lint overlay, agent context, test functions). Short."
+  "popup_sectionPick": {
+    "message": "Pick",
+    "description": "Popup: small heading above Piwi Picker's own tools (multi-pick, assertions, lint overlay, test functions), the first section of Piwi's menu here. Short."
+  },
+  "popup_sectionRecord": {
+    "message": "Record",
+    "description": "Popup: small heading above Report a bug and Replay a bug report, the Record section of Piwi's menu. Short."
+  },
+  "popup_sectionRunControl": {
+    "message": "Run control",
+    "description": "Popup: small heading above the Runs tile, the Run control section of Piwi's menu, as the editors name it. In a column a third of the popup wide: about 20 characters at most."
+  },
+  "popup_sectionDashboard": {
+    "message": "Dashboard",
+    "description": "Popup: small heading above the Tested elements tile, the Dashboard section of Piwi's menu (what the connected instance knows). About 20 characters at most."
+  },
+  "popup_sectionAgents": {
+    "message": "Agents",
+    "description": "Popup: small heading above the Agent context tile, the Agents section of Piwi's menu. About 20 characters at most."
   },
   "popup_devtoolsNote": {
     "message": "The locator console, the session, network mocks, viewports, Playwright view and Save login are in DevTools, in the Piwi panel.",
@@ -7391,15 +7411,15 @@
   },
   "popup_runsHintNone": {
     "message": "Pause, step, resume",
-    "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A compact tile’s hint: one short line, about 25 characters."
+    "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A tile a third of the popup wide: two short lines at most, about 20 characters each."
   },
   "popup_runsHintAway": {
     "message": "Not connected: see why",
-    "description": "Popup, the line under the Runs tile while an editor or the desktop app is paired and none of its windows answers: the Runs window says why. A compact tile’s hint: one short line, about 25 characters."
+    "description": "Popup, the line under the Runs tile while an editor or the desktop app is paired and none of its windows answers: the Runs window says why. A tile a third of the popup wide: two short lines at most, about 20 characters each."
   },
   "popup_runsHint_one": {
     "message": "$count$ run in your editor",
-    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7409,7 +7429,7 @@
   },
   "popup_runsHint_other": {
     "message": "$count$ runs in your editor",
-    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7419,7 +7439,7 @@
   },
   "popup_runsHintWaiting_one": {
     "message": "$count$ test waits for you",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7429,7 +7449,7 @@
   },
   "popup_runsHintWaiting_other": {
     "message": "$count$ tests wait for you",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7439,7 +7459,7 @@
   },
   "popup_runsHintFailed_one": {
     "message": "$count$ test failed",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7449,7 +7469,7 @@
   },
   "popup_runsHintFailed_other": {
     "message": "$count$ tests failed",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
     "placeholders": {
       "count": {
         "content": "$1",
