@@ -1910,6 +1910,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           branches: c.branches,
         };
       }),
+    ...(() => {
+      // A config no instance reads has no run status of its own; its runs' tests still mark their lines.
+      const unread = contexts
+        .filter((c) => !(c.client && c.project))
+        .map((c) => ({ root: c.root, tests: ownRunTests.testsOf(c.root, followedSessions()) }))
+        .filter((c) => c.tests.length);
+      return unread.length ? { runTests: unread } : {};
+    })(),
   });
 
   /** The latest run each config's context last read, by root: a newer one drops the results kept of its own runs. */
@@ -3435,12 +3443,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     lensesShown(await fileSummaryOf(params), credentials.codeLens ?? 'all'),
   );
 
+  /**
+   * A spec's summary in a config no instance reads: each test's line as the editor's own runs have it, its state
+   * alone, and nothing for a test none of them ran.
+   */
+  const ownRunSummary = (context: PiwiContext, file: string, uri: string): FileSummary => {
+    if (!relativeTo(context.root, file)) return { file: null, lines: [] };
+    const document = documents.get(uri);
+    const text = document ? document.getText() : (readText(file) ?? '');
+    const lines: SummaryLine[] = testCalls(text.split(/\r?\n/)).flatMap((call) => {
+      const own = ownTestOf(context, file, call);
+      return own
+        ? [{ line: call.line, title: ownRunWords(context, own), status: own.status, endLine: call.endLine }]
+        : [];
+    });
+    return { file: null, lines };
+  };
+
   /** A file's summary, every line of it, before the person's choice of lenses (`lensesShown`) filters it. */
   const fileSummaryOf = async (params: FileSummaryParams): Promise<FileSummary> => {
     const empty: FileSummary = { file: null, lines: [] };
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
-    if (!file || !context?.index || !context.client) return empty;
+    if (!file || !context) return empty;
+    if (!context.index || !context.client) return ownRunSummary(context, file, params.uri);
     const relative = relativeTo(context.root, file);
     const document = documents.get(params.uri);
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';

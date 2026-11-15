@@ -68,7 +68,7 @@ submenu remains); a run the Testing view started shows each test's result as its
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
 failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
-newer latest run (LR9 in part: the test lines of a config with no instance at all remain). L6 in part since: golden
+newer latest run, a config without an instance too (LR9 in part: an unwatched lane's running line). L6 in part since: golden
 fixtures both editors read (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, and a spec's test
 marks and lens rows), held to the same words by VS Code's `tests/golden.test.ts` and `GlueTest`, the marks and rows
 drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Code Vision providers on the 2024.1 test
@@ -517,15 +517,11 @@ beside Failures or in the Run and Debug container is decided: the Piwi panel (§
 
 ### 8.5 What the study's model brings
 
-<a id="lr9"></a>**LR9. The Testing view and the test lines take the developer's own run from the instance, so a run
-that reports to none shows no test running, and no line shows where a running test is.** The service sets a test's
-live state from the instance's run stream (`packages/editor/src/run-watch.ts:622-668`), which the test lines
-(`packages/editor/src/server.ts:3060-3061`) and the Testing view (`apps/vscode/src/test-explorer.ts:383-410`) read; the
-workers' own reports reach the Testing view only as output lines, once a test run follows the instance's run
-(`test-explorer.ts:418-432`). No line marks the call a running test of the developer's own is at, where a CI run's
-positions are marked (`apps/vscode/src/ci-view.ts:90-106`). **(read)** This is live-runs E3 (E2 for the running line),
-of the study's P4. Fix: the Testing view and the test's line from the run's own events, a spinner while it runs and the
-pause or failed glyph while it waits, and the running line marked. ([L1](#l1))
+<a id="lr9"></a>**LR9. No line shows where a running test of the developer's own is, unless someone watches its lane.**
+A test's line takes its state from the run's own events, an instance or not, but the line of the call a running test
+is at is marked only for a lane being watched (`piwi/runningLine`), where a CI run's positions are marked for every lane
+(`apps/vscode/src/ci-view.ts`). **(read)** This is live-runs E2, of the study's P4. Fix: the running line marked for
+each test of the developer's own run as it runs. ([L1](#l1))
 
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's

@@ -712,7 +712,10 @@ export function pickNotice(at: { file: string; line: number }, outcome: 'replace
  */
 export function runsInFiles(runs: RunStatusResult | null): string {
   return JSON.stringify(
-    runs?.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })) ?? null,
+    runs && {
+      contexts: runs.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })),
+      runTests: runs.runTests,
+    },
   );
 }
 
@@ -726,7 +729,11 @@ export function filesRedraw(before: RunStatusResult | null, after: RunStatusResu
   if (runsInFiles(before) === runsInFiles(after)) return 'none';
   const withoutTests = (runs: RunStatusResult | null) =>
     runsInFiles(
-      runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined, runTests: undefined })) },
+      runs && {
+        ...runs,
+        contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined, runTests: undefined })),
+        runTests: undefined,
+      },
     );
   return withoutTests(before) === withoutTests(after) ? 'tests' : 'all';
 }

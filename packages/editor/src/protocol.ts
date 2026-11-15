@@ -959,11 +959,15 @@ export interface RunStatus {
  */
 export type RunLineStatus = 'running' | 'paused' | 'failed' | 'passed' | 'skipped';
 
-/** A test of a run the editor follows: its spec, its titles (`RunTest.title`) and its state. */
+/**
+ * A test of a run the editor follows: its spec, its titles (`RunTest.title`), its state and the words its line says of
+ * it (`paused, line 14,`), which change with the stop it stands at though the state stays.
+ */
 export interface RunLineTest {
   uri: string;
   title: string[];
   status: RunLineStatus;
+  words: string;
 }
 
 /** A test of the run in progress: `running` once it began, then its result. */
@@ -1015,6 +1019,11 @@ export type StatusBarAlert = 'new' | 'any' | 'never';
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
 export interface RunStatusResult {
   contexts: RunStatus[];
+  /**
+   * For each config no instance reads, which `contexts` leaves out, the tests of the runs the editor follows that its
+   * lines show (as `RunStatus.runTests`); absent while none has any.
+   */
+  runTests?: Array<{ root: string; tests: RunLineTest[] }>;
 }
 
 export const RUN_STATUS_REQUEST = 'piwi/runStatus';

@@ -382,10 +382,16 @@ data class LiveRun(
 data class LiveTest(val testCaseId: Int = 0, val status: String? = null, val stuck: String? = null)
 
 /**
- * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`) and its `status`
- * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result).
+ * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`), its `status`
+ * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result) and the `words` its line says
+ * of it, which change with the stop it stands at though the status stays.
  */
-data class RunLineTest(val uri: String = "", val title: List<String> = emptyList(), val status: String = "running")
+data class RunLineTest(
+    val uri: String = "",
+    val title: List<String> = emptyList(),
+    val status: String = "running",
+    val words: String = "",
+)
 
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
@@ -433,7 +439,14 @@ data class Baseline(val choice: BaselineChoice? = null, val label: String? = nul
 /** `piwi/setBaseline`: the baseline chosen for the context at `root`, read at once. */
 data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 
-data class RunStatusResult(val contexts: List<RunStatus>? = null)
+/**
+ * The runs each context reads (`contexts`), and for each config no instance reads, which `contexts` leaves out, the tests
+ * of the runs the IDE follows that its lines show (`runTests`).
+ */
+data class RunStatusResult(val contexts: List<RunStatus>? = null, val runTests: List<UnreadRunTests>? = null)
+
+/** A config no instance reads, by its folder, and the tests of its runs the IDE follows that its lines show. */
+data class UnreadRunTests(val root: String = "", val tests: List<RunLineTest> = emptyList())
 
 /**
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,

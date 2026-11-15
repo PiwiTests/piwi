@@ -98,7 +98,7 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
       live: false,
     });
     expect(own.testsOf(ROOT, [session('ed-1', [worker(0, null)])])).toEqual([
-      { uri: mug.uri, title: MUG, status: 'passed' },
+      { uri: mug.uri, title: MUG, status: 'passed', words: 'passed' },
     ]);
     // Then once it ended.
     own.heard('ed-1', null, { type: 'ended' }, ROOT);

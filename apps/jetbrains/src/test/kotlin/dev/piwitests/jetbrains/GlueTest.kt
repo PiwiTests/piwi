@@ -3663,6 +3663,11 @@ class GlueTest {
         // Its spec is drawn again, though no test of it showed a result before.
         assertEquals(setOf(java.nio.file.Path.of(java.net.URI(mug.uri))), Glue.runTestFiles(paused))
         assertEquals(emptySet<java.nio.file.Path>(), Glue.runTestFiles(ended))
+        // So does a test of a run in a config no instance reads, which the contexts leave out.
+        val unread = RunLineTest("file:///w2/tests/cart.spec.ts", listOf("adds a mug"), "running")
+        val elsewhere = ended.copy(runTests = listOf(UnreadRunTests("/w2", listOf(unread))))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(ended, elsewhere))
+        assertEquals(setOf(java.nio.file.Path.of(java.net.URI(unread.uri))), Glue.runTestFiles(elsewhere))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
         // Another baseline is another run in the files.
