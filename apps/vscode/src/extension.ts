@@ -1816,7 +1816,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // The format the configuration is copied in: chosen, or named by the command's argument.
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
-      if (!connectedOrSay()) return;
+      // Refused only while the service is down: it lists a context's servers whether the instance answers or not.
+      if (menuDown) {
+        void vscode.window
+          .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+        return;
+      }
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
         void vscode.window
@@ -2294,8 +2300,8 @@ async function insertFromPicker(
       {
         message:
           payload.kind === 'locator'
-            ? 'Piwi: inserted the locator from Piwi Picker.'
-            : 'Piwi: inserted the recorded steps from Piwi Picker.',
+            ? 'inserted the locator from Piwi Picker.'
+            : 'inserted the recorded steps from Piwi Picker.',
         key: 'picker-inserted',
       },
       vscode.workspace.getConfiguration('piwi').get('hiddenMessages'),

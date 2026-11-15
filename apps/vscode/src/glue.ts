@@ -2071,11 +2071,12 @@ export function unfollowedOutcome(
 }
 
 /**
- * The name of the test run that follows a run in progress: `Piwi: your run #124`, `Piwi: CI run #125 on main`, else
- * `Piwi: run #126 on main`, whoever started it, by the branch it runs on when it names one.
+ * The name of the test run that follows a run in progress: `Piwi: your run #124`, or `Piwi: run #124 (Started by Claude
+ * Code)` for the editor's own run an agent started, `Piwi: CI run #125 on main`, else `Piwi: run #126 on main`, whoever
+ * started it, by the branch it runs on when it names one.
  */
 export function liveRunName(live: LiveRun): string {
-  if (live.own) return `Piwi: your run #${live.runId}`;
+  if (live.own) return live.label ? `Piwi: run #${live.runId} (${live.label})` : `Piwi: your run #${live.runId}`;
   return `Piwi: ${live.ci ? 'CI run' : 'run'} #${live.runId}${live.branch ? ` on ${live.branch}` : ''}`;
 }
 

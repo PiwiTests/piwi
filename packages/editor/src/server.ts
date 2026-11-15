@@ -720,11 +720,12 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
 
 /**
  * A test's latest result, as its line's summary leads with it, in the dashboard's words: in the run in progress while
- * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
- * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
- * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
- * runs`, `never run`, `no recent result`). Another's run in progress follows that result, named as CI's or a plain run
- * (`passed in its latest run · running in CI run #130`, `… · running in run #131`).
+ * it follows the test (`running in your run #130`, `running in run #130 (Started by Claude Code)` for an agent's,
+ * `label`), else in the latest run the failures are read from, named as the failure's other lines name it (`failing in
+ * run #124 on main, its line edited since`, `fixed locally in your run #124 (failing in run #120)`), else the
+ * catalog's, which names no run (`didn't run in its latest run`, `flaky in recent runs`, `never run`, `no recent
+ * result`). Another's run in progress follows that result, named as CI's or a plain run (`passed in its latest run ·
+ * running in CI run #130`, `… · running in run #131`).
  */
 function testVerdict(
   context: PiwiContext,
@@ -732,9 +733,13 @@ function testVerdict(
   failed: BranchFailure | undefined,
   fixed: BranchResolved | undefined,
   failure: TestFailure | undefined,
+  label?: string,
 ): string {
   const lineLive = lineLiveState(context, found.id);
-  if (lineLive && context.live) return `${liveWords(lineLive)} in your run #${context.live.runId}`;
+  if (lineLive && context.live) {
+    const run = label ? `run #${context.live.runId} (${label})` : `your run #${context.live.runId}`;
+    return `${liveWords(lineLive)} in ${run}`;
+  }
   const settled = settledVerdict(context, found, failed, fixed, failure);
   const other = context.live && !context.live.own ? context.liveTests.get(found.id) : undefined;
   return other
@@ -3396,7 +3401,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        const verdict = testVerdict(context, found, failed, fixed, failure);
+        const label = context.live?.own && context.live.ref ? runLabels.get(context.live.ref) : undefined;
+        const verdict = testVerdict(context, found, failed, fixed, failure, label);
         // A test the catalog has no run of has no pass rate to give.
         const passRate =
           runs > 0
@@ -3826,10 +3832,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runCommands.delete(oldest);
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
-    for (const ref of runLabels.keys()) if (!runCommands.has(ref)) runLabels.delete(ref);
-    // A live run keeps its name to its end.
+    // A live run keeps its name and who started it to its end; a run started again under a ref is a person's until an
+    // agent's start names it again.
     const live = new Set(runSessions.current().map((session) => session.ref));
     for (const ref of runNames.keys()) if (!runCommands.has(ref) && !live.has(ref)) runNames.delete(ref);
+    for (const ref of runLabels.keys()) if (!runCommands.has(ref) && !live.has(ref)) runLabels.delete(ref);
+    runLabels.delete(run.ref!);
     runLines.started(run.ref!, unsavedFiles);
     return run;
   };

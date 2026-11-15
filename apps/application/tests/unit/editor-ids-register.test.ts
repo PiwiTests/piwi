@@ -32,10 +32,12 @@ describe('the editor ids D25 freezes', () => {
         configuration: { properties: Record<string, unknown> } | Array<{ properties: Record<string, unknown> }>;
         mcpServerDefinitionProviders: Array<{ id: string }>;
         views: Record<string, Array<{ id: string }>>;
+        viewsContainers: Record<string, Array<{ id: string }>>;
         submenus: Array<{ id: string }>;
       };
     };
-    const { commands, configuration, mcpServerDefinitionProviders, views, submenus } = manifest.contributes;
+    const { commands, configuration, mcpServerDefinitionProviders, views, viewsContainers, submenus } =
+      manifest.contributes;
     const settings = [configuration].flat().flatMap((c) => Object.keys(c.properties));
     const contributed = [
       ...commands.map((c) => c.command),
@@ -48,6 +50,11 @@ describe('the editor ids D25 freezes', () => {
     ];
     const registered = idsIn(bullet('- **The VS Code extension**'), /^piwi\.[A-Za-z][\w.]*$/);
     expect(registered).toEqual([...new Set(contributed)].sort());
+    // The panels its views sit in, by their bare ids.
+    const panels = Object.values(viewsContainers)
+      .flat()
+      .map((c) => c.id);
+    expect(panels.filter((id) => !idsIn(bullet('- **The VS Code extension**'), /^[a-z]+$/).includes(id))).toEqual([]);
   });
 
   test("list every action and action group id of the JetBrains plugin's plugin.xml", () => {

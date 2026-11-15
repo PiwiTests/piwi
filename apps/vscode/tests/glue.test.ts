@@ -2540,6 +2540,9 @@ describe('the Testing view', () => {
     expect(resultsRunName(runs())).toBe('Piwi: run #120 on main');
     expect(resultsRunName(null)).toBe('Piwi: the latest runs');
     expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
+    expect(liveRunName({ runId: 124, own: true, label: 'Started by Claude Code' } as LiveRun)).toBe(
+      'Piwi: run #124 (Started by Claude Code)',
+    );
     expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
     // A CI run of the branch says so: it is not the person's tests running.
     expect(liveRunName({ runId: 126, own: false, ci: true, branch: 'main' } as LiveRun)).toBe(

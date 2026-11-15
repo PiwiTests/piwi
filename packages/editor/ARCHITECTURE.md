@@ -238,7 +238,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
   `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
-  desktop app and Piwi Runner hear no key.
+  desktop app and Piwi Runner hear no key. `NOTICE_KEYS` also holds the VS Code extension's own `picker-inserted`, its
+  confirmation of what Piwi Picker inserted, which the service never sends.
 - **The status item's alarm** is the service's (`RunStatus.alarm`, `statusAlarm`), as the credentials'
   `statusBarAlert` chooses: with `new`, the default, a test a run of this editor failed (an overlay of `ownRuns`) that
   did not fail on that project in the baseline (`isNew`) and that the baseline failed on no other project (listed from
