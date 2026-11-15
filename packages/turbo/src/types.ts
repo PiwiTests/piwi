@@ -22,6 +22,12 @@ export interface TurboOptions {
    */
   fastReset: boolean;
   /**
+   * Experimental worker option, with `reuseContextWithReset`: the reset between tests leaves the browser's HTTP cache
+   * when the last test loaded nothing the browser could serve again without asking the server but static assets
+   * (`immutable`, or fresh for a week, and not tied to the user).
+   */
+  keepStaticCache: boolean;
+  /**
    * Experimental worker option: the worker's stack traces map only the frames that may have a source map, leaving out
    * those of Node and of `node_modules`. They read the same.
    */

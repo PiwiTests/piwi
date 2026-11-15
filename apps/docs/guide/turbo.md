@@ -140,26 +140,20 @@ surface races that slower runs hid: measure on your own suite before keeping any
 
 ## Experimental hooks
 
-**Experimental.** Seven options reach into Playwright's internals inside each test worker. `max` turns them all on;
-name them under `experimental` to pick some.
+**Experimental.** Eight options reach into Playwright's internals inside each test worker. `max` turns them all on;
+name them under `experimental` to pick some. The [package
+README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-hooks) describes each one and its limits:
 
-- `fastScreenshots` (Chromium): encodes PNG screenshots for speed. The pixels are the same and the files larger.
-  `toHaveScreenshot` writes its baselines in the stock encoding; a `page.screenshot()` compared with `toMatchSnapshot`
-  is encoded for speed, also when it becomes the baseline.
-- `retryIntervals`: the waits between the checks of Playwright's retry loop. Stock is `[20, 50, 100, 100, 500]` ms.
-- `failFast`: a failing assertion ends once nothing can change the page before its timeout: no request, timer,
-  animation, socket, worker or pending storage, crypto or decoding work in any page of the context. It shortens red
-  runs on pages that go idle, does nothing on a page that polls, and must stay off for a test that changes the page
-  from its own Node code while an assertion waits, or a page that waits on another browser context or a prompt.
-- `skipStabilityWait`: clicks, hovers, taps and drags stop waiting for the element to keep still. The visible, enabled
-  and hit-target checks stay. Leave it off for apps that ignore input while they animate.
-- `fastReset` (Chromium, with context reuse): between tests, the storage of every origin the test visited is cleared
-  through CDP, where Playwright's reset loads each origin again. The mouse is moved away from the tab only after a
-  test that used Playwright's mouse or touchscreen.
-- `fastStackTraces`: Playwright captures a stack for every API call, and looks up a source map for each of its
-  frames. The frames of Node and of `node_modules`, which have none, skip the lookup; stack traces read the same.
-- `screenshotMatches`: a screenshot assertion whose capture has the baseline's bytes, or those of a capture that
-  matched before, passes without decoding the two images. A passing assertion took 33 ms in place of 81 ms.
+- `fastScreenshots` (Chromium) encodes PNG screenshots for speed, and `screenshotMatches` passes a screenshot
+  assertion whose capture is known to match without decoding the images.
+- `retryIntervals` shortens the waits of Playwright's retry loop, and `skipStabilityWait` stops pointer actions waiting
+  for the element to keep still. Leave the latter off for apps that ignore input while they animate.
+- `failFast` ends a failing assertion once nothing can change the page. It must stay off for a test that changes the
+  page from its own Node code while an assertion waits.
+- `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, and the HTTP
+  cache kept when the last test received only static assets. An app that replaces a file at the same URL between tests
+  needs `keepStaticCache` off.
+- `fastStackTraces` skips the source map lookup for the frames of Node and `node_modules`.
 
 ```ts
 withOptimizations(config, {
@@ -171,6 +165,7 @@ withOptimizations(config, {
     fastReset: true,
     fastStackTraces: true,
     screenshotMatches: true,
+    keepStaticCache: true,
   },
 });
 ```

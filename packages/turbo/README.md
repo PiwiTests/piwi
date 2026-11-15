@@ -41,7 +41,7 @@ import { test, expect } from '@piwitests/turbo/test';
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker.                               |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                                                                                                           |
-| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, and screenshot assertions that pass a known capture without decoding it. |
+| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, and a reset that keeps static assets cached. |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
@@ -169,6 +169,7 @@ withOptimizations(config, {
     fastReset: true,
     fastStackTraces: true,
     screenshotMatches: true,
+    keepStaticCache: true,
   },
 });
 ```
@@ -200,13 +201,21 @@ withOptimizations(config, {
   it. The captures that matched are remembered by hash in `node_modules/.cache/piwi-turbo` (the cache folder of
   [`piwi-turbo`](#a-faster-start-piwi-turbo)), so with `fastScreenshots`, whose bytes differ from the baseline's, an
   assertion gains from its second run on. A passing assertion took 33 ms in place of 81 ms with both hooks on.
+- **`keepStaticCache`** (with `reuseContext`): Playwright's reset clears the browser's HTTP cache, so each test downloads
+  and compiles the app's scripts again. The reset leaves the cache when the last test received nothing the browser
+  could serve again without asking the server but static assets: images, fonts, stylesheets, scripts, WebAssembly and
+  media, and any response `immutable` or fresh for a week, none of them private, setting a cookie or varying with one.
+  Any other such response (an API response with `max-age`, a page with an `Expires` date) clears the whole cache, as
+  stock. An app that replaces an image or a script at the same URL between tests would serve the next test the old
+  one: leave it off for such a suite. On Piwi's own dashboard, a page load took 340 ms in place of 415 ms.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
-`Page.prototype.expectScreenshot` and `BrowserContext.prototype.resetForReuse`, from the first page the frame class,
-the element handle class and Chromium's CDP session, and the worker's `Error.prepareStackTrace`. They refuse to run,
-with an error that names the reason, on a `playwright-core` version they were not tested with (`TESTED_VERSIONS`,
-currently 1.64.1), on an internal with another shape, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at
-your own risk. What each lever was measured to save is in the
+`Page.prototype.expectScreenshot` and `BrowserContext.prototype.setStorageState`, a context's `response` events, from
+the first page the frame class, the element handle class and Chromium's CDP session, and the worker's
+`Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
+were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
+outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
+measured to save is in the
 [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 
 ## The benchmark

@@ -21,6 +21,7 @@ import {
   installHooks,
   state,
   validIntervals,
+  watchStaticCache,
 } from './hooks';
 import { IDLE_TRACKER } from './idle-tracker';
 import type { BlockRule, TurboOptions } from './types';
@@ -32,6 +33,14 @@ function routeMatcher(rule: BlockRule): string | RegExp | ((url: URL) => boolean
 /** The guid of a page or context, which stays the same across the tests of a reused context. */
 function guidOf(object: Page | BrowserContext): string {
   return (object as unknown as { _guid: string })._guid;
+}
+
+/** Playwright's server object behind a context, which the hooks see. */
+function serverContextOf(context: BrowserContext): object {
+  const toImpl = (context as unknown as { _connection?: { toImpl?: (object: unknown) => object } })._connection?.toImpl;
+  const server = toImpl?.(context);
+  if (!server) throw new Error('@piwitests/turbo: keepStaticCache needs a browser launched by the test worker');
+  return server;
 }
 
 /** The CDP sessions turbo opens and keeps: a test's own are detached as it ends. */
@@ -164,7 +173,12 @@ export async function captureFailure(
   return captured;
 }
 
-type WorkerOptions = 'reuseContextWithReset' | 'fastReset' | 'fastStackTraces' | 'failureScreenshots';
+type WorkerOptions =
+  | 'reuseContextWithReset'
+  | 'fastReset'
+  | 'keepStaticCache'
+  | 'fastStackTraces'
+  | 'failureScreenshots';
 
 function modeOf(setting: unknown): string | undefined {
   return typeof setting === 'object' && setting !== null ? (setting as { mode?: string }).mode : (setting as string);
@@ -186,6 +200,7 @@ export const test: TurboTest = base.extend<
   // turbo's `test` hands this option to Playwright's reuseContext, so its context is reused with the reset below.
   reuseContextWithReset: [false, { scope: 'worker', option: true }],
   fastReset: [false, { scope: 'worker', option: true }],
+  keepStaticCache: [false, { scope: 'worker', option: true }],
   fastStackTraces: [false, { scope: 'worker', option: true }],
   // Installed once the worker has loaded the test files, after Playwright set up source-map-support.
   _turboStackTraces: [
@@ -204,16 +219,18 @@ export const test: TurboTest = base.extend<
     { scope: 'worker' },
   ],
   reuseContext: [
-    async ({ reuseContextWithReset, _turboReused, fastReset, connectOptions }, use) => {
-      // The reset of a reused context runs before each test's fixtures, so fastReset holds for the whole worker.
-      if (_turboReused && fastReset) {
+    async ({ reuseContextWithReset, _turboReused, fastReset, keepStaticCache, connectOptions }, use) => {
+      // The reset of a reused context runs before each test's fixtures, so fastReset and keepStaticCache hold for the
+      // whole worker.
+      if (_turboReused && (fastReset || keepStaticCache)) {
         if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
           throw new Error(
-            '@piwitests/turbo: fastReset needs a browser launched by the test worker, not a connected one',
+            '@piwitests/turbo: fastReset and keepStaticCache need a browser launched by the test worker, not a connected one',
           );
         }
         installHooks();
-        state.fastReset = true;
+        state.fastReset = fastReset;
+        state.keepStaticCache = keepStaticCache;
       }
       await use(reuseContextWithReset);
     },
@@ -340,6 +357,10 @@ export const test: TurboTest = base.extend<
         };
         listeners.push(() => (context.newCDPSession = newCDPSession));
       }
+      // keepStaticCache: whether this test left nothing in the HTTP cache but static assets.
+      const keepCache = reused && state.keepStaticCache;
+      const server = keepCache ? serverContextOf(context) : undefined;
+      const staticOnly = server ? watchStaticCache(server) : undefined;
       const origins = new Set<string>();
       if (clearCaches) {
         const onRequest = (request: Request) => {
@@ -357,6 +378,10 @@ export const test: TurboTest = base.extend<
         for (const remove of listeners) remove();
       }
       if (clearCaches) cachesLeft.set(guidOf(context), origins);
+      if (server && staticOnly) {
+        if (await staticOnly()) state.staticCacheContexts.add(server);
+        else state.staticCacheContexts.delete(server);
+      }
       if (reused) {
         for (const session of sessions) if (!ownSessions.has(session)) await session.detach().catch(() => {});
         await resetForNextTest(

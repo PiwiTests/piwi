@@ -27,9 +27,9 @@ tell a real gain from noise.
    `instantAnimations`, `reuseContext` and `compileCache`. `signIn` and `blockRequests` need the suite's own paths and
    URLs, so no preset sets them.
 4. **Experimental hooks** wrap Playwright's server inside the test worker: `fastScreenshots`, `retryIntervals`,
-   `failFast`, `skipStabilityWait`, `fastReset`, `fastStackTraces` and `screenshotMatches`. They install only on the
-   Playwright versions they were tested with, check the shape of every internal they wrap, and throw instead of
-   falling back.
+   `failFast`, `skipStabilityWait`, `fastReset`, `fastStackTraces`, `screenshotMatches` and `keepStaticCache`. They
+   install only on the Playwright versions they were tested with, check the shape of every internal they wrap, and
+   throw instead of falling back.
 5. **Context reuse is Playwright's own `reuseContext` plus a reset of what it leaves**: offline mode, extra headers,
    permissions, geolocation and Cache Storage. A pair of end-to-end tests per kind of state a test can leave checks the
    next test starts without it, under Playwright's reset and under `fastReset`. Reuse stays in `fast` although it costs
@@ -81,6 +81,7 @@ one noted. Piwi's suite was not run again, so its CPU figures are left out.
 | `piwi-turbo`, caches | Flashwright's suites with `max`, one worker, median of 5 runs (6 for one test) whose first starts with an empty cache: one trivial test 1,179 to 902 ms, 15 trivial tests 1,792 to 1,470, TodoMVC 4,458 to 4,296, Shop 6,431 to 6,086, Inventory 12,180 to 11,798. |
 | `piwi-turbo`, spare worker | The same runs, against the caches alone: 902 to 722 ms, 1,470 to 1,307, 4,296 to 4,128, 6,086 to 5,865; Inventory unchanged (11,798 and 11,805). On a one-test run with a page, outside the harness (10 rounds): 1,295 ms stock, 907 with the caches, 651 with the spare. |
 | `screenshotMatches` | A passing `toHaveScreenshot` of a 1280×720 page spent about 40 ms of its 81 ms decoding the capture and the baseline. Median of 15 assertions: 81 ms stock, 88 ms with `fastScreenshots`, 39.5 ms with `screenshotMatches` (the stock capture has the baseline's bytes), 33.5 ms with both once the store knows the capture; on a page of gradients, 132, 101.5, 82 and 35 ms. Flashwright's screenshot suite, 15 tests against one baseline: `max` 3,658 ms without it and 3,019 ms with it (stock 4,611, 5 runs). |
+| `keepStaticCache` | Piwi's own dashboard, built for production (a 490 KB entry script, 283 static responses on its home page, two public logos with a `Last-Modified` date only), 11 tests that each load its home page with a reused context: median page load 396–427 ms with Playwright's reset and 324–359 ms with the hook, over four rounds. |
 | `retryIntervals` | Reference workload: −6.0% wall, lower in all five rounds, for +3.2% CPU. |
 | `fastScreenshots` | Flashwright's screenshot suite: `max` 1.34× against 1.14× without it. No measurable change on the reference workload, where screenshots are 2% of the test time. |
 | `failFast` | Reference workload, red run of six failing assertions: −22% (25.2 s to 19.6 s), with the same failures and no false one. |
@@ -158,9 +159,17 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 - **A cheaper end of run for the HTML reporter**: it reads, hashes and copies every attachment, and copies the trace
   viewer, as the run ends. That took 82 ms of a 17 s run of the reference workload with a trace of every test (42
   traces, a 9.1 MB report), and 13 ms (46 ms with a trace) of a one-test run. Not worth a hook.
-- **Returning before the teardown**: a one-test run spends about 65 ms between its last test's end and its exit
-  (the worker closes the browser, the reporters end). Only a command that does not wait for its runner could return
-  sooner, so it waits on the warm runner below.
+- **Returning before the teardown**: a one-test run spends about 65 ms between its last test's end and its exit. Most
+  of it, about 52 ms, is Playwright stopping its workers, which it does before the reporters end and print the
+  summary; a command that returned sooner would leave the summary out. What follows the reporters is about 13 ms.
+- **`keepStaticCache` reading each response in the test's process**: a `response` listener on the context makes
+  Playwright send every response of the run to the worker's client, 291 for one load of the dashboard, and that cost
+  as much as the kept cache saved (median page load 412–486 ms with it, 424–472 ms without). The hook records the
+  responses in Playwright's server instead.
+- **Probing an element through `evaluateAll`**, in Piwi's capture fixtures: one locator resolution in place of the
+  probe's own `locator.evaluate`, which takes 6–8 protocol commands. Locator healing cost 204 ms per test before and
+  208 ms after, over three rounds of the reporter's capture benchmark alternating the two builds: the test does not
+  wait on those commands.
 - **A warm runner** (a prototype, not shipped): a process kept in the background holds one runner that has loaded
   Playwright, and `piwi-turbo` hands it each command's arguments, environment and folder and streams its output back.
   With `max`, after an untimed pause of 1.5 s before each run (5 runs, 6 for one test): one test 776 ms with

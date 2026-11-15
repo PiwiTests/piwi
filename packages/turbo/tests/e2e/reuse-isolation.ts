@@ -11,6 +11,8 @@ export function defineIsolationTests(test: typeof turboTest): void {
 
   let server: Server;
   let origin: string;
+  // Requests the server answered, by route: the HTTP cache answers the others.
+  const hits = { fresh: 0, static: 0 };
 
   test.beforeAll(async () => {
     server = createServer((request, response) => {
@@ -36,6 +38,26 @@ export function defineIsolationTests(test: typeof turboTest): void {
             await (await caches.open('runtime')).put(event.request, fetched.clone());
             return fetched;
           })));`);
+        return;
+      }
+      // A response the browser may serve again for ten minutes, and a static asset it may keep for a year.
+      if (request.url === '/fresh') {
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.fresh));
+        return;
+      }
+      if (request.url === '/static.js') {
+        hits.static++;
+        response.writeHead(200, {
+          'content-type': 'text/javascript',
+          'cache-control': 'public, max-age=31536000, immutable',
+        });
+        response.end('window.staticLoaded = true;');
+        return;
+      }
+      if (request.url === '/static-page') {
+        response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+        response.end('<script src="/static.js"></script><p>static</p>');
         return;
       }
       response.writeHead(200, { 'content-type': 'text/html' });
@@ -305,6 +327,37 @@ export function defineIsolationTests(test: typeof turboTest): void {
     // Chromium updates the hover state of a new layout a few frames later.
     await page.waitForTimeout(300);
     expect(await hovered(page)).toBe(false);
+  });
+
+  /** Loads the page of the static asset, and returns how many times the server sent the asset. */
+  async function loadStaticAsset(page: Page) {
+    await page.goto(`${origin}/static-page`);
+    await expect.poll(() => page.evaluate(() => (window as { staticLoaded?: boolean }).staticLoaded)).toBe(true);
+    return hits.static;
+  }
+
+  let staticBefore = 0;
+  let freshBefore = '';
+
+  test('loads a static asset and nothing the browser could reuse without asking', async ({ page }) => {
+    staticBefore = await loadStaticAsset(page);
+  });
+
+  test('gets that static asset from the cache only when the reset keeps static assets', async ({
+    page,
+    keepStaticCache,
+  }) => {
+    expect(await loadStaticAsset(page)).toBe(staticBefore + (keepStaticCache ? 0 : 1));
+  });
+
+  test('leaves a response the browser could serve again without asking, beside a static asset', async ({ page }) => {
+    staticBefore = await loadStaticAsset(page);
+    freshBefore = await page.evaluate(() => fetch('/fresh').then((response) => response.text()));
+  });
+
+  test('starts with neither of them cached', async ({ page }) => {
+    expect(await loadStaticAsset(page)).toBe(staticBefore + 1);
+    expect(await page.evaluate(() => fetch('/fresh').then((response) => response.text()))).not.toBe(freshBefore);
   });
 
   test.describe('with failFast', () => {

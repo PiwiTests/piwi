@@ -101,6 +101,12 @@ export interface Optimizations {
      * `node_modules/.cache/piwi-turbo`. Any other capture is compared as Playwright compares it.
      */
     screenshotMatches?: boolean;
+    /**
+     * With `reuseContext`: the reset between tests leaves the browser's HTTP cache when the last test loaded nothing
+     * the browser could serve again without asking the server but static assets (`immutable`, or fresh for a week,
+     * and not private, set with a cookie or varying with one). Any other response the browser could reuse clears it.
+     */
+    keepStaticCache?: boolean;
   };
 }
 
@@ -177,6 +183,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         fastReset: true,
         fastStackTraces: true,
         screenshotMatches: true,
+        keepStaticCache: true,
       },
     };
   }
@@ -224,6 +231,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.fastReset) use.fastReset = true;
   if (experimental.fastStackTraces) use.fastStackTraces = true;
   if (experimental.screenshotMatches) use.screenshotMatches = true;
+  if (experimental.keepStaticCache) use.keepStaticCache = true;
   if (options.compileCache) {
     enableCompileCache(options.compileCache === true ? defaultCompileCache() : options.compileCache);
   }

@@ -11,6 +11,8 @@
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
 //                     source map
+//   keep static cache when Playwright resets a reused context, leaves its HTTP cache when the last test loaded
+//                     nothing the browser could reuse without asking the server but static assets
 //   screenshot matches  a screenshot assertion passes without decoding its first capture when that capture's bytes
 //                     are the baseline's, or those of a capture that matched the same baseline with the same options
 //
@@ -21,6 +23,7 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { defaultCacheRoot, privateFolder } from './cache-folder';
+import { cacheVerdict } from './static-cache';
 import { TESTED_VERSIONS } from './versions';
 
 const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
@@ -41,6 +44,9 @@ export const state = {
   failFast: false,
   skipStabilityWait: false,
   fastReset: false,
+  keepStaticCache: false,
+  /** The server contexts whose HTTP cache holds static assets only, which the next reset leaves. */
+  staticCacheContexts: new WeakSet<object>(),
   screenshotMatches: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
@@ -59,6 +65,7 @@ export const state = {
     skippedPointerResets: 0,
     screenshotMatches: 0,
     rememberedScreenshots: 0,
+    keptCaches: 0,
   },
   elementHooked: false,
 };
@@ -331,6 +338,39 @@ function hookScreenshotMatches(Page: ServerPage, version: string): void {
   };
 }
 
+/**
+ * keepStaticCache: records the responses a test's context receives, in Playwright's server, and tells at the test's
+ * end whether the browser's HTTP cache can hold anything but static assets. A static verdict waits for the raw
+ * headers, which carry the cookie a response sets.
+ */
+export function watchStaticCache(serverContext: ServerPage): () => Promise<boolean> {
+  const responses: ServerPage[] = [];
+  const onResponse = (response: ServerPage) => responses.push(response);
+  serverContext.on('response', onResponse);
+  return async () => {
+    serverContext.off('response', onResponse);
+    for (const response of responses) {
+      if (
+        typeof response.request?.()?.method !== 'function' ||
+        typeof response.headers !== 'function' ||
+        typeof response.internalRawResponseHeaders !== 'function'
+      )
+        throw new IncompatibleError("Playwright's server responses no longer have the methods keepStaticCache reads");
+      const headers = (list: Array<{ name: string; value: string }>) =>
+        Object.fromEntries(list.map(({ name, value }) => [name.toLowerCase(), value]));
+      const verdict = cacheVerdict(response.request().method(), response.status(), headers(response.headers()));
+      if (verdict === 'reusable') return false;
+      if (verdict !== 'static') continue;
+      const raw = await Promise.race([
+        response.internalRawResponseHeaders() as Promise<Array<{ name: string; value: string }>>,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+      ]);
+      if (!raw || headers(raw)['set-cookie'] !== undefined) return false;
+    }
+    return true;
+  };
+}
+
 function hookContextReset(core: ServerPage): void {
   const proto = core.server?.BrowserContext?.prototype;
   const resetForReuse = proto?.resetForReuse as ((progress: unknown, params: unknown) => Promise<unknown>) | undefined;
@@ -339,19 +379,35 @@ function hookContextReset(core: ServerPage): void {
     | undefined;
   if (typeof resetForReuse !== 'function' || typeof setStorageState !== 'function')
     throw new IncompatibleError("Playwright's server BrowserContext has no resetForReuse()/setStorageState()");
+  if (!String(setStorageState).includes('this.clearCache()'))
+    throw new IncompatibleError("Playwright's context reset no longer clears the HTTP cache through clearCache()");
+  const setStorage = setStorageState;
   const reset = String(resetForReuse);
   const blank = reset.indexOf('gotoImpl(progress2, "about:blank", {})');
   const storage = reset.indexOf('setStorageState(progress2, this._options.storageState, "resetForReuse")');
   if (blank < 0 || storage < blank || !String(setStorageState).includes('this._origins'))
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
+  // keepStaticCache: the reset leaves the HTTP cache of a context whose last test loaded static assets only.
+  proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
+    const keep = mode === 'resetForReuse' && state.keepStaticCache && state.staticCacheContexts.has(this);
+    if (!keep) return resetStorage.call(this, progress, storageState, mode);
+    this.clearCache = async () => {
+      state.counters.keptCaches++;
+    };
+    try {
+      return await resetStorage.call(this, progress, storageState, mode);
+    } finally {
+      delete this.clearCache;
+    }
+  };
   // Playwright's reset restores the storage once the test's other pages are closed and its tab is on about:blank. The
   // storage of every origin the test visited, the tab's session storage included, is cleared here through CDP, so
   // Playwright loads only the configured storage state's origins. With no page left, Playwright opens one and loads
   // each origin to clear it, all but its Cache Storage, cleared after.
-  proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
+  async function resetStorage(this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
     const origins = this._origins as Set<string> | undefined;
     if (mode !== 'resetForReuse' || !state.fastReset || !(origins instanceof Set))
-      return setStorageState.call(this, progress, storageState, mode);
+      return setStorage.call(this, progress, storageState, mode);
     const visited = [...origins];
     const session = mainSession(this);
     if (session) {
@@ -359,16 +415,16 @@ function hookContextReset(core: ServerPage): void {
       for (const origin of visited)
         await session.send('Storage.clearDataForOrigin', { origin, storageTypes: CLEARED_STORAGE });
       origins.clear();
-      return setStorageState.call(this, progress, storageState, mode);
+      return setStorage.call(this, progress, storageState, mode);
     }
-    const result = await setStorageState.call(this, progress, storageState, mode);
+    const result = await setStorage.call(this, progress, storageState, mode);
     const opened = mainSession(this);
     if (opened) {
       for (const origin of visited)
         await opened.send('Storage.clearDataForOrigin', { origin, storageTypes: 'cache_storage' });
     }
     return result;
-  };
+  }
 }
 
 /** The CDP session of a server context's first page, on Chromium. */

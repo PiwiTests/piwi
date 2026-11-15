@@ -125,6 +125,7 @@ describe('presets', () => {
       fastReset: true,
       fastStackTraces: true,
       screenshotMatches: true,
+      keepStaticCache: true,
       instantAnimations: true,
     });
   });
