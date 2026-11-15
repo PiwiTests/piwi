@@ -682,7 +682,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 3 of 9',
+      text: '$(loading~spin) Piwi: 3 of 9',
       // What each worker runs now, under the counts.
       tooltip: 'Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays',
       markdown: true,
@@ -690,7 +690,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 4 of 10 · 1 failed · 1 flaky',
+      text: '$(loading~spin) Piwi: 4 of 10 · 1 failed · 1 flaky',
       tooltip:
         'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.\n\n' +
         'Run in shop (ed-1) · Worker 1 · checkout › pays\n\nRun in shop (ed-2) · Worker 1 · checkout › pays',
@@ -723,16 +723,16 @@ describe('Share live', () => {
       ...session('ed-2', [worker(0, 'running')]),
       page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
     };
-    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(sync~spin) Piwi: 3 of 9');
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(loading~spin) Piwi: 3 of 9');
     // An agent's run says who started it, never reading as the person's own.
     const agents = progressItem(sessionsOf({ ...counted('ed-1', 3, 9), label: 'Started by Claude Code' }))!;
-    expect(agents.text).toBe('$(sync~spin) Piwi: 3 of 9 · Started by Claude Code');
+    expect(agents.text).toBe('$(loading~spin) Piwi: 3 of 9 · Started by Claude Code');
     expect(agents.tooltip).toMatch(/^Piwi: the run ran 3 of 9 tests\. Started by Claude Code\./);
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 3 of 9',
+      text: '$(loading~spin) Piwi: 3 of 9',
       tooltip:
         "Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n[Watch a worker's test](command:piwi.watchWorker)",
       markdown: true,
@@ -743,7 +743,7 @@ describe('Share live', () => {
     const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
     expect(progressItem(sessionsOf(named))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: run #78 · 3 of 9',
+      text: '$(loading~spin) Piwi: run #78 · 3 of 9',
       tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n${link}`,
       markdown: true,
       command: RUN_COMMANDS.openPage,
@@ -2393,7 +2393,7 @@ describe('the CI runs of the branch', () => {
     expect(running).toMatchObject({
       label: 'checkout › pays',
       description: "chromium · worker 2 · Click getByRole('button')",
-      icon: 'sync~spin',
+      icon: 'loading~spin',
       open: { uri: page, line: 8, character: 21 },
     });
     // Watch opens the lane in the worker panel; the dashboard's view is the second choice.

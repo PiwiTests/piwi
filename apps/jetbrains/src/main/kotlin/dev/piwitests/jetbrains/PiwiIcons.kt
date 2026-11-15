@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
+import com.intellij.ui.AnimatedIcon
 import javax.swing.Icon
 
 /**
@@ -22,10 +23,33 @@ object PiwiIcons {
     val FLAKY: Icon = IconLoader.getIcon("/icons/testFlaky.svg", PiwiIcons::class.java)
 
     /**
-     * A running test: a ring on the outcome palette's running color, as VS Code's mark, apart from the IDE's run
-     * triangle that starts a test.
+     * A running test: a ring on the outcome palette's running color, apart from the IDE's run triangle that starts a
+     * test, turning a twelfth of a turn twelve times a second as VS Code's mark spins.
      */
-    val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+    val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java).let { ring ->
+        AnimatedIcon(RUNNING_FRAME_MILLIS, *Array(RUNNING_FRAMES) { Turned(ring, it * 360.0 / RUNNING_FRAMES) })
+    }
+
+    /** The running ring's frames, a turn's twelfths, and how long each shows. */
+    private const val RUNNING_FRAMES = 12
+    private const val RUNNING_FRAME_MILLIS = 1000 / RUNNING_FRAMES
+
+    /** `icon` turned by `degrees` about its center. */
+    private class Turned(private val icon: Icon, private val degrees: Double) : Icon {
+        override fun getIconWidth() = icon.iconWidth
+
+        override fun getIconHeight() = icon.iconHeight
+
+        override fun paintIcon(c: java.awt.Component?, g: java.awt.Graphics, x: Int, y: Int) {
+            val turned = g.create() as java.awt.Graphics2D
+            try {
+                turned.rotate(Math.toRadians(degrees), x + iconWidth / 2.0, y + iconHeight / 2.0)
+                icon.paintIcon(c, turned, x, y)
+            } finally {
+                turned.dispose()
+            }
+        }
+    }
 
     /**
      * Piwi's mark, the tool window's, the status item's, a notification's and the language server widget's: the filled

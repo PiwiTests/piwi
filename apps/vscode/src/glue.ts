@@ -287,13 +287,13 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
+ * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
  * editor's own, or who started it when a person did not (` · Started by Claude Code`).
  */
 function liveText(live: LiveRun): string {
   const run = live.ci ? 'CI run' : 'run';
   const whose = live.own ? ` · ${live.label ?? 'yours'}` : '';
-  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${whose}`;
+  return `$(loading~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${whose}`;
 }
 
 /**
@@ -373,7 +373,7 @@ export const RUN_LINE_GLYPHS: Record<RunLineState, string> = {
   stopped: '$(debug-pause)',
   pausing: '$(debug-pause)',
   live: '$(broadcast)',
-  running: '$(sync~spin)',
+  running: '$(loading~spin)',
   passed: '$(pass)',
   failed: '$(error)',
   interrupted: '$(warning)',
@@ -390,7 +390,7 @@ export function runLineText(line: RunLine, now: number): string {
 
 /** The item's text while the latest run is read again: its icon spins. */
 export function refreshingText(text: string): string {
-  return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
+  return `$(loading~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
 type StatusContext = StatusResult['contexts'][number];
@@ -657,7 +657,9 @@ export function statusBarView(
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
+      text: live
+        ? liveText(live)
+        : `$(loading~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';

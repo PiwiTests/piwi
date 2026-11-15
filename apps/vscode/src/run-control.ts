@@ -1111,7 +1111,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   // A spinner while a run goes on; once every run that counts ended, how they ended: passed, failed (a failed test, a
   // failure of its own, a timeout), else stopped short (interrupted).
   const glyph = told.some((p) => p.status === 'running')
-    ? '$(sync~spin)'
+    ? '$(loading~spin)'
     : failed || told.some((p) => p.status === 'failed' || p.status === 'timedout')
       ? '$(error)'
       : told.every((p) => p.status === 'passed')
@@ -1514,7 +1514,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert-region',
-    icon: '$(screen-full)',
+    icon: '$(piwi-region)',
     title: editorWords('action.assert-region'),
     command: RUN_COMMANDS.assertRegion,
     key: 'piwi.runCanAssertRegion',
@@ -1522,7 +1522,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'mock',
-    icon: '$(arrow-swap)',
+    icon: '$(piwi-mock)',
     title: editorWords('action.mock'),
     command: RUN_COMMANDS.mock,
     key: 'piwi.runCanMock',
@@ -2466,7 +2466,7 @@ export interface CiNode {
 
 /** A CI test's outcome as the gutter draws it, the running one spinning. */
 const CI_TEST_ICONS: Record<CiTest['status'], string> = {
-  running: 'sync~spin',
+  running: 'loading~spin',
   passed: 'mark:passed',
   failed: 'mark:failed',
   flaky: 'mark:flaky',

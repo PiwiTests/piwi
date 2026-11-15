@@ -167,6 +167,24 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(PiwiStatusBarWidget.RUN_ACTIONS.toList(), runControl.getChildren(null).map { ActionManager.getInstance().getId(it) })
     }
 
+    /** A running test's ring turns, a twelfth of a turn a frame, as VS Code's spins; the other outcomes stand still. */
+    fun testTheRunningRingTurns() {
+        val running = PiwiIcons.outcome("running")
+        assertTrue(running is com.intellij.ui.AnimatedIcon)
+        // The ring's own size, however the test's IDE loads icons.
+        val ring = com.intellij.openapi.util.IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+        assertEquals(ring.iconWidth to ring.iconHeight, running.iconWidth to running.iconHeight)
+        assertFalse(PiwiIcons.outcome("passed") is com.intellij.ui.AnimatedIcon)
+        // Each frame paints.
+        val image = java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = image.createGraphics()
+        try {
+            running.paintIcon(null, g, 0, 0)
+        } finally {
+            g.dispose()
+        }
+    }
+
     /**
      * Every action draws a platform icon or a glyph Piwi draws, but a toggle (its menu row shows a check mark); a stop's
      * code actions draw the same in its popups (`PiwiIcons.stopAction`), and a glyph has one meaning.

@@ -99,6 +99,20 @@
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E005"
         }
+      },
+      "piwi-region": {
+        "description": "Assert a region at a stop",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E006"
+        }
+      },
+      "piwi-mock": {
+        "description": "Mock a request at a stop",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E007"
+        }
       }
     },
     "viewsContainers": {
@@ -508,7 +522,7 @@
         "command": "piwi.stopFollowingEditor",
         "title": "Stop following the active editor",
         "category": "Piwi",
-        "icon": "$(eye)"
+        "icon": "$(eye-closed)"
       },
       {
         "command": "piwi.copyAgentContext",
@@ -687,13 +701,13 @@
       {
         "command": "piwi.assertRegionAtStop",
         "title": "Assert a region at the stop",
-        "icon": "$(screen-full)",
+        "icon": "$(piwi-region)",
         "category": "Piwi"
       },
       {
         "command": "piwi.mockAtStop",
         "title": "Mock a request at the stop…",
-        "icon": "$(arrow-swap)",
+        "icon": "$(piwi-mock)",
         "category": "Piwi"
       },
       {
