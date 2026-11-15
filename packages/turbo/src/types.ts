@@ -23,8 +23,7 @@ export interface TurboOptions {
   fastReset: boolean;
   /**
    * Experimental worker option, with `reuseContextWithReset`: the reset between tests leaves the browser's HTTP cache
-   * when the last test loaded nothing the browser could serve again without asking the server but static assets
-   * (`immutable`, or fresh for a week, and not tied to the user).
+   * while it holds only static assets (see `keepStaticCache` in `withOptimizations`' options).
    */
   keepStaticCache: boolean;
   /**

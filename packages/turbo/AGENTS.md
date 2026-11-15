@@ -29,8 +29,8 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
 - **The spare worker stands in only for a fork that matches its start** (`spareRefusal` in `src/spare.ts`): a changed
   variable Node reads at start, or one Playwright read while the spare loaded, refuses it. `tests/e2e/cli.spec.ts` runs
   a project through the built command.
-- **The warm daemon (`--warm`) answers only requests that carry its token** and listens in a folder only its user can
-  reach; a runner takes a command only when what it read as it loaded is the caller's (`refusal` in
-  `src/warm-daemon.ts`), else the command runs cold. `tests/e2e/cli.spec.ts` checks both.
+- **The warm daemon (`--warm`) answers only requests that carry its token**, kept with its address in a file only its
+  user can read; a runner takes a command only when what it read as it loaded, its terminal included, is the caller's
+  (`refusal` in `src/warm-daemon.ts`), else the command runs cold. `tests/e2e/cli.spec.ts` checks both.
 - `npm run turbo:test` runs the unit tests (Vitest), `npm run turbo:test:e2e` builds the package and runs the hooks'
   compatibility suite and the command's tests.

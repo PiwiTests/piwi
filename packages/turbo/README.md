@@ -147,13 +147,18 @@ npx piwi-turbo --warm test tests/checkout.spec.ts
 ```
 
 The first such command starts a process in the background that keeps one runner loaded, with its spare worker; the
-next `test` commands go to it, and it readies another after each. A runner takes a command only when it loaded with
-the caller's terminal (its width and height, or none), the folder when it read it, and the variables it read or Node
-reads at start; otherwise the command runs in its own process, as without `--warm`, and the next runner loads for it.
-A request carries a token from a file only you can read, the process listens in a folder only you can reach (a named
-pipe on Windows), it exits after ten minutes without a request, and `npx piwi-turbo --warm-stop` stops it. On a run of
-one test, after a pause as when you edit between runs (median of 8): 539 ms without `--warm` and 212 ms with it, and
-773 ms and 431 ms for a test that opens a page.
+next `test` commands go to it, one runner each, and it readies another after each. A runner takes a command only when
+it loaded for the caller's terminal (its width, height and colors, or none), folder and `PIWI_TURBO_*` variables, and
+for the variables it read or Node reads at start; otherwise the command runs in its own process, as without `--warm`,
+and the next runner loads for it. Watch mode and Node options on the command (`node --inspect`) always run that way.
+Ctrl+C reaches the run. The process exits after ten minutes with no run and no request, and
+`npx piwi-turbo --warm-stop` stops it once its runs have stopped.
+
+A request carries a token that the process writes, with its address, to a file only you can read, in a folder only you
+can write to; on Windows it listens on a pipe with a name no one can guess, and relies on the temporary folder being
+yours alone, as it is by default. On a run of one test, after a pause as when you edit between runs (median of 8, run
+with `node` rather than `npx`): 539 ms without `--warm` and 212 ms with it, and 773 ms and 431 ms for a test that
+opens a page.
 
 ## Advanced: the levers one by one
 
@@ -217,12 +222,15 @@ withOptimizations(config, {
   [`piwi-turbo`](#a-faster-start-piwi-turbo)), so with `fastScreenshots`, whose bytes differ from the baseline's, an
   assertion gains from its second run on. A passing assertion took 33 ms in place of 81 ms with both hooks on.
 - **`keepStaticCache`** (with `reuseContext`): Playwright's reset clears the browser's HTTP cache, so each test downloads
-  and compiles the app's scripts again. The reset leaves the cache when the last test received nothing the browser
-  could serve again without asking the server but static assets: images, fonts, stylesheets, scripts, WebAssembly and
-  media, and any response `immutable` or fresh for a week, none of them private, setting a cookie or varying with one.
-  Any other such response (an API response with `max-age`, a page with an `Expires` date) clears the whole cache, as
-  stock. An app that replaces an image or a script at the same URL between tests would serve the next test the old
-  one: leave it off for such a suite. On Piwi's own dashboard, a page load took 340 ms in place of 415 ms.
+  and compiles the app's scripts again. The reset leaves the cache when what the context received since the last reset
+  holds nothing the browser could serve again without asking the server but static assets: a response marked
+  `immutable`; an image, font, stylesheet, script, WebAssembly module or media file with no lifetime of its own or one
+  of a week or more; any other response fresh for a week whose request carried no cookie or credentials; none of them
+  private, setting a cookie or varying with one. Anything else the browser could reuse clears the whole cache, as
+  stock: an API response or a stylesheet with a short lifetime, a permanent redirect, a page with an `Expires` date.
+  A file the app changes at the same URL between tests, served with a `Last-Modified` date and no lifetime (an avatar,
+  a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. On Piwi's own
+  dashboard, a page load took 328–342 ms in place of 404–450 ms.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot` and `BrowserContext.prototype.setStorageState`, a context's `response` events, from

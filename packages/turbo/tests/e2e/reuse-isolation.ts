@@ -12,7 +12,7 @@ export function defineIsolationTests(test: typeof turboTest): void {
   let server: Server;
   let origin: string;
   // Requests the server answered, by route: the HTTP cache answers the others.
-  const hits = { fresh: 0, static: 0 };
+  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0 };
 
   test.beforeAll(async () => {
     server = createServer((request, response) => {
@@ -53,6 +53,27 @@ export function defineIsolationTests(test: typeof turboTest): void {
           'cache-control': 'public, max-age=31536000, immutable',
         });
         response.end('window.staticLoaded = true;');
+        return;
+      }
+      // A static asset that sets a cookie, and a response the browser may serve again for ten minutes.
+      if (request.url === '/static-cookie.js') {
+        hits.staticCookie++;
+        response.writeHead(200, {
+          'content-type': 'text/javascript',
+          'cache-control': 'public, max-age=31536000, immutable',
+          'set-cookie': 'seen=1; Path=/',
+        });
+        response.end('window.staticLoaded = true;');
+        return;
+      }
+      if (request.url === '/late') {
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.late));
+        return;
+      }
+      if (request.url === '/static-cookie-page') {
+        response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+        response.end('<script src="/static-cookie.js"></script><p>static</p>');
         return;
       }
       if (request.url === '/static-page') {
@@ -359,6 +380,34 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(await loadStaticAsset(page)).toBe(staticBefore + 1);
     expect(await page.evaluate(() => fetch('/fresh').then((response) => response.text()))).not.toBe(freshBefore);
   });
+
+  let cookieBefore = 0;
+
+  test('loads a static asset that sets a cookie', async ({ page }) => {
+    await page.goto(`${origin}/static-cookie-page`);
+    await expect.poll(() => page.evaluate(() => (window as { staticLoaded?: boolean }).staticLoaded)).toBe(true);
+    cookieBefore = hits.staticCookie;
+  });
+
+  test('gets that asset from the server again', async ({ page }) => {
+    await page.goto(`${origin}/static-cookie-page`);
+    await expect.poll(() => page.evaluate(() => (window as { staticLoaded?: boolean }).staticLoaded)).toBe(true);
+    expect(hits.staticCookie).toBe(cookieBefore + 1);
+  });
+
+  for (const delay of [0, 20, 40]) {
+    test(`leaves a reusable response that arrives once the test has ended (${delay} ms)`, async ({ page }) => {
+      await page.goto(origin);
+      await page.evaluate((after) => void setTimeout(() => fetch('/late'), after), delay);
+    });
+
+    test(`gets that response from the server (${delay} ms)`, async ({ page }) => {
+      await page.goto(origin);
+      const before = hits.late;
+      await page.evaluate(() => fetch('/late').then((response) => response.text()));
+      expect(hits.late).toBe(before + 1);
+    });
+  }
 
   test.describe('with failFast', () => {
     test.use({ failFast: true });

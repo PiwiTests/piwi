@@ -357,10 +357,8 @@ export const test: TurboTest = base.extend<
         };
         listeners.push(() => (context.newCDPSession = newCDPSession));
       }
-      // keepStaticCache: whether this test left nothing in the HTTP cache but static assets.
-      const keepCache = reused && state.keepStaticCache;
-      const server = keepCache ? serverContextOf(context) : undefined;
-      const staticOnly = server ? watchStaticCache(server) : undefined;
+      // keepStaticCache: the next reset judges what the reused context receives from here on.
+      if (reused && state.keepStaticCache) watchStaticCache(serverContextOf(context));
       const origins = new Set<string>();
       if (clearCaches) {
         const onRequest = (request: Request) => {
@@ -378,10 +376,6 @@ export const test: TurboTest = base.extend<
         for (const remove of listeners) remove();
       }
       if (clearCaches) cachesLeft.set(guidOf(context), origins);
-      if (server && staticOnly) {
-        if (await staticOnly()) state.staticCacheContexts.add(server);
-        else state.staticCacheContexts.delete(server);
-      }
       if (reused) {
         for (const session of sessions) if (!ownSessions.has(session)) await session.detach().catch(() => {});
         await resetForNextTest(

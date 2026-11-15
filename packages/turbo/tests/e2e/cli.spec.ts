@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -109,9 +109,11 @@ test.describe('with --warm', () => {
 
   test("runs a test command in a warm runner, with the caller's environment and exit code", async () => {
     const cache = test.info().outputPath('cache');
-    const passed = await warmRun(['test'], cache);
+    await warmRun(['test'], cache, { CLI_PROJECT_CALLER: 'the first caller' });
+    const passed = await warmRun(['test'], cache, { CLI_PROJECT_CALLER: 'the second caller' });
     expect(passed.status, passed.output).toBe(0);
     expect(passed.output).toContain('2 passed');
+    expect(passed.output).toContain('caller: the second caller');
     const none = await warmRun(['test', '--grep', 'no test has this title'], cache);
     expect(none.status, none.output).toBe(1);
     expect(none.output).toContain('No tests found');
@@ -131,8 +133,9 @@ test.describe('with --warm', () => {
     await warmRun(['test'], cache);
     const install = findPlaywright(project)!;
     const address = warmAddress(install, cache, packageVersion);
+    const contact = JSON.parse(readFileSync(address.contactFile, 'utf8')) as { address: string };
     const replies = await new Promise<string>((resolve) => {
-      const socket = connect(address.socket);
+      const socket = connect(contact.address);
       let received = '';
       socket.on('data', (chunk) => (received += chunk));
       socket.on('close', () => resolve(received));
@@ -144,6 +147,6 @@ test.describe('with --warm', () => {
     });
     expect(replies).toBe('');
     run(['--warm-stop'], cache);
-    await expect.poll(() => existsSync(address.tokenFile)).toBe(false);
+    await expect.poll(() => existsSync(address.contactFile)).toBe(false);
   });
 });

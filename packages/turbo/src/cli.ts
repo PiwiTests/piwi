@@ -23,7 +23,9 @@ async function main(): Promise<void> {
   if (flag === '--warm') {
     process.argv.splice(2, 1);
     const args = process.argv.slice(2);
-    const warmable = runsWorkers(args) && process.execArgv.length === 0 && !process.env.NODE_V8_COVERAGE;
+    // Watch mode reads keys from the terminal, which the warm runner does not have.
+    const warmable =
+      runsWorkers(args) && process.execArgv.length === 0 && !process.env.NODE_V8_COVERAGE && !process.env.PWTEST_WATCH;
     const result = warmable ? await runWarm(install, args, log) : 'cold';
     if (result !== 'cold') {
       process.exitCode = result;

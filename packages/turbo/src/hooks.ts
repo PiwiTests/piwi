@@ -45,8 +45,8 @@ export const state = {
   skipStabilityWait: false,
   fastReset: false,
   keepStaticCache: false,
-  /** The server contexts whose HTTP cache holds static assets only, which the next reset leaves. */
-  staticCacheContexts: new WeakSet<object>(),
+  /** The responses each reused context received since its last reset, which keepStaticCache judges at the next. */
+  staticCacheResponses: new WeakMap<object, ServerPage[]>(),
   screenshotMatches: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
@@ -338,37 +338,52 @@ function hookScreenshotMatches(Page: ServerPage, version: string): void {
   };
 }
 
+type HeaderList = Array<{ name: string; value: string }>;
+
+const headerMap = (list: HeaderList) => Object.fromEntries(list.map(({ name, value }) => [name.toLowerCase(), value]));
+
+/** A promise, or `null` after a second: raw headers that never come count as unknown. */
+const withinASecond = <T>(promise: Promise<T>) =>
+  Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))]);
+
 /**
- * keepStaticCache: records the responses a test's context receives, in Playwright's server, and tells at the test's
- * end whether the browser's HTTP cache can hold anything but static assets. A static verdict waits for the raw
- * headers, which carry the cookie a response sets.
+ * keepStaticCache: records the responses a reused context receives in Playwright's server, from now until each reset
+ * judges them, so a response that arrives once its test has ended counts too.
  */
-export function watchStaticCache(serverContext: ServerPage): () => Promise<boolean> {
+export function watchStaticCache(serverContext: ServerPage): void {
+  if (state.staticCacheResponses.has(serverContext)) return;
   const responses: ServerPage[] = [];
-  const onResponse = (response: ServerPage) => responses.push(response);
-  serverContext.on('response', onResponse);
-  return async () => {
-    serverContext.off('response', onResponse);
-    for (const response of responses) {
-      if (
-        typeof response.request?.()?.method !== 'function' ||
-        typeof response.headers !== 'function' ||
-        typeof response.internalRawResponseHeaders !== 'function'
-      )
-        throw new IncompatibleError("Playwright's server responses no longer have the methods keepStaticCache reads");
-      const headers = (list: Array<{ name: string; value: string }>) =>
-        Object.fromEntries(list.map(({ name, value }) => [name.toLowerCase(), value]));
-      const verdict = cacheVerdict(response.request().method(), response.status(), headers(response.headers()));
-      if (verdict === 'reusable') return false;
-      if (verdict !== 'static') continue;
-      const raw = await Promise.race([
-        response.internalRawResponseHeaders() as Promise<Array<{ name: string; value: string }>>,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
-      ]);
-      if (!raw || headers(raw)['set-cookie'] !== undefined) return false;
-    }
-    return true;
-  };
+  state.staticCacheResponses.set(serverContext, responses);
+  serverContext.on('response', (response: ServerPage) => responses.push(response));
+}
+
+/**
+ * Whether the responses a context received since its last reset left nothing in the HTTP cache but static assets.
+ * A response that may be static is judged again with its raw headers: the request's cookie and credentials, and the
+ * cookie the response sets.
+ */
+async function onlyStaticAssets(responses: ServerPage[]): Promise<boolean> {
+  for (const response of responses) {
+    const request = response.request?.();
+    if (
+      typeof request?.method !== 'function' ||
+      typeof request.internalRawRequestHeaders !== 'function' ||
+      typeof response.headers !== 'function' ||
+      typeof response.internalRawResponseHeaders !== 'function'
+    )
+      throw new IncompatibleError("Playwright's server responses no longer have the methods keepStaticCache reads");
+    const verdict = cacheVerdict(request.method(), response.status(), headerMap(response.headers()));
+    if (verdict === 'reusable') return false;
+    if (verdict !== 'static') continue;
+    const [raw, rawRequest] = await Promise.all([
+      withinASecond(response.internalRawResponseHeaders() as Promise<HeaderList>),
+      withinASecond(request.internalRawRequestHeaders() as Promise<HeaderList>),
+    ]);
+    if (!raw || !rawRequest) return false;
+    const judged = cacheVerdict(request.method(), response.status(), headerMap(raw), headerMap(rawRequest));
+    if (judged !== 'static' && judged !== 'revalidated') return false;
+  }
+  return true;
 }
 
 function hookContextReset(core: ServerPage): void {
@@ -389,7 +404,11 @@ function hookContextReset(core: ServerPage): void {
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
   // keepStaticCache: the reset leaves the HTTP cache of a context whose last test loaded static assets only.
   proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
-    const keep = mode === 'resetForReuse' && state.keepStaticCache && state.staticCacheContexts.has(this);
+    const responses = state.staticCacheResponses.get(this);
+    if (mode !== 'resetForReuse' || !state.keepStaticCache || !responses)
+      return resetStorage.call(this, progress, storageState, mode);
+    const keep = await onlyStaticAssets(responses);
+    responses.length = 0;
     if (!keep) return resetStorage.call(this, progress, storageState, mode);
     this.clearCache = async () => {
       state.counters.keptCaches++;

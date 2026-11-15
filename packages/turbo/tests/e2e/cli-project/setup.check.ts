@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('runs in the spare worker with the environment Playwright gives its workers', () => {
   console.log(`worker pid ${process.pid}`);
+  console.log(`caller: ${process.env.CLI_PROJECT_CALLER ?? 'none'}`);
   expect(process.env.CLI_PROJECT_FROM_CONFIG).toBe('set by the config');
   expect(process.env.TEST_WORKER_INDEX).toBe('0');
   expect(process.cwd()).toBe(__dirname);

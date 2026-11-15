@@ -123,9 +123,19 @@ describe('recordReads', () => {
       void Object.assign({}, process.env);
       void process.env.PIWI_TURBO_READ_DIRECTLY;
       void ('PIWI_TURBO_CHECKED' in process.env);
+      if (Object.prototype.hasOwnProperty.call(process.env, 'PIWI_TURBO_OWNED')) void process.env.PIWI_TURBO_OWNED;
+      // A variable checked once a listing of them all is over.
+      void Object.keys(process.env).filter((key) => key === 'PIWI_TURBO_NONE');
+      void process.env.PIWI_TURBO_READ_DIRECTLY;
+      void Object.prototype.hasOwnProperty.call(process.env, 'PATH');
       void process.cwd();
     });
-    expect([...reads.env].sort()).toEqual(['PIWI_TURBO_CHECKED', 'PIWI_TURBO_READ_DIRECTLY']);
+    expect([...reads.env].sort()).toEqual([
+      'PATH',
+      'PIWI_TURBO_CHECKED',
+      'PIWI_TURBO_OWNED',
+      'PIWI_TURBO_READ_DIRECTLY',
+    ]);
     expect(reads.cwd).toBe(true);
   });
 });

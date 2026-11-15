@@ -102,9 +102,11 @@ export interface Optimizations {
      */
     screenshotMatches?: boolean;
     /**
-     * With `reuseContext`: the reset between tests leaves the browser's HTTP cache when the last test loaded nothing
-     * the browser could serve again without asking the server but static assets (`immutable`, or fresh for a week,
-     * and not private, set with a cookie or varying with one). Any other response the browser could reuse clears it.
+     * With `reuseContext`: the reset between tests leaves the browser's HTTP cache while it holds only static assets:
+     * responses `immutable`; images, fonts, stylesheets, scripts and media with no lifetime of their own or one of a
+     * week; other responses fresh for a week requested without a cookie. Anything else the browser could reuse clears
+     * it. A file the app changes at the same URL between tests, with no lifetime of its own, reaches the next test as it
+     * was.
      */
     keepStaticCache?: boolean;
   };

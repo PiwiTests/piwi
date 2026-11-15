@@ -118,7 +118,7 @@ It caches Playwright's compiled modules for the runner and its workers, and for 
 loads Playwright while the runner reads the config. A single test went from 1.2 s to 0.7 s: it helps an edit-and-run
 loop or an agent that runs one test at a time, not a long CI run. IDE extensions that start `playwright` themselves
 bypass it. With `--warm` first, a background process keeps a runner loaded for the next `test` command: a test that
-opens a page took 0.4 s. The [package
+opens a page took 0.4 s, without the start of `npx`. The [package
 README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#a-faster-start-piwi-turbo) lists its variables and
 measurements.
 
@@ -153,8 +153,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
 - `failFast` ends a failing assertion once nothing can change the page. It must stay off for a test that changes the
   page from its own Node code while an assertion waits.
 - `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, and the HTTP
-  cache kept when the last test received only static assets. An app that replaces a file at the same URL between tests
-  needs `keepStaticCache` off.
+  cache kept while it holds only static assets. An app that changes a file at the same URL between tests, served with
+  no lifetime of its own, needs `keepStaticCache` off.
 - `fastStackTraces` skips the source map lookup for the frames of Node and `node_modules`.
 
 ```ts

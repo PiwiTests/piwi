@@ -1,6 +1,6 @@
 // Where @piwitests/turbo keeps what it caches between runs, and the check that no other user can write there: V8 runs
 // what a code cache holds, and a screenshot assertion passes on what the match store holds.
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -21,13 +21,16 @@ export function defaultCacheRoot(): string {
   return resolve(process.env.PIWI_TURBO_CACHE_DIR ?? cacheRoot(process.cwd(), existsSync, tmpdir(), user));
 }
 
-/** Creates `folder` for this user alone if needed; whether only this user can write to it (always, on Windows). */
+/**
+ * Creates `folder` for this user alone if needed; whether it is a folder of this user's that no other user can write
+ * to, and not a link. On Windows, where folders carry no such modes, the temporary folder is the user's own.
+ */
 export function privateFolder(folder: string): boolean {
   try {
     mkdirSync(folder, { recursive: true, mode: 0o700 });
     if (!process.getuid) return true;
-    const { uid, mode } = statSync(folder);
-    return uid === process.getuid() && (mode & 0o022) === 0;
+    const stats = lstatSync(folder);
+    return stats.isDirectory() && stats.uid === process.getuid() && (stats.mode & 0o022) === 0;
   } catch {
     return false;
   }

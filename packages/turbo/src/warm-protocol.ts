@@ -11,12 +11,21 @@ export const WARM_IDLE_MS = 10 * 60_000;
 /** The variable that tells Playwright the terminal it writes to; the warm runner is prepared for the caller's. */
 export const TERMINAL_VARIABLE = 'PLAYWRIGHT_FORCE_TTY';
 
-/** Where a daemon listens, and the file holding the token its requests carry. */
+/** Where a daemon's files are: the address it listens on and its token, and its log. */
 export interface WarmAddress {
-  /** A folder only this user can reach: the token, and the socket on POSIX. */
+  /** A folder only this user can write to. */
   folder: string;
-  socket: string;
-  tokenFile: string;
+  /** Holds the daemon's address and token, readable by this user alone (`WarmContact`). */
+  contactFile: string;
+  logFile: string;
+  /** On POSIX, the socket, in `folder`; on Windows, the daemon names a pipe no one can guess and writes it down. */
+  socket?: string;
+}
+
+/** What `contactFile` holds. */
+export interface WarmContact {
+  address: string;
+  token: string;
 }
 
 /**
@@ -30,18 +39,47 @@ export function warmAddress(install: PlaywrightInstall, cacheRoot: string, packa
     .digest('hex')
     .slice(0, 16);
   const folder = join(tmpdir(), `piwi-turbo-${user}`);
-  const socket =
-    process.platform === 'win32' ? `\\\\.\\pipe\\piwi-turbo-${user}-${key}` : join(folder, `warm-${key}.sock`);
-  return { folder, socket, tokenFile: join(folder, `warm-${key}.token`) };
+  return {
+    folder,
+    contactFile: join(folder, `warm-${key}.json`),
+    logFile: join(folder, `warm-${key}.log`),
+    socket: process.platform === 'win32' ? undefined : join(folder, `warm-${key}.sock`),
+  };
+}
+
+/** What the caller's output streams are: the warm runner's take their place from its start. */
+export interface StreamInfo {
+  isTTY: boolean;
+  columns?: number;
+  rows?: number;
+  colorDepth?: number;
+}
+
+/** How a stream of this process describes itself. */
+export function streamInfo(stream: NodeJS.WriteStream): StreamInfo {
+  if (!stream.isTTY) return { isTTY: false };
+  return { isTTY: true, columns: stream.columns, rows: stream.rows, colorDepth: stream.getColorDepth?.() };
 }
 
 /**
- * The terminal the caller writes to, as Playwright reads it when it loads: the caller's own `PLAYWRIGHT_FORCE_TTY`, else
- * its width and height on a terminal, else `0`.
+ * The terminal the caller writes to, which Playwright and the libraries it loads read as they load: the value of
+ * `PLAYWRIGHT_FORCE_TTY` that describes it (the caller's own, else its width and height on a terminal, else `0`), and
+ * the caller's two output streams. A warm runner serves a caller whose terminal is the one it loaded for.
  */
-export function terminalOf(env: NodeJS.ProcessEnv, stdout: { isTTY?: boolean; columns?: number; rows?: number }) {
-  return env[TERMINAL_VARIABLE] ?? (stdout.isTTY ? `${stdout.columns ?? 0}x${stdout.rows ?? 0}` : '0');
+export interface Terminal {
+  force: string;
+  stdout: StreamInfo;
+  stderr: StreamInfo;
 }
+
+export function terminalOf(env: NodeJS.ProcessEnv, stdout: NodeJS.WriteStream, stderr: NodeJS.WriteStream): Terminal {
+  const out = streamInfo(stdout);
+  const force = env[TERMINAL_VARIABLE] ?? (out.isTTY ? `${out.columns ?? 0}x${out.rows ?? 0}` : '0');
+  return { force, stdout: out, stderr: streamInfo(stderr) };
+}
+
+/** The variable that hands a warm runner the terminal it loads for. */
+export const RUNNER_TERMINAL = 'PIWI_TURBO_WARM_TERMINAL';
 
 /** A request to the daemon. */
 export type WarmRequest =
@@ -51,7 +89,7 @@ export type WarmRequest =
       args: string[];
       env: NodeJS.ProcessEnv;
       cwd: string;
-      terminal: string;
+      terminal: Terminal;
       stdinIsTTY: boolean;
     }
   | { type: 'signal'; signal: NodeJS.Signals }
@@ -67,14 +105,24 @@ export type WarmReply =
 /** Between the daemon and its warm runner. */
 export type RunnerMessage =
   | { type: 'ready'; envRead: string[]; cwdRead: boolean }
-  | { type: 'run'; args: string[]; env: NodeJS.ProcessEnv; cwd: string; stdinIsTTY: boolean };
+  | {
+      type: 'run';
+      args: string[];
+      env: NodeJS.ProcessEnv;
+      cwd: string;
+      stdinIsTTY: boolean;
+    }
+  | { type: 'interrupt' };
 
 /** Sends one message. */
 export function send(socket: Socket, message: WarmRequest | WarmReply): void {
   socket.write(`${JSON.stringify(message)}\n`);
 }
 
-/** Calls `onMessage` for each message the socket receives. */
+/** The longest message a socket takes: a request carries the caller's whole environment. */
+const MESSAGE_LIMIT = 16 * 1024 * 1024;
+
+/** Calls `onMessage` for each message the socket receives, and closes a socket that sends anything else. */
 export function onMessages<T>(socket: Socket, onMessage: (message: T) => void): void {
   let buffered = '';
   socket.setEncoding('utf8');
@@ -84,7 +132,16 @@ export function onMessages<T>(socket: Socket, onMessage: (message: T) => void): 
     while ((end = buffered.indexOf('\n')) >= 0) {
       const line = buffered.slice(0, end);
       buffered = buffered.slice(end + 1);
-      if (line) onMessage(JSON.parse(line) as T);
+      if (!line) continue;
+      let message: T;
+      try {
+        message = JSON.parse(line) as T;
+      } catch {
+        socket.destroy();
+        return;
+      }
+      onMessage(message);
     }
+    if (buffered.length > MESSAGE_LIMIT) socket.destroy();
   });
 }
