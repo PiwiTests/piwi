@@ -143,6 +143,12 @@ describe('fixPlanToMarkdown', () => {
     expect(unavailable).not.toContain('## Suspect lines');
   });
 
+  it('leaves out the Verify section when no command can name the tests', () => {
+    const plan = makePlan();
+    const md = fixPlanToMarkdown({ ...plan, verify: { ...plan.verify, command: '' } });
+    expect(md).not.toContain('## Verify');
+  });
+
   it('renders the reproduce recipe and the bisect', () => {
     const md = fixPlanToMarkdown(makePlan());
     expect(md).toContain('## Reproduce locally');

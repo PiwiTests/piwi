@@ -331,3 +331,46 @@ test('the projects offered are the ones the tests ran in that every shell quotes
   ];
   expect(retryProjects(cases)).toEqual(['chromium', 'webkit']);
 });
+
+describe('a filter that would match every test', () => {
+  const empty = { filePath: '', title: '', line: 3, projectName: 'chromium' };
+
+  test('an empty path, or a line with no path, is left out', () => {
+    expect(buildRetryCommand([empty])).toBe('');
+    expect(buildRetryCommand([empty], { mode: 'file' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!])).toBe(
+      'npx playwright test "tests/login.spec.ts:10" --project="chromium"',
+    );
+    expect(buildRetryArgs([empty])).toBe('');
+  });
+
+  test('an empty title is left out', () => {
+    expect(buildRetryCommand([empty], { mode: 'grep' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!], { mode: 'grep' })).toBe(
+      'npx playwright test --grep "should login" --project="chromium"',
+    );
+  });
+
+  test('a path that starts with a dash is left out', () => {
+    expect(buildRetryCommand([{ ...empty, filePath: '--ui' }])).toBe('');
+    expect(buildRetryArgs([{ ...empty, filePath: '-x.spec.ts' }])).toBe('');
+  });
+});
+
+describe('a test left out of a retry', () => {
+  test('takes its project with it', () => {
+    expect(
+      buildRetryArgs([
+        { filePath: 'tests/a.spec.ts', title: 'a', line: null, projectName: 'p1' },
+        { filePath: '', title: 'b', line: null, projectName: 'p2' },
+      ]),
+    ).toBe('"tests/a.spec.ts" --project="p1"');
+  });
+
+  test('a blank title is left out like an empty one', () => {
+    expect(buildRetryCommand([{ filePath: '', title: '  ', line: null, projectName: null }], { mode: 'grep' })).toBe(
+      '',
+    );
+    expect(buildTitleGrepFlag([' ', 'pays'])).toBe(' -g "pays"');
+  });
+});

@@ -197,6 +197,11 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
+/** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+const copyCommand = computed(() =>
+  buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
+);
+
 /** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
@@ -347,14 +352,8 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Copy as command',
         icon: 'i-lucide-clipboard',
-        onSelect: () =>
-          void copy(
-            buildRetryCommand(props.cases, {
-              mode: options.value.mode,
-              options: localRunCopyOptions(options.value),
-            }),
-            { toast: 'Command copied' },
-          ),
+        disabled: !copyCommand.value,
+        onSelect: () => void copy(copyCommand.value, { toast: 'Command copied' }),
       },
       {
         label: 'Project defaults…',

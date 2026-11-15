@@ -3,6 +3,7 @@ import {
   buildBisectArgs,
   buildLocalRunPlan,
   buildReproduceArgs,
+  canBisect,
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
@@ -165,6 +166,20 @@ describe('buildReproduceArgs', () => {
   });
 });
 
+describe('a bisect with nothing to find its tests by', () => {
+  const nameless = { filePath: '', title: '', line: 3, projectName: 'chromium' };
+
+  test('has no arguments, rather than run every test at each step', () => {
+    expect(buildBisectArgs([nameless, { ...nameless, filePath: '--ui' }])).toEqual([]);
+    expect(canBisect([nameless])).toBe(false);
+  });
+
+  test('runs a Flake Lab arm, or finds its tests by title alone', () => {
+    expect(canBisect([nameless], 12)).toBe(true);
+    expect(buildBisectArgs([{ ...nameless, title: 'pays' }])).toEqual(['--grep=pays', '--project=chromium']);
+  });
+});
+
 describe('buildBisectArgs', () => {
   test('finds the tests by file and title, so a line that moved between commits still matches', () => {
     expect(
@@ -260,6 +275,26 @@ describe('a filter that would match every test', () => {
 
   test('an empty title is left out', () => {
     expect(buildLocalRunPlan([{ ...CASE, title: '' }], { mode: 'grep' })).toEqual([]);
+  });
+});
+
+describe('a test with no spec path Playwright takes', () => {
+  test('leaves a reproduction without its project', () => {
+    expect(
+      buildReproduceArgs([
+        { ...CASE, projectName: 'p1' },
+        { ...CASE, filePath: ':x', projectName: 'p2' },
+      ]),
+    ).toEqual(['tests/checkout.spec.ts:42', '--project=p1']);
+  });
+
+  test('a path that starts with `:` is left out of a local run, as the copied command leaves it out', () => {
+    expect(buildLocalRunPlan([{ ...CASE, filePath: ':x' }])).toEqual([]);
+  });
+
+  test('a blank title selects nothing', () => {
+    expect(buildLocalRunPlan([{ ...CASE, title: '   ' }], { mode: 'grep' })).toEqual([]);
+    expect(buildBisectArgs([{ ...CASE, filePath: '', title: ' ' }])).toEqual([]);
   });
 });
 

@@ -189,8 +189,12 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
   //    specs and projects, as one command a CI re-run would run, the same on
   //    every shell.
   const testArgs = buildRetryArgs(input.cases);
-  const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
-  steps.push({ step: 'Run the failing test', bash: testCmd, powershell: testCmd });
+  if (testArgs || input.cases.length === 0) {
+    const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
+    steps.push({ step: 'Run the failing test', bash: testCmd, powershell: testCmd });
+  } else {
+    notes.push('No failing test has a file path a command can name, so the step that runs it is left out.');
+  }
 
   const env: ReproEnv[] = [];
   if (input.environment) env.push({ label: 'Environment', value: input.environment });
@@ -258,7 +262,13 @@ export function buildBisectScript(input: BisectInput): BisectResult {
     };
   }
 
-  const command = verifyCommand.trim() || 'npx playwright test';
+  const command = verifyCommand.trim();
+  if (!command) {
+    return {
+      available: false,
+      reason: 'The failing tests have no file path or title a command can name, so no bisect is built for them.',
+    };
+  }
   const goodShort = good.slice(0, 7);
   const badShort = bad.slice(0, 7);
 

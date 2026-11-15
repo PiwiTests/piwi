@@ -9,6 +9,7 @@
  */
 import {
   escapeGrep,
+  isSpecFilter,
   specPattern,
   type RetryCase,
   type RetryMode,
@@ -67,12 +68,12 @@ function elided(items: string[]): string[] {
 }
 
 /**
- * The test filters of a step, and the same filters as its short preview shows them. A spec path that is empty or
- * starts with `-` is left out, and so is an empty title.
+ * The test filters of a step, and the same filters as its short preview shows them. A spec path Playwright would not
+ * take as the filter it names (`isSpecFilter`) is left out, and so is a blank title.
  */
 function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {
-    const escaped = cases.map((c) => escapeGrep(c.title)).filter(Boolean);
+    const escaped = cases.filter((c) => c.title.trim()).map((c) => escapeGrep(c.title));
     if (escaped.length === 0) return { args: [], summary: [] };
     // One argument, so a title that starts with `-` is never read as an option.
     const grep = (titles: string[]) => `--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`;
@@ -82,8 +83,7 @@ function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summar
   const specs: string[] = [];
   for (const c of cases) {
     const file = specPattern(c.filePath);
-    // Playwright reads an argument that starts with `-` as an option, and an empty one as a filter every file matches.
-    if (!file || file.startsWith('-')) continue;
+    if (!isSpecFilter(file)) continue;
     const spec = mode === 'file-line' && c.line ? `${file}:${c.line}` : file;
     if (seen.has(spec)) continue;
     seen.add(spec);
@@ -104,9 +104,11 @@ function displayArg(arg: string): string {
  * run: the deduped `file:line` specs plus one `--project=` per distinct project.
  * Unlike `buildLocalRunPlan` this never splits into per-project steps — a bisect
  * runs one command at each commit, and running the union of the failing tests is
- * exactly the probe a bisect needs. Empty when no case has a spec path Playwright can take.
+ * exactly the probe a bisect needs. Empty when no case has a spec path Playwright can take; a case without one is
+ * left out with its project.
  */
-export function buildReproduceArgs(cases: RetryCase[]): string[] {
+export function buildReproduceArgs(allCases: RetryCase[]): string[] {
+  const cases = allCases.filter((c) => isSpecFilter(specPattern(c.filePath)));
   const args = specArgs(cases, 'file-line').args;
   if (args.length === 0) return [];
   const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
@@ -118,17 +120,24 @@ export function buildReproduceArgs(cases: RetryCase[]): string[] {
  * The argv a bisect runs at each commit: the failing tests' files, their titles
  * as one `--grep=` pattern, and one `--project=` per project, so a test whose
  * line moved between commits still matches. A path that starts with `-` would
- * be read as an option and is left out.
+ * be read as an option and is left out. Empty when the cases name neither a
+ * file nor a title: each step would run every test.
  */
 export function buildBisectArgs(cases: RetryCase[]): string[] {
-  const files = [...new Set(cases.map((c) => specPattern(c.filePath)))].filter((f) => f && !f.startsWith('-'));
-  const titles = [...new Set(cases.map((c) => c.title).filter(Boolean))].map(escapeGrep);
+  const files = [...new Set(cases.map((c) => specPattern(c.filePath)))].filter(isSpecFilter);
+  const titles = [...new Set(cases.map((c) => c.title).filter((title) => title.trim()))].map(escapeGrep);
+  if (files.length === 0 && titles.length === 0) return [];
   const args = [...files];
   if (titles.length > 0) args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);
   for (const project of new Set(cases.map((c) => c.projectName || '').filter(Boolean))) {
     args.push(`--project=${project}`);
   }
   return args;
+}
+
+/** Whether a bisect has a test to run at each step: a Flake Lab arm, or a file or title of the cases. */
+export function canBisect(cases: RetryCase[], flakeTestCaseId?: number | null): boolean {
+  return flakeTestCaseId != null || buildBisectArgs(cases).length > 0;
 }
 
 /** The options of a local run as a copied command carries them, so the copy runs what Run locally runs. */
