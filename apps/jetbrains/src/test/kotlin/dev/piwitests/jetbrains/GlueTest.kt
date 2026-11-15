@@ -400,6 +400,10 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // A test that may be stuck counts beside the run's results.
+        val stuck = Glue.statusView(connected, live(failed, inProgress.copy(stuck = 1)))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours", stuck.text)
+        assertEquals(true, stuck.tooltip.contains("\nYour run #124 is running: 4 of 9 · 1 failed · 1 stuck?\n"))
         // An agent's run is never the person's own.
         val agent = Glue.statusView(connected, live(failed, inProgress.copy(label = "Started by Claude Code")))
         assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code", agent.text)

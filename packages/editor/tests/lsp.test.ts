@@ -2948,6 +2948,49 @@ describe('runs as they happen', () => {
     expect((await testLine())?.status).not.toBe('flaky');
   });
 
+  test('a test of the run the instance says may be stuck says so while it runs, never while it stands stopped', async () => {
+    const command = await runTests();
+    runDetails.set(61, editorRun(61, command.ref, 'running', '2026-09-27T15:00:00.000Z'));
+    refRuns.set(command.ref!, { id: 61, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 61));
+    await waitFor(() => (runStreams.get(61)?.size ? true : undefined));
+    const testLine = async () => {
+      const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+        uri: uri('tests/checkout.spec.ts'),
+      })) as FileSummary;
+      return summary.lines.find((l) => l.status !== undefined);
+    };
+    const latest = () => statuses[statuses.length - 1]?.contexts[0];
+    const attempt = { title: 'pays', location: 'tests/checkout.spec.ts:3:5', browser: 'chromium', repeatEachIndex: 0 };
+
+    pushRunEvent(61, 'test-begin', { ...attempt, filePath: 'tests/checkout.spec.ts' });
+    await waitFor(() => (latest()?.liveTests?.length ? true : undefined));
+    pushRunEvent(61, 'test-stuck', { ...attempt, elapsedMs: 150_000, usualMs: 40_000 });
+    const stuck = await waitFor(() => (latest()?.live?.stuck === 1 ? latest() : undefined));
+    expect(stuck.liveTests).toEqual([
+      { testCaseId: 1, status: 'running', stuck: 'Stuck? running over 3 min, usually 40 s' },
+    ]);
+    expect((await testLine())?.title).toMatch(/^Stuck\? running over 3 min, usually 40 s, in your run #61 · /);
+
+    // A stop of the attempt hides it, and its going on shows it again.
+    pushRunEvent(61, 'test-stopped', { ...attempt, stop: { kind: 'pause' } });
+    await waitFor(() => (latest()?.live && latest()?.live?.stuck === undefined ? true : undefined));
+    expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
+    pushRunEvent(61, 'test-resumed', attempt);
+    await waitFor(() => (latest()?.live?.stuck === 1 ? true : undefined));
+
+    // Its end ends it.
+    pushRunEvent(61, 'test-completed', {
+      ...attempt,
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+    });
+    await waitFor(() => (latest()?.liveTests?.[0]?.status === 'passed' ? true : undefined));
+    expect(latest()?.live?.stuck).toBeUndefined();
+    expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'passed' }]);
+  });
+
   test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
     const startTime = '2026-09-27T12:00:00.000Z';
     runDetails.set(66, {

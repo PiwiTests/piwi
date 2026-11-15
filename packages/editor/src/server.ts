@@ -772,17 +772,22 @@ function testVerdict(
   const lineLive = lineLiveState(context, found.id);
   if (lineLive && context.live) {
     const run = label ? `run #${context.live.runId} (${label})` : `your run #${context.live.runId}`;
-    return `${liveWords(lineLive)} in ${run}`;
+    return `${liveWords(context, found.id, lineLive)} in ${run}`;
   }
   const settled = settledVerdict(context, found, failed, fixed, failure);
   const other = context.live && !context.live.own ? context.liveTests.get(found.id) : undefined;
   return other
-    ? `${settled} · ${liveWords(other)} in ${context.live!.ci ? 'CI ' : ''}run #${context.live!.runId}`
+    ? `${settled} · ${liveWords(context, found.id, other)} in ${context.live!.ci ? 'CI ' : ''}run #${context.live!.runId}`
     : settled;
 }
 
-/** A test's state in the run in progress, in the dashboard's words: `running`, `failing`, `passed`. */
-function liveWords(live: LiveTestStatus): string {
+/**
+ * A test's state in the run in progress, in the dashboard's words: `running`, `failing`, `passed`, and for a test the
+ * instance said may be stuck, `Stuck? running over 4 min, usually 40 s` (`liveStuck`).
+ */
+function liveWords(context: PiwiContext, testCaseId: number, live: LiveTestStatus): string {
+  const stuck = live === 'running' ? context.liveStuck.get(testCaseId) : undefined;
+  if (stuck) return `${stuck},`;
   return live === 'failed' ? 'failing' : statusWords(live);
 }
 
@@ -1857,11 +1862,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           alarm: statusAlarm(c, credentials.statusBarAlert ?? 'new'),
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
-          live: c.live ? liveAnswer(c.live, c.client!.runUrl(c.live.runId)) : null,
+          live: c.live ? liveAnswer(c.live, c.client!.runUrl(c.live.runId), c.liveStuck.size) : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
           ...(c.liveTests.size
-            ? { liveTests: [...c.liveTests].map(([testCaseId, status]) => ({ testCaseId, status })) }
+            ? {
+                liveTests: [...c.liveTests].map(([testCaseId, status]) => {
+                  const stuck = status === 'running' ? c.liveStuck.get(testCaseId) : undefined;
+                  return { testCaseId, status, ...(stuck ? { stuck } : {}) };
+                }),
+              }
             : {}),
           reporterVersion: c.reporterVersion,
           baseline: { choice: c.baseline, label: c.baselineLabel },
@@ -2123,10 +2133,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const watchedRuns = new Set<string>();
   /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
   const runLabels = new Map<string, string>();
-  /** A context's run in progress as the clients get it: its page, and who started an own run when a person did not. */
-  function liveAnswer(live: LiveRun, url: string): LiveRun {
+  /**
+   * A context's run in progress as the clients get it: its page, who started an own run when a person did not, and how
+   * many of its tests may be stuck.
+   */
+  function liveAnswer(live: LiveRun, url: string, stuck: number): LiveRun {
     const label = live.own && live.ref ? runLabels.get(live.ref) : undefined;
-    return { ...live, url, ...(label ? { label } : {}) };
+    return { ...live, url, ...(label ? { label } : {}), ...(stuck ? { stuck } : {}) };
   }
   /** What each registered run is called (`runName`) and where it runs, by its ref, kept as long as its command line or its live run. */
   const runNames = new Map<string, { name: string; cwd: string }>();

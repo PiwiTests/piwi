@@ -9,7 +9,8 @@ lang: en-US
 <Needs editor />
 
 The Piwi item in the status bar of the [editor extensions](./editors) says how the latest run of your branch went, or
-how far a run in progress is, for the Playwright config of the file you are editing.
+how far a run in progress is, for the Playwright config of the file you are editing, with its tests that may be
+[stuck](./stuck-tests) (`· 1 stuck?`).
 
 The latest complete run on the branch: how many tests passed, how many still fail (`Piwi: 2 failing`), or, with none
 failing, how many your local runs fixed (`Piwi: 1 fixed locally`); its tooltip counts what your local runs fixed and the

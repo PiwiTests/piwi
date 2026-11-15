@@ -455,6 +455,8 @@ export class PiwiContext {
    * gutter shows over the latest run's results meanwhile.
    */
   liveTests = new Map<number, LiveTestStatus>();
+  /** The tests of `live` the instance said may be stuck, in the words `LiveTest.stuck` carries, while they run. */
+  liveStuck = new Map<number, string>();
   /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
   readonly ownRuns = new Set<number>();
   /**
@@ -665,6 +667,7 @@ export class PiwiContext {
     this.runReadAt = null;
     this.live = null;
     this.liveTests = new Map();
+    this.liveStuck = new Map();
     this.ownRuns.clear();
     this.failureAnchors.clear();
     this.commitTexts.clear();

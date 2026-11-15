@@ -530,6 +530,11 @@ describe('statusBarView', () => {
       text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
+    // A test that may be stuck counts beside the run's results.
+    expect(statusBarView(connected, live({ stuck: 1 }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours',
+      tooltip: expect.stringContaining('\n\nYour run #124 is running: 4 of 9 · 1 failed · 1 stuck?\n\n'),
+    });
     // An agent's run is never the person's own.
     expect(statusBarView(connected, live({ label: 'Started by Claude Code' }))).toMatchObject({
       text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',

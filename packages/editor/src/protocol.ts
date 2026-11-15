@@ -952,6 +952,11 @@ export type LiveTestStatus = 'running' | 'passed' | 'failed' | 'flaky' | 'skippe
 export interface LiveTest {
   testCaseId: number;
   status: LiveTestStatus;
+  /**
+   * While it runs, what the instance said of an attempt that runs much longer than it passes (`Stuck? running over 4
+   * min, usually 40 s`); absent while that attempt stands stopped.
+   */
+  stuck?: string;
 }
 
 /** A run in progress, as its events count it. */
@@ -980,6 +985,8 @@ export interface LiveRun {
    * say it where they would say the run is the person's. Absent for a person's run.
    */
   label?: string;
+  /** How many of its tests run much longer than they pass (`LiveTest.stuck`); absent for none. */
+  stuck?: number;
 }
 
 /** Which failures turn the status item to its alarm: `new`, `any` or `never`. */

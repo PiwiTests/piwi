@@ -569,6 +569,11 @@ result:
 clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
 its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
+The stream's `test-stuck` (once per attempt, `elapsedMs` and `usualMs`), `test-stopped` and `test-resumed` name an
+attempt as its `test-begin` did (`attemptKey`: title, place, browser, repetition). A running attempt the instance said
+may be stuck, while it does not stand stopped, makes `PiwiContext.liveStuck`: its test's `LiveTest.stuck` and line say
+`Stuck? running over 4 min, usually 40 s`, and `LiveRun.stuck` counts them.
+
 Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
 `RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
 run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it

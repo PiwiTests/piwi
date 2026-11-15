@@ -356,14 +356,18 @@ object Glue {
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
     /**
-     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own, or
-     * who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
+     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours` for the
+     * editor's own, or who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
      */
     private fun liveText(live: LiveRun): String {
         val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" +
+        return "Piwi: $run #${live.runId} · ${liveCount(live)}" +
             if (live.own) " · ${live.label ?: "yours"}" else ""
     }
+
+    /** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
+    private fun liveCount(live: LiveRun): String =
+        countWords(live.done, live.total, live.failed) + if ((live.stuck ?: 0) > 0) " · ${live.stuck} stuck?" else ""
 
     /**
      * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a
@@ -401,7 +405,7 @@ object Glue {
             live.ci -> "CI run #${live.runId}"
             else -> "Run #${live.runId}"
         }
-        return "\n$run is running: ${countWords(live.done, live.total, live.failed)}"
+        return "\n$run is running: ${liveCount(live)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */

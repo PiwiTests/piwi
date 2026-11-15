@@ -290,13 +290,18 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
- * editor's own, or who started it when a person did not (` · Started by Claude Code`).
+ * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours`
+ * for the editor's own, or who started it when a person did not (` · Started by Claude Code`).
  */
 function liveText(live: LiveRun): string {
   const run = live.ci ? 'CI run' : 'run';
   const whose = live.own ? ` · ${live.label ?? 'yours'}` : '';
-  return `$(loading~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${whose}`;
+  return `$(loading~spin) Piwi: ${run} #${live.runId} · ${liveCount(live)}${whose}`;
+}
+
+/** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
+function liveCount(live: LiveRun): string {
+  return `${countWords(live.done, live.total, live.failed)}${live.stuck ? ` · ${live.stuck} stuck?` : ''}`;
 }
 
 /**
@@ -309,7 +314,7 @@ function liveLine(live: LiveRun): string {
       ? `Run #${live.runId} (${live.label})`
       : `Your run #${live.runId}`
     : `${live.ci ? 'CI run' : 'Run'} #${live.runId}`;
-  return `${run} is running: ${countWords(live.done, live.total, live.failed)}`;
+  return `${run} is running: ${liveCount(live)}`;
 }
 
 /** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */

@@ -1,6 +1,6 @@
 ---
 title: Stuck tests
-description: 'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed.'
+description: "A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed."
 lang: en-US
 ---
 
@@ -54,6 +54,13 @@ a sharded run's says which of its shards have started: `shards 1 and 3 of 4 star
 
 On the **Tests** tab, `is:stuck` lists the stuck tests, and `worker:` and `shard:` narrow the list to one worker or one
 shard ([Test search](/reference/test-search)).
+
+## In your editor
+
+In VS Code and a JetBrains IDE, the [editor extensions](./editors) say it of the run they follow: the test's line
+reads `Stuck? running over 7 min, usually 41 s, in your run #130`, VS Code's Testing view writes that line in the run's
+output once, and the [status bar item](./editor-status-bar) counts them (`Piwi: run #130 · 4 of 9 · 1 stuck?`). A test
+that stands stopped is not counted until it goes on.
 
 ## The notification
 
