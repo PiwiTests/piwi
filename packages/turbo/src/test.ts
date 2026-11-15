@@ -237,6 +237,7 @@ export const test: TurboTest = base.extend<
   ],
   instantAnimations: [false, { option: true }],
   fastScreenshots: [false, { option: true }],
+  screenshotMatches: [false, { option: true }],
   retryIntervals: [undefined, { option: true }],
   failFast: [false, { option: true }],
   skipStabilityWait: [false, { option: true }],
@@ -251,6 +252,7 @@ export const test: TurboTest = base.extend<
       screenshot,
       instantAnimations,
       fastScreenshots,
+      screenshotMatches,
       retryIntervals,
       failFast,
       skipStabilityWait,
@@ -273,7 +275,8 @@ export const test: TurboTest = base.extend<
     // Baselines keep stock encoding: a run that writes snapshots takes them without the fast PNG option.
     const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
-    const hooks = fast || !!intervals || failFast || skipStabilityWait || (reused && fastReset);
+    const matches = screenshotMatches && !updating;
+    const hooks = fast || matches || !!intervals || failFast || skipStabilityWait || (reused && fastReset);
     if (hooks) {
       if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
@@ -287,6 +290,7 @@ export const test: TurboTest = base.extend<
       if (pages.length) assertHooksWork({ needsChromium: fast });
     }
     state.fastScreenshots = fast;
+    state.screenshotMatches = matches;
     state.retryIntervals = intervals;
     state.failFast = failFast;
     state.skipStabilityWait = skipStabilityWait;
@@ -363,6 +367,7 @@ export const test: TurboTest = base.extend<
       }
     } finally {
       state.fastScreenshots = false;
+      state.screenshotMatches = false;
       state.retryIntervals = undefined;
       state.failFast = false;
       state.skipStabilityWait = false;

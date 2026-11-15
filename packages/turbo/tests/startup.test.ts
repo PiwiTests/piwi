@@ -2,7 +2,8 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { cacheKey, isCachedModule } from '../src/code-cache';
 import { spareRefusal, type ForkRequest, type SpareStart } from '../src/spare';
-import { cacheRoot, codeCacheFolder, isCodeCacheFolder, runsWorkers } from '../src/startup-env';
+import { cacheRoot } from '../src/cache-folder';
+import { codeCacheFolder, isCodeCacheFolder, runsWorkers } from '../src/startup-env';
 
 const start: SpareStart = {
   entry: '/app/node_modules/playwright/lib/worker/workerProcessEntry.js',

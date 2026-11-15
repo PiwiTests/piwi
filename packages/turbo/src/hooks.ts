@@ -11,10 +11,16 @@
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
 //                     source map
+//   screenshot matches  a screenshot assertion passes without decoding its first capture when that capture's bytes
+//                     are the baseline's, or those of a capture that matched the same baseline with the same options
 //
 // They wrap private internals, so they install only on the Playwright versions they were tested with, check the shape
 // of what they wrap, and throw instead of falling back when anything differs.
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { defaultCacheRoot, privateFolder } from './cache-folder';
 import { TESTED_VERSIONS } from './versions';
 
 const STOCK_BACKOFF = '[20, 50, 100, 100, 500]';
@@ -35,6 +41,7 @@ export const state = {
   failFast: false,
   skipStabilityWait: false,
   fastReset: false,
+  screenshotMatches: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
@@ -50,6 +57,8 @@ export const state = {
     skippedStabilityWaits: 0,
     fastResets: 0,
     skippedPointerResets: 0,
+    screenshotMatches: 0,
+    rememberedScreenshots: 0,
   },
   elementHooked: false,
 };
@@ -205,6 +214,119 @@ function hookBaselines(Page: ServerPage): void {
       return await expectScreenshot.call(this, progress, options);
     } finally {
       state.baselinesBeingWritten--;
+    }
+  };
+}
+
+const sha1 = (data: Buffer | string) => createHash('sha1').update(data).digest('hex');
+
+/**
+ * The captures known to match a baseline, by a key of the baseline's bytes, the comparison's options and Playwright's
+ * version: in memory, and in the cache folder when only this user can write to it.
+ */
+export const screenshotMatchStore = {
+  /** The cache folder; `defaultCacheRoot()` unless set. */
+  root: undefined as string | undefined,
+  folder: undefined as string | null | undefined,
+  known: new Map<string, Set<string>>(),
+  /** Forgets what this process read, and keeps the store in `root` from now on. */
+  reset(root?: string): void {
+    this.root = root;
+    this.folder = undefined;
+    this.known.clear();
+  },
+  directory(): string | null {
+    if (this.folder === undefined) {
+      const root = this.root ?? defaultCacheRoot();
+      this.folder = privateFolder(root) ? join(root, 'screenshot-matches') : null;
+    }
+    return this.folder;
+  },
+  hashes(key: string): Set<string> {
+    let hashes = this.known.get(key);
+    if (!hashes) {
+      hashes = new Set();
+      const folder = this.directory();
+      try {
+        if (folder) for (const hash of readFileSync(join(folder, key), 'utf8').split('\n')) if (hash) hashes.add(hash);
+      } catch {}
+      this.known.set(key, hashes);
+    }
+    return hashes;
+  },
+  add(key: string, hash: string): void {
+    const hashes = this.hashes(key);
+    if (hashes.has(hash)) return;
+    hashes.add(hash);
+    const folder = this.directory();
+    try {
+      if (folder) {
+        mkdirSync(folder, { recursive: true });
+        appendFileSync(join(folder, key), `${hash}\n`);
+      }
+    } catch {}
+  },
+};
+
+type ScreenshotOptions = { expected?: Buffer; isNot?: boolean; locator?: { frame: ServerPage; selector: string } };
+
+/** The key of a baseline and the options of its comparison; the options that are objects only shape the capture. */
+function matchKey(version: string, options: ScreenshotOptions): string {
+  const primitives = Object.entries(options)
+    .filter(([, value]) => value === null || typeof value !== 'object')
+    .sort(([a], [b]) => (a < b ? -1 : 1));
+  return sha1([version, sha1(options.expected!), JSON.stringify(primitives)].join('\0'));
+}
+
+/**
+ * A screenshot assertion against a baseline takes its first capture here, as Playwright's own first attempt takes it,
+ * and passes without decoding it when its bytes are the baseline's or those of a capture that matched the same
+ * baseline with the same options before. Otherwise Playwright's comparison runs and receives that capture as its
+ * first: a capture that passes there at the first attempt is remembered.
+ */
+function hookScreenshotMatches(Page: ServerPage, version: string): void {
+  const expectScreenshot = Page.prototype.expectScreenshot as (
+    progress: Progress,
+    options: ScreenshotOptions,
+  ) => Promise<unknown>;
+  Page.prototype.expectScreenshot = async function (this: ServerPage, progress: Progress, options: ScreenshotOptions) {
+    if (!state.screenshotMatches || !Buffer.isBuffer(options?.expected) || options.isNot)
+      return expectScreenshot.call(this, progress, options);
+    // The capture Playwright's first attempt takes: the element's, or the page's after the pre-action checks.
+    const owner = options.locator ? options.locator.frame : this.screenshotter;
+    const method = options.locator ? 'rafrafTimeoutScreenshotElementWithProgress' : 'screenshotPage';
+    const capture = owner?.[method] as ((...args: unknown[]) => Promise<Buffer>) | undefined;
+    if (typeof capture !== 'function') throw new IncompatibleError(`Playwright's screenshots have no ${method}()`);
+    let first: Buffer | undefined;
+    try {
+      if (options.locator) first = await capture.call(owner, progress, options.locator.selector, 0, options);
+      else {
+        await this.performActionPreChecks(progress);
+        first = await capture.call(owner, progress, options);
+      }
+    } catch {}
+    const key = matchKey(version, options);
+    const hash = first && sha1(first);
+    if (first && hash && (first.equals(options.expected) || screenshotMatchStore.hashes(key).has(hash))) {
+      state.counters.screenshotMatches++;
+      return {};
+    }
+    // Playwright's comparison takes the capture above as its first, and its own after that.
+    let captures = 0;
+    owner[method] = async function (...args: unknown[]) {
+      captures++;
+      if (captures === 1 && first) return first;
+      return capture.apply(owner, args);
+    };
+    try {
+      const result = await expectScreenshot.call(this, progress, options);
+      if (first && hash && captures === 1) {
+        screenshotMatchStore.add(key, hash);
+        state.counters.rememberedScreenshots++;
+      }
+      return result;
+    } finally {
+      delete owner[method];
     }
   };
 }
@@ -420,6 +542,7 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
   hookContextReset(core);
   hookBaselines(Page);
+  hookScreenshotMatches(Page, version);
   const reportAsNew = Page.prototype.reportAsNew;
   // Every new page passes through reportAsNew: the first one gives access to the classes to wrap.
   Page.prototype.reportAsNew = function (this: ServerPage, ...args: unknown[]) {

@@ -124,6 +124,7 @@ describe('presets', () => {
       skipStabilityWait: true,
       fastReset: true,
       fastStackTraces: true,
+      screenshotMatches: true,
       instantAnimations: true,
     });
   });

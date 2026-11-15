@@ -95,6 +95,12 @@ export interface Optimizations {
      * frames outside Node and `node_modules`. They read the same.
      */
     fastStackTraces?: boolean;
+    /**
+     * A screenshot assertion passes without decoding its capture when the capture's bytes are the baseline's, or those
+     * of a capture that matched the same baseline with the same options before, remembered in
+     * `node_modules/.cache/piwi-turbo`. Any other capture is compared as Playwright compares it.
+     */
+    screenshotMatches?: boolean;
   };
 }
 
@@ -170,6 +176,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         skipStabilityWait: true,
         fastReset: true,
         fastStackTraces: true,
+        screenshotMatches: true,
       },
     };
   }
@@ -216,6 +223,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.skipStabilityWait) use.skipStabilityWait = true;
   if (experimental.fastReset) use.fastReset = true;
   if (experimental.fastStackTraces) use.fastStackTraces = true;
+  if (experimental.screenshotMatches) use.screenshotMatches = true;
   if (options.compileCache) {
     enableCompileCache(options.compileCache === true ? defaultCompileCache() : options.compileCache);
   }

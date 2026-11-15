@@ -1,5 +1,6 @@
 import { captureFailure, test, expect } from '../../src/test';
-import { state } from '../../src/hooks';
+import { chmodSync, mkdirSync } from 'node:fs';
+import { screenshotMatchStore, state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
 
 const STATIC_PAGE = `
@@ -84,6 +85,93 @@ test.describe('fast screenshots', () => {
     const before = state.counters.optimizedScreenshots;
     await page.screenshot({ type: 'jpeg', quality: 80 });
     expect(state.counters.optimizedScreenshots).toBe(before);
+  });
+});
+
+test.describe('screenshot matches', () => {
+  test.use({ screenshotMatches: true });
+
+  test.beforeEach(({}, testInfo) => {
+    screenshotMatchStore.reset(testInfo.outputPath('cache'));
+  });
+
+  /** Writes the page's or the element's stock capture as the baseline `name`. */
+  async function baseline(target: Page | ReturnType<Page['locator']>, name: string) {
+    const fast = state.fastScreenshots;
+    state.fastScreenshots = false;
+    await target.screenshot({ path: test.info().snapshotPath(name, { kind: 'screenshot' }) });
+    state.fastScreenshots = fast;
+  }
+
+  test("pass a capture with the baseline's bytes without comparing it, and fail a changed page", async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page, 'static.png');
+    const before = state.counters.screenshotMatches;
+    await expect(page).toHaveScreenshot('static.png');
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+    await page.evaluate(() => document.body.insertAdjacentHTML('afterbegin', '<h1>A change</h1>'));
+    const error = await expect(page)
+      .toHaveScreenshot('static.png', { timeout: 1000 })
+      .catch((caught: Error) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+  });
+
+  test('do the same for an element', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page.locator('.alpha'), 'panel.png');
+    const before = state.counters.screenshotMatches;
+    await expect(page.locator('.alpha')).toHaveScreenshot('panel.png');
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+  });
+
+  test.describe('with fast screenshots', () => {
+    test.use({ fastScreenshots: true });
+
+    test('remember a capture that matched, and pass it later, in this run and the next', async ({ page }) => {
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      const { screenshotMatches, rememberedScreenshots } = state.counters;
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.rememberedScreenshots).toBe(rememberedScreenshots + 1);
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches);
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches + 1);
+      // The next run reads what this one remembered.
+      screenshotMatchStore.reset(screenshotMatchStore.root);
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches + 2);
+    });
+
+    test('keep a remembered capture to the options it matched with', async ({ page }) => {
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      await expect(page).toHaveScreenshot('static.png');
+      const before = state.counters.screenshotMatches;
+      await expect(page).toHaveScreenshot('static.png', { threshold: 0 });
+      expect(state.counters.screenshotMatches).toBe(before);
+    });
+
+    test('remember nothing on disk in a folder other users can write to', async ({ page }, testInfo) => {
+      test.skip(process.platform === 'win32', 'folder modes are POSIX');
+      const shared = testInfo.outputPath('shared');
+      mkdirSync(shared, { recursive: true });
+      chmodSync(shared, 0o777);
+      screenshotMatchStore.reset(shared);
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      await expect(page).toHaveScreenshot('static.png');
+      expect(screenshotMatchStore.directory()).toBeNull();
+    });
+  });
+
+  test('leave negated assertions to Playwright', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page, 'static.png');
+    await page.evaluate(() => document.body.insertAdjacentHTML('afterbegin', '<h1>A change</h1>'));
+    const before = state.counters.screenshotMatches;
+    await expect(page).not.toHaveScreenshot('static.png');
+    expect(state.counters.screenshotMatches).toBe(before);
   });
 });
 

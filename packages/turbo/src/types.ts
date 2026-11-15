@@ -26,6 +26,11 @@ export interface TurboOptions {
    * those of Node and of `node_modules`. They read the same.
    */
   fastStackTraces: boolean;
+  /**
+   * Experimental: a screenshot assertion passes without decoding its capture when the capture's bytes are the
+   * baseline's, or those of a capture that matched the same baseline with the same options before.
+   */
+  screenshotMatches: boolean;
   /** Experimental: the backoff of Playwright's retry loop, in milliseconds. */
   retryIntervals: number[] | undefined;
   /** Experimental: a failing web-first assertion ends once nothing can change the page before its timeout. */

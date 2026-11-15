@@ -1,6 +1,5 @@
 // What `piwi-turbo` shares with the code-cache hook and the spare worker: the environment variables it passes them, the
-// messages the spare exchanges with the runner, and where the caches go.
-import { dirname, join } from 'node:path';
+// messages the spare exchanges with the runner, and the code cache's folders.
 
 /** The code-cache folder; the hook does nothing without it. */
 export const CODE_CACHE_DIR = 'PIWI_TURBO_CODE_CACHE_DIR';
@@ -23,17 +22,6 @@ export interface SpareLoaded {
 export interface SpareHandoff {
   method: '__piwi_turbo_spare_handoff__';
   env: NodeJS.ProcessEnv;
-}
-
-/**
- * The cache folder of a run from `cwd`: `.cache/piwi-turbo` in the nearest `node_modules`, else a folder of this user's
- * own in the temporary folder.
- */
-export function cacheRoot(cwd: string, exists: (path: string) => boolean, temporary: string, user: string): string {
-  for (let folder = cwd; ; folder = dirname(folder)) {
-    if (exists(join(folder, 'node_modules'))) return join(folder, 'node_modules', '.cache', 'piwi-turbo');
-    if (dirname(folder) === folder) return join(temporary, `piwi-turbo-${user}`);
-  }
 }
 
 /** Whether a folder in the code cache holds the caches of one Playwright, Node and architecture (`codeCacheFolder`). */
