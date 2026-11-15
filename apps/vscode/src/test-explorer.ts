@@ -25,7 +25,7 @@ import {
   type TestItemsParams,
   type TestItemsResult,
 } from '@piwitests/editor/protocol';
-import { attemptOutcome, sessionLines, testsBegun } from './run-control';
+import { attemptOutcome, combinedOutcome, sessionLines, testsBegun } from './run-control';
 import {
   SPEC_FILE,
   VERIFY_REPEAT,
@@ -85,6 +85,8 @@ interface ProfileRun {
   /** The tests it runs, and the result each was last shown with. */
   tests: Map<vscode.TestItem, TreeTest>;
   shown: Set<vscode.TestItem>;
+  /** Each test's last attempt in each Playwright project, as its workers ended them (`piwi/runTest`). */
+  attempts: Map<vscode.TestItem, Map<string, TestOutcome>>;
   parts: ProfilePart[];
   /** While its commands are being started: it does not end before the last one started. */
   starting: boolean;
@@ -131,9 +133,9 @@ export class TestExplorer implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   /** The service's last answer, which a spec's own answer replaces in place. */
   private answer: TestItemsResult = { contexts: [] };
-  /** Each test's item and what the service says of it, and the items of each test the catalog knows, by its id. */
   /** The test each worker of a run began last, by ref and worker, which its `test-end` ends. */
   private readonly begun = new Map<string, RunTest>();
+  /** Each test's item and what the service says of it, and the items of each test the catalog knows, by its id. */
   private readonly testOf = new Map<vscode.TestItem, TreeTest>();
   private byCase = new Map<number, vscode.TestItem[]>();
   /** The result each test was last shown with. */
@@ -486,7 +488,10 @@ export class TestExplorer implements vscode.Disposable {
     const profile = [...this.profiles].find((p) => p.run === run);
     for (const begun of profile ? testsBegun(before, session) : []) {
       const item = this.itemAt(begun.uri, begun.line);
-      if (item && profile!.tests.has(item) && !profile!.shown.has(item)) run.started(item);
+      // A test shown from its workers' events runs again on a retry, or in another project.
+      if (item && profile!.tests.has(item) && (!profile!.shown.has(item) || profile!.attempts.has(item))) {
+        run.started(item);
+      }
     }
     for (const line of sessionLines(before, session)) {
       const at = line.at
@@ -515,7 +520,10 @@ export class TestExplorer implements vscode.Disposable {
     const item = this.itemAt(test.uri, test.line);
     const outcome = attemptOutcome(event.status, test);
     if (!item || !outcome || !profile.tests.has(item)) return;
-    this.show(profile.run, item, outcome);
+    // Each project's last attempt counts: the test fails when one of them failed (`combinedOutcome`).
+    const projects = profile.attempts.get(item) ?? profile.attempts.set(item, new Map()).get(item)!;
+    projects.set(test.project, outcome);
+    this.show(profile.run, item, combinedOutcome([...projects.values()]));
     profile.shown.add(item);
   }
 
@@ -696,6 +704,7 @@ export class TestExplorer implements vscode.Disposable {
       run,
       tests: picked,
       shown: new Set(),
+      attempts: new Map(),
       parts: [],
       starting: true,
       coverage,

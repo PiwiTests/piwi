@@ -2535,8 +2535,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val STOP: DataKey<Glue.ShownStop> = DataKey.create("piwi.stop")
 
         /**
-         * The run a control acts on, the Run tab's: its stops alone; the run Stop the run ends and Hold failures turns
-         * over, the Runs tab's row's.
+         * The run an action acts on, the Run tab's or a Runs tab row's: a control at its stops alone, Hold failures on it
+         * alone, and the run Stop the run ends (a Runs tab row's).
          */
         val RUN: DataKey<String> = DataKey.create("piwi.run")
 
@@ -3954,7 +3954,17 @@ class HoldFailuresAction : RunControlAction() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
-        val controls = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
+        val sessions = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)
+        // An entry about one run (the Run tab's, a Runs tab row's) acts on that run alone, and only while it can hold.
+        val ref = e.getData(PiwiRunSessions.RUN)
+        if (ref != null) {
+            val hold = sessions?.sessions?.get(ref)?.hold
+            e.presentation.isVisible = hold != null
+            e.presentation.isEnabled = e.presentation.isEnabled && hold != null
+            e.presentation.text = Glue.holdActionText(hold?.on)
+            return
+        }
+        val controls = sessions?.controls()
         e.presentation.text = Glue.holdActionText(controls ?: Glue.RunControls(active = false, pausable = false, pausing = false, stopped = false))
     }
 

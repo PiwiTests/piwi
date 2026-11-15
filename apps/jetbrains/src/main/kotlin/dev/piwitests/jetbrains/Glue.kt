@@ -2948,7 +2948,10 @@ object Glue {
         inPiwiWindow || fileName?.substringAfterLast('.', "")?.lowercase() in CHORD_FILES
 
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
-    fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
+    fun holdActionText(controls: RunControls): String = holdActionText(controls.onlyHold?.on)
+
+    /** Hold failures' text for a run holding them (`true`), one not (`false`), or any run (`null`). */
+    fun holdActionText(on: Boolean?): String = when (on) {
         true -> "Turn hold failures off"
         false -> "Turn hold failures on"
         null -> "Turn hold failures on or off for the run"

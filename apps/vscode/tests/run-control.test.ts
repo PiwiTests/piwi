@@ -38,6 +38,7 @@ import {
   withLaneLayer,
   ciNodes,
   attemptOutcome,
+  combinedOutcome,
   runNodes,
   ciPositionFiles,
   ciPositionsIn,
@@ -2347,6 +2348,11 @@ describe("this window's runs shared live, and a teammate's ask", () => {
       line: 2,
     });
     expect(attemptOutcome('interrupted', runTest())).toBeNull();
+    // A test run in several projects fails when one of them failed it.
+    const failed = attemptOutcome('failed', runTest())!;
+    expect(combinedOutcome([failed, { state: 'passed' }])).toBe(failed);
+    expect(combinedOutcome([{ state: 'skipped' }, { state: 'passed' }])).toEqual({ state: 'passed' });
+    expect(combinedOutcome([{ state: 'skipped' }])).toEqual({ state: 'skipped' });
     expect(attemptOutcome(undefined, runTest())).toBeNull();
   });
 });

@@ -1,7 +1,8 @@
 /**
  * The **Runs** view of the Piwi panel (`piwi.liveRuns`), shown while a run is in progress: each run with how far it is,
  * each of its workers with its test and whether it stands stopped, and the run's page on the dashboard. A row names its
- * run and worker, so the run commands of its menus (Watch, Pause and watch, Resume, Step, Pause, Stop) act on it. What
+ * run and worker, so the run commands of its menus (Watch, Pause and watch, Resume, Step, Stop the run, Hold failures)
+ * act on it. What
  * it lists comes from `runNodes` (`run-control.ts`), tested without an editor.
  */
 import { setContextKey } from './context-keys';

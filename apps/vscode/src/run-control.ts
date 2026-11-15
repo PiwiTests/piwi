@@ -605,6 +605,13 @@ export function attemptOutcome(status: string | undefined, test: RunTest): TestO
   return null;
 }
 
+/** A test's result from its projects' last attempts: failed when one failed, else passed when one passed, else skipped. */
+export function combinedOutcome(outcomes: readonly TestOutcome[]): TestOutcome {
+  return (
+    outcomes.find((o) => o.state === 'failed') ?? outcomes.find((o) => o.state === 'passed') ?? { state: 'skipped' }
+  );
+}
+
 /**
  * The tests a run's change begins, each attempt once, by its spec and the line of its `test(…)` call: the Testing view
  * shows them running from the run's own events, whether an instance follows the run or not.
