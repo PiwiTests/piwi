@@ -37,6 +37,8 @@ export interface LocalRunStep {
   args: string[];
   /** Human-readable preview of the step. */
   display: string;
+  /** The preview cut to fit a menu or a tooltip: at most three test filters, then how many more it holds. */
+  summary?: string;
 }
 
 const RUN_MODE_FLAGS: Record<LocalRunMode, string[]> = {
@@ -56,25 +58,45 @@ function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {
   return groups;
 }
 
-function specArgs(cases: RetryCase[], mode: RetryMode): string[] {
+/** How many test filters a short command shows before it counts the rest. */
+const SUMMARY_FILTERS = 3;
+
+function elided(items: string[]): string[] {
+  if (items.length <= SUMMARY_FILTERS + 1) return items;
+  return [...items.slice(0, SUMMARY_FILTERS), `… ${items.length - SUMMARY_FILTERS} more`];
+}
+
+/**
+ * The test filters of a step, and the same filters as its short preview shows them. A spec path that is empty or
+ * starts with `-` is left out, and so is an empty title.
+ */
+function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {
-    const escaped = cases.map((c) => escapeGrep(c.title));
-    return ['--grep', escaped.length === 1 ? escaped[0]! : `(${escaped.join('|')})`];
+    const escaped = cases.map((c) => escapeGrep(c.title)).filter(Boolean);
+    if (escaped.length === 0) return { args: [], summary: [] };
+    // One argument, so a title that starts with `-` is never read as an option.
+    const grep = (titles: string[]) => `--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`;
+    return { args: [grep(escaped)], summary: [displayArg(grep(elided(escaped)))] };
   }
   const seen = new Set<string>();
   const specs: string[] = [];
   for (const c of cases) {
-    const spec = mode === 'file-line' && c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath);
+    const file = specPattern(c.filePath);
+    // Playwright reads an argument that starts with `-` as an option, and an empty one as a filter every file matches.
+    if (!file || file.startsWith('-')) continue;
+    const spec = mode === 'file-line' && c.line ? `${file}:${c.line}` : file;
     if (seen.has(spec)) continue;
     seen.add(spec);
     specs.push(spec);
   }
-  return specs;
+  return { args: specs, summary: elided(specs.map(displayArg)) };
 }
 
-/** Quote an argument for display only — execution never goes through a shell. */
+/** Quote an argument for display only — execution never goes through a shell. An option's value is quoted alone. */
 function displayArg(arg: string): string {
-  return /[\s"'()|]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
+  const option = /^--[\w-]+=/.exec(arg)?.[0] ?? '';
+  const value = arg.slice(option.length);
+  return option + (/[\s"'()|]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value);
 }
 
 /**
@@ -82,10 +104,11 @@ function displayArg(arg: string): string {
  * run: the deduped `file:line` specs plus one `--project=` per distinct project.
  * Unlike `buildLocalRunPlan` this never splits into per-project steps — a bisect
  * runs one command at each commit, and running the union of the failing tests is
- * exactly the probe a bisect needs.
+ * exactly the probe a bisect needs. Empty when no case has a spec path Playwright can take.
  */
 export function buildReproduceArgs(cases: RetryCase[]): string[] {
-  const args = specArgs(cases, 'file-line');
+  const args = specArgs(cases, 'file-line').args;
+  if (args.length === 0) return [];
   const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
   for (const project of projects) args.push(`--project=${project}`);
   return args;
@@ -148,14 +171,22 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
 
   const steps: LocalRunStep[] = [];
   for (const [project, projectCases] of groupByProject(cases)) {
-    const args = specArgs(projectCases, mode);
-    if (project) args.push(`--project=${project}`);
-    args.push(...RUN_MODE_FLAGS[runMode]);
-    if (options.trace) args.push('--trace=on');
+    const specs = specArgs(projectCases, mode);
+    // A step left with no filter would run every test of its project.
+    if (specs.args.length === 0) continue;
+    const flags: string[] = [];
+    if (project) flags.push(`--project=${project}`);
+    flags.push(...RUN_MODE_FLAGS[runMode]);
+    if (options.trace) flags.push('--trace=on');
     // Each repetition reports its own result, as the editors' repeat does.
-    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
-    if (stopsAtFirstFailure(options)) args.push('--max-failures=1');
-    steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
+    if (repeatEach > 1) flags.push(`--repeat-each=${repeatEach}`, '--retries=0');
+    if (stopsAtFirstFailure(options)) flags.push('--max-failures=1');
+    const args = [...specs.args, ...flags];
+    steps.push({
+      args,
+      display: ['playwright', 'test', ...args.map(displayArg)].join(' '),
+      summary: ['playwright', 'test', ...specs.summary, ...flags.map(displayArg)].join(' '),
+    });
   }
   return steps;
 }
