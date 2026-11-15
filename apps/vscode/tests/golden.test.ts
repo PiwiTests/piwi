@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import type { RunSession, RunStatus, StatusResult } from '@piwitests/editor/protocol';
-import { statusBarView } from '../src/glue';
+import type { FileSummary, RunSession, RunStatus, StatusResult } from '@piwitests/editor/protocol';
+import { statusBarView, testDecorations } from '../src/glue';
 import { runNodes, workersNow, type RunNode } from '../src/run-control';
 
 /**
@@ -13,6 +13,21 @@ const golden = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/status-and-runs.json'), 'utf-8'),
 );
 
+const testLines = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/test-lines.json'), 'utf-8'),
+) as {
+  summary: FileSummary;
+  marks: Array<[number, string, string]>;
+  failing: { test: [number, number]; line: number };
+};
+
+/**
+ * A test mark's hover as Markdown shows it: a backslash's character as itself, and an emphasis marker or an HTML tag
+ * nobody escaped gone, as the reader sees them. The JetBrains plugin's tooltip shows the same words.
+ */
+const hoverWords = (hover: string) =>
+  hover.replace(/\\(.)|<[^>]*>|[*_]/g, (whole, escaped: string | undefined) => escaped ?? '');
+
 /** The status bar text without VS Code's leading codicon, as the JetBrains plugin draws its icon apart. */
 const withoutIcon = (text: string) => text.replace(/^\$\([^)]+\)\s*/, '');
 
@@ -21,6 +36,17 @@ const flat = (nodes: RunNode[]): string[][] =>
   nodes.flatMap((n) => [[n.kind, n.label, n.description], ...n.children.map((c) => [c.kind, c.label, c.description])]);
 
 describe('the golden fixtures both editors read', () => {
+  test('the marks of a spec’s tests: each test’s line, its result’s mark and its hover', () => {
+    const decorations = testDecorations(testLines.summary.lines);
+    expect(decorations.map((d) => [d.line, d.status, hoverWords(d.hover)])).toEqual(testLines.marks);
+    // Each mark is the gutter image of its status, which the extension draws (`media/test-<status>.svg`).
+    for (const d of decorations)
+      expect(fs.existsSync(path.resolve(__dirname, `../media/test-${d.status}.svg`))).toBe(true);
+    // The failing test's background over its lines, and the stronger one on the line it failed at.
+    const failing = decorations.filter((d) => d.failingUntil !== null);
+    expect(failing.map((d) => ({ test: [d.line, d.failingUntil], line: d.failingLine }))).toEqual([testLines.failing]);
+  });
+
   const status: StatusResult = { contexts: [golden.status.context] };
   for (const c of golden.status.cases as Array<{ name: string; runs: RunStatus; text: string }>) {
     test(`the status bar: ${c.name}`, () => {

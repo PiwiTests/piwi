@@ -68,9 +68,11 @@ submenu remains); a run the Testing view started shows each test's result as its
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
 failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
-newer latest run (LR9 in part: the test lines of a config with no instance at all remain). L6 in part since: golden fixtures both editors' pure halves read
-(`packages/editor/tests/golden/`: the status bar's text and the Runs rows), held to the same words by VS Code's
-`tests/golden.test.ts` and `GlueTest`. L4 in part since: the ASP.NET Core route manifest names each handler's line,
+newer latest run (LR9 in part: the test lines of a config with no instance at all remain). L6 in part since: golden
+fixtures both editors read (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, and a spec's test
+marks), held to the same words by VS Code's `tests/golden.test.ts` and `GlueTest`, the marks drawn in JetBrains by
+`PiwiPluginTest` through the gutter's annotator on the 2024.1 test platform (the Code Vision row, VS Code's nightly
+snapshot and the layout checks remain). L4 in part since: the ASP.NET Core route manifest names each handler's line,
 the instance keeps it on the handler file and the code index carries each route a file handles with the tests that
 called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests · 1 failing`) that runs them.
 L7 decided: Playwright for .NET gets an MIT NuGet adapter, proposed in [playwright-dotnet.md](playwright-dotnet.md).
