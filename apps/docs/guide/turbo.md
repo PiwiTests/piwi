@@ -157,11 +157,12 @@ withOptimizations(config, {
 });
 ```
 
-They run only on the Playwright versions they were tested with, and throw instead of falling back: on another
-version, on an internal they do not recognize, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1`
-runs them on another version, at your own risk. What each hook was measured to save, and what was tried and dropped,
-is in the package's [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md). Several levers follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a
-fork of Playwright; `@piwitests/turbo` applies them to stock Playwright instead.
+They run only on the Playwright versions they were tested with, and throw instead of falling back: on another version,
+on an internal they do not recognize, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs
+them on another version, at your own risk. What each hook was measured to save is in the package's [decision
+record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md). Several levers follow techniques from
+[Flashwright](https://github.com/xcodebeast/flashwright), a fork of Playwright; `@piwitests/turbo` applies them to stock
+Playwright instead.
 
 ## Measure on your suite
 

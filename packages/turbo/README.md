@@ -46,10 +46,37 @@ import { test, expect } from '@piwitests/turbo/test';
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
 
-On the package's reference suite, against a typical unoptimized setup, `safe` took 4% off the wall time and 7% off the
-CPU time, and `fast` 6% and 53%. Context reuse changed little there, a suite whose time is mostly waiting on its API. On
-Flashwright's benchmark suites it took 15% and 4% off two app suites, changed nothing on one of very large pages, and
-added 4% to a suite of trivial tests, where Playwright's reset of a context takes longer than a new context.
+### What it measured
+
+Each configuration ran interleaved with stock Playwright, round by round, and the figures are medians of 5 runs on a
+4-CPU Linux machine with Chromium. What a suite gains depends on where its time goes: measure yours with
+[the benchmark](#the-benchmark).
+
+Wall time against stock Playwright, on the suites of Flashwright's benchmark, one worker:
+
+| Suite                                      | `fast` | `max` |
+| ------------------------------------------ | -----: | ----: |
+| 15 trivial tests                           | +10%   | −12%  |
+| TodoMVC                                    | −14%   | −34%  |
+| A shop with a saved sign-in and a slow API | −10%   | −27%  |
+| An inventory page of 8,500 elements        | −2%    | −9%   |
+
+On the trivial tests, `fast` is slower than stock: resetting a reused context takes longer than creating one when a test
+does almost nothing. Turn reuse off for such a suite with `reuseContext: false`.
+
+On the package's reference suite, 42 tests of an orders console against a typical unoptimized setup (a sign-in through
+the form in every test, a trace of every test, the default worker count):
+
+| Configuration                                                                  | Wall time   | CPU time, every process | Artifacts |
+| ------------------------------------------------------------------------------ | ----------: | ----------------------: | --------: |
+| `safe`                                                                         | −4%         | −7%                     | −100%     |
+| `fast`                                                                         | −6%         | −53%                    | −100%     |
+| `lightTraces` alone                                                            | −3%         | −46%                    | −97%      |
+| `reducedMotion` alone                                                          | −4%         | −46%                    | −76%      |
+| `signIn`, `blockRequests`, reduced motion, traces of failures and four workers | 80 s → 16 s | 84 s → 30 s             | −100%     |
+
+What each experimental hook measured on its own, and how every figure was measured, are in the
+[decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 
 ### Sign-in and third-party requests
 
@@ -133,7 +160,7 @@ The hooks wrap Playwright's server inside each test worker: the server `Page.pro
 CDP session, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a
 `playwright-core` version they were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another
 shape, or when the browser runs outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at
-your own risk. What each lever was measured to save, and what was tried and dropped, is in the
+your own risk. What each lever was measured to save is in the
 [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 
 ## The benchmark
