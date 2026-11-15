@@ -204,6 +204,13 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
     Ok(menu)
 }
 
+/// Put the tray's tooltip back, once an update the tray started failed.
+fn idle_tooltip(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(TRAY_TOOLTIP));
+    }
+}
+
 /// The tray icon: a click opens the window, and its menu holds, in the desktop app's order and with its glyphs, Open,
 /// Run in background and Start on login, Check for updates in a build that can update itself, Show logs and Quit.
 fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
@@ -247,7 +254,7 @@ fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
             "show_logs" => reveal_log(app),
             TRAY_RUN_BG_ID => toggle_run_in_background(app),
             TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
-            "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP),
+            "check_update" => updates::check_from_tray(app, idle_tooltip),
             "quit" => quit_after_confirming(app, APP_NAME),
             _ => {}
         });

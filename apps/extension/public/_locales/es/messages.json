@@ -270,11 +270,14 @@
   "popup_testedElements": {
     "message": "Elementos probados"
   },
-  "popup_testedElementsHint": {
-    "message": "Lo que tus pruebas alcanzan en esta página, y lo que no"
-  },
   "popup_testedElementsConnect": {
     "message": "Conecta Piwi para ver lo que alcanzan tus pruebas"
+  },
+  "popup_testedElementsShort": {
+    "message": "Lo que tus pruebas alcanzan aquí"
+  },
+  "popup_testedElementsConnectShort": {
+    "message": "Conecta Piwi para verlo"
   },
   "devtools_playwrightView": {
     "message": "Vista Playwright"

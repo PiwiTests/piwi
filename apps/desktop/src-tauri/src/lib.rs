@@ -3865,7 +3865,7 @@ pub fn run() {
                     "show_logs" => reveal_log(app),
                     TRAY_AGENTS_ID => open_page(app, "/settings/mcp"),
                     TRAY_CONNECTION_ID => open_page(app, "/settings/desktop"),
-                    "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP_IDLE),
+                    "check_update" => updates::check_from_tray(app, refresh_tray_tooltip),
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
                         let _ = app

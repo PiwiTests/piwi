@@ -468,8 +468,9 @@ fn tray_answer(status: &UpdateStatus, installed: &str) -> TrayAnswer {
 
 /// The tray's Check for updates: check, say what was found, and on the
 /// person's yes install the update and restart. Progress shows in the tray
-/// icon's tooltip; `idle_tooltip` is put back when the install fails.
-pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
+/// icon's tooltip; `restore_tooltip` puts the app's own back when the install
+/// fails.
+pub fn check_from_tray(app: &AppHandle, restore_tooltip: fn(&AppHandle)) {
     let Some(busy) = app.try_state::<TrayUpdateBusy>() else {
         return;
     };
@@ -524,7 +525,7 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
                             "Update",
                             move |go| {
                                 if go {
-                                    tauri::async_runtime::spawn(install_and_restart(after, idle_tooltip));
+                                    tauri::async_runtime::spawn(install_and_restart(after, restore_tooltip));
                                 } else {
                                     after.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
                                 }
@@ -539,7 +540,7 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
 /// Download and install the update the last check found, its progress in the
 /// tray's tooltip, then restart. On Windows the install never returns: the
 /// plugin hands over to the installer, which starts the app again.
-async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
+async fn install_and_restart(app: AppHandle, restore_tooltip: fn(&AppHandle)) {
     let tooltip = |text: &str| {
         if let Some(tray) = app.tray_by_id("main") {
             let _ = tray.set_tooltip(Some(text));
@@ -569,7 +570,7 @@ async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
     match installed {
         Ok(()) => app.restart(),
         Err(error) => {
-            tooltip(idle_tooltip);
+            restore_tooltip(&app);
             app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
             tell(&app, MessageDialogKind::Error, &format!("The update failed: {error}"));
         }

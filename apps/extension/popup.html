@@ -434,6 +434,15 @@
       }
       .grid.sections .tile .label {
         grid-area: 1 / 2 / 2 / 4;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+      }
+      /* The running tool's tile says so by its accent border alone here: a word after its label would add a line. */
+      .grid.sections .tile.running .label::after {
+        content: none;
       }
       .grid.sections .tile .hint {
         grid-area: 2 / 1 / 3 / 3;
@@ -698,8 +707,8 @@
           <div class="section-label" id="run-control-section-label" data-i18n="popup_sectionRunControl">
             Run control
           </div>
-          <!-- The editor's runs, in a window of their own: shown, in the grid's free cell, while an editor or the
-             desktop app is paired, muted while none of its hubs answers. -->
+          <!-- The editor's runs, in a window of their own: shown while an editor or the desktop app is paired, muted while
+             none of its hubs answers. -->
           <button id="runs" class="tile compact runs" type="button" aria-keyshortcuts="U" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M8.5 5.5v13M15.5 5.5v13" />
@@ -722,8 +731,8 @@
             </svg>
             <span class="text">
               <span class="label" data-i18n="popup_testedElements">Tested elements</span>
-              <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsHint"
-                >What your tests reach on this page, and what they miss</span
+              <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsShort"
+                >What your tests reach here</span
               >
             </span>
             <kbd class="key" aria-hidden="true">T</kbd>

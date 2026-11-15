@@ -39,9 +39,9 @@ once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** 
 
 Its data, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
-The tray menu, in the editors' order: **Show the stopped test** while one waits, **Open Piwi Desktop**, **Stop** per
-running test (the machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
-the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
+The tray menu, in the editors' order: **Show the stopped test** if one waits, **Open Piwi Desktop**, **Stop** per
+running test (machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
+the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit Piwi Desktop**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
@@ -147,8 +147,8 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 ## Updates
 
 **Settings → About → Updates** checks for a newer release (also at startup), lists what changed since your version,
-breaking changes first, and installs it on restart. The `.exe` needs no admin rights; the `.msi` does. Downloads are
-signature-checked.
+breaking changes first, and installs it on restart; the tray's **Check for updates…** installs and restarts.
+The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-checked.
 
 ## Limits
 

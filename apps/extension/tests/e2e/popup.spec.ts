@@ -52,8 +52,8 @@ test.describe('popup.html', () => {
   test('every tool tile carries a digit shortcut, 1 through 7, in render order', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    // The Runs tile, in More tools' free cell while the editor's runs show, has a letter, as the flows do.
-    const keys = await page.locator('.actions button:not(#runs)').evaluateAll((buttons) =>
+    // The Runs tile, under Run control while the editor's runs show, has a letter, as the flows do.
+    const keys = await page.locator('.actions button').evaluateAll((buttons) =>
       buttons.map((b) => ({
         id: b.id,
         badge: b.querySelector('.key')?.textContent ?? null,
@@ -370,9 +370,7 @@ test.describe('Tested elements tile', () => {
   test('without a connection it says so and opens the settings', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(page.locator('#coverage-hint')).toHaveText(
-      'Connect to your Piwi instance to see what your tests reach',
-    );
+    await expect(page.locator('#coverage-hint')).toHaveText('Connect Piwi to see it');
     const [options] = await Promise.all([context.waitForEvent('page'), page.locator('#coverage-overlay').click()]);
     await expect(options).toHaveURL(new RegExp(`chrome-extension://${extensionId}/options.html`));
   });
@@ -390,7 +388,7 @@ test.describe('Tested elements tile', () => {
       }),
     );
     await page.reload();
-    await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach on this page, and what they miss');
+    await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach here');
   });
 });
 
@@ -472,15 +470,35 @@ async function connectedPopupHeight(page: Page, extensionId: string): Promise<nu
   await expect(page.locator('#connection-health')).toBeVisible();
   await page.locator('#runs').evaluate((tile: HTMLElement) => (tile.hidden = false));
   await expect(page.locator('#runs')).toBeVisible();
+  // Tested elements running on the page, as its tile shows it then.
+  await page.locator('#coverage-overlay').evaluate((tile) => tile.classList.add('running'));
   return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
 }
 
-for (const language of ['de', 'fr', 'es', 'pt-BR']) {
+/** Whether the label or the hint of a tile side by side under its section's name is cut. */
+async function sectionTilesCut(page: Page): Promise<string[]> {
+  return page.locator('.grid.sections .tile').evaluateAll((tiles) =>
+    tiles.flatMap((tile) =>
+      ['.label', '.hint'].flatMap((part) => {
+        const el = tile.querySelector(part) as HTMLElement;
+        return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1
+          ? [`${tile.id} ${part}`]
+          : [];
+      }),
+    ),
+  );
+}
+
+for (const language of ['en', 'de', 'fr', 'es', 'pt-BR']) {
   test.describe(`in ${language}`, () => {
     test.use({ browserLanguage: language });
-    test('the popup fits a popup’s 600 pixels', async ({ context, extensionId }) => {
+    test('the popup fits a popup’s 600 pixels, its tiles under Run control, Dashboard and Agents cut nothing', async ({
+      context,
+      extensionId,
+    }) => {
       const page = await context.newPage();
       expect(await connectedPopupHeight(page, extensionId)).toBeLessThanOrEqual(600);
+      expect(await sectionTilesCut(page)).toEqual([]);
     });
   });
 }

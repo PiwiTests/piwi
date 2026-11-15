@@ -199,7 +199,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   const override = await getActiveProjectOverride(tabUrl);
 
   connected = isConnected(connection);
-  coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
+  coverageHint.textContent = connected ? t('popup_testedElementsShort') : t('popup_testedElementsConnectShort');
   if (!connected) {
     // Connected to an instance that has no pattern yet: only the offer to add this site.
     const reachable = connection.instanceUrl.trim() !== '' && connection.serverSyncedAt > 0;

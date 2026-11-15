@@ -842,7 +842,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Lint overlay',
         summary: 'The buttons, links and fields of a page no stable locator finds alone, each with the test id to add.',
         needs: ['extension'],
-        where: 'Browser extension → More tools → Lint overlay',
+        where: 'Browser extension → Pick → Lint overlay',
         doc: 'features/lint-overlay',
         part: 'On the page',
       },
@@ -905,7 +905,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
         needs: ['fixtures', 'extension'],
-        where: 'Browser extension → More tools → Runs',
+        where: 'Browser extension → Run control → Runs',
         doc: 'features/runs-window',
       },
     ],
