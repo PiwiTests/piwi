@@ -28,6 +28,7 @@ import {
   COMMAND_STARTED_NOTIFICATION,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
+  TEST_CARD_REQUEST,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   FAILURES_NOTIFICATION,
@@ -52,6 +53,8 @@ import {
   type CommandStartedParams,
   type CoverageParams,
   type CoverageResult,
+  type TestCard,
+  type TestCardParams,
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
@@ -260,6 +263,13 @@ const SERVICE_DOWN_MS = 3_000;
 const PROXY_WAIT_MS = 250;
 /** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
 const FILES_DRAW_WAIT_MS = 50;
+/** How long a test's hover waits for its card before it shows the test's result in one line. */
+const CARD_WAIT_MS = 1_500;
+
+/** What `read` gives within `ms`, else null. */
+function within<T>(read: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([read, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+}
 /** The editor's settings the service's environment follows (`serviceEnvironment`); a change starts it again. */
 const PROXY_SETTINGS = ['http.proxy', 'http.proxyStrictSSL', 'http.proxyAuthorization', 'http.noProxy'];
 /** The type of a test run's task (`taskDefinitions` in `package.json`), told apart by its ref. */
@@ -572,6 +582,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
+  // A test's hover on its line: its card from the service, else its result in one line, with its links.
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].map((language) => ({
+        scheme: 'file',
+        language,
+      })),
+      {
+        provideHover: async (document, position, token) => {
+          const test = gutter.get(document.uri.toString())?.find((t) => t.line === position.line);
+          if (!test) return null;
+          const params: TestCardParams | null =
+            test.testCaseId !== null ? { uri: document.uri.toString(), testCaseId: test.testCaseId } : null;
+          const card = params
+            ? await within(
+                lc.sendRequest<TestCard | null>(TEST_CARD_REQUEST, params, token).catch(() => null),
+                CARD_WAIT_MS,
+              )
+            : null;
+          if (token.isCancellationRequested) return null;
+          const hover = new vscode.MarkdownString(
+            testHoverMarkdown(test, document.uri.toString(), card?.markdown ?? null),
+          );
+          hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
+          return new vscode.Hover(hover, document.lineAt(test.line).range);
+        },
+      },
+    ),
+  );
   let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
@@ -580,14 +619,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, the test's line keeps the hover.
     const icons = !explorer && (vscode.workspace.getConfiguration('piwi').get<boolean>('gutterIcons') ?? true);
     gutter.set(document.uri.toString(), tests);
+    // The test's hover is its card, which the hover provider below asks the service for as it shows.
     const hovered = (shown: TestDecoration[]) =>
-      shown
-        .filter((t) => t.line < document.lineCount)
-        .map((t) => {
-          const hover = new vscode.MarkdownString(testHoverMarkdown(t, document.uri.toString()));
-          hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
-          return { range: document.lineAt(t.line).range, hoverMessage: hover };
-        });
+      shown.filter((t) => t.line < document.lineCount).map((t) => ({ range: document.lineAt(t.line).range }));
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
         editor.setDecorations(type, icons ? hovered(tests.filter((t) => t.status === status)) : []);

@@ -202,6 +202,19 @@ export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
 export type BranchFlaky = NonNullable<BranchFailures['flaky']>[number];
 
 /** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
+/** One execution of a test, as its history lists them (`GET /api/test-cases/:id/history`), newest first. */
+export interface TestExecution {
+  runId: number;
+  status: string;
+  /** In ms; null when unknown. */
+  duration: number | null;
+  error: string | null;
+  /** It passed on a retry after an attempt failed: flaky. */
+  passedAfterFailure?: boolean | null;
+  /** When its run started. */
+  startTime: string | null;
+}
+
 export interface RunDetails {
   id: number;
   /** Its project; absent from an instance that does not send it. */
@@ -874,6 +887,11 @@ export class PiwiClient {
   }
 
   /** A run's page in the dashboard. */
+  /** A test's latest executions, newest first, the instance's fifty at most. */
+  testHistory(testCaseId: number): Promise<{ items: TestExecution[] }> {
+    return this.get(`/api/test-cases/${testCaseId}/history`);
+  }
+
   runUrl(runId: number): string {
     return `${this.connection.serverUrl}/test-runs/${runId}`;
   }

@@ -61,9 +61,9 @@ filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@pi
 
 Each test's actions are one list in both editors: **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi**,
 **Record steps in this test…** (a [recording](./editor-recording) after the last line of its body), a failure's trace
-and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab commands. In VS Code, **Piwi:
-Show the test's actions…** opens them from the Testing view's gutter and its menus, the line number's menu with the
-view off, and **More…** in the test's hover; in a JetBrains IDE, either click on the result icon. The IDE's own run
+and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab commands. **More…** on the [test's card](./editor-test-card) opens them, and in VS Code **Piwi: Show the test's actions…**
+from the Testing view's gutter and menus, and the line number's menu with the view off; in a JetBrains IDE, a
+right-click on the result icon. The IDE's own run
 icon offers **Run with Piwi** and **Verify ×3 with Piwi** too; turning off **Piwi test results** under **Gutter Icons**
 hides the result icon and its list.
 

@@ -77,7 +77,8 @@ request and unreachable glyphs (`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-
 **Each file's summary.** The extension asks `piwi/fileSummary` once per text version of a file and per drawing of the
 files (`summaryOf`), and draws it in two places:
 
-- A test's line goes to the gutter: an icon from `media/` and a hover with the summary the service writes, **Run**
+- A test's line goes to the gutter: an icon from `media/`, and a hover, from a hover provider on the line, with the
+  test's card (`piwi/testCard`'s Markdown, waited for `CARD_WAIT_MS`, else the summary the service writes), **Run**
   (`piwi.runTests` with `SummaryLine.testCaseId`), **Open in dashboard** and **More…** (`testDecorations`,
   `testHoverMarkdown`, `TEST_HOVER_COMMANDS` in `src/glue.ts`). **More…**, the Testing view's gutter and item menus,
   its message menu, and the line number's menu with the view off (`editor/lineNumber/context`) open **Piwi: Show the

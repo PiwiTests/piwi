@@ -55,7 +55,9 @@ tests that ran the line (`piwi/coverageTests`), go to the next line no test runs
 profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's actions (TL1). M21 built since: a run the developer started in a
 terminal or in the IDE's test runner is followed as the developer's own once its process names its page on the
 instance, and its verdict says where it ran (`run #125 in a terminal`), from the service's words as every verdict
-(HM16).
+(HM16). L5 built since: a test's card, `piwi/testCard`, in VS Code's hover and on a click of
+JetBrains' result icon: its last twenty results as a strip, each to its run, how they went, its last failure, its
+owner, tags and quarantine, with Run, Open in dashboard and More… (TL21).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -258,7 +260,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and six large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and five large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -398,14 +400,6 @@ the Gutter Icons page, a descriptor whose switch the annotator reads. ([M9](#m9)
 ### 5.7 The IDE's own test UI
 
 ### 5.8 A test card
-
-<a id="tl21"></a>**TL21. A test's tooltip and hover are one line, though the service holds its history, last failure,
-owner, trace and screenshot.** `Glue.kt:832-833` and `apps/vscode/src/glue.ts:699-701` show the service's one-line
-summary, while the dashboard's test page draws the history, flaky rate, owner and quarantine. To answer "my bug or a
-flake?", the developer leaves the editor. **(seen)** Fix: a `piwi/testCard` request (the last N results as a strip, the
-flaky rate, the last failure, owner, quarantine, the evidence and the test's action list), a popup on the result icon
-in JetBrains and the hover in VS Code, laid out like the dashboard's test row: the test counterpart of the element card
-of [extension-ux-audit.md](extension-ux-audit.md) §4.1. ([L5](#l5), [LI7](#li7))
 
 ## 6. Settings, connection, onboarding and agents
 
@@ -686,7 +680,7 @@ history, flaky rate, owner and quarantine. **Lives in** `packages/editor` and bo
 gutter actions, a click that opens a browser, five names for run. **Depends on** [LI1](#li1). **Revisits**
 [developer-loop-audit.md](developer-loop-audit.md) P1 (Run and Verify ×3 on the result icon built, the run line marker
 left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps M8 (built),
-[M9](#m9), [L5](#l5).
+[M9](#m9), L5 (built).
 
 <a id="li8"></a>
 
@@ -916,7 +910,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [LR12](#lr12), [NF10](#nf10) |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger | `ide` | [LR3](#lr3) |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`) | `ide` | [RD7](#rd7), [RD8](#rd8) |
-| <a id="l5"></a>L5 | **A test card in both editors** (`piwi/testCard`), laid out like the dashboard's test row | `ide` | [TL21](#tl21) |
 | <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19)) |
 | <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter | `docs` | none ([LI17](#li17)) |
 
