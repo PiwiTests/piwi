@@ -262,6 +262,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRunSessions>().heard(session)
     }
 
+    /** A worker of a run began or ended a test: the run's test tree in its Run tab. */
+    @JsonNotification("piwi/runTest")
+    fun runTest(event: RunTestEvent) {
+        project.service<PiwiRunTestTrees>().heard(event)
+    }
+
     /** A CI run of the branch moved, read-only: the CI Runs tab and the CI positions. */
     @JsonNotification("piwi/ciSessionChanged")
     fun ciSessionChanged(session: CiSession) {

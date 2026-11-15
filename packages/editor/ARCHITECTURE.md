@@ -218,7 +218,8 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`,
+    `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
   - CI runs: `piwi/ciWatch`;
@@ -234,7 +235,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, a worker
+  that left mid-test ending it `interrupted`, which the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
   `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
   `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
@@ -1660,6 +1662,13 @@ The marks of the second and third are placed through `diffLines` and `placeLine`
 
 `piwi/coverageChanged` pushes the marks of a document the client asked about, against the answer the client holds, when
 an edit, a read or a late answer changes them.
+
+`piwi/coverageFiles` answers the same for every application file of a config that the code index says the coverage
+recorded (`coveredFiles`), or that the given tests reach, after reading the code index and the coverage again; with
+tests, its marks are theirs alone (`coverageOfTests`). It reads each file once, outside the open files' caches
+(`PiwiContext.coverageOnce`, `coverageOfRun`), `MAX_COVERAGE_FILES` at most, `COVERAGE_FILES_AT_ONCE` at a time: VS
+Code's Coverage profile shows it. `piwi/coverageTests` names the tests the marks say ran a line, as a run of them that
+records the file's runtime's coverage (`recordedRuntime`, as the lens's run does): a JetBrains mark's menu runs it.
 
 On an application file, `piwi/fileSummary` adds the coverage's tests to the file's `Reached by N tests` line, with
 `41 of 63 lines run` when the executable lines are known, and gives each function that ran a line at its first line.

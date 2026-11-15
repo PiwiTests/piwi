@@ -324,8 +324,31 @@ object PiwiCommands {
             }, project.disposed)
             return true
         }
+        if (args != null && PlaywrightRunnerGate.available()) offerRunner(project)
         run(project, cwd, line, env, command.ref, command.label, command.name)
         return true
+    }
+
+    /** The key under which the IDE's Playwright runner was offered, once per installation. */
+    private const val RUNNER_OFFERED = "piwi.playwrightRunnerOffered"
+
+    /**
+     * Once per installation, at a run the IDE's Playwright runner could take while the plugin's console runs it: offer
+     * the runner, which **Settings → Tools → Piwi** switches on too.
+     */
+    private fun offerRunner(project: Project) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (properties.getBoolean(RUNNER_OFFERED)) return
+        properties.setValue(RUNNER_OFFERED, true)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.RUNNER_OFFER)
+            .addAction(
+                NotificationAction.createSimpleExpiring("Use the IDE's Playwright runner") {
+                    val before = PiwiUserSettings.state().copy()
+                    PiwiUserSettings.state().playwrightRunner = true
+                    PiwiUserSettings.changed(before)
+                },
+            )
+            .notify(project)
     }
 
     /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread, then run `then`. */
@@ -438,6 +461,12 @@ object PiwiCommands {
                     if (ref == null) ended.complete(Unit) else commandEnded(project, CommandEndedParams(ref, event.exitCode)) { ended.complete(Unit) }
                 }
             })
+            // A test run's tree takes its tests' events from now on, kept until its tab shows it.
+            val relay = if (ref != null && !project.isDisposed) {
+                TestTreeRelay(handler).also { project.service<PiwiRunTestTrees>().follow(ref, it) }
+            } else {
+                null
+            }
             // Stop, among the run's controls, ends it; the service lists the run as starting until it reports.
             if (ref != null && !project.isDisposed) {
                 project.service<PiwiRunSessions>().track(ref, handler)
@@ -450,6 +479,7 @@ object PiwiCommands {
                     PiwiRunTab.show(
                         project,
                         handler,
+                        relay,
                         Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
                         RunOutputLinks(project, cwd),
                         ref,

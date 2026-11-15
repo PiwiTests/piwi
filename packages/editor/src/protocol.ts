@@ -319,6 +319,43 @@ export interface CoverageResult {
 export const COVERAGE_REQUEST = 'piwi/coverage';
 
 /**
+ * `piwi/coverageFiles`: the application files under a Playwright config's folder (`root`) that the project's recorded
+ * coverage names lines of, each with its marks as `piwi/coverage` places them (`exact` or `mapped`); with `testIds`,
+ * those the tests of these catalog ids reach alone. The code index and the coverage are read again first, so a client
+ * asks it once a run's results were read. At most `MAX_COVERAGE_FILES` files are read (`truncated` past them).
+ */
+export interface CoverageFilesParams {
+  root: string;
+  testIds?: number[];
+}
+
+export interface CoverageFilesResult {
+  files: CoverageResult[];
+  truncated: boolean;
+}
+
+export const COVERAGE_FILES_REQUEST = 'piwi/coverageFiles';
+
+/** The most files `piwi/coverageFiles` reads. */
+export const MAX_COVERAGE_FILES = 200;
+
+/**
+ * `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file, as the arguments of a
+ * run of them (`RunTestsArgs`), and how many; `args` null when none did.
+ */
+export interface CoverageTestsParams {
+  uri: string;
+  line: number;
+}
+
+export interface CoverageTestsResult {
+  args: RunTestsArgs | null;
+  count: number;
+}
+
+export const COVERAGE_TESTS_REQUEST = 'piwi/coverageTests';
+
+/**
  * `piwi/coverageChanged` (notification, server to client): the marks of a file the client asked `piwi/coverage` about
  * changed: an edit moved them, the coverage was read again (a refresh, a run that ended), or it arrived after the
  * request was answered. Carries `CoverageResult`, which replaces what the client holds for its `uri`.
@@ -2236,6 +2273,24 @@ export interface RunLive {
 }
 
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
+
+/**
+ * `piwi/runTest` (notification, server to client): a worker of a run began a test (`test-begin`, with the test), or
+ * ended the test it began last (`test-end`, with Playwright's status of it: `passed`, `failed`, `timedOut`, `skipped`,
+ * `interrupted`, the last too for a worker that left before it said), as its run connection says it. Each comes once, as it happens, for a client that draws a test tree of
+ * the run; the session (`piwi/runSessionChanged`) holds only what each worker runs now.
+ */
+export interface RunTestEvent {
+  ref: string;
+  /** The folder of the run's Playwright config, as `piwi/status` names it; null when no context holds it. */
+  root: string | null;
+  worker: number;
+  type: 'test-begin' | 'test-end';
+  test?: RunTest;
+  status?: string;
+}
+
+export const RUN_TEST_NOTIFICATION = 'piwi/runTest';
 
 /**
  * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the

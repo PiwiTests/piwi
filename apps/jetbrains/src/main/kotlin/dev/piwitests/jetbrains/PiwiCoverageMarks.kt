@@ -1,8 +1,10 @@
 package dev.piwitests.jetbrains
 
-import com.intellij.codeInsight.hint.HintManager
+import com.intellij.application.options.colors.ColorAndFontOptions
+import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
@@ -10,6 +12,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.LogicalPosition
+import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.impl.DocumentMarkupModel
 import com.intellij.openapi.editor.markup.ActiveGutterRenderer
@@ -22,7 +26,9 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
@@ -32,6 +38,7 @@ import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
 import java.awt.Graphics
 import java.awt.Rectangle
@@ -203,8 +210,54 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
             HighlighterTargetArea.LINES_IN_RANGE,
         ).apply {
             val tooltip = Glue.coverageMarkTooltip(mark)
-            lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip)
+            lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip) { editor, e ->
+                showMenu(editor, e, mark.kind)
+            }
             if (mark.kind == Glue.CoverageKind.RUN) setErrorStripeMarkColor(null) else errorStripeTooltip = tooltip
+        }
+    }
+
+    /**
+     * A mark's menu, at the click: run the tests that ran the line (a run mark's), go to the next line no test runs,
+     * hide the marks, and edit their colors on the Piwi color page.
+     */
+    private fun showMenu(editor: Editor, e: MouseEvent, kind: Glue.CoverageKind) {
+        val file = editor.virtualFile ?: return
+        val uri = files.entries.firstOrNull { it.value == file }?.key ?: return
+        val line = editor.xyToLogicalPosition(e.point).line
+        val group = DefaultActionGroup()
+        if (kind == Glue.CoverageKind.RUN) {
+            group.add(DumbAwareAction.create("Run the tests that ran this line") { runTestsOf(uri, line) })
+        }
+        Glue.nextNotRunLine(answers[uri], line)?.let { next ->
+            group.add(
+                DumbAwareAction.create("Go to the next line no test runs") {
+                    editor.caretModel.moveToLogicalPosition(LogicalPosition(next, 0))
+                    editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+                },
+            )
+        }
+        group.addSeparator()
+        group.add(DumbAwareAction.create("Hide the coverage marks") { shown = false })
+        group.add(
+            DumbAwareAction.create("Edit the colors…") {
+                val context = DataManager.getInstance().getDataContext(editor.component)
+                ColorAndFontOptions.selectOrEditColor(context, COLOR_NAMES[kind], PiwiColorSettingsPage::class.java)
+            },
+        )
+        val context = DataManager.getInstance().getDataContext(editor.component)
+        JBPopupFactory.getInstance()
+            .createActionGroupPopup(null, group, context, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e))
+    }
+
+    /** Run the tests the coverage says ran a line of the file at `uri` (`piwi/coverageTests`), or say none did. */
+    private fun runTestsOf(uri: String, line: Int) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val found = project.service<PiwiProjectService>().server()?.coverageTests(CoverageTestsParams(uri, line))?.orNull()
+            val args = found?.args
+            if (args == null) PiwiCommands.notify(project, "The coverage names no test that ran this line.")
+            else PiwiCommands.runTests(project, args)
         }
     }
 
@@ -234,6 +287,14 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         /** The lines changed since the default branch, in a file no test reaches: uncovered changes. */
         val UNCOVERED: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_UNCOVERED_CHANGE")
 
+        /** Each mark's entry on the Piwi color page (`PiwiColorSettingsPage`), which Edit the colors… selects too. */
+        val COLOR_NAMES = mapOf(
+            Glue.CoverageKind.RUN to "Coverage//Lines the tests ran",
+            Glue.CoverageKind.NOT_RUN to "Coverage//Lines no test runs",
+            Glue.CoverageKind.CHANGED to "Coverage//Lines changed since the coverage run",
+            Glue.CoverageKind.UNCOVERED to "Coverage//Uncovered changes, in a file no test reaches",
+        )
+
         fun keyOf(kind: Glue.CoverageKind): TextAttributesKey = when (kind) {
             Glue.CoverageKind.RUN -> RUN
             Glue.CoverageKind.NOT_RUN -> NOT_RUN
@@ -244,23 +305,31 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
 }
 
 /**
- * A coverage mark at the left of the gutter, in the error stripe color of its key (else its background), so a color
- * scheme restyles it; dashed for the lines changed since the coverage run. Hovered, it shows its tooltip: what it says
- * of its lines and what the marks mean; clicked, the same as a hint.
+ * A coverage mark at the right of the gutter's marker area, beside the IDE's own coverage at its left, in the error
+ * stripe color of its key (else its background), so a color scheme restyles it; dashed for the lines changed since the
+ * coverage run. Hovered, it shows its tooltip: what it says of its lines and what the marks mean; clicked on the bar
+ * itself, its `menu`, a click elsewhere in the gutter left to the gutter.
  */
 internal class CoverageGutterMark(
     val key: TextAttributesKey,
     private val dashed: Boolean,
     private val tooltip: String,
+    private val menu: (Editor, MouseEvent) -> Unit,
 ) : LineMarkerRendererEx, ActiveGutterRenderer {
-    override fun getPosition(): LineMarkerRendererEx.Position = LineMarkerRendererEx.Position.LEFT
+    override fun getPosition(): LineMarkerRendererEx.Position = LineMarkerRendererEx.Position.RIGHT
 
     override fun getTooltipText(): String = tooltip
 
-    override fun canDoAction(e: MouseEvent): Boolean = true
+    /** Where the bar was last painted across the gutter, which a click must hit. */
+    @Volatile private var painted: IntRange? = null
+
+    override fun canDoAction(e: MouseEvent): Boolean {
+        val bar = painted ?: return false
+        return e.x in (bar.first - JBUI.scale(2))..(bar.last + JBUI.scale(2))
+    }
 
     override fun doAction(editor: Editor, e: MouseEvent) {
-        HintManager.getInstance().showInformationHint(editor, tooltip)
+        menu(editor, e)
         e.consume()
     }
 
@@ -268,6 +337,7 @@ internal class CoverageGutterMark(
         val attributes = editor.colorsScheme.getAttributes(key) ?: return
         g.color = attributes.errorStripeColor ?: attributes.backgroundColor ?: return
         val width = minOf(r.width, JBUI.scale(3)).coerceAtLeast(1)
+        painted = r.x until r.x + width
         if (!dashed) {
             g.fillRect(r.x, r.y, width, r.height)
             return

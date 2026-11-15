@@ -927,6 +927,15 @@ object Glue {
     const val UNCOVERED_EXPLAINED =
         "The orange bar at the left of a line: it changed since the default branch, and no test reaches this file."
 
+    /**
+     * The first line (0-based) after `line` that no test runs by a `piwi/coverage` answer, from the top again past the
+     * last; null when the answer has none.
+     */
+    fun nextNotRunLine(result: CoverageResult?, line: Int): Int? {
+        val starts = result?.notRun.orEmpty().map { it.start }.sorted()
+        return starts.firstOrNull { it > line } ?: starts.firstOrNull()
+    }
+
     /** A coverage mark's tooltip, in the gutter and the scroll bar: what it says of its lines, then what the marks mean. */
     fun coverageMarkTooltip(mark: CoverageMark): String {
         val explained = if (mark.kind == CoverageKind.UNCOVERED) UNCOVERED_EXPLAINED else COVERAGE_MARKS_EXPLAINED
@@ -3297,6 +3306,106 @@ object Glue {
         run.sent = text
         SetRunBreakpointsParams(ref, places)
     }
+
+    /**
+     * The service messages (`##teamcity[…]`, by node id) that draw a run's tests in the IDE's test tree from its
+     * `piwi/runTest` events: a suite per Playwright project, in it per spec file (by its path in the config's folder) and
+     * per `describe` block, opened the first time a test of it begins; a node per attempt of a test, a retry named so,
+     * which the worker's next `test-end` ends with its status, an interrupted test as ignored. Not thread-safe: one
+     * caller at a time.
+     */
+    class RunTestTree {
+        private var next = 0
+        private val suites = LinkedHashMap<List<String>, String>()
+        private val running = HashMap<Int, String>()
+
+        /** The message that says the run reports its tests, before any of them. */
+        fun start(): List<String> = listOf("##teamcity[enteredTheMatrix]")
+
+        /** The messages an event adds to the tree; none for an end with no test begun by its worker. */
+        fun lines(event: RunTestEvent): List<String> {
+            if (event.type == "test-end") {
+                val node = running.remove(event.worker) ?: return emptyList()
+                return when (event.status) {
+                    "passed" -> listOf(message("testFinished", "nodeId" to node))
+                    "skipped" -> listOf(message("testIgnored", "nodeId" to node), message("testFinished", "nodeId" to node))
+                    "interrupted" -> listOf(
+                        message("testIgnored", "nodeId" to node, "message" to "Interrupted"),
+                        message("testFinished", "nodeId" to node),
+                    )
+                    else -> listOf(
+                        message("testFailed", "nodeId" to node, "message" to failedWords(event.status)),
+                        message("testFinished", "nodeId" to node),
+                    )
+                }
+            }
+            val test = event.test ?: return emptyList()
+            val path = runCatching { java.nio.file.Paths.get(java.net.URI(test.uri ?: "")) }.getOrNull() ?: return emptyList()
+            val file = path.toString().replace('\\', '/')
+            val shown = event.root
+                ?.let { root -> runCatching { java.nio.file.Paths.get(root).relativize(path).toString().replace('\\', '/') }.getOrNull() }
+                ?.takeIf { it.isNotEmpty() && !it.startsWith("..") }
+                ?: file.substringAfterLast('/')
+            val titles = test.title.orEmpty().ifEmpty { listOf("test") }
+            val out = mutableListOf<String>()
+            // An end missed before the worker's next test: that test is left as the platform leaves an unfinished one.
+            running.remove(event.worker)
+            // The project, the spec, then each describe block around the test: each level's key, name and location.
+            val levels = buildList {
+                test.project?.takeIf { it.isNotEmpty() }?.let { add(Triple("project\u0000$it", it, null)) }
+                add(Triple("file\u0000$file", shown, "file://$file"))
+                titles.dropLast(1).forEach { add(Triple("describe\u0000$it", it, "file://$file")) }
+            }
+            var parent = "0"
+            for (depth in levels.indices) {
+                val key = levels.take(depth + 1).map { it.first }
+                val (_, name, location) = levels[depth]
+                parent = suites[key] ?: (++next).toString().also { node ->
+                    suites[key] = node
+                    val attributes = listOfNotNull("nodeId" to node, "parentNodeId" to parent, "name" to name, location?.let { "locationHint" to it })
+                    out += message("testSuiteStarted", *attributes.toTypedArray())
+                }
+            }
+            val node = (++next).toString()
+            running[event.worker] = node
+            val name = titles.last() + if (test.retry > 0) " (retry ${test.retry})" else ""
+            out += message("testStarted", "nodeId" to node, "parentNodeId" to parent, "name" to name, "locationHint" to "file://$file:${test.line + 1}")
+            return out
+        }
+
+        /** The suites' ends, the innermost first, once the run's process ended. */
+        fun finish(): List<String> = suites.values.reversed().map { message("testSuiteFinished", "nodeId" to it) }
+
+        private fun failedWords(status: String?) = when (status) {
+            "timedOut" -> "Timed out"
+            "interrupted" -> "Interrupted"
+            else -> "Failed"
+        }
+
+        private fun message(name: String, vararg attributes: Pair<String, String>) =
+            "##teamcity[$name ${attributes.joinToString(" ") { (k, v) -> "$k='${escaped(v)}'" }}]"
+
+        private fun escaped(value: String) = buildString {
+            for (c in value) {
+                when (c) {
+                    '|' -> append("||")
+                    '\'' -> append("|'")
+                    '\n' -> append("|n")
+                    '\r' -> append("|r")
+                    '[' -> append("|[")
+                    ']' -> append("|]")
+                    '\u0085' -> append("|x")
+                    '\u2028' -> append("|l")
+                    '\u2029' -> append("|p")
+                    else -> append(c)
+                }
+            }
+        }
+    }
+
+    /** The offer of the IDE's Playwright runner, made once, at a run the plugin's console runs. */
+    const val RUNNER_OFFER = "Run Piwi's runs in the IDE's Playwright runner? Its test tree adds Debug and Rerun Failed " +
+        "Tests; Piwi's run controls work there too."
 
     /** The longest paused page the plugin decodes, in base64 characters: 12 MB of JPEG. */
     const val MAX_IMAGE_DATA = 16 * 1024 * 1024

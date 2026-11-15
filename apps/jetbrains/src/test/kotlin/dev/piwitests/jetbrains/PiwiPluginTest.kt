@@ -1231,6 +1231,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .first { coverageKey(it) == "PIWI_COVERAGE_RUN" }
             val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
             assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
+            // At the right of the marker area: the IDE's own coverage paints at its left.
+            assertEquals(
+                com.intellij.openapi.editor.markup.LineMarkerRendererEx.Position.RIGHT,
+                (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.LineMarkerRendererEx).position,
+            )
             // Every mark carries its key, for a background the scheme sets; the lines run draw no mark in the scroll bar.
             val scheme = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance().globalScheme
             assertEquals("PIWI_COVERAGE_RUN", run.textAttributesKey?.externalName)

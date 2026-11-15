@@ -46,7 +46,13 @@ under Run control, Tested elements under Dashboard and Agent context under Agent
 Piwi Desktop and Piwi Runner takes the menu's order, the run control first, the app, Agents and Connection, then its
 own options, with Check for updates in both and each row's glyph (X3). M8 built since: a plain Run pauses at no breakpoint, Debug with Piwi does, as the IDE's own Run and Debug
 (`piwi.breakpoints` `debug`, its default; `always` and `never` beside it; `RunTestsArgs.debugging`), the runs a
-terminal starts with `always` alone (TL17).
+terminal starts with `always` alone (TL17), and **Debug the test at the cursor** in both editors. L2 built since:
+VS Code's Testing view runs a Coverage profile that shows its tests' coverage of the files they reach in the Test
+Coverage view (`piwi/coverageFiles`), and JetBrains paints Piwi's marks beside the IDE's coverage, a click on one offering to run the
+tests that ran the line (`piwi/coverageTests`), go to the next line no test runs, hide the marks or edit their colors
+(TL18); a run in JetBrains' Run tab draws its tests in the IDE's test tree as its workers begin and end them
+(`piwi/runTest`), and such a run offers the IDE's Playwright runner once (TL19); with the Run, Debug and Coverage
+profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's actions (TL1).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -249,7 +255,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the four medium and seven large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the four medium and six large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -363,14 +369,6 @@ What works: both editors draw the same answer per line from the editor service (
 the failing line and the evidence are the same data in Rider and in VS Code. **(read)** What differs is what a click
 does, what the line says and which marks it carries.
 
-<a id="tl1"></a>**TL1. VS Code's Testing view carries Piwi's results and none of its actions, and in both editors the
-IDE's own test UI is mostly unused.** `apps/vscode/src/test-explorer.ts:127-135` creates two Run-kind profiles and no
-Debug or Coverage profile, `apps/vscode/package.json` contributes no `testing/*` menu, and coverage is drawn as Piwi's
-own decorations, outside the Test Coverage view; in JetBrains the IDE run icon has no Piwi entry. **(seen)** Fix: each
-IDE's test UI as Piwi's home, Run, Debug and Coverage meaning what the IDE means, and Piwi's own marks kept for flaky,
-quarantine and history, which no IDE shows ([editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 built the
-view results-only). ([L2](#l2), [LI8](#li8))
-
 ### 5.1 The gutter and its menus
 
 <a id="tl3"></a>**TL3. The IDE run icon on a JS test carries no Piwi action, so a test with no Piwi result yet cannot be
@@ -395,22 +393,6 @@ the Gutter Icons page, a descriptor whose switch the annotator reads. ([M9](#m9)
 ### 5.6 Debug
 
 ### 5.7 The IDE's own test UI
-
-<a id="tl18"></a>**TL18. Piwi's coverage sits beside each IDE's coverage rather than inside it: VS Code gets no Test
-Coverage view, and JetBrains paints in the IDE coverage's strip.** VS Code draws its own borders
-(`apps/vscode/src/extension.ts:628-657`) and never calls `TestRun.addCoverage`, which VS Code's engines floor, 1.91,
-already offers, so no per-file percentage shows Piwi's data. JetBrains' coverage mark paints at `Position.LEFT`
-(`PiwiCoverageMarks.kt:252`), the IDE coverage's strip, so after Run with Coverage the two bars overlap, and its click
-shows only a hint (`:256-260`). **(read)** Fix: a Coverage profile and `FileCoverage` on the results run in VS Code; in
-JetBrains, a click menu (Run the tests that ran these lines, Next uncovered line, Hide, Edit colors…) and Piwi's marks
-skipped while the IDE shows its own. ([L2](#l2), [LI8](#li8))
-
-<a id="tl19"></a>**TL19. JetBrains has no per-test view of a Piwi run in progress, while VS Code shows one in its
-Testing view.** VS Code publishes a run in progress test by test (`apps/vscode/src/test-explorer.ts:163-183`); JetBrains
-shows counts in the status item and "running x/y" on the Piwi tool window's run node (`Glue.kt:586-587`), and the IDE's
-test tree comes only with its Playwright runner, off by default and never offered. **(read)** Fix: offer the runner once
-([editor-extensions-audit.md](../adr/editor-extensions-audit.md) §6.4), and give other runs an SMTRunner console fed by
-the run channel's test events. Local progress is [LR9](#lr9). ([L2](#l2), [LI8](#li8))
 
 ### 5.8 A test card
 
@@ -720,12 +702,12 @@ left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/serve
 VS Code: Run, Debug and Coverage profiles, the instance's coverage as `FileCoverage` (`loadDetailedCoverage`), and
 durations, descriptions and TestTags from `SpecTest`. JetBrains: an SMTRunner console fed by the run channel in
 [LI9](#li9)'s Run tab, so every Piwi run gets the IDE's test tree; the result icon a switchable Gutter Icons entry;
-Piwi's coverage bar hidden while the IDE shows its own. Piwi's own marks stay for flaky, quarantine, history and
+Piwi's coverage bar beside the IDE's own, not over it. Piwi's own marks stay for flaky, quarantine, history and
 [live-view-next.md](live-view-next.md) Part 6's CI position. **Lives in** both clients and the service (FSL).
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 (a results-only Testing view, built) and §6.4 (offer
-the IDE's Playwright runner, not built). Steps M8 (built), [M9](#m9), [L2](#l2).
+the IDE's Playwright runner, built with L2). Steps M8 and L2 (built), [M9](#m9).
 
 <a id="li9"></a>
 
@@ -940,7 +922,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [LR12](#lr12), [NF10](#nf10) |
-| <a id="l2"></a>L2 | **VS Code's coverage view and a JetBrains test tree for Piwi runs** ([LI8](#li8)) | `ide` | [TL18](#tl18), [TL19](#tl19), [TL1](#tl1) |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger | `ide` | [LR3](#lr3) |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`) | `ide` | [RD7](#rd7), [RD8](#rd8) |
 | <a id="l5"></a>L5 | **A test card in both editors** (`piwi/testCard`), laid out like the dashboard's test row | `ide` | [TL21](#tl21) |
@@ -1122,5 +1103,4 @@ What the slices and the two hands-on runs checked and found right, kept here so 
   it finds a config beside a solution through Git (`Glue.kt:218-231`, `GlueTest.kt:2391-2398`) **(read)**. The editor
   menu shows Piwi's entries, and the Add menu offers Record a New Test File… **(seen)**. `use-shortcut-of` gives the run
   controls Rider's Visual Studio keys (F5, F10, Shift+F11, Ctrl+F10) **(read)**.
-- **VS Code's Testing view** follows a live run test by test (`apps/vscode/src/test-explorer.ts:379-411`), the view
-  JetBrains lacks ([TL19](#tl19)) **(read)**.
+- **VS Code's Testing view** follows a live run test by test (`apps/vscode/src/test-explorer.ts:379-411`) **(read)**.

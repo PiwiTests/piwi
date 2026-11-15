@@ -29,6 +29,7 @@ import type {
   RunLine,
   RunLineParams,
   RunSession,
+  RunTestEvent,
   StopCode,
   StopRunParams,
 } from '../src/protocol';
@@ -66,6 +67,8 @@ export interface Service {
   client: MessageConnection;
   stop: () => void;
   sessions: RunSession[];
+  /** Each test the runs' workers began and ended (`piwi/runTest`), in order. */
+  tests: RunTestEvent[];
   notices: Notice[];
   /** The code made at stops the client was sent to write (`piwi/stopCode`). */
   codes: StopCode[];
@@ -107,6 +110,7 @@ export async function service(
   });
   const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
   const sessions: RunSession[] = [];
+  const tests: RunTestEvent[] = [];
   const notices: Notice[] = [];
   const codes: StopCode[] = [];
   const agents: AgentsResult[] = [];
@@ -119,6 +123,7 @@ export async function service(
   });
   client.onNotification('piwi/agentsChanged', (told: AgentsResult) => void agents.push(told));
   client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
+  client.onNotification('piwi/runTest', (event: RunTestEvent) => void tests.push(event));
   client.onNotification('piwi/runLineChanged', (params: RunLineParams) => void lines.push(params.line));
   client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
   client.onNotification('piwi/stopCode', (code: StopCode) => void codes.push(code));
@@ -152,6 +157,7 @@ export async function service(
       client.dispose();
     },
     sessions,
+    tests,
     notices,
     codes,
     agents,
