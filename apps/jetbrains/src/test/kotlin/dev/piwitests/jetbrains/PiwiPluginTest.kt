@@ -137,6 +137,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(record), strokes("Piwi.RecordHere"))
         assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift K")), strokes("Piwi.RunTestAtCursor"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift Z")), strokes("Piwi.OpenFailures"))
+        // A keymap where a chord is another action's takes its own letter alone, and those descending from it too
+        // (`packages/editor/src/keys.ts`, checked against every bundled keymap by `keys.test.ts`); a macOS keymap Cmd.
+        val manager = com.intellij.openapi.keymap.KeymapManager.getInstance()
+        fun strokesIn(keymap: String, id: String) =
+            manager.getKeymap(keymap)?.getShortcuts(id)?.filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>()?.map { it.firstKeyStroke }
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift O")), strokesIn("Mac OS X 10.5+", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift R")), strokesIn("Mac OS X", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift K")), strokesIn("Mac OS X 10.5+", "Piwi.RunTestAtCursor"))
+        strokesIn("Visual Studio", "Piwi.RecordHere")?.let { assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift O")), it) }
         // A run's controls use the debugger's shortcuts, in this keymap as in every other.
         for ((control, debugger) in listOf(
             "Piwi.PauseRun" to "Pause", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",

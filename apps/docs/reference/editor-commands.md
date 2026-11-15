@@ -8,10 +8,26 @@ lang: en-US
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
 a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
-and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Both editors give
-`Ctrl+Shift+Alt+K` to Run the test at the cursor, `Ctrl+Shift+Alt+F` to Re-run the failing tests and
-`Ctrl+Shift+Alt+R` to Record here… and Stop recording (`Cmd` on macOS); a run's controls take the debugger's keys
+and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
+shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).
+
+### Keys
+
+`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. A JetBrains keymap where that chord is another action's
+takes the letter of its column, as the keymaps descending from it do: Visual Studio 2022, Visual Assist and ReSharper
+descend from Visual Studio, and the macOS keymaps from Mac OS X 10.5+.
+
+| Command | VS Code, and a JetBrains IDE's default keymap | Visual Studio | ReSharper | Mac OS X 10.5+ | Visual Studio OSX | ReSharper OSX |
+|---|---|---|---|---|---|---|
+| **Piwi: Run the test at the cursor** | `K` | `J` | `J` | `K` | `J` | `J` |
+| **Piwi: Re-run the failing tests** | `F` | `F` | `T` | `F` | `F` | `T` |
+| **Piwi: Record here…**, **Piwi: Stop recording** | `R` | `O` | `O` | `O` | `O` | `O` |
+| **Piwi: Open the failures** | `Z` | `Z` | `Z` | `Z` | `Z` | `Z` |
+
+They share a chord only with an action of the database tool window, of a Java file or of a Kotlin script, which acts
+where they do not. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings →
+Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## Connection
 
@@ -52,7 +68,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Compare with…** | Choose the run the failures are read against: [Compare with another run](/features/editor-status-bar#compare-with-another-run) |
 | **Piwi: Group the failures by…** | File, cluster or owner, or a flat list: [The failures view](/features/editor-failures#the-failures-view) |
 | **Piwi: Follow the active editor**, **Piwi: Stop following the active editor** | VS Code: select the active file's first failure in the failures view, or stop |
-| **Piwi: Open the failures** | JetBrains: open the Piwi tool window's failures |
+| **Piwi: Open the failures** | Open the failures view, the Piwi tool window's in a JetBrains IDE |
 | **Piwi: Show the run's flaky tests** | Open the failures view on the run's [flaky tests](/features/flaky-tests) |
 | **Piwi: Show or hide the coverage marks** | The [coverage marks](/features/editor-coverage) of the lines the tests ran |
 

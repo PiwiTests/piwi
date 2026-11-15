@@ -1409,6 +1409,11 @@
         "when": "editorTextFocus"
       },
       {
+        "command": "piwi.openFailures",
+        "key": "ctrl+shift+alt+z",
+        "mac": "cmd+shift+alt+z"
+      },
+      {
         "command": "piwi.stopRun",
         "key": "shift+f5",
         "when": "piwi.runActive && !inDebugMode"

@@ -137,10 +137,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The IDE's Playwright runner is reached only after `PlaywrightRunnerGate.available()`**, which names none of the
   runner's classes: they belong to the `JavaScript` plugin.
   ([Playwright runner](ARCHITECTURE.md#playwright-runner))
-- **The default chords are the VS Code extension's** (`$default` keymap): `Ctrl+Alt+Shift+R` records and stops a
-  recording, `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret.
-  `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
-  plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
+- **Piwi's chords are the editor service's table (`packages/editor/src/keys.ts`)**: the VS Code extension's in the
+  `$default` keymap, and another letter where a bundled keymap gives that chord to another action, `replace-all` in
+  `plugin.xml`. `packages/editor/tests/keys.test.ts` checks them against `keymap-chords.json`; when `verifyIdes`
+  changes, run `scripts/keymap-chords.py` on the new IDEs. ([Keymaps](ARCHITECTURE.md#keymaps))
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
   takes the key.** From the keyboard, Resume, Step, Run to caret and Finish give way to a suspended debug session, Pause
   to a running one, Stop to any (`givesWayTo`); `PiwiRunActionPromoter` puts them first only while a run is live.

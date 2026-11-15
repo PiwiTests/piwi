@@ -123,6 +123,8 @@
                         text="Run the test at the caret" icon="AllIcons.Actions.Execute"
                         description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift J" replace-all="true"/>
+                    <keyboard-shortcut keymap="Visual Studio OSX" first-keystroke="meta alt shift J" replace-all="true"/>
                 </action>
                 <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                         text="Verify the test at the caret ×3"
@@ -143,6 +145,8 @@
                         text="Re-run the failing tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
                         description="Run every test that still fails, or whose failing line changed since its run">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+                    <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift T" replace-all="true"/>
+                    <keyboard-shortcut keymap="ReSharper OSX" first-keystroke="meta alt shift T" replace-all="true"/>
                     <synonym text="Rerun failed tests"/>
                 </action>
                 <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
@@ -158,6 +162,8 @@
                         icon="/icons/record.svg"
                         description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift O" replace-all="true"/>
+                    <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt shift O" replace-all="true"/>
                     <synonym text="Playwright codegen"/>
                     <synonym text="Record a test"/>
                 </action>
@@ -171,6 +177,8 @@
                         description="Close the recording's browser; the recorded lines stay, one undo away">
                     <!-- Record here's chord: the two never apply to the same file at once. -->
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift O" replace-all="true"/>
+                    <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt shift O" replace-all="true"/>
                 </action>
                 <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause recording"
                         icon="/icons/recordPaused.svg"
@@ -342,7 +350,9 @@
             <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the page of a run of this project"
                     icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
             <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
-                    icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>
+                    icon="/icons/piwi.svg" description="Open the Piwi tool window's failures">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z"/>
+            </action>
             <action id="Piwi.ShowFlakyTests" class="dev.piwitests.jetbrains.ShowFlakyTestsAction" icon="/icons/testFlaky.svg"
                     text="Show the run's flaky tests" description="Open the Piwi tool window on the run's flaky tests"/>
             <action id="Piwi.NodeSettings" class="dev.piwitests.jetbrains.NodeSettingsAction" text="Node.js settings…"
