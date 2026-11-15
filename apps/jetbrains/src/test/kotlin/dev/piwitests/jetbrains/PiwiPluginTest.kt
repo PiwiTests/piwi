@@ -825,7 +825,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
     /**
      * Each kind of balloon goes to its group, which the IDE's notification settings name: a run's verdict to the
      * results, ending with Settings…; a confirmation to the confirmations; a picked locator the service did not place
-     * to the problems, with Restart and the log; a recording the service let go to the problems too.
+     * to the problems, with Restart and the log; a recording the service did not start to the problems too.
      */
     fun testEachKindOfBalloonGoesToItsGroup() {
         val shown = mutableListOf<com.intellij.notification.Notification>()
@@ -852,6 +852,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         PiwiCommands.notify(project, Glue.pickNotice(Glue.SendPlace("tests/a.spec.ts", 3), Glue.PickOutcome.NO_ANSWER))
         PiwiCommands.notify(project, PiwiRecordFlow.startFailure(java.util.concurrent.CompletableFuture<PageCandidatesResult>()), com.intellij.notification.NotificationType.ERROR)
         com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(4, shown.size)
         val (verdict, confirmed, pick, recording) = shown
         assertEquals(PiwiNotice.RESULT.group, verdict.groupId)
         assertEquals(listOf(Glue.OPEN_FAILURES, Glue.ONLY_ON_FAILURE, "Settings…"), verdict.actions.map { it.templateText })

@@ -532,11 +532,6 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
 class CopyMcpConfigurationAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    // Enabled while a context reads an instance, whose servers the configuration names.
-    override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled = piwiConnected(e.project)
-    }
-
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         copyMcpConfiguration(project)

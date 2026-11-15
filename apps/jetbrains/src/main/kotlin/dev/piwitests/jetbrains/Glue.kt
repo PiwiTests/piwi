@@ -1271,9 +1271,10 @@ object Glue {
 
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open the log; an instance still
-     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
-     * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open
+     * the log; an instance still being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare
+     * with…; no connection, with Connect… and Record a new test file…, which needs none; else no failure in the run read
+     * (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
         "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))

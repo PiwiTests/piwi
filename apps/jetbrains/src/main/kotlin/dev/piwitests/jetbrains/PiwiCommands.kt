@@ -431,7 +431,7 @@ object PiwiCommands {
         notification.notify(project)
     }
 
-    /** `notification` with Restart the editor service and Open the log, for a message that the service did not answer. */
+    /** `notification` with Restart the editor service and Open the log, for a message that the service does not run or did not answer. */
     fun withServiceFixes(project: Project, notification: Notification): Notification = notification
         .addAction(
             NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
