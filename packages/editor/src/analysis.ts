@@ -986,7 +986,13 @@ export function testActions(
   debugRun: RunTestsArgs | null = null,
   recordAt: number | null = null,
 ): TestAction[] {
-  const debug: RunTestsArgs = debugRun ?? { uri, testIds: [testCaseId], headed: true, holdFailures: true };
+  const debug: RunTestsArgs = debugRun ?? {
+    uri,
+    testIds: [testCaseId],
+    headed: true,
+    holdFailures: true,
+    debugging: true,
+  };
   const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
   const actions: Array<Omit<TestAction, 'section'>> = [
     {

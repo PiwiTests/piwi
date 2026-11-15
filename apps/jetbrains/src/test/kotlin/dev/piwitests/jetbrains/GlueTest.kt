@@ -2389,6 +2389,20 @@ class GlueTest {
     }
 
     @Test
+    fun `which runs pause at the IDE's breakpoints, Debug with Piwi alone by default, an older true or false as always or never`() {
+        assertEquals(
+            listOf("debug", "debug", "always", "always", "never", "never"),
+            listOf(null, "debug", "true", "always", "false", "never").map { Glue.breakpointsMode(it) },
+        )
+        val plain = RunTestsArgs("file:///a.spec.ts", listOf(1))
+        val debugging = plain.copy(debugging = true)
+        val failure = plain.copy(debug = DebugRun(EditorBreakpoint("file:///a.spec.ts", 4), "pays"))
+        assertEquals(listOf(false, true, true), listOf(plain, debugging, failure).map { Glue.takesBreakpoints("debug", it) })
+        assertEquals(listOf(true, true), listOf(plain, debugging).map { Glue.takesBreakpoints("always", it) })
+        assertEquals(listOf(false, false), listOf(plain, debugging).map { Glue.takesBreakpoints("never", it) })
+    }
+
+    @Test
     fun `the settings page's groups, choices and defaults are the editor service's registry`() {
         val file = java.io.File("../../packages/editor/src/settings.json")
         assertTrue(file.absolutePath, file.isFile)
@@ -2407,6 +2421,7 @@ class GlueTest {
         val lists = mapOf(
             "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
             "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
+            "breakpoints" to Glue.BREAKPOINTS_CHOICES,
             "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
             "codeLens" to Glue.CODE_LENS_CHOICES,
         )

@@ -3209,14 +3209,41 @@ object Glue {
      * What a run was given of the IDE's breakpoints: where the edit log stood when it started (`since`), the line of
      * each breakpoint in its code by the IDE's breakpoint, and the places last sent (null before any).
      */
-    class RunBreakpoints(val since: Int, val lines: MutableMap<Any, EditorBreakpoint>, var sent: String?)
+    class RunBreakpoints(
+        val since: Int,
+        val lines: MutableMap<Any, EditorBreakpoint>,
+        var sent: String?,
+        /** Whether it pauses at the IDE's breakpoints ([takesBreakpoints]); null for a run not started here. */
+        val takes: Boolean? = null,
+    )
 
-    /** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
-    fun runStarted(since: Int, breakpoints: List<RunBreakpoint>?): RunBreakpoints = RunBreakpoints(
+    /**
+     * A run started at `since` with `breakpoints`, which it takes or not (`takes`); one heard of but not started here
+     * was given none Piwi knows.
+     */
+    fun runStarted(since: Int, breakpoints: List<RunBreakpoint>?, takes: Boolean? = null): RunBreakpoints = RunBreakpoints(
         since,
         breakpoints.orEmpty().mapNotNull { b -> b.key?.let { it to b.place } }.toMap(HashMap()),
         breakpoints?.let { list -> breakpointsText(list.map { it.place }) },
+        takes,
     )
+
+    /** The choices of `PiwiUserSettings.breakpoints`: which runs pause at the IDE's breakpoints. */
+    val BREAKPOINTS_CHOICES = listOf("debug", "always", "never")
+
+    /**
+     * `PiwiUserSettings.breakpoints` as kept: one of [BREAKPOINTS_CHOICES], an older `true` or `false` read as `always`
+     * or `never`, else `debug`: Debug with Piwi alone pauses at the IDE's breakpoints, as the IDE's own Run and Debug.
+     */
+    fun breakpointsMode(value: String?): String = when (value) {
+        "always", "true" -> "always"
+        "never", "false" -> "never"
+        else -> "debug"
+    }
+
+    /** Whether a run pauses at the IDE's breakpoints: every run with `always`, a Debug with Piwi run with `debug`. */
+    fun takesBreakpoints(mode: String, args: RunTestsArgs?): Boolean =
+        mode == "always" || (mode == "debug" && (args?.debugging == true || args?.debug != null))
 
     /** Keep what a run was given, the oldest of more than [MAX_BREAKPOINT_RUNS] runs forgotten. */
     fun <T> remember(runs: LinkedHashMap<String, T>, ref: String, value: T) {
@@ -3244,17 +3271,19 @@ object Glue {
 
     /**
      * The `piwi/setRunBreakpoints` the live runs need for the IDE's `breakpoints`: one per run whose places
-     * ([runPlaces]) differ from those it has (`runs`, by ref: those its command started with, else the last sent), which
-     * `runs` then records. A run heard of without its start maps from now.
+     * ([runPlaces], none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: those its
+     * command started with, else the last sent), which `runs` then records. A run heard of without its start maps from
+     * now, and takes them as `heardTakes` says.
      */
     fun breakpointUpdates(
         sessions: Map<String, RunSession>,
         breakpoints: List<RunBreakpoint>,
         runs: LinkedHashMap<String, RunBreakpoints>,
         edits: EditLog,
+        heardTakes: Boolean = true,
     ): List<SetRunBreakpointsParams> = sessions.keys.mapNotNull { ref ->
         val run = runs[ref] ?: runStarted(edits.now(), null).also { remember(runs, ref, it) }
-        val places = runPlaces(run, breakpoints, edits)
+        val places = if (run.takes ?: heardTakes) runPlaces(run, breakpoints, edits) else emptyList()
         val text = breakpointsText(places)
         if (run.sent == text) return@mapNotNull null
         run.sent = text

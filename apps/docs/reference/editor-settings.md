@@ -42,7 +42,7 @@ the choice of the desktop app on this machine only.
 | `piwi.runNotifications` | When a run ends, whether a notification says what it changed: always, only when something fails, or never | Say what it changed when something fails | Yours |
 | `piwi.runNotificationsScope` | The runs it says it for: the runs started here, or also the branch's CI runs | The runs started here and the branch's CI runs | Yours |
 | `piwi.statusBarAlert` | When the status bar item turns red: for a new failure a run started here caused, for any failing test, or never | For a new failure a run started here caused | Yours |
-| `piwi.breakpoints` | Whether the runs Piwi starts pause at the editor's breakpoints: [Editor breakpoints](/features/editor-breakpoints) | on | Yours |
+| `piwi.breakpoints` | Which runs pause at the editor's breakpoints, Debug with Piwi, every run or none: [Editor breakpoints](/features/editor-breakpoints) | Debug with Piwi | Yours |
 | `piwi.runHeaded` | Whether every run Piwi starts runs headed, its browser window shown | off | Yours |
 | `piwi.runHoldFailures` | [Hold failures](/features/watch-a-run) from each run's start: Auto, On or Off | Auto | Yours |
 | `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results | on | Yours, which a project may set |

@@ -412,7 +412,8 @@ const tests = {
     const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
     vscode.debug.addBreakpoints([breakpoint]);
     try {
-      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1] });
+      // A Debug with Piwi run pauses at them; a plain Run, at none.
+      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1], debugging: true });
       const run = api.lastRun();
       assert.equal(run.env.PIWI_PAUSE_AT, 'tests/checkout.spec.ts:3');
       // Built in the editor from the instance's args; the instance's own command text is never run. The fixture
@@ -496,6 +497,9 @@ const tests = {
   async 'a run started here shows where it stops, its controls steer it, and its breakpoints follow the editor’s'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
+    // A run heard of, not started here, pauses at the editor's breakpoints with `always` alone.
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('breakpoints', 'always', vscode.ConfigurationTarget.Global);
     assert.ok(channel, 'the run names the run channel');
     const ref = 'ed-0000c0de';
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
@@ -658,6 +662,7 @@ const tests = {
       await new Promise((resolve) => setTimeout(resolve, 200));
       assert.equal(heard.filter((m) => m.type === 'control' && m.action === 'resume').length, 1);
     } finally {
+      await settings.update('breakpoints', undefined, vscode.ConfigurationTarget.Global);
       socket.destroy();
       await vscode.window.showTextDocument(spec);
       await vscode.commands.executeCommand('workbench.action.files.revert');
@@ -674,6 +679,9 @@ const tests = {
     const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
     const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    // A run a terminal starts pauses at the editor's breakpoints with `always` alone.
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('breakpoints', 'always', vscode.ConfigurationTarget.Global);
     vscode.debug.addBreakpoints([breakpoint]);
     // The run a terminal started names itself, on the channel of the window's discovery file.
     const ref = 'terminal-4242-1730000000000';
@@ -718,6 +726,7 @@ const tests = {
       await vscode.commands.executeCommand('piwi.endTest');
       await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
     } finally {
+      await settings.update('breakpoints', undefined, vscode.ConfigurationTarget.Global);
       vscode.debug.removeBreakpoints([breakpoint]);
       socket.destroy();
     }

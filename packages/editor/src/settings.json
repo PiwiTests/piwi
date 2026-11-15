@@ -105,8 +105,22 @@
       "jetbrains": "breakpoints",
       "group": "runs",
       "scope": "user",
-      "type": "boolean",
-      "default": true
+      "type": "string",
+      "default": "debug",
+      "choices": [
+        {
+          "value": "debug",
+          "label": "Debug with Piwi"
+        },
+        {
+          "value": "always",
+          "label": "Every run"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
+      ]
     },
     {
       "key": "piwi.runHeaded",

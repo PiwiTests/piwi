@@ -1795,6 +1795,25 @@ describe('the breakpoints sent to a run', () => {
     ]);
   });
 
+  test('go to a run that takes them alone: a plain Run gets none, one started elsewhere gets them with always', () => {
+    const edits = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    const live = sessionsOf(
+      session('ed-debug', [worker(0, 'running')]),
+      session('ed-plain', [worker(0, 'running')]),
+      session('terminal-1', [worker(0, 'running')]),
+    );
+    remember(runs, 'ed-debug', runStarted(edits.now(), [], true));
+    remember(runs, 'ed-plain', runStarted(edits.now(), [], false));
+    // With `debug`: the Debug with Piwi run alone.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([
+      { ref: 'ed-debug', places },
+      { ref: 'terminal-1', places: [] },
+    ]);
+    // With `always`: the run started elsewhere too, the plain Run still as it started.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, true)).toEqual([{ ref: 'terminal-1', places }]);
+  });
+
   test('keep the line a run has for a breakpoint that moved with an edit, and map a new one back', () => {
     const edits = new EditLog();
     const runs = new Map<string, RunBreakpoints>();

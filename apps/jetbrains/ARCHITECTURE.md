@@ -537,7 +537,10 @@ and **Run a saved selection…**. The breakpoints come from `PiwiProjectService.
    local files, in a read action;
 2. then `Glue.runBreakpoints`, keeping those in script files under a Playwright config's folder.
 
-The checkbox under **Settings → Tools → Piwi** (`PiwiUserSettings.breakpoints`, each person's own in every project) turns them off.
+The choice under **Settings → Tools → Piwi** (`PiwiUserSettings.breakpoints`, each person's own in every project) says
+which runs take them (`Glue.breakpointsMode`, `Glue.takesBreakpoints`): `debug`, the default, a Debug with Piwi run
+alone (`RunTestsArgs.debugging`, or a failure's `debug`); `always`, every run, a run started in a terminal included;
+`never`, none. An older `true` or `false` reads as `always` or `never`.
 
 When the command carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or says the
 run pauses at a `page.pause()` (`RunCommand.pauses`), `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing
@@ -730,7 +733,8 @@ with it off). No Picker pairing or port forwarding is needed for the panel, and 
 reporters keep the still image.
 
 **Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to
-each live run 100 ms after a burst of changes, and the settings page does when the breakpoints checkbox changes. They go
+each live run that takes them (`RunBreakpoints.takes`, as its start said; a run not started here, and a terminal's,
+with `always` alone) 100 ms after a burst of changes, and the settings page does when the breakpoints choice changes. They go
 as lines of the run's code (`Glue.runPlaces`): a breakpoint the run was given, known by the `XLineBreakpoint` itself,
 keeps its line while it only moved with the edits (`XLineBreakpointImpl.updatePosition` firing `breakpointChanged`);
 one added or dragged is mapped back through them. They go only to a run whose places differ from those its command

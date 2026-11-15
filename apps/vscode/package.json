@@ -1595,9 +1595,24 @@
             ]
           },
           "piwi.breakpoints": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
+            "type": "string",
+            "enum": [
+              "debug",
+              "always",
+              "never"
+            ],
+            "enumItemLabels": [
+              "Debug with Piwi",
+              "Every run",
+              "Never"
+            ],
+            "enumDescriptions": [
+              "Debug with Piwi pauses at the editor's breakpoints; a plain Run pauses at none.",
+              "Every run Piwi starts, and a run started in a terminal, pauses at them.",
+              "No run pauses at them."
+            ],
+            "default": "debug",
+            "markdownDescription": "Which runs Piwi starts pause at the editor's breakpoints: **Debug with Piwi** alone by default, as the editor's own Run and Debug. A run with a breakpoint in a test or page object file pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion): headless, the editor marks the line and shows the page; with `piwi.runHeaded`, Piwi's pause bar shows in the browser: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, 0.60.0 or later to pause before calls other than locator actions and assertions, and 0.62.0 or later to stop headless: with an older reporter, or one whose version Piwi cannot read, a run with breakpoints starts headed. [Documentation](https://piwitests.dev/reference/editor-settings#runs)",
             "order": 3,
             "scope": "application"
           },

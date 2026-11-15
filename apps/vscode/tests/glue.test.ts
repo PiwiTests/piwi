@@ -109,6 +109,8 @@ import {
   runStartLine,
   runStartOptions,
   withRunStart,
+  breakpointsMode,
+  runTakesBreakpoints,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -2067,6 +2069,29 @@ describe('the verdict of a run started from the editor', () => {
   });
 });
 
+describe('which runs pause at the breakpoints', () => {
+  test('reads piwi.breakpoints, an older true or false as always or never, Debug with Piwi by default', () => {
+    expect([undefined, 'debug', 'x', true, 'always', false, 'never'].map(breakpointsMode)).toEqual([
+      'debug',
+      'debug',
+      'debug',
+      'always',
+      'always',
+      'never',
+      'never',
+    ]);
+  });
+
+  test('a Debug with Piwi run takes them with debug, every run with always, none with never', () => {
+    const plain = { uri: 'file:///a.spec.ts', testIds: [1] };
+    const debugging = { ...plain, debugging: true };
+    const failure = { ...plain, debug: { stop: { uri: plain.uri, line: 4 }, title: 'pays' } };
+    expect([plain, debugging, failure].map((args) => runTakesBreakpoints('debug', args))).toEqual([false, true, true]);
+    expect([plain, debugging].map((args) => runTakesBreakpoints('always', args))).toEqual([true, true]);
+    expect([plain, debugging].map((args) => runTakesBreakpoints('never', args))).toEqual([false, false]);
+  });
+});
+
 describe('a test’s actions from its gutter', () => {
   const SECTIONS = { run: '', record: 'Record', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
   const action = (group: TestAction['group'], title: string): TestAction => ({
@@ -2476,6 +2501,7 @@ describe('the Testing view', () => {
         testIds: [1, 2],
         headed: true,
         holdFailures: true,
+        debugging: true,
       },
     ]);
     expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([

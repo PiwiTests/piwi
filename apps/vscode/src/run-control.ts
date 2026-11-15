@@ -1930,15 +1930,28 @@ export interface RunBreakpoints {
   since: number;
   lines: Map<string, EditorBreakpoint>;
   sent: string;
+  /**
+   * Whether the run pauses at the editor's breakpoints (`runTakesBreakpoints`), as it started here; absent for a run
+   * heard of but not started here, which takes them only while `piwi.breakpoints` is `always`.
+   */
+  takes?: boolean;
 }
 
-/** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
-export function runStarted(since: number, breakpoints: readonly RunBreakpoint[] | null): RunBreakpoints {
+/**
+ * A run started at `since` with `breakpoints`, which it takes or not (`takes`); one heard of but not started here was
+ * given none Piwi knows.
+ */
+export function runStarted(
+  since: number,
+  breakpoints: readonly RunBreakpoint[] | null,
+  takes?: boolean,
+): RunBreakpoints {
   const places = (breakpoints ?? []).map((b) => ({ uri: b.uri, line: b.line }));
   return {
     since,
     lines: new Map((breakpoints ?? []).map((b, i) => [b.id, places[i]!])),
     sent: breakpoints ? JSON.stringify(places) : '',
+    ...(takes === undefined ? {} : { takes }),
   };
 }
 
@@ -1970,14 +1983,16 @@ export function runPlaces(
 
 /**
  * The `piwi/setRunBreakpoints` the live runs need for the editor's `breakpoints`: one per run whose places
- * (`runPlaces`) differ from those it has (`runs`, by ref: the ones its command started with, else the last sent),
- * which `runs` then records. A run heard of without its start maps from now.
+ * (`runPlaces`, none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: the ones its command
+ * started with, else the last sent), which `runs` then records. A run heard of without its start maps from now, and
+ * takes them as `heardTakes` says.
  */
 export function breakpointUpdates(
   sessions: Sessions,
   breakpoints: readonly RunBreakpoint[],
   runs: Map<string, RunBreakpoints>,
   edits: EditLog,
+  heardTakes = true,
 ): SetRunBreakpointsParams[] {
   const updates: SetRunBreakpointsParams[] = [];
   for (const ref of sessions.keys()) {
@@ -1986,7 +2001,7 @@ export function breakpointUpdates(
       run = runStarted(edits.now(), null);
       remember(runs, ref, run);
     }
-    const places = runPlaces(run, breakpoints, edits);
+    const places = (run.takes ?? heardTakes) ? runPlaces(run, breakpoints, edits) : [];
     const text = JSON.stringify(places);
     if (run.sent === text) continue;
     run.sent = text;

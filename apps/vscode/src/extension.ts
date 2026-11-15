@@ -219,6 +219,8 @@ import {
   SPEC_FILE,
   statusMenu,
   type StatusBarView,
+  breakpointsMode,
+  runTakesBreakpoints,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -1209,11 +1211,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    */
   const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
 
-  /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
-  const breakpointsForRun = () =>
-    vscode.workspace.getConfiguration('piwi').get<boolean>('breakpoints', true)
-      ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
-      : [];
+  /** Which runs pause at the editor's breakpoints (`piwi.breakpoints`). */
+  const breakpointsModeNow = () => breakpointsMode(vscode.workspace.getConfiguration('piwi').get('breakpoints'));
+  /** The enabled breakpoints a run that takes them pauses at; none outside the Playwright configs, or with `never`. */
+  const enabledBreakpoints = () =>
+    breakpointsModeNow() === 'never'
+      ? []
+      : runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? []);
 
   /** Ends the task of the run `ref` started in this window: whether there was one. */
   const terminateRun = (ref: string): boolean => {
@@ -1237,7 +1241,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   /** Where the runs started here stop, and their controls. */
   const runControl = registerRunControl(context, lc, {
-    breakpoints: breakpointsForRun,
+    breakpoints: enabledBreakpoints,
+    breakpointsMode: breakpointsModeNow,
     terminate: terminateRun,
     // Once the status is read: before, the item shows the service starting.
     changed: () => {
@@ -1257,7 +1262,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
    * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`). Whether it started.
    */
-  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]): Promise<boolean> => {
+  const startRun = async (
+    command: RunCommand,
+    breakpoints: readonly RunBreakpoint[],
+    takes = breakpointsModeNow() === 'always',
+  ): Promise<boolean> => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
@@ -1269,7 +1278,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
     lastRun = { ...command, env };
     if (command.ref) {
-      runControl.started(command.ref, breakpoints);
+      runControl.started(command.ref, breakpoints, takes);
       return runAsTask({ ...command, ref: command.ref }, env);
     }
     runInTerminal(command.cwd, command.command, env);
@@ -1292,7 +1301,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * (`withRunStart`); the command started, or null when there is none, said unless `quiet`.
    */
   const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
-    const breakpoints = breakpointsForRun();
+    // A plain Run pauses at the breakpoints with `always` alone; a Debug with Piwi run with `debug` too.
+    const takes = runTakesBreakpoints(breakpointsModeNow(), args);
+    const breakpoints = takes ? enabledBreakpoints() : [];
     const started = withRunStart(args, runChoices());
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
@@ -1302,7 +1313,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return null;
     }
-    await startRun(command, breakpoints);
+    await startRun(command, breakpoints, takes);
     return command;
   };
 
@@ -1775,7 +1786,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         { placeHolder: 'Run which selection?' },
       );
       if (!picked) return;
-      const breakpoints = breakpointsForRun();
+      const breakpoints = breakpointsModeNow() === 'always' ? enabledBreakpoints() : [];
       const command = await lc.sendRequest<RunCommand | null>(
         RUN_SELECTION_REQUEST,
         withRunStart(

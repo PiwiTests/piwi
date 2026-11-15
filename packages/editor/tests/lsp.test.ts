@@ -1567,7 +1567,7 @@ describe('the Piwi language server', () => {
     });
     // A test that passed debugs headed, holding its failures.
     expect(actions[1]!.command.arguments).toEqual([
-      { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true },
+      { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true, debugging: true },
     ]);
     expect(actions[2]!.command.arguments).toEqual([
       { uri: uri('tests/checkout.spec.ts'), testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 },

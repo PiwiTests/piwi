@@ -915,6 +915,24 @@ export interface TestDecoration {
   actions: boolean;
 }
 
+/**
+ * Which runs pause at the editor's breakpoints (`piwi.breakpoints`): `debug`, a Debug with Piwi run alone, its default;
+ * `always`, every run; `never`, none.
+ */
+export type BreakpointsMode = 'debug' | 'always' | 'never';
+
+/** `piwi.breakpoints` as set: one of its choices, `true` and `false` read as `always` and `never`, else `debug`. */
+export function breakpointsMode(value: unknown): BreakpointsMode {
+  if (value === true || value === 'always') return 'always';
+  if (value === false || value === 'never') return 'never';
+  return 'debug';
+}
+
+/** Whether a run pauses at the editor's breakpoints: every run with `always`, a Debug with Piwi run with `debug`. */
+export function runTakesBreakpoints(mode: BreakpointsMode, args: RunTestsArgs | null): boolean {
+  return mode === 'always' || (mode === 'debug' && !!(args?.debugging || args?.debug));
+}
+
 /** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
 export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions'];
 
@@ -2027,7 +2045,7 @@ export function testRunsOf(tests: readonly TreeTest[], repeat?: number, debug = 
       testIds: byId ? [...new Set(ids as number[])] : [],
       ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
       ...(repeat ? { repeat } : {}),
-      ...(debug ? { headed: true, holdFailures: true } : {}),
+      ...(debug ? { headed: true, holdFailures: true, debugging: true } : {}),
     };
   });
 }

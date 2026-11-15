@@ -472,9 +472,9 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
                             val service = project.service<PiwiProjectService>()
-                            val breakpoints = service.breakpoints()
-                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val user = service.user()
+                            val breakpoints = if (Glue.breakpointsMode(user.breakpoints) == "always") service.breakpoints() else emptyList()
+                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val params = Glue.withRunStart(
                                 RunSelectionParams(uri, picked.key, places),
                                 user.runHeaded,

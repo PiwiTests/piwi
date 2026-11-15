@@ -167,7 +167,7 @@ other one is each person's own, application-scoped, which a committed `.vscode/s
 | ---------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `piwi.serverUrl`             | a URL                                    | The instance. Connect writes it in the workspace settings.                                                  |
 | `piwi.project`               | a project name                           | The project. Connect writes it in the workspace settings.                                                   |
-| `piwi.breakpoints`           | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                                      |
+| `piwi.breakpoints`           | `debug`, `always`, `never`               | Which test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                                |
 | `piwi.runHeaded`             | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Application scope.                    |
 | `piwi.runHoldFailures`       | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Application scope.             |
 | `piwi.runNotifications`      | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                                     |
@@ -402,10 +402,11 @@ application-scoped), and the status bar item's tooltip ends with them (`runStart
 
 ### Breakpoints
 
-Every test run passes the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows
-(on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run with Piwi**,
-**Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
-tests**) and **Run a saved selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
+A test run passes the editor's breakpoints to the service (`breakpoints`) as the `piwi.breakpoints` setting says
+(`breakpointsMode`, `runTakesBreakpoints`): `debug`, the default, a Debug with Piwi run alone (`RunTestsArgs.debugging`,
+or a failure's `debug`: the Testing view's Debug profile, a test's Debug with Piwi, Debug with Piwi on a failure, a
+debug link); `always`, every run through `runTests` and **Run a saved selection…**; `never`, none; an older `true`
+or `false` reads as `always` or `never`. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
 a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). A run with breakpoints stays headless unless
 **Run headed** is on ([How a run starts](#how-a-run-starts)) or the service makes it headed for a reporter that stops at
 none headless (`breakpointRunHeaded`), and its stops show in the editor as any headless stop does.
@@ -579,10 +580,12 @@ own. Each answer shows as an information message, a warning when it is not `ok`,
 (`Worker 1: …`, `traceAnswerText`) when the panel shows another slot by then. The service starts Playwright's trace
 viewer on the machine the run runs on; the trace's path never reaches the extension. A CI run's lane has neither.
 
-**Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
+**Breakpoints during a run.** The enabled breakpoints go to each live run that takes them as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
-moved with the edits; another is mapped back through them. They go only to a run whose places differ from those its
+moved with the edits; another is mapped back through them. A run started here takes them as its start said
+(`RunBreakpoints.takes`), one heard of but not started here, and one a terminal starts (`piwi/setBreakpoints`), with
+`always` alone. They go only to a run whose places differ from those its
 command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects. The service
 hears them as they stand too (`piwi/setBreakpoints`, as the service starts, as the Playwright configs change and as they
 change, only when they differ): a run started in a terminal starts with them.

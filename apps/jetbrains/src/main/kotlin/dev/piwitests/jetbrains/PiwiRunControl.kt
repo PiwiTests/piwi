@@ -605,10 +605,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The stops already called attention to (`Glue.attentionStops`). */
     private val attended = LinkedHashSet<String>()
 
-    /** A run started with `breakpoints`: they are not sent to it again, and its lines are the documents' now. */
-    fun started(ref: String, breakpoints: List<Glue.RunBreakpoint>) {
+    /**
+     * A run started with `breakpoints`, which it takes or not (`takes`): they are not sent to it again, and its lines
+     * are the documents' now.
+     */
+    fun started(ref: String, breakpoints: List<Glue.RunBreakpoint>, takes: Boolean) {
         synchronized(lock) {
-            Glue.remember(runs, ref, Glue.runStarted(edits.now(), breakpoints))
+            Glue.remember(runs, ref, Glue.runStarted(edits.now(), breakpoints, takes))
             starting[ref] = System.currentTimeMillis()
         }
     }
@@ -656,8 +659,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * The IDE's breakpoints to each live run whose breakpoints differ, and to the service as they stand, for a run a
-     * terminal starts (`piwi/setBreakpoints`), off the event thread, once for a burst.
+     * The IDE's breakpoints to each live run that takes them whose breakpoints differ (none to one that takes none), and
+     * to the service as they stand, for a run a terminal starts (`piwi/setBreakpoints`), which takes them with `always`
+     * alone; off the event thread, once for a burst.
      */
     fun breakpointsChanged() {
         if (!breakpointsQueued.compareAndSet(false, true)) return
@@ -665,11 +669,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             {
                 breakpointsQueued.set(false)
                 if (gone.value(null)) return@schedule
-                val breakpoints = project.service<PiwiProjectService>().breakpoints()
-                val places = breakpoints.map { it.place }
+                val service = project.service<PiwiProjectService>()
+                val breakpoints = service.breakpoints()
+                val always = Glue.breakpointsMode(service.user().breakpoints) == "always"
+                val places = if (always) breakpoints.map { it.place } else emptyList()
                 val text = places.joinToString("\n") { "${it.uri} ${it.line}" }
                 val (updates, fresh) = synchronized(lock) {
-                    Glue.breakpointUpdates(sessions, breakpoints, runs, edits) to (text != editorBreakpointsSent)
+                    Glue.breakpointUpdates(sessions, breakpoints, runs, edits, always) to (text != editorBreakpointsSent)
                 }
                 updates.forEach { remote.setBreakpoints(it) }
                 // Kept as sent only once a service heard them: one that starts later hears them then.

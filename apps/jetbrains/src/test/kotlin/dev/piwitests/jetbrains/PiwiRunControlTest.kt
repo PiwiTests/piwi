@@ -1574,6 +1574,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val service = project.service<PiwiProjectService>()
         service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
         val manager = XDebuggerManager.getInstance(project).breakpointManager
+        // Every run takes them, a run heard of but not started here too.
+        PiwiUserSettings.state().breakpoints = "always"
         try {
             hear(running("ed-3"))
             assertEquals(SetRunBreakpointsParams("ed-3", emptyList()), waitFor("the breakpoints at the start") { breakpoints.firstOrNull() })
@@ -1611,8 +1613,44 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             Thread.sleep(300)
             assertEquals(5, breakpoints.size)
         } finally {
+            PiwiUserSettings.state().breakpoints = "debug"
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             // No service runs here: a read leaves nothing of the pushed status to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /**
+     * With the default `debug`, a Debug with Piwi run takes the IDE's breakpoints, a plain Run and a run started in a
+     * terminal none.
+     */
+    fun testOnlyADebugWithPiwiRunTakesTheBreakpointsByDefault() {
+        val type = TestLineBreakpointType()
+        XBreakpointType.EXTENSION_POINT_NAME.point.registerExtension(type, testRootDisposable)
+        val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
+        val manager = XDebuggerManager.getInstance(project).breakpointManager
+        try {
+            assertEquals("debug", Glue.breakpointsMode(PiwiUserSettings.state().breakpoints))
+            sessions.started("ed-debug", emptyList(), takes = true)
+            sessions.started("ed-plain", emptyList(), takes = false)
+            hear(running("ed-debug"))
+            hear(running("ed-plain"))
+            WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
+            assertEquals(
+                SetRunBreakpointsParams("ed-debug", listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the Debug with Piwi run's breakpoint") { breakpoints.firstOrNull { it.ref == "ed-debug" } },
+            )
+            Thread.sleep(300)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertTrue("a plain Run takes none", breakpoints.filter { it.ref == "ed-plain" }.all { it.places.isEmpty() })
+            assertTrue("a terminal's run takes none", editorBreakpoints.all { it.places.isEmpty() })
+        } finally {
+            WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
             val deadline = System.currentTimeMillis() + 10_000
             while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
@@ -1631,6 +1669,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val service = project.service<PiwiProjectService>()
         service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
         val manager = XDebuggerManager.getInstance(project).breakpointManager
+        // A run a terminal starts takes them with `always`.
+        PiwiUserSettings.state().breakpoints = "always"
         try {
             WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
             assertEquals(
@@ -1649,6 +1689,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertTrue(myFixture.testAction(actions.getAction("Piwi.EndTest")).isEnabled)
             assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the test") { controls.firstOrNull() })
         } finally {
+            PiwiUserSettings.state().breakpoints = "debug"
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
             val deadline = System.currentTimeMillis() + 10_000

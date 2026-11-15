@@ -350,6 +350,11 @@ export interface RunTestsArgs extends RunStartOptions {
   root?: string;
   testIds: number[];
   /**
+   * A Debug with Piwi run, which pauses at the editor's breakpoints while `piwi.breakpoints` is `debug` (its default),
+   * where a plain Run pauses at none; a failure's debug run (`debug`) is one too. The clients pass `breakpoints` by it.
+   */
+  debugging?: boolean;
+  /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
    * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion)
    * (`PIWI_PAUSE_AT` in `RunCommand.env`). A breakpoint runs a test headed only when the project's reporter stops at
