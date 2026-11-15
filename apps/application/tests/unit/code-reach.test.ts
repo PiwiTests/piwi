@@ -65,6 +65,14 @@ beforeAll(async () => {
       kind: 'handled-by',
     },
   ]);
+  // The declared manifest gives the handler's line.
+  await db.insert(schema.graphNodes).values({
+    projectId: 1,
+    kind: 'route',
+    key: 'GET /api/products',
+    origin: 'manifest',
+    attrs: { declared: true, line: 12 },
+  });
 });
 
 describe('sanitizeCodeReach', () => {
@@ -111,6 +119,10 @@ describe('code reach', () => {
     ]);
     expect(index.builtAt).not.toBeNull();
     expect(index.truncated).toBe(false);
+    // Each route a file handles that tests called, at its handler's line.
+    expect(
+      index.routes.map((r) => [index.files[r.file], r.route, r.line, r.tests.map((t) => index.tests[t]!.id)]),
+    ).toEqual([['server/api/products.get.ts', 'GET /api/products', 12, [3]]]);
   });
 
   test('graph specs: file nodes with origin coverage, reaches edges from each test', () => {

@@ -69,6 +69,21 @@ describe('buildManifestGraph', () => {
     expect(nodes[0]?.origin).toBe('manifest');
   });
 
+  test('keeps the line a route’s handler body starts at, beside its handler alone', () => {
+    const { nodes } = buildManifestGraph(
+      {
+        routes: [
+          { method: 'GET', pattern: '/api/orders/{id}', handler: 'src/Orders.cs', line: 24 },
+          { method: 'GET', pattern: '/api/cart', line: 7 },
+        ],
+      },
+      'instrumentation',
+    );
+    const attrs = (key: string) => nodes.find((n) => n.key === key)?.attrs as { line?: number } | undefined;
+    expect(attrs('GET /api/orders/:id')?.line).toBe(24);
+    expect(attrs('GET /api/cart')?.line).toBeUndefined();
+  });
+
   test('keeps the declared patterns, every one that folds to the same key', () => {
     const { nodes } = buildManifestGraph(
       {

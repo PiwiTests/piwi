@@ -22,6 +22,7 @@ const manifestRouteSchema = z.object({
   method: z.string().min(1),
   pattern: z.string().min(1),
   handler: z.string().nullable().optional(),
+  line: z.number().int().positive().nullable().optional(),
   responses: z.array(z.number().int()).optional(),
 });
 const manifestPageSchema = z.object({
