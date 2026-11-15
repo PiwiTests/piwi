@@ -196,13 +196,13 @@ describe('proxy indirection', () => {
   } as unknown as Page;
 
   // The page fixture wraps the page's locator methods before its first await (`instrumentPage`), so the fake page
-  // hands out a real capture proxy as soon as the fixture starts. What the fixture awaits next reads a browser this
-  // page does not have, so how the fixture ends is ignored.
+  // hands out a real capture proxy as soon as the fixture starts. Without a test's info or a sink, the rest of the
+  // fixture does nothing and it ends within microtasks.
   const pageFixture = piwiFixtures.page as unknown as (
     args: { page: Page },
     use: (page: Page) => Promise<void>,
   ) => Promise<void>;
-  pageFixture({ page }, async () => {}).catch(() => {});
+  void pageFixture({ page }, async () => {});
   const proxied = page.getByTestId('open-42');
   if (proxied === raw) throw new Error('the page fixture did not wrap the page synchronously');
 

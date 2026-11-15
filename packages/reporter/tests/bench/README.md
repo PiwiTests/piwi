@@ -133,7 +133,7 @@ how to measure anything this small — see above):
 | DOM read, seeded probe called by name | 11.0 ms | 14.9 ms |
 | extra `ariaSnapshot()`, when the name isn't already settled | 2.0 ms | 3.7 ms |
 
-Micro, per captured operation:
+Micro, per captured operation, measured on a later sandbox (Xeon @ 2.30GHz, Node 22.23, Playwright 1.64.1):
 
 | | mean |
 |---|---|
@@ -146,9 +146,10 @@ Micro, per captured operation:
 | locator property read, bare → through the proxy | 0.07 µs → 0.13 µs |
 | 20 instrumented actions, sink open, flushed at teardown (per test) | 1.7 ms |
 
-This package's own Node-side code is ~35 µs per operation. Within it, materializing the stack for the call-site
-location is about three quarters of the cost and the parsing this package controls is the rest. That location is what
-keys the per-call-site dedupe, so it is taken on every action whether or not a probe follows it.
+This package's own Node-side code costs tens of microseconds per operation: ~35 µs for the steps listed above, and
+~85 µs per action through the real fixtures (20 actions and the teardown flush in 1.7 ms). Of `captureCallerLocation`,
+materializing the stack is 22 µs and the parsing this package controls 3 µs. That location is what keys the
+per-call-site dedupe, so it is taken on every action whether or not a probe follows it.
 
 That is not what a probe costs the worker. A CPU profile of a worker running `full` against `fixtures` at 200 rows
 spends ~5 ms per locator probe in Playwright's in-process client and server: the probe's own `locator.evaluate`
