@@ -139,8 +139,10 @@ tells the views, starts the service for the open files and offers the first-run 
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); either click opens the
-  service's list of the test's actions (`SummaryLine.actions`, `TestResultGutter`, a `DumbAwareAction`), a separator
+- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); a click shows the
+  test's card (`piwi/testCard`'s HTML, which the service escapes, waited for `CARD_WAIT_MILLIS` off the event thread) in
+  a popup with **Run**, **Open in dashboard** and **More…** (`showCard`), and More…, the right-click, or a click without
+  a card opens the service's list of the test's actions (`SummaryLine.actions`, `TestResultGutter`, a `DumbAwareAction`), a separator
   with the service's words between its groups (`TestAction.section`): **Run with Piwi** and **Verify ×3 with Piwi**,
   the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` acting on the test's line (`TEST_LINE`) rather
   than the caret's, at the line a range marker follows through edits, **Open in dashboard** the registered

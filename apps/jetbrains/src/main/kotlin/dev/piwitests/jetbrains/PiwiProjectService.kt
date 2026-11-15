@@ -209,7 +209,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile private var disposed = false
 
     /** What ends the work queued for later: this service disposed, or its project. */
-    private val gone = Condition<Any?> { disposed || project.isDisposed }
+    internal val gone = Condition<Any?> { disposed || project.isDisposed }
 
     /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
     @Volatile var startProblem: String? = null

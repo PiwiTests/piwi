@@ -695,6 +695,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'Run and debug',
       },
       {
+        title: 'Test card',
+        summary:
+          'Hover a test in VS Code or click its result in a JetBrains IDE: its latest runs as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine.',
+        needs: ['editor'],
+        where: "The test's hover in VS Code; a click on its result icon in a JetBrains IDE",
+        doc: 'features/editor-test-card',
+        part: 'Run and debug',
+      },
+      {
         title: "The editor's status bar",
         summary:
           "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",

@@ -941,10 +941,10 @@ export function runTakesBreakpoints(mode: BreakpointsMode, args: RunTestsArgs | 
 export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions'];
 
 /**
- * A test's gutter hover in the file at `uri`: its result, then **Run**, **Open in dashboard** and **More…**, its
- * actions (`piwi.testActions`), when it has them.
+ * A test's hover in the file at `uri`: its card (`piwi/testCard`'s Markdown), else its result in one line, then
+ * **Run**, **Open in dashboard** and **More…**, its actions (`piwi.testActions`), when it has them.
  */
-export function testHoverMarkdown(test: TestDecoration, uri: string): string {
+export function testHoverMarkdown(test: TestDecoration, uri: string, card: string | null = null): string {
   const link = (title: string, command: string, args: unknown[]) =>
     `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
   const links = [
@@ -954,7 +954,8 @@ export function testHoverMarkdown(test: TestDecoration, uri: string): string {
     test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
     test.actions ? link('More…', 'piwi.testActions', [{ uri, line: test.line } satisfies TestLine]) : '',
   ].filter(Boolean);
-  return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
+  const head = card ?? test.hover;
+  return links.length ? `${head}\n\n${links.join(' · ')}` : head;
 }
 
 /** The decorations of a file's tests: the summary lines that carry a result. */

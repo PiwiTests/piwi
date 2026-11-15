@@ -319,6 +319,45 @@ export interface CoverageResult {
 export const COVERAGE_REQUEST = 'piwi/coverage';
 
 /**
+ * `piwi/testCard`: a test's card, laid out as the dashboard's test row: its latest results as a strip, each to its run,
+ * how they went, its last failure, its owner, tags and quarantine; null for a test the instance does not know.
+ */
+export interface TestCardParams {
+  uri: string;
+  testCaseId: number;
+}
+
+/** One of a test's latest results: its outcome, the run's page, when the run started and how long the test took. */
+export interface TestCardResult {
+  status: 'passed' | 'failed' | 'flaky' | 'skipped';
+  runId: number;
+  url: string;
+  at: string | null;
+  durationMs: number | null;
+}
+
+export interface TestCard {
+  testCaseId: number;
+  /** Its `describe` blocks and its own title, joined by ` › `. */
+  title: string;
+  /** Its page in the dashboard. */
+  url: string;
+  /** Its latest results, newest first, the most `TEST_CARD_RESULTS`. */
+  results: TestCardResult[];
+  /**
+   * The card in words, newest result on the right as the dashboard's strip: as Markdown for a hover, and as HTML of
+   * plain tags (`b`, `a`, `br`, `code`) for a client that draws HTML.
+   */
+  markdown: string;
+  html: string;
+}
+
+export const TEST_CARD_REQUEST = 'piwi/testCard';
+
+/** The most results a test's card shows. */
+export const TEST_CARD_RESULTS = 20;
+
+/**
  * `piwi/coverageFiles`: the application files under a Playwright config's folder (`root`) that the project's recorded
  * coverage names lines of, each with its marks as `piwi/coverage` places them (`exact` or `mapped`); with `testIds`,
  * those the tests of these catalog ids reach alone. The code index and the coverage are read again first, so a client

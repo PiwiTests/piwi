@@ -1,6 +1,6 @@
 ---
 title: Breakpoints in the browser
-description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there, before a navigation, an action, a key press or an assertion: headless, its page shown in the editor; with Run headed, under a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
+description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test you debug with Piwi pauses there, before a navigation, an action, a key press or an assertion: headless, its page shown in the editor; with Run headed, under a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
 lang: en-US
 ---
 

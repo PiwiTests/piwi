@@ -1078,6 +1078,10 @@ describe('the tests of a file', () => {
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
       `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
     );
+    // With its card, the card takes the result's place, the links kept.
+    expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts', '**Piwi** · pays\n\nNo result yet')).toBe(
+      `**Piwi** · pays\n\nNo result yet\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
+    );
     expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions']);
     // A service that gives neither: the result alone.
     const [bare] = testDecorations([{ line: 3, title: 'never run', status: 'unknown' }]);

@@ -55,7 +55,9 @@ tests that ran the line (`piwi/coverageTests`), go to the next line no test runs
 profiles and the run icon's Piwi entry, each IDE's test UI carries Piwi's actions (TL1). M21 built since: a run the developer started in a
 terminal or in the IDE's test runner is followed as the developer's own once its process names its page on the
 instance, and its verdict says where it ran (`run #125 in a terminal`), from the service's words as every verdict
-(HM16).
+(HM16). L5 built since: a test's card, `piwi/testCard`, in VS Code's hover and on a click of
+JetBrains' result icon: its last twenty results as a strip, each to its run, how they went, its last failure, its
+owner, tags and quarantine, with Run, Open in dashboard and More… (TL21).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -258,7 +260,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and six large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the three medium and five large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -399,14 +401,6 @@ the Gutter Icons page, a descriptor whose switch the annotator reads. ([M9](#m9)
 
 ### 5.8 A test card
 
-<a id="tl21"></a>**TL21. A test's tooltip and hover are one line, though the service holds its history, last failure,
-owner, trace and screenshot.** `Glue.kt:832-833` and `apps/vscode/src/glue.ts:699-701` show the service's one-line
-summary, while the dashboard's test page draws the history, flaky rate, owner and quarantine. To answer "my bug or a
-flake?", the developer leaves the editor. **(seen)** Fix: a `piwi/testCard` request (the last N results as a strip, the
-flaky rate, the last failure, owner, quarantine, the evidence and the test's action list), a popup on the result icon
-in JetBrains and the hover in VS Code, laid out like the dashboard's test row: the test counterpart of the element card
-of [extension-ux-audit.md](extension-ux-audit.md) §4.1. ([L5](#l5), [LI7](#li7))
-
 ## 6. Settings, connection, onboarding and agents
 
 What works: the API key never sits in a setting (VS Code's secret storage and the IDE's password safe, each per
@@ -532,8 +526,8 @@ page in the gutter tooltip and the Testing view, and `· 1 stuck?` on the status
 Rider runs the same plugin as WebStorm, with other keymaps, another project model and a .NET backend beside the specs.
 What differs is RD3, RD4, RD7 and RD8 below and one finding filed elsewhere:
 
-| What differs in Rider | Where |
-|---|---|
+| What differs in Rider                                        | Where             |
+| ------------------------------------------------------------ | ----------------- |
 | Nothing from Piwi in the Solution Explorer or the Tests menu | [AC3](#ac3), §4.1 |
 
 <a id="rd3"></a>**RD3. Specs beside a Rider solution, a layout the plugin's config search supports, may get no
@@ -679,14 +673,14 @@ apart.
 
 The service sends each test line one grouped action list (`SummaryLine.actions`, with the file's summary): Run with Piwi, Debug with Piwi and Verify
 ×3; Trace, Screenshot and Open in dashboard; Copy context for agent; Record here; the desktop jobs. JetBrains draws it
-on the result icon's either click and on the IDE run icon (`JSTestRunLineMarkersAdditionalActionGroup`); VS Code in its
+on the result icon (the right-click, and the click after the test's card) and on the IDE run icon (`JSTestRunLineMarkersAdditionalActionGroup`); VS Code in its
 Testing menus and the hover. The gutter acts, the hover explains, the lens informs, quick fixes only edit. Debug with
 Piwi builds the dashboard's Debug in my editor run (`RunTestsArgs.debug`) for a failure; a later `piwi/testCard` adds
 history, flaky rate, owner and quarantine. **Lives in** `packages/editor` and both clients (FSL). **Replaces** anonymous
 gutter actions, a click that opens a browser, five names for run. **Depends on** [LI1](#li1). **Revisits**
 [developer-loop-audit.md](developer-loop-audit.md) P1 (Run and Verify ×3 on the result icon built, the run line marker
 left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps M8 (built),
-[M9](#m9), [L5](#l5).
+[M9](#m9), L5 (built).
 
 <a id="li8"></a>
 
@@ -886,8 +880,8 @@ window forward.
 
 The defects still open on `PiwiTests/piwi`, grouped by area as the repository's issues are.
 
-| Issue | What still holds | Findings |
-|---|---|---|
+| Issue | What still holds                                                                                                 | Findings    |
+| ----- | ---------------------------------------------------------------------------------------------------------------- | ----------- |
 | #1118 | Rider's highlighting of a spec folder beside the solution is unchecked, and nothing offers to attach that folder | [RD3](#rd3) |
 
 ## 12. The plan
@@ -899,26 +893,25 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 ### Quick wins
 
 | Step | Change | Scope | Findings |
-|---|---|---|---|
+| ---- | ------ | ----- | -------- |
 
 ### Medium
 
-| Step | Change | Scope | Findings |
-|---|---|---|---|
-| <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
+| Step                | Change                                                                                                                                                                                                                                                                                        | Scope | Findings                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------- |
+| <a id="m9"></a>M9   | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test`                                                                                                                                                                  | `ide` | [TL3](#tl3), [TL4](#tl4)              |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
-| <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
+| <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie                                                                                                                                                            | `ide` | [ST22](#st22)                         |
 
 ### Large
 
-| Step | Change | Scope | Findings |
-|---|---|---|---|
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled | `ide` | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [LR12](#lr12), [NF10](#nf10) |
-| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger | `ide` | [LR3](#lr3) |
-| <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`) | `ide` | [RD7](#rd7), [RD8](#rd8) |
-| <a id="l5"></a>L5 | **A test card in both editors** (`piwi/testCard`), laid out like the dashboard's test row | `ide` | [TL21](#tl21) |
-| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19)) |
-| <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter | `docs` | none ([LI17](#li17)) |
+| Step              | Change                                                                                                                                                                                                                                                                          | Scope  | Findings                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------- |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the place of the CI list settled                                                                     | `ide`  | [LR7](#lr7), [LR9](#lr9), [LR10](#lr10), [LR12](#lr12), [NF10](#nf10) |
+| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide`  | [LR3](#lr3)                                                           |
+| <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`)                                                                             | `ide`  | [RD7](#rd7), [RD8](#rd8)                                              |
+| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide`  | none ([LI19](#li19))                                                  |
+| <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter                                                                                                                                                              | `docs` | none ([LI17](#li17))                                                  |
 
 ### Sequence
 
@@ -994,63 +987,63 @@ plugin's `icons/` with a `_dark` copy. **(new)** marks a glyph Piwi is still to 
 in the product-icon font, a Piwi Picker key added to `apps/extension/src/shared/icons.ts`. A dash means the tool has no
 such action.
 
-| Concept | Dashboard and desktop (lucide) | Piwi Picker (ICONS key) | VS Code (codicon or `$(piwi-*)`) | JetBrains (AllIcons or plugin SVG) |
-|---|---|---|---|---|
-| Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
-| Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
-| An instance that does not answer | – | – | `$(piwi-unreachable)` | `unreachable.svg` |
-| Get started | – | – | `$(book)` | `AllIcons.General.ShowInfos` |
-| Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
-| Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
-| A test's actions | – | – | `$(list-selection)` | the result icon itself (its click) |
-| Debug a test or a failure | – | – | `$(debug-alt)` | `AllIcons.Actions.StartDebugger` |
-| Stop recording | – | `stop-circle` | `$(stop-circle)` | `stopRecording.svg` |
-| Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
-| Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |
-| Step | `redo-dot` | `skip` | `$(debug-step-over)` | `Actions.TraceOver` |
-| Finish | `arrow-up-from-dot` | `step-out` | `$(debug-step-out)` | `Actions.StepOut` |
-| End the test | `ban` | `blocked` | `$(circle-slash)` | `RunConfigurations.TestIgnored` |
-| Stop the run | `square` | `stop` | `$(debug-stop)` | `Actions.Suspend` |
-| Pick | `crosshair` | `pick` | `$(target)` | `General.Locate` |
-| Assert | `check-circle` | `check-circle` | `$(pass)` | `General.InspectionsOK` |
-| Assert a region | `scan` | `viewport` | `$(piwi-region)` | `region.svg` |
-| Mock a request | `network` | `network` | `$(piwi-mock)` | `mock.svg` |
-| Share live | `radio` | `broadcast` | `$(broadcast)` | `live.svg` |
-| Stop sharing live | `circle-stop` | `eye-off` | `$(piwi-stop-live)` | `stopLive.svg` |
-| Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
-| Interact | `hand` | `hand` | the hand, drawn in a worker's page, built | `interact.svg`, built |
-| Write code… | - | - | a lens and a page's button, no glyph | `Actions.IntentionBulb`, built on a worker's page |
-| Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` | `pauseWatch.svg` |
-| Run on my machine | `monitor-play` | – | – | – |
-| Run headed, Hold failures (start options) | – | – | `$(settings)` on Run options… | `General.Settings` on Run options…, `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed |
-| Show the stopped test's browser | – | – | `$(browser)` | `browser.svg` |
-| Share with Playwright tools | – | – | `$(tools)` | `tools.svg` |
-| Reset the runs' MCP token | – | – | `$(key)` | `key.svg` |
-| Run the tests that reach this file | – | – | `$(references)` | `testsForFile.svg` |
-| A CI run of the branch | – | – | `$(cloud)` | `ciRun.svg` |
-| Pair | `link` | `link` | `$(link)` | `pair.svg` |
-| Open in dashboard | `external-link` | `external` | `$(link-external)` | `Ide.External_link_arrow` |
-| Latest run, run node, Open the failures | the Piwi mark | – | `$(piwi-mark)`, built for Open the failures | `piwi.svg`, 16 px outline, built for `Piwi.OpenFailures` |
-| Cluster | `layers` | – | `$(layers)` | `layers.svg` |
-| Owner | `user` | – | `$(person)` | `General.User` |
-| Trace | `file-archive` | – | `$(file-zip)` | `FileTypes.Archive` |
-| Screenshot | `camera` | `camera` | `$(device-camera)` | `FileTypes.Image` |
-| Reproduce in the desktop app | `monitor` | `monitor` | `$(device-desktop)` | `Nodes.Desktop` |
-| Find the breaking commit | `git-branch` | – | `$(git-branch)` | `Vcs.Branch` |
-| Flake Lab | `flask-conical` | – | `$(beaker)` | `flask.svg` |
-| File an issue | `circle-dot` | – | `$(issues)` | `issue.svg` |
-| Verify ×3 | – | – | `$(sync)` | `Actions.Rerun` |
-| Go to a failure's test | – | – | `$(go-to-file)` | `Nodes.Test` |
-| Run this spec | – | – | `$(run-all)` | `Actions.RunAll` |
-| Re-run the failing tests | – | – | `$(run-errors)` | `RunConfigurations.RerunFailedTests` |
-| Coverage | `scan-line` | – | `$(run-coverage)` | `General.RunWithCoverage` |
-| Passed: `emerald-500` `#10b981` | `check-circle-2` | a dot in the fill | `test-passed.svg` | `RunConfigurations.TestPassed` |
-| Failed: `rose-500` `#f43f5e` | `x-circle` | a dot in the fill | `test-failed.svg` | `RunConfigurations.TestError` |
-| Flaky: `fuchsia-500` `#d946ef` | `shuffle` | a dot in the fill | `test-flaky.svg`, and `$(piwi-flaky)` for a codicon | `testFlaky.svg` |
-| Running: `blue-500` `#3b82f6` | `loader-circle`, spinning | – | a ring in `test-running.svg`, spinning | `testRunning.svg`, a ring, turning |
-| Skipped: `zinc-400` `#a1a1aa`; fixme `zinc-600` | `minus-circle` | a dot in the fill | `test-skipped.svg` | `RunConfigurations.TestIgnored` |
-| Did not run: `amber-500` `#f59e0b` | `circle-slash` | – | – | `RunConfigurations.TestNotRan` |
-| Interrupted: `slate-500` `#64748b` | `circle-pause`; the tray's dot | – | – | – |
+| Concept                                         | Dashboard and desktop (lucide) | Piwi Picker (ICONS key) | VS Code (codicon or `$(piwi-*)`)                    | JetBrains (AllIcons or plugin SVG)                                                                            |
+| ----------------------------------------------- | ------------------------------ | ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Connect                                         | `plug`                         | `plug`                  | `$(plug)`                                           | `connect.svg`                                                                                                 |
+| Disconnect                                      | `unplug`                       | `unlink`                | `$(debug-disconnect)`                               | `disconnect.svg`                                                                                              |
+| An instance that does not answer                | –                              | –                       | `$(piwi-unreachable)`                               | `unreachable.svg`                                                                                             |
+| Get started                                     | –                              | –                       | `$(book)`                                           | `AllIcons.General.ShowInfos`                                                                                  |
+| Record                                          | `circle`, filled               | `record`                | `$(record)`                                         | `record.svg`, gray; `recording.svg`, red, while recording                                                     |
+| Recording paused                                | –                              | `record`, gray          | `$(circle-large-outline)`                           | `recordPaused.svg`                                                                                            |
+| A test's actions                                | –                              | –                       | `$(list-selection)`                                 | the result icon itself (its click)                                                                            |
+| Debug a test or a failure                       | –                              | –                       | `$(debug-alt)`                                      | `AllIcons.Actions.StartDebugger`                                                                              |
+| Stop recording                                  | –                              | `stop-circle`           | `$(stop-circle)`                                    | `stopRecording.svg`                                                                                           |
+| Resume                                          | `play`                         | `play`                  | `$(debug-continue)`                                 | `Actions.Resume`                                                                                              |
+| Pause                                           | `pause`                        | `pause`                 | `$(debug-pause)`                                    | `Actions.Pause`                                                                                               |
+| Step                                            | `redo-dot`                     | `skip`                  | `$(debug-step-over)`                                | `Actions.TraceOver`                                                                                           |
+| Finish                                          | `arrow-up-from-dot`            | `step-out`              | `$(debug-step-out)`                                 | `Actions.StepOut`                                                                                             |
+| End the test                                    | `ban`                          | `blocked`               | `$(circle-slash)`                                   | `RunConfigurations.TestIgnored`                                                                               |
+| Stop the run                                    | `square`                       | `stop`                  | `$(debug-stop)`                                     | `Actions.Suspend`                                                                                             |
+| Pick                                            | `crosshair`                    | `pick`                  | `$(target)`                                         | `General.Locate`                                                                                              |
+| Assert                                          | `check-circle`                 | `check-circle`          | `$(pass)`                                           | `General.InspectionsOK`                                                                                       |
+| Assert a region                                 | `scan`                         | `viewport`              | `$(piwi-region)`                                    | `region.svg`                                                                                                  |
+| Mock a request                                  | `network`                      | `network`               | `$(piwi-mock)`                                      | `mock.svg`                                                                                                    |
+| Share live                                      | `radio`                        | `broadcast`             | `$(broadcast)`                                      | `live.svg`                                                                                                    |
+| Stop sharing live                               | `circle-stop`                  | `eye-off`               | `$(piwi-stop-live)`                                 | `stopLive.svg`                                                                                                |
+| Watch                                           | `eye`                          | `eye`                   | `$(eye)`, built for Watch a worker's test           | `Actions.Show`, built for `Piwi.WatchWorker`                                                                  |
+| Interact                                        | `hand`                         | `hand`                  | the hand, drawn in a worker's page, built           | `interact.svg`, built                                                                                         |
+| Write code…                                     | -                              | -                       | a lens and a page's button, no glyph                | `Actions.IntentionBulb`, built on a worker's page                                                             |
+| Pause and watch                                 | `pause`, `eye` once stopped    | `pause`                 | `$(piwi-pause-watch)`                               | `pauseWatch.svg`                                                                                              |
+| Run on my machine                               | `monitor-play`                 | –                       | –                                                   | –                                                                                                             |
+| Run headed, Hold failures (start options)       | –                              | –                       | `$(settings)` on Run options…                       | `General.Settings` on Run options…, `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed |
+| Show the stopped test's browser                 | –                              | –                       | `$(browser)`                                        | `browser.svg`                                                                                                 |
+| Share with Playwright tools                     | –                              | –                       | `$(tools)`                                          | `tools.svg`                                                                                                   |
+| Reset the runs' MCP token                       | –                              | –                       | `$(key)`                                            | `key.svg`                                                                                                     |
+| Run the tests that reach this file              | –                              | –                       | `$(references)`                                     | `testsForFile.svg`                                                                                            |
+| A CI run of the branch                          | –                              | –                       | `$(cloud)`                                          | `ciRun.svg`                                                                                                   |
+| Pair                                            | `link`                         | `link`                  | `$(link)`                                           | `pair.svg`                                                                                                    |
+| Open in dashboard                               | `external-link`                | `external`              | `$(link-external)`                                  | `Ide.External_link_arrow`                                                                                     |
+| Latest run, run node, Open the failures         | the Piwi mark                  | –                       | `$(piwi-mark)`, built for Open the failures         | `piwi.svg`, 16 px outline, built for `Piwi.OpenFailures`                                                      |
+| Cluster                                         | `layers`                       | –                       | `$(layers)`                                         | `layers.svg`                                                                                                  |
+| Owner                                           | `user`                         | –                       | `$(person)`                                         | `General.User`                                                                                                |
+| Trace                                           | `file-archive`                 | –                       | `$(file-zip)`                                       | `FileTypes.Archive`                                                                                           |
+| Screenshot                                      | `camera`                       | `camera`                | `$(device-camera)`                                  | `FileTypes.Image`                                                                                             |
+| Reproduce in the desktop app                    | `monitor`                      | `monitor`               | `$(device-desktop)`                                 | `Nodes.Desktop`                                                                                               |
+| Find the breaking commit                        | `git-branch`                   | –                       | `$(git-branch)`                                     | `Vcs.Branch`                                                                                                  |
+| Flake Lab                                       | `flask-conical`                | –                       | `$(beaker)`                                         | `flask.svg`                                                                                                   |
+| File an issue                                   | `circle-dot`                   | –                       | `$(issues)`                                         | `issue.svg`                                                                                                   |
+| Verify ×3                                       | –                              | –                       | `$(sync)`                                           | `Actions.Rerun`                                                                                               |
+| Go to a failure's test                          | –                              | –                       | `$(go-to-file)`                                     | `Nodes.Test`                                                                                                  |
+| Run this spec                                   | –                              | –                       | `$(run-all)`                                        | `Actions.RunAll`                                                                                              |
+| Re-run the failing tests                        | –                              | –                       | `$(run-errors)`                                     | `RunConfigurations.RerunFailedTests`                                                                          |
+| Coverage                                        | `scan-line`                    | –                       | `$(run-coverage)`                                   | `General.RunWithCoverage`                                                                                     |
+| Passed: `emerald-500` `#10b981`                 | `check-circle-2`               | a dot in the fill       | `test-passed.svg`                                   | `RunConfigurations.TestPassed`                                                                                |
+| Failed: `rose-500` `#f43f5e`                    | `x-circle`                     | a dot in the fill       | `test-failed.svg`                                   | `RunConfigurations.TestError`                                                                                 |
+| Flaky: `fuchsia-500` `#d946ef`                  | `shuffle`                      | a dot in the fill       | `test-flaky.svg`, and `$(piwi-flaky)` for a codicon | `testFlaky.svg`                                                                                               |
+| Running: `blue-500` `#3b82f6`                   | `loader-circle`, spinning      | –                       | a ring in `test-running.svg`, spinning              | `testRunning.svg`, a ring, turning                                                                            |
+| Skipped: `zinc-400` `#a1a1aa`; fixme `zinc-600` | `minus-circle`                 | a dot in the fill       | `test-skipped.svg`                                  | `RunConfigurations.TestIgnored`                                                                               |
+| Did not run: `amber-500` `#f59e0b`              | `circle-slash`                 | –                       | –                                                   | `RunConfigurations.TestNotRan`                                                                                |
+| Interrupted: `slate-500` `#64748b`              | `circle-pause`; the tray's dot | –                       | –                                                   | –                                                                                                             |
 
 The last seven rows are `STATUS_COLORS` (`apps/application/shared/status-colors.ts:36-45`) with the dashboard's
 `getStatusIcon` glyphs (`apps/application/app/utils/index.ts:311-331`). The outcome palette adds four states with no key

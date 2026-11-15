@@ -201,6 +201,24 @@ export type BranchFailure = BranchFailures['failures'][number];
 export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
 export type BranchFlaky = NonNullable<BranchFailures['flaky']>[number];
 
+/** One execution of a test, as its history lists them (`GET /api/test-cases/:id/history`), newest first. */
+export interface TestExecution {
+  runId: number;
+  status: string;
+  /** In ms; null when unknown. */
+  duration: number | null;
+  error: string | null;
+  /** It passed on a retry after an attempt failed: flaky. */
+  passedAfterFailure?: boolean | null;
+  /** The attempt: 0 for the first, 1 for the first retry. A run's results are the last attempts of each repetition in each project. */
+  retries?: number | null;
+  /** Its repetition (`--repeat-each`) and Playwright project's name, which tell a run's results apart. */
+  repeatEachIndex?: number | null;
+  browserName?: string | null;
+  /** When its run started. */
+  startTime: string | null;
+}
+
 /** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
 export interface RunDetails {
   id: number;
@@ -387,6 +405,9 @@ export function forgetShared(answers: ResponseCache): void {
     else entry.until = 0;
   }
 }
+
+/** The most attempts the instance answers for a test's history. */
+export const TEST_HISTORY_ROWS = 50;
 
 export class PiwiClient {
   /**
@@ -871,6 +892,12 @@ export class PiwiClient {
   /** An execution's page in the dashboard. */
   executionUrl(executionId: number): string {
     return `${this.connection.serverUrl}/test-run-cases/${executionId}`;
+  }
+
+  /** A test's latest executions, newest first, the instance's fifty at most. */
+  /** A test's attempts, newest run first, `TEST_HISTORY_ROWS` at most. */
+  testHistory(testCaseId: number): Promise<{ items: TestExecution[] }> {
+    return this.get(`/api/test-cases/${testCaseId}/history`);
   }
 
   /** A run's page in the dashboard. */

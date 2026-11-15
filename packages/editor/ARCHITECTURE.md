@@ -218,7 +218,7 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`,
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;

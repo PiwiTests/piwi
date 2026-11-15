@@ -203,7 +203,8 @@ export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | 
 
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
   // Lab runs replay a test with an injected fault or condition, so their executions never
-  // appear in a test's history. A row is one attempt, in one Playwright project and repetition.
+  // appear in a test's history. A row is one attempt, in one Playwright project and repetition, and a run's rows
+  // follow one another.
   return db
     .select({
       id: testRunsCases.id,
@@ -222,7 +223,7 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.origin)))
-    .orderBy(desc(testRuns.startTime))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(50);
 }
 

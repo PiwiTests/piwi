@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.RangeMarker
@@ -21,6 +22,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.ui.awt.RelativePoint
+import java.util.concurrent.TimeUnit
 import javax.swing.Icon
 
 /**
@@ -96,10 +98,12 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     }
 
     /**
-     * A test's latest result in the gutter; either click opens what the service lists for the test
-     * (`SummaryLine.actions`): Run and Verify ×3 as the registered actions, acting at the line its `test(…)` call stands
-     * on now (`at`), then its evidence, its context for an agent and its Flake Lab commands, a separator between groups.
-     * Without a list, a click runs what its line names (it opens the test in the dashboard).
+     * A test's latest result in the gutter. A click shows its card (`piwi/testCard`, waited for `CARD_WAIT_MILLIS`), then
+     * **Run**, **Open in dashboard** and **More…**, as VS Code's hover does; More…, and the right-click, open what the
+     * service lists for the test (`SummaryLine.actions`): Run and Verify ×3 as the registered actions, acting at the line
+     * its `test(…)` call stands on now (`at`), then its evidence, its context for an agent and its Flake Lab commands, a
+     * separator between groups. Without its card, a click opens that list; without a list, it runs what its line names
+     * (it opens the test in the dashboard).
      */
     internal class TestResultGutter(
         private val project: Project,
@@ -118,15 +122,37 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             if (!line.actions.isNullOrEmpty() && actions != null) {
                 return object : DumbAwareAction() {
                     override fun actionPerformed(e: AnActionEvent) {
-                        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-                            null,
-                            actions,
-                            e.dataContext,
-                            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
-                            true,
-                        )
                         val mouse = e.inputEvent as? java.awt.event.MouseEvent
-                        if (mouse != null) popup.show(RelativePoint(mouse)) else popup.showInBestPositionFor(e.dataContext)
+                        val point = mouse?.let { RelativePoint(it) }
+                        val dataContext = e.dataContext
+                        val showActions = {
+                            val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+                                null,
+                                actions,
+                                dataContext,
+                                JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+                                true,
+                            )
+                            if (point != null) popup.show(point) else popup.showInBestPositionFor(dataContext)
+                        }
+                        val testCaseId = line.testCaseId
+                        if (uri == null || testCaseId == null || point == null) return showActions()
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            val service = project.getServiceIfCreated(PiwiProjectService::class.java)
+                                ?: return@executeOnPooledThread
+                            val asked = runCatching { service.server()?.testCard(TestCardParams(uri, testCaseId)) }.getOrNull()
+                            // A card not there in time is asked for no longer: the service stops reading it.
+                            val card = try {
+                                runCatching { asked?.get(CARD_WAIT_MILLIS, TimeUnit.MILLISECONDS) }.getOrNull()
+                            } finally {
+                                asked?.cancel(true)
+                            }
+                            ApplicationManager.getApplication().invokeLater({
+                                // The editor clicked may have closed while the card was asked for.
+                                if (!point.component.isShowing) return@invokeLater
+                                if (card?.html == null) showActions() else showCard(card, testCaseId, point, showActions)
+                            }, service.gone)
+                        }
                     }
                 }
             }
@@ -188,12 +214,42 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             return group
         }
 
+        /** The card at `point`: its HTML, then Run, Open in dashboard and More…, which opens the test's list. */
+        private fun showCard(card: TestCard, testCaseId: Int, point: RelativePoint, showActions: () -> Unit) {
+            var popup: com.intellij.openapi.ui.popup.JBPopup? = null
+            val links = "<br><a href=\"$RUN_LINK\">Run</a> · <a href=\"$OPEN_LINK\">Open in dashboard</a> · " +
+                "<a href=\"$MORE_LINK\">More…</a>"
+            val listener = javax.swing.event.HyperlinkListener { event ->
+                if (event.eventType != javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) return@HyperlinkListener
+                popup?.cancel()
+                when (val href = event.description) {
+                    RUN_LINK -> PiwiCommands.runTests(project, RunTestsArgs(uri!!, listOf(testCaseId)))
+                    OPEN_LINK -> card.url?.let { com.intellij.ide.BrowserUtil.browse(it) }
+                    MORE_LINK -> showActions()
+                    else -> if (href.startsWith("http://") || href.startsWith("https://")) com.intellij.ide.BrowserUtil.browse(href)
+                }
+            }
+            val label = com.intellij.codeInsight.hint.HintUtil.createInformationLabel("<html>${card.html}$links</html>", listener, null, null)
+            popup = JBPopupFactory.getInstance().createComponentPopupBuilder(label, null)
+                .setRequestFocus(false)
+                .setCancelOnClickOutside(true)
+                .createPopup()
+            popup.show(point)
+        }
+
         override fun equals(other: Any?): Boolean = other is TestResultGutter && other.line == line && other.uri == uri
 
         override fun hashCode(): Int = line.hashCode()
     }
 
     companion object {
+        /** How long a click on a test's result waits for its card before it opens the test's list. */
+        const val CARD_WAIT_MILLIS = 1_500L
+
+        private const val RUN_LINK = "piwi:run"
+        private const val OPEN_LINK = "piwi:open"
+        private const val MORE_LINK = "piwi:more"
+
         /** The 0-based line a `piwi.record` command names (its second argument). */
         fun recordLine(command: PiwiCommand): Int? = (command.arguments?.getOrNull(1) as? Number)?.toInt()
             ?: (command.arguments?.getOrNull(1) as? com.google.gson.JsonPrimitive)?.takeIf { it.isNumber }?.asInt

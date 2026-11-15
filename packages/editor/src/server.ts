@@ -155,9 +155,11 @@ import {
   type BranchResolved,
   type CatalogCase,
   type FileCoverage,
+  type TestExecution,
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
+import { testCard } from './test-card.js';
 import { requireDesktopProof } from './http.js';
 import {
   isTestLocation,
@@ -228,6 +230,7 @@ import {
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
   COVERAGE_TESTS_REQUEST,
+  TEST_CARD_REQUEST,
   MAX_COVERAGE_FILES,
   FAILURES_NOTIFICATION,
   FAILURES_REQUEST,
@@ -321,6 +324,8 @@ import {
   type CoverageResult,
   type CoverageTestsParams,
   type CoverageTestsResult,
+  type TestCard,
+  type TestCardParams,
   type LineSpan,
   type DesktopResult,
   type EditorBreakpoint,
@@ -715,6 +720,16 @@ export function statusAlarm(context: PiwiContext, alert: StatusBarAlert): boolea
   return failures.some(
     (f) => f.source === 'overlay' && f.isNew && isOwnRun(context, f.runId) && !baseline.has(f.testCaseId),
   );
+}
+
+/** A test's quarantine in words: `quarantined 3 d · 2/5 passes toward release`; null when it is not quarantined. */
+function quarantineWords(context: PiwiContext, testCaseId: number): string | null {
+  const quarantined = context.quarantined.get(testCaseId);
+  if (!quarantined) return null;
+  const toward = quarantined.releaseProposed
+    ? 'ready to release'
+    : `${quarantined.consecutivePasses}${context.releaseAfter ? `/${context.releaseAfter}` : ''} passes toward release`;
+  return `quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${toward}`;
 }
 
 /**
@@ -1606,6 +1621,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const marksKept = new Map<string, { text: string; coverage: FileCoverage; marks: Promise<CoverageMarks> }>();
   /** The URIs whose marks are kept at most; the least recently computed goes first. */
   const MAX_MARKS = 100;
+  /** How long a test's history is reused for its card, and how many tests' are kept. */
+  const TEST_HISTORY_MS = 30_000;
+  const MAX_HISTORIES = 100;
   /** The files `piwi/coverageFiles` reads at once. */
   const COVERAGE_FILES_AT_ONCE = 6;
 
@@ -3393,14 +3411,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             : !found.status || found.status === 'never-run'
               ? ''
               : ' · no pass rate (no passed or failed run)';
-        const quarantined = context.quarantined.get(found.id);
-        const quarantine = quarantined
-          ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
-              quarantined.releaseProposed
-                ? 'ready to release'
-                : `${quarantined.consecutivePasses}${context.releaseAfter ? `/${context.releaseAfter}` : ''} passes toward release`
-            }`
-          : '';
+        const quarantined = quarantineWords(context, found.id);
+        const quarantine = quarantined ? ` · ${quarantined}` : '';
         const inSelections = context.selections.filter((sel) => sel.tests.has(found.id)).map((sel) => sel.name);
         const selectionsText = inSelections.length
           ? ` · in ${inSelections.slice(0, 3).join(', ')}${inSelections.length > 3 ? '…' : ''}`
@@ -3790,6 +3802,51 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       for (const result of results) if (result) files.push(result);
     }
     return { files, truncated: at < candidates.length };
+  });
+
+  /** Each test's history as last read, by instance and test, reused for `TEST_HISTORY_MS`: a hover reads it often. */
+  const histories = new Map<string, { at: number; read: Promise<TestExecution[]> }>();
+  const historyOf = (context: PiwiContext, testCaseId: number): Promise<TestExecution[]> => {
+    const client = context.client!;
+    const key = `${client.connection.serverUrl}\n${testCaseId}`;
+    const kept = histories.get(key);
+    if (kept && Date.now() - kept.at < TEST_HISTORY_MS) return kept.read;
+    const read = client.testHistory(testCaseId).then((answer) => answer.items ?? []);
+    const entry = { at: Date.now(), read };
+    histories.delete(key);
+    histories.set(key, entry);
+    read.catch(() => {
+      if (histories.get(key) === entry) histories.delete(key);
+    });
+    for (const oldest of histories.keys()) {
+      if (histories.size <= MAX_HISTORIES) break;
+      histories.delete(oldest);
+    }
+    return read;
+  };
+
+  connection.onRequest(TEST_CARD_REQUEST, async (params: TestCardParams, token): Promise<TestCard | null> => {
+    const file = uriToPath(params.uri);
+    const context = file ? contextFor(file) : null;
+    const relative = file && context ? relativeTo(context.root, file) : null;
+    if (!context?.client || !context.project || !relative) return null;
+    const found = (await context.casesOf(relative).catch(() => [])).find((c) => c.id === params.testCaseId);
+    if (!found || token.isCancellationRequested) return null;
+    // No card when its history cannot be read.
+    const executions = await historyOf(context, found.id).catch(() => null);
+    if (!executions || token.isCancellationRequested) return null;
+    const title = [...(found.suitePath ? found.suitePath.split('\x1f') : []), found.title].join(' › ');
+    return testCard({
+      testCaseId: found.id,
+      title,
+      url: context.client.testUrl(found.id),
+      owner: found.owner ?? null,
+      tags: found.tags ?? [],
+      quarantine: quarantineWords(context, found.id),
+      executions,
+      runUrl: (runId) => context.client!.runUrl(runId),
+      now: Date.now(),
+    });
   });
 
   connection.onRequest(COVERAGE_TESTS_REQUEST, async (params: CoverageTestsParams): Promise<CoverageTestsResult> => {
