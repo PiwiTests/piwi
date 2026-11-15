@@ -953,6 +953,13 @@ const breadcrumbItems = computed(() => [
           <template v-if="fixPlan" #verify>
             <div class="space-y-1.5">
               <CodeBlock :code="fixPlan.verify.command" lang="bash" />
+              <p v-if="fixPlan.verify.leftOut?.length" class="text-xs text-muted">
+                The command leaves out
+                {{ fixPlan.verify.leftOut.length === 1 ? 'one test' : `${fixPlan.verify.leftOut.length} tests` }} its
+                file path or title cannot name:
+                {{ fixPlan.verify.leftOut.map((c) => c.title || c.filePath).join(', ') }}. Run
+                {{ fixPlan.verify.leftOut.length === 1 ? 'it' : 'them' }} yourself.
+              </p>
               <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
               <div class="flex flex-wrap items-center gap-2">
                 <DesktopRunLocallyButton

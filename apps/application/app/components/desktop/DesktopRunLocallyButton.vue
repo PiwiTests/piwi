@@ -50,7 +50,7 @@ onMounted(() => {
 });
 
 const store = useDesktopLocalRuns();
-const { link, busy, pickAndLink, refresh } = useDesktopProjectLink(() => props.projectId);
+const { link, loaded: linkLoaded, busy, pickAndLink, refresh } = useDesktopProjectLink(() => props.projectId);
 const { missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
   () => props.projectId,
   () => props.cases,
@@ -215,6 +215,8 @@ const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 const copyCommand = computed(() =>
   buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
 );
+/** The tests the run names that the copied command leaves out: a shell would misread their title or path. */
+const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryCommandNames(c, options.value.mode)).length);
 
 /** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
@@ -377,6 +379,10 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Copy as command',
         icon: 'i-lucide-clipboard',
+        description:
+          copyLeavesOut.value > 0
+            ? `Leaves out ${copyLeavesOut.value} more test${copyLeavesOut.value === 1 ? '' : 's'}: a shell would misread ${copyLeavesOut.value === 1 ? 'its title or path' : 'their titles or paths'}`
+            : undefined,
         disabled: !copyCommand.value,
         onSelect: () => void copy(copyCommand.value, { toast: 'Command copied' }),
       },
@@ -424,7 +430,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy"
+          :disabled="busy || !linkLoaded"
           @click="onPrimaryClick"
         >
           {{ face.label }}
@@ -444,7 +450,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           aria-label="Run options"
           class="relative"
         >
-          <span v-if="attention" class="absolute -top-1 -right-1 size-2 rounded-full bg-warning" />
+          <span v-if="attention && linkLoaded" class="absolute -top-1 -right-1 size-2 rounded-full bg-warning" />
         </UButton>
       </UDropdownMenu>
     </UFieldGroup>

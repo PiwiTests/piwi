@@ -10,6 +10,7 @@ import { failureClusters } from '../../database/schema';
 import { resolveOwners } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
 import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
+import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 
 defineRouteMeta({
   openAPI: {
@@ -37,7 +38,9 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     clusterRow && mayDispatch
-      ? ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId).catch(() => null)
+      ? clusterRerunCases(db, id)
+          .then((cases) => ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId, null, cases))
+          .catch(() => null)
       : Promise.resolve(null),
   ]);
 

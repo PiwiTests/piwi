@@ -10,7 +10,7 @@ import {
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
+import { executionRerunInfo, flakeLabCiAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -41,7 +41,7 @@ export default eventHandler(async (event) => {
     .where(eq(testRunsCases.id, id));
   const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
-    row && mayDispatch ? ciRerunAvailability(db, projectId, row.testRunId).catch(() => null) : Promise.resolve(null),
+    row && mayDispatch ? executionRerunInfo(db, id).catch(() => null) : Promise.resolve(null),
     row?.testCaseId != null && mayDispatch
       ? flakeLabCiAvailability(db, projectId, row.testCaseId).catch(() => null)
       : Promise.resolve(null),

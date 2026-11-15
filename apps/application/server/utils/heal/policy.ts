@@ -24,7 +24,7 @@ import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
 import { refreshOpenHealActions } from './pr-state';
 import { listOutcomes } from '../outcomes';
 import { recordHealBranchRun } from './branch-runs';
-import { buildRerunCommand } from '#shared/retry-command';
+import { buildRerunPlan } from '#shared/retry-command';
 import {
   healBranchName,
   healDedupeKey,
@@ -162,16 +162,23 @@ export async function rejectedHealEdits(db: DbClient, projectId: number): Promis
 }
 
 /**
- * Build the verify command shown in the PR body — exactly the affected tests — or an empty string when they name
- * neither a file nor a title, since the command would run every test.
+ * Build the verify command shown in the PR body — exactly the affected tests — and the titles of those it cannot
+ * name; the command is empty when they name neither a file nor a title, since it would run every test.
  */
-function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]): string {
+function buildVerify(
+  edits: HealEditPayload[],
+  rows: HealCandidateRow[],
+): { verifyCommand: string; verifyLeftOut?: string[] } {
   const byExecution = new Map(rows.map((r) => [r.executionId, r] as const));
   const cases = edits
     .map((e) => byExecution.get(e.executionId))
     .filter((r): r is HealCandidateRow => !!r)
     .map((r) => ({ filePath: r.filePath, title: r.title }));
-  return cases.length > 0 ? buildRerunCommand(cases) : '';
+  if (cases.length === 0) return { verifyCommand: '' };
+  const { command, leftOut } = buildRerunPlan(cases);
+  return command && leftOut.length
+    ? { verifyCommand: command, verifyLeftOut: [...new Set(leftOut.map((c) => c.title || c.filePath))] }
+    : { verifyCommand: command };
 }
 
 async function countOpenHealActions(db: DbClient, projectId: number): Promise<number> {
@@ -299,7 +306,7 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
     commitMessage: settings.commitMessage,
     title: settings.commitMessage,
     draft: settings.draft,
-    verifyCommand: buildVerifyCommand(edits, rows),
+    ...buildVerify(edits, rows),
     edits,
   };
 

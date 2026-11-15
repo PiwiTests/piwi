@@ -23,7 +23,7 @@ import { findFixedBefore } from './cluster-memory';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { storedPatchValidation, validatePatch } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
-import { buildRerunCommand } from '#shared/retry-command';
+import { buildRerunPlan } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
@@ -139,7 +139,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
   // The tests that verify the fix are the ones a CI re-run of the cluster runs,
   // each at the line and in the project of its latest failure, as one command.
   const rerunCases = await clusterRerunCases(db, clusterId);
-  const verifyCommand = buildRerunCommand(rerunCases);
+  const { command: verifyCommand, leftOut: verifyLeftOut } = buildRerunPlan(rerunCases);
 
   // Reproduce locally and bisect the regression window: the checkout of the
   // failing commit, a pinned install, the browser and the exact test command,
@@ -177,6 +177,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     verify: {
       command: verifyCommand,
       cases: rerunCases,
+      leftOut: verifyLeftOut,
       expectation:
         'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open. Put the commit trailer in the commit message of the fix and report the change as a fix attempt, so the fix is tied to it.',
       commitTrailer: clusterTrailerLine(cluster.id),

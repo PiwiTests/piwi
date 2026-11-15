@@ -20,6 +20,7 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
     verify: {
       command: 'npx playwright test tests/checkout.spec.ts',
       cases: [{ filePath: 'tests/checkout.spec.ts', title: 'checkout completes' }],
+      leftOut: [],
       expectation: 'When these pass, Piwi records the fix.',
       commitTrailer: 'Piwi-Cluster: 7',
     },
@@ -141,6 +142,15 @@ describe('fixPlanToMarkdown', () => {
       makePlan({ suspectLines: { ...suspectLines([]), available: false, reason: 'no-coverage' } }),
     );
     expect(unavailable).not.toContain('## Suspect lines');
+  });
+
+  it('lists the tests the verify command leaves out', () => {
+    const plan = makePlan();
+    const md = fixPlanToMarkdown({
+      ...plan,
+      verify: { ...plan.verify, leftOut: [{ filePath: '.', title: 'refunds' }] },
+    });
+    expect(md).toContain('The command leaves out these tests: run them yourself.\n\n- refunds — `.`');
   });
 
   it('leaves out the Verify section when no command can name the tests', () => {

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { failureClusters } from '../../../database/schema';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 import { ciRerunAvailability } from '../../../utils/ci-rerun';
+import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import type { ClusterRerunDispatch } from '#shared/ci-rerun';
 
 defineRouteMeta({
@@ -29,7 +30,13 @@ export default eventHandler(async (event) => {
     .where(eq(failureClusters.id, id));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId);
+  const availability = await ciRerunAvailability(
+    db,
+    cluster.projectId,
+    cluster.lastSeenRunId,
+    null,
+    await clusterRerunCases(db, id),
+  );
   return {
     ...availability,
     lastDispatch: (cluster.lastRerunDispatch as ClusterRerunDispatch | null) ?? null,

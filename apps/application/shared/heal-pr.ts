@@ -91,6 +91,12 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
     lines.push(payload.verifyCommand);
     lines.push('```');
     lines.push('');
+    if (payload.verifyLeftOut?.length) {
+      lines.push(
+        `The command leaves out ${payload.verifyLeftOut.map((t) => `\`${t}\``).join(', ')}: run them yourself.`,
+      );
+      lines.push('');
+    }
   }
   lines.push(
     '_Opened automatically by Piwi. Review the diff as you would any change — the evidence points at these ' +
