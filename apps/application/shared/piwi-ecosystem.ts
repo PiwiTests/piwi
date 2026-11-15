@@ -123,7 +123,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     id: 'turbo',
     name: 'Faster test runs',
     summary:
-      '`@piwitests/turbo` makes a Playwright suite faster without forking Playwright: presets that keep traces and screenshots for failed tests only, reduce motion, run animations at once and reuse one reset browser context per worker, plus experimental hooks into Playwright’s internals. Its benchmark measures each change on your own suite. It needs no Piwi server.',
+      '`@piwitests/turbo` makes a Playwright suite faster without forking Playwright: presets that keep traces and screenshots for failed tests only, reduce motion, run animations at once and reuse one reset browser context per worker, plus experimental hooks into Playwright’s internals, and a `piwi-turbo` command that shortens the start of each run. Its benchmark measures each change on your own suite. It needs no Piwi server.',
     get: '`npm install --save-dev @piwitests/turbo`, then `withOptimizations` around the Playwright config and `test` from `@piwitests/turbo/test`.',
     when: 'A suite takes too long, in CI or on your machine, with or without the dashboard.',
     needs: [],

@@ -1,9 +1,9 @@
 // `withOptimizations`: the public levers, applied to a Playwright config.
-import module from 'node:module';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PlaywrightTestConfig, PlaywrightTestProject } from '@playwright/test';
+import { enableCompileCache } from './compile-cache';
 import type { BlockRule } from './types';
 
 type TraceMode = 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries' | 'retain-on-first-failure';
@@ -134,14 +134,6 @@ const EXPERIMENTAL_RETRY_INTERVALS = [10, 20, 40, 50];
 function defaultCompileCache(): string {
   const modules = resolve('node_modules');
   return existsSync(modules) ? join(modules, '.cache', 'piwi-turbo-compile') : join(tmpdir(), 'piwi-turbo-compile');
-}
-
-function enableCompileCache(directory: string): void {
-  if (process.env.NODE_COMPILE_CACHE || process.env.NODE_DISABLE_COMPILE_CACHE || process.env.NODE_V8_COVERAGE) return;
-  const path = resolve(directory);
-  // The runner caches from here on; workers inherit the variable and cache from their start.
-  module.enableCompileCache?.(path);
-  process.env.NODE_COMPILE_CACHE = path;
 }
 
 function defined<T extends object>(options: T): Partial<T> {

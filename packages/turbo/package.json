@@ -12,6 +12,9 @@
   },
   "type": "commonjs",
   "main": "dist/index.js",
+  "bin": {
+    "piwi-turbo": "dist/cli.js"
+  },
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -46,7 +49,7 @@
     "turbo:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" \"bench/\"",
     "turbo:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"bench/\"",
     "turbo:test": "vitest run",
-    "turbo:test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
+    "turbo:test:e2e": "tsup --silent && playwright test --config=tests/e2e/playwright.config.ts",
     "turbo:bench": "node bench/cli.mjs run --config bench/workload/bench.config.mjs",
     "turbo:bench:profile": "node bench/cli.mjs profile --config bench/workload/bench.config.mjs",
     "test": "npm run turbo:test",

@@ -33,7 +33,14 @@ tell a real gain from noise.
    permissions, geolocation and Cache Storage. A pair of end-to-end tests per kind of state a test can leave checks the
    next test starts without it, under Playwright's reset and under `fastReset`. Reuse stays in `fast` although it costs
    a suite of very short tests; the docs say when to turn it off.
-6. **Keep only what measures well.** Every lever was measured before it shipped, and what did not pay was removed
+6. **A command for the start: `piwi-turbo`.** Playwright loads its own modules before it reads the config, so no
+   config reaches the runner's start. `piwi-turbo` runs Playwright's CLI in its own process once it has set up Node's
+   compile cache and a V8 code cache of Playwright's modules, written as each process exits so it holds the functions
+   the run compiled, for the runner and the Node processes it forks. For `test`, it also starts a spare worker that
+   loads Playwright's bundles while the runner starts and stands in for the first worker fork, unless the fork's
+   options, the Node options, the folder, or a variable Node reads at start or Playwright read while the spare loaded
+   have changed by then. It changes the command, not the config, so it sits outside the presets.
+7. **Keep only what measures well.** Every lever was measured before it shipped, and what did not pay was removed
    rather than documented. The list below is the record of what was tried.
 
 ### How it was measured
@@ -70,6 +77,8 @@ one noted. Piwi's suite was not run again, so its CPU figures are left out.
 | `trace: 'on-first-retry'`, `failureScreenshots` | Piwi's suite, measured before the benchmark's fixes: −13% wall with reduced motion, then −5% with failure screenshots. |
 | Presets `safe`, `fast` | Reference workload against an unoptimized setup: −4.3% wall and −6.9% CPU; −5.8% and −53%. |
 | `compileCache` | A single-test run started about 55 ms sooner with the cache set from the config, and 143 ms with `NODE_COMPILE_CACHE` set in the environment, which also reaches the runner. |
+| `piwi-turbo`, caches | Flashwright's suites with `max`, one worker, median of 5 runs (6 for one test) whose first starts with an empty cache: one trivial test 1,179 to 902 ms, 15 trivial tests 1,792 to 1,470, TodoMVC 4,458 to 4,296, Shop 6,431 to 6,086, Inventory 12,180 to 11,798. |
+| `piwi-turbo`, spare worker | The same runs, against the caches alone: 902 to 722 ms, 1,470 to 1,307, 4,296 to 4,128, 6,086 to 5,865; Inventory unchanged (11,798 and 11,805). On a one-test run with a page, outside the harness (10 rounds): 1,295 ms stock, 907 with the caches, 651 with the spare. |
 | `retryIntervals` | Reference workload: −6.0% wall, lower in all five rounds, for +3.2% CPU. |
 | `fastScreenshots` | Flashwright's screenshot suite: `max` 1.34× against 1.14× without it. No measurable change on the reference workload, where screenshots are 2% of the test time. |
 | `failFast` | Reference workload, red run of six failing assertions: −22% (25.2 s to 19.6 s), with the same failures and no false one. |
@@ -141,6 +150,12 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
   four suites (noop 0.89× vs 0.90×, TodoMVC 1.18× vs 1.16×, Shop 1.07× vs 1.08×, Inventory 0.95× vs 0.94×).
   Reverted to the simpler CDP session.
 
+- **The workers' code cache switched on from the config**, which would have kept `playwright test` as the command:
+  one trivial test 1,296 against 1,234 ms with `max` alone, 15 trivial tests 1,809 against 1,871. No measurable
+  change: the saving is in the runner, which loads Playwright before any config.
+- **A larger young generation** (`--max-semi-space-size=64`) for the runner and its workers: single-test runs came out
+  slower.
+
 ## Consequences
 
 - **The hooks tie the package to the Playwright versions they were tested with** (1.64.1). A new version needs the
@@ -155,10 +170,17 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 - **`fast` is slower than stock on a suite of very short tests**, where Playwright's reset of a context (three
   navigations and a mouse move that waits for a frame) takes longer than a new context. Without the experimental hooks
   turbo cannot shorten that reset.
-- **The gap to Flashwright stays.** Flashwright measured 1.8× to 3× stock on its suites here, turbo's `max` 1.1×
-  to 1.5×. Per run of 15 trivial tests, most of the remaining CPU difference is Node loading Playwright's bundles: 409
-  against 189 ms in the runner and 283 against 138 ms in the worker. A package cannot change how Playwright is
-  bundled; a compile cache set in the environment shortens the runner's share.
+- **The gap to Flashwright narrows on short runs only.** Flashwright measured 1.8× to 3× stock on its suites here,
+  turbo's `max` 1.1× to 1.5×. Per run of 15 trivial tests, most of the remaining CPU difference was Node loading
+  Playwright's bundles: 409 against 189 ms in the runner and 283 against 138 ms in the worker. A package cannot change
+  how Playwright is bundled; `piwi-turbo` caches the compiled bundles and loads the first worker's ahead, which took
+  `max` from 1.16× to 1.59× stock on 15 trivial tests, and a single test from 0.98× to 1.59× (Flashwright: 2.3× and
+  3.1×). Its saving is per command, so a long suite gains a few percent.
+- **`piwi-turbo` helps only the runs that go through it**: IDE extensions and tools that start `playwright`
+  themselves do not. The spare worker relies on Playwright's worker entry (`lib/worker/workerProcessEntry.js`), the
+  options of its worker fork and the variables it adds (`PLAYWRIGHT_TEST`, `FORCE_COLOR`, `DEBUG_COLORS`); when one of
+  them differs, Playwright forks as usual. The code cache replaces `Module.prototype._compile` for Playwright's own
+  files, with a `require` built as Node builds it.
 - **`failFast` sees only what its tracker counts**: requests, timers, frames, sockets, workers, channels, animations,
   media, and pending crypto, storage, decoding and WebAssembly work in every page of the context. It must stay off for
   a test that changes the page from its own Node code while an assertion waits, or a page that waits on another

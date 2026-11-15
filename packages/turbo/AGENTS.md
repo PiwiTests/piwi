@@ -23,4 +23,11 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
   in `bench/workload/bench.config.mjs`.
 - **Only `src/test.ts` imports the hooks**: tsup bundles each entry on its own, and the hooks' `state` must exist once
   per worker.
-- `npm run turbo:test` runs the unit tests (Vitest), `npm run turbo:test:e2e` the hooks' compatibility suite.
+- **`piwi-turbo` (`src/cli.ts`) sets its caches up and starts the spare worker before anything loads Playwright**: it
+  imports no module that loads `@playwright/test`. `code-cache.ts` and `spare-worker.ts` stay tsup entries, since
+  other processes load them by path from `dist/`.
+- **The spare worker stands in only for a fork that matches its start** (`spareRefusal` in `src/spare.ts`): a changed
+  variable Node reads at start, or one Playwright read while the spare loaded, refuses it. `tests/e2e/cli.spec.ts` runs
+  a project through the built command.
+- `npm run turbo:test` runs the unit tests (Vitest), `npm run turbo:test:e2e` builds the package and runs the hooks'
+  compatibility suite and the command's tests.

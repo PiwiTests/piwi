@@ -101,6 +101,42 @@ sign in to one origin with different credentials need `test.use({ reuseContextWi
 Reuse happens through `@piwitests/turbo/test`, or `PW_TEST_REUSE_CONTEXT`, and needs video off. Turn it off with
 `reuseContext: false`, for a suite of very short tests or very large pages.
 
+## A faster start: `piwi-turbo`
+
+Playwright loads its own modules before it reads the config, and each test worker loads them again: most of a second
+before the first test starts, however short the suite. `piwi-turbo` runs the Playwright of the current folder with that
+start cut down, and passes every command and option on unchanged:
+
+```sh
+npx piwi-turbo test tests/checkout.spec.ts
+```
+
+- **Caches**: Node's compile cache, and a V8 code cache of Playwright's own modules that each process writes as it
+  exits, so it holds the functions the run compiled as well as the top-level code. Both serve the runner and the Node
+  processes it starts, from `node_modules/.cache/piwi-turbo` (`PIWI_TURBO_CACHE_DIR` moves it). The first run fills
+  them; the cache of another Playwright or Node version is deleted.
+- **A spare worker** (`test` only, not with `--ui`, `--list` or `--debug`): a Node process that loads Playwright while
+  the runner reads the config and the tests, and becomes the first test worker. Playwright forks that worker as usual
+  when the fork differs from what the spare was started with: other Node options or folder, or a change to a variable
+  Node reads at start or Playwright read as it loaded, such as a config that sets `CI` or `NODE_OPTIONS`.
+
+The saving is per command, so it shows on short runs: an edit-and-run loop, or an agent that runs one test at a time.
+IDE extensions and tools that start `playwright` themselves don't go through it. `PIWI_TURBO_CACHE=0` turns the caches
+off, `PIWI_TURBO_SPARE_WORKER=0` the spare worker, and `PIWI_TURBO_DEBUG=1` says whether the spare was used and why
+not. Wall time of whole commands with `max`, on the same suites as above (median of 5 runs, 6 for one test, the first
+with an empty cache):
+
+| Run                                 | `playwright test` | `piwi-turbo test`, caches only | `piwi-turbo test` |
+| ----------------------------------- | ----------------: | -----------------------------: | ----------------: |
+| One trivial test                    | 1,179 ms          | 902 ms                         | 722 ms            |
+| 15 trivial tests                    | 1,792 ms          | 1,470 ms                       | 1,307 ms          |
+| TodoMVC                             | 4,458 ms          | 4,296 ms                       | 4,128 ms          |
+| A shop with a saved sign-in         | 6,431 ms          | 6,086 ms                       | 5,865 ms          |
+| An inventory page of 8,500 elements | 12,180 ms         | 11,798 ms                      | 11,805 ms         |
+
+Calling `node_modules/.bin/piwi-turbo` directly, from a script or an agent, also saves the start of `npx`, about
+200 ms on the same machine.
+
 ## Advanced: the levers one by one
 
 Every preset is a set of these options; name one to override it.
@@ -114,7 +150,7 @@ Every preset is a set of these options; name one to override it.
 | `reducedMotion`      | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations.                                                                                                                                                                                                                                                                                                                                 |
 | `instantAnimations`  | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion.                                                                                                                                                                                                                                                                                                            |
 | `reuseContext`       | One browser context per worker, reset between tests (see above).                                                                                                                                                                                                                                                                                                                                                 |
-| `compileCache`       | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given; the web server and global setup the runner starts use it too. The runner loads Playwright before the config: set `NODE_COMPILE_CACHE` in the environment to cache its start too. Skipped when coverage is collected or a compile cache is already set. |
+| `compileCache`       | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given; the web server and global setup the runner starts use it too. The runner loads Playwright before the config: [`piwi-turbo`](#a-faster-start-piwi-turbo) caches its start too. Skipped when coverage is collected or a compile cache is already set.                        |
 
 ### Experimental hooks
 
@@ -183,8 +219,8 @@ own suite. The benchmark lives in the repository and is not part of the npm pack
 Several levers follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a fork of Playwright
 that makes them its defaults: faster PNG encoding, less waiting between checks, failure screenshots taken only on
 failure, instant animations, assertions that fail once the page is idle, pointer actions that skip the wait for a
-still element, and a reused, reset browser context. @piwitests/turbo applies them to stock Playwright at runtime
-instead of forking it. It contains no Flashwright or Playwright code; both are Apache-2.0.
+still element, a reused, reset browser context, a code cache of Playwright's modules and a worker started before the
+runner needs it. @piwitests/turbo applies them to stock Playwright at runtime instead of forking it. It contains no Flashwright or Playwright code; both are Apache-2.0.
 
 @piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by
 Microsoft or the Flashwright project. Playwright is a trademark of Microsoft Corporation.
