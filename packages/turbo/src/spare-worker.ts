@@ -1,7 +1,7 @@
 // The spare test worker `piwi-turbo test` starts with the runner. It loads Playwright's bundles while the runner starts,
 // records the environment variables they read as they load, and reports them. Handed off, it takes the environment of
 // the worker Playwright meant to start and runs Playwright's worker entry in this process.
-import { SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
+import { DISCARD_CODE_CACHE, SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
 
 const entry = process.env[SPARE_ENTRY];
 const preload: string[] = JSON.parse(process.env[SPARE_PRELOAD] ?? '[]');
@@ -10,7 +10,9 @@ process.argv[1] = entry;
 
 let handedOff = false;
 const exitUnlessHandedOff = () => {
-  if (!handedOff) process.exit(0);
+  if (handedOff) return;
+  (globalThis as { [DISCARD_CODE_CACHE]?: boolean })[DISCARD_CODE_CACHE] = true;
+  process.exit(0);
 };
 process.on('disconnect', exitUnlessHandedOff);
 

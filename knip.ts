@@ -108,13 +108,14 @@ const config: KnipConfig = {
         'bench/workload/app/public/*.js',
         'bench/workload/bench.config.mjs',
         'bench/workload/tests/*.setup.ts',
-        'tests/e2e/cli-project/*.check.ts',
+        'tests/e2e/cli-project/*.check.{ts,mts}',
       ],
       playwright: {
         config: [
           'tests/e2e/playwright.config.ts',
           'bench/workload/playwright.config.ts',
           'tests/e2e/cli-project/playwright.config.ts',
+          'tests/e2e/cli-project/esm.config.mts',
         ],
       },
     },

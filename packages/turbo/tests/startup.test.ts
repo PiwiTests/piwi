@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { cacheKey, isCachedModule } from '../src/code-cache';
 import { spareRefusal, type ForkRequest, type SpareStart } from '../src/spare';
-import { cacheRoot, runsWorkers } from '../src/startup-env';
+import { cacheRoot, codeCacheFolder, isCodeCacheFolder, runsWorkers } from '../src/startup-env';
 
 const start: SpareStart = {
   entry: '/app/node_modules/playwright/lib/worker/workerProcessEntry.js',
@@ -43,6 +43,8 @@ describe('spareRefusal', () => {
       'NODE_OPTIONS changed',
     );
     expect(spareRefusal(start, envRead, request({ ...start.env, LC_ALL: 'fr_FR' }))).toBe('LC_ALL changed');
+    expect(spareRefusal(start, envRead, request({ ...start.env, HOME: '/home/other' }))).toBe('HOME changed');
+    expect(spareRefusal(start, envRead, request({ ...start.env, TMPDIR: '/scratch' }))).toBe('TMPDIR changed');
     expect(spareRefusal(start, envRead, request({ ...start.env, DEBUG_DEPTH: '4' }))).toBe('DEBUG_DEPTH changed');
   });
 
@@ -62,13 +64,22 @@ describe('spareRefusal', () => {
 describe('cacheRoot', () => {
   test('uses the nearest node_modules above the folder', () => {
     const exists = (path: string) => path === join('/repo', 'node_modules');
-    expect(cacheRoot(join('/repo', 'packages', 'app'), exists, '/tmp')).toBe(
+    expect(cacheRoot(join('/repo', 'packages', 'app'), exists, '/tmp', '1000')).toBe(
       join('/repo', 'node_modules', '.cache', 'piwi-turbo'),
     );
   });
 
-  test('falls back to the temporary folder', () => {
-    expect(cacheRoot(join('/repo', 'app'), () => false, '/tmp')).toBe(join('/tmp', 'piwi-turbo'));
+  test("falls back to a folder of the user's own in the temporary folder", () => {
+    expect(cacheRoot(join('/repo', 'app'), () => false, '/tmp', '1000')).toBe(join('/tmp', 'piwi-turbo-1000'));
+  });
+});
+
+describe('isCodeCacheFolder', () => {
+  test("recognizes the code cache's folders only", () => {
+    expect(isCodeCacheFolder(codeCacheFolder('1.64.1'))).toBe(true);
+    expect(isCodeCacheFolder('1.65.0-alpha-1767225600000-v24.11.0-arm64')).toBe(true);
+    for (const name of ['my-notes', 'v24.11.0', '1.64.1', 'node_modules', '.git'])
+      expect(isCodeCacheFolder(name)).toBe(false);
   });
 });
 

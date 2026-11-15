@@ -113,15 +113,18 @@ npx piwi-turbo test tests/checkout.spec.ts
 
 - **Caches**: Node's compile cache, and a V8 code cache of Playwright's own modules that each process writes as it
   exits, so it holds the functions the run compiled as well as the top-level code. Both serve the runner and the Node
-  processes it starts, from `node_modules/.cache/piwi-turbo` (`PIWI_TURBO_CACHE_DIR` moves it). The first run fills
-  them; the code cache of another Playwright or Node version is deleted.
+  processes it starts, from `node_modules/.cache/piwi-turbo` (`PIWI_TURBO_CACHE_DIR` names another folder). The first
+  run fills them; the code cache of another Playwright or Node version is deleted. A folder other users can write to
+  is not used.
 - **A spare worker** (`test` only, not with `--ui`, `--list` or `--debug`): a Node process that loads Playwright while
   the runner reads the config and the tests, and becomes the first test worker. Playwright forks that worker as usual
   when the fork differs from what the spare was started with: other Node options or folder, or a change to a variable
   Node reads at start or Playwright read as it loaded, such as a config that sets `CI` or `NODE_OPTIONS`.
 
 The saving is per command, so it shows on short runs: an edit-and-run loop, or an agent that runs one test at a time.
-IDE extensions and tools that start `playwright` themselves don't go through it. `PIWI_TURBO_CACHE=0` turns the caches
+IDE extensions and tools that start `playwright` themselves don't go through it. A test can see two differences
+from `playwright test`: the worker's `process.execArgv` loads the code cache, and the processes of the run have
+`NODE_COMPILE_CACHE` and `PIWI_TURBO_*` variables. `PIWI_TURBO_CACHE=0` turns the caches
 off, `PIWI_TURBO_SPARE_WORKER=0` the spare worker, and `PIWI_TURBO_DEBUG=1` says whether the spare was used and why
 not. Wall time of whole commands with `max`, on the same suites as above (median of 5 runs, 6 for one test, the first
 with an empty cache):

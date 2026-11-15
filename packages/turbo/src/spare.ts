@@ -6,8 +6,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
 
-/** Variables Node reads as a process starts, and the `debug` module's options, which it finds by listing them all. */
-const STARTUP_ENV = /^(NODE_|UV_|LANG$|LANGUAGE$|LC_|OPENSSL_|SSL_CERT_|DEBUG)/i;
+/**
+ * Variables Node reads as a process starts, the ones it reads for `os.homedir()` and `os.tmpdir()` without going through
+ * `process.env`, and the `debug` module's options, which it finds by listing them all.
+ */
+const STARTUP_ENV =
+  /^(NODE_|UV_|LANG$|LANGUAGE$|LC_|OPENSSL_|SSL_CERT_|HOME|USERPROFILE$|TMPDIR$|TEMP$|TMP$|XDG_|DEBUG)/i;
 
 /** What the spare was started with. */
 export interface SpareStart {

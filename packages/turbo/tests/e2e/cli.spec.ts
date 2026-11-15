@@ -69,10 +69,21 @@ test('starts no spare for other commands', () => {
   expect(result.output).not.toContain('spare');
 });
 
-test('removes the code caches of other Playwright or Node versions', () => {
+test('removes the code caches of other Playwright or Node versions, and nothing else', () => {
   const cache = test.info().outputPath('cache');
-  mkdirSync(join(cache, 'code', '1.0.0-v20.0.0-x64'), { recursive: true });
-  writeFileSync(join(cache, 'code', '1.0.0-v20.0.0-x64', 'stale.bin'), '');
+  for (const folder of ['1.0.0-v20.0.0-x64', 'notes']) {
+    mkdirSync(join(cache, 'code', folder), { recursive: true });
+    writeFileSync(join(cache, 'code', folder, 'kept.txt'), '');
+  }
   expect(run(['--version'], cache).status).toBe(0);
-  expect(readdirSync(join(cache, 'code'))).not.toContain('1.0.0-v20.0.0-x64');
+  const left = readdirSync(join(cache, 'code'));
+  expect(left).not.toContain('1.0.0-v20.0.0-x64');
+  expect(left).toContain('notes');
+});
+
+test('prints no warning of its own in an ES module project', () => {
+  const result = run(['test', '--config', 'esm.config.mts'], test.info().outputPath('cache'));
+  expect(result.status, result.output).toBe(0);
+  expect(result.output).toContain('1 passed');
+  expect(result.output).not.toContain('Warning');
 });

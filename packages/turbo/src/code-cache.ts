@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import vm from 'node:vm';
-import { CODE_CACHE_DIR, RUNNER_PID } from './startup-env';
+import { CODE_CACHE_DIR, DISCARD_CODE_CACHE, RUNNER_PID } from './startup-env';
 
 const PLAYWRIGHT_MODULE = /[\\/]node_modules[\\/](playwright|playwright-core|@playwright[\\/]test)[\\/]/;
 
@@ -53,7 +53,31 @@ function makeRequire(statics: ModuleStatics, parent: ModuleInternals) {
   });
 }
 
+/**
+ * Node warns once per process that `USE_MAIN_CONTEXT_DEFAULT_LOADER` is experimental, as the first `import()` of code
+ * compiled with it runs. One such `import()` here, with that warning filtered out, so a run prints what
+ * `playwright test` prints.
+ */
+function takeLoaderWarning(): void {
+  const emitWarning = process.emitWarning;
+  process.emitWarning = function (this: unknown, warning: string | Error, ...rest: unknown[]) {
+    if (
+      String(typeof warning === 'string' ? warning : warning.message).startsWith('vm.USE_MAIN_CONTEXT_DEFAULT_LOADER')
+    )
+      return;
+    return Reflect.apply(emitWarning, this, [warning, ...rest]);
+  } as typeof process.emitWarning;
+  try {
+    new vm.Script('import("node:path").catch(() => {})', {
+      importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+    }).runInThisContext();
+  } finally {
+    process.emitWarning = emitWarning;
+  }
+}
+
 function install(directory: string): void {
+  takeLoaderWarning();
   const statics = Module as unknown as ModuleStatics;
   const compile = statics.prototype._compile;
   const written: Array<{ script: vm.Script; file: string }> = [];
@@ -79,6 +103,7 @@ function install(directory: string): void {
   };
 
   process.on('exit', () => {
+    if ((globalThis as { [DISCARD_CODE_CACHE]?: boolean })[DISCARD_CODE_CACHE]) return;
     for (const { script, file } of written) {
       const temporary = `${file}.${process.pid}.tmp`;
       try {

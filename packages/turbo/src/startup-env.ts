@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path';
 export const CODE_CACHE_DIR = 'PIWI_TURBO_CODE_CACHE_DIR';
 /** The runner's process id, which tells the runner from the Node processes it starts. */
 export const RUNNER_PID = 'PIWI_TURBO_RUNNER_PID';
+/** Set on `globalThis` by a process whose code caches are not worth keeping, such as a spare worker never used. */
+export const DISCARD_CODE_CACHE = Symbol.for('piwi-turbo.discard-code-cache');
 /** Playwright's worker entry, which the spare worker runs once handed off. */
 export const SPARE_ENTRY = 'PIWI_TURBO_SPARE_ENTRY';
 /** The modules the spare worker loads while it waits, as a JSON array of paths. */
@@ -23,12 +25,25 @@ export interface SpareHandoff {
   env: NodeJS.ProcessEnv;
 }
 
-/** The cache folder of a run from `cwd`: `.cache/piwi-turbo` in the nearest `node_modules`, else the temporary folder. */
-export function cacheRoot(cwd: string, exists: (path: string) => boolean, temporary: string): string {
+/**
+ * The cache folder of a run from `cwd`: `.cache/piwi-turbo` in the nearest `node_modules`, else a folder of this user's
+ * own in the temporary folder.
+ */
+export function cacheRoot(cwd: string, exists: (path: string) => boolean, temporary: string, user: string): string {
   for (let folder = cwd; ; folder = dirname(folder)) {
     if (exists(join(folder, 'node_modules'))) return join(folder, 'node_modules', '.cache', 'piwi-turbo');
-    if (dirname(folder) === folder) return join(temporary, 'piwi-turbo');
+    if (dirname(folder) === folder) return join(temporary, `piwi-turbo-${user}`);
   }
+}
+
+/** Whether a folder in the code cache holds the caches of one Playwright, Node and architecture (`codeCacheFolder`). */
+export function isCodeCacheFolder(name: string): boolean {
+  return /^\d+\.\d+\.\d+\S*-v\d+\.\d+\.\d+-[a-z0-9]+$/.test(name);
+}
+
+/** The folder of the code caches of one Playwright version, for this Node and architecture. */
+export function codeCacheFolder(playwrightVersion: string): string {
+  return `${playwrightVersion}-${process.version}-${process.arch}`;
 }
 
 /** Whether a `playwright` command line runs tests in workers this process forks: `test`, without UI mode or `--list`. */
