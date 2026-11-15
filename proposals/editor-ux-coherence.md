@@ -67,8 +67,8 @@ run acting on it, and a run's row says and turns over its Hold failures (LR7 in 
 submenu remains); a run the Testing view started shows each test's result as its worker ends it, from the run's own
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
-failed while its failure is held, then its result in a run that reaches no instance, until the config's next run (LR9
-in part: the test lines of a config with no instance at all remain). L6 in part since: golden fixtures both editors' pure halves read
+failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
+newer latest run (LR9 in part: the test lines of a config with no instance at all remain). L6 in part since: golden fixtures both editors' pure halves read
 (`packages/editor/tests/golden/`: the status bar's text and the Runs rows), held to the same words by VS Code's
 `tests/golden.test.ts` and `GlueTest`. L4 in part since: the ASP.NET Core route manifest names each handler's line,
 the instance keeps it on the handler file and the code index carries each route a file handles with the tests that

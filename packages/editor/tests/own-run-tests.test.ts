@@ -130,6 +130,32 @@ describe('the tests of the editor’s own runs, as their lines show them', () =>
     expect(own.stateOf(ROOT, SPEC, ['cart', 'adds a cup'], [])?.status).toBe('skipped');
   });
 
+  test('the newest run’s result first, and the kept results gone with a newer latest run', () => {
+    const own = new OwnRunTests();
+    own.heard('ed-1', 0, { type: 'test-begin', test: runTest(MUG) }, ROOT);
+    own.heard('ed-1', 0, { type: 'test-end', status: 'passed' }, ROOT);
+    // A second run of the config, while the first goes on, fails the test.
+    own.heard('ed-2', 0, { type: 'test-begin', test: runTest(MUG) }, ROOT);
+    own.heard('ed-2', 0, { type: 'test-end', status: 'failed' }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])).toMatchObject({ status: 'failed', ref: 'ed-2' });
+    own.heard('ed-1', null, { type: 'ended' }, ROOT);
+    own.heard('ed-2', null, { type: 'ended' }, ROOT);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])).toMatchObject({ status: 'failed', ref: 'ed-2' });
+    // The instance gives a newer latest run of the config.
+    expect(own.forget(ROOT)).toBe(true);
+    expect(own.stateOf(ROOT, SPEC, MUG, [])).toBeUndefined();
+    expect(own.forget(ROOT)).toBe(false);
+  });
+
+  test('a stop in a file whose name is spelled apart in its URI names the file', () => {
+    const own = new OwnRunTests();
+    const page = path.join(ROOT, 'tests/pages/my page.ts');
+    const at = stop('breakpoint', page, 2);
+    expect(own.stateOf(ROOT, SPEC, MUG, [session('ed-1', [worker(0, runTest(MUG), at)])])?.words).toBe(
+      'stopped at a breakpoint, line 3 of my page.ts,',
+    );
+  });
+
   test('a run that names its page on an instance leaves its results to the instance', () => {
     const own = new OwnRunTests();
     own.sessionChanged(session('ed-1', [], { page: { id: 42, url: 'https://piwi.example.com/test-runs/42' } }));

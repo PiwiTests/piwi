@@ -886,8 +886,8 @@ object Glue {
     /**
      * What a change of the runs from `before` to `after` draws again: nothing when only the run in progress moved
      * ([runsInFiles]); the files whose tests show a result when only the tests of the run in progress began or ended
-     * (`liveTests`, and `runTests` as the runs the IDE follows tell them), which only a test's line shows; every file Piwi reads when anything else the files show changed,
-     * such as the latest run or its baseline.
+     * (`liveTests`, and `runTests` as the runs the IDE follows tell them), which only a test's line shows; every file
+     * Piwi reads when anything else the files show changed, such as the latest run or its baseline.
      */
     fun redraw(before: RunStatusResult?, after: RunStatusResult?): Redraw {
         val shownBefore = runsInFiles(before)
@@ -898,6 +898,12 @@ object Glue {
             else -> Redraw.ALL
         }
     }
+
+    /** The specs the tests of the runs the IDE follows stand in (`runTests`), which a tests' redraw draws too. */
+    fun runTestFiles(runs: RunStatusResult?): Set<java.nio.file.Path> =
+        runs?.contexts.orEmpty().flatMap { it.runTests.orEmpty() }
+            .mapNotNull { runCatching { java.nio.file.Path.of(java.net.URI(it.uri)) }.getOrNull() }
+            .toSet()
 
     private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
         runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null, runTests = null) })

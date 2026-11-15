@@ -829,6 +829,9 @@ function failureSource(context: PiwiContext, runId: number | undefined): 'ci' | 
   return isCiRun(context, runId) ? 'ci' : 'local';
 }
 
+/** How often, at most, the run status says the tests of the editor's own runs changed, as the sessions are paced. */
+const RUN_TESTS_PACE_MS = 300;
+
 /** A catalog status as a test line shows it. */
 function testLineStatus(status: string | null | undefined): TestLineStatus {
   return status === 'passed' || status === 'failed' || status === 'flaky' || status === 'skipped' ? status : 'unknown';
@@ -1909,8 +1912,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }),
   });
 
+  /** The latest run each config's context last read, by root: a newer one drops the results kept of its own runs. */
+  const latestRead = new Map<string, number | null>();
   /** Tell the client when the run status changed; a CI run a context reads in progress is followed. */
   const sendRunStatus = () => {
+    for (const c of contexts) {
+      const id = c.failures?.run?.id ?? null;
+      const before = latestRead.get(c.root);
+      latestRead.set(c.root, id);
+      if (before !== undefined && before !== id) ownRunTests.forget(c.root);
+    }
     ciSessions.sync();
     const status = runStatus();
     const serialized = JSON.stringify(status);
@@ -2219,17 +2230,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   /** The run line the client holds (`piwi/runLineChanged`), as last sent. */
   let lineSent = JSON.stringify(null);
-  /** Send the run line once it changed, after the change the session brings is heard. */
-  /** The tests the editor's own runs show on their lines changed, or may have: the run status says so once. */
-  let runTestsPending = false;
+  /**
+   * The tests the editor's own runs show on their lines changed, or may have: the run status says so, at most every
+   * `RUN_TESTS_PACE_MS`, as the sessions are paced.
+   */
+  let runTestsPending: ReturnType<typeof setTimeout> | null = null;
   const runTestsChanged = () => {
-    if (runTestsPending) return;
-    runTestsPending = true;
-    queueMicrotask(() => {
-      runTestsPending = false;
+    runTestsPending ??= setTimeout(() => {
+      runTestsPending = null;
       sendRunStatus();
-    });
+    }, RUN_TESTS_PACE_MS);
   };
+  /** Send the run line once it changed, after the change the session brings is heard. */
   const lineChanged = () =>
     queueMicrotask(() => {
       const line = runLine(runSessions.current(), runSessions.sharingWindow);
@@ -3400,6 +3412,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       // instance streams; else its result in an own run no instance reads.
       const instanceLive = lineLiveState(context, found.id);
       const shown = own && (own.live || !instanceLive) ? own : undefined;
+      // A result of the editor's own run newer than the failure read, which no longer stands on the line.
+      const outdated = shown && !shown.live && shown.status !== 'failed';
       const live = shown?.status ?? instanceLive;
       const status = live ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
       // The failure's own, the catalog's latest run's for a result the catalog gives, none for a run in progress.
@@ -3407,9 +3421,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return {
         call,
         found,
-        failed,
+        failed: outdated ? undefined : failed,
         fixed,
-        failure,
+        failure: outdated ? undefined : failure,
         status,
         duration: duration === null ? null : Math.round(duration),
         ...(shown ? { own: shown } : {}),
@@ -4986,6 +5000,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     for (const { file, listener } of headWatches) fs.unwatchFile(file, listener);
     if (runTimer) clearTimeout(runTimer);
     if (placeTimer) clearTimeout(placeTimer);
+    if (runTestsPending) clearTimeout(runTestsPending);
     for (const t of timers.values()) clearTimeout(t);
   };
 }

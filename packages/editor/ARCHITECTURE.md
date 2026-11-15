@@ -575,8 +575,11 @@ titles, so an edit since the run started moves nothing. A test running or standi
 run sessions, takes its line before the instance's stream does: `running`, `paused` at a stop (`paused, line 14, in
 your run`), `failed` while its failure is held. Its results, as each worker's `test-end` says them, show only for a run
 that names no page on an instance (`RunSession.page`), whose results no stream brings: while it runs, then until
-another run of its config begins. A test the catalog does not know gets a line of that state alone. `piwi/runStatus`
-gives these tests in `runTests`, which the clients compare as they compare `liveTests`. A config without an instance
+another run of its config begins or the context reads a newer latest run (`forget`), the newest run's result first. Such
+a result in place of a failure the instance read drops that failure from the line. A test the catalog does not know
+gets a line of that state alone. `piwi/runStatus` gives these tests in `runTests`, at most every 300 ms, which the
+clients compare as they compare `liveTests`; the JetBrains plugin draws again the specs they name, whether or not
+their tests showed a result before. A config without an instance
 has no test lines (`piwi/fileSummary` answers none).
 
 The stream's `test-stuck` (once per attempt, `elapsedMs` and `usualMs`), `test-stopped` and `test-resumed` name an

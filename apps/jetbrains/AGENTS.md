@@ -217,8 +217,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The flaky, running and paused marks (`icons/testFlaky.svg`, `testRunning.svg`, `testPaused.svg`) are VS Code's,
   byte for byte** (VS Code's running ring adds the style that spins it; `PiwiIcons.RUNNING` turns this one in code, on
   the result icon alone), in `STATUS_COLORS`' fills and the pause bar's violet, and so are the recording marks
-  (`icons/recording*.svg`, `recordPaused*.svg`); both color schemes' failing and recording tints blend those fills over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`)
-  background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
+  (`icons/recording*.svg`, `recordPaused*.svg`); both color schemes' failing and recording tints blend those fills
+  over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`) background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **`icons/testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg`, `reload.svg`, `region.svg`, `mock.svg` and
   `unreachable.svg` are also VS Code's font glyphs** (`ICON_FONT_GLYPHS`): after
   editing one, run `npm run app:generate:brand` (`apps/application/`), which draws them into
