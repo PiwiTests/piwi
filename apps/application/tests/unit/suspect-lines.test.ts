@@ -429,7 +429,7 @@ describe('the fix plan', () => {
       edits: [],
       failingTests: [],
       ownership: { owner: null, source: null },
-      verify: { command: 'npx playwright test', expectation: '', commitTrailer: '' },
+      verify: { command: 'npx playwright test', leftOut: [], expectation: '', commitTrailer: '' },
       reproduce: { steps: [], env: [], notes: [] },
       bisect: { available: false, reason: 'no range' },
       bisectedCommit: null,

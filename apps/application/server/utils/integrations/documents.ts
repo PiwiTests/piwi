@@ -193,6 +193,7 @@ async function gatherClusterFacts(
     patch,
     locatorEdits,
     verifyCommand: plan?.verify.command ?? null,
+    verifyLeftOut: plan?.verify.leftOut.map((c) => c.title || c.filePath),
     reproduceScript,
     relatedIssues,
     automatic: opts.automatic ?? null,

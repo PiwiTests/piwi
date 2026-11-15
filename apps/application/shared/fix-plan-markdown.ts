@@ -10,6 +10,7 @@
 import type { FixPlan } from '#shared/fix-plan.types';
 import { reproScript } from '#shared/reproduce';
 import { suspectLineMarkdown, suspectLinesLead } from '#shared/suspect-lines';
+import { markdownCode } from '#shared/utils/markdown-code';
 
 /** Fenced code block, guarding against a body that already ends in a newline. */
 function fence(body: string, lang = ''): string {
@@ -158,7 +159,15 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
   }
 
   // Verify
-  if (verify.command) lines.push('## Verify', '', fence(verify.command), '', verify.expectation, '');
+  if (verify.command) {
+    lines.push('## Verify', '', fence(verify.command), '', verify.expectation, '');
+    if (verify.leftOut.length) {
+      lines.push('The command leaves out these tests: run them yourself.', '');
+      for (const c of verify.leftOut)
+        lines.push(`- ${c.title || '(no title)'} — ${markdownCode(c.filePath || '(no file)')}`);
+      lines.push('');
+    }
+  }
   if (verify.commitTrailer) lines.push('Commit trailer:', '', fence(verify.commitTrailer), '');
 
   // Reproduce locally — the commands are git/npm/npx, identical on every OS.
