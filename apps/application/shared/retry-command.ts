@@ -84,11 +84,20 @@ function quoteAll(values: string[]): string[] {
 }
 
 /**
- * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option, an
- * empty one matches every file, and a bare `:<line>` that line of every file.
+ * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option,
+ * and one whose path holds nothing but `.` and `/` (empty included) matches every file, or, with a `:<line>`, that
+ * line of every file.
  */
 export function isSpecFilter(spec: string): boolean {
-  return spec !== '' && !spec.startsWith('-') && !spec.startsWith(':');
+  return !spec.startsWith('-') && !spec.startsWith(':') && !/^[./]*(?::\d+)?$/.test(spec);
+}
+
+/**
+ * Whether a title still names its tests in a copied command: it holds a character that is neither blank nor one
+ * {@link titleGrepPattern} turns into `.`. A title made only of those would match every test.
+ */
+export function isTitleFilter(title: string): boolean {
+  return [...title].some((ch) => ch.trim() !== '' && !SHELL_EXPANDED.test(ch));
 }
 
 /** The quoted spec paths of `values` that Playwright takes as test filters (see {@link isSpecFilter}). */
@@ -118,11 +127,11 @@ function projectFlags(projects: string[]): string {
 
 /**
  * The ` -g "<title|title>"` flag that narrows a `playwright test` run to these
- * titles, or an empty string without titles. A blank title, which every test
- * matches, is left out. See {@link titleGrepPattern}.
+ * titles, or an empty string without titles. A title that would match every
+ * test is left out (see {@link isTitleFilter}). See {@link titleGrepPattern}.
  */
 export function buildTitleGrepFlag(titles: string[]): string {
-  const named = titles.filter((title) => title.trim());
+  const named = titles.filter(isTitleFilter);
   if (named.length === 0) return '';
   return ` -g "${named.map(titleGrepPattern).join('|')}"`;
 }
@@ -226,7 +235,7 @@ export function buildRetryCommand(
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else {
-      const patterns = projectCases.filter((c) => c.title.trim()).map((c) => titleGrepPattern(c.title));
+      const patterns = projectCases.filter((c) => isTitleFilter(c.title)).map((c) => titleGrepPattern(c.title));
       if (patterns.length === 0) continue;
       const grepArg = patterns.length === 1 ? patterns[0]! : `(${patterns.join('|')})`;
       cmd = `${baseCmd} --grep "${grepArg}"`;

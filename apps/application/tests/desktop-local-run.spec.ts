@@ -197,6 +197,59 @@ test.describe('Desktop local run', () => {
     executionId = (run.testCases as Case[]).find((c) => c.title === 'checkout completes')!.executionId;
   });
 
+  test('a test with no file path Playwright takes is left out, and the menu says so', async ({ page, request }) => {
+    const startTime = Date.now();
+    const failed = (title: string, location: string) => ({
+      title,
+      status: 'failed',
+      duration: 1000,
+      location,
+      browser: { name: 'chromium', projectName: 'chromium' },
+      error: 'Error: boom',
+      retries: 0,
+      workerIndex: 0,
+      startedAt: startTime,
+    });
+    const submit = async (testCases: ReturnType<typeof failed>[]) => {
+      const res = await retryPost(request, '/api/test-runs/submit', {
+        data: {
+          projectName: PROJECT.DESKTOP_LOCAL_RUN_UNNAMED,
+          status: 'failed',
+          startTime: new Date(startTime).toISOString(),
+          duration: 2000,
+          totalTests: testCases.length,
+          passedTests: 0,
+          failedTests: testCases.length,
+          skippedTests: 0,
+          testCases,
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      const proj = await (await request.get(`/api/projects/${data.projectId}`)).json();
+      return proj.testRuns[0].id as number;
+    };
+
+    await installFakeBridge(page, { linked: true });
+    const someRun = await submit([failed('pays', 'tests/pay.spec.ts:7:1'), failed('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${someRun}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run options' }).first().click();
+    await expect(page.getByText('Leaves out 1 of the 2 tests: Playwright cannot take their file paths')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    expect((await runInvocations(page))[0]!.args!.args).toEqual(['tests/pay.spec.ts:7', '--project=chromium']);
+
+    // With no test it can name, the button runs nothing and opens its menu, which says why.
+    const noneRun = await submit([failed('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${noneRun}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(page.getByRole('menu').getByText('Runs nothing')).toBeVisible();
+    expect(await runInvocations(page)).toHaveLength(0);
+  });
+
   test('without the bridge the button does not exist', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
