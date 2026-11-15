@@ -1,0 +1,8382 @@
+{
+ "ides": {
+  "GO-2026.3": {
+   "VSCode OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift S": [
+      "GoShareInPlaygroundAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift S": [
+      "GoShareInPlaygroundAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "meta alt shift S": [
+      "GoShareInPlaygroundAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift S": [
+      "GoShareInPlaygroundAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "GoShareInPlaygroundAction",
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "GoFmtFileAction",
+      "TfFmtFileAction"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "GoFmtProjectAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift S": [
+      "GoShareInPlaygroundAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  },
+  "IU-2026.2.3": {
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh",
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh",
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh",
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "ctrl alt shift Z": [
+      "ChangesView.Revert",
+      "Vcs.RollbackChangedLines"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "InsertLiveTemplate"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "NetBeans 6.5": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift O": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "Print",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject",
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh",
+      "ReloadScriptConfiguration"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "IntroduceTypeAlias"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "ConvertJavaToKotlin",
+      "ConvertJavaToKotlinInGroup",
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell",
+      "ExtractFunctionToScope"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "IntroduceFunctionalParameter",
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration",
+      "ReloadScriptConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   }
+  },
+  "PS-2026.3": {
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "NetBeans 6.5": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift O": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "Print",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift Z": [
+      "ChangesView.Revert",
+      "Vcs.RollbackChangedLines"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "InsertLiveTemplate"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  },
+  "PY-2026.3": {
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift O": [
+      "PyInstallPackageAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  },
+  "RD-2026.2.2": {
+   "Visual Studio 2022": {
+    "parent": "Visual Studio",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Visual Assist OSX": {
+    "parent": "Visual Studio OSX",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Assist": {
+    "parent": "Visual Studio",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "VSCode OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "ReSharperNavigateTo"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "ReSharper OSX": {
+    "parent": "Visual Studio OSX",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "ReSharperGotoImplementation"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "SilentCodeCleanup"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction",
+      "GotoRelated"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "ReSharper": {
+    "parent": "Visual Studio",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "ReSharperGotoImplementation"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "SilentCodeCleanup"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction",
+      "GotoRelated"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift A": [
+      "InspectThis"
+     ],
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath",
+      "RiderDumpLookupAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift A": [
+      "InspectThis"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift Q": [
+      "RiderDumpLookupAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  },
+  "RM-2026.3": {
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "NetBeans 6.5": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift O": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "Print",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "TextMate": {
+    "parent": "Mac OS X",
+    "chords": {
+     "ctrl alt shift G": [
+      "org.jetbrains.plugins.ruby.rails.actions.generators.ReloadGeneratorsAction"
+     ],
+     "ctrl alt shift R": [
+      "ForceRefresh",
+      "org.jetbrains.plugins.ruby.rails.actions.rake.ReloadRakeTasksAction"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch",
+      "ReplaceInPath"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift Z": [
+      "ChangesView.Revert",
+      "Vcs.RollbackChangedLines"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "InsertLiveTemplate"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  },
+  "WS-2024.1": {
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Eclipse (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "ctrl alt shift Z": [
+      "ChangesView.Revert",
+      "Vcs.RollbackChangedLines"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Eclipse": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "InsertLiveTemplate"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "NetBeans 6.5": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift O": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "Print",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   },
+   "VSCode OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "SingleUserFollowAction"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "meta alt shift Y": [
+      "FullLine.GenerateContextAction"
+     ]
+    }
+   },
+   "VSCode": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "FullLine.GenerateMarkerAction"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ],
+     "ctrl alt shift Y": [
+      "CurrentLeadUnfollowAction",
+      "FullLine.GenerateContextAction",
+      "SingleUserFollowAction"
+     ]
+    }
+   }
+  },
+  "WS-2026.3": {
+   "$default": {
+    "parent": null,
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for GNOME": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for KDE": {
+    "parent": "Default for XWin",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Default for XWin": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole",
+      "SurroundWith"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Emacs": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X 10.5+": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Mac OS X": {
+    "parent": "$default",
+    "chords": {
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "GotoSymbol"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Sublime Text": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "macOS System Shortcuts": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.SetDefault"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "ctrl alt shift K": [
+      "ToggleBookmarkWithMnemonic"
+     ],
+     "ctrl alt shift U": [
+      "ShowSettingsAndFindUsages"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "GotoPrevElementUnderCaretUsage"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse (Mac OS X)": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift Z": [
+      "ChangesView.Revert",
+      "Vcs.RollbackChangedLines"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Eclipse": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "InsertLiveTemplate"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift K": [
+      "CheckinProject"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "meta alt shift R": [
+      "ChooseRunConfiguration",
+      "ForceRefresh"
+     ],
+     "meta alt shift T": [
+      "GotoSymbol"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "Visual Studio": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift K": [
+      "Git.Commit.And.Push.Executor",
+      "Hg.Commit.And.Push.Executor"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift N": [
+      "VcsShowNextChangeMarker"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction",
+      "VcsShowPrevChangeMarker"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift R": [
+      "ChooseRunConfiguration"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "NetBeans 6.5": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift J": [
+      "SelectAllOccurrences"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift O": [
+      "GotoSymbol"
+     ],
+     "ctrl alt shift P": [
+      "Print",
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift T": [
+      "Refactorings.QuickListPopupAction"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode OSX": {
+    "parent": "Mac OS X 10.5+",
+    "chords": {
+     "ctrl alt shift B": [
+      "EditorPreviousWordWithSelection"
+     ],
+     "ctrl alt shift F": [
+      "EditorNextWordWithSelection"
+     ],
+     "meta alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "meta alt shift C": [
+      "CopyReference"
+     ],
+     "meta alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "meta alt shift E": [
+      "TextSearchAction"
+     ],
+     "meta alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "meta alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "meta alt shift H": [
+      "PopupHector"
+     ],
+     "meta alt shift I": [
+      "RunInspection"
+     ],
+     "meta alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "meta alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "meta alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "meta alt shift R": [
+      "ForceRefresh"
+     ],
+     "meta alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "meta alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "meta alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "meta alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   },
+   "VSCode": {
+    "parent": "$default",
+    "chords": {
+     "ctrl alt shift B": [
+      "DatabaseView.OpenDdlInConsole"
+     ],
+     "ctrl alt shift C": [
+      "CopyReference"
+     ],
+     "ctrl alt shift D": [
+      "Console.TableResult.CloneColumn",
+      "UML.ShowChanges"
+     ],
+     "ctrl alt shift E": [
+      "TextSearchAction"
+     ],
+     "ctrl alt shift F": [
+      "Console.TableResult.EditFilterCriteria",
+      "DatabaseView.FullTextSearch"
+     ],
+     "ctrl alt shift G": [
+      "DatabaseView.CopyDdlAction"
+     ],
+     "ctrl alt shift H": [
+      "PopupHector"
+     ],
+     "ctrl alt shift I": [
+      "RunInspection"
+     ],
+     "ctrl alt shift L": [
+      "ShowReformatFileDialog"
+     ],
+     "ctrl alt shift M": [
+      "Console.TableResult.MaximizeEditingCell"
+     ],
+     "ctrl alt shift P": [
+      "ReformatWithPrettierAction"
+     ],
+     "ctrl alt shift Q": [
+      "Jdbc.OpenConsole.New.InPath"
+     ],
+     "ctrl alt shift S": [
+      "ShowProjectStructureSettings"
+     ],
+     "ctrl alt shift U": [
+      "ShowUmlDiagram"
+     ],
+     "ctrl alt shift V": [
+      "EditorPasteSimple"
+     ],
+     "ctrl alt shift W": [
+      "DumpLookupElementWeights"
+     ],
+     "ctrl alt shift X": [
+      "PublishGroup.UploadTo"
+     ]
+    }
+   }
+  }
+ }
+}

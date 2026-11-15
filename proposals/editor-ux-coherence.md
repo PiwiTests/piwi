@@ -174,7 +174,14 @@ watches in sight, an accepted watch taking the slot's stop from the paused page;
 row, Resume, Step, Finish and Write code…, as a toolbar; Watch and Interact are toggles with their glyphs in the words
 both editors write (`page.watch`, `page.interact`) under one input rule (`page.input-rule`); VS Code's pages carry a tab
 icon, and every control an accessible name; JetBrains' Worker tab offers Interact at a stop (LR8, NF6, left out of
-this document). Record here is a code action where the
+this document). M16 built: Piwi's chords are one table (`packages/editor/src/keys.ts`), `Ctrl+Alt+Shift` (`Cmd`) with
+R, F and K and B for a new Open the failures in both editors, acting from the keyboard only in a JavaScript or
+TypeScript editor and in Piwi's views, and another letter, or none, in the keymaps that give one to another action:
+the Visual Studio and ReSharper families', TextMate's, the Linux desktops' and Mac OS X 10.5+'s Force Refresh; a test
+checks them against every keymap bundled with WebStorm (2024.1 and 2026.3), IDEA Ultimate, Rider, PyCharm, PhpStorm,
+GoLand and RubyMine (`apps/jetbrains/keymap-chords.json`, which `apps/jetbrains/scripts/keymap-chords.py` reads from
+the IDEs), sharing a chord only with an action that acts elsewhere alone, and against AltGr's letters (AC12, left out
+of this document; #1117). The run-control keys stay set by each client, with no table (deferred). Record here is a code action where the
 service says a recording writes (`piwi/recordPlace`): a new test past the imports, steps in a test's or a function's
 body, in VS Code's Ctrl+. (kind `refactor.piwi`) and JetBrains' Alt+Enter, never on an import or in a class body
 (TL9). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
@@ -207,8 +214,8 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
-- **Seven findings lead (§0)**, from one action spelled four ways to Rider's keys colliding with Piwi's and a JetBrains
-  plugin that misreports a stopped service.
+- **Seven findings lead (§0)**, from one action spelled four ways to a JetBrains plugin that misreports a stopped
+  service.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
@@ -253,8 +260,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 5. **Most of Piwi's glyphs are tied to no table or test across its tools**: only the outcome, coverage and
    recording marks are ([X2](#x2)).
 
-6. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
-   Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
+6. **No check opens Rider** to see a spec beside the solution or a C# file ([RD3](#rd3), [RD4](#rd4)).
 
 7. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
 
@@ -363,27 +369,6 @@ is Record in the stop's popup and on the inlay (`Glue.StopAction`), where VS Cod
 why a test stopped. **(read)** Fix: the editor service sends the words and the clients map only icons; the rest comes
 from the words table of [LI1](#li1), held by a test over both clients. ([M22](#m22), [LI1](#li1),
 [LI6](#li6))
-
-### 4.5 Keys
-
-<a id="ac12"></a>**AC12. Piwi's Ctrl+Alt+Shift chords are already taken in the keymaps that Rider ships: R and K in the
-Visual Studio, Visual Studio 2022, Visual Assist and ReSharper keymaps, and F in ReSharper's by Silent Code Cleanup, and
-no key opens the Failures in either editor.** `plugin.xml:135`, `:158`, `:193`, `:204` bind K, F and R in `$default`
-only; the table lists what Rider 2026.2.4.1's keymaps, resolved with their parents, bind to them (which action wins was
-not checked), and `apps/vscode/ARCHITECTURE.md:895-897` names the Rider keymaps' letters but not their actions, and
-plans no remedy. Nothing binds the Piwi tool window or the Failures view, though
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md) Q8 names that key and its Status counts Q8 built.
-**(read)** Fix: chords for the Visual Studio, Mac OS X 10.5+ and Visual Studio OSX keymaps, which the others inherit,
-from one table a test checks against every keymap bundled with WebStorm, IDEA and Rider; one Failures chord in both
-editors. ([M16](#m16), [LI15](#li15))
-
-| Rider keymap | R: Record Here, Stop Recording | K: Run the Test at the Caret | F: Re-run the Failing Tests |
-|---|---|---|---|
-| Visual Studio, Visual Studio 2022, Visual Assist | `ChooseRunConfiguration` | `Git.Commit.And.Push.Executor` (and `Hg.`) | free |
-| ReSharper | `ChooseRunConfiguration` | `Git.Commit.And.Push.Executor` (and `Hg.`) | `SilentCodeCleanup` |
-| Visual Studio OSX, Visual Assist OSX (Cmd) | `ChooseRunConfiguration`, `ForceRefresh` | `CheckinProject` | free |
-| ReSharper OSX (Cmd) | `ChooseRunConfiguration`, `ForceRefresh` | free | `SilentCodeCleanup` |
-| Mac OS X 10.5+, VSCode OSX, Sublime Text (Mac OS X), macOS System Shortcuts (Cmd) | `ForceRefresh` | free | free |
 
 ## 5. The test line
 
@@ -745,11 +730,10 @@ tool, Follow off `$(eye)`, and Copy, Open and Stop sharing wherever the run is l
 ## 9. Rider
 
 Rider runs the same plugin as WebStorm, with other keymaps, another project model and a .NET backend beside the specs.
-What differs is RD3, RD4, RD7 and RD8 below and three findings filed elsewhere:
+What differs is RD3, RD4, RD7 and RD8 below and one finding filed elsewhere:
 
 | What differs in Rider | Where |
 |---|---|
-| Piwi's chords collide in the Visual Studio, VS 2022, ReSharper and Visual Assist keymaps | [AC12](#ac12), §4.5 |
 | Nothing from Piwi in the Solution Explorer or the Tests menu | [AC3](#ac3), §4.1 |
 
 <a id="rd3"></a>**RD3. Specs beside a Rider solution, a layout the plugin's config search supports, may get no
@@ -768,7 +752,7 @@ there.** `apps/docs/features/editor-coverage.md:3, 11-14, 126-127` promise marks
 finds WebStorm only. Code Vision and the diagnostics run in the frontend, where JetBrains' docs say C# elements are not
 visible; only a run settles it. **(read)** Fix: `editor-coverage.md` claims for Rider only what a check has seen, until
 a Rider scene on `examples/sample-app/backends/aspnetcore` checks [RD3](#rd3), a controller's marks, lens and
-diagnostics, [AC3](#ac3) and [AC12](#ac12). ([M17](#m17))
+diagnostics, and [AC3](#ac3). ([M17](#m17))
 
 <a id="rd7"></a>**RD7. A C# controller, like any application file, gets one "Reached by N tests" line above its usings
 and nothing per action or endpoint.** `packages/editor/src/server.ts:3230-3239` puts the line at `line: 0`, and the
@@ -809,7 +793,7 @@ four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
 makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Built: the catalog's ids and one title per
 action, held against both manifests (`packages/editor/src/actions.ts`). Its short labels and the words table are step
-[M22](#m22); its concept, menus and keys come with [M4](#m4), [M3](#m3) and [M16](#m16).
+[M22](#m22), its chords M16's ([LI15](#li15)); its concept and menus come with [M4](#m4) and [M3](#m3).
 
 <a id="li15"></a>
 
@@ -821,7 +805,12 @@ Rider, and VS Code's defaults, and fails on a collision. The table records the r
 Run to Cursor and Finish give way to a suspended debugger, Pause to a running one and Stop to any session, Pause on the
 platform Pause action's key. **Lives in** `packages/editor` and both clients (FSL). **Replaces** chords Rider's Visual
 Studio-family and ReSharper keymaps already bind, keys set per client with no collision check. **Depends on**
-[LI1](#li1). **Revisits** no decision. Step [M16](#m16).
+[LI1](#li1). **Revisits** no decision. Built with M16 in part: the chords are their own table
+(`packages/editor/src/keys.ts`), not the catalog, and a test holds both manifests and the docs' table of keys to it
+rather than generating them; it checks them against every keymap bundled with WebStorm (2024.1 and 2026.3), IDEA
+Ultimate, Rider, PyCharm, PhpStorm, GoLand and RubyMine (`apps/jetbrains/keymap-chords.json`) and VS Code's. They act
+from the keyboard only in a JavaScript or TypeScript editor and in Piwi's views, so a chord shares its key only with
+an action acting elsewhere alone (`SHARED_CHORDS`). The run-control keys, which each client still sets, are deferred.
 
 **Look (principles 2 and 3).**
 
@@ -1099,7 +1088,6 @@ line-number menu of #1116 in [M7](#m7), and the stale Run This Spec wording of #
 
 | Issue | What still holds | Findings |
 |---|---|---|
-| #1117 | Piwi's Ctrl+Alt+Shift chords collide with Rider's Visual Studio, ReSharper and Visual Assist keymaps, and Cmd+Alt+Shift+R with `ForceRefresh` on macOS | [AC12](#ac12) |
 | #1118 | Rider's highlighting of a spec folder beside the solution is unchecked, and nothing offers to attach that folder | [RD3](#rd3) |
 | #1255 | JetBrains reads a stopped editor service as one not started yet | [NF5](#nf5) |
 | #1315 | A CI or teammate run's tests drawn as running on the test lines, Re-run Failing with nothing failing, JetBrains messages without a way out | [NF4](#nf4), [NF9](#nf9), [NF5](#nf5) |
@@ -1132,7 +1120,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m10"></a>M10 | **The start options in one shape in both editors**; the settings registry, its grouped pages, the display switches and the scopes are built (Status) | `ide` | [NF3](#nf3) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state, a stop that waits for the person shown in it until answered | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18), [HM17](#hm17) |
 | <a id="m14"></a>M14 | **A nightly check that fails on a stop row wider than its box**; the run controls in the debugger's places, Go to the stopped line, the starting state, the run names and the shorter stop line are built (Status) | `ide` | [LR6](#lr6) |
-| <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m21"></a>M21 | **The rest of the verdicts**: those of terminal and IDE runner runs, after the study's P7 | `ide` | [HM16](#hm16) |
 | <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18), [AC9](#ac9), [NF3](#nf3) |
@@ -1155,7 +1142,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 The quick wins that stand alone (Q13, Q27, Q28, Q30), each on its own. Then, on the action catalog, one Piwi menu
 (M3); M4 draws the glyphs
-Appendix A still marks, and M5 animates the running ring. M13 finishes the glance; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
+Appendix A still marks, and M5 animates the running ring. M13 finishes the glance; M17 closes #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
 ## 13. Open questions
@@ -1310,7 +1297,7 @@ such action.
 | A CI run of the branch | – | – | `$(cloud)` | `ciRun.svg` |
 | Pair | `link` | `link` | `$(link)` | `pair.svg` |
 | Open in dashboard | `external-link` | `external` | `$(link-external)` | `Ide.External_link_arrow` |
-| Latest run, run node | the Piwi mark | – | `$(piwi-mark)` (new) | `piwi.svg`, 16 px outline (new) |
+| Latest run, run node, Open the failures | the Piwi mark | – | `$(piwi-mark)`, built for Open the failures | `piwi.svg`, 16 px outline, built for `Piwi.OpenFailures` |
 | Cluster | `layers` | – | `$(layers)` | `layers.svg` |
 | Owner | `user` | – | `$(person)` | `General.User` |
 | Trace | `file-archive` | – | `$(file-zip)` | `FileTypes.Archive` |

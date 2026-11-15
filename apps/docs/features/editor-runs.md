@@ -16,7 +16,7 @@ and its results over the latest CI run's [failures](./editor-failures).
 - The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
   IDE) run the tests they name when clicked; those of a server file record its
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
-- **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
+- **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS, another [key](/reference/editor-commands#keys) in some JetBrains keymaps) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
   on a spec and under VS Code's editor title Run button (the caret in a JetBrains IDE), saving the spec first. **Run** in VS Code's test hover runs it, as
   [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know, such as one just
@@ -80,7 +80,7 @@ the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests
 
-**Piwi: Re-run the failing tests** (`Ctrl+Shift+Alt+F`, `Cmd+Shift+Alt+F` on macOS; **Tools → Piwi → Re-run the
+**Piwi: Re-run the failing tests** (`Ctrl+Shift+Alt+F`, `Cmd+Shift+Alt+F` on macOS, as [Keys](/reference/editor-commands#keys) lists; **Tools → Piwi → Re-run the
 failing tests**) runs every test still failing, or edited since its run, one command per Playwright config, or those
 of one config from its node in the [failures view](./editor-failures#the-failures-view); when none fails, it says so.
 

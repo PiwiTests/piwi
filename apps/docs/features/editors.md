@@ -135,10 +135,11 @@ settings, for every project, and the failure severity and serving runs to agents
 ## Commands
 
 Each extension's commands, under **Piwi:** in VS Code's command palette and **Tools → Piwi** in a JetBrains IDE, are
-listed with what they do on [Editor commands](/reference/editor-commands). Three have the same shortcut in both
-editors (where some keymaps and plugins already use these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor,
-`Ctrl+Shift+Alt+F` re-runs the failing tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording;
-`Cmd` for `Ctrl` on macOS. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
+listed with what they do on [Editor commands](/reference/editor-commands). Both editors bind `Ctrl+Shift+Alt+K` to
+run the test at the cursor, `Ctrl+Shift+Alt+F` to re-run the failing tests, `Ctrl+Shift+Alt+R` to record at the cursor
+and stop the recording, and `Ctrl+Shift+Alt+B` to open the failures, in a JavaScript or TypeScript file or Piwi's
+views; `Cmd` for `Ctrl` on macOS. Some JetBrains keymaps, macOS's among them, take other letters:
+[Keys](/reference/editor-commands#keys). **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
 **Settings → Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs

@@ -22,7 +22,10 @@
     {
       "id": "run",
       "title": "Run the failing tests",
-      "text": "Re-run every test still failing, or, in a spec, run the test at the {cursor} with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.",
+      "text": {
+        "vscode": "Re-run every test still failing, or, in a spec, run the test at the {cursor} with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.",
+        "jetbrains": "Re-run every test still failing, or, in a spec, run the test at the {cursor} with the key Settings → Keymap gives it under Piwi. When the run ends, the failures show what it fixed."
+      },
       "action": "Re-run the failing tests",
       "image": { "vscode": "vscode-testing.png" }
     },
@@ -36,7 +39,10 @@
     {
       "id": "record",
       "title": "Record a test",
-      "text": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the {cursor}. No instance needed.",
+      "text": {
+        "vscode": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the {cursor}. No instance needed.",
+        "jetbrains": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, Record here… records at the {cursor}, from the editor's menu or Alt+Enter. No instance needed."
+      },
       "action": "Record a new test file…"
     },
     {

@@ -75,6 +75,18 @@ class GlueTest {
     }
 
     @Test
+    fun `a chord of Piwi's acts from the keyboard in a JavaScript or TypeScript editor or the Piwi tool window alone`() {
+        assertTrue(Glue.chordActsIn("checkout.spec.ts", inPiwiWindow = false))
+        assertTrue(Glue.chordActsIn("helpers.MJS", inPiwiWindow = false))
+        assertTrue(Glue.chordActsIn(null, inPiwiWindow = true))
+        // Where the actions sharing its chord act: a Java, Kotlin script, Go or Terraform file, the Database tool window.
+        for (file in listOf("Main.java", "build.gradle.kts", "main.go", "main.tf", "README")) {
+            assertFalse(file, Glue.chordActsIn(file, inPiwiWindow = false))
+        }
+        assertFalse(Glue.chordActsIn(null, inPiwiWindow = false))
+    }
+
+    @Test
     fun `a run is named by what it runs, with its number once it has one, as VS Code names it`() {
         val named = RunSession(ref = "ed-1", root = "/w/shop", name = "checkout.spec.ts:12")
         assertEquals("checkout.spec.ts:12", Glue.runLabel(named))

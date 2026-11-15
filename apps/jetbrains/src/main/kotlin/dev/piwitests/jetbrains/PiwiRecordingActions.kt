@@ -67,7 +67,11 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    override fun update(e: AnActionEvent) = e.appliesWhen(canRecord(e))
+    // From the keyboard, the chord stops a running recording instead, whatever file it is in (`StopRecordingAction`).
+    override fun update(e: AnActionEvent) = e.appliesWhen(
+        canRecord(e) &&
+            !(e.place == ActionPlaces.KEYBOARD_SHORTCUT && e.project?.getServiceIfCreated(PiwiRecordings::class.java)?.any() == true),
+    )
 
     /** Whether a recording can start at the event's caret. */
     protected fun canRecord(e: AnActionEvent): Boolean {
@@ -147,7 +151,7 @@ class StopRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.appliesWhen(recordingOf(e)?.stopping == false)
+        e.appliesWhen(chordActsHere(e) && recordingOf(e)?.stopping == false)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

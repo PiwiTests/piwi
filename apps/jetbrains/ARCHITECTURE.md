@@ -864,6 +864,29 @@ Playwright for .NET (`Glue.holdsDotnetPlaywright`) hears once, per project (`piw
 reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a suggestion,
 `PiwiProjectService.noteDotnetPlaywright`). A reference added later is heard once the project opens again.
 
+## Keymaps
+
+Piwi's chords are the editor service's table (`packages/editor/src/keys.ts`): `Ctrl+Alt+Shift` with a letter in the
+`$default` keymap, as the VS Code extension binds them, and another letter, or none (`remove="true"`), in a keymap
+where that chord is another action's, registered with `replace-all="true"` so the keymap and those descending from it
+drop the inherited one. A keymap whose name starts with `Mac OS X` inherits its parent's with Cmd for Ctrl
+(`MacOSDefaultKeymap`), the other macOS keymaps descending from one of them.
+
+From the keyboard (`ActionPlaces.KEYBOARD_SHORTCUT`), a chord acts only in an editor of a JavaScript or TypeScript file
+or in the Piwi tool window (`chordActsHere`, `Glue.chordActsIn`), so the update of Re-run the failing tests, Stop
+recording and Open the failures disables them elsewhere and the keystroke goes to the next action bound to it; Record
+here and Run the test at the caret act in a spec alone already.
+
+`keymap-chords.json` is what each keymap bundled with WebStorm (2024.1, the oldest the plugin supports, and the latest),
+IntelliJ IDEA Ultimate, Rider, PyCharm, PhpStorm, GoLand and RubyMine binds to `Ctrl`/`Cmd+Alt+Shift` with a letter,
+resolved as the platform does, keymap files and plugins' shortcuts alike. `scripts/keymap-chords.py` writes it from
+each IDE's folder or archive, streamed, the IDE never unpacked (its header shows how).
+`packages/editor/tests/keys.test.ts` fails on a chord another action has in any of them, but the actions that act
+only where Piwi's do not (`SHARED_CHORDS`: the Database tool window's, a database console's results', a Java, Kotlin script, Go or Terraform
+file's), or bound to the chord by another IDE's version of a keymap it descends from,
+on two of Piwi's on one key, and on a Windows or Linux chord with a letter a keyboard types with AltGr (`Ctrl+Alt`:
+`ALTGR_LETTERS`). `PiwiPluginTest` checks the platform resolves the table so in the IDE it runs.
+
 ## Recording
 
 What the service does during a recording: [Recorder](../../packages/editor/ARCHITECTURE.md#recorder) in the editor
@@ -880,10 +903,9 @@ the steps there, which the service refuses where they cannot go. Without an answ
 
 - **Where.** The recording actions are offered only in a script file under one of the project's Playwright config
   folders (`Glue.inConfigDirs`).
-- **The chord.** `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording.
-  `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
-  extension's chords. Which keymaps already use them:
-  [`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings).
+- **The chord.** `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
+  the VS Code extension's chords are its own; a keymap where it is another action's takes another letter
+  ([Keymaps](#keymaps)).
 - **The choices.** A dialog asks for the start page and the page expression (the candidates, the default first, any
   other typed in; the expression chosen last is selected again), then the plugin sends `piwi/record`; a popup asks for the Playwright project when the answer lists
   `projects`. The choices stay in `PiwiLocalSettings`.

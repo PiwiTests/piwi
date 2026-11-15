@@ -32,7 +32,7 @@ object OnboardingSteps {
         Step(
             id = "run",
             title = "Run the failing tests",
-            text = "Re-run every test still failing, or, in a spec, run the test at the caret with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.",
+            text = "Re-run every test still failing, or, in a spec, run the test at the caret with the key Settings → Keymap gives it under Piwi. When the run ends, the failures show what it fixed.",
             label = "Re-run the failing tests",
             actionId = "Piwi.RerunFailing",
             image = null,
@@ -48,7 +48,7 @@ object OnboardingSteps {
         Step(
             id = "record",
             title = "Record a test",
-            text = "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the caret. No instance needed.",
+            text = "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, Record here… records at the caret, from the editor's menu or Alt+Enter. No instance needed.",
             label = "Record a new test file…",
             actionId = "Piwi.RecordNewFile",
             image = null,

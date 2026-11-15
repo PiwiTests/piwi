@@ -298,6 +298,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openFailures",
+        "title": "Open the failures",
+        "category": "Piwi",
+        "icon": "$(piwi-mark)"
+      },
+      {
         "command": "piwi.openDocumentation",
         "title": "Open the documentation",
         "icon": "$(question)",
@@ -1383,24 +1389,31 @@
         "command": "piwi.record",
         "key": "ctrl+shift+alt+r",
         "mac": "cmd+shift+alt+r",
-        "when": "editorTextFocus && !piwi.recording && editorLangId =~ /^(typescript|javascript)(react)?$/"
+        "when": "editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
       },
       {
         "command": "piwi.stopRecording",
         "key": "ctrl+shift+alt+r",
         "mac": "cmd+shift+alt+r",
-        "when": "piwi.recording"
+        "when": "piwi.recording && ((editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/) || focusedView =~ /^piwi\\./)"
       },
       {
         "command": "piwi.rerunFailing",
         "key": "ctrl+shift+alt+f",
-        "mac": "cmd+shift+alt+f"
+        "mac": "cmd+shift+alt+f",
+        "when": "(editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/) || focusedView =~ /^piwi\\./"
       },
       {
         "command": "piwi.runTestAtCursor",
         "key": "ctrl+shift+alt+k",
         "mac": "cmd+shift+alt+k",
-        "when": "editorTextFocus"
+        "when": "editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/"
+      },
+      {
+        "command": "piwi.openFailures",
+        "key": "ctrl+shift+alt+b",
+        "mac": "cmd+shift+alt+b",
+        "when": "(editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/) || focusedView =~ /^piwi\\./"
       },
       {
         "command": "piwi.stopRun",

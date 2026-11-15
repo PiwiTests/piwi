@@ -163,7 +163,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   },
   { title: 'Open the documentation', vscode: 'piwi.openDocumentation', jetbrains: ['Piwi.OpenDocumentation'] },
   { title: 'Go to the stopped line', vscode: 'piwi.showStop', jetbrains: ['Piwi.ShowStop'] },
-  { title: 'Open the failures', jetbrains: ['Piwi.OpenFailures'] },
+  { title: 'Open the failures', vscode: 'piwi.openFailures', jetbrains: ['Piwi.OpenFailures'] },
   { title: 'Node.js settings…', jetbrains: ['Piwi.NodeSettings'] },
   { title: 'Go to the recorded lines', jetbrains: ['Piwi.GoToRecordedLines'] },
 ];

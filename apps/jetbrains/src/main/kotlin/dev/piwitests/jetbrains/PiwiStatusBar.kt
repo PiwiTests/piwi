@@ -358,6 +358,10 @@ internal class StatusLabel : JBLabel() {
 class OpenFailuresAction : DumbAwareAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = chordActsHere(e)
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         PiwiFailuresToolWindowFactory.showFailures(project)

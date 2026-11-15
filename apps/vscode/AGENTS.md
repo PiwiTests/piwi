@@ -70,9 +70,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A test run is a VS Code task** (`runAsTask`, the `piwi` type of `taskDefinitions` in `package.json`).
   `tasks.onDidEndTaskProcess` gives the exit code the service needs (`piwi/commandEnded`) on every VS Code version and
   in every shell. ([Test runs as tasks](ARCHITECTURE.md#test-runs-as-tasks))
-- **A default keybinding uses a chord that VS Code's default keymap leaves free, and the JetBrains plugin binds the
-  same chord.** Today: `ctrl+shift+alt` (`cmd` on macOS) with `r`, `f` and `k`. The letters each editor's keymaps
-  already take, and the JetBrains conflicts, are in [Keybindings](ARCHITECTURE.md#keybindings).
+- **A default keybinding is the editor service's chord table (`packages/editor/src/keys.ts`), `ctrl+shift+alt` (`cmd`
+  on macOS) with a letter VS Code's default keymap leaves free (`VSCODE_TAKEN`), acting only where `CHORD_CONTEXT`
+  says, as the JetBrains plugin's do.** `packages/editor/tests/keys.test.ts` holds `contributes.keybindings` to it. ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and the debugger does
   not take the key**: Stop on `!inDebugMode`, the others on `debugState != 'stopped'` (`contributes.keybindings`).
   **Pause** has no default key: a key bound for as long as a test runs takes one from the workbench.

@@ -997,33 +997,28 @@ with its unit test.
 
 ## Keybindings
 
-The default keybindings (`contributes.keybindings`) are the JetBrains plugin's chords for the same actions:
+The default keybindings (`contributes.keybindings`) are the editor service's chord table (`packages/editor/src/keys.ts`),
+which the JetBrains plugin binds in its `$default` keymap too:
 
 | Chord (`cmd` instead of `ctrl` on macOS) | Command                                                                                  |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `ctrl+shift+alt+r`                       | `piwi.record` in a TypeScript or JavaScript editor, `piwi.stopRecording` while recording |
 | `ctrl+shift+alt+f`                       | `piwi.rerunFailing`                                                                      |
-| `ctrl+shift+alt+k`                       | `piwi.runTestAtCursor`, in a focused editor                                              |
+| `ctrl+shift+alt+k`                       | `piwi.runTestAtCursor`, in a TypeScript or JavaScript editor                             |
+| `ctrl+shift+alt+b`                       | `piwi.openFailures`                                                                      |
+
+`piwi.record` and `piwi.runTestAtCursor` act only in a focused TypeScript or JavaScript editor, the others there and in
+a focused view of Piwi's (`CHORD_CONTEXT`), as in a JetBrains IDE, where a chord may then share its key with an action
+acting elsewhere alone.
 
 **VS Code** binds `ctrl+shift+alt` (`cmd` on macOS) with these letters, checked in the `microsoft/vscode` sources
-(1.145): `a`, `c`, `g`, `i` (Linux only), `l`, `n` (VS Code for the Web only) and `o`. It binds none of `r`, `f` and
-`k`. `ctrl+alt+<key>` and the `ctrl+k` chords are taken too.
+(1.145): `a`, `c`, `g`, `i` (Linux only), `l`, `n` (VS Code for the Web only) and `o` (`VSCODE_TAKEN`). It binds none of
+Piwi's. `ctrl+alt+<key>` and the `ctrl+k` chords are taken too.
 
-**The JetBrains IDEs** (`intellij-community` sources, October 2026):
-
-- The platform's `$default` keymap, which every bundled keymap descends from, binds `ctrl+alt+shift` with `c`, `e`,
-  `h`, `i`, `j`, `l`, `n`, `s`, `t`, `v` and `w`. Its bundled plugins add `d` (database grid), `p` (Java), `o`
-  (Python), and `a`, `k`, `m` and `r` (Kotlin, in IntelliJ IDEA: `ctrl+alt+shift+K` converts a Java file to Kotlin,
-  `ctrl+alt+shift+R` reloads a Kotlin script's configuration). A list made earlier in the IDEs, closed-source plugins
-  included, also named `u`, `x` and `y`.
-- The macOS keymaps turn `$default`'s `ctrl` into `cmd`, and **Mac OS X 10.5+** binds `cmd+alt+shift+R` to Force
-  Refresh.
-- Keymaps installed as plugins, and preinstalled in some IDEs such as Rider, take the chords too. Visual Studio binds
-  `R` and `K`, and ReSharper, which descends from it, adds `F`. On macOS, Visual Studio OSX binds `cmd+alt+shift` with
-  `R` and `K`, ReSharper OSX and Visual Studio for Mac with `F`, and Xcode with `R`, `F` and `K`.
-
-So the Piwi chords are free in VS Code and in the platform's own `$default` keymap, but meet the bindings above in
-IntelliJ IDEA with Kotlin, on macOS and in those keymaps. Check a new chord against these lists.
+**The JetBrains IDEs**: what each keymap bundled with WebStorm, IntelliJ IDEA Ultimate, Rider, PyCharm, PhpStorm,
+GoLand and RubyMine binds to the chords is
+`apps/jetbrains/keymap-chords.json`, against which `packages/editor/tests/keys.test.ts` checks the table; a keymap where
+a chord is another action's takes another letter ([`apps/jetbrains/ARCHITECTURE.md`](../jetbrains/ARCHITECTURE.md#keymaps)).
 
 **A run's controls** ([Run control](#run-control)) take the debugger's keys instead, only while they apply and the
 debugger does not take the key: Stop while no debug session runs (`!inDebugMode`), the others while none is paused

@@ -8,10 +8,33 @@ lang: en-US
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
 a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
-and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Both editors give
-`Ctrl+Shift+Alt+K` to Run the test at the cursor, `Ctrl+Shift+Alt+F` to Re-run the failing tests and
-`Ctrl+Shift+Alt+R` to Record here… and Stop recording (`Cmd` on macOS); a run's controls take the debugger's keys
+and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
+shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).
+
+### Keys
+
+`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. Record here… and Run the test at the cursor act in an editor
+of a JavaScript or TypeScript file, the others there and in Piwi's views (the Piwi tool window in a JetBrains IDE), and
+nowhere else. A JetBrains keymap where that chord is another action's in those places takes the letter of its row, as do
+the keymaps descending from it. **Settings → Keymap** shows `$default` as Windows, `Mac OS X 10.5+` as macOS, `Mac OS X`
+as IntelliJ IDEA Classic, and `Default for XWin`, `Default for GNOME` and `Default for KDE` as XWin, GNOME and KDE; it
+drops ` OSX` and ` (Mac OS X)` from the other names, adding (macOS) on Windows and Linux.
+
+| Keymap | Record here…, Stop recording | Re-run the failing tests | Run the test at the cursor | Open the failures |
+|---|---|---|---|---|
+| VS Code, and `$default` and every JetBrains keymap not below | `R` | `F` | `K` | `B` |
+| `Default for XWin`, `Default for GNOME`, `Default for KDE` | `R` | `F` | `K` | `G` |
+| `Mac OS X 10.5+`, `Eclipse (Mac OS X)`, `Sublime Text (Mac OS X)`, `VSCode OSX`, `macOS System Shortcuts` | `Z` | `F` | `K` | `B` |
+| `Visual Studio`, `Visual Studio 2022`, `Visual Assist` | `G` | `F` | `J` | `B` |
+| `ReSharper` | none | `T` | `J` | none |
+| `Visual Studio OSX`, `Visual Assist OSX` | `Z` | `F` | `J` | `B` |
+| `ReSharper OSX` | `Z` | `T` | `J` | `S` |
+| `TextMate` | `R` | `J` | `K` | `B` |
+
+They share a key only with an action of the Database tool window or a database console's results, or of a Java, Kotlin
+script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
+**Settings → Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## Connection
 
@@ -52,7 +75,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Compare with…** | Choose the run the failures are read against: [Compare with another run](/features/editor-status-bar#compare-with-another-run) |
 | **Piwi: Group the failures by…** | File, cluster or owner, or a flat list: [The failures view](/features/editor-failures#the-failures-view) |
 | **Piwi: Follow the active editor**, **Piwi: Stop following the active editor** | VS Code: select the active file's first failure in the failures view, or stop |
-| **Piwi: Open the failures** | JetBrains: open the Piwi tool window's failures |
+| **Piwi: Open the failures** | Open the failures view, the Piwi tool window's in a JetBrains IDE |
 | **Piwi: Show the run's flaky tests** | Open the failures view on the run's [flaky tests](/features/flaky-tests) |
 | **Piwi: Show or hide the coverage marks** | The [coverage marks](/features/editor-coverage) of the lines the tests ran |
 
