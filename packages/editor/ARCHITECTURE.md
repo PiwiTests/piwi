@@ -236,9 +236,9 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, with whether
-  it ended with the status it was expected to end with, `ok`, a worker that left mid-test ending it `interrupted`, which
-  the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, with
+  whether it ended with the status it was expected to end with, `ok`, a worker that left mid-test ending it
+  `interrupted`, which the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
   `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
   `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
@@ -575,9 +575,9 @@ its own result, and its title names the CI run after it (`passed in its latest r
 The runs the service follows tell a test's line more (`src/own-run-tests.ts`, `OwnRunTests`), by the test's spec and
 titles, so an edit since the run started moves nothing. A test running or standing at a stop of one of them, from the
 run sessions, takes its line before the instance's stream does: `running`, `paused` at a stop (`paused, line 14, in
-your run`), `failed` while its failure is held. Its results, as each worker's `test-end` says them (a `test.fail()` test that failed
-passing, by the `expectedStatus` the reporter sends), show only for a run
-that names no page on an instance (`RunSession.page`), whose results no stream brings: while it runs, then until
+your run`), `failed` while its failure is held. Its results, as each worker's `test-end` says them and read against
+the status the test was expected to end with (a `test.fail()` test passes by failing and fails by passing), show only
+for a run that names no page on an instance (`RunSession.page`), whose results no stream brings: while it runs, then until
 another run of its config begins or the context reads a newer latest run (`forget`), the newest run's result first. Such
 a result in place of a failure the instance read drops that failure from the line. A test the catalog does not know
 gets a line of that state alone. `piwi/runStatus` gives these tests in `runTests`, each with its line's words so a new

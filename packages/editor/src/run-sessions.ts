@@ -146,9 +146,9 @@ export type RunHeard =
   | { type: 'test-begin'; test: RunTest }
   /**
    * The test ended, with Playwright's status, and whether that is the status it was expected to end with (`ok`: a
-   * `test.fail()` test that failed is ok, one that passed is not), absent from a reporter that does not say.
+   * `test.fail()` test that failed is ok, one that passed is not; `passed` from a reporter that does not say).
    */
-  | { type: 'test-end'; status: string; pausedMs: number; ok?: boolean }
+  | { type: 'test-end'; status: string; pausedMs: number; ok: boolean }
   | { type: 'stopped'; stop: RunStop }
   | { type: 'running'; since: string }
   | { type: 'event'; event: RunEvent }
@@ -2544,7 +2544,7 @@ export class RunSessions {
             type: 'test-end',
             status: message.status,
             pausedMs: message.pausedMs,
-            ...(expected === undefined ? {} : { ok: message.status === expected }),
+            ok: message.status === (expected ?? 'passed'),
           },
           session.root,
         );

@@ -591,24 +591,16 @@ export interface SessionLine {
 
 /**
  * An attempt's result as the Testing view shows it from the run's own events (`piwi/runTest`'s `test-end`): skipped;
- * passed when it ended as it was expected to (`ok`, else when it passed: a `test.fail()` test that failed passes);
- * else failed at its test's line (a timeout too, and a `test.fail()` test that passed); null for an attempt that did
- * not end on its own (`interrupted`, a worker that left), which leaves the result to the run's end.
+ * passed when it ended as it was expected to (`ok`: a `test.fail()` test that failed passes); else failed at its
+ * test's line (a timeout too, and a `test.fail()` test that passed); null for an attempt that did not end on its own
+ * (`interrupted`, a worker that left), which leaves the result to the run's end.
  */
-export function attemptOutcome(status: string | undefined, test: RunTest, ok?: boolean): TestOutcome | null {
+export function attemptOutcome(status: string | undefined, test: RunTest, ok: boolean | undefined): TestOutcome | null {
   if (status === 'skipped') return { state: 'skipped' };
   if (status !== 'passed' && status !== 'failed' && status !== 'timedOut') return null;
-  const passed = ok ?? status === 'passed';
-  if (passed) return { state: 'passed' };
+  if (ok) return { state: 'passed' };
   const attempt = test.retry ? ` (attempt ${test.retry + 1})` : '';
-  if (status === 'passed') {
-    return {
-      state: 'failed',
-      message: `Passed in this run${attempt}, though it is expected to fail.`,
-      line: test.line,
-    };
-  }
-  const how = status === 'timedOut' ? 'Timed out' : 'Failed';
+  const how = status === 'passed' ? 'Expected to fail, but passed' : status === 'timedOut' ? 'Timed out' : 'Failed';
   return { state: 'failed', message: `${how} in this run${attempt}.`, line: test.line };
 }
 

@@ -3428,14 +3428,13 @@ object Glue {
         fun lines(event: RunTestEvent): List<String> {
             if (event.type == "test-end") {
                 val node = running.remove(event.worker) ?: return emptyList()
-                val passed = event.ok ?: (event.status == "passed")
                 return when {
                     event.status == "skipped" -> listOf(message("testIgnored", "nodeId" to node), message("testFinished", "nodeId" to node))
                     event.status == "interrupted" -> listOf(
                         message("testIgnored", "nodeId" to node, "message" to "Interrupted"),
                         message("testFinished", "nodeId" to node),
                     )
-                    passed -> listOf(message("testFinished", "nodeId" to node))
+                    event.ok == true -> listOf(message("testFinished", "nodeId" to node))
                     else -> listOf(
                         message("testFailed", "nodeId" to node, "message" to failedWords(event.status)),
                         message("testFinished", "nodeId" to node),
@@ -3481,7 +3480,7 @@ object Glue {
 
         private fun failedWords(status: String?) = when (status) {
             "timedOut" -> "Timed out"
-            "passed" -> "Passed, though it is expected to fail"
+            "passed" -> "Expected to fail, but passed"
             else -> "Failed"
         }
 

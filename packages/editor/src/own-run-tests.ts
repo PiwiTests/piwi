@@ -62,13 +62,12 @@ export class OwnRunTests {
     const key = test && testKeyOf(test);
     if (!test || !run || !key) return;
     const status = what.type === 'left' ? 'interrupted' : what.status;
-    // A test that ended as it was expected to passes: a `test.fail()` test that failed (`ok`, when the reporter says).
-    const ok = what.type === 'left' ? undefined : what.ok;
+    // A test that ended as it was expected to passes (`ok`): a `test.fail()` test that failed.
     const result: Result | null =
       status === 'skipped'
         ? status
         : status === 'passed' || status === 'failed' || status === 'timedOut'
-          ? (ok ?? status === 'passed')
+          ? what.ok
             ? 'passed'
             : 'failed'
           : // An interrupted attempt leaves the attempt before it.

@@ -1120,14 +1120,8 @@ export function parseRunToHub(line: string): RunToHub | null {
       const isStatus = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z]{1,32}$/.test(s);
       if (typeof testId !== 'string' || !testId || !isStatus(status)) return null;
       if (typeof pausedMs !== 'number' || !Number.isFinite(pausedMs) || pausedMs < 0) return null;
-      if (expectedStatus !== undefined && !isStatus(expectedStatus)) return null;
-      return {
-        type: 'test-end',
-        testId,
-        status,
-        pausedMs,
-        ...(expectedStatus === undefined ? {} : { expectedStatus }),
-      };
+      // An expected status it cannot read is left out: the status alone tells then.
+      return { type: 'test-end', testId, status, pausedMs, ...(isStatus(expectedStatus) ? { expectedStatus } : {}) };
     }
     case 'answer': {
       const { request, what, value: answered } = value;

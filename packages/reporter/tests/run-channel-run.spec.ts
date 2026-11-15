@@ -524,7 +524,7 @@ describe('a run steered over the run channel', () => {
     expect(Buffer.from(images.headless!.data, 'base64').subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
     const heard = heardIn('headless');
     const end = heard[heard.length - 1];
-    expect(end).toMatchObject({ type: 'test-end', status: 'passed' });
+    expect(end).toMatchObject({ type: 'test-end', status: 'passed', expectedStatus: 'passed' });
     expect((end as { pausedMs: number }).pausedMs).toBeGreaterThanOrEqual(HOLD_MS - 50);
     const result = test('headless');
     expect(result.duration).toBeLessThan(TIMEOUT_MS);

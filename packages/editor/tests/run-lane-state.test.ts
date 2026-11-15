@@ -90,7 +90,7 @@ function harness() {
 }
 
 describe('a test’s end as the session hears it', () => {
-  test('says whether the test ended as it was expected to, when the reporter says what it expected', async () => {
+  test('says whether the test ended as it was expected to, `passed` when the reporter does not say', async () => {
     const { join, heard } = harness();
     const worker = join(0, 0);
     worker.begin('t0');
@@ -103,7 +103,7 @@ describe('a test’s end as the session hears it', () => {
     expect(ends).toEqual([
       { type: 'test-end', status: 'failed', pausedMs: 0, ok: true },
       { type: 'test-end', status: 'passed', pausedMs: 0, ok: false },
-      { type: 'test-end', status: 'passed', pausedMs: 0 },
+      { type: 'test-end', status: 'passed', pausedMs: 0, ok: true },
     ]);
   });
 });

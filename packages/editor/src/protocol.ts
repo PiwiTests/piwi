@@ -2366,9 +2366,9 @@ export interface RunTestEvent {
   test?: RunTest;
   status?: string;
   /**
-   * Of a `test-end`: whether `status` is the one the test was expected to end with (Playwright's `expectedStatus`): a
-   * `test.fail()` test that failed is ok, one that passed is not. Absent when the run's reporter does not say, or for
-   * a worker that left: `status` alone tells then.
+   * Of a `test-end` a worker said: whether `status` is the one the test was expected to end with (Playwright's
+   * `expectedStatus`, `passed` from a reporter that does not say): a `test.fail()` test that failed is ok, one that
+   * passed is not. Absent for a worker that left, whose test ends `interrupted`.
    */
   ok?: boolean;
 }
