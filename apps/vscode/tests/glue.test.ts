@@ -419,7 +419,7 @@ describe('statusBarView', () => {
     };
     // CI failures the developer did not cause: counted, never the alarm.
     expect(statusBarView(connected, failing(false))).toMatchObject({
-      text: '$(error) Piwi: 3 failing · 2 flaky',
+      text: '$(error) Piwi: 3 failing',
       action: 'refresh',
       error: false,
     });
@@ -435,7 +435,7 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
     };
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
-    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: false });
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing', error: false });
     expect(view.tooltip).toBe(
       `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
@@ -469,7 +469,7 @@ describe('statusBarView', () => {
     );
     // While the run goes on, the item and the tooltip count its failed results alike.
     const running = statusBarView(connected, projects('running'));
-    expect(running.text).toBe('$(sync~spin) Piwi: 118 of 120 · 2 failed');
+    expect(running.text).toBe('$(loading~spin) Piwi: 118 of 120 · 2 failed');
     expect(running.tooltip).toMatch(/: 116 passed, 2 failed, 0 flaky, 0 skipped\n/);
   });
 
@@ -517,19 +517,19 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
     };
     expect(statusBarView(connected, live({}))).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
       tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4 of 9 · 1 failed\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
       liveUrl: null,
       error: false,
     });
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 4 of 9',
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
     // An agent's run is never the person's own.
     expect(statusBarView(connected, live({ label: 'Started by Claude Code' }))).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',
       tooltip: expect.stringContaining('\n\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n\n'),
     });
     // The editor's own run counts from its own process's events, which the instance may not have heard yet.
@@ -538,32 +538,32 @@ describe('statusBarView', () => {
         ? { total: 9, done: 6, failed: 2, flaky: 0, skipped: 0, status: 'running' as const, failure: null }
         : undefined;
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, told)).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      text: '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
       tooltip: expect.stringContaining('\n\nYour run #124 is running: 6 of 9 · 2 failed\n\n'),
     });
     // Another's run, or one the events do not count, keeps the instance's count.
     expect(statusBarView(connected, live({ ref: 'ed-2' }), false, Date.now(), null, told).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1', own: false }), false, Date.now(), null, told).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed',
     );
     // Its session ended: the count it told last stays until the instance's reaches it, so it never goes back.
     const counts = new OwnRunCounts();
     let session: typeof told = told;
     const kept = (ref: string, instance: LiveRun) => counts.count(ref, session(ref), instance);
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
     );
     session = () => undefined;
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1', done: 7 }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 7 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 7 of 9 · 1 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
     const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));
@@ -581,7 +581,7 @@ describe('statusBarView', () => {
       contexts: [runs.contexts[0]!, { ...runs.contexts[0]!, root: '/w/admin', live: null }],
     };
     expect(statusBarView(other, elsewhere, false, Date.now(), '/w/admin/tests/a.spec.ts').text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     const notOwn: RunStatusResult = {
       contexts: [{ ...elsewhere.contexts[0]!, live: { ...inProgress, own: false } }, elsewhere.contexts[1]!],
@@ -594,7 +594,7 @@ describe('statusBarView', () => {
       contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
     };
     expect(statusBarView(connected, first)).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 0 of 9 · yours',
+      text: '$(loading~spin) Piwi: run #124 · 0 of 9 · yours',
       tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0 of 9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith)`,
       action: 'refresh',
     });
@@ -638,7 +638,7 @@ describe('statusBarView', () => {
   test('a running run shows its progress', () => {
     expect(
       statusBarView(connected, run({ status: 'running', passedTests: 40, failedTests: 1, flakyTests: 0 })),
-    ).toMatchObject({ text: '$(sync~spin) Piwi: 41 of 120 · 1 failed', action: 'refresh' });
+    ).toMatchObject({ text: '$(loading~spin) Piwi: 41 of 120 · 1 failed', action: 'refresh' });
   });
 
   test('an interrupted run names its status', () => {
@@ -655,8 +655,8 @@ describe('statusBarView', () => {
   });
 
   test('while a click reads the run again, the item’s icon spins', () => {
-    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
-    expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
+    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(loading~spin) Piwi: 2 failing');
+    expect(refreshingText('Piwi')).toBe('$(loading~spin) Piwi');
   });
 
   describe('with several Playwright configs', () => {
@@ -678,7 +678,7 @@ describe('statusBarView', () => {
     test('speaks for the config of the active file, the deepest that holds it', () => {
       const view = statusBarView(several, runs, false, Date.now(), '/w/apps/admin/tests/users.spec.ts');
       expect(view).toMatchObject({
-        text: '$(error) Piwi: 2 failing · 2 flaky',
+        text: '$(error) Piwi: 2 failing',
         url: 'http://piwi/test-runs/300',
         error: false,
       });
@@ -1594,7 +1594,7 @@ describe('the recording’s controls', () => {
         { title: 'Pause', command: 'piwi.pauseRecording' },
       ],
       status: '$(record) Piwi: recording · 6 steps',
-      tooltip: 'Recording into checkout.spec.ts. Click to stop.',
+      tooltip: 'Recording into checkout.spec.ts. Click for Stop recording and Pause.',
     });
     expect(recordingView('paused', 1, false, 'a.spec.ts')).toMatchObject({
       title: '$(circle-large-outline) Paused · 1 step',
@@ -1965,7 +1965,7 @@ describe('the failures view', () => {
     expect(failingRuns(null)).toEqual([]);
   });
 
-  test('Run this test names the failure’s config', () => {
+  test('Run with Piwi names the failure’s config', () => {
     expect(failureRunArgs({ ...failing, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts' })).toEqual({
       uri: 'file:///w/shared/pages/admin.ts',
       root: '/w/apps/admin',
@@ -2068,7 +2068,7 @@ describe('the verdict of a run started from the editor', () => {
 });
 
 describe('a test’s actions from its gutter', () => {
-  const SECTIONS = { run: '', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
+  const SECTIONS = { run: '', record: 'Record', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
   const action = (group: TestAction['group'], title: string): TestAction => ({
     group,
     section: SECTIONS[group],
@@ -2682,7 +2682,7 @@ describe('the status item while runs are followed', () => {
       '$(error) Piwi: held at its failure · a.spec.ts:4',
     );
     expect(runLineText({ text: 'Piwi: run #124 · 4 of 9 · 1 failed', state: 'running', calls: 0 }, 0)).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed',
     );
     const pausing = {
       text: 'Piwi: pausing… · waits in waitForResponse',

@@ -99,6 +99,20 @@
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E005"
         }
+      },
+      "piwi-region": {
+        "description": "Assert a region at a stop",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E006"
+        }
+      },
+      "piwi-mock": {
+        "description": "Mock a request at a stop",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E007"
+        }
       }
     },
     "viewsContainers": {
@@ -458,19 +472,19 @@
       },
       {
         "command": "piwi.runTest",
-        "title": "Run this test",
+        "title": "Run with Piwi",
         "category": "Piwi",
         "icon": "$(play)"
       },
       {
         "command": "piwi.debugFailure",
-        "title": "Debug this failure",
+        "title": "Debug with Piwi",
         "category": "Piwi",
         "icon": "$(debug-alt)"
       },
       {
         "command": "piwi.verifyFailure",
-        "title": "Verify the test ×3",
+        "title": "Verify ×3 with Piwi",
         "category": "Piwi",
         "icon": "$(sync)"
       },
@@ -508,7 +522,7 @@
         "command": "piwi.stopFollowingEditor",
         "title": "Stop following the active editor",
         "category": "Piwi",
-        "icon": "$(eye)"
+        "icon": "$(eye-closed)"
       },
       {
         "command": "piwi.copyAgentContext",
@@ -532,6 +546,18 @@
         "command": "piwi.bisectInDesktop",
         "title": "Find the breaking commit in the desktop app",
         "icon": "$(git-branch)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.flakeLabInDesktop",
+        "title": "Run Flake Lab on its untested suspects in the desktop app",
+        "icon": "$(beaker)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.fileIssue",
+        "title": "File an issue",
+        "icon": "$(issues)",
         "category": "Piwi"
       },
       {
@@ -687,13 +713,13 @@
       {
         "command": "piwi.assertRegionAtStop",
         "title": "Assert a region at the stop",
-        "icon": "$(screen-full)",
+        "icon": "$(piwi-region)",
         "category": "Piwi"
       },
       {
         "command": "piwi.mockAtStop",
         "title": "Mock a request at the stop…",
-        "icon": "$(arrow-swap)",
+        "icon": "$(piwi-mock)",
         "category": "Piwi"
       },
       {
@@ -859,6 +885,14 @@
         },
         {
           "command": "piwi.bisectInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.flakeLabInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.fileIssue",
           "when": "false"
         },
         {
@@ -1291,6 +1325,16 @@
           "command": "piwi.bisectInDesktop",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
           "group": "4_desktop@2"
+        },
+        {
+          "command": "piwi.flakeLabInDesktop",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bflakelab\\b/",
+          "group": "4_desktop@3"
+        },
+        {
+          "command": "piwi.fileIssue",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bissue\\b/",
+          "group": "5_issue@1"
         },
         {
           "command": "piwi.lookIntoFlake",

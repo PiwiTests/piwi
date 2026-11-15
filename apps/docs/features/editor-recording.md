@@ -25,6 +25,9 @@ works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 | VS Code | **Piwi: Record here…**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title (unless a stop's controls hold it), or **Ctrl+.** (**Cmd+.** on macOS); any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file…**, also in the explorer's **Piwi** submenu while the editor is connected to an instance |
 | JetBrains IDE | **Tools → Piwi → Record here…**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **New → Playwright test (recorded)…** on a folder of a Playwright config, or the project view's **Piwi** submenu |
 
+**Record steps in this test…**, among a test's actions (its result icon in a JetBrains IDE, **Piwi: Show the test's
+actions…** in VS Code), records into that test after the last line of its body, wherever the cursor is.
+
 Before the browser opens, the editor asks for:
 
 1. **The start page**: a path on the project's `baseURL`, or an address; left empty, the browser opens the `baseURL`.

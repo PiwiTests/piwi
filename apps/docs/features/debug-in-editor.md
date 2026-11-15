@@ -28,7 +28,7 @@ the failure enters your code (a page object's line included), in the captured fr
 
 ## From the editor
 
-The same run starts from the editor, with no question: **Debug this failure** on a failure of the Piwi panel's
+The same run starts from the editor, with no question: **Debug with Piwi** on a failure of the Piwi panel's
 failures (its context menu in VS Code, the tool window's in a JetBrains IDE), and **Debug with Piwi** among a failed
 test's actions in its gutter ([Runs from the editor](./editor-runs)).
 

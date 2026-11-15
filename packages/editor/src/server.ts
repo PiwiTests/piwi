@@ -181,6 +181,7 @@ import {
   fileFixtures,
   pageCandidates,
   recordPlace,
+  recordPlacer,
 } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
@@ -210,7 +211,6 @@ import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   SHARE_DESKTOP_JOB_REQUEST,
-  type DesktopJobKind,
   type DesktopJobParams,
   type DesktopJobResult,
   type ShareDesktopJobParams,
@@ -251,6 +251,9 @@ import {
   RUN_SELECTION_REQUEST,
   RUN_ID_REQUEST,
   SCREENSHOT_REQUEST,
+  FILE_ISSUE_REQUEST,
+  type FileIssueParams,
+  type FileIssueResult,
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
@@ -1335,7 +1338,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * What a failure's node offers on its test, the one test of its spec, as it stands, titled as it failed; nothing when
    * the spec holds no such test or several: the test's `test(…)` line (`WorkspaceFailure.test`), Verify ×3 by its
-   * location (`verify`), and Debug this failure (`debug`), the dashboard's Debug in my editor run stopping once at the
+   * location (`verify`), and Debug with Piwi (`debug`), the dashboard's Debug in my editor run stopping once at the
    * line it failed through (`debugRunOf`).
    */
   const failureTestActions = (
@@ -1398,6 +1401,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
+            ...(f.clusterId && context.source !== 'desktop' ? { fileIssue: true as const } : {}),
+            ...(context.source !== 'desktop' && hasUntestedSuspect(context.flakeLab.get(f.testCaseId))
+              ? { untestedSuspects: true as const }
+              : {}),
             ...onTest,
           },
         ];
@@ -2360,38 +2367,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return origin && bases.includes(origin) ? 'relative' : 'absolute';
   };
 
-  /**
-   * On a failure from a team instance, while the desktop app runs: reproduce or bisect it there, and run Flake Lab
-   * on its test there when the test has a flake suspect no experiment tested.
-   */
-  const desktopJobActions = (context: PiwiContext, failure: BranchFailure, diagnostic: Diagnostic): CodeAction[] => {
-    if (!desktopJobs.available(context)) return [];
-    const job = (title: string, kind: DesktopJobKind): CodeAction => ({
-      title,
-      kind: CodeActionKind.QuickFix,
-      diagnostics: [diagnostic],
-      command: {
-        title,
-        command: 'piwi.desktopJob',
-        arguments: [
-          {
-            root: context.root,
-            executionId: failure.executionId,
-            ...(kind === 'flake-lab' ? { testCaseId: failure.testCaseId } : {}),
-            kind,
-          } satisfies DesktopJobParams,
-        ],
-      },
-    });
-    return [
-      job('Reproduce in the desktop app', 'reproduce'),
-      job('Find the breaking commit in the desktop app', 'bisect'),
-      ...(hasUntestedSuspect(context.flakeLab.get(failure.testCaseId))
-        ? [job('Run Flake Lab on its untested suspects in the desktop app', 'flake-lab')]
-        : []),
-    ];
-  };
-
   async function validate(document: TextDocument): Promise<void> {
     const file = uriToPath(document.uri);
     const context = file ? contextFor(file) : null;
@@ -2937,7 +2912,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         // Asked together; each waited for a while at most.
         const healingAsked = within(owner.healing(failure.executionId), null);
         const fixPlanAsked = failure.clusterId ? within(owner.fixPlan(failure.clusterId), null) : null;
-        const issuesAsked = owner.client && failure.clusterId ? within(owner.issuesOf(failure), null) : null;
         const healing = await healingAsked;
         const edit = healing?.edit;
         const line = diagnostic.range.start.line;
@@ -2963,15 +2937,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
-        // A quick fix edits, but for checking an edit of the line that failed, first, the desktop app's jobs and File an
-        // issue: running the test otherwise, its trace, its context and its page are the failure node's.
+        // A quick fix edits, but for checking an edit of the line that failed, first: running the test otherwise, its
+        // trace, its context, its page, the desktop app's jobs and File an issue are the failure node's.
         if (data.edited) {
           fixes.unshift({
-            title: 'Run this test',
+            title: 'Run with Piwi',
             kind: CodeActionKind.QuickFix,
             diagnostics: [diagnostic],
             command: {
-              title: 'Run this test',
+              title: 'Run with Piwi',
               command: 'piwi.runTests',
               arguments: [
                 {
@@ -2984,7 +2958,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           });
         }
         actions.push(...fixes);
-        actions.push(...desktopJobActions(owner, failure, diagnostic));
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         const verification = fixPlan ? verificationCommand(fixPlan.verify.command) : null;
@@ -3013,20 +2986,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             kind: CodeActionKind.QuickFix,
             diagnostics: [diagnostic],
             edit: planEdit.edit,
-          });
-        }
-        // Offered once the failure is known to have no ticket.
-        const issues = await issuesAsked;
-        if (owner.client && failure.clusterId && issues && !issues.length) {
-          actions.push({
-            title: 'File an issue',
-            kind: CodeActionKind.QuickFix,
-            diagnostics: [diagnostic],
-            command: {
-              title: 'File an issue',
-              command: 'piwi.openInDashboard',
-              arguments: [owner.client.clusterUrl(failure.clusterId)],
-            },
           });
         }
       }
@@ -3359,6 +3318,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
+      const placeOf = recordPlacer(text);
       for (const { call, found, failed, fixed, failure, status: testStatus } of specTests(
         context,
         file,
@@ -3402,6 +3362,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ].join('')
           : '';
         const endLine = call.endLine;
+        // Steps recorded in the test go after its last line before the one that closes it, where Record here writes steps.
+        const lastBodyLine = endLine !== undefined ? endLine - 1 : -1;
+        const recordAt = lastBodyLine > i && placeOf(lastBodyLine) === 'steps' ? lastBodyLine : null;
         const open: PiwiCommand = {
           title: 'Open in dashboard',
           command: 'piwi.openInDashboard',
@@ -3433,6 +3396,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                   failed.executionId,
                 )
               : null,
+            recordAt,
           ),
         });
         out.push(...lab);
@@ -3454,9 +3418,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         reasons.push({
           problem: true,
           line: failure.line,
-          title: 'Run this test',
+          title: 'Run with Piwi',
           command: {
-            title: 'Run this test',
+            title: 'Run with Piwi',
             command: 'piwi.runTests',
             arguments: [{ uri: params.uri, testIds: [found.id] } satisfies RunTestsArgs],
           },
@@ -4196,6 +4160,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return { path: trace, cwd: commandFolder(context), command: `npx playwright show-trace "${trace}"` };
     }
     return null;
+  });
+
+  connection.onRequest(FILE_ISSUE_REQUEST, async (params: FileIssueParams): Promise<FileIssueResult> => {
+    const file = uriToPath(params.uri);
+    const candidates = [file ? contextFor(file) : null, ...contexts].filter((c): c is PiwiContext => !!c);
+    for (const context of candidates) {
+      const failure = context.failures?.failures.find((f) => f.executionId === params.executionId);
+      if (!failure?.clusterId || !context.client) continue;
+      const filed = (await context.issuesOf(failure).catch(() => null)) ?? [];
+      const ticket = filed[0];
+      if (!ticket) return { url: context.client.clusterUrl(failure.clusterId), message: null, issueUrl: null };
+      const name = [ticket.key, ticket.title].filter(Boolean).join(' ') || ticket.url;
+      return { url: null, message: `Piwi: an issue is filed for this failure already: ${name}.`, issueUrl: ticket.url };
+    }
+    return { url: null, message: 'Piwi: this failure is no longer in the latest run.', issueUrl: null };
   });
 
   connection.onRequest(SCREENSHOT_REQUEST, async (params: ScreenshotParams): Promise<ScreenshotResult | null> => {

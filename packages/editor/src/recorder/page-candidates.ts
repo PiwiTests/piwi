@@ -1495,12 +1495,23 @@ export function fileFixtures(text: string): Set<string> {
  * its members, and on or above the last import statement or `require` declaration.
  */
 export function recordPlace(text: string, caretLine: number): RecordInto | null {
-  const model = new FileModel(text);
-  const context = model.contextAt(blockPosition(model, caretLine).offset);
-  if (context === 'class') return null;
-  if (context !== 'file') return 'steps';
-  const statements = importBindings(text).statements;
-  const last = statements[statements.length - 1]?.end;
-  const lastImport = last === undefined ? -1 : text.slice(0, last).split(/\r\n|\r|\n/).length - 1;
-  return caretLine > lastImport ? 'test' : null;
+  return recordPlacer(text)(caretLine);
+}
+
+/** `recordPlace` for many lines of one text, which it reads once, on the first line asked. */
+export function recordPlacer(text: string): (caretLine: number) => RecordInto | null {
+  let model: FileModel | null = null;
+  let lastImport: number | null = null;
+  return (caretLine) => {
+    model ??= new FileModel(text);
+    const context = model.contextAt(blockPosition(model, caretLine).offset);
+    if (context === 'class') return null;
+    if (context !== 'file') return 'steps';
+    if (lastImport === null) {
+      const statements = importBindings(text).statements;
+      const last = statements[statements.length - 1]?.end;
+      lastImport = last === undefined ? -1 : text.slice(0, last).split(/\r\n|\r|\n/).length - 1;
+    }
+    return caretLine > lastImport ? 'test' : null;
+  };
 }

@@ -38,7 +38,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`,
+ * `piwi.record`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -76,7 +77,20 @@ object PiwiCommands {
                 PiwiNotifier.confirm(project, "Copied. Paste it to your agent.")
             }
             "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
+            "piwi.record" -> {
+                val file = arg<String>(arguments.getOrNull(0))
+                    ?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() }
+                val line = arg<Int>(arguments.getOrNull(1))
+                if (file != null && line != null) recordAt(project, file, line)
+            }
         }
+    }
+
+    /** Record here at the start of the 0-based `line` of `file`, opened in an editor first. */
+    private fun recordAt(project: Project, file: com.intellij.openapi.vfs.VirtualFile, line: Int) {
+        val editor = FileEditorManager.getInstance(project)
+            .openTextEditor(com.intellij.openapi.fileEditor.OpenFileDescriptor(project, file, line, 0), true) ?: return
+        PiwiRecordFlow.recordHere(project, editor, file, line)
     }
 
     /**
@@ -333,6 +347,29 @@ object PiwiCommands {
     }
 
     /** Download a failure's screenshot and open it in an editor tab. */
+    /** File an issue: the failure's cluster in the dashboard, or, when a ticket is linked already, which one. */
+    fun fileIssue(project: Project, params: TraceParams) {
+        background(project, "Piwi: looking for the failure's issue") {
+            val server = project.service<PiwiProjectService>().server()
+            val result = server?.fileIssue(params)?.orNull()
+            val url = result?.url
+            if (url != null) {
+                BrowserUtil.browse(url)
+                return@background
+            }
+            val type = if (result?.message != null && server != null) NotificationType.INFORMATION else NotificationType.WARNING
+            val notification = PiwiNotifier.create(
+                PiwiNotifier.kindOf(type),
+                StringUtil.escapeXmlEntities(result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER),
+                type,
+            )
+            result?.issueUrl?.let { issue ->
+                notification.addAction(NotificationAction.createSimpleExpiring("Open the issue") { BrowserUtil.browse(issue) })
+            }
+            notification.notify(project)
+        }
+    }
+
     fun openScreenshot(project: Project, params: TraceParams) {
         background(project, "Piwi: downloading the screenshot") {
             val request = project.service<PiwiProjectService>().server()?.screenshot(params)

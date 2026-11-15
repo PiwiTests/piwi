@@ -199,7 +199,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
 - **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
-  is about (`STOP`, `TEST_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
+  is about (`STOP`, `TEST_LINE`, `RECORD_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
   gets an id in D25.
 - **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
   on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`
@@ -210,7 +210,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
 - **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte** (VS Code's
-  running ring adds the style that spins it), in
+  running ring adds the style that spins it; `PiwiIcons.RUNNING` turns this one in code, on the result icon alone), in
   `STATUS_COLORS`' fills, and so are the recording marks (`icons/recording*.svg`, `recordPaused*.svg`); both color
   schemes' failing and recording tints blend those fills over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`)
   background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.

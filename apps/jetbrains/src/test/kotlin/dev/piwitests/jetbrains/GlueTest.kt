@@ -230,7 +230,7 @@ class GlueTest {
             file = entry(0, "3 tests in Piwi · 1 failing"),
             lines = listOf(
                 entry(9, "✗ locator('#pay') was not found"),
-                entry(9, "Run this test"),
+                entry(9, "Run with Piwi"),
                 entry(9, "Screenshot"),
                 entry(9, "Trace"),
                 entry(4, "passed 44 of 48 runs", status = "failing"),
@@ -240,7 +240,7 @@ class GlueTest {
         )
         val slots = (0 until Glue.CODE_VISION_SLOTS).map { slot -> Glue.codeVisionSlot(summary, slot).map { it.line to it.title } }
         assertEquals(listOf(0 to "3 tests in Piwi · 1 failing", 9 to "✗ locator('#pay') was not found", 4 to "Flaky · Flake Lab"), slots[0])
-        assertEquals(listOf(9 to "Run this test"), slots[1])
+        assertEquals(listOf(9 to "Run with Piwi"), slots[1])
         assertEquals(listOf(9 to "Screenshot"), slots[2])
         assertEquals(listOf(9 to "Trace"), slots[3])
         assertEquals(emptyList<Pair<Int, String?>>(), slots[4])
@@ -342,7 +342,7 @@ class GlueTest {
 
     @Test
     fun `a failing run, a running run, an interrupted run and no run`() {
-        assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(connected, runs(passed.copy(status = "failed", failedTests = 3))).text)
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, runs(passed.copy(status = "failed", failedTests = 3))).text)
         assertEquals(
             "Piwi: 41 of 120 · 1 failed",
             Glue.statusView(connected, runs(passed.copy(status = "running", passedTests = 40, failedTests = 1, flakyTests = 0))).text,
@@ -363,7 +363,7 @@ class GlueTest {
             ),
         )
         val view = Glue.statusView(connected, local(2, 1, 2))
-        assertEquals("Piwi: 2 failing · 1 fixed locally", view.text)
+        assertEquals("Piwi: 2 failing", view.text)
         assertEquals(
             "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
                 "2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env",
@@ -460,10 +460,10 @@ class GlueTest {
             admin.tooltip.lines(),
         )
         val shop = Glue.statusView(status, runs, file = "/w/shop/cart.spec.ts")
-        assertEquals("Piwi: 3 failing · 2 flaky", shop.text)
+        assertEquals("Piwi: 3 failing", shop.text)
         assertEquals("The active file's Playwright config, in shop (one of 2)", shop.tooltip.lines()[1])
         // A file in neither, or none: the first connected, and how to see another's run.
-        assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(status, runs, file = "/w/README.md").text)
+        assertEquals("Piwi: 3 failing", Glue.statusView(status, runs, file = "/w/README.md").text)
         assertEquals(
             "The Playwright config in shop (one of 2): open a file of another one to see its run",
             Glue.statusView(status, runs).tooltip.lines()[1],

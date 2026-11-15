@@ -85,5 +85,5 @@ class PiwiCodeVisionSettings : CodeVisionGroupSettingProvider {
     override val groupName = "Piwi"
     override val description =
         "Piwi's lines above a spec, a test and a locator: the tests behind a locator, a test's pass rate, a failure's " +
-            "reason, Run this test, its screenshot and trace, and Flake Lab."
+            "reason, Run with Piwi, its screenshot and trace, and Flake Lab."
 }

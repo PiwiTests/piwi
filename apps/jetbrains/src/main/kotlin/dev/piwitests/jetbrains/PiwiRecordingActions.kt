@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -63,6 +64,9 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
+/** The 0-based line a popup's Record here starts at (a test's Record steps in this test), which it takes over the caret's. */
+val RECORD_LINE: DataKey<Int> = DataKey.create("piwi.recordLine")
+
 /** Piwi: Record here… — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -84,7 +88,7 @@ open class RecordHereAction : AnAction(), DumbAware {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        PiwiRecordFlow.recordHere(project, editor, file)
+        PiwiRecordFlow.recordHere(project, editor, file, e.getData(RECORD_LINE))
     }
 }
 
@@ -210,7 +214,8 @@ object PiwiRecordFlow {
             Glue.inConfigDirs(file.nioPathOrNull(), project.service<PiwiProjectService>().playwrightConfigDirs()) &&
             project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) == null
 
-    fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
+    /** Record here at the editor's caret, or at the start of the 0-based `line` when given. */
+    fun recordHere(project: Project, editor: Editor, file: VirtualFile, line: Int? = null) = start(project, editor, file, null, line)
 
     /**
      * Record a new test file: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
@@ -324,7 +329,7 @@ object PiwiRecordFlow {
         generateSequence(1) { it + 1 }.map { if (it == 1) "recorded$suffix" else "recorded-$it$suffix" }
             .first { !Files.exists(directory.resolve(it)) }
 
-    private fun start(project: Project, editor: Editor, file: VirtualFile, fixedInto: String?) {
+    private fun start(project: Project, editor: Editor, file: VirtualFile, fixedInto: String?, at: Int? = null) {
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return
         if (!FileDocumentManager.getInstance().requestWriting(editor.document, project)) return
         if (project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) != null) {
@@ -332,7 +337,12 @@ object PiwiRecordFlow {
             return
         }
         val document = editor.document
-        val offset = if (fixedInto == "file") 0 else editor.caretModel.offset
+        if (at != null && at !in 0 until document.lineCount) return
+        val offset = when {
+            fixedInto == "file" -> 0
+            at != null -> document.getLineStartOffset(at)
+            else -> editor.caretModel.offset
+        }
         val line = document.getLineNumber(offset)
         val character = offset - document.getLineStartOffset(line)
         background(project, "Piwi: preparing the recording") {

@@ -161,6 +161,11 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
     const action = EDITOR_ACTIONS.find((a) => a.vscode === command);
     return action ? actionTitle(action, 'vscode') : command;
   };
+  const recordingRows = [
+    !!state.recording && 'piwi.stopRecording',
+    state.recording === 'paused' && 'piwi.resumeRecording',
+    state.recording === 'recording' && 'piwi.pauseRecording',
+  ];
   const sections: Array<[string, Array<string | false>]> = [
     [
       '',
@@ -174,9 +179,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
           none: false as const,
         }[state.action],
         state.action === 'restart' && 'piwi.openLog',
-        !!state.recording && 'piwi.stopRecording',
-        state.recording === 'paused' && 'piwi.resumeRecording',
-        state.recording === 'recording' && 'piwi.pauseRecording',
+        ...recordingRows,
       ],
     ],
     [
@@ -287,13 +290,13 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
+ * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
  * editor's own, or who started it when a person did not (` · Started by Claude Code`).
  */
 function liveText(live: LiveRun): string {
   const run = live.ci ? 'CI run' : 'run';
   const whose = live.own ? ` · ${live.label ?? 'yours'}` : '';
-  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${whose}`;
+  return `$(loading~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${whose}`;
 }
 
 /**
@@ -373,7 +376,7 @@ export const RUN_LINE_GLYPHS: Record<RunLineState, string> = {
   stopped: '$(debug-pause)',
   pausing: '$(debug-pause)',
   live: '$(broadcast)',
-  running: '$(sync~spin)',
+  running: '$(loading~spin)',
   passed: '$(pass)',
   failed: '$(error)',
   interrupted: '$(warning)',
@@ -390,7 +393,7 @@ export function runLineText(line: RunLine, now: number): string {
 
 /** The item's text while the latest run is read again: its icon spins. */
 export function refreshingText(text: string): string {
-  return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
+  return `$(loading~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
 type StatusContext = StatusResult['contexts'][number];
@@ -657,15 +660,17 @@ export function statusBarView(
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
+      text: live
+        ? liveText(live)
+        : `$(loading~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  // The tests failing alone: what was fixed locally and the flaky tests are the tooltip's.
   if (failing > 0) {
-    const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
     return {
       ...view,
-      text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
+      text: `$(error) Piwi: ${failing} failing`,
       error: !!run?.alarm,
     };
   }
@@ -888,7 +893,7 @@ export function withBaseline(
   return next;
 }
 
-/** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+/** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
 export function failureRunArgs(failure: WorkspaceFailure): RunTestsArgs | null {
   if (failure.testCaseId === undefined) return null;
   return { uri: failure.uri, ...(failure.root ? { root: failure.root } : {}), testIds: [failure.testCaseId] };
@@ -1455,7 +1460,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.edited', words)}`,
       actions: [resume, { title: editorWords('recording.keep-edits'), command: 'piwi.stopRecording' }],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
+      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click, then Stop recording keeps your edits.`,
     };
   }
   if (state === 'paused') {
@@ -1463,7 +1468,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.paused', words)}`,
       actions: [stop, resume],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused. Click to stop.`,
+      tooltip: `The recording into ${file} is paused. Click for Stop recording and Resume.`,
     };
   }
   if (state === 'starting') {
@@ -1471,14 +1476,14 @@ export function recordingView(
       title: `$(loading~spin) ${editorWords('recording.block.starting')}`,
       actions: [stop],
       status: `$(loading~spin) ${editorWords('recording.status.starting')}`,
-      tooltip: `Recording into ${file}. Click to stop.`,
+      tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
     };
   }
   return {
     title: `$(record) ${editorWords('recording.block.recording', words)}`,
     actions: [stop, { title: editorWords('recording.pause'), command: 'piwi.pauseRecording' }],
     status: `$(record) ${editorWords('recording.status.recording', words)}`,
-    tooltip: `Recording into ${file}. Click to stop.`,
+    tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
   };
 }
 

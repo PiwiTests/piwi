@@ -125,15 +125,17 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private val tick = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
     /**
-     * Draws the item again: the recording in progress, else the service's line of the runs started here
+     * Draws the item again: the recording in progress, unless a test waits for the person, else the service's line of
+     * the runs started here
      * (`piwi/runLineChanged`: where a test is stopped or the call a pausing one waits in, the share, how far the runs
      * are), its icon badged while a stop waits for the person, `Piwi: refreshing…` while the latest run is read again,
      * else the view of the selected file's context, with its icon and, while its tests fail, the error color. A run's
      * tooltip says what each worker runs now (`Glue.workersNowText`) and who else has it open. On the event thread.
      */
     fun update() {
-        val recording = recording()
         val line = runs()?.line
+        // A test that waits for the person keeps the item over a recording, as in VS Code.
+        val recording = recording()?.takeIf { line == null || line.calls == 0 }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
         val workers = runs()?.let { Glue.workersNowText(it.sessions) }?.let { "\n$it" }.orEmpty()

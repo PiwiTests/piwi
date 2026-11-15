@@ -407,7 +407,9 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             Separator.getInstance(),
             *registered("Piwi.Failure.CopyContext"),
             Separator.getInstance(),
-            *registered("Piwi.Failure.Reproduce", "Piwi.Failure.FindBreakingCommit"),
+            *registered("Piwi.Failure.Reproduce", "Piwi.Failure.FindBreakingCommit", "Piwi.Failure.FlakeLab"),
+            Separator.getInstance(),
+            *registered("Piwi.Failure.FileIssue"),
         )
     }
 
@@ -518,13 +520,14 @@ abstract class FailureNodeAction(icon: Icon) : AnAction(null, null, icon), DumbA
 
     protected fun job(project: Project, f: WorkspaceFailure, kind: String) {
         val service = project.service<PiwiProjectService>()
+        val testCaseId = f.testCaseId.takeIf { kind == "flake-lab" }
         (f.root ?: Glue.contextRootOf(service.status, f.uri))?.let {
-            PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, kind = kind))
+            PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, testCaseId = testCaseId, kind = kind))
         }
     }
 }
 
-/** **Run this test**: the selected failure's test, as Piwi runs it. */
+/** **Run with Piwi**: the selected failure's test, as Piwi runs it. */
 class RunFailureTestAction : FailureNodeAction(AllIcons.Actions.Execute) {
     override fun applies(project: Project, failure: WorkspaceFailure) = Glue.failureRunArgs(failure) != null
 
@@ -534,7 +537,7 @@ class RunFailureTestAction : FailureNodeAction(AllIcons.Actions.Execute) {
 }
 
 /**
- * **Debug this failure**: the run the service built for it (`WorkspaceFailure.debug`), stopping once at the line it
+ * **Debug with Piwi**: the run the service built for it (`WorkspaceFailure.debug`), stopping once at the line it
  * failed through, once the files are saved.
  */
 class DebugFailureAction : FailureNodeAction(AllIcons.Actions.StartDebugger) {
@@ -548,7 +551,7 @@ class DebugFailureAction : FailureNodeAction(AllIcons.Actions.StartDebugger) {
     }
 }
 
-/** **Verify the test ×3**: the selected failure's test by its location, three times (`WorkspaceFailure.verify`). */
+/** **Verify ×3 with Piwi**: the selected failure's test by its location, three times (`WorkspaceFailure.verify`). */
 class VerifyFailureAction : FailureNodeAction(AllIcons.Actions.Rerun) {
     override fun applies(project: Project, failure: WorkspaceFailure) = failure.verify != null
 
@@ -603,6 +606,22 @@ class FindBreakingCommitAction : FailureNodeAction(PiwiIcons.BISECT) {
     override fun applies(project: Project, failure: WorkspaceFailure) = desktop(project, failure)
 
     override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "bisect")
+}
+
+/** **Run Flake Lab on its untested suspects in the desktop app**: the selected failure's test has one. */
+class FlakeLabFailureAction : FailureNodeAction(PiwiIcons.FLAKE_LAB) {
+    override fun applies(project: Project, failure: WorkspaceFailure) =
+        failure.untestedSuspects == true && !Glue.isFixedLocally(failure) &&
+            project.service<PiwiProjectService>().status?.desktopUrl != null
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "flake-lab")
+}
+
+/** **File an issue**: the selected failure's cluster in the dashboard, or which ticket is linked already. */
+class FileIssueAction : FailureNodeAction(PiwiIcons.ISSUE) {
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.fileIssue == true
+
+    override fun perform(project: Project, failure: WorkspaceFailure) = PiwiCommands.fileIssue(project, evidence(failure))
 }
 
 /**

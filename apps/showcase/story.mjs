@@ -255,14 +255,17 @@ export const STORY = [
       await runCard(runs).getByText('Stopped at a breakpoint').waitFor({ timeout: 90_000 });
     },
     async check({ vscode, runs, testPage, set }) {
-      await waitFor(
-        () =>
-          vscode
-            .locator('.codelens-decoration', { hasText: `Stopped at a breakpoint · Click ${BROKEN}` })
-            .first()
-            .isVisible(),
-        'the paused line in VS Code',
-      );
+      const row = vscode
+        .locator('.codelens-decoration', { hasText: `Stopped at a breakpoint · Click ${BROKEN}` })
+        .first();
+      await waitFor(() => row.isVisible(), 'the paused line in VS Code');
+      // The stop row ends inside the editor it is drawn in: none of its controls lies past the editor's right edge.
+      const fits = await row.evaluate((el) => {
+        const box = el.closest('.monaco-editor')?.querySelector('.editor-scrollable')?.getBoundingClientRect();
+        const ends = [...el.children].map((child) => child.getBoundingClientRect().right);
+        return { right: Math.max(el.getBoundingClientRect().left, ...ends), box: box?.right ?? null };
+      });
+      expect(fits.box !== null && fits.right <= fits.box, `the stop row fits its editor: ${JSON.stringify(fits)}`);
       await waitFor(
         () => vscode.locator('.statusbar-item .codicon-debug-continue').first().isVisible(),
         "the run's controls in the status bar",

@@ -416,7 +416,7 @@ message (`Local failure: …`, `Local failure, edited since your run #42: …`),
 A failure whose line changed since its run:
 
 - is an information, `Edited since run #120: …`, with `data.edited`;
-- has **Run this test** (`piwi.runTests`) first among its quick fixes, the only failure that has it there;
+- has **Run with Piwi** (`piwi.runTests`) first among its quick fixes, the only failure that has it there;
 - has `state: 'edited'` in `TestFailure` and in `piwi/failures`;
 - shows `✎ edited since run #120` above the line.
 
@@ -458,13 +458,13 @@ On a spec, `piwi/fileSummary` gives each test's line:
   spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
   `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
   the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
-  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug this
-  failure**, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug with
+  Piwi** on its node, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
   spec titled as it failed (`failureTestActions`).
 
 Every code action the service answers carries Piwi's name, its words after it starting lower-case (`piwiActionTitle`:
-`Piwi: heal with getByRole(…)`, `Piwi: run this test`); the clients' recorded-locator fixes read the same
-(`Piwi: use getByTestId('pay')`).
+`Piwi: heal with getByRole(…)`), or names Piwi itself and stays as it is (`Run with Piwi`); the clients'
+recorded-locator fixes read the same (`Piwi: use getByTestId('pay')`).
 
 `piwi/testAt` answers, for a position of a spec:
 
@@ -501,7 +501,7 @@ as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server
 ### Failure lines and Flake Lab lines
 
 A failing test's line also carries `failure`: the line of the test that its error's stack goes through. The instance
-sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run this test**
+sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run with Piwi**
 (`piwi.runTests` with the test's id), **Screenshot** and **Trace** are ordinary summary lines. The hover on any line of
 that stack shows the message and the call chain.
 
@@ -1707,9 +1707,10 @@ spec or a file the locator index calls locators from.
   unsaved change, compared with `HEAD`, breaks locators the suite uses (`breaksOfChange`). Quick fix: update every call
   site.
 - `ci-failure`: a failure of the latest run ([Failure diagnostics](#failure-diagnostics-and-runs-laid-over)). Quick
-  fixes, which edit but for the last two: heal the locator, **Run this test** once the line was edited, apply the fix
-  plan (then run its verification), and the desktop jobs and file an issue when the failure has no linked ticket,
-  which no other place offers; its trace, its context and its page are the failure node's.
+  fixes, which edit but for the first: **Run with Piwi** once the line was edited, heal the locator, apply the fix plan
+  (then run its verification); its trace, its context, its page, the desktop jobs and File an issue are the failure
+  node's. File an issue (`WorkspaceFailure.fileIssue`) asks `piwi/fileIssue` when chosen, which answers the cluster's
+  page while no ticket is linked to the cluster or the test (`issuesOf`), else names the ticket.
 
 ### Completion
 
@@ -1768,10 +1769,11 @@ Its requests go through `src/http.ts`. When the service's environment names a pr
 It posts the job with the token of the app's discovery file: the app never receives the editor's key. Jobs are offered
 only while the app runs and the context reads another instance than the app (`DesktopJobs.available`):
 
-- on a failure, the quick fixes **Reproduce in the desktop app** and **Find the breaking commit in the desktop app** (a
-  bisect);
-- on a flaky test's line, and on a failure whose test has an untested suspect (`hasUntestedSuspect`), a `flake-lab`
-  job.
+- on a CI failure's node, **Reproduce in the desktop app** and **Find the breaking commit in the desktop app** (a
+  bisect), which the clients offer while `piwi/status` names the app (`desktopUrl`);
+- on a flaky test's line, and on the node of a failure whose test has an untested suspect
+  (`WorkspaceFailure.untestedSuspects`, `hasUntestedSuspect`, set only on a context that reads another instance than
+  the app), a `flake-lab` job.
 
 A `flake-lab` job carries the test's reproduce plan, which the service reads from the instance with recording on
 (`source=desktop`, and this machine's name). The app runs it with `piwi flake --plan <file> --json` against itself.

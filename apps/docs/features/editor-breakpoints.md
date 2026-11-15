@@ -19,7 +19,7 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 1. Set a line breakpoint on a line with a Playwright call, in a spec, a page object or a fixture:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
    or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
-2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
+2. Run the test from Piwi: **Run with Piwi**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The test stops before the call on your line runs. A run Piwi starts follows your config, headless unless it sets
    `headless: false` or you chose **Run headed** ([How a run starts](./editor-runs#how-a-run-starts)): the editor
    marks the line and shows the stopped page ([A headless run](./editor-run-control#a-headless-run)). In a headed run,

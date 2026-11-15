@@ -104,6 +104,10 @@ interface Session {
 export interface Recording extends vscode.Disposable {
   /** Stop every recording of this window, before the editor service stops. */
   stopAll(): Promise<void>;
+  /** The current recording as the Piwi status item shows it, its menu holding its controls; null while none runs. */
+  status(): { text: string; tooltip: string } | null;
+  /** The current recording, or its state, changed. */
+  readonly onDidChangeStatus: vscode.Event<void>;
 }
 
 const toRange = (span: TextSpan) =>
@@ -151,8 +155,9 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   const starting = new Map<string, TextChange[][]>();
   const lensesChanged = new vscode.EventEmitter<void>();
   const diagnostics = vscode.languages.createDiagnosticCollection('piwi-recording');
-  const statusItem = vscode.window.createStatusBarItem('piwi.recording', vscode.StatusBarAlignment.Left, 49);
-  statusItem.name = 'Piwi recording';
+  /** The current recording as the Piwi status item shows it. */
+  let shown: { text: string; tooltip: string } | null = null;
+  const statusChanged = new vscode.EventEmitter<void>();
   const blockBackground = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.recordingBlockBackground'),
@@ -187,15 +192,11 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     setContextKey('piwi.recording', !!s);
     setContextKey('piwi.recordingPaused', !!s && (s.edited || s.state === 'paused'));
     lensesChanged.fire();
-    if (!s) {
-      statusItem.hide();
-      return;
-    }
-    const view = recordingView(s.state, s.steps, s.edited, path.basename(s.document.uri.fsPath));
-    statusItem.text = view.status;
-    statusItem.tooltip = view.tooltip;
-    statusItem.command = { title: 'Stop recording', command: 'piwi.stopRecording', arguments: [s.id] };
-    statusItem.show();
+    const view = s && recordingView(s.state, s.steps, s.edited, path.basename(s.document.uri.fsPath));
+    const next = view ? { text: view.status, tooltip: view.tooltip } : null;
+    if (JSON.stringify(next) === JSON.stringify(shown)) return;
+    shown = next;
+    statusChanged.fire();
   };
 
   /** The tint over the block of a recording and its gutter mark, in each editor that shows its file. */
@@ -823,7 +824,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   const disposables: vscode.Disposable[] = [
     lensesChanged,
     diagnostics,
-    statusItem,
+    statusChanged,
     blockBackground,
     recordingMark,
     pausedMark,
@@ -927,6 +928,8 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   ];
 
   return {
+    status: () => shown,
+    onDidChangeStatus: statusChanged.event,
     async stopAll() {
       const all = running();
       for (const s of all) {
