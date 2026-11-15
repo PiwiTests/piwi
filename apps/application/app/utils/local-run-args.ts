@@ -67,33 +67,36 @@ function elided(items: string[]): string[] {
 }
 
 /**
- * The test filters of a step, and the same filters as its short preview shows them. A spec path that starts with
- * `-` is left out, as the copied command leaves it out.
+ * The test filters of a step, and the same filters as its short preview shows them. A spec path that is empty or
+ * starts with `-` is left out, as the copied command leaves it out, and so is an empty title.
  */
 function specArgs(cases: RetryCase[], mode: RetryMode): { args: string[]; summary: string[] } {
   if (mode === 'grep') {
-    const escaped = cases.map((c) => escapeGrep(c.title));
-    const pattern = (titles: string[]) => (titles.length === 1 ? titles[0]! : `(${titles.join('|')})`);
-    return {
-      args: ['--grep', pattern(escaped)],
-      summary: ['--grep', displayArg(pattern(elided(escaped)))],
-    };
+    const escaped = cases.map((c) => escapeGrep(c.title)).filter(Boolean);
+    if (escaped.length === 0) return { args: [], summary: [] };
+    // One argument, so a title that starts with `-` is never read as an option.
+    const grep = (titles: string[]) => `--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`;
+    return { args: [grep(escaped)], summary: [displayArg(grep(elided(escaped)))] };
   }
   const seen = new Set<string>();
   const specs: string[] = [];
   for (const c of cases) {
-    const spec = mode === 'file-line' && c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath);
-    // Playwright reads an argument that starts with `-` as an option.
-    if (spec.startsWith('-') || seen.has(spec)) continue;
+    const file = specPattern(c.filePath);
+    // Playwright reads an argument that starts with `-` as an option, and an empty one as a filter every file matches.
+    if (!file || file.startsWith('-')) continue;
+    const spec = mode === 'file-line' && c.line ? `${file}:${c.line}` : file;
+    if (seen.has(spec)) continue;
     seen.add(spec);
     specs.push(spec);
   }
   return { args: specs, summary: elided(specs.map(displayArg)) };
 }
 
-/** Quote an argument for display only — execution never goes through a shell. */
+/** Quote an argument for display only — execution never goes through a shell. An option's value is quoted alone. */
 function displayArg(arg: string): string {
-  return /[\s"'()|]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
+  const option = /^--[\w-]+=/.exec(arg)?.[0] ?? '';
+  const value = arg.slice(option.length);
+  return option + (/[\s"'()|]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value);
 }
 
 /**
@@ -101,10 +104,11 @@ function displayArg(arg: string): string {
  * run: the deduped `file:line` specs plus one `--project=` per distinct project.
  * Unlike `buildLocalRunPlan` this never splits into per-project steps — a bisect
  * runs one command at each commit, and running the union of the failing tests is
- * exactly the probe a bisect needs.
+ * exactly the probe a bisect needs. Empty when no case has a spec path Playwright can take.
  */
 export function buildReproduceArgs(cases: RetryCase[]): string[] {
   const args = specArgs(cases, 'file-line').args;
+  if (args.length === 0) return [];
   const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
   for (const project of projects) args.push(`--project=${project}`);
   return args;

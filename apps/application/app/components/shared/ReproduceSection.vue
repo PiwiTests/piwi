@@ -15,6 +15,7 @@
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
+import { buildReproduceArgs } from '~/utils/local-run-args';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
 const props = defineProps<{
@@ -65,7 +66,9 @@ const linked = computed(() => desktop.value && !!link.value?.exists);
 
 /** The failing commit a reproduction would check out. */
 const commit = computed(() => props.context?.commit ?? props.reproduce.commit ?? null);
-const canReproduceHere = computed(() => linked.value && !!commit.value && (props.context?.cases.length ?? 0) > 0);
+const canReproduceHere = computed(
+  () => linked.value && !!commit.value && buildReproduceArgs(props.context?.cases ?? []).length > 0,
+);
 const canBisectHere = computed(
   () => linked.value && props.bisect.available && !!props.context?.good && !!props.context?.bad,
 );

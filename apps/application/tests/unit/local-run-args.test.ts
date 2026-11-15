@@ -57,7 +57,7 @@ describe('buildLocalRunPlan', () => {
       ],
       { mode: 'grep' },
     );
-    expect(plan[0]!.args).toEqual(['--grep', '(pays \\(visa\\)|refund \\$10)', '--project=chromium']);
+    expect(plan[0]!.args).toEqual(['--grep=(pays \\(visa\\)|refund \\$10)', '--project=chromium']);
   });
 
   test('file mode dedupes file paths', () => {
@@ -129,8 +129,8 @@ describe('buildLocalRunPlan', () => {
 
   test('display quotes arguments with spaces or regex metacharacters, args stay raw', () => {
     const plan = buildLocalRunPlan([{ ...CASE, title: 'pays (visa)' }], { mode: 'grep' });
-    expect(plan[0]!.args[1]).toBe('pays \\(visa\\)');
-    expect(plan[0]!.display).toBe('playwright test --grep "pays \\(visa\\)" --project=chromium');
+    expect(plan[0]!.args[0]).toBe('--grep=pays \\(visa\\)');
+    expect(plan[0]!.display).toBe('playwright test --grep="pays \\(visa\\)" --project=chromium');
   });
 });
 
@@ -210,7 +210,10 @@ describe('Copy as command', () => {
       'npx',
       'playwright',
       'test',
-      ...buildLocalRunPlan([CASE], options)[0]!.args,
+      // The copy passes the pattern as the next argument, which Playwright reads the same.
+      ...buildLocalRunPlan([CASE], options)[0]!.args.flatMap((arg) =>
+        arg.startsWith('--grep=') ? ['--grep', arg.slice('--grep='.length)] : [arg],
+      ),
     ]);
   });
 
@@ -238,7 +241,33 @@ describe('a spec path that starts with a dash', () => {
 
   test('is still filtered by title in grep mode', () => {
     const [step] = buildLocalRunPlan([{ ...CASE, filePath: '--headed' }], { mode: 'grep' });
-    expect(step!.args).toEqual(['--grep', 'checkout completes', '--project=chromium']);
+    expect(step!.args).toEqual(['--grep=checkout completes', '--project=chromium']);
+  });
+
+  test('leaves a reproduction with nothing to run', () => {
+    expect(buildReproduceArgs([{ ...CASE, filePath: '-smoke.spec.ts' }])).toEqual([]);
+  });
+});
+
+describe('a filter that would match every test', () => {
+  test('an empty spec path is left out', () => {
+    expect(buildLocalRunPlan([{ ...CASE, filePath: '' }])).toEqual([]);
+    expect(buildLocalRunPlan([{ ...CASE, filePath: '' }, CASE], { mode: 'file' })[0]!.args).toEqual([
+      'tests/checkout.spec.ts',
+      '--project=chromium',
+    ]);
+  });
+
+  test('an empty title is left out', () => {
+    expect(buildLocalRunPlan([{ ...CASE, title: '' }], { mode: 'grep' })).toEqual([]);
+  });
+});
+
+describe('a title that starts with a dash', () => {
+  test('is passed in the --grep argument itself, never as an argument of its own', () => {
+    const [step] = buildLocalRunPlan([{ ...CASE, title: '-1 item is shown' }], { mode: 'grep' });
+    expect(step!.args).toEqual(['--grep=-1 item is shown', '--project=chromium']);
+    expect(step!.display).toBe('playwright test --grep="-1 item is shown" --project=chromium');
   });
 });
 
@@ -265,7 +294,7 @@ describe('the summary of a local run step', () => {
 
   test('shows three titles of a grep pattern and counts the rest', () => {
     const [step] = buildLocalRunPlan(cases(10), { mode: 'grep' });
-    expect(step!.summary).toBe('playwright test --grep "(test 0|test 1|test 2|… 7 more)" --project=chromium');
+    expect(step!.summary).toBe('playwright test --grep="(test 0|test 1|test 2|… 7 more)" --project=chromium');
   });
 
   test('counts and quotes grep titles that hold a backslash or a quote', () => {
@@ -274,7 +303,7 @@ describe('the summary of a local run step', () => {
     list[1] = { ...list[1]!, title: 'ends with \\' };
     const [step] = buildLocalRunPlan(list, { mode: 'grep' });
     expect(step!.summary).toBe(
-      'playwright test --grep "(say \\"hi\\"|ends with \\\\|test 2|… 3 more)" --project=chromium',
+      'playwright test --grep="(say \\"hi\\"|ends with \\\\|test 2|… 3 more)" --project=chromium',
     );
   });
 });

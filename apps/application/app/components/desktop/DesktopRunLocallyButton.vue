@@ -93,6 +93,9 @@ watch(
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
+/** No case has a spec path Playwright can take (empty, or read as an option): only selecting by title runs them. */
+const noPlan = computed(() => plan.value.length === 0);
+const NO_PLAN_HINT = "Playwright cannot take these tests' file paths: select them by title";
 const contextRun = computed(() => store.latestForCases(props.projectId, props.cases));
 const running = computed(() => contextRun.value?.status === 'running');
 
@@ -148,6 +151,7 @@ const face = computed(() => {
   if (!linked.value) {
     return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
   }
+  if (noPlan.value) return { ...idle, tooltip: NO_PLAN_HINT };
   const command =
     plan.value.length === 1
       ? (plan.value[0]!.summary ?? plan.value[0]!.display)
@@ -179,6 +183,7 @@ function onPrimaryClick() {
     modalOpen.value = true;
     return;
   }
+  if (noPlan.value) return;
   runNow();
 }
 
@@ -227,10 +232,17 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
 
   if (linked.value) {
     groups.push([
-      { type: 'label', label: plan.value.length === 1 ? 'Runs this command' : 'Runs these commands, one by one' },
       {
         type: 'label',
-        label: commandPreview.value,
+        label: noPlan.value
+          ? 'Runs nothing'
+          : plan.value.length === 1
+            ? 'Runs this command'
+            : 'Runs these commands, one by one',
+      },
+      {
+        type: 'label',
+        label: noPlan.value ? NO_PLAN_HINT : commandPreview.value,
         class: 'font-mono text-[11px] font-normal',
         ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
       },
@@ -243,7 +255,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         icon: mode.icon,
         type: 'checkbox' as const,
         checked: options.value.runMode === mode.value,
-        disabled: running.value,
+        disabled: running.value || noPlan.value,
         onSelect: () => runNow({ runMode: mode.value }),
       })),
     ]);
@@ -384,7 +396,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy"
+          :disabled="busy || (noPlan && !attention && !running && !flashRun)"
           @click="onPrimaryClick"
         >
           {{ face.label }}
