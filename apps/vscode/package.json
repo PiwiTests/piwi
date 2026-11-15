@@ -1718,10 +1718,10 @@
               "problems",
               "off"
             ],
-            "markdownDescription": "The lines Piwi writes above the code: the tests behind a locator or a file, a test's evidence, its Flake Lab commands. `problems` keeps a failure's reason and evidence and a file's uncovered changes; `off` shows none. Each test's mark in the gutter or the Testing view stays. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "markdownDescription": "The lines Piwi writes above the code: the tests behind a locator or a file, a failure's reason and Run with Piwi, its Flake Lab commands. `problems` keeps a failure's reason and Run with Piwi and a file's uncovered changes; `off` shows none. Each test's mark in the gutter or the Testing view stays. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
             "enumDescriptions": [
               "Every line Piwi has.",
-              "Only a failure's reason and evidence, and a file's uncovered changes.",
+              "Only a failure's reason and Run with Piwi, and a file's uncovered changes.",
               "None."
             ],
             "order": 0,

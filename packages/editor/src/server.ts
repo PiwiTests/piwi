@@ -3499,7 +3499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       /** The lines each test's call spans in the spec, by its id. */
       const spans: Array<{ id: number; from: number; to: number }> = [];
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
-      /** The reason and the evidence of each failure, above its failing line: first on that line. */
+      /** The reason of each failure and Run with Piwi, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
       const placeOf = recordPlacer(text);
       for (const { call, found, failed, fixed, failure, status: testStatus, own } of specTests(
@@ -3583,8 +3583,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           ),
         });
         out.push(...lab);
+        // The failing line holds the reason and Run with Piwi; the evidence is among the test's actions.
         if (!failed || !failure) continue;
-        const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         // The failure's diagnostic says why it failed: the line above says so only where no diagnostic does.
         const why = failure.diagnosed || !failed.headline ? null : clip(failed.headline, 120);
         const mark = failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)}` : '✗ Failed here';
@@ -3608,22 +3608,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             arguments: [{ uri: params.uri, testIds: [found.id] } satisfies RunTestsArgs],
           },
         });
-        if (failed.screenshot) {
-          reasons.push({
-            problem: true,
-            line: failure.line,
-            title: 'Screenshot',
-            command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
-          });
-        }
-        if (failed.traces.length) {
-          reasons.push({
-            problem: true,
-            line: failure.line,
-            title: 'Trace',
-            command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
-          });
-        }
       }
       const fileLine: SummaryLine | null = cases.length
         ? {
