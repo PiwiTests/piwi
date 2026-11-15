@@ -108,11 +108,31 @@ function quoteSpecs(values: string[]): string[] {
   return quoteAll(values.filter(isSpecFilter));
 }
 
+/**
+ * Whether a retry command in `mode` names this case: by title, when its title can name it in a shell
+ * ({@link isTitleFilter}); by file, when its spec path is a filter Playwright takes and every shell leaves as it is.
+ */
+export function retryCommandNames(c: RetryCase, mode: RetryMode = 'file-line'): boolean {
+  return mode === 'grep' ? isTitleFilter(c.title) : quoteSpecs([specPattern(c.filePath)]).length > 0;
+}
+
 /** What a copy of a retry command says when no case has a file path or title a command can name. */
 export const NO_RETRY_COMMAND = 'No test here has a file path or title a command can name.';
 
 /** What a re-run dispatch answers when no case has a file path its arguments can name. */
 export const NO_RETRY_ARGS = 'None of these tests has a file path a re-run can name.';
+
+/**
+ * A re-run's availability once its cases are known: unavailable, with {@link NO_RETRY_ARGS}, when it would be
+ * available but no case has a file path its arguments can name, so the button never offers a dispatch the POST refuses.
+ */
+export function withRetryCases<T extends { available: boolean; reason: string | null }>(
+  availability: T,
+  cases: RetryCase[],
+): T {
+  if (!availability.available || buildRetryArgs(cases)) return availability;
+  return { ...availability, available: false, reason: NO_RETRY_ARGS };
+}
 
 /** ` --project="<name>"`, or nothing when the name cannot be quoted safely (the tests then run in every project). */
 function projectFlag(project: string): string {
@@ -312,23 +332,29 @@ export function buildRetryArgs(allCases: RetryCase[]): string {
  * when one cannot (see {@link isSpecFilter}) and the titles name them all. When
  * neither names every case, the files it can name run whole; when it names no
  * case at all, or only by titles too long to pass on, it is empty, since it would
- * run every test.
+ * run every test. {@link buildRerunPlan} also names the cases it leaves out.
  */
 export function buildRerunCommand(cases: RetryCase[]): string {
+  return buildRerunPlan(cases).command;
+}
+
+/** The command of {@link buildRerunCommand} and the cases it leaves out, every case when it is empty. */
+export function buildRerunPlan(cases: RetryCase[]): { command: string; leftOut: RetryCase[] } {
   const base = 'npx playwright test';
-  if (cases.length === 0) return base;
+  if (cases.length === 0) return { command: base, leftOut: [] };
   const byFile = cases.filter((c) => quoteSpecs([specPattern(c.filePath)]).length > 0);
   const allByFile = byFile.length === cases.length;
   const allByTitle = cases.every((c) => isTitleFilter(c.title));
   const named = allByFile || allByTitle ? cases : byFile;
+  const leftOut = cases.filter((c) => !named.includes(c));
   const files = allByFile || !allByTitle ? quoteSpecs([...new Set(byFile.map((c) => specPattern(c.filePath)))]) : [];
   const grep = allByTitle ? buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]) : '';
-  if (files.length === 0 && !grep) return '';
+  if (files.length === 0 && !grep) return { command: '', leftOut: cases };
   const projects = projectFlags(caseProjects(named));
   const head = [base, ...files].join(' ');
   const withTitles = `${head}${grep}${projects}`;
-  if (withTitles.length <= MAX_CMD_LENGTH) return withTitles;
-  return files.length > 0 ? `${head}${projects}` : '';
+  if (withTitles.length <= MAX_CMD_LENGTH) return { command: withTitles, leftOut };
+  return files.length > 0 ? { command: `${head}${projects}`, leftOut } : { command: '', leftOut: cases };
 }
 
 /**

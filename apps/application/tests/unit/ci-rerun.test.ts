@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { resolveCiRerunSettings } from '#shared/ci-rerun';
-import { buildRerunCommand, buildRetryArgs } from '#shared/retry-command';
+import { buildRerunCommand, buildRerunPlan, buildRetryArgs, withRetryCases } from '#shared/retry-command';
 
 describe('resolveCiRerunSettings', () => {
   test('defaults to disabled with no targets', () => {
@@ -62,6 +62,20 @@ describe('buildRerunCommand', () => {
       'npx playwright test -g "refunds|pays"',
     );
     expect(buildRerunCommand([{ ...a, filePath: '.' }, b])).toBe('npx playwright test "b.spec.ts"');
+  });
+
+  test('names the cases it leaves out', () => {
+    const titleOnly = { filePath: '.', title: 'refunds', line: 1, projectName: null };
+    const fileOnly = { filePath: 'b.spec.ts', title: '$', line: 2, projectName: null };
+    expect(buildRerunPlan([titleOnly, fileOnly])).toEqual({
+      command: 'npx playwright test "b.spec.ts"',
+      leftOut: [titleOnly],
+    });
+    expect(buildRerunPlan([{ ...titleOnly, title: '' }])).toEqual({
+      command: '',
+      leftOut: [{ ...titleOnly, title: '' }],
+    });
+    expect(buildRerunPlan([fileOnly]).leftOut).toEqual([]);
   });
 
   test('is empty when only titles name the tests and they would make the command too long', () => {
@@ -169,5 +183,24 @@ describe('resolveCiRerunSettings with a CI server', () => {
         ciServer: { preset: 'jenkins', baseUrl: 'https://user:pw@jenkins.example.com/', rerun: { job: 'e2e' } },
       } as never).ciServer?.baseUrl,
     ).toBeUndefined();
+  });
+});
+
+describe('withRetryCases', () => {
+  const ready = { available: true, reason: null, provider: 'github' };
+
+  test('makes a re-run unavailable when no case has a file path it can name', () => {
+    expect(withRetryCases(ready, [{ filePath: '', title: 't', line: 1, projectName: null }])).toEqual({
+      ...ready,
+      available: false,
+      reason: 'None of these tests has a file path a re-run can name.',
+    });
+  });
+
+  test('keeps an available re-run with a case it can name, and an unavailable one as it is', () => {
+    const named = [{ filePath: 'a.spec.ts', title: 't', line: 1, projectName: null }];
+    expect(withRetryCases(ready, named)).toBe(ready);
+    const off = { available: false, reason: 'CI re-run is off', provider: null };
+    expect(withRetryCases(off, [])).toBe(off);
   });
 });
