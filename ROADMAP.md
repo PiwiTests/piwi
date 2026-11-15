@@ -163,6 +163,10 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Exploring
 
+- **The running line of every lane** — the editor marks the line each running test of your own run is at, whether or
+  not you watch its lane, from a small `position` message each worker sends on the run channel. Design record in
+  [proposals/running-line-every-lane.md](proposals/running-line-every-lane.md).
+
 - **Demo examples in the docs** — every feature page links to a concrete example in the live demo (a verified flake
   fix, a stored AI diagnosis, a broken locator with its replacements), from one registry of examples the seed is
   checked against, so a link never opens the wrong test when the demo data changes. The screenshot scenes and the
