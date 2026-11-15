@@ -1595,11 +1595,12 @@ export function coalesced(fn: () => void, schedule: (run: () => void) => void): 
 const TASK_NAME_LENGTH = 80;
 
 /**
- * The name of a test run's task, cut at `TASK_NAME_LENGTH` characters: `playwright test` and its arguments, or, for a
- * command whose arguments the service did not give, the command itself (`commandTaskName`).
+ * The name of a test run's task, cut at `TASK_NAME_LENGTH` characters: the run's name the service gave
+ * (`RunCommand.name`), else `playwright test` and its arguments, or, for a command whose arguments the service did not
+ * give, the command itself (`commandTaskName`).
  */
-export function runTaskName(args: readonly string[], command?: string): string {
-  const name = args.length || !command ? ['playwright test', ...args].join(' ') : commandTaskName(command);
+export function runTaskName(args: readonly string[], command?: string, runName?: string): string {
+  const name = runName ?? (args.length || !command ? ['playwright test', ...args].join(' ') : commandTaskName(command));
   return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
 }
 

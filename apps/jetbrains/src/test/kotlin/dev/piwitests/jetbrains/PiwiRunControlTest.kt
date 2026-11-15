@@ -69,6 +69,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     /** A lane whose trace ask waits here until the test lets it go. */
     private val traceGates = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CountDownLatch>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
+    private val commandsStarted = CopyOnWriteArrayList<CommandStartedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
     private val listed = CopyOnWriteArrayList<StopRequestsParams>()
     private val counted = CopyOnWriteArrayList<LocatorAtCaretParams>()
@@ -174,6 +175,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
             override fun commandEnded(params: CommandEndedParams) {
                 ended += params
+            }
+
+            override fun commandStarted(params: CommandStartedParams) {
+                commandsStarted += params
             }
 
             override fun action(params: StopActionParams): RunControlResult {
@@ -432,8 +437,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-7", file, 4, since))
         val inlay = sessions.shown().inlays.single()
         val renderer = inlay.renderer as StopInlay
-        assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
-        assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
+        // The inlay as VS Code's row: Resume, Step and Finish, then Write code…, which opens the code actions.
+        assertEquals(listOf(Glue.StopControl.RESUME, Glue.StopControl.STEP, Glue.StopControl.FINISH, Glue.WriteCode), renderer.links)
+        assertEquals(Glue.WriteCode, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
+        assertEquals(Glue.StopAction.entries, Glue.stopActions(sessions.stops().single()))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
         assertEquals(listOf("Resume", "Step", "Run to the caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
 
@@ -458,7 +465,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         // At a headless stop, Mock a request alone.
         val headless = taking("ed-7", file, 4, "2026-10-25T10:00:07.500Z")
         hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
-        assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
+        assertEquals(listOf(Glue.StopAction.MOCK), Glue.stopActions(sessions.stops().single()))
+        assertEquals(Glue.WriteCode, (sessions.shown().inlays.single().renderer as StopInlay).links.last())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
     }
 
@@ -892,7 +900,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val shown = sessions.shown()
         val renderer = shown.inlays.single().renderer as StopInlay
         assertEquals("Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
-        assertEquals(listOf(Glue.StopControl.RESUME) + Glue.StopAction.entries, renderer.links)
+        assertEquals(listOf(Glue.StopControl.RESUME, Glue.WriteCode), renderer.links)
         assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
@@ -1045,6 +1053,36 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(sent, controls.size)
     }
 
+    fun testTheRunMenusControlsShowWhileARunIsLiveAndTheEditorsWhileATestIsStopped() {
+        val actions = ActionManager.getInstance()
+        fun shown(id: String, place: String): Boolean {
+            val event = AnActionEvent.createFromDataContext(place, null, SimpleDataContext.getProjectContext(project))
+            actions.getAction(id).update(event)
+            return event.presentation.isVisible
+        }
+        assertFalse(shown("Piwi.RunMenu", ActionPlaces.MAIN_MENU))
+        assertFalse(shown("Piwi.EditorRunControl", ActionPlaces.EDITOR_POPUP))
+        hear(running("ed-1"))
+        assertTrue(shown("Piwi.RunMenu", ActionPlaces.MAIN_MENU))
+        assertFalse(shown("Piwi.EditorRunControl", ActionPlaces.EDITOR_POPUP))
+        val file = file("tests/pages/checkout.page.ts", page)
+        hear(stopped("ed-1", file, 3, bar = true, since = "2026-10-25T10:00:00.000Z"))
+        assertTrue(shown("Piwi.EditorRunControl", ActionPlaces.EDITOR_POPUP))
+    }
+
+    fun testARunTabsControlsActOnItsRunAlone() {
+        val file = file("tests/pages/checkout.page.ts", page)
+        hear(stopped("ed-1", file, 3, bar = true, since = "2026-10-25T10:00:00.000Z"))
+        val resume = registeredWith("Piwi.ResumeRun") { it.add(PiwiRunSessions.RUN, "ed-2") }!!
+        resume.actionPerformed(AnActionEvent.createFromDataContext("PiwiRunTab", null, SimpleDataContext.getProjectContext(project)))
+        Thread.sleep(200)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertTrue(controls.isEmpty())
+        val own = registeredWith("Piwi.ResumeRun") { it.add(PiwiRunSessions.RUN, "ed-1") }!!
+        own.actionPerformed(AnActionEvent.createFromDataContext("PiwiRunTab", null, SimpleDataContext.getProjectContext(project)))
+        assertEquals("resume", waitFor("Resume") { controls.firstOrNull() }.action)
+    }
+
     /** A debug session, suspended or running, standing for the debugger's of another process. */
     private fun debugSession(suspended: Boolean): XDebugSession =
         Proxy.newProxyInstance(XDebugSession::class.java.classLoader, arrayOf(XDebugSession::class.java)) { _, method, _ ->
@@ -1057,7 +1095,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * A run in the IDE's Playwright runner is followed by its configuration: its first run, a Rerun and a Rerun Failed
-     * Tests of it end with Stop and tell the service they ended.
+     * Tests of it tell the service they started, end with Stop and tell the service they ended.
      */
     fun testTheRunnersRunsOfAConfigurationPiwiMadeAreFollowed() {
         assertTrue(PlaywrightRunnerGate.available())
@@ -1083,6 +1121,9 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             waitFor("the end told") { ended.find { it.exitCode == exit } }
         }
         assertEquals(listOf(CommandEndedParams("ed-6", 1), CommandEndedParams("ed-6", 0)), ended.toList())
+        // Each listed as starting as its process started, as a run of the console is.
+        waitFor("the starts told") { commandsStarted.takeIf { it.size == 2 } }
+        assertEquals(listOf("ed-6", "ed-6"), commandsStarted.map { it.ref })
         // Another configuration's run is none of Piwi's.
         val other = PlaywrightRunnerLauncher.configure(project, base.path, listOf("tests/b.spec.ts"), emptyMap())!!
         events.processStarted(executor.id, ExecutionEnvironmentBuilder.createOrNull(executor, other)!!.build(), NopProcessHandler())
@@ -1517,7 +1558,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("terminal-41-1", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("end"))), terminal = true))
             val renderer = sessions.shown().inlays.single().renderer as StopInlay
             assertEquals("Stopped at a breakpoint · Fill \"one\" locator('input') · run in a terminal", renderer.text)
-            assertEquals(Glue.StopControl.END, renderer.links.last())
+            assertTrue("End the test, in the inlay's menu", Glue.canEnd(sessions.stops().single()))
             myFixture.openFileInEditor(spec)
             val actions = ActionManager.getInstance()
             assertFalse("a terminal's run is the terminal's to stop", myFixture.testAction(actions.getAction("Piwi.StopRun")).isEnabled)

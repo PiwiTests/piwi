@@ -217,7 +217,8 @@ data class RunCommandArgs(
  * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
  * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`). `label` says who
- * started it when a person did not (`Started by Claude Code`, an agent's `run_start`).
+ * started it when a person did not (`Started by Claude Code`, an agent's `run_start`). `name` is what the run is called
+ * (`checkout.spec.ts:12`), its Run tab's title and its name wherever it is picked.
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -228,6 +229,7 @@ data class RunCommand(
     val notice: String? = null,
     val pauses: Boolean? = null,
     val label: String? = null,
+    val name: String? = null,
 )
 
 /** `piwi/startRun`: run the command the service built for an agent's `run_start`, as a person's run starts. */
@@ -1051,6 +1053,10 @@ data class RunSession(
     val checkout: RunCheckout? = null,
     /** Who started the run when a person did not (`Started by Claude Code`, an agent's); null for a person's run. */
     val label: String? = null,
+    /** What the run is called, as its command says (`RunCommand.name`); null for a run the service did not build. */
+    val name: String? = null,
+    /** Its command started and the run has not reached the service yet: shown as starting, with Stop. */
+    val starting: Boolean = false,
     val live: RunLive? = null,
     val progress: RunProgress? = null,
     /** The run's page on the instance once its own process names it: its number there and its address. */

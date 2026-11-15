@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/turbo",
-  "version": "0.69.0",
+  "version": "0.70.0",
   "description": "Make a Playwright suite faster without forking Playwright: public levers for your config, experimental version-pinned hooks, and the benchmark to judge them",
   "homepage": "https://piwitests.dev",
   "repository": {

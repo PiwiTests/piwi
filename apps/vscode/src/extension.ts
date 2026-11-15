@@ -417,20 +417,39 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
 
 /**
  * Once per machine, on the first activation in a workspace that holds a Playwright config: the walkthrough, unless
- * `workbench.welcomePage.walkthroughs.openOnInstall` is off. Never in the integration suite's window.
+ * `workbench.welcomePage.walkthroughs.openOnInstall` is off. Never in the integration suite's window. Whether it opened.
  */
-async function openWalkthroughOnce(context: vscode.ExtensionContext): Promise<void> {
-  if (context.globalState.get(WALKTHROUGH_OPENED) || context.extensionMode === vscode.ExtensionMode.Test) return;
-  if (!vscode.workspace.getConfiguration('workbench').get('welcomePage.walkthroughs.openOnInstall', true)) return;
+async function openWalkthroughOnce(context: vscode.ExtensionContext): Promise<boolean> {
+  if (context.globalState.get(WALKTHROUGH_OPENED) || context.extensionMode === vscode.ExtensionMode.Test) return false;
+  if (!vscode.workspace.getConfiguration('workbench').get('welcomePage.walkthroughs.openOnInstall', true)) return false;
   const configs = await vscode.workspace.findFiles(PLAYWRIGHT_CONFIGS, '**/node_modules/**', 1);
-  if (!configs.length) return;
+  if (!configs.length) return false;
   await context.globalState.update(WALKTHROUGH_OPENED, true);
   await vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false);
+  return true;
+}
+
+/**
+ * The first-run queue: one offer per window, the walkthrough first. An offer that does not get the window's turn
+ * keeps its flag unset, so a later window makes it.
+ */
+let firstRun: Promise<boolean> = Promise.resolve(false);
+let firstRunTaken = false;
+
+/** Whether an offer may show in this window now: once the walkthrough is settled, the first offer to ask. */
+async function takeFirstRunTurn(): Promise<boolean> {
+  if (await firstRun) firstRunTaken = true;
+  if (firstRunTaken) return false;
+  firstRunTaken = true;
+  return true;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
-  void openWalkthroughOnce(context);
+  // VS Code 1.101 and later list Piwi's MCP server for the agent: the walkthrough's MCP step says so then.
+  const mcpProvided = !!(vscode as unknown as { lm?: Partial<McpApi> }).lm?.registerMcpServerDefinitionProvider;
+  setContextKey('piwi.mcpProvided', mcpProvided);
+  firstRun = openWalkthroughOnce(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   /** The service as a child process, with the editor's proxy settings in its environment. */
   const service = (): NodeModule => ({
@@ -948,6 +967,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // command with the same ref, which the service follows as a rerun of a run it knows.
   /** The refs of the tasks started from Piwi whose process has not started yet: their start was already sent. */
   const pendingStarts = new Set<string>();
+  /** The tasks VS Code is starting, by ref, which a Stop ends once they started. */
+  const executing = new Map<string, Thenable<vscode.TaskExecution>>();
   /** Run a test command as a task: whether VS Code started it. */
   const runAsTask = async (
     command: RunCommand & { ref: string },
@@ -957,9 +978,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
+      // The run's name (`RunCommand.name`), as its other places say it; a command the service did not register, its line.
       command.label
-        ? `${runTaskName(command.args, command.command)} · ${command.label}`
-        : runTaskName(command.args, command.command),
+        ? `${runTaskName(command.args, command.command, command.name)} · ${command.label}`
+        : runTaskName(command.args, command.command, command.name),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -970,8 +992,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     };
     pendingStarts.add(command.ref);
     void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref: command.ref } satisfies CommandStartedParams);
+    const execution = vscode.tasks.executeTask(task);
+    executing.set(command.ref, execution);
     try {
-      await vscode.tasks.executeTask(task);
+      await execution;
       return true;
     } catch (err) {
       pendingStarts.delete(command.ref);
@@ -983,6 +1007,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         exitCode: null,
       } satisfies CommandEndedParams);
       return false;
+    } finally {
+      if (executing.get(command.ref) === execution) executing.delete(command.ref);
     }
   };
   /** The ref of a test run's task; null for another task. */
@@ -995,6 +1021,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const ref = taskRef(e.execution);
       if (!ref || pendingStarts.delete(ref)) return;
       void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref } satisfies CommandStartedParams);
+    }),
+    // A task that ended before its process started (its terminal closed first) ends its command all the same.
+    vscode.tasks.onDidEndTask((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref || !pendingStarts.delete(ref)) return;
+      explorer?.taskEnded(ref, null);
+      void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, { ref, exitCode: null } satisfies CommandEndedParams);
     }),
     vscode.tasks.onDidEndTaskProcess((e) => {
       const ref = taskRef(e.execution);
@@ -1163,8 +1196,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /** Ends the task of the run `ref` started in this window: whether there was one. */
   const terminateRun = (ref: string): boolean => {
     const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
-    execution?.terminate();
-    return !!execution;
+    if (execution) {
+      execution.terminate();
+      return true;
+    }
+    // A task VS Code is still starting ends as soon as it started.
+    const starting = executing.get(ref);
+    starting?.then(
+      (started) => started.terminate(),
+      () => {},
+    );
+    return !!starting;
   };
 
   /** The CI runs of the branch while they run, read-only. */
@@ -1179,6 +1221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     changed: () => {
       if (status || runs) render();
     },
+    stopsDrawn: () => lensesChanged.fire(),
   });
   context.subscriptions.push(runControl);
   runSessions = () => runControl.sessions();
@@ -1253,6 +1296,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => explorer?.dispose() });
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
+  // The editor whose cursor a command acts on: the active one, else the last one active while a view such as the
+  // walkthrough has the focus.
+  let lastTextEditor = vscode.window.activeTextEditor;
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) lastTextEditor = editor;
+    }),
+  );
+  const cursorEditor = () =>
+    vscode.window.activeTextEditor ??
+    (lastTextEditor && !lastTextEditor.document.isClosed ? lastTextEditor : undefined);
 
   /** Saves the open document at `uri` when it has unsaved changes: a run reads its spec as saved. */
   const saveSpec = async (uri: string) => {
@@ -1280,10 +1334,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * else by its location; with `repeat`, by its location, that many times.
    */
   const runTestAt = async (at: unknown, repeat?: number) => {
-    const editor = vscode.window.activeTextEditor;
+    const editor = cursorEditor();
     const target =
       testLineArg(at) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
-    if (!target) return;
+    if (!target) {
+      void vscode.window.showInformationMessage('Piwi: open a spec and put the cursor in a test, then run it.');
+      return;
+    }
     const found = await lc
       .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri: target.uri, line: target.line, character: 0 })
       .catch(() => null);
@@ -1770,8 +1827,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         async provideCodeLenses(document) {
           const summary = await summaryOf(document);
           if (!summary) return [];
-          // A test's line is drawn in the gutter and its hover, not as a lens above it.
-          return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
+          // A test's line is drawn in the gutter and its hover, not as a lens above it; a stopped line, by its stop's row.
+          const stopped = new Set(runControl.executionPoints(document.uri.toString()));
+          const lines = summary.lines.filter((l) => !l.status && !stopped.has(l.line));
+          return [...(summary.file ? [summary.file] : []), ...lines].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
@@ -2217,11 +2276,17 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }
 
-/** Once per machine: tell where Piwi's MCP server went, or offer its configuration where the editor has no provider API. */
+/**
+ * Once per machine, when the first-run queue gives it the window's turn: tell where Piwi's MCP server went, unless the
+ * walkthrough said it, or offer its configuration where the editor has no provider API.
+ */
 async function offerMcp(context: vscode.ExtensionContext, servers: McpServersResult): Promise<void> {
   if (context.globalState.get(MCP_OFFERED) || !servers.servers.length) return;
-  await context.globalState.update(MCP_OFFERED, true);
   const hasApi = !!(vscode as unknown as { lm?: Partial<McpApi> }).lm?.registerMcpServerDefinitionProvider;
+  // Where the editor lists the server itself, the walkthrough's MCP step said so already.
+  if (hasApi && context.globalState.get(WALKTHROUGH_OPENED)) return void context.globalState.update(MCP_OFFERED, true);
+  if (!(await takeFirstRunTurn())) return;
+  await context.globalState.update(MCP_OFFERED, true);
   if (hasApi) {
     void vscode.window.showInformationMessage(
       `Piwi's MCP server is listed for the editor's agent: it can read your suite's failures, flaky tests and healings. ${
@@ -2382,13 +2447,14 @@ async function useInstance(context: vscode.ExtensionContext, lc: LanguageClient,
 let offeringDesktop = false;
 
 /**
- * Once per workspace: when the desktop app runs while another instance is in use, offer to read
- * the workspace from the app. The other instance stays saved, one Piwi: Connect away.
+ * Once per workspace, when the first-run queue gives it the window's turn: when the desktop app runs while another
+ * instance is in use, offer to read the workspace from the app. The other instance stays saved, one Piwi: Connect away.
  */
 async function offerDesktop(context: vscode.ExtensionContext, lc: LanguageClient, status: StatusResult): Promise<void> {
   if (!status.desktopUrl || offeringDesktop || context.workspaceState.get<boolean>(DESKTOP_OFFERED)) return;
   const current = status.contexts.find((c) => c.connected) ?? status.contexts[0];
   if (!current?.serverUrl || current.source === 'desktop') return;
+  if (offeringDesktop || !(await takeFirstRunTurn())) return;
   offeringDesktop = true;
   try {
     await context.workspaceState.update(DESKTOP_OFFERED, true);
@@ -2458,22 +2524,51 @@ async function signIn(base: string): Promise<string | null> {
     void vscode.window.showInformationMessage('Piwi: this instance predates the browser sign-in; paste an API key.');
     return pasteKey();
   }
-  await vscode.env.openExternal(vscode.Uri.parse(started.verificationUrl));
-  const result = await vscode.window.withProgress(
+  const page = vscode.Uri.parse(started.verificationUrl);
+  await vscode.env.openExternal(page);
+  const cancel = new AbortController();
+  // While the browser decides, a picker holds the code and the link to copy; it closes with the sign-in, and closing it
+  // first cancels the sign-in.
+  const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { act: () => Thenable<unknown> }>();
+  pick.title = `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`;
+  pick.placeholder = 'Waiting for the browser. Escape cancels the sign-in.';
+  pick.busy = true;
+  pick.ignoreFocusOut = true;
+  pick.items = [
     {
-      location: vscode.ProgressLocation.Notification,
-      title: `Piwi: allow the request in your browser. It shows the code ${started.userCode}.`,
-      cancellable: true,
+      label: '$(copy) Copy code',
+      description: started.userCode,
+      act: () => vscode.env.clipboard.writeText(started.userCode),
     },
-    async (_progress, token) => {
-      const cancel = new AbortController();
-      token.onCancellationRequested(() => cancel.abort());
-      return waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
-        if (cancel.signal.aborted) return null;
-        throw e;
-      });
+    {
+      label: '$(link) Copy link',
+      description: started.verificationUrl,
+      act: () => vscode.env.clipboard.writeText(started.verificationUrl),
     },
-  );
+    { label: '$(link-external) Open browser again', act: () => vscode.env.openExternal(page) },
+  ];
+  pick.onDidAccept(() => {
+    const chosen = pick.selectedItems[0];
+    pick.selectedItems = [];
+    if (chosen) void Promise.resolve(chosen.act()).catch(() => undefined);
+  });
+  let ended = false;
+  pick.onDidHide(() => {
+    if (!ended) cancel.abort();
+  });
+  pick.show();
+  let result: Awaited<ReturnType<typeof waitForSignIn>> | null;
+  try {
+    result = await waitForSignIn(base, started, cancel.signal).catch((e: unknown) => {
+      if (cancel.signal.aborted) return null;
+      throw e;
+    });
+  } finally {
+    ended = true;
+    pick.dispose();
+  }
+  // A sign-in closed while its last answer was on the way takes no key.
+  if (cancel.signal.aborted) return null;
   if (!result) return null;
   if (result.status === 'approved' && result.apiKey) return result.apiKey;
   void vscode.window.showInformationMessage(

@@ -531,10 +531,6 @@ object Glue {
     const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
         ".env. Trusting it starts Piwi."
 
-    /** What the first-run notification says Piwi does. */
-    const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
-        "with your local runs laid over them, and records tests at the caret."
-
     /**
      * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
      * Piwi reads Playwright Test suites in JavaScript and TypeScript.
@@ -556,14 +552,31 @@ object Glue {
     const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
-     * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a
-     * Playwright config, while no context of `status` is connected and none of `instances` names an instance (the
-     * project's settings, `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app while it
-     * runs). `status` is null until the service starts, with the first file opened.
+     * Whether the Get Started tab opens on its own: not `shown` on this installation yet, in a `trusted` project holding
+     * a Playwright config, connected or not.
      */
-    fun showsFirstRun(shown: Boolean, trusted: Boolean, configDirs: List<Path>, status: StatusResult?, instances: List<String?>): Boolean =
-        !shown && trusted && configDirs.isNotEmpty() &&
-            status?.contexts.orEmpty().none { it.connected } && instances.all { it.isNullOrBlank() }
+    fun showsGetStarted(shown: Boolean, trusted: Boolean, configDirs: List<Path>): Boolean =
+        !shown && trusted && configDirs.isNotEmpty()
+
+    /** What a Get Started button says when its action cannot run here now, such as one on the code at the caret. */
+    fun notNowText(label: String): String = "$label needs a test file open at a test, or something to act on: not now."
+
+    /** A step of the onboarding script as the HTML the Get Started tab shows: its text, its `code` spans as code. */
+    fun onboardingHtml(text: String): String = escapeHtml(text).replace(Regex("`([^`]+)`"), "<code>$1</code>")
+
+    /**
+     * The first-run queue of this IDE session: one offer at a time, the Get Started tab first. An offer that does not
+     * get the turn keeps its flag unset, so a later session makes it.
+     */
+    class FirstRunQueue {
+        private val taken = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** Whether an offer may show now: the first to ask, alone. */
+        fun take(): Boolean = taken.compareAndSet(false, true)
+    }
+
+    /** The IDE's first-run queue, which every project shares. */
+    val FIRST_RUN = FirstRunQueue()
 
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
@@ -1238,6 +1251,7 @@ object Glue {
         RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
         COMPARE("Compare with…", "Piwi.CompareWith"),
+        RECORD_NEW_FILE("Record a new test file…", "Piwi.RecordNewFile"),
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
@@ -1247,10 +1261,10 @@ object Glue {
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
      * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
      * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
-     * with Connect…; else no failure in the run read (`runId`).
+     * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
         "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
         "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
         "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
@@ -1274,6 +1288,58 @@ object Glue {
     fun testConnectionText(url: String, needsKey: Boolean): String =
         if (needsKey) "$url answers. It asks for an API key: Connect… signs in or takes one."
         else "$url answers, and lists its projects without a key."
+
+    /** The desktop app's project list's first choice: the project linked there to this folder, by name when one is. */
+    fun linkedProjectLabel(linked: String?): String =
+        linked?.let { "$it, linked to this folder" } ?: "The one linked to this folder in the desktop app, none yet"
+
+    /** Whether the desktop app runs, the project it links to this folder, and whether it has a project at all. */
+    fun desktopStateText(url: String?, linked: String?, projects: Int): String = when {
+        url == null -> "Not running on this machine: the instance below is read until it runs."
+        linked != null -> "Running at $url; this folder is linked there to $linked."
+        projects == 0 -> "Running at $url, with no project yet: import or send a run to it, then link this folder there."
+        else -> "Running at $url: no address or key needed."
+    }
+
+    /** What Apply does to the key of an address: `keep`, `set` a new one, or `remove` it. */
+    fun keyChangeKind(change: Any): String = when (change) {
+        is PiwiProjectService.KeyChange.Set -> "set"
+        PiwiProjectService.KeyChange.Remove -> "remove"
+        else -> "keep"
+    }
+
+    /** The key row of the Connect panel: a key saved for `url` in the password safe, one to save or to remove on Apply. */
+    fun keyStateText(url: String, saved: Boolean, change: String): String = when (change) {
+        "set" -> "A new key for $url, saved on Apply"
+        "remove" -> "Removed on Apply"
+        else -> if (saved) "Saved for $url in the IDE's password safe" else "None saved for $url"
+    }
+
+    /** How many projects the instance lists, or that it lists none yet. */
+    fun projectsStateText(url: String, count: Int): String =
+        if (count == 0) "$url has no project yet: send a run with the Piwi reporter, then Refresh." else "$url lists $count ${if (count == 1) "project" else "projects"}."
+
+    /** What a settings page button that reads the saved settings says while the page holds changes not applied. */
+    const val APPLY_FIRST = "Apply the page's changes first: this reads the saved settings."
+
+    /** The sign-in's words in the Connect panel. */
+    const val SIGN_IN_WAITING = "Allow the request in your browser, which shows this code. No browser opened? Copy the link."
+    const val SIGN_IN_CANCELLED = "Sign-in cancelled."
+    const val SIGN_IN_TOO_OLD = "This instance predates the browser sign-in: paste an API key instead."
+    const val SIGN_IN_PENDING = "A sign-in waits in the browser: allow it, or cancel it, then connect."
+
+    /** What the browser answered the sign-in: a key, saved on Apply; a denial; or the request expired. */
+    fun signInAnswerText(url: String, status: String, hasKey: Boolean): String = when {
+        status == "approved" && hasKey -> "Signed in: a new key for $url, saved on Apply."
+        status == "approved" -> "$url allowed the request but sent no key."
+        status == "denied" -> "The request was denied in the browser."
+        else -> "The request expired: sign in again."
+    }
+
+    /** What Connect says once the desktop app is chosen: its project, or the one linked to this folder there. */
+    fun desktopConnectedText(project: String): String =
+        if (project.isBlank()) "Reading the desktop app while it runs, on the project linked there to this folder."
+        else "Reading the desktop app while it runs, project $project."
 
     /** What Test connection says of an address it could not use, in Connect's words. */
     fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
@@ -1355,40 +1421,6 @@ object Glue {
             if (desktop) add("the choice of the desktop app")
         }
         return if (parts.isEmpty()) null else "Forget ${parts.joinToString(", and ")}?"
-    }
-
-    enum class ConnectTarget { DESKTOP, INSTANCE, OTHER }
-
-    /** A connection Connect offers when the desktop app runs. */
-    data class ConnectChoice(val target: ConnectTarget, val label: String, val detail: String, val serverUrl: String?, val inUse: Boolean)
-
-    /**
-     * What Connect offers when the desktop app runs: the app, the instance the environment, the
-     * `.env` or the settings name (the app does not replace it: either is one choice away), and
-     * another instance.
-     */
-    fun connectChoices(status: StatusResult?, desktop: DesktopResult, savedUrl: String): List<ConnectChoice> {
-        val contexts = status?.contexts.orEmpty()
-        val context = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull()
-        val usesDesktop = context?.source == "desktop"
-        val choices = mutableListOf(
-            ConnectChoice(
-                ConnectTarget.DESKTOP,
-                "The Piwi desktop app, at ${desktop.url}",
-                desktop.linked?.let { "Runs on this machine; this folder is linked there to the project ${it.name}." }
-                    ?: "Runs on this machine: no address or key needed.",
-                null,
-                usesDesktop,
-            ),
-        )
-        val named = context?.instance?.serverUrl?.let { it to context.instance.source }
-            ?: normalizeServerUrl(savedUrl)?.let { it to "editor" }
-        if (named != null && named.first != desktop.url) {
-            val (url, source) = named
-            choices += ConnectChoice(ConnectTarget.INSTANCE, url, "From ${sourceLabel(source)}.", url, !usesDesktop && context?.serverUrl == url)
-        }
-        choices += ConnectChoice(ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false)
-        return choices
     }
 
     /** The desktop app's discovery file: its address, its token, and the folders linked to its projects. */
@@ -2471,7 +2503,7 @@ object Glue {
         val live = sessions.values.filter { !it.ended && !it.workers.isNullOrEmpty() }
         val lines = live.flatMap { session ->
             session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
-                val run = if (live.size > 1) "${runLabel(session)} · " else ""
+                val run = if (live.size > 1) "${runLabel(session, live)} · " else ""
                 // A title's own line breaks as spaces: one line per worker.
                 val test = w.test?.title?.joinToString(" › ")?.replace(Regex("\\s+"), " ")
                 val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
@@ -2493,8 +2525,10 @@ object Glue {
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
      * their order; `pausable` keeps those a Pause can stop now (Pause and Watch).
      */
-    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> =
-        sessions.values.flatMap { session ->
+    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> {
+        // The run is named beside its worker only while workers of several runs can be watched.
+        val runs = sessions.values.filter { s -> s.workers.orEmpty().any { it.watchable } }
+        return sessions.values.flatMap { session ->
             session.workers.orEmpty()
                 .filter { it.watchable && (!pausable || (it.state != "stopped" && !it.pausing && it.test?.cannotPause == null)) }
                 .map { w ->
@@ -2504,9 +2538,11 @@ object Glue {
                         w.state == "stopped" -> "stopped in $title"
                         else -> "running $title"
                     }
-                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $doing")
+                    val run = if (runs.size > 1) "${runTitle(session, runs)} · " else ""
+                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $run$doing")
                 }
         }
+    }
 
     /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
     private fun listed(names: List<String>): String =
@@ -2532,7 +2568,7 @@ object Glue {
      */
     fun runsPresenceText(sessions: Map<String, RunSession>): String? {
         val lines = sessions.values.mapNotNull { session ->
-            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session)}: $it" else it }
+            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session, sessions.values)}: $it" else it }
         }
         return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
@@ -2631,7 +2667,13 @@ object Glue {
     fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
         val shared = sharedRunsOf(sessions).filter { it.live.shared }
         val entries = shared.flatMap { run ->
-            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it).replaceFirstChar { c -> c.lowercaseChar() } } else null
+            // "Run #78" reads "run #78" inside a sentence; what a run runs keeps its own case.
+            val among = shared.mapNotNull { sessions[it.ref] }
+            val name = if (shared.size > 1) {
+                sessions[run.ref]?.let { runLabel(it, among) }?.let { if (it.startsWith("Run ")) "r${it.drop(1)}" else it }
+            } else {
+                null
+            }
             listOfNotNull(
                 run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the page of $n" } ?: "Open the run page", run.ref, it) },
                 run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the link of $n" } ?: "Copy the run page's link", run.ref, it) },
@@ -2714,11 +2756,34 @@ object Glue {
     fun holdableRuns(sessions: Map<String, RunSession>): List<RunSession> =
         sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
 
-    /** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
-    fun runLabel(session: RunSession): String {
+    /**
+     * A run named apart from the others in a list (`among`): its page when it has one, else what it runs
+     * (`RunSession.name`), else its folder's name, else its ref; its ref after it while another of the list reads the
+     * same, as VS Code's `runLabel`.
+     */
+    fun runLabel(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainLabel, session, among)
+
+    /**
+     * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as
+     * VS Code's `runTitle`; else [runLabel]. Its ref after it while another of `among` reads the same.
+     */
+    fun runTitle(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainTitle, session, among)
+
+    private fun plainLabel(session: RunSession): String {
         session.page?.let { return "Run #${it.id}" }
+        session.name?.let { return it }
         val folder = session.root?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
         return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
+    }
+
+    private fun plainTitle(session: RunSession): String {
+        val name = session.name
+        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+    }
+
+    private fun apart(name: (RunSession) -> String, session: RunSession, among: Collection<RunSession>): String {
+        val text = name(session)
+        return if (among.any { it.ref != session.ref && name(it) == text }) "$text (${session.ref})" else text
     }
 
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
@@ -2887,6 +2952,20 @@ object Glue {
     fun stopControls(stop: ShownStop): List<StopControl> =
         if (isFailure(stop.stop)) listOf(StopControl.RESUME)
         else StopControl.entries.filter { it != StopControl.END || canEnd(stop) }
+
+    /** The inlay's link that opens a stop's code actions, as VS Code's row says it. */
+    object WriteCode : StopLink {
+        override val label: String = EditorWords.words("stop.write-code")
+    }
+
+    /**
+     * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
+     * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     */
+    fun stopInlayLinks(stop: ShownStop): List<StopLink> =
+        stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
+            (if (stopActions(stop).isNotEmpty()) listOf(WriteCode) else emptyList())
 
     /** Whether a stop can end its test (End the test, `end`): its reporter takes it, and it is no failure. */
     fun canEnd(stop: ShownStop): Boolean = !isFailure(stop.stop) && "end" in stop.takes

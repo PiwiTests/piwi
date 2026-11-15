@@ -30,20 +30,23 @@ within four folders of the project's (in Rider, the solution's) or of its Git ro
 on **Tools → Piwi → Read the instance and the configs again**. It reads the connection the reporter already uses;
 otherwise, **Settings → Tools → Piwi** signs you in with the browser: [Editor connection](./editor-connection).
 
+The first trusted project with a Playwright config opens a **Get started** tab in the Piwi tool window, once per
+installation: the steps of VS Code's walkthrough, each with its button and a check mark once done. **Help → Get
+started** opens it again.
+
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 
-**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then the instance saved for the project,
-then the desktop app. When the environment or the workspace `.env` names another instance, the page says so above the
-fields, and an empty **Server URL** shows its address. **Test connection** beside the URL says whether the address typed
-there answers and asks for a key, before you apply it. While the service cannot start, the page and the **Piwi** tool
+**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then where the project reads from: the
+desktop app, with its projects, or an instance, with its address and **Test connection**, its key with **Sign in…**,
+**Paste key…** and **Remove**, and the project, picked from the instance's list. **Connect…**, under **Tools → Piwi**
+and in the tool window's gear menu, is the same panel as one dialog. Nothing is saved before **Apply** or **Connect**, but **Disconnect**, which asks first.
+When the environment or the workspace `.env` names another instance, the page says so, and an empty **Server URL**
+shows its address. While the service cannot start, the page and the **Piwi** tool
 window offer **Node.js settings…**, and the service starts again once you close the settings.
 
 When the service stops, the **Piwi** tool window says so and offers **Restart the editor service** and **Open the log**, as
 does a balloon that says it is not running; both are also under **Tools → Piwi** and in the tool window's gear. The
 **Log** tab holds the service's starts and stops, why it could not start, its errors and the requests that failed.
-
-The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
-installation, with **Connect…**, **Open the failures** and **Learn more**.
 
 Piwi reads Playwright Test suites in JavaScript and TypeScript. A Rider solution whose Playwright tests are written in
 C# (a `.csproj` referencing `Microsoft.Playwright`) and that holds no Playwright config gets no tool window or status
@@ -94,16 +97,9 @@ line** on the debugger's Show Execution Point key:
   Piwi** also offer **Pick a locator**, **Record**, **Assert**, **Assert a region** and **Mock a request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
   says how many elements its locator matches on the stopped page, and a failure held there reads `Held at its failure · …`.
-- **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
-  off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
-  tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate
-  and Rider; where it lacks one, the option is off and says why.
-- **The severity of a failure**: **Settings → Tools → Piwi → In the editor** chooses it
-  ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
-  weak warning.
-- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → Agents (MCP)** chooses whether the copied
-  configuration holds the IDE's key or has the agent sign in through the browser
-  ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
+- **The settings**: **Settings → Tools → Piwi** holds the options in the groups of
+  [Editor settings](/reference/editor-settings), the IDE's Playwright runner among them, each group linking its
+  section there.
 - **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the runs' MCP server configuration for
   agents** gives an agent that starts commands (the AI Assistant among them) the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;

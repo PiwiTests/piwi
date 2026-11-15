@@ -435,6 +435,12 @@ export interface RunCommand {
    * the client says as the run starts (VS Code in its task's name too). Absent for a person's run.
    */
   label?: string;
+  /**
+   * What the run is called (`checkout.spec.ts:12`, `checkout.spec.ts and 2 more`, a title, `every test`), the same in
+   * its terminal or Run tab and wherever a client names it (`RunSession.name`); absent from a run the service did not
+   * register on the run channel.
+   */
+  name?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -2084,6 +2090,13 @@ export interface RunSession {
    * otherwise.
    */
   checkout?: { commit: string };
+  /** What the run is called, as its command says (`RunCommand.name`); absent for a run the service did not build. */
+  name?: string;
+  /**
+   * The run's command started and the run has not reached the service yet: a web server or a global setup may run
+   * first. The clients show it as starting, with Stop. Absent once its own process or a worker connects.
+   */
+  starting?: boolean;
   /**
    * Who started the run when a person did not (`Started by Claude Code`, an agent's `run_start`), as its command's
    * `RunCommand.label` says: the clients name it beside the run, never as the person's own. Absent for a person's run.

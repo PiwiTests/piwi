@@ -1,6 +1,6 @@
 // Bundle the extension into dist/extension.cjs and ship the editor service beside it, so nothing is installed in the
 // user's project: the language server, and the recorder's launcher and files it finds next to itself.
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { build } from 'esbuild';
@@ -47,3 +47,11 @@ if (missing.length) {
 }
 mkdirSync('dist', { recursive: true });
 for (const name of SERVICE) copyFileSync(join(from, name), join('dist', name));
+
+// The walkthrough's images: the docs screenshots the onboarding script names for VS Code.
+const onboarding = JSON.parse(readFileSync('../../packages/editor/src/onboarding.json', 'utf8'));
+mkdirSync('dist/walkthrough', { recursive: true });
+for (const step of onboarding.steps) {
+  const image = step.image?.vscode;
+  if (image) copyFileSync(join('../docs/public/screenshots', image), join('dist/walkthrough', image));
+}

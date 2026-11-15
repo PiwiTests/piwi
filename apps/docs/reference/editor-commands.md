@@ -24,7 +24,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Open the log** | The editor service's log: its starts and ends, its errors and the requests that failed |
 | **Piwi: Open the Piwi menu** | VS Code: the status bar item's menu, which a JetBrains IDE opens with a click on its item: [The editor's status bar](/features/editor-status-bar) |
 | **Piwi: Node.js settings…** | JetBrains: choose the Node.js the editor service starts with |
-| **Piwi: Get started** | VS Code: open the walkthrough |
+| **Piwi: Get started** | Open the first steps: VS Code's walkthrough, or the Get started tab of the Piwi tool window in a JetBrains IDE |
 | **Piwi: Open the documentation** | Open this site in the browser: [Editor extensions](/features/editors) from VS Code, [JetBrains plugin](/features/jetbrains) from a JetBrains IDE |
 
 ## Runs
@@ -83,6 +83,19 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | **Piwi: Share the stopped test's browser with Playwright tools** | [Share with Playwright tools](/features/editor-run-control#share-with-playwright-tools) |
 | **Piwi: Open the page of a run of this window** | The page of a run this window started or follows, on the instance or the desktop app |
 | **Piwi: Open the branch's run in progress** | VS Code: open the run of the branch the instance is receiving: [Follow a run](/features/watch-a-run) |
+
+### Where the run controls are
+
+- **In VS Code**: the Piwi item's menu while they apply, after **Go to the stopped line**; the command palette; the
+  editor title, Pause or Resume, Step, Finish and Stop (on a run this window started) in the debug toolbar's order, the
+  others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries.
+- **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
+  Run tab, acting on that run; the status bar item's menu; and, while a test is stopped, first in the editor's context
+  menu.
+
+A run is named after what it runs (`checkout.spec.ts:12`, `a.spec.ts and 2 more`, the title it greps, `×3` after a
+Verify ×3, a Flake Lab line's command), in its terminal or Run tab and wherever you pick it, where it also has its
+number on the instance once it has one (`Run #78 · checkout.spec.ts:12`). Two runs of one name show their refs.
 
 ## Code at a stop
 

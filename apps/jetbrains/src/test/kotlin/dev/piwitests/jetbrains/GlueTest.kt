@@ -75,21 +75,75 @@ class GlueTest {
     }
 
     @Test
-    fun `the first-run notification shows once, in a trusted project with a Playwright config that nothing connects`() {
-        val dirs = listOf(Path.of("/w/e2e"))
-        assertEquals(true, Glue.showsFirstRun(shown = false, trusted = true, configDirs = dirs, status = null, instances = listOf(null, "")))
-        assertEquals("once per installation", false, Glue.showsFirstRun(true, true, dirs, null, emptyList()))
-        assertEquals("never in an untrusted project", false, Glue.showsFirstRun(false, false, dirs, null, emptyList()))
-        assertEquals("not without a config", false, Glue.showsFirstRun(false, true, emptyList(), null, emptyList()))
-        assertEquals("not once connected", false, Glue.showsFirstRun(false, true, dirs, connected, emptyList()))
-        val unconnected = StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen.")))
-        assertEquals(true, Glue.showsFirstRun(false, true, dirs, unconnected, emptyList()))
-        assertEquals(
-            "not while the project names an instance, before the service answers",
-            false,
-            Glue.showsFirstRun(false, true, dirs, null, listOf(null, "https://piwi.example.com")),
-        )
+    fun `a run is named by what it runs, with its number once it has one, as VS Code names it`() {
+        val named = RunSession(ref = "ed-1", root = "/w/shop", name = "checkout.spec.ts:12")
+        assertEquals("checkout.spec.ts:12", Glue.runLabel(named))
+        assertEquals("checkout.spec.ts:12", Glue.runTitle(named))
+        val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
+        assertEquals("Run #78", Glue.runLabel(numbered))
+        assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
+        // Two runs of one name in one list are told apart by their refs.
+        val again = named.copy(ref = "ed-2")
+        assertEquals("checkout.spec.ts:12 (ed-2)", Glue.runTitle(again, listOf(named, again)))
+        assertEquals("checkout.spec.ts:12 (ed-1)", Glue.runLabel(named, listOf(named, again)))
+        assertEquals("checkout.spec.ts:12", Glue.runLabel(named, listOf(named, numbered.copy(ref = "ed-3"))))
     }
+
+    @Test
+    fun `the Connect panel says where the project reads from, the key Apply saves, and what the browser answered`() {
+        assertEquals("Mugs, linked to this folder", Glue.linkedProjectLabel("Mugs"))
+        assertEquals("The one linked to this folder in the desktop app, none yet", Glue.linkedProjectLabel(null))
+        assertEquals("Not running on this machine: the instance below is read until it runs.", Glue.desktopStateText(null, null, 0))
+        assertEquals("Running at http://127.0.0.1:3000; this folder is linked there to Mugs.", Glue.desktopStateText("http://127.0.0.1:3000", "Mugs", 1))
+        assertTrue(Glue.desktopStateText("http://127.0.0.1:3000", null, 0).contains("no project yet"))
+        assertEquals("keep", Glue.keyChangeKind(PiwiProjectService.KeyChange.Keep))
+        assertEquals("set", Glue.keyChangeKind(PiwiProjectService.KeyChange.Set("pd_1")))
+        assertEquals("remove", Glue.keyChangeKind(PiwiProjectService.KeyChange.Remove))
+        assertEquals("Saved for https://p in the IDE's password safe", Glue.keyStateText("https://p", saved = true, change = "keep"))
+        assertEquals("None saved for https://p", Glue.keyStateText("https://p", saved = false, change = "keep"))
+        assertEquals("A new key for https://p, saved on Apply", Glue.keyStateText("https://p", saved = true, change = "set"))
+        assertEquals("Removed on Apply", Glue.keyStateText("https://p", saved = true, change = "remove"))
+        assertEquals("https://p lists 1 project.", Glue.projectsStateText("https://p", 1))
+        assertTrue(Glue.projectsStateText("https://p", 0).startsWith("https://p has no project yet"))
+        assertEquals("Signed in: a new key for https://p, saved on Apply.", Glue.signInAnswerText("https://p", "approved", hasKey = true))
+        assertEquals("The request was denied in the browser.", Glue.signInAnswerText("https://p", "denied", hasKey = false))
+        assertEquals("The request expired: sign in again.", Glue.signInAnswerText("https://p", "expired", hasKey = false))
+        assertEquals("Reading the desktop app while it runs, project Mugs.", Glue.desktopConnectedText("Mugs"))
+    }
+
+    @Test
+    fun `the Get Started tab opens once, in a trusted project with a Playwright config, connected or not`() {
+        val dirs = listOf(Path.of("/w/e2e"))
+        assertEquals(true, Glue.showsGetStarted(shown = false, trusted = true, configDirs = dirs))
+        assertEquals("once per installation", false, Glue.showsGetStarted(true, true, dirs))
+        assertEquals("never in an untrusted project", false, Glue.showsGetStarted(false, false, dirs))
+        assertEquals("not without a config", false, Glue.showsGetStarted(false, true, emptyList()))
+        // One offer per session: the first to ask.
+        val queue = Glue.FirstRunQueue()
+        assertEquals(listOf(true, false, false), listOf(queue.take(), queue.take(), queue.take()))
+    }
+
+    @Test
+    fun `the Get Started tab plays the editor service's onboarding script, in this editor's words`() {
+        val file = java.io.File("../../packages/editor/src/onboarding.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val script = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        assertEquals(script["title"].asString to script["description"].asString, OnboardingSteps.TITLE to OnboardingSteps.DESCRIPTION)
+        val words = { text: String -> text.replace("{cursor}", "caret").replace("{window}", "project") }
+        val steps = script["steps"].asJsonArray.map { it.asJsonObject }
+        assertEquals(
+            steps.map { step ->
+                val text = step["text"].let { if (it.isJsonPrimitive) it.asString else it.asJsonObject["jetbrains"].asString }
+                listOf(step["id"].asString, step["title"].asString, words(text), words(step["action"].asString).removeSuffix("…"))
+                    .plus(step["image"]?.asJsonObject?.get("jetbrains")?.asString)
+            },
+            OnboardingSteps.STEPS.map { listOf(it.id, it.title, it.text, it.label.removeSuffix("…"), it.image) },
+        )
+        // A step's text as HTML: its own markup escaped, its code spans as code.
+        assertEquals("Press <code>Ctrl+K</code> &lt;b&gt;", Glue.onboardingHtml("Press `Ctrl+K` <b>"))
+    }
+
 
     @Test
     fun `the status bar tooltip shows the instance's and the project's text as text, a line per line`() {
@@ -895,6 +949,12 @@ class GlueTest {
                 "Stop sharing this project's runs",
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
+        )
+        // What a run runs keeps its own case inside the sentence.
+        val greps = other.copy(name = "Pays by card")
+        assertEquals(
+            "Stop sharing Pays by card",
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to greps), windowShared = false).last().label,
         )
         assertEquals(
             listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs")),
@@ -2173,10 +2233,20 @@ class GlueTest {
         val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
         assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
         assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
-        assertEquals(Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT)), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(
-            Glue.EmptyText("Piwi is not connected to an instance, so it has no run to show.", listOf(Glue.EmptyLink.CONNECT)),
-            Glue.failuresEmpty(FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show."), null, null),
+            Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE)),
+            Glue.failuresEmpty(FailuresView("disconnected"), null, null),
+        )
+        assertEquals(
+            Glue.EmptyText(
+                "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
+                listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE),
+            ),
+            Glue.failuresEmpty(
+                FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show. Recording works without one."),
+                null,
+                null,
+            ),
         )
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
@@ -2380,34 +2450,6 @@ class GlueTest {
         listOf(connected.contexts!!.single().copy(instance = NamedInstance("http://piwi", "dotenv"))),
         desktopUrl = "http://127.0.0.1:3000",
     )
-
-    @Test
-    fun `Connect offers the desktop app, the instance the project names, and another one`() {
-        assertEquals(
-            listOf(
-                Glue.ConnectChoice(
-                    Glue.ConnectTarget.DESKTOP,
-                    "The Piwi desktop app, at http://127.0.0.1:3000",
-                    "Runs on this machine; this folder is linked there to the project Shop.",
-                    null,
-                    false,
-                ),
-                Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "http://piwi", "From the workspace .env.", "http://piwi", true),
-                Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
-            ),
-            Glue.connectChoices(team, desktop, ""),
-        )
-        // With the app in use, the instance is still one choice away; saved only in the settings, it comes from there.
-        val onDesktop = StatusResult(
-            listOf(team.contexts!!.single().copy(serverUrl = "http://127.0.0.1:3000", source = "desktop", instance = null)),
-            desktopUrl = "http://127.0.0.1:3000",
-        )
-        val choices = Glue.connectChoices(onDesktop, desktop, "https://piwi.corp/")
-        assertEquals(listOf(true, false, false), choices.map { it.inUse })
-        assertEquals("https://piwi.corp" to "From Settings → Tools → Piwi.", choices[1].serverUrl to choices[1].detail)
-        // Before the service starts: the app and the instance saved here.
-        assertEquals(3, Glue.connectChoices(null, desktop, "https://piwi.corp").size)
-    }
 
     @Test
     fun `the status says when the desktop app runs unused, or was chosen and does not run`() {

@@ -327,6 +327,11 @@
                 <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Open the documentation"
                         icon="AllIcons.Actions.Help"
                         description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
+                <action id="Piwi.GetStarted" class="dev.piwitests.jetbrains.PiwiGetStarted$Open" text="Get started"
+                        icon="AllIcons.General.ShowInfos"
+                        description="The first steps with Piwi, in a tab of the Piwi tool window: connect, run, stop at a breakpoint, record, pair Piwi Picker, give your agent the MCP server">
+                    <add-to-group group-id="HelpMenu" anchor="last"/>
+                </action>
             </group>
         </group>
         <!-- The status popup's own rows, registered so their keys show and Find Action reaches them. -->
@@ -369,6 +374,25 @@
             <action id="Piwi.Failure.FindBreakingCommit" class="dev.piwitests.jetbrains.FindBreakingCommitAction"
                     text="Find the breaking commit in the desktop app"
                     description="Find the commit that broke the selected CI failure's test, in the desktop app"/>
+        </group>
+        <!--
+          While a run is live, its controls where the debugger keeps its own: a stop's first in the editor's context
+          menu, as VS Code's, and the run's in the Run menu.
+        -->
+        <group id="Piwi.EditorRunControl" class="dev.piwitests.jetbrains.PiwiLiveRunGroup">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <reference ref="Piwi.ResumeRun"/>
+            <reference ref="Piwi.StepRun"/>
+            <reference ref="Piwi.RunToCaret"/>
+            <reference ref="Piwi.FinishRun"/>
+            <reference ref="Piwi.EndTest"/>
+            <reference ref="Piwi.ShowStop"/>
+            <separator/>
+        </group>
+        <group id="Piwi.RunMenu" class="dev.piwitests.jetbrains.PiwiLiveRunGroup">
+            <add-to-group group-id="RunMenu" anchor="last"/>
+            <separator/>
+            <reference ref="Piwi.RunControl"/>
         </group>
         <!--
           Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS

@@ -46,6 +46,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
   level); `GlueTest` holds the copy, the scopes and the defaults to the file.
+- **The Get Started tab plays the editor service's onboarding script** (`packages/editor/src/onboarding.json`),
+  restated in `OnboardingSteps`, its screenshots bundled by `processResources`; `GlueTest` holds the copy to the file.
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
@@ -124,8 +126,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking`) and `GlueTest`.
 - **An `mcp-remote` entry runs one exact release over HTTP alone** (`Glue.MCP_REMOTE`, `--transport http-only`), for
   the instance's servers and the runs' alike. Checked by `GlueTest`.
-- **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
-  (`Glue.loopbackAlternatives`) and saves the one that answered. ([Connect](ARCHITECTURE.md#connect))
+- **An instance on this machine is never reached through the IDE's proxy.** Test connection tries every loopback
+  address (`Glue.loopbackAlternatives`) and keeps the one that answered. ([Connect](ARCHITECTURE.md#connect))
+- **The Connect panel saves nothing before Apply or Connect, a key change only for the address it was made for, and asks
+  the instance and the desktop app off the event thread**, its sign-in included (`PiwiConnectPanel`); `PiwiPluginTest`
+  checks what Apply saves and that an edit of the address drops a key change.
 
 ### Features
 
@@ -246,7 +251,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiRunLineMarker.kt`: Piwi's entries in the IDE run icon's menu, and the Gutter Icons switch of the result icon.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
-- `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
+- `PiwiConnect.kt`, `PiwiConnectPanel.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect, its panel and the
+  settings pages.
 - `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
@@ -265,7 +271,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   [Status bar](ARCHITECTURE.md#status-bar): before changing what one of them shows.
 - [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, the
   run control (stops, their actions and shortcuts, the paused page) and the code from a stop.
-- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the first-run notification.
+- [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the Get started tab.
 - [Recording](ARCHITECTURE.md#recording): starting a recording, writing the block, warnings, undo.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),
   [Connect](ARCHITECTURE.md#connect), [Settings and secrets](ARCHITECTURE.md#settings-and-secrets),

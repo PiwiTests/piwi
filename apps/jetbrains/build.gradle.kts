@@ -28,6 +28,12 @@ val serverFiles = listOf(
     "record-ide-messages.json",
 ).map { editorDist.file(it) }
 
+// The docs screenshots the onboarding script names for this editor (`"jetbrains": "<name>.png"`).
+val onboardingImages = Regex("\"jetbrains\":\\s*\"([\\w.-]+\\.png)\"")
+    .findAll(file("../../packages/editor/src/onboarding.json").readText())
+    .map { it.groupValues[1] }
+    .toList()
+
 repositories {
     mavenCentral()
     intellijPlatform {
@@ -123,10 +129,23 @@ tasks {
             into(pluginName.map { "$it/server" })
         }
     }
+    // The docs screenshots the Get Started tab shows, as the onboarding script names them.
+    processResources {
+        // An empty include would take every screenshot.
+        if (onboardingImages.isNotEmpty()) {
+            from("../docs/public/screenshots") {
+                include(onboardingImages)
+                into("onboarding")
+            }
+        }
+    }
     test {
         systemProperty("piwi.editor.server", languageServer.asFile.absolutePath)
         // Files of the editor service the tests read: a change to one runs them again, past the build cache.
         inputs.file("../../packages/editor/src/connect-failures.json").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file("../../packages/editor/src/onboarding.json").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file("../../packages/editor/src/settings.json").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file("../../packages/editor/src/words.json").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file("../../packages/editor/src/protocol.ts").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file(languageServer).optional().withPathSensitivity(PathSensitivity.RELATIVE)
     }

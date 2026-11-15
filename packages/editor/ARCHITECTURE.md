@@ -131,6 +131,10 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/settings.ts`, `src/settings.json`: the editors' settings registry: each option's VS Code key and JetBrains
   field, its group and order, its scope (a team's or a person's), type, default and choice labels, the editor's own
   word where the two differ; VS Code's manifest and the JetBrains settings page are held to it.
+- `src/onboarding.ts`, `src/onboarding.json`: the onboarding script, the first steps with Piwi written once: each
+  step's title, its text in each editor's words, its button as an action of the catalog and the docs screenshot it
+  shows; VS Code's walkthrough plays it and the JetBrains plugin's `OnboardingSteps` restates it, held to the file by
+  `tests/onboarding.test.ts`, `apps/vscode/tests/walkthrough.test.ts` and `GlueTest`.
 - `src/words.ts`, `src/words.json`: the words both clients write themselves (a stop's controls and code actions with
   their short labels, a recording's states and controls, a worker's and a CI lane's name, the choices of Hold failures),
   `{name}` for a value the client fills in; VS Code reads them, and the JetBrains plugin's `EditorWords.WORDS` restates
@@ -773,6 +777,14 @@ worker of a run tells the service over the run channel what it runs and where it
 ### Run sessions
 
 `src/run-sessions.ts` (`RunSessions`) keeps one session per run, by the ref of its command (`PIWI_ORIGIN_REF`).
+A run the service built opens its session as the client says its command started (`piwi/commandStarted`,
+`RunSessions.commandStarted`), `starting` until its own process or a worker connects (`STARTING_MS` at most), so the
+clients and an agent's `run_list` list it and stop it while a web server or a global setup runs first; the run line
+says `starting <name>…`. It ends as its command does, whatever connected. A command whose terminal carries another ref
+is listed once it connects. Each run the service registers on the run channel is named after what it runs (`runName` in
+`src/commands.ts`: its first filter and how many more, the title it greps, else every test, then `×N` for its repeats;
+a command of another kind by its words, `commandName`), as `RunCommand.name` and `RunSession.name`, which the clients
+use for its task or Run tab and wherever they name it, kept while the run lives.
 
 A run started in a terminal attaches the same way, its reporter having read the run channel from the discovery file
 ([The discovery file](#the-discovery-file)), under a ref of its own (`terminal-<pid>-<time>`, `TERMINAL_REF_PREFIX`)

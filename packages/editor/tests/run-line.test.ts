@@ -56,6 +56,17 @@ describe('the run line both status items show', () => {
     });
   });
 
+  test('says a run starts while its command started and it has not reached the service, by its name when alone', () => {
+    expect(runLine([session({ starting: true, name: 'checkout.spec.ts:12' })], false)).toEqual({
+      text: 'Piwi: starting checkout.spec.ts:12…',
+      state: 'running',
+      calls: 0,
+    });
+    expect(
+      runLine([session({ starting: true }), session({ ref: 'ed-2', starting: true, name: 'a' })], false)?.text,
+    ).toBe('Piwi: starting…');
+  });
+
   test('says where a stop stands, then the run and how far it is', () => {
     const held = session({
       workers: [worker({ state: 'stopped', stop: stop('failure', { calls: true }) })],

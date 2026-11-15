@@ -21,10 +21,6 @@ that names an instance wins:
 A project set up for the reporter needs nothing more. An editor started from the Dock or the Start menu may not see
 the variables your shell exports: the `.env` or Connect work either way.
 
-In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
-machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
-JetBrains IDE shows one notification: [JetBrains plugin](./jetbrains#install-and-start).
-
 ## With the desktop app
 
 The desktop app needs no pairing with the editor: while it runs, it publishes its address and a local token in
@@ -45,14 +41,15 @@ Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` nam
 ### Beside a shared instance
 
 When the environment, a `.env` or Connect names your team's instance, the desktop app sits beside it rather than
-replacing it. Run **Piwi: Connect…**: it lists the desktop app, the instance the workspace names, and **Another
-instance**, and marks the one in use. Choose **The Piwi desktop app**, and the editor reads the app first while it
-runs, then the shared instance again when the app quits. Choosing the shared instance in the same list switches back;
-its address, project and key stay saved throughout.
+replacing it. In VS Code, **Piwi: Connect…** lists the desktop app, the instance the workspace names, and **Another
+instance**, and marks the one in use; in a JetBrains IDE, Connect reads the project from **The Piwi desktop app,
+while it runs** or **An instance**. Choose the desktop app, and the editor reads it first while it runs, then the
+shared instance again when the app quits. Choosing the instance switches back; its address, project and key stay saved
+throughout.
 
 The choice is kept on your machine only (VS Code's workspace state, `.idea/workspace.xml` in a JetBrains IDE), never
-in a file the team shares. In a JetBrains IDE, **Settings → Tools → Piwi** shows it too, as **Read this project from
-the desktop app while it runs**. When the app starts while the editor reads another instance, the editor offers the
+in a file the team shares. In a JetBrains IDE, **Settings → Tools → Piwi** shows it too, under **Read this project
+from**. When the app starts while the editor reads another instance, the editor offers the
 switch once per workspace.
 
 ### The project
@@ -65,24 +62,28 @@ what the editor reads from it: the instance answers each read once.
 
 ## Connect
 
-Run **Piwi: Connect…** from the command palette, or click `Piwi: connect` in the status bar. In a JetBrains IDE it is
-the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's gear menu, and under
-**Tools → Piwi**.
+Run **Piwi: Connect…** from the command palette, or click `Piwi: connect` in the status bar.
 
 1. When the desktop app runs, Connect lists it first, with the instance the workspace already names: choose
    **The Piwi desktop app**, and pick the project if none is linked to the folder, or choose the instance to switch
    back to it. Otherwise, or with **Another instance**, give the instance's address, such as
    `https://piwi.example.com`.
-2. When the instance has a login, choose **Sign in with the browser**. The instance's page opens with a code: check
-   that the editor shows the same code, then click **Allow**. The editor receives an [API key](/operate/api-keys)
-   created for you and named after it, such as "Piwi in WebStorm on macOS", which you revoke under **Settings →
-   Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
-   Or paste a key you created yourself. An instance without a login needs no key.
+2. When the instance has a login, choose **Sign in with the browser**, or paste a key you created yourself. An
+   instance without a login needs no key.
 3. Pick the project.
+
+In a JetBrains IDE, Connect is one dialog holding the Connection panel of **Settings → Tools → Piwi**
+([JetBrains plugin](./jetbrains#install-and-start)).
+
+The browser sign-in opens the instance's page with a code: check that the editor shows the same code, then click
+**Allow**. While it waits, the editor keeps the code and the page's link at hand, with **Copy code**, **Copy link**
+and **Open browser again**, for a browser that opened elsewhere. The editor receives an [API key](/operate/api-keys)
+created for you and named after it, such as "Piwi in WebStorm on macOS", which you revoke under **Settings →
+Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
 
 When the environment or a `.env` names another instance, Connect saves your choice and says which source comes first.
 In a JetBrains IDE, an instance on your machine is reached at `localhost`, `127.0.0.1` or `[::1]`, whichever it
-listens on: Connect tries all three and saves the one that answered.
+listens on: Test connection and the project list try all three and keep the one that answered.
 
 ## What is saved where
 

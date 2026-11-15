@@ -206,21 +206,30 @@ failures) and `piwi.runPage` (a run named its page) ([Run control](#run-control)
 
 ## Walkthrough
 
-**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`). Its steps are: connect, the failures, a run,
-a recording, the MCP server, and the settings.
+**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`), which plays the editor service's onboarding
+script (`@piwitests/editor/onboarding`, `onboarding.json`), as the JetBrains plugin's Get Started tab does: connect, the
+failures, a run, a breakpoint stop, a recording, pairing Piwi Picker, the MCP server, and the settings.
 
-- Each step's media is a Markdown file of `walkthrough/`, which `.vscodeignore` ships.
-- Each step has a button that runs a command of the extension: `piwi.connect`, `piwi.failures.focus`,
-  `piwi.rerunFailing`, `piwi.recordFile`, `piwi.copyMcpConfiguration`, `piwi.openSettings`.
-- Each step is checked off by its completion events (`onContext:piwi.active`, `onView:piwi.failures`, `onCommand:…`).
+- Each step's title, text and button are the script's, its button the action catalog's command in VS Code's words.
+- Its media is the docs screenshot the script names, which `build.mjs` copies to `dist/walkthrough/`, or else a
+  Markdown file of `walkthrough/`; `.vscodeignore` ships both.
+- The MCP step comes in two forms: `piwi.mcpProvided`, set where VS Code lists Piwi's MCP server itself (1.101 and
+  later), shows the one that says so.
+- Each step is checked off by its completion events (`onContext:piwi.active`, `onView:piwi.failures`,
+  `onContext:piwi.runStopped`, `onCommand:…`).
+
+**The first-run queue.** The walkthrough comes first; the desktop app's offer and the MCP notice then share one turn per
+window (`takeFirstRunTurn`), and one that does not get it keeps its flag unset for a later window. Where VS Code lists
+the MCP server itself, the notice stays silent once the walkthrough opened.
 
 The walkthrough opens once per machine (`piwi.walkthroughOpened` in global state), on the first activation in a
 workspace that holds a Playwright config (`PLAYWRIGHT_CONFIGS` in `src/glue.ts`, the activation event's glob). It does
 not open when `workbench.welcomePage.walkthroughs.openOnInstall` is off, nor in the integration suite's window
 (`ExtensionMode.Test`). **Piwi: Get started** (`piwi.getStarted`) opens it again (`WALKTHROUGH`).
 
-`tests/walkthrough.test.ts` checks that each step names a contributed command or view, a context key the extension
-sets, and a shipped Markdown file: a step that still names a renamed command, view or context key fails it.
+`tests/walkthrough.test.ts` holds the steps to the script, and checks that each names a contributed command or view, a
+context key the extension sets, and a shipped Markdown file or screenshot, and that the settings step names every
+setting of the registry.
 
 ## Coverage marks
 
@@ -359,10 +368,11 @@ Three commands, in the palette, in the **Piwi** submenu of the editor's context 
 `Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button; the explorer's
 **Piwi** submenu (`piwi.explorerContext`) runs a spec or the tests that reach a file, and records a new test file in a
 folder or beside a file, as the JetBrains project view's does
-(`editor/title/run`), the spec first. The title also holds one Piwi button by state (`editor/title`): Stop recording
-while a recording runs, else Resume at a stop, else Record here on a spec, and in its `…` menu the run's other
-controls and the recording's, each as the palette offers it. Each button has a glyph no other command has, but Record
-here, which Resume recording shares (`tests/menus.test.ts`, and the nightly suite on a spec):
+(`editor/title/run`), the spec first. The title also holds Piwi's buttons by state (`editor/title`): Stop recording
+while a recording runs, else a live run's controls ([Run control](#run-control)), else Record here on a spec, and in
+its `…` menu the run's other controls and the recording's, each as the palette offers it. Each button has a glyph no
+other command has, but Record here, which Resume recording shares (`tests/menus.test.ts`, and the nightly suite on a
+spec):
 
 - **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`);
 - **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);
@@ -431,9 +441,16 @@ All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`
 an information message. The commands show in the Piwi item's menu (`statusMenu`), after **Go to the stopped line**
 (`piwi.showStop`, the stop `chooseStop` gives, its file shown with the focus), a held failure offering Resume without
 Step or Finish (`ControlState.failed`); and in the palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
-`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows Resume at a stop while no
-recording runs, and its `…` menu every other control as the palette offers it ([Running the test at the
-cursor](#running-the-test-at-the-cursor)). The keys: [Keybindings](#keybindings).
+`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows, while no recording runs,
+Pause (while no test is stopped) or Resume, Step, Finish and Stop (`piwi.runStoppable`) in the debug toolbar's order,
+and its `…` menu every other control as the palette offers it; the editor's context menu holds a stop's controls while
+a test is stopped and no recording runs, as the palette offers each (`0_piwi_run`, after VS Code's `navigation` group,
+which a menu always sorts first). A run's task is named after the run (`RunCommand.name`, cut as `runTaskName` cuts),
+and the choosers and the Watch chooser name a run by `runTitle` (`Run #78 · checkout.spec.ts:12`), with its ref while
+another of the list reads the same, a worker's run only while several runs have workers to watch ([Running the test at
+the cursor](#running-the-test-at-the-cursor)). A Stop while VS Code starts the task ends it once started
+(`executing`), and a task that ends before its process started ends its command (`onDidEndTask`). The keys:
+[Keybindings](#keybindings).
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
 `OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the focus,
@@ -607,8 +624,8 @@ service's reference.
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
 `stopActions`): **Pick a locator**, **Record**, **Assert** and **Assert a region** at a stop the pause bar shows,
 **Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
-Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits beside the line's
-own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
+Finish (`stopLensControls`): Run to the cursor, End the test and each action are in its hover, so the row fits; the line's own lenses
+give way while a stop shows (`executionPoints`, `stopsDrawn`). Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
 (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
 `piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
 (`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests` in a quick pick, the latest first
@@ -942,7 +959,9 @@ ring. The API `activate` returns gives what the view shows (`testExplorer`).
 1. When the desktop app runs, it first lists the app beside the instance the workspace names (`connectChoices` in
    `src/glue.ts`).
 2. Otherwise it asks for the instance's address, then asks the instance whether it needs a key.
-3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted.
+3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted. While the sign-in
+   waits, a picker holds the code with **Copy code**, **Copy link** and **Open browser again**; it closes with the
+   sign-in, and closing it first cancels the sign-in, whose answer is then dropped.
 4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
    `SecretStorage`.
 

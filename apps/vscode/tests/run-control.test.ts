@@ -82,6 +82,7 @@ import {
   holdTarget,
   holdText,
   runLabel,
+  runTitle,
   runName,
   runPageTarget,
   sessionLines,
@@ -579,6 +580,11 @@ describe('Hold failures', () => {
     expect(tooltip).toContain('Run in shop (term-2): Hold failures off');
     expect(runLabel(held('ed-3', false))).toBe('Run in shop (ed-3)');
     expect(runLabel({ ...held('ed-3', false), root: null })).toBe('Run ed-3');
+    // Named by what it runs, with its number once it has one, as the JetBrains plugin names it.
+    const named = { ...held('ed-3', false), name: 'checkout.spec.ts:12' };
+    expect([runLabel(named), runTitle(named)]).toEqual(['checkout.spec.ts:12', 'checkout.spec.ts:12']);
+    const numbered = { ...named, page: { id: 78, url: 'http://piwi/runs/78' } };
+    expect([runLabel(numbered), runTitle(numbered)]).toEqual(['Run #78', 'Run #78 · checkout.spec.ts:12']);
   });
 
   test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {
@@ -751,6 +757,21 @@ describe('Share live', () => {
     expect(watchTargetsFor(all, null)).toHaveLength(3);
     expect(watchTargetsFor(all, { ref: 'ed-1', worker: 1 }).map((t) => t.lane)).toEqual([1]);
     expect(watchTargetsFor(all, { ref: 'ed-2' })).toEqual([]);
+  });
+
+  test('names each run before its workers once several have workers to watch, two of one name by their refs', () => {
+    const one = { ...session('ed-1', [worker(0, 'running', { watchable: true })]), name: 'checkout.spec.ts:12' };
+    const two = { ...session('ed-2', [worker(0, 'between', { watchable: true })]), name: 'checkout.spec.ts:12' };
+    expect(watchableWorkers(sessionsOf(one, two)).map((t) => t.description)).toEqual([
+      'checkout.spec.ts:12 (ed-1) · running checkout › pays',
+      'checkout.spec.ts:12 (ed-2) · between tests',
+    ]);
+    const paged = { ...one, page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } };
+    expect(watchableWorkers(sessionsOf(paged, two))[0]!.description).toBe(
+      'Run #78 · checkout.spec.ts:12 · running checkout › pays',
+    );
+    expect(runTitle(two, [one, two])).toBe('checkout.spec.ts:12 (ed-2)');
+    expect(runTitle(two)).toBe('checkout.spec.ts:12');
   });
 
   test('says what the worker panel’s slot does, and whether its image is of now', () => {

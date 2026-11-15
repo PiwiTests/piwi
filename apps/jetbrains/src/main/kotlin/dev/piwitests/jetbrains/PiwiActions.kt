@@ -70,6 +70,7 @@ class OpenSettingsAction : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
+        PiwiGetStarted.done("settings")
         ShowSettingsUtil.getInstance().showSettingsDialog(project, PiwiConfigurable::class.java)
     }
 }
@@ -544,6 +545,7 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
                     return@executeOnPooledThread
                 }
                 CopyPasteManager.getInstance().setContents(StringSelection(Glue.mcpConfiguration(servers)))
+                PiwiGetStarted.done("mcp")
                 PiwiNotifier.confirm(
                     project,
                     ("The MCP configuration is on the clipboard: paste it in ${Glue.mcpPasteWhere(aiAssistantEnabled())}. " +
@@ -552,10 +554,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             }
         }
 
-        /** Once per installation: offer Piwi's MCP server to the IDE's agent. */
+        /** Once per installation, when the first-run queue gives it the turn (`Glue.FIRST_RUN`): offer Piwi's MCP server to the IDE's agent. */
         fun offer(project: Project) {
             val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-            if (properties.getBoolean(OFFERED)) return
+            if (properties.getBoolean(OFFERED) || !Glue.FIRST_RUN.take()) return
             properties.setValue(OFFERED, true)
             PiwiNotifier.create(
                 PiwiNotice.OFFER,
@@ -612,6 +614,7 @@ class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
                     )
                 }
                 CopyPasteManager.getInstance().setContents(StringSelection(render(url, token)))
+                PiwiGetStarted.done("mcp")
                 PiwiNotifier.confirm(
                     project,
                     "The runs' MCP configuration is on the clipboard: paste it in $where. It holds this project's token: " +

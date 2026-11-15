@@ -153,6 +153,7 @@ jobs:
               - 'apps/extension/src/**'
               - 'apps/extension/public/_locales/**'
               - 'apps/extension/scripts/build.mjs'
+              - 'apps/docs/public/screenshots/jetbrains-*.png'
             # The desktop app bundles the Node version of the Dockerfile's base image.
             desktop:
               - 'apps/desktop/**'

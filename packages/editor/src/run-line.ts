@@ -82,8 +82,14 @@ export function runLine(sessions: readonly RunSession[], sharingWindow: boolean)
       )}${one?.label ? ` · ${one.label}` : ''}`,
     );
   }
-  // A run that has not counted yet still shows it runs.
-  if (!parts.length && sessions.some((s) => !s.ended)) parts.push('running');
+  // A run that has not counted yet still shows it runs; one whose command started and that has not reached the service
+  // yet (a web server or a global setup runs first), that it starts, by its name when it is the only one.
+  if (!parts.length) {
+    const starting = sessions.filter((s) => s.starting && !s.ended);
+    const name = starting.length === 1 ? starting[0]!.name : undefined;
+    if (starting.length) parts.push(`starting${name ? ` ${name}` : ''}…`);
+    else if (sessions.some((s) => !s.ended)) parts.push('running');
+  }
   if (!parts.length) return null;
   const state: RunLineState = stops.length
     ? stops.every((s) => s.reason === 'failure')

@@ -112,9 +112,20 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
         assertEquals(listOf("Piwi.RunSpec", "Piwi.RunTestsForFile", null, "Piwi.RecordNewFile"), ids("Piwi.ProjectViewPopup"))
         assertTrue(actions.getAction("Piwi.ProjectViewPopup") is com.intellij.openapi.actionSystem.CompactActionGroup)
-        for ((menu, piwi) in listOf("EditorPopupMenu" to "Piwi.EditorPopup", "ProjectViewPopupMenu" to "Piwi.ProjectViewPopup")) {
-            assertEquals(menu, listOf(piwi), ids(menu).filter { it?.startsWith("Piwi.") == true })
+        // The editor's context menu: a stop's controls first, while a run is live, then the Piwi submenu; the Run menu: the
+        // run's controls, while a run is live.
+        for ((menu, piwi) in listOf(
+            "EditorPopupMenu" to listOf("Piwi.EditorRunControl", "Piwi.EditorPopup"),
+            "ProjectViewPopupMenu" to listOf("Piwi.ProjectViewPopup"),
+            "RunMenu" to listOf("Piwi.RunMenu"),
+        )) {
+            assertEquals(menu, piwi, ids(menu).filter { it?.startsWith("Piwi.") == true })
         }
+        assertEquals(
+            listOf("Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowStop", null),
+            ids("Piwi.EditorRunControl"),
+        )
+        assertTrue(actions.getAction("Piwi.EditorRunControl") is PiwiLiveRunGroup)
         // Each Piwi menu shows Piwi's mark before its name.
         for (menu in listOf("Piwi.Actions", "Piwi.EditorPopup", "Piwi.ProjectViewPopup")) {
             assertNotNull(menu, actions.getAction(menu).templatePresentation.icon)
@@ -482,22 +493,84 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
-    /** Connect's choice beside the desktop app: one radio button per connection, one of them selected at a time. */
-    fun testConnectOffersTheConnectionsAsOneGroupOfRadioButtons() {
-        val choices = listOf(
-            Glue.ConnectChoice(Glue.ConnectTarget.DESKTOP, "The Piwi desktop app", "Runs on this machine.", "http://127.0.0.1:7495", true),
-            Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "https://a.example", "From the settings.", "https://a.example", false),
-            Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
-        )
-        val dialog = PiwiConnectFlow.ChooseConnectionDialog(project, choices)
+    /**
+     * The Connect panel: the settings as saved, the desktop app or an instance chosen with one radio button of two, and
+     * Apply saving the source, the instance, its project and the desktop app's project.
+     */
+    fun testTheConnectPanelSavesTheConnectionOnApply() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val settings = service.settings()
+        val local = service.local()
+        val panel = PiwiConnectPanel(project, testRootDisposable)
         try {
-            assertEquals(listOf("The Piwi desktop app (in use)", "https://a.example", "Another instance…"), dialog.buttons.map { it.text })
-            assertEquals(Glue.ConnectTarget.INSTANCE, dialog.picked()?.target)
-            dialog.buttons[2].isSelected = true
-            assertEquals(listOf(false, false, true), dialog.buttons.map { it.isSelected })
-            assertEquals(Glue.ConnectTarget.OTHER, dialog.picked()?.target)
+            assertEquals(local.desktop, panel.desktopRadio.isSelected)
+            assertFalse(panel.isModified())
+            panel.desktopRadio.isSelected = true
+            assertFalse("one of the two", panel.instanceRadio.isSelected)
+            panel.instanceRadio.isSelected = true
+            assertFalse("one of the two", panel.desktopRadio.isSelected)
+            panel.urlField.text = "https://panel.example/"
+            panel.projectCombo.editor.item = "Shop"
+            assertTrue(panel.isModified())
+            panel.apply()
+            assertEquals("https://panel.example" to "Shop", settings.serverUrl to settings.project)
+            assertFalse(local.desktop)
+            assertFalse(panel.isModified())
+            // The desktop app read first, on its project.
+            panel.desktopRadio.isSelected = true
+            panel.desktopProject.addItem("Mugs")
+            panel.desktopProject.selectedItem = "Mugs"
+            panel.apply()
+            assertTrue(local.desktop)
+            assertEquals("Mugs", local.desktopProject)
+            // An address that is no URL is refused.
+            panel.urlField.text = "not a url"
+            assertThrows(com.intellij.openapi.options.ConfigurationException::class.java) { panel.apply() }
         } finally {
-            Disposer.dispose(dialog.disposable)
+            service.disconnect()
+        }
+    }
+
+    /**
+     * A key change belongs to the address it was made for: an edit of the address drops it, and Apply saves or removes
+     * the key of that address alone.
+     */
+    fun testAKeyChangeBelongsToItsAddress() {
+        val service = project.getService(PiwiProjectService::class.java)
+        try {
+            service.saveCredentials("https://a.example", "Shop", "pd_saved")
+            val panel = PiwiConnectPanel(project, testRootDisposable)
+            val remove = PiwiConnectPanel::class.java.getDeclaredMethod("removeKey").apply { isAccessible = true }
+            remove.invoke(panel)
+            assertEquals(PiwiProjectService.KeyChange.Remove, panel.key)
+            // Another address: the change was not made for it.
+            panel.urlField.text = "https://b.example"
+            assertEquals(PiwiProjectService.KeyChange.Keep, panel.key)
+            panel.urlField.text = "https://a.example"
+            assertEquals("an edit dropped it", PiwiProjectService.KeyChange.Keep, panel.key)
+            remove.invoke(panel)
+            panel.apply()
+            assertFalse(service.hasApiKey("https://a.example"))
+        } finally {
+            service.disconnect()
+        }
+    }
+
+    /** Connect is one dialog holding the panel, on the settings as saved. */
+    fun testConnectIsOneDialogHoldingThePanel() {
+        val service = project.getService(PiwiProjectService::class.java)
+        try {
+            service.saveCredentials("https://given.example", "Shop", null)
+            val dialog = PiwiConnectFlow.ConnectDialog(project)
+            try {
+                assertEquals("https://given.example", dialog.panel.urlField.text)
+                assertTrue(dialog.panel.instanceRadio.isSelected)
+                assertFalse(dialog.panel.signingIn())
+            } finally {
+                Disposer.dispose(dialog.disposable)
+            }
+        } finally {
+            service.disconnect()
         }
     }
 
@@ -738,55 +811,80 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
-     * failures and the documentation, once per installation.
+     * The first project holding a Playwright config opens the Get Started tab, once per installation and when the
+     * first-run queue gives it the turn; its buttons are registered actions with the onboarding script's labels, and a
+     * step's action checks it off.
      */
-    fun testTheFirstRunNotificationShowsOncePerInstallation() {
+    fun testGetStartedOpensOncePerInstallation() {
         val service = project.getService(PiwiProjectService::class.java)
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
-        val shown = mutableListOf<com.intellij.notification.Notification>()
-        project.messageBus.connect(testRootDisposable).subscribe(
-            com.intellij.notification.Notifications.TOPIC,
-            object : com.intellij.notification.Notifications {
-                override fun notify(notification: com.intellij.notification.Notification) {
-                    if (notification.content == Glue.FIRST_RUN) shown += notification
-                }
-            },
-        )
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         val config = File(project.basePath!!, "playwright.config.ts")
-        val before = properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN)
+        val before = properties.getBoolean(PiwiGetStarted.SHOWN)
         try {
-            properties.unsetValue(PiwiProjectService.FIRST_RUN_SHOWN)
+            properties.unsetValue(PiwiGetStarted.SHOWN)
             config.writeText("export default {};\n")
             val found = service.searchPlaywright()
-            service.offerFirstRun(found, listOf("https://piwi.example.com"))
+            // Another offer took the session's turn: the tab waits for a later session.
+            service.openGetStartedOnce(found, Glue.FirstRunQueue().apply { take() }) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals("a project naming an instance is connected", emptyList<Any>(), shown)
-            assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
-            service.offerFirstRun(found, emptyList())
+            assertNull(window.contentManager.findContent(PiwiGetStarted.TAB))
+            assertFalse(properties.getBoolean(PiwiGetStarted.SHOWN))
+            val queue = Glue.FirstRunQueue()
+            service.openGetStartedOnce(found, queue) { it.run() }
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(listOf("Connect…", "Open the failures", "Learn more"), shown.single().actions.map { it.templateText })
-            // Each kind has its group, the requests' sticky, a confirmation fading on its own.
+            val tab = window.contentManager.findContent(PiwiGetStarted.TAB)
+            assertNotNull(tab)
+            assertTrue(properties.getBoolean(PiwiGetStarted.SHOWN))
+            assertFalse("the tab took the session's turn", queue.take())
+            window.contentManager.removeContent(tab, true)
+            service.openGetStartedOnce(found, Glue.FirstRunQueue()) { it.run() }
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertNull("once per installation", window.contentManager.findContent(PiwiGetStarted.TAB))
+            // Each button runs a registered action whose text is its label.
+            val actions = ActionManager.getInstance()
+            assertEquals(
+                OnboardingSteps.STEPS.map { it.label },
+                OnboardingSteps.STEPS.map { actions.getAction(it.actionId)?.templatePresentation?.text },
+            )
+            // The screenshots it names are bundled.
+            for (step in OnboardingSteps.STEPS.filter { it.image != null }) {
+                assertNotNull(step.image, PiwiGetStarted::class.java.getResource("/onboarding/${step.image}"))
+            }
+            // An offer: titled Piwi, with its icon, in the suggestions' group; each kind has its group.
             val groups = com.intellij.notification.NotificationGroupManager.getInstance()
             assertEquals(
                 PiwiNotice.entries.map { it.group to (if (it == PiwiNotice.REQUEST) "STICKY_BALLOON" else "BALLOON") },
                 PiwiNotice.entries.map { it.group to groups.getNotificationGroup(it.group)!!.displayType.name },
             )
-            // A warning keeps the platform's icon.
             assertNull(PiwiNotifier.create(PiwiNotice.PROBLEM, "x", com.intellij.notification.NotificationType.WARNING).icon)
-            // An offer: titled Piwi, with its icon, in the suggestions' group.
-            val offer = shown.single()
+            val offer = PiwiNotifier.create(PiwiNotice.OFFER, "x")
             assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
             assertNotNull(offer.icon)
             assertTrue(offer.isSuggestionType)
-            assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
-            service.offerFirstRun(found, emptyList())
-            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals("once per installation", 1, shown.size)
         } finally {
             config.delete()
             service.searchPlaywright()
-            properties.setValue(PiwiProjectService.FIRST_RUN_SHOWN, before)
+            properties.setValue(PiwiGetStarted.SHOWN, before)
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /** A step is checked off where its action succeeded, once, and Open the failures checks its step off. */
+    fun testAStepIsCheckedOffWhereItsActionSucceeded() {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        val key = "piwi.getStarted.done.failures"
+        val before = properties.getBoolean(key)
+        try {
+            properties.unsetValue(key)
+            assertFalse(PiwiGetStarted.isDone("failures"))
+            val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project)
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+            ActionManager.getInstance().getAction("Piwi.OpenFailures").actionPerformed(event)
+            assertTrue(PiwiGetStarted.isDone("failures"))
+        } finally {
+            properties.setValue(key, before)
         }
     }
 
