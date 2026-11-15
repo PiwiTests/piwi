@@ -300,6 +300,7 @@ import {
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
+  type LiveRun,
   type LiveTestStatus,
   type ApplyPickResult,
   type CommandEndedParams,
@@ -722,8 +723,8 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
  * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
  * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
  * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
- * runs`, `never run`, `no recent result`). A CI run in progress follows that result, named as CI's (`passed in its
- * latest run · running in CI run #130`).
+ * runs`, `never run`, `no recent result`). Another's run in progress follows that result, named as CI's or a plain run
+ * (`passed in its latest run · running in CI run #130`, `… · running in run #131`).
  */
 function testVerdict(
   context: PiwiContext,
@@ -733,12 +734,12 @@ function testVerdict(
   failure: TestFailure | undefined,
 ): string {
   const lineLive = lineLiveState(context, found.id);
-  if (lineLive && context.live) {
-    return `${liveWords(lineLive)} in ${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
-  }
+  if (lineLive && context.live) return `${liveWords(lineLive)} in your run #${context.live.runId}`;
   const settled = settledVerdict(context, found, failed, fixed, failure);
-  const ci = context.live?.ci ? context.liveTests.get(found.id) : undefined;
-  return ci ? `${settled} · ${liveWords(ci)} in CI run #${context.live!.runId}` : settled;
+  const other = context.live && !context.live.own ? context.liveTests.get(found.id) : undefined;
+  return other
+    ? `${settled} · ${liveWords(other)} in ${context.live!.ci ? 'CI ' : ''}run #${context.live!.runId}`
+    : settled;
 }
 
 /** A test's state in the run in progress, in the dashboard's words: `running`, `failing`, `passed`. */
@@ -747,11 +748,11 @@ function liveWords(live: LiveTestStatus): string {
 }
 
 /**
- * A test's state in the run in progress that its line takes: none from a CI run's, which the line names beside its own
- * result and never draws as the developer's tests running.
+ * A test's state in the run in progress that its line takes: the developer's own run's alone. Another's, CI's or a
+ * teammate's, the line names beside its own result and never draws as the developer's tests running.
  */
 function lineLiveState(context: PiwiContext, testCaseId: number): LiveTestStatus | undefined {
-  return context.live?.ci ? undefined : context.liveTests.get(testCaseId);
+  return context.live?.own ? context.liveTests.get(testCaseId) : undefined;
 }
 
 /** A test's result in the latest run the failures are read from, else the catalog's: `testVerdict` without a live run. */
@@ -1808,7 +1809,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           alarm: statusAlarm(c, credentials.statusBarAlert ?? 'new'),
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
-          live: c.live ? { ...c.live, url: c.client!.runUrl(c.live.runId) } : null,
+          live: c.live ? liveAnswer(c.live, c.client!.runUrl(c.live.runId)) : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
           ...(c.liveTests.size
@@ -2074,6 +2075,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const watchedRuns = new Set<string>();
   /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
   const runLabels = new Map<string, string>();
+  /** A context's run in progress as the clients get it: its page, and who started an own run when a person did not. */
+  function liveAnswer(live: LiveRun, url: string): LiveRun {
+    const label = live.own && live.ref ? runLabels.get(live.ref) : undefined;
+    return { ...live, url, ...(label ? { label } : {}) };
+  }
   /** What each registered run is called (`runName`) and where it runs, by its ref, kept as long as its command line or its live run. */
   const runNames = new Map<string, { name: string; cwd: string }>();
   /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */

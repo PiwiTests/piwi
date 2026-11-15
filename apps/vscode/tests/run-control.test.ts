@@ -586,6 +586,10 @@ describe('Hold failures', () => {
     expect([runLabel(named), runTitle(named)]).toEqual(['checkout.spec.ts:12', 'checkout.spec.ts:12']);
     const numbered = { ...named, page: { id: 78, url: 'http://piwi/runs/78' } };
     expect([runLabel(numbered), runTitle(numbered)]).toEqual(['Run #78', 'Run #78 · checkout.spec.ts:12']);
+    // An agent's run says who started it.
+    expect(runTitle({ ...numbered, label: 'Started by Claude Code' })).toBe(
+      'Run #78 · checkout.spec.ts:12 · Started by Claude Code',
+    );
   });
 
   test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {

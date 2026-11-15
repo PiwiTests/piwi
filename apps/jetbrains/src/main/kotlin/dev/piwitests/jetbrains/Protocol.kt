@@ -327,6 +327,8 @@ data class LiveRun(
     val ci: Boolean = false,
     /** The branch it runs on, as it reported it; null for a run that names none. */
     val branch: String? = null,
+    /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
+    val label: String? = null,
 )
 
 /** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */

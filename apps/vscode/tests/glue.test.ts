@@ -527,6 +527,11 @@ describe('statusBarView', () => {
       text: '$(sync~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
+    // An agent's run is never the person's own.
+    expect(statusBarView(connected, live({ label: 'Started by Claude Code' }))).toMatchObject({
+      text: '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',
+      tooltip: expect.stringContaining('\n\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n\n'),
+    });
     // The editor's own run counts from its own process's events, which the instance may not have heard yet.
     const told = (ref: string) =>
       ref === 'ed-1'

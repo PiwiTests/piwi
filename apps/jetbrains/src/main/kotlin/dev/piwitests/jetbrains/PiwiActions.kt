@@ -532,6 +532,11 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
 class CopyMcpConfigurationAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    // Enabled while a context reads an instance, whose servers the configuration names.
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         copyMcpConfiguration(project)
@@ -670,7 +675,7 @@ class ResetRunsMcpTokenAction : AnAction(), DumbAware {
         if (!yes) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = project.service<PiwiProjectService>().agentsChanged(newToken = true)
-            PiwiCommands.notify(
+            PiwiNotifier.confirm(
                 project,
                 if (answer?.token != null) {
                     "The runs' MCP server has a new token: copy the runs' MCP server configuration again for each agent."

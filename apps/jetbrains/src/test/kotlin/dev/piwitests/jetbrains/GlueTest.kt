@@ -94,6 +94,8 @@ class GlueTest {
         val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
         assertEquals("Run #78", Glue.runLabel(numbered))
         assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        // An agent's run says who started it.
+        assertEquals("Run #78 · checkout.spec.ts:12 · Started by Claude Code", Glue.runTitle(numbered.copy(label = "Started by Claude Code")))
         assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
         // Two runs of one name in one list are told apart by their refs.
         val again = named.copy(ref = "ed-2")
@@ -398,6 +400,10 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // An agent's run is never the person's own.
+        val agent = Glue.statusView(connected, live(failed, inProgress.copy(label = "Started by Claude Code")))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code", agent.text)
+        assertEquals(true, agent.tooltip.contains("\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.

@@ -865,6 +865,11 @@ export interface LiveRun {
   ci?: boolean;
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
+  /**
+   * Who started an own run when a person did not (`Started by Claude Code`, as `RunSession.label` says): the clients
+   * say it where they would say the run is the person's. Absent for a person's run.
+   */
+  label?: string;
 }
 
 /** Which failures turn the status item to its alarm: `new`, `any` or `never`. */

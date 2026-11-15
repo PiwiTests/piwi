@@ -208,6 +208,7 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
+  NOT_CONNECTED,
   notConnectedNotice,
   RESTART_SERVICE,
   SERVICE_NOT_ANSWERING,
@@ -776,6 +777,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
   /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
   const connectedOrSay = (): boolean => {
+    // A service that is down answers nothing: it is restarted, not connected.
+    if (menuDown) {
+      void vscode.window
+        .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+        .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+      return false;
+    }
     const notice = notConnectedNotice(status);
     if (!notice) return true;
     const button = notice.action === 'retry' ? 'Retry' : notice.action === 'connect' ? 'Connect' : null;
@@ -1554,7 +1562,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.c)
           : contexts[0]);
       if (!target) {
-        if (!contexts.length) void vscode.window.showInformationMessage('Piwi: connect to an instance first.');
+        if (!contexts.length) {
+          void vscode.window
+            .showInformationMessage(NOT_CONNECTED, 'Connect')
+            .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
+        }
         return;
       }
       const picked = await vscode.window.showQuickPick(baselinePicks(target), {
@@ -1803,9 +1815,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // The format the configuration is copied in: chosen, or named by the command's argument.
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
+      if (!connectedOrSay()) return;
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
-        void vscode.window.showWarningMessage('Piwi: connect to an instance first.');
+        void vscode.window
+          .showWarningMessage(NOT_CONNECTED, 'Connect')
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
         return;
       }
       const format: RunsMcpFormat | undefined = MCP_FORMATS.some((f) => f.format === asked)

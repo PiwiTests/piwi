@@ -339,10 +339,14 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own. */
+    /**
+     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own, or
+     * who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
+     */
     private fun liveText(live: LiveRun): String {
         val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
+        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" +
+            if (live.own) " · ${live.label ?: "yours"}" else ""
     }
 
     /**
@@ -370,14 +374,18 @@ object Glue {
         return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
-    /** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
+    /**
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     */
     private fun liveLine(live: LiveRun): String {
         val run = when {
-            live.own -> "Your run"
-            live.ci -> "CI run"
-            else -> "Run"
+            live.own && live.label != null -> "Run #${live.runId} (${live.label})"
+            live.own -> "Your run #${live.runId}"
+            live.ci -> "CI run #${live.runId}"
+            else -> "Run #${live.runId}"
         }
-        return "\n$run #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}"
+        return "\n$run is running: ${countWords(live.done, live.total, live.failed)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -697,7 +705,7 @@ object Glue {
         val told = sessions.values.filter { !it.ended && !it.terminal && it.checkout == null && it.progress?.status == "running" }
         val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
         val progress = session?.progress ?: return ownLive?.let { it to own.root }
-        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
+        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref, label = session.label))
             .copy(done = progress.done, total = progress.total, failed = progress.failed)
         return counted to (if (ownLive != null) own.root else session.root)
     }
@@ -2776,7 +2784,8 @@ object Glue {
 
     /**
      * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as
-     * VS Code's `runTitle`; else [runLabel]. Its ref after it while another of `among` reads the same.
+     * VS Code's `runTitle`; else [runLabel]; then who started it when a person did not (`· Started by Claude Code`). Its
+     * ref after it while another of `among` reads the same.
      */
     fun runTitle(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainTitle, session, among)
 
@@ -2789,7 +2798,8 @@ object Glue {
 
     private fun plainTitle(session: RunSession): String {
         val name = session.name
-        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        val title = if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        return session.label?.let { "$title · $it" } ?: title
     }
 
     private fun apart(name: (RunSession) -> String, session: RunSession, among: Collection<RunSession>): String {

@@ -781,6 +781,10 @@
           "when": "piwi.active"
         },
         {
+          "command": "piwi.copyMcpConfiguration",
+          "when": "piwi.active"
+        },
+        {
           "command": "piwi.groupFailuresBy",
           "when": "piwi.active"
         },
