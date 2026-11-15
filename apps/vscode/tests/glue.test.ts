@@ -530,6 +530,14 @@ describe('statusBarView', () => {
       text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
+    // Another's run names its branch, the developer's own the short form.
+    expect(statusBarView(connected, live({ own: false, ci: true, failed: 0, branch: 'feature-x' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: CI run #124 on feature-x · 4 of 9',
+      tooltip: expect.stringContaining('\n\nCI run #124 on feature-x is running: 4 of 9\n\n'),
+    });
+    expect(statusBarView(connected, live({ branch: 'feature-x' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+    });
     // A test that may be stuck counts beside the run's results.
     expect(statusBarView(connected, live({ stuck: 1 }))).toMatchObject({
       text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours',

@@ -291,12 +291,18 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 
 /**
  * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours`
- * for the editor's own, or who started it when a person did not (` · Started by Claude Code`).
+ * for the editor's own, or who started it when a person did not (` · Started by Claude Code`); another's names its
+ * branch (`CI run #130 on feature-x`).
  */
 function liveText(live: LiveRun): string {
-  const run = live.ci ? 'CI run' : 'run';
   const whose = live.own ? ` · ${live.label ?? 'yours'}` : '';
-  return `$(loading~spin) Piwi: ${run} #${live.runId} · ${liveCount(live)}${whose}`;
+  return `$(loading~spin) Piwi: ${othersRun(live, 'run')} · ${liveCount(live)}${whose}`;
+}
+
+/** A run in progress the editor did not start, as both status lines name it: `CI run #130 on feature-x`. */
+function othersRun(live: LiveRun, run: 'run' | 'Run'): string {
+  const named = `${live.ci ? `CI ${run.toLowerCase()}` : run} #${live.runId}`;
+  return live.own || !live.branch ? named : `${named} on ${live.branch}`;
 }
 
 /** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
@@ -313,7 +319,7 @@ function liveLine(live: LiveRun): string {
     ? live.label
       ? `Run #${live.runId} (${live.label})`
       : `Your run #${live.runId}`
-    : `${live.ci ? 'CI run' : 'Run'} #${live.runId}`;
+    : othersRun(live, 'Run');
   return `${run} is running: ${liveCount(live)}`;
 }
 

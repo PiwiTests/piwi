@@ -400,6 +400,14 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // Another's run names its branch, the developer's own the short form.
+        val ci = Glue.statusView(connected, live(failed, inProgress.copy(own = false, ci = true, failed = 0, branch = "feature-x")))
+        assertEquals("Piwi: CI run #124 on feature-x · 4 of 9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 on feature-x is running: 4 of 9\n"))
+        assertEquals(
+            "Piwi: run #124 · 4 of 9 · 1 failed · yours",
+            Glue.statusView(connected, live(failed, inProgress.copy(branch = "feature-x"))).text,
+        )
         // A test that may be stuck counts beside the run's results.
         val stuck = Glue.statusView(connected, live(failed, inProgress.copy(stuck = 1)))
         assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours", stuck.text)

@@ -357,12 +357,16 @@ object Glue {
 
     /**
      * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours` for the
-     * editor's own, or who started it when a person did not (` · Started by Claude Code`), as VS Code's `liveText`.
+     * editor's own, or who started it when a person did not (` · Started by Claude Code`); another's names its branch
+     * (`CI run #130 on feature-x`), as VS Code's `liveText`.
      */
-    private fun liveText(live: LiveRun): String {
-        val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${liveCount(live)}" +
-            if (live.own) " · ${live.label ?: "yours"}" else ""
+    private fun liveText(live: LiveRun): String =
+        "Piwi: ${othersRun(live, "run")} · ${liveCount(live)}" + if (live.own) " · ${live.label ?: "yours"}" else ""
+
+    /** A run in progress the editor did not start, as both status lines name it: `CI run #130 on feature-x`. */
+    private fun othersRun(live: LiveRun, run: String): String {
+        val named = "${if (live.ci) "CI ${run.lowercase()}" else run} #${live.runId}"
+        return if (live.own || live.branch == null) named else "$named on ${live.branch}"
     }
 
     /** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
@@ -402,8 +406,7 @@ object Glue {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            live.ci -> "CI run #${live.runId}"
-            else -> "Run #${live.runId}"
+            else -> othersRun(live, "Run")
         }
         return "\n$run is running: ${liveCount(live)}"
     }

@@ -59,7 +59,8 @@ instance, and its verdict says where it ran (`run #125 in a terminal`), from the
 JetBrains' result icon: its latest runs as a strip, each to its run, how they went, its last failure, its
 owner, tags and quarantine, with Run, Open in dashboard and More… (TL21). L1 in part since: a test the instance says
 may be stuck says so on its line (`Stuck? running over 4 min, usually 40 s, in your run #130`), in VS Code's Testing
-view's output and on both status lines (`· 1 stuck?`), never while it stands stopped (LR12).
+view's output and on both status lines (`· 1 stuck?`), never while it stands stopped (LR12); another's run in progress
+names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -511,8 +512,9 @@ pause or failed glyph while it waits, and the running line marked. ([L1](#l1))
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
 run reads `Piwi: run #131 · 4 of 9` in both status bars and `running in run #131` beside a test's result. **(read)**
-Fix: the run's origin in the status line and the tooltips (`CI run #130 on feature-x`), the short form for the
-developer's own run; and CI runs as read-only rows of the Runs view and tab. ([L1](#l1))
+Fix: CI runs as read-only rows of the Runs view and tab, and the run's origin in the tooltips (a teammate's
+machine, the desktop app), which the instance does not send yet; the status line and the tooltips name another's run's
+branch (`CI run #130 on feature-x`), the developer's own the short form. ([L1](#l1))
 
 ### 8.7 Words deferred to the study
 
