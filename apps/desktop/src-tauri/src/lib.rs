@@ -34,7 +34,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{
+    CheckMenuItemBuilder, IconMenuItem, IconMenuItemBuilder, MenuBuilder, MenuItemBuilder,
+};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::async_runtime::Receiver;
 use tauri::window::{ProgressBarState, ProgressBarStatus};
@@ -255,6 +257,52 @@ pub(crate) fn background_menu_items(
         login: login_item.clone(),
     });
     Ok((run_bg_item, login_item))
+}
+
+/// The glyph of a row of the tray's menu, the same in Piwi Desktop and Piwi Runner: the Piwi mark for the app, else
+/// the dashboard's icon for the row's concept, drawn by the brand asset generator (`menu-icons/`).
+#[derive(Clone, Copy)]
+pub(crate) enum MenuIcon {
+    App,
+    ShowStop,
+    StopRun,
+    Agents,
+    Connection,
+    Update,
+    Folder,
+    Logs,
+    Quit,
+}
+
+impl MenuIcon {
+    fn png(self) -> &'static [u8] {
+        match self {
+            MenuIcon::App => include_bytes!("../menu-icons/piwi.png"),
+            MenuIcon::ShowStop => include_bytes!("../menu-icons/show-stop.png"),
+            MenuIcon::StopRun => include_bytes!("../menu-icons/stop-run.png"),
+            MenuIcon::Agents => include_bytes!("../menu-icons/agents.png"),
+            MenuIcon::Connection => include_bytes!("../menu-icons/connection.png"),
+            MenuIcon::Update => include_bytes!("../menu-icons/update.png"),
+            MenuIcon::Folder => include_bytes!("../menu-icons/folder.png"),
+            MenuIcon::Logs => include_bytes!("../menu-icons/logs.png"),
+            MenuIcon::Quit => include_bytes!("../menu-icons/quit.png"),
+        }
+    }
+}
+
+/// A row of the tray's menu with its glyph; a glyph that cannot be read leaves the row without one.
+pub(crate) fn tray_item<R: tauri::Runtime, M: Manager<R>>(
+    app: &M,
+    id: &str,
+    text: &str,
+    icon: MenuIcon,
+) -> tauri::Result<IconMenuItem<R>> {
+    let builder = IconMenuItemBuilder::with_id(id, text);
+    match tauri::image::Image::from_bytes(icon.png()) {
+        Ok(image) => builder.icon(image),
+        Err(_) => builder,
+    }
+    .build(app)
 }
 
 /// Ids of the tray's Run in background and Start on login (`background_menu_items`).
@@ -487,13 +535,19 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
         }
         return;
     };
-    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page, || session_is_live(app)));
+    open_page(app, &page);
+}
+
+/// Show the dashboard window at `page`, an app-relative page: now, or as the dashboard loads while its session is not
+/// live (`LinkedPage`).
+fn open_page(app: &AppHandle, page: &str) {
+    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(page, || session_is_live(app)));
     if held {
         if let Some(w) = app.get_webview_window("main") {
             bring_to_front(&w);
         }
     } else {
-        show_page(app, &page);
+        show_page(app, page);
     }
 }
 
@@ -1794,10 +1848,10 @@ struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
 #[derive(Default)]
 struct TrayRunItemsInner {
-    stops: Vec<(String, String, tauri::menu::MenuItem<tauri::Wry>)>,
+    stops: Vec<(String, String, IconMenuItem<tauri::Wry>)>,
     separator: Option<tauri::menu::PredefinedMenuItem<tauri::Wry>>,
     /// Show the stopped test, first in the menu while a test waits, with its text.
-    show: Option<(String, tauri::menu::MenuItem<tauri::Wry>)>,
+    show: Option<(String, IconMenuItem<tauri::Wry>)>,
 }
 
 impl TrayRunItemsInner {
@@ -1806,6 +1860,10 @@ impl TrayRunItemsInner {
         usize::from(self.show.is_some())
     }
 }
+
+/// Ids of the tray's MCP server… and Desktop app settings…, which open those settings pages.
+const TRAY_AGENTS_ID: &str = "agents";
+const TRAY_CONNECTION_ID: &str = "connection";
 
 /// Id of the tray's Show the stopped test.
 const TRAY_SHOW_STOP_ID: &str = "show-stop";
@@ -1850,7 +1908,7 @@ pub(crate) fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
             items.show = Some((text, item));
         }
         (Some(text), None) => {
-            if let Ok(item) = MenuItemBuilder::with_id(TRAY_SHOW_STOP_ID, text.as_str()).build(app) {
+            if let Ok(item) = tray_item(app, TRAY_SHOW_STOP_ID, text.as_str(), MenuIcon::ShowStop) {
                 if menu.0.insert(&item, 0).is_ok() {
                     items.show = Some((text, item));
                 }
@@ -1882,7 +1940,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         if present {
             continue;
         }
-        if let Ok(item) = MenuItemBuilder::with_id(id.as_str(), text.as_str()).build(app) {
+        if let Ok(item) = tray_item(app, id.as_str(), text.as_str(), MenuIcon::StopRun) {
             let _ = menu.0.insert(&item, first + index);
             items.stops.insert(index, (id.clone(), text.clone(), item));
         }
@@ -3528,6 +3586,7 @@ pub fn run() {
         .manage(PendingOpenFiles::default())
         .manage(LinkedPage::default())
         .manage(updates::UpdaterSupport(updater_supported))
+        .manage(updates::TrayUpdateBusy::default())
         .manage(updates::PendingUpdate::default())
         .manage(updates::ReleaseNotesState::default())
         .setup(move |app| {
@@ -3752,22 +3811,30 @@ pub fn run() {
             });
 
             // --- tray ---
-            let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
-            let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
-            let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+            // In the sections of Piwi's menu, as Piwi Runner's tray: the run control (Show the stopped test, the
+            // Stop items under Open, `refresh_tray_stop`, `refresh_tray_runs`), the app, Agents and Connection, then
+            // the app's own options, Check for updates, its files and Quit.
+            let open_i = tray_item(app, "open", &format!("Open {APP_NAME}"), MenuIcon::App)?;
+            let agents_i = tray_item(app, TRAY_AGENTS_ID, "MCP server…", MenuIcon::Agents)?;
+            let connection_i = tray_item(app, TRAY_CONNECTION_ID, "Desktop app settings…", MenuIcon::Connection)?;
+            let folder_i = tray_item(app, "open_folder", "Open data folder", MenuIcon::Folder)?;
+            let logs_i = tray_item(app, "show_logs", "Show logs", MenuIcon::Logs)?;
+            let update_i = tray_item(app, "check_update", "Check for updates…", MenuIcon::Update)?;
             let (bg_i, login_i) = background_menu_items(app)?;
-            let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+            let quit_i = tray_item(app, "quit", &format!("Quit {APP_NAME}"), MenuIcon::Quit)?;
 
-            let menu = MenuBuilder::new(app)
+            let mut menu = MenuBuilder::new(app)
                 .item(&open_i)
-                .item(&folder_i)
-                .item(&logs_i)
+                .item(&agents_i)
+                .item(&connection_i)
                 .separator()
                 .item(&bg_i)
                 .item(&login_i)
-                .separator()
-                .item(&quit_i)
-                .build()?;
+                .separator();
+            if app.state::<updates::UpdaterSupport>().0 {
+                menu = menu.item(&update_i);
+            }
+            let menu = menu.item(&folder_i).item(&logs_i).separator().item(&quit_i).build()?;
             app.manage(TrayMenu(menu.clone()));
             app.manage(TrayRunItems::default());
 
@@ -3796,6 +3863,9 @@ pub fn run() {
                         }
                     }
                     "show_logs" => reveal_log(app),
+                    TRAY_AGENTS_ID => open_page(app, "/settings/mcp"),
+                    TRAY_CONNECTION_ID => open_page(app, "/settings/desktop"),
+                    "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP_IDLE),
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
                         let _ = app
@@ -4613,6 +4683,24 @@ mod tests {
         let long = "x".repeat(65);
         for bad in ["", "a/b", "a b", "a?worker=1", "x\u{0}", long.as_str()] {
             assert!(!is_run_ref(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_glyph_of_the_trays_menus_is_a_png_the_menu_reads() {
+        for icon in [
+            crate::MenuIcon::App,
+            crate::MenuIcon::ShowStop,
+            crate::MenuIcon::StopRun,
+            crate::MenuIcon::Agents,
+            crate::MenuIcon::Connection,
+            crate::MenuIcon::Update,
+            crate::MenuIcon::Folder,
+            crate::MenuIcon::Logs,
+            crate::MenuIcon::Quit,
+        ] {
+            let image = tauri::image::Image::from_bytes(icon.png()).expect("a PNG");
+            assert_eq!((image.width(), image.height()), (32, 32));
         }
     }
 

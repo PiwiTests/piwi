@@ -166,7 +166,8 @@ shell and are feature-equivalent.
   channel its requested runs name, and nothing in `runner_app.rs` publishes that hub (`publish_discovery_hub`) or the
   file, so no terminal run or other tool finds it; `runner_app` compiles with and without the feature so `cargo test`
   covers both.
-  Its tray shares the desktop app's Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
+  Its tray shares the desktop app's rows, order and glyphs (`tray_item`, `MenuIcon`, the brand generator's
+  `menu-icons/`), and its Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
   with Run in background on until the person turns it off, and its window holds the same two toggles: a desktop with
   no tray host must still be able to turn it off and quit.
 - **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config:

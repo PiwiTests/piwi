@@ -480,6 +480,28 @@ const PNG_FILES = [
 ];
 const ICO_FILES = ['apps/application/public/favicon.ico', 'apps/docs/public/favicon.ico'];
 
+// The rows of the tray menu Piwi Desktop and Piwi Runner share, each with its concept's glyph: the Piwi mark for the
+// app, else the dashboard's lucide icon. One mid gray reads on a light menu and a dark one, as a menu's bitmaps keep
+// their colors; 32 px, which the menu draws at 16 points.
+const MENU_ICON_GRAY = '#8a8f98';
+const lucide = JSON.parse(readFileSync(resolve(ROOT, 'node_modules/@iconify-json/lucide/icons.json'), 'utf8'));
+const lucideIcon = (name) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" style="color:${MENU_ICON_GRAY}">${lucide.icons[name].body}</svg>`;
+const MENU_ICONS = {
+  piwi: monoMark(MENU_ICON_GRAY, 32),
+  'show-stop': lucideIcon('circle-pause'),
+  'stop-run': lucideIcon('square'),
+  agents: lucideIcon('bot'),
+  connection: lucideIcon('monitor'),
+  update: lucideIcon('download'),
+  folder: lucideIcon('folder-open'),
+  logs: lucideIcon('scroll-text'),
+  quit: lucideIcon('power'),
+};
+for (const [name, markup] of Object.entries(MENU_ICONS)) {
+  PNG_FILES.push([`apps/desktop/src-tauri/menu-icons/${name}.png`, 32, markup]);
+}
+
 for (const [path, content] of Object.entries(SVG_FILES)) write(path, content);
 
 /**

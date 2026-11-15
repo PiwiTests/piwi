@@ -40,9 +40,11 @@ fixed locally and flaky in its tooltip (HM2). M4 and M13 built since: an instanc
 glyph in both status items, a cloud struck through (`$(piwi-unreachable)`, `unreachable.svg`) (HM4), and JetBrains' run
 tab opens a shared run's page and copies its link after its controls, as the status popup does;
 VS Code's failures view lists finished runs alone, which no share outlives, and its status menu lists the shared ones
-(LR14). M3 in part since: Piwi Picker's popup stands its tiles in the menu's sections, in its order: Record actions and
+(LR14). M3 built since: Piwi Picker's popup stands its tiles in the menu's sections, in its order: Record actions and
 Pick an element first, Piwi Picker's own tools under Pick, Report a bug and Replay under Record, and side by side Runs
-under Run control, Tested elements under Dashboard and Agent context under Agents, the gear Connection (X3 in part).
+under Run control, Tested elements under Dashboard and Agent context under Agents, the gear Connection; and the tray of
+Piwi Desktop and Piwi Runner takes the menu's order, the run control first, the app, Agents and Connection, then its
+own options, with Check for updates in both and each row's glyph (X3).
 Also built since, with their findings: Q25 (the JetBrains plugin's labels
 in sentence case, as VS Code's, so its labels quoted below in Title Case now read in sentence case), Q12, Q5's Test
 connection (ST9), and Q8's Documentation in the gear, the headline in the hover alone and Reload Piwi with a glyph of
@@ -237,8 +239,7 @@ step moves the document to `adr/`.
 
 **Summary.**
 
-- **What is left.** Most of the plan's quick wins are built; the steps left center on the other tools' menus (M3),
-  Debug with Piwi (M8), the Rider layer (M17) and the debug-session decision (L3).
+- **What is left.** Most of the plan's quick wins are built; the steps left center on Debug with Piwi (M8), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -246,7 +247,7 @@ step moves the document to `adr/`.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** the six medium and seven large steps left, each the size of a
+- **Twenty larger items (§10) and a ranked plan (§12):** the five medium and seven large steps left, each the size of a
   pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -328,11 +329,6 @@ These rules hold them together; each larger item of §10 carries one or more.
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
    `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([RD4](#rd4))
 
-<a id="x3"></a>**X3. The tray of Piwi Desktop and Piwi Runner keeps a list of its own.** The status item opens one Piwi menu
-in both editors, and Piwi Picker's popup stands in its sections, but the tray takes neither its order nor its words.
-**(read)** Fix: the tray takes [LI4](#li4)'s sections, with Check for updates and icons alike in Piwi Desktop and Piwi
-Runner. ([M3](#m3), [LI4](#li4))
-
 **What 1.0 allows.** [1.0-stabilization.md](1.0-stabilization.md) D25 lists every command, setting and action id of both
 editors, their action groups, views and submenus, held to the manifests by
 `apps/application/tests/unit/editor-ids-register.test.ts`. Titles, icons, menus and their order are not frozen, so they
@@ -355,8 +351,8 @@ Run Tests in tests/ and Solution Explorer's offers Run Unit Tests, with nothing 
 Record a new test file… among the file kinds, on C# project folders too, since it needs only a Playwright config in the
 project (`PiwiRecordingActions.kt:101-104`). **(seen)** Fix: the same group in Solution Explorer and the Tests menu
 through an optional Rider descriptor, and New → Playwright Test (Recorded)…, which
-[record-from-the-ide.md](record-from-the-ide.md) Part 2 plans, on config folders only. ([M3](#m3), [M17](#m17),
-[LI4](#li4), [LI16](#li16))
+[record-from-the-ide.md](record-from-the-ide.md) Part 2 plans, on config folders only. ([M17](#m17), [LI4](#li4),
+[LI16](#li16))
 
 ### 4.4 Names
 
@@ -634,7 +630,7 @@ four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
 makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Built: the catalog's ids and one title per
 action, held against both manifests (`packages/editor/src/actions.ts`). Its short labels and the words table are step
-M22's (built), its chords M16's ([LI15](#li15)); its concept came with M4's glyphs (built) and its menus come with [M3](#m3).
+M22's (built), its chords M16's ([LI15](#li15)); its concept came with M4's glyphs (built) and its menus came with M3 (built).
 
 <a id="li15"></a>
 
@@ -698,7 +694,7 @@ preselected, so Enter still refreshes) and the tool window's gear; the click ope
 in** the catalog's menu fields and both manifests (FSL); ids stay. **Replaces** 51 flat rows, nothing in either file
 tree, a VS Code status click that only refreshes. **Depends on** [LI1](#li1). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M7 (a status popup in JetBrains only) and §3.6, which
-called VS Code's status bar the control center. Steps [M3](#m3).
+called VS Code's status bar the control center. Step M3 (built).
 
 <a id="li5"></a>
 
@@ -946,7 +942,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): the tray of Piwi Desktop and Piwi Runner takes its sections, with Check for updates and icons alike in both | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
@@ -967,7 +962,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-On the action catalog, one Piwi menu (M3); M17 closes #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
+On the action catalog, one Piwi menu (M3, built); M17 closes #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
 ## 13. Open questions

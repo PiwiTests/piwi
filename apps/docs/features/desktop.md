@@ -39,10 +39,9 @@ once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** 
 
 Its data, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
-The system tray menu holds **Open Piwi Desktop**, each test running from the app with **Stop** (the machine kept
-awake meanwhile), **Open data folder**, **Show logs**, **Run in background** (off, closing the window quits), **Start
-on login** (hidden in the tray), **Quit Piwi Desktop**, and first **Show the stopped test**, opening the window on one
-waiting for you. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
+The tray menu, in the editors' order: **Show the stopped test** while one waits, **Open Piwi Desktop**, **Stop** per
+running test (the machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
+the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
