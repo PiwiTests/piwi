@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { cacheKey, isCachedModule } from '../src/code-cache';
 import { spareRefusal, type ForkRequest, type SpareStart } from '../src/spare';
 import { cacheRoot } from '../src/cache-folder';
+import { recordReads } from '../src/env-reads';
 import { codeCacheFolder, isCodeCacheFolder, runsWorkers } from '../src/startup-env';
 
 const start: SpareStart = {
@@ -112,5 +113,19 @@ describe('the code cache', () => {
     expect(cacheKey('/a.js', 10, 1, 'worker')).toBe(key);
     expect(new Set([cacheKey('/a.js', 11, 1, 'worker'), cacheKey('/a.js', 10, 2, 'worker')]).has(key)).toBe(false);
     expect(cacheKey('/a.js', 10, 1, 'runner test')).not.toBe(key);
+  });
+});
+
+describe('recordReads', () => {
+  test('records the variables read and the folder asked for, not a copy of the whole environment', () => {
+    const reads = recordReads(() => {
+      void { ...process.env };
+      void Object.assign({}, process.env);
+      void process.env.PIWI_TURBO_READ_DIRECTLY;
+      void ('PIWI_TURBO_CHECKED' in process.env);
+      void process.cwd();
+    });
+    expect([...reads.env].sort()).toEqual(['PIWI_TURBO_CHECKED', 'PIWI_TURBO_READ_DIRECTLY']);
+    expect(reads.cwd).toBe(true);
   });
 });

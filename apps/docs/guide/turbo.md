@@ -117,8 +117,10 @@ npx piwi-turbo test tests/checkout.spec.ts
 It caches Playwright's compiled modules for the runner and its workers, and for `test` starts a spare worker that
 loads Playwright while the runner reads the config. A single test went from 1.2 s to 0.7 s: it helps an edit-and-run
 loop or an agent that runs one test at a time, not a long CI run. IDE extensions that start `playwright` themselves
-bypass it. The [package README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#a-faster-start-piwi-turbo)
-lists its variables and measurements.
+bypass it. With `--warm` first, a background process keeps a runner loaded for the next `test` command: a test that
+opens a page took 0.4 s. The [package
+README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#a-faster-start-piwi-turbo) lists its variables and
+measurements.
 
 ## Advanced: the levers one by one
 

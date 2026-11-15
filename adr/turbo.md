@@ -40,7 +40,10 @@ tell a real gain from noise.
    the run compiled, for the runner and the Node processes it forks. For `test`, it also starts a spare worker that
    loads Playwright's bundles while the runner starts and stands in for the first worker fork, unless the fork's
    options, the Node options, the folder, or a variable Node reads at start or Playwright read while the spare loaded
-   have changed by then. It changes the command, not the config, so it sits outside the presets.
+   have changed by then. It changes the command, not the config, so it sits outside the presets. With `--warm`
+   first, a daemon keeps one such runner loaded between commands, prepared for the caller's terminal, and gives a
+   `test` command to it only when the variables the runner read as it loaded, the folder it read and Node's start-up
+   variables are the caller's; requests carry a token from a file only the user can read.
 7. **Keep only what measures well.** Every lever was measured before it shipped, and what did not pay was removed
    rather than documented. The list below is the record of what was tried.
 
@@ -82,6 +85,7 @@ one noted. Piwi's suite was not run again, so its CPU figures are left out.
 | `piwi-turbo`, spare worker | The same runs, against the caches alone: 902 to 722 ms, 1,470 to 1,307, 4,296 to 4,128, 6,086 to 5,865; Inventory unchanged (11,798 and 11,805). On a one-test run with a page, outside the harness (10 rounds): 1,295 ms stock, 907 with the caches, 651 with the spare. |
 | `screenshotMatches` | A passing `toHaveScreenshot` of a 1280×720 page spent about 40 ms of its 81 ms decoding the capture and the baseline. Median of 15 assertions: 81 ms stock, 88 ms with `fastScreenshots`, 39.5 ms with `screenshotMatches` (the stock capture has the baseline's bytes), 33.5 ms with both once the store knows the capture; on a page of gradients, 132, 101.5, 82 and 35 ms. Flashwright's screenshot suite, 15 tests against one baseline: `max` 3,658 ms without it and 3,019 ms with it (stock 4,611, 5 runs). |
 | `keepStaticCache` | Piwi's own dashboard, built for production (a 490 KB entry script, 283 static responses on its home page, two public logos with a `Last-Modified` date only), 11 tests that each load its home page with a reused context: median page load 396–427 ms with Playwright's reset and 324–359 ms with the hook, over four rounds. |
+| `piwi-turbo --warm` | The prototype, on Flashwright's suites with `max` after an untimed pause of 1.5 s before each run (5 runs, 6 for one test): one test 776 ms without it and 485 ms with it (stock 1,333, Flashwright 438); 15 trivial tests 1,460 and 1,119; on the app suites the saving, about 200 to 300 ms per command, was within run-to-run noise. As shipped, one test after the same pause (median of 8): 539 and 212 ms, and 773 and 431 ms for a test that opens a page. |
 | `retryIntervals` | Reference workload: −6.0% wall, lower in all five rounds, for +3.2% CPU. |
 | `fastScreenshots` | Flashwright's screenshot suite: `max` 1.34× against 1.14× without it. No measurable change on the reference workload, where screenshots are 2% of the test time. |
 | `failFast` | Reference workload, red run of six failing assertions: −22% (25.2 s to 19.6 s), with the same failures and no false one. |
@@ -170,13 +174,6 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
   probe's own `locator.evaluate`, which takes 6–8 protocol commands. Locator healing cost 204 ms per test before and
   208 ms after, over three rounds of the reporter's capture benchmark alternating the two builds: the test does not
   wait on those commands.
-- **A warm runner** (a prototype, not shipped): a process kept in the background holds one runner that has loaded
-  Playwright, and `piwi-turbo` hands it each command's arguments, environment and folder and streams its output back.
-  With `max`, after an untimed pause of 1.5 s before each run (5 runs, 6 for one test): one test 776 ms with
-  `piwi-turbo` and 485 ms with the warm runner (stock 1,333, Flashwright 438); 15 trivial tests 1,460 and 1,119; on the
-  app suites the saving, about 200 to 300 ms per command, was within run-to-run noise. Shipping it needs the runner
-  prepared for the caller's terminal (Playwright fixes the terminal's width and colors as it loads), Ctrl+C passed
-  on, a socket only its user can reach, named pipes on Windows, and a restart when Playwright changes.
 - **A larger young generation** (`--max-semi-space-size=64`) for the runner and its workers: single-test runs came out
   slower.
 

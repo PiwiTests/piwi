@@ -140,6 +140,21 @@ with an empty cache):
 An agent or a script that runs `node node_modules/@piwitests/turbo/dist/cli.js test` instead of
 `npx piwi-turbo test` also saves the start of `npx`, about 200 ms on the same machine.
 
+### A warm runner: `--warm`
+
+```sh
+npx piwi-turbo --warm test tests/checkout.spec.ts
+```
+
+The first such command starts a process in the background that keeps one runner loaded, with its spare worker; the
+next `test` commands go to it, and it readies another after each. A runner takes a command only when it loaded with
+the caller's terminal (its width and height, or none), the folder when it read it, and the variables it read or Node
+reads at start; otherwise the command runs in its own process, as without `--warm`, and the next runner loads for it.
+A request carries a token from a file only you can read, the process listens in a folder only you can reach (a named
+pipe on Windows), it exits after ten minutes without a request, and `npx piwi-turbo --warm-stop` stops it. On a run of
+one test, after a pause as when you edit between runs (median of 8): 539 ms without `--warm` and 212 ms with it, and
+773 ms and 431 ms for a test that opens a page.
+
 ## Advanced: the levers one by one
 
 Every preset is a set of these options; name one to override it.

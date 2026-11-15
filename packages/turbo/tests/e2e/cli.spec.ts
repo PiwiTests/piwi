@@ -1,7 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { findPlaywright } from '../../src/start';
+import { warmAddress } from '../../src/warm-protocol';
+import { version as packageVersion } from '../../package.json';
 
 const cli = join(__dirname, '..', '..', 'dist', 'cli.js');
 const project = join(__dirname, 'cli-project');
@@ -86,4 +90,60 @@ test('prints no warning of its own in an ES module project', () => {
   expect(result.status, result.output).toBe(0);
   expect(result.output).toContain('1 passed');
   expect(result.output).not.toContain('Warning');
+});
+
+test.describe('with --warm', () => {
+  /** Runs `--warm` commands until one goes to a warm runner, as the daemon the first one started gets ready. */
+  async function warmRun(args: string[], cache: string, env: NodeJS.ProcessEnv = {}) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = run(['--warm', ...args], cache, env);
+      if (/warm runner \d+ runs the command/.test(result.output)) return result;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error('no command went to a warm runner');
+  }
+
+  test.afterEach(() => {
+    run(['--warm-stop'], test.info().outputPath('cache'));
+  });
+
+  test("runs a test command in a warm runner, with the caller's environment and exit code", async () => {
+    const cache = test.info().outputPath('cache');
+    const passed = await warmRun(['test'], cache);
+    expect(passed.status, passed.output).toBe(0);
+    expect(passed.output).toContain('2 passed');
+    const none = await warmRun(['test', '--grep', 'no test has this title'], cache);
+    expect(none.status, none.output).toBe(1);
+    expect(none.output).toContain('No tests found');
+  });
+
+  test('runs the command in its own process when a variable the runner read as it loaded changed', async () => {
+    const cache = test.info().outputPath('cache');
+    await warmRun(['test'], cache, { CI: 'one value' });
+    const result = run(['--warm', 'test'], cache, { CI: 'another value' });
+    expect(result.status, result.output).toBe(0);
+    expect(result.output).toContain('no warm runner: CI changed');
+    expect(result.output).toContain('2 passed');
+  });
+
+  test('answers no request without the token, and stops when asked', async () => {
+    const cache = test.info().outputPath('cache');
+    await warmRun(['test'], cache);
+    const install = findPlaywright(project)!;
+    const address = warmAddress(install, cache, packageVersion);
+    const replies = await new Promise<string>((resolve) => {
+      const socket = connect(address.socket);
+      let received = '';
+      socket.on('data', (chunk) => (received += chunk));
+      socket.on('close', () => resolve(received));
+      socket.on('connect', () =>
+        socket.write(
+          `${JSON.stringify({ type: 'run', token: 'not the token', args: ['test'], env: {}, cwd: project })}\n`,
+        ),
+      );
+    });
+    expect(replies).toBe('');
+    run(['--warm-stop'], cache);
+    await expect.poll(() => existsSync(address.tokenFile)).toBe(false);
+  });
 });

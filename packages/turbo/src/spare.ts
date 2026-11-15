@@ -45,9 +45,23 @@ export function spareRefusal(
   if (JSON.stringify(request.execArgv) !== JSON.stringify(start.execArgv)) return 'the Node options changed';
   if (request.cwd !== start.cwd) return 'the working folder changed';
   if (JSON.stringify(options.stdio) !== JSON.stringify(start.stdio)) return 'the fork asks for other stdio';
-  const env = options.env ?? process.env;
-  for (const key of new Set([...Object.keys(env), ...Object.keys(start.env)]))
-    if (env[key] !== start.env[key] && (envRead.has(key) || STARTUP_ENV.test(key))) return `${key} changed`;
+  return envRefusal(start.env, envRead, options.env ?? process.env);
+}
+
+/**
+ * The first variable that differs between the environment a process loaded with and `env`, among those its loading
+ * read and those Node reads as a process starts, or `undefined` when none does. `ignored` names variables compared
+ * some other way.
+ */
+export function envRefusal(
+  loadedWith: NodeJS.ProcessEnv,
+  envRead: ReadonlySet<string>,
+  env: NodeJS.ProcessEnv,
+  ignored: ReadonlySet<string> = new Set(),
+): string | undefined {
+  for (const key of new Set([...Object.keys(env), ...Object.keys(loadedWith)]))
+    if (!ignored.has(key) && env[key] !== loadedWith[key] && (envRead.has(key) || STARTUP_ENV.test(key)))
+      return `${key} changed`;
   return undefined;
 }
 

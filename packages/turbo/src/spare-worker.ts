@@ -1,6 +1,7 @@
 // The spare test worker `piwi-turbo test` starts with the runner. It loads Playwright's bundles while the runner starts,
 // records the environment variables they read as they load, and reports them. Handed off, it takes the environment of
 // the worker Playwright meant to start and runs Playwright's worker entry in this process.
+import { recordReads } from './env-reads';
 import { DISCARD_CODE_CACHE, SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
 
 const entry = process.env[SPARE_ENTRY];
@@ -25,19 +26,10 @@ const handoff = new Promise<NodeJS.ProcessEnv>((resolve) => {
   process.on('message', onMessage);
 });
 
-const env = process.env;
-const envRead = new Set<string>();
-const record = (key: string | symbol) => typeof key === 'string' && envRead.add(key);
-process.env = new Proxy(env, {
-  get: (target, key) => (record(key), Reflect.get(target, key)),
-  has: (target, key) => (record(key), Reflect.has(target, key)),
-});
-try {
+const reads = recordReads(() => {
   for (const id of preload) require(id);
-} finally {
-  process.env = env;
-}
-process.send({ method: '__piwi_turbo_spare_loaded__', envRead: [...envRead] } satisfies SpareLoaded);
+});
+process.send({ method: '__piwi_turbo_spare_loaded__', envRead: [...reads.env] } satisfies SpareLoaded);
 
 void handoff.then((workerEnv) => {
   handedOff = true;
