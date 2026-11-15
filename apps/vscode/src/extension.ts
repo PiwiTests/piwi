@@ -94,6 +94,9 @@ import {
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
   SCREENSHOT_REQUEST,
+  FILE_ISSUE_REQUEST,
+  type FileIssueParams,
+  type FileIssueResult,
   TRACE_REQUEST,
   type DesktopResult,
   type BaselineChoice,
@@ -1638,10 +1641,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.flakeLabInDesktop', (target: FailureNode) =>
       desktopJobOf(target, 'flake-lab'),
     ),
-    // File an issue: the page of the failure's cluster, where the dashboard files one.
+    // File an issue: the failure's cluster in the dashboard, or which ticket is linked already.
     vscode.commands.registerCommand('piwi.fileIssue', async (target: FailureNode) => {
-      const url = failureOf(target)?.issueUrl;
-      if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+      const failure = failureOf(target);
+      if (!failure || !connectedOrSay()) return;
+      const params: FileIssueParams = { uri: failure.uri, executionId: failure.executionId };
+      const result = await lc.sendRequest<FileIssueResult>(FILE_ISSUE_REQUEST, params).catch(() => null);
+      if (result?.url) {
+        await vscode.env.openExternal(vscode.Uri.parse(result.url));
+        return;
+      }
+      const open = 'Open the issue';
+      const picked = await vscode.window.showInformationMessage(
+        result?.message ?? 'Piwi: the editor service did not answer.',
+        ...(result?.issueUrl ? [open] : []),
+      );
+      if (picked === open && result?.issueUrl) await vscode.env.openExternal(vscode.Uri.parse(result.issueUrl));
     }),
     // A flaky test's Flakiness tab and the Flake Lab commands it can run, as the service lists them.
     vscode.commands.registerCommand('piwi.lookIntoFlake', async (node?: FailureNode) => {

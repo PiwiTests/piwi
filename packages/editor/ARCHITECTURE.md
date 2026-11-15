@@ -458,8 +458,8 @@ On a spec, `piwi/fileSummary` gives each test's line:
   spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
   `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
   the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
-  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug this
-  failure**, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug with
+  Piwi** on its node, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
   spec titled as it failed (`failureTestActions`).
 
 Every code action the service answers carries Piwi's name, its words after it starting lower-case (`piwiActionTitle`:
@@ -1708,8 +1708,9 @@ spec or a file the locator index calls locators from.
   site.
 - `ci-failure`: a failure of the latest run ([Failure diagnostics](#failure-diagnostics-and-runs-laid-over)). Quick
   fixes, which edit but for the first: **Run with Piwi** once the line was edited, heal the locator, apply the fix plan
-  (then run its verification); its trace, its context, its page, the desktop jobs and File an issue
-  (`WorkspaceFailure.issueUrl`, its cluster's page) are the failure node's.
+  (then run its verification); its trace, its context, its page, the desktop jobs and File an issue are the failure
+  node's. File an issue (`WorkspaceFailure.fileIssue`) asks `piwi/fileIssue` when chosen, which answers the cluster's
+  page while no ticket is linked to the cluster or the test (`issuesOf`), else names the ticket.
 
 ### Completion
 
@@ -1771,7 +1772,8 @@ only while the app runs and the context reads another instance than the app (`De
 - on a CI failure's node, **Reproduce in the desktop app** and **Find the breaking commit in the desktop app** (a
   bisect), which the clients offer while `piwi/status` names the app (`desktopUrl`);
 - on a flaky test's line, and on the node of a failure whose test has an untested suspect
-  (`WorkspaceFailure.untestedSuspects`, `hasUntestedSuspect`), a `flake-lab` job.
+  (`WorkspaceFailure.untestedSuspects`, `hasUntestedSuspect`, set only on a context that reads another instance than
+  the app), a `flake-lab` job.
 
 A `flake-lab` job carries the test's reproduce plan, which the service reads from the instance with recording on
 (`source=desktop`, and this machine's name). The app runs it with `piwi flake --plan <file> --json` against itself.

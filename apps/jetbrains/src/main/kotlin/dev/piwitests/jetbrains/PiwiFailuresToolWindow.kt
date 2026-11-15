@@ -608,20 +608,20 @@ class FindBreakingCommitAction : FailureNodeAction(PiwiIcons.BISECT) {
     override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "bisect")
 }
 
-/** **Run Flake Lab on its untested suspects in the desktop app**: the selected CI failure's test has one. */
+/** **Run Flake Lab on its untested suspects in the desktop app**: the selected failure's test has one. */
 class FlakeLabFailureAction : FailureNodeAction(PiwiIcons.FLAKE_LAB) {
-    override fun applies(project: Project, failure: WorkspaceFailure) = failure.untestedSuspects == true && desktop(project, failure)
+    override fun applies(project: Project, failure: WorkspaceFailure) =
+        failure.untestedSuspects == true && !Glue.isFixedLocally(failure) &&
+            project.service<PiwiProjectService>().status?.desktopUrl != null
 
     override fun perform(project: Project, failure: WorkspaceFailure) = job(project, failure, "flake-lab")
 }
 
-/** **File an issue**: the page of the selected failure's cluster, where the dashboard files one. */
+/** **File an issue**: the selected failure's cluster in the dashboard, or which ticket is linked already. */
 class FileIssueAction : FailureNodeAction(PiwiIcons.ISSUE) {
-    override fun applies(project: Project, failure: WorkspaceFailure) = failure.issueUrl != null
+    override fun applies(project: Project, failure: WorkspaceFailure) = failure.fileIssue == true
 
-    override fun perform(project: Project, failure: WorkspaceFailure) {
-        failure.issueUrl?.let { BrowserUtil.browse(it) }
-    }
+    override fun perform(project: Project, failure: WorkspaceFailure) = PiwiCommands.fileIssue(project, evidence(failure))
 }
 
 /**

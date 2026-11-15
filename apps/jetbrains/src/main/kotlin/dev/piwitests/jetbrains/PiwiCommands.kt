@@ -347,6 +347,29 @@ object PiwiCommands {
     }
 
     /** Download a failure's screenshot and open it in an editor tab. */
+    /** File an issue: the failure's cluster in the dashboard, or, when a ticket is linked already, which one. */
+    fun fileIssue(project: Project, params: TraceParams) {
+        background(project, "Piwi: looking for the failure's issue") {
+            val server = project.service<PiwiProjectService>().server()
+            val result = server?.fileIssue(params)?.orNull()
+            val url = result?.url
+            if (url != null) {
+                BrowserUtil.browse(url)
+                return@background
+            }
+            val type = if (result?.message != null && server != null) NotificationType.INFORMATION else NotificationType.WARNING
+            val notification = PiwiNotifier.create(
+                PiwiNotifier.kindOf(type),
+                StringUtil.escapeXmlEntities(result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER),
+                type,
+            )
+            result?.issueUrl?.let { issue ->
+                notification.addAction(NotificationAction.createSimpleExpiring("Open the issue") { BrowserUtil.browse(issue) })
+            }
+            notification.notify(project)
+        }
+    }
+
     fun openScreenshot(project: Project, params: TraceParams) {
         background(project, "Piwi: downloading the screenshot") {
             val request = project.service<PiwiProjectService>().server()?.screenshot(params)

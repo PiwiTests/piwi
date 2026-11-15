@@ -37,7 +37,8 @@ spec failed at:
   command runs in a terminal.
 
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
-test. **File an issue**, on the failure's node, opens the cluster in the dashboard, which lists them too.
+test. **File an issue**, on the failure's node, opens its cluster in the dashboard to file one, or names the ticket
+already linked.
 
 <figure>
   <img src="/screenshots/vscode-hover.png" alt="VS Code: the hover on a failing line, dragged taller: the CI failure with its error, its call log and the chain of calls that reached the line, then the failure screenshot of the checkout page">
@@ -101,11 +102,12 @@ context menu adds **Compare with…** for that config. With one config, the run 
 
 Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run with Piwi**,
 **Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Go to the test**,
-**Debug with Piwi**, **Verify ×3 with Piwi**, **Open the screenshot**, **Copy context for agent**, and, on a CI
-failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the desktop app**,
-**Find the breaking commit in the desktop app** and, for a test with an untested [flake suspect](./flake-lab), **Run
-Flake Lab on its untested suspects in the desktop app** (**Share on …** in a job's notification records its result), and,
-on a failure with a [cluster](/features/failure-clusters), **File an issue**. **Heal** stays a quick fix on the line.
+**Debug with Piwi**, **Verify ×3 with Piwi**, **Open the screenshot**, **Copy context for agent**, and **File an
+issue** on a failure with a [cluster](/features/failure-clusters). While the
+[desktop app](/features/desktop#jobs-from-your-editor) runs, it adds **Reproduce in the desktop app** and **Find the
+breaking commit in the desktop app** on a CI failure, and **Run Flake Lab on its untested suspects in the desktop app**
+on a failure whose test has an untested [flake suspect](./flake-lab); **Share on …** in a job's notification records
+its result. **Heal** stays a quick fix on the line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
 latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected failure

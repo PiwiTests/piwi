@@ -341,7 +341,8 @@ run); so does **Debug with Piwi** among a test's actions on the result icon (`Te
 `PiwiCommands.debug`). **Verify ×3 with Piwi** (`Piwi.Failure.Verify`) runs `WorkspaceFailure.verify`, and **Go to
 the test** (`Piwi.Failure.GoToTest`) opens `WorkspaceFailure.test`. On a CI failure while the desktop app runs,
 `Piwi.Failure.Reproduce`, `Piwi.Failure.FindBreakingCommit` and, where `WorkspaceFailure.untestedSuspects` says,
-`Piwi.Failure.FlakeLab` pass the job to the app; `Piwi.Failure.FileIssue` opens `WorkspaceFailure.issueUrl`. A run that
+`Piwi.Failure.FlakeLab` (on any failure it says, not only a CI one) pass the job to the app; `Piwi.Failure.FileIssue`
+asks `piwi/fileIssue` (`PiwiCommands.fileIssue`), opening the cluster's page or saying which ticket is linked. A run that
 names its own start keeps it (`Glue.withRunStart`).
 
 ### Compare with

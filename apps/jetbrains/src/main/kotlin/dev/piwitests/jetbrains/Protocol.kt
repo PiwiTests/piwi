@@ -263,6 +263,12 @@ data class TraceResult(val path: String? = null, val cwd: String? = null, val co
 
 data class ScreenshotResult(val path: String? = null)
 
+/**
+ * `piwi/fileIssue`: `url`, the page of the failure's cluster where the dashboard files its issue, while no ticket is
+ * linked; otherwise `message` says why, `issueUrl` being the ticket already filed when there is one.
+ */
+data class FileIssueResult(val url: String? = null, val message: String? = null, val issueUrl: String? = null)
+
 data class ContextStatus(
     val root: String? = null,
     val connected: Boolean = false,
@@ -574,9 +580,12 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
-    /** File an issue: the page of the failure's cluster, where the dashboard files one; null without a cluster. */
-    val issueUrl: String? = null,
-    /** Whether its test has a flake suspect no experiment tested yet, which Flake Lab in the desktop app runs. */
+    /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+    val fileIssue: Boolean? = null,
+    /**
+     * Whether its test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: Flake
+     * Lab in the desktop app runs it.
+     */
     val untestedSuspects: Boolean? = null,
     /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
     val test: EditorBreakpoint? = null,
@@ -1549,6 +1558,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/screenshot")
     fun screenshot(params: TraceParams): CompletableFuture<ScreenshotResult?>
+
+    @JsonRequest("piwi/fileIssue")
+    fun fileIssue(params: TraceParams): CompletableFuture<FileIssueResult?>
 
     @JsonRequest("piwi/agentContext")
     fun agentContext(params: TraceParams): CompletableFuture<AgentContextResult?>

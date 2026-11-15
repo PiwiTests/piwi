@@ -122,9 +122,8 @@ and every other comparison between runs.
 - **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows the share of its recent passed or
   failed runs in which it failed or passed on a retry, and its top suspect ("flaky 18% · top suspect: GET /api/cart slower (reproduced
   7 of 10)"), with **Reproduce this flake** and, once reproduced, **Verify the flake fix**, run in a terminal against
-  the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (on a failure with
-  an untested suspect, **Run Flake Lab on its untested suspects in the desktop app**) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you
-  confirm it; **Share on …** records the results on the instance, as run from `desktop`.
+  the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (a failure's node
+  has it too) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you confirm it; **Share on …** records the results on the instance, as run from `desktop`.
 - **On a flaky failure's execution or cluster page**, the [next step](./fix-plans#the-next-step) reproduces it under the top untested suspect, then verifies the fix.
 - **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
 

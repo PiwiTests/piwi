@@ -1076,10 +1076,10 @@ const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
 
 /**
  * A code action's title as the light bulb lists it among the editor's own: under Piwi's name, its words after it
- * starting lower-case (`Piwi: use getByRole(…)`), a title naming Piwi as it is (`Run with Piwi`); Heal's `Heal: use …` as `Piwi: heal with …`.
+ * starting lower-case (`Piwi: use getByRole(…)`), a title ending `with Piwi` as it is (`Run with Piwi`); Heal's `Heal: use …` as `Piwi: heal with …`.
  */
 export function piwiActionTitle(title: string): string {
-  if (/\bPiwi\b/.test(title)) return title;
+  if (title.startsWith('Piwi: ') || title.endsWith(' with Piwi')) return title;
   const heal = /^Heal: use (.+)$/.exec(title);
   if (heal) return `Piwi: heal with ${heal[1]}`;
   return `Piwi: ${title.charAt(0).toLowerCase()}${title.slice(1)}`;

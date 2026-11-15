@@ -774,6 +774,22 @@ export interface ScreenshotResult {
 
 export const SCREENSHOT_REQUEST = 'piwi/screenshot';
 
+/** `piwi/fileIssue`: File an issue for a failure of `piwi/failures` (`WorkspaceFailure.fileIssue`). */
+export type FileIssueParams = TraceParams;
+
+/**
+ * `url`: the page of the failure's cluster, where the dashboard files its issue, while no ticket is linked to the
+ * cluster or the test; otherwise null, and `message` says why, `issueUrl` being the ticket already filed when there is
+ * one.
+ */
+export interface FileIssueResult {
+  url: string | null;
+  message: string | null;
+  issueUrl: string | null;
+}
+
+export const FILE_ISSUE_REQUEST = 'piwi/fileIssue';
+
 /**
  * The latest run on the checked-out branch of one workspace context: its latest complete run, and the later runs of
  * that branch the service lays over it (a test re-run from an editor, a run on a developer's machine).
@@ -1288,11 +1304,11 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
-  /** File an issue: the page of the failure's cluster, where the dashboard files one; absent without a cluster. */
-  issueUrl?: string;
+  /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+  fileIssue?: true;
   /**
-   * The test has a flake suspect no experiment tested yet: the failure's node offers Run Flake Lab on its untested
-   * suspects in the desktop app while it runs.
+   * The test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: the failure's
+   * node offers Run Flake Lab on its untested suspects in the desktop app while it runs.
    */
   untestedSuspects?: true;
   /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */

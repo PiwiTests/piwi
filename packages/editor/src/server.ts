@@ -181,6 +181,7 @@ import {
   fileFixtures,
   pageCandidates,
   recordPlace,
+  recordPlacer,
 } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
@@ -250,6 +251,9 @@ import {
   RUN_SELECTION_REQUEST,
   RUN_ID_REQUEST,
   SCREENSHOT_REQUEST,
+  FILE_ISSUE_REQUEST,
+  type FileIssueParams,
+  type FileIssueResult,
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
@@ -1397,8 +1401,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             isNew: f.isNew ?? false,
             duration: f.duration ?? null,
             hasScreenshot: !!f.screenshot,
-            ...(f.clusterId ? { issueUrl: client.clusterUrl(f.clusterId) } : {}),
-            ...(hasUntestedSuspect(context.flakeLab.get(f.testCaseId)) ? { untestedSuspects: true as const } : {}),
+            ...(f.clusterId && context.source !== 'desktop' ? { fileIssue: true as const } : {}),
+            ...(context.source !== 'desktop' && hasUntestedSuspect(context.flakeLab.get(f.testCaseId))
+              ? { untestedSuspects: true as const }
+              : {}),
             ...onTest,
           },
         ];
@@ -3312,6 +3318,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
+      const placeOf = recordPlacer(text);
       for (const { call, found, failed, fixed, failure, status: testStatus } of specTests(
         context,
         file,
@@ -3357,7 +3364,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         // Steps recorded in the test go after its last line before the one that closes it, where Record here writes steps.
         const lastBodyLine = endLine !== undefined ? endLine - 1 : -1;
-        const recordAt = lastBodyLine > i && recordPlace(text, lastBodyLine) === 'steps' ? lastBodyLine : null;
+        const recordAt = lastBodyLine > i && placeOf(lastBodyLine) === 'steps' ? lastBodyLine : null;
         const open: PiwiCommand = {
           title: 'Open in dashboard',
           command: 'piwi.openInDashboard',
@@ -4153,6 +4160,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return { path: trace, cwd: commandFolder(context), command: `npx playwright show-trace "${trace}"` };
     }
     return null;
+  });
+
+  connection.onRequest(FILE_ISSUE_REQUEST, async (params: FileIssueParams): Promise<FileIssueResult> => {
+    const file = uriToPath(params.uri);
+    const candidates = [file ? contextFor(file) : null, ...contexts].filter((c): c is PiwiContext => !!c);
+    for (const context of candidates) {
+      const failure = context.failures?.failures.find((f) => f.executionId === params.executionId);
+      if (!failure?.clusterId || !context.client) continue;
+      const filed = (await context.issuesOf(failure).catch(() => null)) ?? [];
+      const ticket = filed[0];
+      if (!ticket) return { url: context.client.clusterUrl(failure.clusterId), message: null, issueUrl: null };
+      const name = [ticket.key, ticket.title].filter(Boolean).join(' ') || ticket.url;
+      return { url: null, message: `Piwi: an issue is filed for this failure already: ${name}.`, issueUrl: ticket.url };
+    }
+    return { url: null, message: 'Piwi: this failure is no longer in the latest run.', issueUrl: null };
   });
 
   connection.onRequest(SCREENSHOT_REQUEST, async (params: ScreenshotParams): Promise<ScreenshotResult | null> => {

@@ -569,6 +569,7 @@ describe('piwiActionTitle', () => {
   test('keeps a title that names Piwi as it is', () => {
     expect(piwiActionTitle('Run with Piwi')).toBe('Run with Piwi');
     expect(piwiActionTitle('Piwi: record steps here…')).toBe('Piwi: record steps here…');
+    expect(piwiActionTitle("Use getByText('Welcome to Piwi')")).toBe("Piwi: use getByText('Welcome to Piwi')");
   });
 
   test('reads a heal as heal with its locator', () => {

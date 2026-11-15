@@ -1141,8 +1141,8 @@ describe('the Piwi language server', () => {
           },
           duration: 5012,
           hasScreenshot: true,
-          // File an issue: its cluster's page; its test has a flake suspect no experiment tested.
-          issueUrl: `${url}/failure-clusters/77`,
+          // File an issue, on its cluster; its test has a flake suspect no experiment tested.
+          fileIssue: true,
           untestedSuspects: true,
         },
       ],
@@ -1189,6 +1189,18 @@ describe('the Piwi language server', () => {
       ['Reproduce this flake', 'piwi.runCommand'],
       ['Verify the flake fix', 'piwi.runCommand'],
     ]);
+    // File an issue looks for a ticket when asked: this failure's cluster has one, which it names.
+    const at = uri('tests/pages/checkout.page.ts');
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 900 })).toEqual({
+      url: null,
+      message: 'Piwi: an issue is filed for this failure already: SHOP-12 Cart rows missing.',
+      issueUrl: 'https://jira.test/browse/SHOP-12',
+    });
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 1 })).toEqual({
+      url: null,
+      message: 'Piwi: this failure is no longer in the latest run.',
+      issueUrl: null,
+    });
   });
 
   test('groups the failures as the client last asked, for the failures it pushes too', async () => {

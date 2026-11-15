@@ -28,7 +28,7 @@ in the words table's words (NF3); each failures view state carries the actions i
 JetBrains' tool window draws and VS Code's welcomes are held to, reading the instance again Retry wherever it answers a
 failure (NF3); both editors mark the line a pausing test waits at, naming its worker, with End the test (LR18); and a
 failure's quick fixes edit, Run with Piwi first only once its line was rewritten, its trace, context, page, the desktop
-app's jobs and File an issue left to its node (`WorkspaceFailure.issueUrl`, `untestedSuspects`), Run, Debug and Verify ×3
+app's jobs and File an issue left to its node (`untestedSuspects`, `piwi/fileIssue`), Run, Debug and Verify ×3
 named with Piwi wherever they are offered, and each test line's list offers Record steps in this test… after the last
 line of its body (TL2, TL7). M5 built since, and M4 and M13 in part: JetBrains' running ring turns as VS Code's spins (TL5);
 VS Code draws Assert a region and Mock a request with the plugin's glyphs from its icon font (`$(piwi-region)`,

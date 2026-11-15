@@ -292,10 +292,11 @@ config's alone from its node (`failingRuns`). **Run with Piwi** runs `failureRun
 service built for it (`WorkspaceFailure.debug`) once every file is saved, quietly (the service says why it refuses a
 debug run); so does **Debug with Piwi** among a test's actions (`TestAction.kind` `debug`). **Verify ×3 with Piwi**
 (`piwi.verifyFailure`) runs `WorkspaceFailure.verify`, and **Go to the test** (`piwi.goToFailureTest`) opens
-`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`. On a CI failure while the
-desktop app runs (`desktop`), **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and,
-where `WorkspaceFailure.untestedSuspects` says (`flakelab`), **Run Flake Lab on its untested suspects in the desktop
-app** pass the job to `piwi.desktopJob`; **File an issue** (`piwi.fileIssue`, `issue`) opens `WorkspaceFailure.issueUrl`.
+`WorkspaceFailure.test`, each on a failure whose `contextValue` says `verify` or `test`. While the desktop app runs,
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app** on a CI failure (`desktop`), and
+**Run Flake Lab on its untested suspects in the desktop app** where `WorkspaceFailure.untestedSuspects` says
+(`flakelab`), pass the job to `piwi.desktopJob`; **File an issue** (`piwi.fileIssue`, `issue`) asks `piwi/fileIssue`,
+opening the cluster's page it answers or saying which ticket is linked already.
 
 **The rest of the view.**
 
