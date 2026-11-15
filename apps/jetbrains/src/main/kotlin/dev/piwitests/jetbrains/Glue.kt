@@ -1202,8 +1202,8 @@ object Glue {
     /** The tool window's text while no service answers: why, and the links that start it or show its log. */
     fun serviceDownText(trusted: Boolean, startProblem: String?, stopped: Boolean): EmptyText = when {
         !trusted -> EmptyText(WAITING_FOR_TRUST)
-        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG))
-        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES)
+        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG.link))
+        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES.map { it.link })
         else -> EmptyText(NOT_STARTED)
     }
 
@@ -1255,40 +1255,46 @@ object Glue {
         }
     }
 
-    /** An action the Piwi tool window's empty text links, by its id. */
+    /** An action the Piwi tool window's empty text links: its label, and the id of the action it runs. */
+    data class Link(val label: String, val actionId: String)
+
+    /** An action the Piwi tool window's empty text links while no service answers, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         RESTART_SERVICE("Restart the editor service", "Piwi.RestartService"),
         OPEN_LOG("Open the log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
-        RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
-        COMPARE("Compare with…", "Piwi.CompareWith"),
-        RECORD_NEW_FILE("Record a new test file…", "Piwi.RecordNewFile"),
+        ;
+
+        val link get() = Link(label, actionId)
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
-    data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
+    data class EmptyText(val text: String, val links: List<Link> = emptyList())
 
     /**
-     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token, with Retry and Open
-     * the log; an instance still being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare
-     * with…; no connection, with Connect… and Record a new test file…, which needs none; else no failure in the run read
-     * (`runId`).
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
+     * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
+     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
+     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
      */
-    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
-        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
-        "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
-        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY, EmptyLink.OPEN_LOG))
-        "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
-        else -> EmptyText(
-            when {
-                baselineNoRun != null -> baselineNoRun
-                runId != null -> "No failure in run #$runId"
-                else -> "No failure in the latest run"
-            },
-        )
+    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
+        val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
+        return when (view?.state) {
+            "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", links)
+            "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
+            "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
+            "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
+            "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            else -> EmptyText(
+                when {
+                    baselineNoRun != null -> baselineNoRun
+                    runId != null -> "No failure in run #$runId"
+                    else -> "No failure in the latest run"
+                },
+                links,
+            )
+        }
     }
 
     /** What Disconnect says when nothing is saved to forget. */

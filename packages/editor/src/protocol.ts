@@ -500,10 +500,19 @@ export type FailuresViewState =
   | 'loading'
   | 'disconnected';
 
-/** A failures view's state and the sentence it shows for it; null beside failures. */
+/** A failures view's state, the sentence it shows for it (null beside failures), and the actions it links. */
 export interface FailuresView {
   state: FailuresViewState;
   message: string | null;
+  /** The actions the state's text links, in order, each by its label and its command or action id in each editor. */
+  links: FailuresViewLink[];
+}
+
+/** An action a failures view's state links: its label, and the command or action that runs it in each editor. */
+export interface FailuresViewLink {
+  label: string;
+  vscode: string;
+  jetbrains: string;
 }
 
 /**

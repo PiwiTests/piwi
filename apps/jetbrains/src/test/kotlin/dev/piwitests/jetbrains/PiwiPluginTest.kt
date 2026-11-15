@@ -376,7 +376,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             waitUntil { service.serviceStopped }
             assertNull(service.status)
             assertEquals(
-                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES),
+                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES.map { it.link }),
                 Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
             )
         } finally {

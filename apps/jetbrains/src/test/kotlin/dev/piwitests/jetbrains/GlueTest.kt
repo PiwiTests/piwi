@@ -2251,30 +2251,27 @@ class GlueTest {
 
     @Test
     fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
-        val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
+        // The service links each state's actions: the tool window draws them by their label and action id.
+        val retry = FailuresViewLink("Retry", "piwi.refresh", "Piwi.Refresh")
+        val settings = FailuresViewLink("Open settings", "piwi.openSettings", "Piwi.OpenSettings")
+        val down = Glue.failuresEmpty(
+            FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", listOf(retry, settings)),
+            null,
+            null,
+        )
         assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
-        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.SETTINGS), down.links)
-        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
-        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
+        assertEquals(listOf(Glue.Link("Retry", "Piwi.Refresh"), Glue.Link("Open settings", "Piwi.OpenSettings")), down.links)
+        val compare = FailuresViewLink("Compare with…", "piwi.compareWith", "Piwi.CompareWith")
+        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet.", listOf(compare)), null, null)
+        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.Link("Compare with…", "Piwi.CompareWith"))), none)
         assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
-        assertEquals(
-            Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE)),
-            Glue.failuresEmpty(FailuresView("disconnected"), null, null),
-        )
-        assertEquals(
-            Glue.EmptyText(
-                "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
-                listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE),
-            ),
-            Glue.failuresEmpty(
-                FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show. Recording works without one."),
-                null,
-                null,
-            ),
-        )
+        assertEquals(Glue.EmptyText("Not connected to a Piwi instance"), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
-        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.OPEN_LOG), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
-        assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
+        val refresh = FailuresViewLink("Refresh the latest run", "piwi.refreshRun", "Piwi.RefreshRun")
+        assertEquals(
+            Glue.EmptyText("No failure in run #41", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
+            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main.", listOf(refresh)), null, 41),
+        )
     }
 
     @Test
@@ -3694,9 +3691,9 @@ class GlueTest {
     @Test
     fun theToolWindowOffersToRestartAServiceThatStoppedAndShowsTheLogOfOneThatCouldNotStart() {
         assertEquals(Glue.EmptyText(Glue.WAITING_FOR_TRUST), Glue.serviceDownText(trusted = false, startProblem = "no node", stopped = true))
-        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG)), Glue.serviceDownText(true, "no node", stopped = true))
+        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG.link)), Glue.serviceDownText(true, "no node", stopped = true))
         assertEquals(
-            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE, Glue.EmptyLink.OPEN_LOG)),
+            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE.link, Glue.EmptyLink.OPEN_LOG.link)),
             Glue.serviceDownText(true, null, stopped = true),
         )
         assertEquals(Glue.EmptyText(Glue.NOT_STARTED), Glue.serviceDownText(true, null, stopped = false))

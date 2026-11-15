@@ -133,7 +133,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "No failure in the latest run of this branch: nothing to fix, and nothing your runs since broke.\n[Refresh](command:piwi.refreshRun)",
+        "contents": "No failure in the latest run of this branch: nothing to fix, and nothing your runs since broke.\n[Refresh the latest run](command:piwi.refreshRun)",
         "when": "piwi.failuresView == clear"
       },
       {
@@ -148,7 +148,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Read the instance and the configs again](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Retry](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {
