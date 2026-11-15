@@ -129,22 +129,31 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
-test('no row of lenses runs past the editor’s right edge', async () => {
+test('no row of lenses is cut short in an editor of the window’s width', async () => {
+  /** The rows of the active editor that are cut short: their text past their box, or their box past the code. */
+  const cut = () =>
+    page.evaluate(() => {
+      const editor = document.activeElement?.closest('.monaco-editor');
+      const code = editor?.querySelector('.editor-scrollable');
+      const scrollbar = editor?.querySelector('.scrollbar.vertical')?.getBoundingClientRect().width ?? 0;
+      const right = (code?.getBoundingClientRect().right ?? 0) - scrollbar;
+      // A row scrolled out of view is not drawn.
+      const rows = [...(editor?.querySelectorAll('.codelens-decoration') ?? [])].filter(
+        (row) => row.getBoundingClientRect().width > 0,
+      );
+      return {
+        rows: rows.length,
+        cut: rows
+          .filter((row) => row.scrollWidth > row.clientWidth + 1 || row.getBoundingClientRect().right > right + 1)
+          .map((row) => row.textContent),
+      };
+    });
   for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
     await openFile(page, file);
     await expect(page.locator('.monaco-editor .codelens-decoration').first()).toBeVisible();
-    // Each row, its lenses side by side, against the part of the editor that shows the code.
-    const { rows, past } = await page.evaluate(() => {
-      const editor = document.querySelector('.editor-instance .monaco-editor .overflow-guard');
-      const right = editor?.getBoundingClientRect().right ?? 0;
-      const all = [...document.querySelectorAll('.editor-instance .monaco-editor .codelens-decoration')];
-      return {
-        rows: all.length,
-        past: all.filter((row) => row.getBoundingClientRect().right > right + 1).map((row) => row.textContent),
-      };
-    });
+    const { rows, cut: short } = await cut();
     expect(rows, file).toBeGreaterThan(0);
-    expect(past, file).toEqual([]);
+    expect(short, file).toEqual([]);
   }
 });
 

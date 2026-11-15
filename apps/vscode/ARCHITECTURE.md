@@ -1101,7 +1101,8 @@ about driving VS Code this way is recorded in
 The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window. It asserts on
 the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
 the quick fixes, the hover, CodeLens, the failures view and the Testing view. It also checks the layout: no row of
-lenses runs past the editor's right edge, and a flaky test's line says so.
+lenses of the active editor, at the window's width, is cut short (its text past its box, or its box under the
+scrollbar), and a flaky test's line says so.
 
 `.github/workflows/nightly-vscode.yml` runs it every night and on demand, not on pull requests. A failure leaves the
 HTML report, with a screenshot of the window.
