@@ -937,9 +937,12 @@ of its own (`liveRunName`), showing `liveTests` as they come. It ends once the r
 again for it.
 
 **The run profiles**, **Run with Piwi**, **Debug with Piwi** (the Debug kind: headed, holding the failures, Piwi's
-run control rather than a debug session) and **Verify ×3 with Piwi**, run the picked tests through `runTests`
+run control rather than a debug session), **Run with Piwi** of the Coverage kind and **Verify ×3 with Piwi**, run the
+picked tests through `runTests`
 (`testRunsOf`: one run per config, by id when every test has one, else by location). A run that names its own start
-keeps it (`withRunStart`). The commands are queued in their
+keeps it (`withRunStart`). Before a Coverage run ends, `showCoverage` adds a `FileCoverage` for each file
+`piwi/coverageFiles` names for its tests (`testCoverageOf`: the lines run of the executable ones), whose statements
+`loadDetailedCoverage` gives from the same answer. The commands are queued in their
 test run, which:
 
 - follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);

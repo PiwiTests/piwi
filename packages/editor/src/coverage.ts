@@ -110,6 +110,21 @@ export function mayHaveCoverage(codeIndex: CodeIndex | null, repoRelative: strin
 }
 
 /**
+ * The files the tests' recorded coverage names, by the code index (`via: 'coverage'`, or not said by an older instance),
+ * repository-relative and each once; with `testIds`, those the tests of these catalog ids reach alone.
+ */
+export function coveredFiles(codeIndex: CodeIndex, testIds: ReadonlySet<number> | null): string[] {
+  const files = new Set<string>();
+  for (const r of codeIndex.reach) {
+    const file = codeIndex.files[r.file];
+    if (file === undefined || (r.via !== undefined && r.via !== 'coverage')) continue;
+    if (testIds && !r.tests.some((t) => testIds.has(codeIndex.tests[t]?.id ?? -1))) continue;
+    files.add(file);
+  }
+  return [...files];
+}
+
+/**
  * The code index that can say whether the instance holds coverage of a file read for `coverageBranch`: the one read for
  * `indexBranch` when it is the same branch, null standing for `defaultBranch` on either side; null otherwise, since a
  * file the coverage of another branch reaches may be missing from it.

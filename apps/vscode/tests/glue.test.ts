@@ -111,6 +111,7 @@ import {
   withRunStart,
   breakpointsMode,
   runTakesBreakpoints,
+  testCoverageOf,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -2747,5 +2748,36 @@ describe('the failures view’s description', () => {
       'by cluster · Baseline: CI run #124 on main',
     );
     expect(failuresViewDescription('owner', '')).toBe('by owner');
+  });
+});
+
+describe('the coverage view', () => {
+  const result = {
+    uri: 'file:///w/src/basket.ts',
+    state: 'exact' as const,
+    executed: [
+      { start: 7, end: 8, tests: 2 },
+      { start: 16, end: 18, tests: 1 },
+    ],
+    notRun: [{ start: 10, end: 10 }],
+    changed: [],
+    tests: 2,
+    executedLines: 5,
+    executableLines: 8,
+    blob: 'b',
+    label: null,
+  };
+
+  test('counts the lines run of the executable ones, and lists each span with the tests that ran it', () => {
+    expect(testCoverageOf(result)).toEqual({
+      count: { covered: 5, total: 8 },
+      spans: [
+        { start: 7, end: 8, executed: 2 },
+        { start: 10, end: 10, executed: 0 },
+        { start: 16, end: 18, executed: 1 },
+      ],
+    });
+    // A run that recorded no executable lines: those run, and those known not run, are the total.
+    expect(testCoverageOf({ ...result, executableLines: null }).count).toEqual({ covered: 5, total: 6 });
   });
 });

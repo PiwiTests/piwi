@@ -192,8 +192,8 @@ when the file opens, and again after each `piwi/statusChanged`. What the service
 [Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
 
 **How a mark is drawn.** Each span of `Glue.coverageMarks` is a range highlighter on the document's markup model
-(`DocumentMarkupModel`), with a `LineMarkerRendererEx` that paints a bar at the left of the gutter, in the error stripe
-color of its key:
+(`DocumentMarkupModel`), with a `LineMarkerRendererEx` that paints a bar at the right of the gutter's marker area
+(`Position.RIGHT`), beside the IDE's own coverage at its left, in the error stripe color of its key:
 
 | Lines                                                                         | Key                             |
 | ----------------------------------------------------------------------------- | ------------------------------- |
@@ -210,7 +210,10 @@ file's scroll bar keeps its own marks, and a background set on any key tints its
 `apps/application/tests/unit/coverage-mark-colors.test.ts`).
 
 **Tooltips.** The bar is also an `ActiveGutterRenderer`. Hovered, the bar and the scroll bar mark show
-`Glue.coverageMarkTooltip`: what the lines are and what the marks mean. Clicked, the bar shows the same as a hint. The
+`Glue.coverageMarkTooltip`: what the lines are and what the marks mean. Clicked, the bar opens its menu (`showMenu`):
+**Run the tests that ran this line** on a run mark (`piwi/coverageTests`), **Go to the next line no test runs**
+(`Glue.nextNotRunLine`), **Hide the coverage marks** and **Edit the colors…**, which opens the Piwi color page at the
+mark's key (`ColorAndFontOptions.selectOrEditColor`, `COLOR_NAMES`). The
 service's hover names the tests behind a line; the lines on a function come in `piwi/fileSummary`, through Code Vision.
 
 **Updates.**

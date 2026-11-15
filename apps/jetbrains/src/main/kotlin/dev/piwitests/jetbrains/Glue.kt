@@ -927,6 +927,15 @@ object Glue {
     const val UNCOVERED_EXPLAINED =
         "The orange bar at the left of a line: it changed since the default branch, and no test reaches this file."
 
+    /**
+     * The first line (0-based) after `line` that no test runs by a `piwi/coverage` answer, from the top again past the
+     * last; null when the answer has none.
+     */
+    fun nextNotRunLine(result: CoverageResult?, line: Int): Int? {
+        val starts = result?.notRun.orEmpty().map { it.start }.sorted()
+        return starts.firstOrNull { it > line } ?: starts.firstOrNull()
+    }
+
     /** A coverage mark's tooltip, in the gutter and the scroll bar: what it says of its lines, then what the marks mean. */
     fun coverageMarkTooltip(mark: CoverageMark): String {
         val explained = if (mark.kind == CoverageKind.UNCOVERED) UNCOVERED_EXPLAINED else COVERAGE_MARKS_EXPLAINED

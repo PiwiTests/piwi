@@ -319,6 +319,43 @@ export interface CoverageResult {
 export const COVERAGE_REQUEST = 'piwi/coverage';
 
 /**
+ * `piwi/coverageFiles`: the application files under a Playwright config's folder (`root`) that the project's recorded
+ * coverage names lines of, each with its marks as `piwi/coverage` places them (`exact` or `mapped`); with `testIds`,
+ * those the tests of these catalog ids reach alone. The code index and the coverage are read again first, so a client
+ * asks it once a run's results were read. At most `MAX_COVERAGE_FILES` files are read (`truncated` past them).
+ */
+export interface CoverageFilesParams {
+  root: string;
+  testIds?: number[];
+}
+
+export interface CoverageFilesResult {
+  files: CoverageResult[];
+  truncated: boolean;
+}
+
+export const COVERAGE_FILES_REQUEST = 'piwi/coverageFiles';
+
+/** The most files `piwi/coverageFiles` reads. */
+export const MAX_COVERAGE_FILES = 200;
+
+/**
+ * `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file, as the arguments of a
+ * run of them (`RunTestsArgs`), and how many; `args` null when none did.
+ */
+export interface CoverageTestsParams {
+  uri: string;
+  line: number;
+}
+
+export interface CoverageTestsResult {
+  args: RunTestsArgs | null;
+  count: number;
+}
+
+export const COVERAGE_TESTS_REQUEST = 'piwi/coverageTests';
+
+/**
  * `piwi/coverageChanged` (notification, server to client): the marks of a file the client asked `piwi/coverage` about
  * changed: an edit moved them, the coverage was read again (a refresh, a run that ended), or it arrived after the
  * request was answered. Carries `CoverageResult`, which replaces what the client holds for its `uri`.

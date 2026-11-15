@@ -153,6 +153,18 @@ data class CoverageResult(
 /** A line breakpoint of the IDE: the file's URI and its 0-based line. */
 data class EditorBreakpoint(val uri: String, val line: Int)
 
+/** `piwi/coverageFiles`: the files under a Playwright config's folder the coverage names, those of `testIds` alone. */
+data class CoverageFilesParams(val root: String, val testIds: List<Int>? = null)
+
+/** Each file the coverage names, with its marks; `truncated` past the most the service reads. */
+data class CoverageFilesResult(val files: List<CoverageResult>? = null, val truncated: Boolean = false)
+
+/** `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file. */
+data class CoverageTestsParams(val uri: String, val line: Int)
+
+/** A run of the tests that ran the line, and how many; `args` null when none did. */
+data class CoverageTestsResult(val args: RunTestsArgs? = null, val count: Int = 0)
+
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
  * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion) when their file is
@@ -1531,6 +1543,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>
+
+    @JsonRequest("piwi/coverageFiles")
+    fun coverageFiles(params: CoverageFilesParams): CompletableFuture<CoverageFilesResult?>
+
+    @JsonRequest("piwi/coverageTests")
+    fun coverageTests(params: CoverageTestsParams): CompletableFuture<CoverageTestsResult?>
 
     @JsonRequest("piwi/runArgs")
     fun runArgs(params: RunTestsArgs): CompletableFuture<RunCommand?>

@@ -1024,6 +1024,30 @@ export function hasCoverageMarks(result: CoverageResult | null | undefined): boo
   return result?.state === 'exact' || result?.state === 'mapped' || !!result?.uncovered?.length;
 }
 
+/** A file's coverage as VS Code's Test Coverage view counts it: the lines run, of the executable ones. */
+export interface CoverageCount {
+  covered: number;
+  total: number;
+}
+
+/**
+ * What VS Code's Test Coverage view shows of a `piwi/coverageFiles` file: the lines run of the executable lines (those
+ * run when a run recorded no executable lines), and each span, run by so many tests or by none.
+ */
+export function testCoverageOf(result: CoverageResult): {
+  count: CoverageCount;
+  spans: Array<{ start: number; end: number; executed: number }>;
+} {
+  const notRun = result.notRun.reduce((n, s) => n + s.end - s.start + 1, 0);
+  return {
+    count: { covered: result.executedLines, total: result.executableLines ?? result.executedLines + notRun },
+    spans: [
+      ...result.executed.map((s) => ({ start: s.start, end: s.end, executed: s.tests })),
+      ...result.notRun.map((s) => ({ start: s.start, end: s.end, executed: 0 })),
+    ].sort((a, b) => a.start - b.start),
+  };
+}
+
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
 export type RunNotifications = 'always' | 'failures' | 'never';
 

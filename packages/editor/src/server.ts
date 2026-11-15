@@ -117,6 +117,7 @@ import {
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
+  coveredFiles,
   coverageNote,
   coverageResult,
   coverageVersions,
@@ -221,8 +222,11 @@ import {
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
+  COVERAGE_FILES_REQUEST,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
+  COVERAGE_TESTS_REQUEST,
+  MAX_COVERAGE_FILES,
   FAILURES_NOTIFICATION,
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
@@ -308,8 +312,12 @@ import {
   type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
+  type CoverageFilesParams,
+  type CoverageFilesResult,
   type CoverageParams,
   type CoverageResult,
+  type CoverageTestsParams,
+  type CoverageTestsResult,
   type LineSpan,
   type DesktopResult,
   type EditorBreakpoint,
@@ -1590,6 +1598,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const marksKept = new Map<string, { text: string; coverage: FileCoverage; marks: Promise<CoverageMarks> }>();
   /** The URIs whose marks are kept at most; the least recently computed goes first. */
   const MAX_MARKS = 100;
+  /** The files `piwi/coverageFiles` reads at once. */
+  const COVERAGE_FILES_AT_ONCE = 6;
 
   /** An application file the coverage may name: its context and repository-relative path; null for test code. */
   const coverageTarget = (uri: string): { file: string; context: PiwiContext; repoRelative: string } | null => {
@@ -3691,6 +3701,47 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // An edit or a read that started meanwhile is computed against what the client now holds.
     else if (coverageTurns.get(uri) !== turn) coverageAgain([uri]);
     return result;
+  });
+
+  connection.onRequest(COVERAGE_FILES_REQUEST, async (params: CoverageFilesParams): Promise<CoverageFilesResult> => {
+    const context = contexts.find((c) => c.root === params.root);
+    if (!context?.client || !context.project || !context.coverageRoute) return { files: [], truncated: false };
+    // Read again: the run the client shows may have recorded coverage the service read before it.
+    await context.refreshCodeIndex().catch(() => undefined);
+    context.staleCoverage();
+    if (!context.codeIndex) return { files: [], truncated: false };
+    const wanted = params.testIds?.length ? new Set(params.testIds) : null;
+    const uris = coveredFiles(context.codeIndex, wanted)
+      .map((relative) => path.join(context.repoRoot, relative))
+      .filter((file) => fs.existsSync(file))
+      .map((file) => pathToFileURL(file).href)
+      .filter((uri) => coverageTarget(uri)?.context === context);
+    const read = uris.slice(0, MAX_COVERAGE_FILES);
+    const files: CoverageResult[] = [];
+    // A few files at a time: each is a request to the instance.
+    for (let i = 0; i < read.length; i += COVERAGE_FILES_AT_ONCE) {
+      const batch = read.slice(i, i + COVERAGE_FILES_AT_ONCE);
+      const results = await Promise.all(batch.map((uri) => coverageNow(uri).catch(() => null)));
+      for (const result of results) {
+        if (result && (result.state === 'exact' || result.state === 'mapped')) files.push(result);
+      }
+    }
+    return { files, truncated: uris.length > read.length };
+  });
+
+  connection.onRequest(COVERAGE_TESTS_REQUEST, async (params: CoverageTestsParams): Promise<CoverageTestsResult> => {
+    const target = coverageTarget(params.uri);
+    const found = target ? await coverageMarksOf(params.uri).catch(() => null) : null;
+    const marks = found?.marks;
+    if (!target || !found || !marks || (marks.state !== 'exact' && marks.state !== 'mapped')) {
+      return { args: null, count: 0 };
+    }
+    const ids = [
+      ...new Set((marks.executed.get(params.line + 1) ?? []).flatMap((i) => found.coverage.tests[i]?.id ?? [])),
+    ];
+    return ids.length
+      ? { args: { uri: params.uri, root: target.context.root, testIds: ids }, count: ids.length }
+      : { args: null, count: 0 };
   });
 
   /**

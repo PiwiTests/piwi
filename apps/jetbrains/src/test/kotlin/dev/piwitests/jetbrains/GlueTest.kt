@@ -3640,6 +3640,15 @@ class GlueTest {
     }
 
     @Test
+    fun `the next line no test runs is after the clicked one, from the top again past the last`() {
+        val coverage = CoverageResult(notRun = listOf(LineSpan(11, 11), LineSpan(4, 5)))
+        assertEquals(11, Glue.nextNotRunLine(coverage, 8))
+        assertEquals(4, Glue.nextNotRunLine(coverage, 11))
+        assertEquals(null, Glue.nextNotRunLine(CoverageResult(), 0))
+        assertEquals(null, Glue.nextNotRunLine(null, 0))
+    }
+
+    @Test
     fun `a coverage mark's tooltip says what it marks, then what the marks mean`() {
         val mark = Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 11, 11, "Piwi: no test runs this line")
         assertEquals(

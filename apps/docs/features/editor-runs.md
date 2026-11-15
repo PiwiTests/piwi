@@ -74,7 +74,9 @@ hides the result icon and its list.
 
 **Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
 Playwright config, **Debug with Piwi** runs them headed at your breakpoints, holding each failure at its line, and
-**Verify ×3 with Piwi** runs them three times. From a failed test's actions, **Debug with Piwi** runs it as
+**Verify ×3 with Piwi** runs them three times. **Run with Piwi** under Run with Coverage runs them too, then lists the
+files their tests reach, with the lines run of each, in VS Code's Test Coverage view
+([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as
 [Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
 they begin, offline too. A test the run gave Piwi no
 result for, such as one the instance does not know, passes when the command exited with 0, else is an error. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins

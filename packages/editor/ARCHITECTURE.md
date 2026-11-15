@@ -218,7 +218,8 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`,
+    `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
   - CI runs: `piwi/ciWatch`;
@@ -1660,6 +1661,11 @@ The marks of the second and third are placed through `diffLines` and `placeLine`
 
 `piwi/coverageChanged` pushes the marks of a document the client asked about, against the answer the client holds, when
 an edit, a read or a late answer changes them.
+
+`piwi/coverageFiles` answers the same for every application file under a config's folder that the code index says the
+coverage recorded (`coveredFiles`), or that the given tests reach, after reading the code index and the coverage again
+(`MAX_COVERAGE_FILES` read at most, `COVERAGE_FILES_AT_ONCE` at a time): VS Code's Coverage profile shows it.
+`piwi/coverageTests` names the tests the marks say ran a line, as a run of them: a JetBrains mark's menu runs it.
 
 On an application file, `piwi/fileSummary` adds the coverage's tests to the file's `Reached by N tests` line, with
 `41 of 63 lines run` when the executable lines are known, and gives each function that ran a line at its first line.
