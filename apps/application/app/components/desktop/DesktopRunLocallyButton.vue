@@ -21,6 +21,7 @@ import {
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
+  localRunNamedCases,
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
@@ -93,7 +94,10 @@ watch(
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
-/** No case has a filter Playwright can take: a spec path that is empty or read as an option, or an empty title. */
+/** The cases the plan names; the others have no file path, or no title, Playwright can select them by. */
+const namedCases = computed(() => localRunNamedCases(props.cases, options.value.mode));
+const leftOut = computed(() => props.cases.length - namedCases.value.length);
+/** No case has a filter Playwright can take. */
 const noPlan = computed(() => plan.value.length === 0);
 const noPlanHint = computed(() =>
   options.value.mode === 'grep'
@@ -113,7 +117,11 @@ const flashRun = computed(() => {
   return now.value - run.finishedAt < FLASH_MS ? run : null;
 });
 
-const testsLabel = computed(() => `${props.cases.length} test${props.cases.length === 1 ? '' : 's'}`);
+/** What the face adds when the plan leaves tests out: a page's own label counts every test it was given. */
+const leftOutSuffix = computed(() => (leftOut.value > 0 && !noPlan.value ? `${leftOut.value} left out` : ''));
+/** The tests a run from here runs: the cases its plan names, or all of them while it names none. */
+const testCount = computed(() => (noPlan.value ? props.cases.length : namedCases.value.length));
+const testsLabel = computed(() => `${testCount.value} test${testCount.value === 1 ? '' : 's'}`);
 const idleLabel = computed(() => props.label ?? `Run ${testsLabel.value} locally`);
 const runModeLabel = computed(
   () => LOCAL_RUN_MODE_ITEMS.find((i) => i.value === options.value.runMode)?.label ?? 'Headless',
@@ -147,7 +155,7 @@ const face = computed(() => {
     };
   }
   const idle = {
-    label: optionsSuffix.value ? `${idleLabel.value} · ${optionsSuffix.value}` : idleLabel.value,
+    label: [idleLabel.value, leftOutSuffix.value, optionsSuffix.value].filter(Boolean).join(' · '),
     color: props.primary ? ('primary' as const) : ('neutral' as const),
     variant: props.primary ? ('solid' as const) : ('outline' as const),
     icon: 'i-lucide-play',
@@ -178,6 +186,8 @@ function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
   });
 }
 
+const menuOpen = ref(false);
+
 function onPrimaryClick() {
   if (running.value || flashRun.value) {
     store.trayOpen.value = true;
@@ -187,7 +197,11 @@ function onPrimaryClick() {
     modalOpen.value = true;
     return;
   }
-  if (noPlan.value) return;
+  // The menu says why nothing runs.
+  if (noPlan.value) {
+    menuOpen.value = true;
+    return;
+  }
   runNow();
 }
 
@@ -255,6 +269,17 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         class: 'font-mono text-[11px] font-normal',
         ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
       },
+      ...(leftOut.value > 0 && !noPlan.value
+        ? [
+            {
+              type: 'label' as const,
+              label: `Leaves out ${leftOut.value} of the ${props.cases.length} tests: ${
+                options.value.mode === 'grep' ? 'they have no title' : 'Playwright cannot take their file paths'
+              }`,
+              class: 'font-normal text-muted',
+            },
+          ]
+        : []),
     ]);
 
     groups.push([
@@ -399,13 +424,18 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy || (noPlan && !attention && !running && !flashRun)"
+          :disabled="busy"
           @click="onPrimaryClick"
         >
           {{ face.label }}
         </UButton>
       </UTooltip>
-      <UDropdownMenu :items="menuItems" :content="{ align: 'end' }" :ui="{ content: 'min-w-56 max-w-md' }">
+      <UDropdownMenu
+        v-model:open="menuOpen"
+        :items="menuItems"
+        :content="{ align: 'end' }"
+        :ui="{ content: 'min-w-56 max-w-md' }"
+      >
         <UButton
           size="xs"
           :color="face.color"
