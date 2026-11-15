@@ -147,7 +147,7 @@
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
                     <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift T" replace-all="true"/>
                     <keyboard-shortcut keymap="ReSharper OSX" first-keystroke="meta alt shift T" replace-all="true"/>
-                    <keyboard-shortcut keymap="TextMate" first-keystroke="meta alt shift Y" replace-all="true"/>
+                    <keyboard-shortcut keymap="TextMate" first-keystroke="meta alt shift J" replace-all="true"/>
                     <synonym text="Rerun failed tests"/>
                 </action>
                 <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
@@ -177,7 +177,7 @@
                 <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
                         icon="/icons/stopRecording.svg"
                         description="Close the recording's browser; the recorded lines stay, one undo away">
-                    <!-- Record here's chord: the two never apply to the same file at once. -->
+                    <!-- Record here's chord: from the keyboard, Record here gives way while a recording runs. -->
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
                     <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift G" replace-all="true"/>
                     <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift G" remove="true"/>

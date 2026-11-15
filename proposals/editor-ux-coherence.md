@@ -176,7 +176,7 @@ both editors write (`page.watch`, `page.interact`) under one input rule (`page.i
 icon, and every control an accessible name; JetBrains' Worker tab offers Interact at a stop (LR8, NF6, left out of
 this document). M16 built: Piwi's chords are one table (`packages/editor/src/keys.ts`), `Ctrl+Alt+Shift` (`Cmd`) with
 R, F and K and B for a new Open the failures in both editors, acting from the keyboard only in a JavaScript or
-TypeScript editor and in Piwi's failures, and another letter, or none, in the keymaps that give one to another action:
+TypeScript editor and in Piwi's views, and another letter, or none, in the keymaps that give one to another action:
 the Visual Studio and ReSharper families', TextMate's, the Linux desktops' and Mac OS X 10.5+'s Force Refresh; a test
 checks them against every keymap bundled with WebStorm (2024.1 and 2026.3), IDEA Ultimate, Rider, PyCharm, PhpStorm,
 GoLand and RubyMine (`apps/jetbrains/keymap-chords.json`, which `apps/jetbrains/scripts/keymap-chords.py` reads from
@@ -805,11 +805,12 @@ Rider, and VS Code's defaults, and fails on a collision. The table records the r
 Run to Cursor and Finish give way to a suspended debugger, Pause to a running one and Stop to any session, Pause on the
 platform Pause action's key. **Lives in** `packages/editor` and both clients (FSL). **Replaces** chords Rider's Visual
 Studio-family and ReSharper keymaps already bind, keys set per client with no collision check. **Depends on**
-[LI1](#li1). **Revisits** no decision. Built with M16 but for the run-control keys, which each client still sets: the
-chords (`packages/editor/src/keys.ts`), held against both manifests and the docs' table of keys and checked against
-every keymap bundled with the JetBrains IDEs the plugin installs in (`apps/jetbrains/keymap-chords.json`) and VS
-Code's; they act from the keyboard only in a JavaScript or TypeScript editor and in Piwi's failures, so a chord shares
-its key only with an action acting elsewhere alone (`SHARED_CHORDS`).
+[LI1](#li1). **Revisits** no decision. Built with M16 in part: the chords are their own table
+(`packages/editor/src/keys.ts`), not the catalog, and a test holds both manifests and the docs' table of keys to it
+rather than generating them; it checks them against every keymap bundled with WebStorm (2024.1 and 2026.3), IDEA
+Ultimate, Rider, PyCharm, PhpStorm, GoLand and RubyMine (`apps/jetbrains/keymap-chords.json`) and VS Code's. They act
+from the keyboard only in a JavaScript or TypeScript editor and in Piwi's views, so a chord shares its key only with
+an action acting elsewhere alone (`SHARED_CHORDS`). The run-control keys, which each client still sets, are deferred.
 
 **Look (principles 2 and 3).**
 

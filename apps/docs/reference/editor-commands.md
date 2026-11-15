@@ -14,10 +14,12 @@ shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's k
 
 ### Keys
 
-`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. They act in an editor of a JavaScript or TypeScript file,
-and in Piwi's failures, alone. A JetBrains keymap where that chord is another action's in those places takes the letter
-of its row, as do the keymaps descending from it; **Settings → Keymap** names `$default` Windows and `Mac OS X 10.5+`
-macOS.
+`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. Record here… and Run the test at the cursor act in an editor
+of a JavaScript or TypeScript file, the others there and in Piwi's views (the Piwi tool window in a JetBrains IDE), and
+nowhere else. A JetBrains keymap where that chord is another action's in those places takes the letter of its row, as do
+the keymaps descending from it. **Settings → Keymap** shows `$default` as Windows, `Mac OS X 10.5+` as macOS, `Mac OS X`
+as IntelliJ IDEA Classic, and `Default for XWin`, `Default for GNOME` and `Default for KDE` as XWin, GNOME and KDE; it
+drops ` OSX` and ` (Mac OS X)` from the other names, adding (macOS) on Windows and Linux.
 
 | Keymap | Record here…, Stop recording | Re-run the failing tests | Run the test at the cursor | Open the failures |
 |---|---|---|---|---|
@@ -28,10 +30,11 @@ macOS.
 | `ReSharper` | none | `T` | `J` | none |
 | `Visual Studio OSX`, `Visual Assist OSX` | `Z` | `F` | `J` | `B` |
 | `ReSharper OSX` | `Z` | `T` | `J` | `S` |
-| `TextMate` | `R` | `Y` | `K` | `B` |
+| `TextMate` | `R` | `J` | `K` | `B` |
 
-They share a key only with an action of the Database tool window, or of a Java, Kotlin script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings →
-Keymap** in a JetBrains IDE (search `Piwi`).
+They share a key only with an action of the Database tool window or a database console's results, or of a Java, Kotlin
+script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
+**Settings → Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## Connection
 

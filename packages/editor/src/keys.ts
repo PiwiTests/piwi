@@ -2,10 +2,10 @@
  * Piwi's chords in both editors, from one table: `Ctrl+Alt+Shift` with a letter (`Cmd` on macOS) in VS Code's default
  * keybindings and in the JetBrains `$default` keymap, and another letter, or none, in a JetBrains keymap that gives that
  * chord to an action acting where Piwi's do, the keymaps descending from it taking it too. From the keyboard, a chord of
- * Piwi's acts in an editor of a JavaScript or TypeScript file or in Piwi's failures alone (`CHORD_CONTEXT` in VS Code,
+ * Piwi's acts in an editor of a JavaScript or TypeScript file or in a view of Piwi's alone (`CHORD_CONTEXT` in VS Code,
  * `Glue.chordActsIn` in JetBrains), so it may share its key with an action acting elsewhere alone (`SHARED_CHORDS`).
  * `tests/keys.test.ts` holds `apps/vscode/package.json`, `apps/jetbrains/.../plugin.xml` and the docs' table of keys to
- * it, and checks each chord against every keymap bundled with the JetBrains IDEs the plugin installs in
+ * it, and checks each chord against every keymap bundled with the JetBrains IDEs of the snapshot
  * (`apps/jetbrains/keymap-chords.json`, which `apps/jetbrains/scripts/keymap-chords.py` reads from them) and against
  * VS Code's own (`VSCODE_TAKEN`).
  */
@@ -33,7 +33,7 @@ export const EDITOR_CHORDS: readonly EditorChord[] = [
     jetbrains: ['Piwi.RerunFailing'],
     letter: 'F',
     // Silent Code Cleanup in ReSharper's, Replace in Path in TextMate's.
-    keymaps: { ReSharper: 'T', 'ReSharper OSX': 'T', TextMate: 'Y' },
+    keymaps: { ReSharper: 'T', 'ReSharper OSX': 'T', TextMate: 'J' },
   },
   {
     vscode: ['piwi.runTestAtCursor'],
@@ -54,9 +54,9 @@ export const EDITOR_CHORDS: readonly EditorChord[] = [
 /** A JetBrains keymap whose name starts with this, and every keymap descending from one, takes Cmd for Ctrl. */
 export const MAC_KEYMAP_PREFIX = 'Mac OS X';
 
-/** Where a chord of Piwi's acts from the keyboard in VS Code: an editor of a JavaScript or TypeScript file, or the failures. */
+/** Where a chord of Piwi's acts from the keyboard in VS Code: an editor of a JavaScript or TypeScript file, or a view of Piwi's. */
 export const CHORD_CONTEXT =
-  '(editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/) || focusedView == piwi.failures';
+  '(editorTextFocus && editorLangId =~ /^(typescript|javascript)(react)?$/) || focusedView =~ /^piwi\\./';
 
 /**
  * The actions a chord of Piwi's may share in a JetBrains keymap, each with where it acts alone: never in an editor of a
@@ -70,6 +70,7 @@ export const SHARED_CHORDS: Record<string, string> = {
   ConvertJavaToKotlin: 'a Java file',
   ConvertJavaToKotlinInGroup: 'a Java file',
   GoFmtFileAction: 'a Go file',
+  GoShareInPlaygroundAction: 'a Go file',
   ReloadScriptConfiguration: 'a Kotlin script',
   TfFmtFileAction: 'a Terraform file',
 };

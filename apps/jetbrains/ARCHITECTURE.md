@@ -882,7 +882,8 @@ IntelliJ IDEA Ultimate, Rider, PyCharm, PhpStorm, GoLand and RubyMine binds to `
 resolved as the platform does, keymap files and plugins' shortcuts alike. `scripts/keymap-chords.py` writes it from
 each IDE's folder or archive, streamed, the IDE never unpacked (its header shows how).
 `packages/editor/tests/keys.test.ts` fails on a chord another action has in any of them, but the actions that act
-only where Piwi's do not (`SHARED_CHORDS`: the Database tool window's, a Java, Kotlin script, Go or Terraform file's),
+only where Piwi's do not (`SHARED_CHORDS`: the Database tool window's, a database console's results', a Java, Kotlin script, Go or Terraform
+file's), or bound to the chord by another IDE's version of a keymap it descends from,
 on two of Piwi's on one key, and on a Windows or Linux chord with a letter a keyboard types with AltGr (`Ctrl+Alt`:
 `ALTGR_LETTERS`). `PiwiPluginTest` checks the platform resolves the table so in the IDE it runs.
 

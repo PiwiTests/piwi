@@ -69,7 +69,7 @@ function normalized(keystroke: string): string | null {
 }
 
 describe('the chords both editors bind', () => {
-  test('collide in no keymap bundled with the JetBrains IDEs the plugin installs in', () => {
+  test('collide in no keymap bundled with the JetBrains IDEs of the snapshot', () => {
     expect(new Set(Object.keys(bundled.ides).map((ide) => ide.split('-')[0]))).toEqual(
       new Set(['GO', 'IU', 'PS', 'PY', 'RD', 'RM', 'WS']),
     );
@@ -89,6 +89,23 @@ describe('the chords both editors bind', () => {
           const others = (keymaps[name]!.chords[stroke] ?? []).filter((action) => !(action in SHARED_CHORDS));
           if (others.length)
             collisions.push(`${ide} ${name}: ${stroke} for ${chord.jetbrains[0]} is ${others.join(', ')}`);
+          // A keymap descends from keymaps other IDEs bundle too, each version binding its own: an action another
+          // version binds to the chord, which this IDE's binds elsewhere or not at all, is the keymap's in that version.
+          for (const [other, theirs] of Object.entries(bundled.ides)) {
+            if (other === ide) continue;
+            for (const ancestor of chain(keymaps, name).slice(1)) {
+              if (!theirs[ancestor] || chordIn(theirs, ancestor, chord) === stroke) continue;
+              const here = keymaps[ancestor]?.chords[stroke] ?? [];
+              const inherited = (theirs[ancestor].chords[stroke] ?? []).filter(
+                (action) => !(action in SHARED_CHORDS) && !here.includes(action),
+              );
+              if (inherited.length) {
+                collisions.push(
+                  `${ide} ${name}: ${stroke} for ${chord.jetbrains[0]} is ${inherited.join(', ')} in ${other} ${ancestor}`,
+                );
+              }
+            }
+          }
           // A keymap of Windows and Linux, where Ctrl+Alt is AltGr, leaves the letters a keyboard types with it alone.
           if (stroke.startsWith('ctrl') && ALTGR_LETTERS.includes(stroke.slice(-1))) {
             collisions.push(`${ide} ${name}: ${stroke} for ${chord.jetbrains[0]} types a letter with AltGr`);
@@ -105,7 +122,14 @@ describe('the chords both editors bind', () => {
       for (const name of Object.keys(keymaps)) {
         for (const chord of EDITOR_CHORDS) {
           const stroke = chordIn(keymaps, name, chord);
-          for (const action of stroke ? (keymaps[name]!.chords[stroke] ?? []) : []) met.add(action);
+          if (!stroke) continue;
+          for (const action of keymaps[name]!.chords[stroke] ?? []) met.add(action);
+          // An action of another IDE's version of a keymap this one descends from.
+          for (const theirs of Object.values(bundled.ides)) {
+            for (const ancestor of chain(keymaps, name).slice(1)) {
+              for (const action of theirs[ancestor]?.chords[stroke] ?? []) met.add(action);
+            }
+          }
         }
       }
     }
@@ -183,6 +207,15 @@ describe('the chords both editors bind', () => {
           }
         }
         expect(shortcuts.length, id).toBe(1 + Object.keys(chord.keymaps ?? {}).length);
+        // The platform applies them in order, so a keymap's own entry follows those of the keymaps it descends from.
+        const order = shortcuts.map((s) => s.keymap!);
+        for (const [at, keymap] of order.entries()) {
+          const ancestors = keymap === '$default' ? [] : chain(allKeymaps.get(keymap)!, keymap).slice(1);
+          for (const ancestor of ancestors) {
+            if (order.includes(ancestor))
+              expect(order.indexOf(ancestor), `${id}: ${ancestor} before ${keymap}`).toBeLessThan(at);
+          }
+        }
       }
     }
     // No other action of the plugin binds Ctrl or Cmd with Alt, Shift and a letter.

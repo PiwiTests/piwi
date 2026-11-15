@@ -147,8 +147,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift Z")), strokesIn("Mac OS X 10.5+", "Piwi.RecordHere"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift R")), strokesIn("Mac OS X", "Piwi.RecordHere"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift K")), strokesIn("Mac OS X 10.5+", "Piwi.RunTestAtCursor"))
-        strokesIn("Visual Studio", "Piwi.RecordHere")?.let { assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), it) }
-        strokesIn("Default for XWin", "Piwi.OpenFailures")?.let { assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), it) }
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), strokesIn("Visual Studio", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), strokesIn("Default for XWin", "Piwi.OpenFailures"))
         // A run's controls use the debugger's shortcuts, in this keymap as in every other.
         for ((control, debugger) in listOf(
             "Piwi.PauseRun" to "Pause", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",

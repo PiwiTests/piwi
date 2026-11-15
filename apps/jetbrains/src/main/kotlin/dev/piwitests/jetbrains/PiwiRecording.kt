@@ -97,6 +97,9 @@ class PiwiRecordings(private val project: Project) : Disposable {
     /** The session writing into `file`, if any. */
     fun sessionFor(file: VirtualFile): RecordingSession? = sessions.values.firstOrNull { it.file == file }
 
+    /** Whether any session runs. */
+    fun any(): Boolean = sessions.isNotEmpty()
+
     /** The project's session when exactly one runs. */
     fun only(): RecordingSession? = sessions.values.singleOrNull()
 

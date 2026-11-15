@@ -105,6 +105,8 @@ class Ide:
         # The platform reads an action's shortcuts alone (`processActionElement`), never a reference's, and drops one
         # that names no keymap.
         for action in root.iter('action'):
+            # An action declared by its class alone takes the class's name as its id.
+            id = action.get('id') or action.get('class')
             for s in action.findall('keyboard-shortcut'):
                 if not s.get('keymap'):
                     continue
@@ -112,11 +114,11 @@ class Ide:
                 if s.get('second-keystroke'):
                     stroke += ' then ' + strokes(s.get('second-keystroke'))
                 if s.get('replace-all') == 'true':
-                    self.plugin.append((s.get('keymap'), action.get('id'), 'clear', stroke))
+                    self.plugin.append((s.get('keymap'), id, 'clear', stroke))
                 if s.get('remove') == 'true':
-                    self.plugin.append((s.get('keymap'), action.get('id'), 'remove', stroke))
+                    self.plugin.append((s.get('keymap'), id, 'remove', stroke))
                 else:
-                    self.plugin.append((s.get('keymap'), action.get('id'), 'add', stroke))
+                    self.plugin.append((s.get('keymap'), id, 'add', stroke))
 
     def jar(self, name, data):
         try:
