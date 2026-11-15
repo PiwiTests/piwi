@@ -663,8 +663,8 @@ rule):
     it. The current page label takes the remaining width, the middle levels hide below `2xl`, and the ancestors
     collapse into a dropdown below `sm`.
   - `OpenInIdeLink` + `OpenInIdeSettingsModal`, `DocLink`, `LinkChip` / `EntityLinks`.
-- **Help and settings**: `HelpHint` (topic keys from `shared/help-content.ts`), `SettingsField`, `SettingsFieldGroup`
-  (a setting of several controls, as a `fieldset`), `EnvManagedBadge`, `EnvManagedAlert`.
+- **Help and settings**: `HelpHint` (topic keys from `shared/help-content.ts`), `SettingsField`, `FormFieldGroup`
+  (a field of several controls, as a `fieldset`), `EnvManagedBadge`, `EnvManagedAlert`.
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
     `RunLiveProgress` (a running run's row in a runs list: its count bar and "120 of 400 · 2 failed"), `TagBadge` /

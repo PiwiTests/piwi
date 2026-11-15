@@ -75,7 +75,10 @@ function pick(id: string) {
   <UModal v-model:open="open" title="Select a model" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <div class="space-y-3">
-        <UInput ref="searchInput" v-model="search" placeholder="Search models…" icon="i-lucide-search" size="sm" />
+        <!-- Its own field: the picker opens from inside the Model field, whose id would otherwise go to this input. -->
+        <UFormField label="Search models" :ui="{ label: 'sr-only' }">
+          <UInput ref="searchInput" v-model="search" placeholder="Search models…" icon="i-lucide-search" size="sm" />
+        </UFormField>
         <div v-if="models.length === 0 && loading" class="flex items-center justify-center gap-2 py-8 text-gray-400">
           <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
           <span class="text-sm">Loading models…</span>

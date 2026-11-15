@@ -133,7 +133,7 @@ async function removeToken() {
           <USwitch v-model="state.gateStatus" label="Post the gate verdict as a commit status" />
         </UFormField>
 
-        <SettingsFieldGroup
+        <FormFieldGroup
           v-if="showGeneratedSpecs"
           label="Generated specs"
           help="bug-report.spec"
@@ -153,7 +153,7 @@ async function removeToken() {
               aria-label="Test import"
             />
           </div>
-        </SettingsFieldGroup>
+        </FormFieldGroup>
       </div>
 
       <template #footer>

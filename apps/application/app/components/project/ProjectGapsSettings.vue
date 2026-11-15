@@ -73,9 +73,9 @@ async function submit() {
           />
         </UFormField>
 
-        <UFormField
+        <FormFieldGroup
           v-if="showServerProbes"
-          name="serverProbes"
+          label="Server probes"
           description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Experimental and off by default: the entry condition (client probes reporting not-noticed on at least one in ten pairs) has not been measured yet. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
         >
           <template #label>
@@ -104,7 +104,7 @@ async function submit() {
               />
             </div>
           </div>
-        </UFormField>
+        </FormFieldGroup>
       </div>
 
       <template #footer>
