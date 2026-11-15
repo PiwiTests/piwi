@@ -118,17 +118,24 @@ export function buildReproduceArgs(cases: RetryCase[]): string[] {
  * The argv a bisect runs at each commit: the failing tests' files, their titles
  * as one `--grep=` pattern, and one `--project=` per project, so a test whose
  * line moved between commits still matches. A path that starts with `-` would
- * be read as an option and is left out.
+ * be read as an option and is left out. Empty when the cases name neither a
+ * file nor a title: each step would run every test.
  */
 export function buildBisectArgs(cases: RetryCase[]): string[] {
   const files = [...new Set(cases.map((c) => specPattern(c.filePath)))].filter((f) => f && !f.startsWith('-'));
   const titles = [...new Set(cases.map((c) => c.title).filter(Boolean))].map(escapeGrep);
+  if (files.length === 0 && titles.length === 0) return [];
   const args = [...files];
   if (titles.length > 0) args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);
   for (const project of new Set(cases.map((c) => c.projectName || '').filter(Boolean))) {
     args.push(`--project=${project}`);
   }
   return args;
+}
+
+/** Whether a bisect has a test to run at each step: a Flake Lab arm, or a file or title of the cases. */
+export function canBisect(cases: RetryCase[], flakeTestCaseId?: number | null): boolean {
+  return flakeTestCaseId != null || buildBisectArgs(cases).length > 0;
 }
 
 /** The options of a local run as a copied command carries them, so the copy runs what Run locally runs. */

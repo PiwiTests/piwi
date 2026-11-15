@@ -33,7 +33,7 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
-import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, NO_RETRY_ARGS, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
   ciServerValues,
@@ -198,6 +198,7 @@ async function dispatch(
   if (!action) throw demoHttpError(400, NO_TARGET);
   const target = ciServerTargetOf(action.target);
   const args = buildRetryArgs(input.cases);
+  if (!args) throw demoHttpError(400, NO_RETRY_ARGS);
   const id = randomId();
   const values = await ciServerValues(db, input.runId, target, args, id);
   const prepared = prepare(target, values, Object.entries(ciActionInputValues(action)));

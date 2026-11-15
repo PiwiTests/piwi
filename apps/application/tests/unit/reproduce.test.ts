@@ -29,6 +29,15 @@ test('recipe — full checkout, pinned install, browser install and test command
   expect(recipe.notes).toEqual([]);
 });
 
+test('recipe — a test with no file path a command can name gets no run step, rather than one that runs every test', () => {
+  const recipe = buildReproRecipe({ ...baseInput, cases: [{ ...baseInput.cases[0]!, filePath: '-x.spec.ts' }] });
+  expect(recipe.steps.map((s) => s.step)).not.toContain('Run the failing test');
+  expect(recipe.notes).toEqual([
+    'No failing test has a file path a command can name, so the step that runs it is left out.',
+  ]);
+  expect(buildReproRecipe({ ...baseInput, cases: [] }).steps.at(-1)!.bash).toBe('npx playwright test');
+});
+
 test('recipe — every step returns both shell forms', () => {
   const recipe = buildReproRecipe(baseInput);
   for (const step of recipe.steps) {

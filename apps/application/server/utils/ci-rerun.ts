@@ -15,7 +15,7 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
-import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, NO_RETRY_ARGS, toPosixPath, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
   ciServerValues,
@@ -337,11 +337,14 @@ async function dispatchRerunOf(
   input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null },
 ): Promise<DispatchedRerun> {
   const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
+  const args = buildRetryArgs(input.cases);
+  // Empty arguments would re-run the whole suite.
+  if (!args) throw new Error(NO_RETRY_ARGS);
   return dispatchWithAction(db, {
     projectId: input.projectId,
     runId: input.runId,
     action,
-    args: buildRetryArgs(input.cases),
+    args,
     id: randomBytes(8).toString('hex'),
     cases: input.cases,
   });

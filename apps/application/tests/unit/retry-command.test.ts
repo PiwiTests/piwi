@@ -331,3 +331,28 @@ test('the projects offered are the ones the tests ran in that every shell quotes
   ];
   expect(retryProjects(cases)).toEqual(['chromium', 'webkit']);
 });
+
+describe('a filter that would match every test', () => {
+  const empty = { filePath: '', title: '', line: 3, projectName: 'chromium' };
+
+  test('an empty path, or a line with no path, is left out', () => {
+    expect(buildRetryCommand([empty])).toBe('');
+    expect(buildRetryCommand([empty], { mode: 'file' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!])).toBe(
+      'npx playwright test "tests/login.spec.ts:10" --project="chromium"',
+    );
+    expect(buildRetryArgs([empty])).toBe('');
+  });
+
+  test('an empty title is left out', () => {
+    expect(buildRetryCommand([empty], { mode: 'grep' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!], { mode: 'grep' })).toBe(
+      'npx playwright test --grep "should login" --project="chromium"',
+    );
+  });
+
+  test('a path that starts with a dash is left out', () => {
+    expect(buildRetryCommand([{ ...empty, filePath: '--ui' }])).toBe('');
+    expect(buildRetryArgs([{ ...empty, filePath: '-x.spec.ts' }])).toBe('');
+  });
+});

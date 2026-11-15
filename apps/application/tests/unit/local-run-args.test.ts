@@ -3,6 +3,7 @@ import {
   buildBisectArgs,
   buildLocalRunPlan,
   buildReproduceArgs,
+  canBisect,
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
@@ -162,6 +163,20 @@ describe('buildReproduceArgs', () => {
 
   test('omits the project filter when no project is known', () => {
     expect(buildReproduceArgs([{ ...CASE, projectName: null }])).toEqual(['tests/checkout.spec.ts:42']);
+  });
+});
+
+describe('a bisect with nothing to find its tests by', () => {
+  const nameless = { filePath: '', title: '', line: 3, projectName: 'chromium' };
+
+  test('has no arguments, rather than run every test at each step', () => {
+    expect(buildBisectArgs([nameless, { ...nameless, filePath: '--ui' }])).toEqual([]);
+    expect(canBisect([nameless])).toBe(false);
+  });
+
+  test('runs a Flake Lab arm, or finds its tests by title alone', () => {
+    expect(canBisect([nameless], 12)).toBe(true);
+    expect(buildBisectArgs([{ ...nameless, title: 'pays' }])).toEqual(['--grep=pays', '--project=chromium']);
   });
 });
 

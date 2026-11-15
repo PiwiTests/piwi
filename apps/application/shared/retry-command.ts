@@ -83,10 +83,21 @@ function quoteAll(values: string[]): string[] {
   return values.map(quoteShellArg).filter((arg): arg is string => arg !== null);
 }
 
-/** The quoted spec paths of `values`: one that starts with `-` would be read as an option, so it is left out too. */
-function quoteSpecs(values: string[]): string[] {
-  return quoteAll(values.filter((value) => !value.startsWith('-')));
+/**
+ * Whether Playwright takes `spec` as the test filter it names: one that starts with `-` would be read as an option, an
+ * empty one matches every file, and a bare `:<line>` that line of every file.
+ */
+function isSpecFilter(spec: string): boolean {
+  return spec !== '' && !spec.startsWith('-') && !spec.startsWith(':');
 }
+
+/** The quoted spec paths of `values` that Playwright takes as test filters (see {@link isSpecFilter}). */
+function quoteSpecs(values: string[]): string[] {
+  return quoteAll(values.filter(isSpecFilter));
+}
+
+/** What a re-run dispatch answers when no case has a file path its arguments can name. */
+export const NO_RETRY_ARGS = 'None of these tests has a file path a re-run can name.';
 
 /** ` --project="<name>"`, or nothing when the name cannot be quoted safely (the tests then run in every project). */
 function projectFlag(project: string): string {
@@ -210,7 +221,8 @@ export function buildRetryCommand(
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else {
-      const patterns = projectCases.map((c) => titleGrepPattern(c.title));
+      const patterns = projectCases.map((c) => titleGrepPattern(c.title)).filter(Boolean);
+      if (patterns.length === 0) continue;
       const grepArg = patterns.length === 1 ? patterns[0]! : `(${patterns.join('|')})`;
       cmd = `${baseCmd} --grep "${grepArg}"`;
     }

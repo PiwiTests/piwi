@@ -15,7 +15,7 @@
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
-import { buildReproduceArgs } from '~/utils/local-run-args';
+import { buildReproduceArgs, canBisect } from '~/utils/local-run-args';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
 const props = defineProps<{
@@ -70,7 +70,12 @@ const canReproduceHere = computed(
   () => linked.value && !!commit.value && buildReproduceArgs(props.context?.cases ?? []).length > 0,
 );
 const canBisectHere = computed(
-  () => linked.value && props.bisect.available && !!props.context?.good && !!props.context?.bad,
+  () =>
+    linked.value &&
+    props.bisect.available &&
+    !!props.context?.good &&
+    !!props.context?.bad &&
+    canBisect(props.context.cases, props.context.flakeArm?.testCaseId),
 );
 
 async function linkFolder() {
