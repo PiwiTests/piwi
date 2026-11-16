@@ -30,23 +30,29 @@ quietly() {
   fi
 }
 
-# The repository pins its Node major in .node-version (CI, engines). The image keeps each Node it ships under
-# /opt/node<major>: the pinned one goes first on PATH, for this hook and for every later command of the session, so
-# the install below runs under that Node's npm. An image without it keeps its default Node, which still runs most
-# checks, so this warns rather than stops: a failure caused by the version then reads as one.
-wanted_node="$(cut -d . -f 1 .node-version 2>/dev/null | tr -d 'v \r' || true)"
+# The repository pins its Node major in .node-version (CI, engines): the first line that starts with a version. The
+# image keeps each Node it ships under /opt/node<major>: the pinned one goes first on PATH, for this hook and, through
+# one marked line of the session's env file, for the commands the session runs, so the install below runs under that
+# Node's npm. Each run writes that line anew, so the session follows a pin that changed. A login shell (`bash -l`)
+# reads the image's profile, which puts its default Node first again. Without that directory, or without an env file,
+# the hook and the session keep the image's Node, which still runs most checks, so this warns rather than stops: a
+# failure caused by the version then reads as one.
+wanted_node="$(sed -n 's/^[[:space:]]*v\{0,1\}\([0-9]\{1,\}\).*/\1/p' .node-version 2>/dev/null | head -n 1 || true)"
+node_mark='# session-start: the pinned Node'
+node_line=''
 if [ -n "$wanted_node" ] && [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
   pinned_bin="/opt/node$wanted_node/bin"
-  if [[ "$wanted_node" =~ ^[0-9]+$ ]] && [ -x "$pinned_bin/node" ]; then
+  if [ -x "$pinned_bin/node" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     export PATH="$pinned_bin:$PATH"
-    path_line="case \":\$PATH:\" in *\":$pinned_bin:\"*) ;; *) export PATH=\"$pinned_bin:\$PATH\" ;; esac"
-    if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
-      echo "$path_line" >>"$CLAUDE_ENV_FILE"
-    fi
+    node_line="case \"\$PATH\" in \"$pinned_bin:\"*) ;; *) export PATH=\"$pinned_bin:\$PATH\" ;; esac $node_mark"
     echo "[session-start] Node $(node --version) from $pinned_bin runs this session (.node-version pins $wanted_node)"
   else
     echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
   fi
+fi
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  other_lines="$(grep -vF "$node_mark" "$CLAUDE_ENV_FILE" 2>/dev/null || true)"
+  { [ -z "$other_lines" ] || printf '%s\n' "$other_lines"; [ -z "$node_line" ] || printf '%s\n' "$node_line"; } >"$CLAUDE_ENV_FILE"
 fi
 
 # Node's default heap limit here is about 2 GB, which `nuxt dev`, `nuxt build` and `nuxt generate` outgrow while they
