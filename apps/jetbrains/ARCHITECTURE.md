@@ -1360,7 +1360,9 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
   editor state of a pre-written `workspace.xml` is not restored on a fresh project).
 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
-where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
+where the IDE's actions have none (the Piwi tool window, the notifications). A click on a test's result icon finds the
+icon on the screen by the dark theme's `TestError` fill (`failingIcon`), since the editor's scroll moves it between
+launches. ImageMagick's `import` captures the screen.
 The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
 code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestError` icon,
 which the fixture's failures call for, is not written: the capture goes to the temporary directory instead
