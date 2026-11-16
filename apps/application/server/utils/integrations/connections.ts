@@ -134,8 +134,10 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
 
     const endpoint = env ? connectionEndpoint(provider, env.baseUrl, env.config) : null;
     if (!env || !endpoint) {
-      if (existing) await db.delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
-      await removeEnvConnectionCredential(db, provider);
+      if (existing) {
+        await db.delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
+        await removeEnvConnectionCredential(db, provider);
+      }
       continue;
     }
     const credentialId = await ensureEnvConnectionCredential(db, provider, {
