@@ -3233,12 +3233,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onHover(async (params, token): Promise<Hover | null> => {
     const file = uriToPath(params.textDocument.uri);
     const found = new Map<number, { context: PiwiContext; failure: BranchFailure }>();
-    for (const d of failureDiagnostics.get(params.textDocument.uri) ?? []) {
+    // The file's diagnostics, whichever form of its URI the client sent (`file:///c%3A/…` on Windows).
+    const published = [...failureDiagnostics].flatMap(([uri, list]) => {
+      const at = uriToPath(uri);
+      return file && at && samePath(at, file) ? list : [];
+    });
+    for (const d of published) {
       if (d.range.start.line !== params.position.line) continue;
       const hit = failureOf(d.data as FailureData);
       if (hit) found.set(hit.failure.executionId, hit);
     }
-    // These failures' diagnostics, on this line, say their headline beside the hover.
+    // These failures' diagnostics, on this line, say what failed, in which run and why, beside the hover: the hover
+    // gives the error's detail, then the failure's page.
     const diagnosedHere = new Set(found.keys());
     // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
     const context = file ? contextFor(file) : null;
@@ -3275,16 +3281,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           (frame) => `[${path.basename(frame.file)}:${frame.line}](${pathToFileURL(frame.file).href}#L${frame.line})`,
         );
       const run = runLabel(context, failure);
+      const title = failure.title.replace(/[[\]]/g, '');
+      const url = context.client?.executionUrl(failure.executionId) ?? '';
+      const diagnosed = diagnosedHere.has(failure.executionId);
+      // Several failures on one line: each part names its test.
+      const named = diagnosed && found.size > 1 ? `${title} · ${run}` : '';
       parts.push(
         [
-          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
-          diagnosedHere.has(failure.executionId) ? '' : (failure.headline ?? ''),
+          diagnosed
+            ? ''
+            : `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${title}](${url}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
+          diagnosed ? '' : (failure.headline ?? ''),
           message && message !== failure.headline ? fenced(message) : '',
           chain.length > 1 ? `Called from ${chain.join(' ← ')}` : '',
           ...issues.map(
             (l) =>
               `Known issue: [${[l.key, l.title].filter(Boolean).join(' ').replace(/[[\]]/g, '') || l.url}](${l.url})${l.statusText ? ` · ${l.statusText}` : ''}`,
           ),
+          // Above the screenshot, which a hover shows past its first screen.
+          diagnosed ? [url ? `[Open in dashboard](${url})` : '', named].filter(Boolean).join(' · ') : '',
           shot ? `![Failure screenshot](${pathToFileURL(shot).href})` : '',
         ]
           .filter(Boolean)

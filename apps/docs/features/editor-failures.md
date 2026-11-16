@@ -36,8 +36,8 @@ are on the failure's node in the [failures view](#the-failures-view), and runnin
   [fix plan](/features/fix-plans) whose patch applies to your files: the edit is previewed, then the plan's verify
   command runs in a terminal.
 
-Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
-test. **File an issue**, on the failure's node, opens its cluster in the dashboard to file one, or names the ticket
+Hover for the error message, its call chain, the failure screenshot, the tickets linked to its cluster or test, and a
+link to the failure in the dashboard; the error marker's own text above them says what failed and in which run. **File an issue**, on the failure's node, opens its cluster in the dashboard to file one, or names the ticket
 already linked.
 
 <figure>

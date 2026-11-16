@@ -1045,7 +1045,10 @@ describe('the Piwi language server', () => {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // The diagnostic on this line says what failed and why: the hover gives the detail, then the failure's page.
+    expect(hover.contents.value).not.toContain('**CI failure**');
+    expect(hover.contents.value).toMatch(/^```text\nError: locator\.click: Timeout 5000ms exceeded\./);
+    expect(hover.contents.value).toContain(`\n\n[Open in dashboard](${url}/test-run-cases/900)`);
     expect(hover.contents.value).toMatch(/!\[Failure screenshot\]\(file:\/\/.*900\.png\)/);
     expect(hover.contents.value).toContain(
       'Known issue: [SHOP-12 Cart rows missing](https://jira.test/browse/SHOP-12) · In Progress',
@@ -2257,7 +2260,16 @@ describe('local runs over the latest CI run', () => {
         textDocument: { uri: uri('tests/pages/checkout.page.ts') },
         position: { line: 3, character: 30 },
       })) as { contents: { value: string } };
-      expect(hover.contents.value).toContain(`**Local failure** · [pays](${url}/test-run-cases/950) · local run #42`);
+      expect(hover.contents.value).not.toContain('**Local failure**');
+      expect(hover.contents.value).not.toContain("\n\ngetByRole('button', { name: 'Pay now' }) was not visible\n\n");
+      expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/950)`);
+      // The client may spell the file's URI otherwise (`file:///c%3A/…` on Windows): the diagnostic is still this line's.
+      const spelled = uri('tests/pages/checkout.page.ts').replace('/checkout.page.ts', '/%63heckout.page.ts');
+      const otherwise = (await client.sendRequest('textDocument/hover', {
+        textDocument: { uri: spelled },
+        position: { line: 3, character: 30 },
+      })) as { contents: { value: string } };
+      expect(otherwise.contents.value).toBe(hover.contents.value);
 
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
@@ -2426,9 +2438,7 @@ describe('failures follow the edits', () => {
       textDocument: { uri: uri(page) },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
-      `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
-    );
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/900)`);
     // The diagnostic shows the headline: the hover gives the error's detail alone.
     expect(hover.contents.value).not.toContain("\n\nlocator('.cart-row').nth(2) was not found\n");
     expect(hover.contents.value).toContain('Timeout 5000ms exceeded');
@@ -3826,9 +3836,7 @@ describe('the baseline chosen in the editor', () => {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
-      `**Local failure** · [removes a row](${url}/test-run-cases/1190) · local run #119`,
-    );
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/1190)`);
   });
 
   test('the ladder reads the checked-out branch, as without a choice', async () => {
