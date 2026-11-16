@@ -1020,7 +1020,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let retryWait = 0;
   let runTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
-  /** Diagnostics of the analysis of open documents, and of the latest run's failures, by URI. */
+  /**
+   * Diagnostics of the analysis of open documents, by the URI the client sent, and of the latest run's failures, by
+   * `pathToFileURL`: `publish` sends a file's two together.
+   */
   const analysisDiagnostics = new Map<string, Diagnostic[]>();
   let failureDiagnostics = new Map<string, Diagnostic[]>();
   /** How the failures tree groups the failures: as the client last asked `piwi/failures`. */
@@ -1046,11 +1049,33 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
   });
 
-  const publish = (uri: string) =>
-    connection.sendDiagnostics({
-      uri,
-      diagnostics: [...(analysisDiagnostics.get(uri) ?? []), ...(failureDiagnostics.get(uri) ?? [])],
+  /** The diagnostics of `map` kept for the file of `uri`, under any form of its URI. */
+  const heldFor = (map: ReadonlyMap<string, Diagnostic[]>, uri: string): Diagnostic[] => {
+    const file = uriToPath(uri);
+    return [...map].flatMap(([key, list]) => {
+      if (key === uri) return list;
+      const at = file ? uriToPath(key) : null;
+      return file && at && samePath(at, file) ? list : [];
     });
+  };
+  /** The URI each file's diagnostics were last sent under, by the file's path. */
+  const sentUnder = new Map<string, string>();
+  /**
+   * Send a file's diagnostics, its analysis's and its failures', in one set under one URI: its open document's, as the
+   * client sent it (`file:///c%3A/…` on Windows), else `pathToFileURL`'s. A client keeps one set per file, so two sets
+   * under two forms of its URI would replace each other; the form it was sent under before gets an empty set first.
+   */
+  const publish = (uri: string) => {
+    const diagnostics = [...heldFor(analysisDiagnostics, uri), ...heldFor(failureDiagnostics, uri)];
+    const file = uriToPath(uri);
+    if (!file) return connection.sendDiagnostics({ uri, diagnostics });
+    const under = openDocument(file)?.uri ?? pathToFileURL(file).href;
+    const before = [...sentUnder].find(([path]) => samePath(path, file));
+    if (before) sentUnder.delete(before[0]);
+    if (before && before[1] !== under) void connection.sendDiagnostics({ uri: before[1], diagnostics: [] });
+    if (diagnostics.length) sentUnder.set(file, under);
+    return connection.sendDiagnostics({ uri: under, diagnostics });
+  };
 
   /** The open document of a file, whichever form of its URI the client sent (`file:///c%3A/…` on Windows). */
   const openDocument = (file: string): TextDocument | undefined =>
@@ -3234,18 +3259,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const file = uriToPath(params.textDocument.uri);
     const found = new Map<number, { context: PiwiContext; failure: BranchFailure }>();
     // The file's diagnostics, whichever form of its URI the client sent (`file:///c%3A/…` on Windows).
-    const published = [...failureDiagnostics].flatMap(([uri, list]) => {
-      const at = uriToPath(uri);
-      return file && at && samePath(at, file) ? list : [];
-    });
+    const published = heldFor(failureDiagnostics, params.textDocument.uri);
+    // These failures' diagnostics, under the pointer, say what failed, in which run and why beside the hover, which
+    // gives the error's detail, then the failure's page; an editor shows a diagnostic only within its range.
+    const diagnosedHere = new Set<number>();
     for (const d of published) {
       if (d.range.start.line !== params.position.line) continue;
       const hit = failureOf(d.data as FailureData);
-      if (hit) found.set(hit.failure.executionId, hit);
+      if (!hit) continue;
+      found.set(hit.failure.executionId, hit);
+      const { character } = params.position;
+      if (character >= d.range.start.character && character <= d.range.end.character) {
+        diagnosedHere.add(hit.failure.executionId);
+      }
     }
-    // These failures' diagnostics, on this line, say what failed, in which run and why, beside the hover: the hover
-    // gives the error's detail, then the failure's page.
-    const diagnosedHere = new Set(found.keys());
     // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
     const context = file ? contextFor(file) : null;
     const pass = placer();

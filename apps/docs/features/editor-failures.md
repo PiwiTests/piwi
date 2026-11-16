@@ -37,8 +37,9 @@ are on the failure's node in the [failures view](#the-failures-view), and runnin
   command runs in a terminal.
 
 Hover for the error message, its call chain, the failure screenshot, the tickets linked to its cluster or test, and a
-link to the failure in the dashboard; the error marker's own text above them says what failed and in which run. **File an issue**, on the failure's node, opens its cluster in the dashboard to file one, or names the ticket
-already linked.
+link to the failure in the dashboard. Over the error's marker, the marker's own text above them says what failed and in
+which run; elsewhere on the line, or with no marker, the hover says it first. **File an issue**, on the failure's node,
+opens its cluster in the dashboard to file one, or names the ticket already linked.
 
 <figure>
   <img src="/screenshots/vscode-hover.png" alt="VS Code: the hover on a failing line, dragged taller: the CI failure with its error, its call log and the chain of calls that reached the line, then the failure screenshot of the checkout page">

@@ -377,7 +377,9 @@ ladder.
 ### Failure diagnostics and runs laid over
 
 The failures of the latest run are published as `ci-failure` diagnostics in every file they point to, merged with the
-analysis of the open documents. Their severity is the one `EditorCredentials.failureSeverity` chooses (`error` when
+analysis of the open documents: `publish` sends a file's two sets as one, under the URI the client opened the file with
+(`file:///c%3A/…` on Windows), else `pathToFileURL`'s, and an empty set under the form it was sent under before, since
+a client keeps one set per file. Their severity is the one `EditorCredentials.failureSeverity` chooses (`error` when
 absent; `failureSeverity` in `src/server.ts`), except that:
 
 - a failure of a run on another branch than the checked-out one is a warning at most;
@@ -427,11 +429,11 @@ A failure whose line changed since its run:
 
 The line above a failing line says `✗ Failed here`, and the headline after it only where no diagnostic on that line
 gives it (`TestFailure.diagnosed`: the diagnostic of the test's failure on any project is on that line, and
-`failureSeverity` is not `off`). The hover of a failure whose diagnostic is on the hovered line gives its error, call
-chain and known issues, the failure's page (`Open in dashboard`, with the test and the run when several failures share
-the line), then its screenshot: the diagnostic beside it says what failed, in which run and why. It finds that diagnostic
-whichever form of the file's URI the client sent (`file:///c%3A/…` on Windows). Every other failure of the call chain
-leads with what failed, the run and the headline. VS Code's Testing view leaves the headline out of the failure's
+`failureSeverity` is not `off`). The hover of a failure whose diagnostic is under the pointer (within its range, where
+an editor shows it) gives its error, call chain and known issues, the failure's page (`Open in dashboard`, with the test
+and the run when several failures share the line), then its screenshot: the diagnostic beside it says what failed, in
+which run and why. It finds that diagnostic whichever form of the file's URI the client sent. Every other failure of the
+call chain, and one hovered outside its diagnostic's range, leads with what failed, the run and the headline. VS Code's Testing view leaves the headline out of the failure's
 message the same way. VS Code asks for the lenses again as it hands new credentials.
 
 A failure whose test left its spec publishes nothing: its `test(…)` call was in the spec the run saw, and is not in the
