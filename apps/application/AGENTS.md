@@ -49,7 +49,8 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   palette, the search fold and the syntax highlighter
   ([what it holds](../../packages/run-ui/ARCHITECTURE.md#what-it-holds)). Use them by auto-import and never keep a
   copy here; a plain TypeScript module that a vitest file loads without Nuxt imports the layer's exports by name
-  (`@piwitests/run-ui/highlight`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
+  (`@piwitests/run-ui/highlight`, `@piwitests/run-ui/text`, `@piwitests/run-ui/status-palette`).
+  ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **What the Local runs tray shares with Piwi Picker's Runs window lives in `@piwitests/run-model`**
   (`packages/run-model/`): what a stop takes, its place and error, a test's name, a worker's status and tab, its
   controls, who is present, the tab shown, the live view's input, and their English words (`RUN_WORDS_EN`, which the

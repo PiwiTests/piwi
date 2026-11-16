@@ -321,15 +321,15 @@ Each entry names folders under `server/api/`.
   page, a running row of a run the shell started offers Pause and watch (`TestRowDesktopWorker`), its worker found
   among the live runs that report the run (`useDesktopRunSessions`, `desktopSessionsOfRun`, `desktopRowWorker`).
   Agents reach the same runs through `/mcp` (the run tools, below).
-- **When the desktop window holds the hub's stream** (`useDesktopRunHub.want`, from
-  `plugins/desktop-run-hub.client.ts`, whatever the layout): while a run of the Local runs tray runs, or while the hub
-  says it has a live one (`hub-runs`, which a reload hears at once). While the stream is open every headless stop waits
-  for the window, so the tray opens on each stop it hears, once. The window says `show` only for the running runs whose
-  **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
-  `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
-  `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
-  Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
-  `tests/unit/desktop-run-hub-plugin.test.ts`).
+  - **When the desktop window holds the hub's stream** (`useDesktopRunHub.want`, from
+    `plugins/desktop-run-hub.client.ts`, whatever the layout): while a run of the Local runs tray runs, or while the hub
+    says it has a live one (`hub-runs`, which a reload hears at once). While the stream is open every headless stop
+    waits for the window, so the tray opens on each stop it hears, once. The window says `show` only for the running
+    runs whose **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
+    `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
+    `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
+    Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
+    `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,

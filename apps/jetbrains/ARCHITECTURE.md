@@ -590,7 +590,7 @@ that: the tab shows its page whatever the focus, while the focus chooses the sto
 file that never opened counts as none. Without the focus, the editor in use is left alone (`PiwiRunSessions.reveal`): a
 file open in an editor already keeps its caret, so the actions still act on the stop at the caret, and while an editor
 shows a file, another stays closed, the stop drawn when it opens, and counts as shown as an open file does; the platform
-opens no file without selecting it (`FileEditorOpenOptions` is internal). With no editor shown, it opens with
+opens no file without selecting it (2024.1: `FileEditorOpenOptions` is internal). With no editor shown, it opens with
 `navigate(false)`. The status bar item's menu lists each stop (`GoToStopAction`, `Glue.stopLabel`), which opens its line
 with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
 

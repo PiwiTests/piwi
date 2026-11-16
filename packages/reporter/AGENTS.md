@@ -20,10 +20,12 @@ responsibilities.
      every rung but `/finish` ([`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects), `tests/requested-run.spec.ts`);
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment), and the ones `onBegin` sets for the workers:
-     the boolean ones as `true` or `false` (`normalizeBoolEnv`), the `PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`,
-     `PIWI_RECORD_CHANNEL` and `PIWI_EDITOR_SEND` of the hub a run started in a terminal or by an editor's test runner
-     follows, unless the run names its own (`internal/config/hub.ts`, `tests/terminal-run.spec.ts`), and outside CI
-     `PIWI_STOP_NOTES` (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
+     the boolean ones as `true` or `false` (`normalizeBoolEnv`); for a run started in a terminal or by an editor's
+     test runner, the `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF` of its hub (`internal/config/hub.ts`: never under CI,
+     Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`), with an editor's `PIWI_RECORD_CHANNEL`, and
+     `PIWI_EDITOR_SEND` (the app's, or the pairing an editor's file names), unless the run names its own
+     (`tests/terminal-run.spec.ts`); and outside CI `PIWI_STOP_NOTES` (`internal/support/stop-notes.ts`,
+     `tests/stop-text.spec.ts`);
    - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
      `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
      `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
@@ -64,10 +66,10 @@ responsibilities.
      the desktop app (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the
      `piwiResources` worker fixture's setup to the worker's end, and the run's own from `onBegin` to `onEnd`
      (`internal/streaming/run-hub-link.ts`): a headless run stops too, a test is ended or held at a stop, and the
-     worker answers what the editor asks (`takes` and `features` in its `run-attach`). Three limits hold for every
-     message: a frame goes to the editor service alone, never stored nor attached, its secret fields and a headed
-     stop's pause bar painted over; trusted input plays only while that stop's view, or the lane view showing it, is
-     watched; and every title goes through `hideTypedText` and `hideSecretsInText`
+     worker answers what the editor asks (`takes` and `features` in its `run-attach`). Three limits hold: a frame
+     goes to the editor service alone, never stored nor attached, its secret fields painted over, and a headed stop's
+     pause bar where `page-view.ts` can paint it; trusted input plays only while that stop's view, or the lane view
+     showing it, is watched; and every call's and stop's title goes through `hideTypedText` and `hideSecretsInText`
      ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
    - with `PIWI_LIVE_VIEW` (set in `onBegin`; outside CI, `none:<why>` for a run without one), each worker's event
      stream to the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): opened in the
@@ -76,9 +78,15 @@ responsibilities.
      never a frame while nobody watches, never stored, nothing from a run outside CI unless it is shared; each frame
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
-     the test gets `context.tracing` and `page.screencast` behind guards that first end Piwi's own trace or view
-     (`guardTracing`, `guardScreencast`) ([what it posts, when, and its tests](ARCHITECTURE.md#side-effects), under
-     **The instance's live view**);
+     the test gets `context.tracing` and `page.screencast` behind guards that first end Piwi's own trace or a view's
+     screencast client (`guardTracing`, `guardScreencast`)
+     ([what it posts, when, and its tests](ARCHITECTURE.md#side-effects), under **The instance's live view**);
+   - while a full view has Inspect open, the page's DOM snapshots and the stylesheets, fonts and images they name
+     (`internal/capture/live-inspect.ts`), read from the runner's trace or from a live trace of Piwi's own, stopped
+     unsaved and its files deleted as Inspect closes: each snapshot goes through `hideFrameSnapshotSecrets` with the
+     attempt's secrets, none for a project with masks, nor while a page's secret fields cannot be read, nor one it
+     cannot read whole, and never a script, a document, an SVG nor bytes of another kind than their type
+     (`tests/live-view-inspect.spec.ts`, `tests/live-inspect.spec.ts`);
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
      (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
      neither, and put back after it, since Playwright passes a worker's environment changes to the projects that

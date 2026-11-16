@@ -110,7 +110,8 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 ## Brand assets
 
 - **Every logo, favicon and app icon in the repository is written by `scripts/generate-brand-assets.mjs`**
-  (`npm run app:generate:brand`) from the drawing and the brand colors in that file, the editors' icon font
-  (`ICON_FONT_GLYPHS`) and the desktop apps' tray glyphs (`MENU_ICONS`) included. Never edit one by hand: change the
-  script and regenerate them all ([what it writes](../ARCHITECTURE.md#brand-assets)).
+  (`npm run app:generate:brand`) from the drawing and the brand colors in that file, VS Code's icon font and the
+  desktop apps' tray glyphs (`MENU_ICONS`) included. Never edit one by hand: change the script and regenerate them
+  all, and regenerate after editing one of the plugin's SVGs the font draws (`ICON_FONT_GLYPHS`)
+  ([what it writes](../ARCHITECTURE.md#brand-assets)).
 - **The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.**

@@ -68,9 +68,9 @@ shell and are feature-equivalent.
   - the pairing poll, which answers only with the secret the start gave. The token goes out once, after **Allow** in
     the window (`DesktopPickerPairingModal`), behind the guard.
 - **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test adds
-  `bundled_hub_env` (`hub_env.rs`): the server's `PIWI_RUN_CHANNEL`, the address its picks go to (`PIWI_EDITOR_SEND`)
-  and the run's `PIWI_RUN_REF`, read from `GET /api/desktop/run-channel` only after `health_ok` proved the host holds
-  the token. Which spawns, their refs and a worktree job's editor:
+  `bundled_hub_env`: the server's `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`), read from
+  `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and the `PIWI_RUN_REF` the
+  shell names the run by (`hub_env.rs`). Which spawns, their refs and a worktree job's editor:
   [`ARCHITECTURE.md`](ARCHITECTURE.md#runs-the-shell-starts).
 - **A run nobody attends ends its ref in `-unattended`, and the server never holds its failures** (`attended_args`,
   mirrored by `desktopArgsAttended`): Flake Lab, a bisect, a lab job, a run with `--ui`, or with `--repeat-each` above
@@ -98,8 +98,9 @@ shell and are feature-equivalent.
   (`src-tauri/src/run_target.rs`). The window names the request id alone: the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
   `isBrowserRequest`), writes the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it
-  when the run ends. What it refuses, and how a quit, a restart and a leftover folder end a requested run:
-  [`ARCHITECTURE.md`](ARCHITECTURE.md#requested-runs).
+  when the run ends. It refuses a request with no arguments, a folder linked since, a folder another local or
+  requested run is going in, or arguments past `REQUEST_ARGS_MAX_CHARS`. How a quit, a restart and a leftover folder
+  end a requested run: [`ARCHITECTURE.md`](ARCHITECTURE.md#requested-runs).
 - **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
   set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that
   names the connected instance (`key_revoked`).

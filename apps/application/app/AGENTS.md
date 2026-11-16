@@ -146,7 +146,7 @@ views are exempt only where a rule says so.
 - **A selection is neutral too**: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
   `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
   of status-colored marks) and `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and, for
-  the last two, the layer's `ui-classes.ts`.
+  the last two, the layer's `ui-classes.ts`; `tests/unit/evidence-accent.test.ts` holds the failure pages to them.
 - **A link inside a sentence keeps the sentence's color**:
   `underline decoration-dotted underline-offset-2 hover:decoration-solid`. `text-primary` links are for navigation lists
   and tables.

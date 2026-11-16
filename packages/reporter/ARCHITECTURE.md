@@ -539,11 +539,11 @@ What the package does to a user's run, process by process.
   JPEG's bytes behind a JSON header, `LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside
   JSON to an older one. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
-  test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
-  title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
-  no screencast runs and no frame goes.
+  test is on (`callInProgress`, its title through `hideSecretsInText`), the test's
+  title and when its page looked so (`at`), a headed stop's pause bar painted over as in the
+  editor's view. Nobody watching, no screencast runs and no frame goes.
 - While a viewer shows the worker in full (`full`), the worker also follows the call its test is in
-  (`live-call-log.ts`). In a run Piwi may pause (`mayPause`: outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
+  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or `mayPause`: with `PIWI_PAUSE_AT`, `PWDEBUG` or
   `--debug`), from Playwright's in-process instrumentation: a listener added to the context's server
   object (`context._connection.toImpl(context).instrumentation`, each member checked first) with
   that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
@@ -622,7 +622,8 @@ What the package does to a user's run, process by process.
   read, that cannot be read whole, or past 4 MB does not go, and stops its frame's chain until
   its next full snapshot, the viewers told why for the main frame. Its title is the runner's
   step's. Before it, each resource it and its stylesheets name that the `.network` file
-  recorded with a content type `inspectResourceType` allows, read from the trace folder's
+  recorded with a content type `inspectResourceType` allows (a stylesheet, a font or an image: never a script, a
+  document or an SVG), read from the trace folder's
   `resources/` (a regular file, 2 MB at most), its bytes of that kind
   (`isInspectResourceBytes`), once per run; the header names each by its address hidden as
   the snapshot's are (`hideResourceUrl`). A project with masks (or masks this reporter cannot
@@ -704,7 +705,8 @@ What the package does to a user's run, process by process.
   channel is this user's socket in such a folder, deleting none. It follows the editor one of whose
   workspace folders holds the config's folder or the working directory, real paths
   compared (`editorForRun`: the most specific, then the latest started), and sets
-  `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket and
+  `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket,
+  `PIWI_EDITOR_SEND` to the pairing its file names, unless the run names its own, and
   `PIWI_RUN_REF` to `terminal-<pid>-<time>` for the workers, which connect as an editor's
   run's do; a run nobody attends follows only an editor whose file says `unattended`, and
   else runs alone. With no editor's workspace holding it, it attaches to the desktop app

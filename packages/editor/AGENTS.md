@@ -225,9 +225,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   the app's `desktop-runs*.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
-  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`; its routes
-  (`src/run-target-routes.ts`), its guard (`src/host-guard.ts`), the window's session and its two event streams are
-  what the desktop app's Nitro routes and guard call, never a copy. A change here runs both suites:
+  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`; its routes, their body
+  checks and the refusal of a browser on the shell-only ones (`src/run-target-routes.ts`), its guard
+  (`src/host-guard.ts`), the window's session and its two event streams are what the desktop app's Nitro routes and
+  guard call, never a copy. A change here runs both suites:
   `tests/run-target-routes.test.ts` holds the contract on the bare `node:http` host, and
   `apps/application/tests/unit/desktop-run-target.test.ts`, `desktop-session-routes.test.ts` and
   `desktop-events-stream.test.ts` the body, id, browser, session and stream checks through the Nitro routes.
