@@ -19,17 +19,20 @@ document, with the snapshot picker and its search by text (Part 4,
 one watch of the run (Part 5, as live-runs P10 revised it, [`features/watch-all`](../apps/docs/features/watch-all.md)),
 and a filmstrip of the test's calls in place of the last 30 seconds (live-runs P11); a CI run of the branch in the
 editors and in Piwi Picker's Runs window, read-only (Part 6, through live-runs P10); and images as binary bodies at the
-size the viewers show them (Part 7, without video). Left: the parts below. The plan as proposed, with every part, the
-decisions D1 to D12, spikes A to H and the defect it found (fixed before its first PR), is at commit `46c65e9fd`; the
-live-runs ADR cites its parts, PRs and open questions by those numbers. Parts and decisions keep their numbers here;
+size the viewers show them (Part 7, without video). Left: the parts below, and two pieces of Part 9 for what is
+built: the live view setting's text, which names only the images, and the demo's call log and Inspect. The plan as
+proposed, with every part, the decisions D1 to D12, spikes A to H and the defect it found (fixed before its first PR),
+is at commit `46c65e9fd`; the live-runs ADR cites its parts, PRs and open questions by those numbers. Parts and decisions keep their numbers here;
 the delivery steps and the open questions are numbered anew. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. Its
 contracts are entry D62 of [`1.0-stabilization.md`](1.0-stabilization.md); of them, the WebM stream, the messages of a
 held failure and its setting, `get_live_test` and the share link to a running run are still to come.
 
 **Summary.** What remains, in the order it should be built:
 
-- **Where a stuck test waits.** A **Stuck?** row names the step the test is in; it also says how long that step usually
-  takes.
+- **The live view setting says what goes out**: the call log, the page's events and text, and Inspect's DOM, which it
+  does not name yet. The demo plays the call log and an Inspect snapshot.
+- **Where a stuck test waits.** A **Stuck?** row, which names the step the test is in, also says how long that step
+  usually takes.
 - **The test's other pages**, each a tab of the lane view, not only the `page` fixture's.
 - **The ARIA tree in Inspect**, beside each call's snapshot.
 - **The last passing run's image** of the same step, beside the live one.
@@ -68,9 +71,9 @@ Inspect's picker on the held page.
   keeps none. Beside the image: the call, its log, its element count and its action point. Under it, the layers a
   viewer asks for (`@piwitests/core/live-layers`): the filmstrip, the page's events, the page's text as roles and
   names; and **Inspect**.
-- **The page a lane shows** is the `page` fixture's, else the first open page its test used (`lanePageShown` in
-  `lane-feed.ts`): one source a lane, shared by every sink (the instance's view and the local hubs'). A viewer cannot
-  pick another page.
+- **The page a lane shows** is its stop's while it stands at one, else the `page` fixture's, else the first open page
+  its test used (`lanePageShown` in `lane-feed.ts`): one source a lane, shared by every sink (the instance's view and
+  the local hubs'). A viewer cannot pick another page.
 - **Stuck?** (`#shared/stuck-tests`, `server/utils/stuck-tests.ts`): an attempt past the longer of two minutes
   (`STUCK_FLOOR_MS`) and three times (`STUCK_FACTOR`) the longest of its test's last ten passing durations on its
   browser. The row says how long it has run against that duration (`TestRowStuck.vue`), and with the run open the live
@@ -97,9 +100,9 @@ Inspect's picker on the held page.
 - **The trace's ARIA snapshots**: with `snapshots: { aria: true }`, a trace writes the page's ARIA snapshot before each
   call, at its action and after it (`aria/<callId>-<phase>.json`). `wrapConfig`'s trace does not ask for them.
 - **ffmpeg 1013**, which Playwright 1.64 installs with its browsers to record videos: a VP9 encoder (`libvpx-vp9`), the
-  WebM format, JPEG images read from a pipe, no network protocol, no filter that paints a box and no raw image input
-  ([spike C](#c-vp9-from-playwrights-ffmpeg)). Playwright 1.63 and earlier install ffmpeg 1011, whose one encoder is
-  VP8. The reporter supports Playwright from 1.59.
+  WebM format, JPEG images read from a pipe, no network protocol ([spike C](#c-vp9-from-playwrights-ffmpeg)), and no
+  filter that paints a box nor any raw image input ([spike E](#e-masking-an-image-in-the-worker)). Playwright 1.63
+  and earlier install ffmpeg 1011, whose one encoder is VP8. The reporter supports Playwright from 1.59.
 
 ## Decisions
 
@@ -109,15 +112,16 @@ in the plan as proposed.
 | | Decision | Why |
 | --- | --- | --- |
 | D9 | **Video is a form of the same view, not a second one**: VP9 in WebM from Playwright's ffmpeg, a keyframe every half second, each cluster opening on one (`-dash 1`), when the worker has ffmpeg 1013 and the viewer's browser shows a frame of it within two seconds; images otherwise. | [Spike C](#c-vp9-from-playwrights-ffmpeg): ten images a second as VP9 took a third fewer bytes than four a second as JPEG, at about 4 ms of CPU an image. [Spike G](#g-the-live-webm-in-three-browsers): Chromium and Firefox play it 0.7 to 1.4 s behind, a late viewer from the last keyframe; WebKit on Linux showed nothing in two runs of three. |
-| D11 | **Holding a failing CI test is a project setting, off by default**: a viewer of the lane as its test fails may hold the failing page, five minutes at most. It narrows run control's D8 for that one case, and ships with an ADR that says so. | Inspecting a CI failure where it happened is worth the CI minutes to some teams, not by default. A hold takes no input and runs no code, but it does steer the run. |
+| D11 | **Holding a failing CI test is a project setting, off by default**: a viewer of the lane as its test fails may hold the failing page, for the length the project sets: five minutes by default, fifteen at most. It narrows run control's D8 for that one case, and ships with an ADR that says so. | Inspecting a CI failure where it happened is worth the CI minutes to some teams, not by default. A hold takes no input and runs no code, but it does steer the run. |
 | D12 | **One server still relays a run.** A relay shared between servers is a plan of its own, together with the run's live events. | The run page's live events have the same limit; lifting one without the other changes nothing for a viewer. |
 
 ## Part 1: Where a stuck test waits
 
-With the run open, a **Stuck?** row names the step the test is in. It also says how long that step usually takes,
-from the steps stored with the passing executions the rule reads, matched by title and place in the code, so a reader
-tells a test stuck in one step from one slow throughout. Without the run open, the row and `test.stuck` stay as they
-are.
+With the run open, a **Stuck?** row names the step the test is in (`TestRowLiveStep.vue`) and how long the test has
+run against its usual time (`TestRowStuck.vue`). It also says how long that step usually takes: the median over the
+test's last passing executions on its browser, as the failure timeline already reads it for each step
+(`getUsualDurations` in `shared/handlers/test-cases.ts`), so a reader tells a test stuck in one step from one slow
+throughout. Without the run open, the row and `test.stuck` stay as they are.
 
 ## Part 3: The test's other pages
 
@@ -142,8 +146,8 @@ and line, when one is stored. It is shown, not compared.
 ## Part 6: An agent and a watch link
 
 - **An agent.** An MCP tool of the instance, `get_live_test`, answers for a running test of a CI or shared run: its
-  call, its call log, its element count and the page's text as the text layer gives it, between the page-content
-  markers the run agent already uses. It takes a viewer's place in the run's watches and steers nothing.
+  call, its call log, its element count and the page's latest ARIA snapshot as the text layer gives it, between the
+  page-content markers the run agent already uses. It takes a viewer's place in the run's watches and steers nothing.
 - **A watch link.** A share link to a running run, read-only, behind `PIWI_SHARE_LINKS_ENABLED`, which ends with the
   run: for someone without an account, such as a customer watching an acceptance run. Its anonymous route serves the
   images and the calls' titles, never the DOM, the page's text, the logs or the requests
@@ -175,15 +179,18 @@ frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-we
 
 ## Part 9: Documentation
 
-- Each new feature gets its own page and catalog entry, linked from the live view page, as Stuck tests, Inspect and
-  Watch all have: **Hold a failing CI test** (Part 8) is a page; the other pages (Part 3) and video (Part 7) replace
-  sentences of the live view page; the step a stuck test waits in goes on the Stuck tests page, the ARIA tree on the
-  Inspect page.
+- Each new feature gets its own page and catalog entry, linked from the live view page, as Inspect and Watch all are
+  (Stuck tests is not linked from it yet): **Hold a failing CI test** (Part 8) is a page; the other pages (Part 3) and
+  video (Part 7) replace sentences of the live view page; the step a stuck test waits in goes on the Stuck tests page,
+  the ARIA tree on the Inspect page.
 - `get_live_test` on the generated MCP tools page; the watch link on the
   [share links](../apps/docs/features/share-links.md) page; the hold's setting in `shared/help-content.ts`.
-- The live view setting's text, which says what goes out, to whom and what is kept, says it again for the hold and the
-  watch link.
-- The demo mirrors each part.
+- The live view setting's text (`ProjectLiveViewSettings.vue`, and `project.live-view` in `shared/help-content.ts`),
+  which says what goes out, to whom and what is kept, names only the images. It says it again for what is built (the
+  call log, the page's events and its text, Inspect's DOM and resources, kept in the instance's memory for the run),
+  then for the hold and the watch link.
+- The demo plays a stuck test, but no call log nor Inspect snapshot, which its run simulator can play without a
+  browser. It mirrors each part below where it can.
 
 ## Part 10: Security
 
@@ -201,13 +208,14 @@ Each PR is usable on its own; sizes are relative (S, M).
 
 | PR | Content | Size |
 | --- | --- | --- |
-| 1 | The step a stuck test is in and how long it usually takes (Part 1). | S |
-| 2 | The test's other pages as tabs (Part 3). | M |
-| 3 | The ARIA tree in Inspect (Part 4). | S |
-| 4 | The last passing run's image (Part 5). | S |
-| 5 | Video (Part 7), once Safari is checked. | M |
-| 6 | `get_live_test` and the watch link (Part 6), each its own PR if it runs long. | M |
-| 7 | Holding a failing CI test (Part 8), its page and the ADR. | M |
+| 1 | The live view setting's text for what is built, and the demo's call log and Inspect snapshot (Part 9). | S |
+| 2 | How long the step a stuck test is in usually takes (Part 1). | S |
+| 3 | The test's other pages as tabs (Part 3). | M |
+| 4 | The ARIA tree in Inspect (Part 4). | S |
+| 5 | The last passing run's image (Part 5). | S |
+| 6 | Video (Part 7), once Safari is checked. | M |
+| 7 | `get_live_test` and the watch link (Part 6), each its own PR if it runs long. | M |
+| 8 | Holding a failing CI test (Part 8), its page and the ADR. | M |
 
 ## Verification
 
@@ -242,6 +250,8 @@ Each PR is usable on its own; sizes are relative (S, M).
 5. **Safari**: does it play the live WebM through `MediaSource`, and how far behind?
 6. **Video on the developer's machine**: the live-runs ADR applies Part 7 to the local lane view too; does a view on the
    same machine, where bytes cost little, gain anything from video?
+7. **The masking codec**: masking ships with `jpeg-js`, two images a second while a masked element shows. Is a
+   WebAssembly JPEG codec worth its weight in the published reporter, for video above all?
 
 ## Not in this plan
 
@@ -251,17 +261,21 @@ Each PR is usable on its own; sizes are relative (S, M).
 - **WebRTC between the worker and the viewer.** CI networks rarely allow the direct connection; the relay through the
   instance works from any CI that reaches it.
 - **Remote DevTools, the Chrome DevTools Protocol through the instance.** The protocol evaluates code in the page and
-  the browser; a team instance that relays it breaks D8 far beyond Part 8.
-- **Input into a CI page from the dashboard**: D8 stands, and a hold takes none.
+  the browser; a team instance that relays it breaks run control's D8 far beyond Part 8.
+- **A recording script in the page's own world**, as rrweb records a session: the reporter's contract 6, nothing the
+  capture does shows up as the test's own. The DOM between calls could come later from a `MutationObserver` in an
+  isolated world, once Inspect has shown the DOM at each call is worth it.
+- **Input into a CI page from the dashboard**: run control's D8 stands, and a hold takes none.
 - **A relay shared between servers** (D12).
 - **Keeping the live view as the run's video**: the trace and video settings keep the record, and the live view keeps
   nothing.
 
 ## Appendix: the spikes
 
-The two spikes that bear on what remains, run on 2026-10-30 in a sandbox with 4 cores and 15 GB of memory, Node.js
+The three spikes that bear on what remains, run on 2026-10-30 in a sandbox with 4 cores and 15 GB of memory, Node.js
 22.22, Playwright 1.64.1 and its Chromium 156.0.8078.4; spike G also with its Firefox 157.0 and WebKit 27.2 (Linux,
-GStreamer). The scripts lived outside the repository. The other six are in the plan as proposed (commit `46c65e9fd`).
+GStreamer). The scripts lived outside the repository. Spike E is cut to what bears on video and the codec; the rest
+of it and the other five spikes are in the plan as proposed (commit `46c65e9fd`).
 
 ### C. VP9 from Playwright's ffmpeg
 
@@ -280,9 +294,20 @@ VP9 used `-c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -b:v 150k -g 
 `-live 1 -cluster_time_limit 1000`. Encoding the 39 images took 0.15 s of CPU, about 4 ms an image. Fed in real time
 with the default input probing, ffmpeg wrote nothing until its input ended; with `-probesize 32 -analyzeduration 0
 -fflags nobuffer`, its first bytes came 0.79 s after the first image at four a second, and 0.32 s at ten. ffmpeg 1011,
-which Playwright 1.63 installs, has `libvpx` (VP8) and no VP9; ffmpeg 1013 has `libvpx-vp9` and no VP8. ffmpeg 1013 has
-no filter that paints a box (its video filters are `scale`, `crop`, `pad`, `format`, `transpose`, the flips and
-`trim`) and reads no raw images, only JPEG: the worker paints a decoded image and encodes it again before ffmpeg.
+which Playwright 1.63 installs, has `libvpx` (VP8) and no VP9; ffmpeg 1013 has `libvpx-vp9` and no VP8.
+
+### E. Masking an image in the worker
+
+The 39 images spike C kept at ten a second (640×400, quality 50, 8.8 KB on average), and `jpeg-js` as
+`playwright-core/lib/utilsBundle` exports it:
+
+- **Decoding** an image took 14.7 ms; decoding, painting a box and encoding again at quality 50, 47.6 ms: 19 % of a core
+  at four images a second, 10 % at two.
+- **Size**: the masked image came out 1.55 times the screencast's at quality 50, 1.51 at 40 and 1.40 at 30 (encoding in
+  29, 23 and 21 ms): Chrome's encoder is more compact than `jpeg-js` at the same quality.
+- **ffmpeg 1013** has no filter that paints a box (its video filters are `scale`, `crop`, `pad`, `format`,
+  `transpose`, the flips and `trim`) and reads no raw images, only JPEG: on the video path too, the worker paints a
+  decoded image and encodes it again before ffmpeg.
 
 ### G. The live WebM in three browsers
 

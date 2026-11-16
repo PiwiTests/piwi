@@ -248,9 +248,8 @@ recording in `STATUS_COLORS`' failed and running fills, the JetBrains schemes bl
 Darcula's background, and VS Code's held failure's arrow takes the failed fill (LI3); VS Code's running ring spins,
 still under the system's reduced motion (TL5 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100
 columns of its font, every text the page fills itself holding a long sentence and an address (ST14). §14 adds the
-findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
-P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
-lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
+findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), is built
+whole, and §8 names what the editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
 live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
 restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
