@@ -153,7 +153,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         anchor: 'project-scm-token',
         resolve: 'project',
         title: 'A token that reads the repository',
-        body: '**Credential** names a GitHub, GitLab or Bitbucket token that can read the repository, saved once under Settings → Credentials; **New credential** saves one here. A project without one falls back to the instance’s, set in Settings → Source control.',
+        body: '**Credential** names a GitHub, GitLab or Bitbucket token that can read the repository, saved once under Settings → Credentials or right beside the picker. A project without one falls back to the instance’s, set in Settings → Source control.',
         side: 'bottom',
         align: 'start',
       },
