@@ -7,7 +7,7 @@ lang: en-US
 # Source control
 
 Piwi reads your repository through the Git host's API with an **SCM token** (a personal or project access token for
-GitHub, GitLab or Bitbucket), saved once as an [SCM credential](/operate/credentials#source-control). Nothing needs it
+GitHub, GitLab or Bitbucket), saved once as an [SCM credential](/operate/credentials). Nothing needs it
 to store runs, but every feature that looks at the code behind a failure, or writes back to a pull request, goes
 through it.
 
@@ -48,11 +48,24 @@ GitLab (`https://gitlab.com/api/v4/projects/acme%2Fweb/`). Then pick it:
 
 The token is encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general), never returned by the API, sent
 only to its destination, and each use is in the credential's log. A token saved on a project or the instance before
-credentials existed is moved to one at startup ([how](/operate/credentials#source-control)). The page stays open
+credentials existed is moved to one at startup (below). The page stays open
 when the Source control [capability](/operate/capabilities) is declined, so the credentials can still be taken out.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
 A private repository needs one, except on the desktop app with a linked folder (below).
+
+### How it is used and logged
+
+Opening a credential for a repository's calls is counted like a **Check** in its log, `ok` once opened (a token the
+host refuses shows on the page that read). Each write (a comment, a commit status, an auto-heal branch, commit or pull
+request, a dispatch) is a row of its own, checked again before it is sent. A refused credential is logged; the reads
+go on without it, and a dispatch, or the **Check** of an action that names its own, is refused.
+
+At startup, a project's token saved before credentials existed moves to a credential bound to the API of its
+repository; it waits while the project has no repository, or one on a GitLab host `PIWI_SCM_GITLAB_HOSTS` does not
+list. The instance's moves to one credential per API it could reach (GitHub's, Bitbucket's, the GitLab cloud's and
+each listed host's), shared with all projects and listed in **Settings → Source control**: delete the ones your
+repositories do not use.
 
 ### On the desktop app
 

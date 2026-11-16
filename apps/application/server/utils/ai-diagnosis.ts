@@ -30,6 +30,7 @@ import { emitNotification } from './notifications/emit';
 import { enqueueDiagnosisPolicies } from './integrations/policies';
 import type { DiagnosisCompletedPayload } from '#shared/notification-events';
 import type { DbClient } from '../database';
+import { openAiKeys } from './ai-credentials';
 
 const STALE_RUNNING_MS = 5 * 60 * 1000;
 
@@ -776,7 +777,12 @@ export async function selectAutoDiagnoseClusters(
 }
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {
-  const config = await resolveAiConfig(db);
+  const resolved = await resolveAiConfig(db);
+  // The keys are opened only when this run calls a model: embeddings, or diagnoses.
+  const config =
+    resolved && (resolved.roles.embedding || resolved.autoDiagnose)
+      ? await openAiKeys(db, resolved, { userId: null, apiKeyId: null })
+      : resolved;
 
   // Always-on (when an embedding role is configured): collapse semantic
   // near-duplicate clusters from this run before any diagnosis runs, so we don't

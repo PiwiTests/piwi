@@ -48,11 +48,13 @@ export async function resolveProjectAiLanguage(db: DbClient, projectId: number):
   return readAiLanguage(db);
 }
 
-/** Stored shape of a single role (apiKey encrypted at rest). */
+/** Stored shape of a single role: the credential its key is in, or, before the startup import, the key encrypted. */
 export interface RawStoredRole {
   provider?: string;
   model?: string;
   baseUrl?: string;
+  /** The `ai` credential the role's key is in (`credentials.id`). */
+  credentialId?: number;
   apiKey?: string;
   reuse?: AiModelRole | null;
   /** OpenAI-compat only: sampling temperature override. */
@@ -201,7 +203,8 @@ export function toRoleSettings(raw?: RawStoredRole | null): AiRoleSettings | nul
     model: raw.model || null,
     baseUrl: raw.baseUrl || null,
     reuse: raw.reuse ?? null,
-    hasApiKey: Boolean(raw.apiKey),
+    hasApiKey: Boolean(raw.apiKey || raw.credentialId),
+    credentialId: raw.credentialId ?? null,
     temperature: raw.temperature ?? null,
   };
 }

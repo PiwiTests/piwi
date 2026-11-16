@@ -2,10 +2,14 @@
 /**
  * One role's own provider connection in Settings → AI: only the fields its tile
  * needs (the API key, the server address, the model, the temperature), then a
- * test whose result stays in view. A command-line tool shows its status and
- * sign-in instead of a key. Env-managed, the key and address are the server's.
+ * test whose result stays in view. A key typed here is saved as a credential
+ * (Settings → Credentials) bound to the role's endpoint; a saved one can be
+ * picked instead. A command-line tool shows its status and sign-in instead of
+ * a key. Env-managed, the key and address are the server's.
  */
-import type { AiModelRole } from '~~/types/api';
+import { isUnderBaseUrl } from '#shared/ci-server';
+import { aiEndpoint, type CredentialSummary } from '#shared/credentials';
+import type { AiModelRole, ApiResponse } from '~~/types/api';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import {
   type LocalCliProvider,
@@ -86,6 +90,40 @@ const placeholder = computed(() => {
 });
 
 const secretKeyCommand = `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`;
+
+type CredentialsAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
+const { data: listed } = useFetch<CredentialsAnswer>('/api/credentials', { key: 'ai-credentials', server: false });
+/** The endpoint the role's key goes to, as the form reads now. */
+const endpoint = computed(() => aiEndpoint(r.value.provider, r.value.baseUrl));
+/** The saved AI keys the role may name: shared with all projects, sent under its endpoint. */
+const savedKeys = computed(() =>
+  ((listed.value?.credentials ?? []) as CredentialSummary[]).filter(
+    (c) =>
+      c.service === 'ai' &&
+      c.managedBy === 'db' &&
+      c.scope.allProjects &&
+      endpoint.value !== null &&
+      isUnderBaseUrl(c.destination, endpoint.value),
+  ),
+);
+const savedKeyItems = computed(() =>
+  savedKeys.value.map((c) => ({ label: c.disabled ? `${c.name} (disabled)` : c.name, value: c.id })),
+);
+/** The credential the role names now: the one picked, else the stored one. */
+const namedId = computed(() =>
+  r.value.credentialId !== undefined ? r.value.credentialId : stored.value?.credentialId,
+);
+const namedName = computed(
+  () => ((listed.value?.credentials ?? []) as CredentialSummary[]).find((c) => c.id === namedId.value)?.name ?? null,
+);
+const pickedKey = computed({
+  get: () => namedId.value ?? undefined,
+  set: (id: number | undefined) => {
+    r.value.credentialId = id ?? null;
+    r.value.apiKey = '';
+    replacingKey.value = false;
+  },
+});
 </script>
 
 <template>
@@ -121,7 +159,10 @@ const secretKeyCommand = `node -e "console.log(require('node:crypto').randomByte
           <CodeBlock :code="secretKeyCommand" lang="bash" />
         </div>
         <div v-else-if="keyStored && !replacingKey" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="flex items-center gap-1.5 text-sm text-highlighted"> A key is stored, encrypted. </span>
+          <span class="flex items-center gap-1.5 text-sm text-highlighted">
+            <template v-if="namedName">The key is saved in “{{ namedName }}”.</template>
+            <template v-else>A key is stored, encrypted.</template>
+          </span>
           <UButton color="neutral" variant="link" size="sm" class="px-0" @click="replacingKey = true">Replace</UButton>
         </div>
         <div v-else class="space-y-1">
@@ -168,6 +209,21 @@ const secretKeyCommand = `node -e "console.log(require('node:crypto').randomByte
           Add an API key
         </UButton>
       </div>
+
+      <SettingsField
+        v-if="!env && !isCli && savedKeyItems.length > 0"
+        label="Saved key"
+        description="A key saved under Settings → Credentials, sent to this provider's address. A key typed above replaces the one the role names."
+      >
+        <USelect
+          v-model="pickedKey"
+          :items="savedKeyItems"
+          placeholder="Pick a saved key"
+          aria-label="Saved AI key"
+          class="w-full sm:max-w-sm"
+          data-testid="ai-saved-key"
+        />
+      </SettingsField>
 
       <SettingsField
         v-if="r.provider === 'openai' || (env && !isCli && r.baseUrl)"

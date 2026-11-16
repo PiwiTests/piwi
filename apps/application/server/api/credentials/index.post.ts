@@ -10,7 +10,7 @@ import {
   insertCredential,
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
-import { parseCredentialInput, scmCredentialProblem, type CredentialInput } from '#shared/credentials';
+import { credentialServiceProblem, parseCredentialInput, type CredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm';
 import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
@@ -33,13 +33,14 @@ export default eventHandler(async (event) => {
   const parsed = parseCredentialInput(await readBody(event).catch(() => null), { partial: false });
   if (!parsed.value) throw apiError({ statusCode: 400, message: parsed.error });
   const input = parsed.value as CredentialInput;
-  if (input.service === 'scm') {
-    const problem = scmCredentialProblem(
+  if (input.service !== 'ci-server') {
+    const problem = credentialServiceProblem(
+      input.service,
       { destination: input.destination, user: input.user ?? null },
       configuredGitlabHosts(),
     );
     if (problem) throw apiError({ statusCode: 400, message: problem });
-    input.destination = normalizeScmDestination(input.destination);
+    if (input.service === 'scm') input.destination = normalizeScmDestination(input.destination);
     input.allowedInputs = null;
     input.customRequests = false;
   }

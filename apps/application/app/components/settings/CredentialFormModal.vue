@@ -109,6 +109,9 @@ const editing = computed(() => props.credential !== null);
 const asksService = computed(() => !editing.value && !props.service);
 const SERVICE_ITEMS = CREDENTIAL_SERVICES.map((value) => ({ label: CREDENTIAL_SERVICE_LABELS[value], value }));
 const isScm = computed(() => form.value.service === 'scm');
+const isAi = computed(() => form.value.service === 'ai');
+/** A CI server credential's user, inputs and Custom request switch; the other services send the secret alone. */
+const isCiServer = computed(() => form.value.service === 'ci-server');
 /** One click per repository host, for an SCM credential's destination. */
 const SCM_HOSTS = [
   { label: 'GitHub', destination: SCM_API_DESTINATIONS.github },
@@ -165,7 +168,7 @@ async function submit() {
     ...(editing.value ? {} : { service: f.service }),
     destination: f.destination.trim(),
     scope: f.allProjects ? { allProjects: true } : { allProjects: false, projectIds: f.projectIds },
-    ...(isScm.value
+    ...(!isCiServer.value
       ? {}
       : {
           user: f.user.trim() || null,
@@ -229,7 +232,7 @@ async function submit() {
           <UInput
             v-model="form.name"
             :maxlength="MAX_CREDENTIAL_NAME_LENGTH"
-            :placeholder="isScm ? 'e.g. GitHub · acme' : 'e.g. Jenkins · piwi-bot'"
+            :placeholder="isScm ? 'e.g. GitHub · acme' : isAi ? 'e.g. Anthropic · team' : 'e.g. Jenkins · piwi-bot'"
             aria-label="Credential name"
             class="w-full"
           />
@@ -267,7 +270,11 @@ async function submit() {
           label="Destination"
           name="credentialDestination"
           required
-          description="The base URL the secret may be sent under. A request elsewhere is refused."
+          :description="
+            isAi
+              ? 'The provider’s API (Anthropic’s, or an OpenAI-compatible base URL). A call elsewhere is refused.'
+              : 'The base URL the secret may be sent under. A request elsewhere is refused.'
+          "
         >
           <UInput
             v-model="form.destination"
@@ -277,7 +284,12 @@ async function submit() {
           />
         </UFormField>
         <div class="grid gap-4 sm:grid-cols-2">
-          <UFormField v-if="!isScm" label="User" name="credentialUser" description="For Basic auth, with the secret.">
+          <UFormField
+            v-if="isCiServer"
+            label="User"
+            name="credentialUser"
+            description="For Basic auth, with the secret."
+          >
             <UInput
               v-model="form.user"
               autocomplete="off"
@@ -333,7 +345,13 @@ async function submit() {
             type="password"
             autocomplete="new-password"
             :placeholder="
-              editing && !credential?.secretEnv ? '•••••••• (unchanged)' : isScm ? 'Access token' : 'API token'
+              editing && !credential?.secretEnv
+                ? '•••••••• (unchanged)'
+                : isScm
+                  ? 'Access token'
+                  : isAi
+                    ? 'API key'
+                    : 'API token'
             "
             aria-label="Credential secret"
             class="w-full font-mono"
@@ -344,7 +362,9 @@ async function submit() {
           :description="
             isScm
               ? 'The projects whose source control and CI actions may name it.'
-              : 'The projects whose CI actions may name it.'
+              : isAi
+                ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
+                : 'The projects whose CI actions may name it.'
           "
         >
           <div class="space-y-2">
@@ -362,7 +382,7 @@ async function submit() {
           </div>
         </FormFieldGroup>
         <FormFieldGroup
-          v-if="!isScm"
+          v-if="isCiServer"
           label="Inputs"
           description="The CI action inputs a request carrying it may send, beside the arguments and the dispatch id."
         >
@@ -378,7 +398,7 @@ async function submit() {
           </div>
         </FormFieldGroup>
         <USwitch
-          v-if="!isScm"
+          v-if="isCiServer"
           v-model="form.customRequests"
           label="Custom requests may carry it"
           description="A Custom request reaches any path under the destination, a script console included."

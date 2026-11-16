@@ -213,9 +213,30 @@ export async function readInstanceScmCredentialIds(db: DrizzleDB): Promise<numbe
   return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
 }
 
-/** What names each credential, by credential id: CI actions, projects' source control, the instance's source control. */
+/** The AI roles, in the order Settings → AI shows them, with the label a reference names them by. */
+const AI_ROLE_REFERENCES = [
+  ['diagnosis', 'AI · Diagnosis'],
+  ['research', 'AI · Research'],
+  ['embedding', 'AI · Embedding'],
+  ['assistant', 'AI · Assistant'],
+] as const;
+
+/** The credential each AI role of Settings → AI names, from the `ai` app setting. */
+async function aiRoleCredentialIds(db: DrizzleDB): Promise<Array<[string, number]>> {
+  const [row] = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, 'ai'));
+  const roles = (row?.value as { roles?: Record<string, { credentialId?: unknown } | undefined> } | undefined)?.roles;
+  return AI_ROLE_REFERENCES.flatMap(([role, label]) => {
+    const id = roles?.[role]?.credentialId;
+    return typeof id === 'number' ? [[label, id] as [string, number]] : [];
+  });
+}
+
+/**
+ * What names each credential, by credential id: CI actions, projects' source
+ * control, the instance's source control, the AI roles.
+ */
 export async function credentialReferences(db: DrizzleDB): Promise<Map<number, CredentialReference[]>> {
-  const [rows, instanceIds] = await Promise.all([
+  const [rows, instanceIds, aiRoles] = await Promise.all([
     db
       .select({
         id: projects.id,
@@ -226,6 +247,7 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
       })
       .from(projects),
     readInstanceScmCredentialIds(db),
+    aiRoleCredentialIds(db),
   ]);
   const references = new Map<number, CredentialReference[]>();
   const add = (credentialId: number, reference: CredentialReference) => {
@@ -235,6 +257,9 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
   };
   for (const id of instanceIds) {
     add(id, { kind: 'instance-scm', projectId: null, projectName: null, actionId: null, name: 'Source control' });
+  }
+  for (const [name, id] of aiRoles) {
+    add(id, { kind: 'ai-role', projectId: null, projectName: null, actionId: null, name });
   }
   for (const project of rows) {
     const projectName = project.label || project.name;
@@ -647,6 +672,15 @@ export async function projectScmCredentialProblem(
     return `The credential "${record!.name}" is sent to ${record!.destination}, which is no repository host's API.`;
   }
   return scmRepositoryProblem(record!, repositoryUrl);
+}
+
+/**
+ * Whether something that serves every project names the credential (the
+ * instance's source control, an AI role), so its scope stays all projects.
+ */
+export async function namedForEveryProject(db: DrizzleDB, credentialId: number): Promise<boolean> {
+  const references = (await credentialReferences(db)).get(credentialId) ?? [];
+  return references.some((r) => r.kind === 'instance-scm' || r.kind === 'ai-role');
 }
 
 /**

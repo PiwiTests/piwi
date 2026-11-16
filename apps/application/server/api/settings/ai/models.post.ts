@@ -4,6 +4,7 @@ import { resolveAiConfig, storedKeyFor } from '../../../utils/ai-provider';
 import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
 import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */
 function normalizePricing(v: string | undefined): string | undefined {
@@ -44,7 +45,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
 
   const body = await readBody<{
     provider?: string;
@@ -71,7 +72,10 @@ export default eventHandler(async (event) => {
   let apiKey = body?.apiKey;
   if (!apiKey) {
     const role: AiModelRole = AI_ROLES.includes(body?.role as AiModelRole) ? (body!.role as AiModelRole) : 'diagnosis';
-    const resolved = await resolveAiConfig(await getDatabase());
+    const resolved = await resolveAiConfig(await getDatabase(), {
+      open: true,
+      actor: requestCredentialActor(event, user),
+    });
     apiKey =
       storedKeyFor(resolved?.roles[role], provider, baseUrl) ||
       storedKeyFor(resolved?.roles.diagnosis, provider, baseUrl) ||

@@ -7,6 +7,7 @@ import { assistantLoopbackBaseUrl } from '../../../../utils/assistant/turn-token
 import { endAssistantAnswer, startAssistantAnswer } from '../../../../utils/assistant/running';
 import { findAssistantConversation, recordAssistantReply } from '#shared/handlers/assistant';
 import { ASSISTANT_STREAM_HEADERS, assistantFrame, assistantQuestionSchema } from '#shared/assistant';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -24,7 +25,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'conversation ID');
   const db = await getDatabase();
 
-  const { status, role } = await assistantAvailability(db);
+  const { status, role } = await assistantAvailability(db, requestCredentialActor(event, user));
   if (status.reason === 'declined') {
     throw apiError({ statusCode: 403, message: 'The assistant is declined on this instance' });
   }

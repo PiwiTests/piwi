@@ -4,6 +4,7 @@ import { assistantRole, resolveAiConfig, callAiProvider, storedKeyFor } from '..
 import { embedTexts } from '../../../utils/ai-embeddings';
 import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, AiProvider, ResolvedAiRole } from '~~/types/api';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -34,7 +35,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
 
   const body = (await readBody(event).catch(() => null)) as {
     role?: string;
@@ -48,7 +49,8 @@ export default eventHandler(async (event) => {
   const role: AiModelRole = AI_ROLES.includes(body?.role as AiModelRole) ? (body!.role as AiModelRole) : 'diagnosis';
 
   const db = await getDatabase();
-  const resolved = await resolveAiConfig(db);
+  // A typed key is tried as it is; without one, the saved credentials are opened, each use logged.
+  const resolved = await resolveAiConfig(db, { open: !body?.apiKey, actor: requestCredentialActor(event, user) });
 
   let config: ResolvedAiRole | null;
 
@@ -67,6 +69,7 @@ export default eventHandler(async (event) => {
     config = {
       provider: body.provider as AiProvider,
       apiKey,
+      credentialId: null,
       model: body.model || '',
       baseUrl: body.baseUrl || null,
       temperature: body.temperature ?? resolved?.roles[role]?.temperature ?? null,

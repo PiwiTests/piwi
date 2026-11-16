@@ -12,7 +12,8 @@ cluster or a single execution, and the cluster titles), semantic merging of fail
 [AI steps](/features/ai-steps), the AI narrative of [quality reports](/features/quality-reports) and the
 [assistant](/features/assistant); an embedding model also sharpens the **Fixed before** matches of
 [fix plans](/features/fix-plans#fixed-before), which are found without one. All use the same provider, configured once
-on the server; API keys never leave it.
+on the server; API keys never leave it. A key typed in **Settings → AI** is saved as a
+[credential](#api-keys), sent only to the role's provider and logged at each use.
 
 ## Enabling AI diagnosis
 
@@ -25,7 +26,7 @@ are not read.
 | Variable | Description |
 |----------|-------------|
 | `PIWI_AI_PROVIDER` | `anthropic`, `openai`, `claude-cli`, `codex-cli`, or `deepseek-cli` |
-| `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
+| `PIWI_AI_API_KEY` | Provider API key (a read-only credential of the environment; a key typed in the UI is saved as a credential, never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL of the provider API: required for `openai`, OpenAI itself (`https://api.openai.com/v1`) included; optional for `anthropic` (a gateway or proxy) |
 | `PIWI_AI_AUTO_DIAGNOSE` | `true` to diagnose, when a run finishes, the clusters that failed in it and have no completed diagnosis yet |
@@ -48,6 +49,15 @@ To be told when a diagnosis finishes without watching the panel, turn on **Setti
 ### Local Codex CLI
 
 Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Harness](/guide/deepseek-cli) with DeepSeek credentials.
+
+## API keys
+
+A key typed in a role's form is saved as an **AI provider** [credential](/operate/credentials), shared with all
+projects and sent only to the role's endpoint: Anthropic's API, or its OpenAI-compatible base URL. A new key rotates
+it, and the form's **Saved key** picks one saved under **Settings → Credentials** instead. The key is opened only by a
+call to the model, counted in the credential's log; a disabled or refused credential fails the call with its reason.
+Each `PIWI_AI_*_API_KEY` set is a read-only credential of the environment. The keys saved before credentials existed
+are moved at startup, one credential per key and endpoint.
 
 ## Model roles
 

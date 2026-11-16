@@ -8,6 +8,7 @@ import {
   resolveTestRunCaseProjectId,
 } from '../../../utils/project-access';
 import { resolveAiConfig } from '../../../utils/ai-provider';
+import { requestCredentialActor } from '../../../utils/credentials';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis';
 
@@ -33,7 +34,12 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveClusterProjectId,
+    'Failure cluster',
+  );
 
   const force = queryFlag(event, 'force');
   const body = (await readBody(event).catch(() => null)) as {
@@ -48,7 +54,7 @@ export default eventHandler(async (event) => {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  const config = await resolveAiConfig(db);
+  const config = await resolveAiConfig(db, { open: true, actor: requestCredentialActor(event, user) });
   if (!config)
     throw apiError({ statusCode: 503, errorCode: 'AI_NOT_CONFIGURED', message: 'AI diagnosis is not configured' });
 

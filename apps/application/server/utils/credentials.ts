@@ -107,6 +107,25 @@ export function withSecretEnvState<T extends { secretEnv: string | null; secretE
   };
 }
 
+/** The variables an AI role's key is read from when the environment manages AI. */
+export const AI_KEY_ENV_VARS = [
+  'PIWI_AI_API_KEY',
+  'PIWI_AI_RESEARCH_API_KEY',
+  'PIWI_AI_EMBEDDING_API_KEY',
+  'PIWI_AI_ASSISTANT_API_KEY',
+] as const;
+
+/**
+ * The secret of a credential the environment sets: the CI server's token, or
+ * the AI key variable its row names, one of {@link AI_KEY_ENV_VARS} alone.
+ */
+function envSecret(service: CredentialService, variable: string | null): string | null {
+  if (service === 'ai') {
+    return variable && (AI_KEY_ENV_VARS as readonly string[]).includes(variable) ? readSecretEnv(variable) : null;
+  }
+  return envCredential(service)?.secret ?? null;
+}
+
 /** The credential the environment sets for a service, as its row holds it, or null when its variables are unset. */
 function envCredential(service: CredentialService): {
   name: string;
@@ -204,6 +223,18 @@ export interface CredentialActor {
   apiKeyId: number | null;
 }
 
+/**
+ * Who a request's uses are logged as: its user, none for the virtual
+ * administrator of an instance without sign-in (id 0, no user row), and the
+ * API key it came through.
+ */
+export function requestCredentialActor(
+  event: { context?: Record<string, unknown> },
+  user: { id: number } | null | undefined,
+): CredentialActor {
+  return { userId: user?.id || null, apiKeyId: (event.context?.apiKeyId as number | undefined) ?? null };
+}
+
 /** One use of a credential, as `withCredential` checks and records it. */
 export interface CredentialUse {
   credentialId: number;
@@ -299,7 +330,7 @@ export async function withCredential<T>(
   let secret: string | null = null;
   if (!refusal && record && row) {
     if (row.managedBy === 'env') {
-      secret = envCredential(record.service)?.secret ?? null;
+      secret = envSecret(record.service, row.secretEnv ?? null);
       if (!secret) refusal = `The credential "${name}" is set by environment variables that are unset.`;
     } else {
       const opened = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
@@ -417,7 +448,7 @@ export async function pruneCredentialUses(db: DbClient, olderThanDays: number): 
 }
 
 /** `name`, or `name (2)`, `name (3)`… : the first no credential has, ignoring case. */
-async function freeName(db: DbClient, name: string): Promise<string> {
+export async function freeName(db: DbClient, name: string): Promise<string> {
   const rows = await db.select({ name: credentials.name }).from(credentials);
   const taken = new Set(rows.map((r) => r.name.toLowerCase()));
   const base = name.slice(0, MAX_CREDENTIAL_NAME_LENGTH - 5);

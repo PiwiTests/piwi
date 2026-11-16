@@ -12,12 +12,13 @@ import { isUnderBaseUrl, normalizeCiServerBaseUrl, urlPathClimbs } from '#shared
 import { SCM_API_DESTINATIONS, scmDestinationHost } from '#shared/scm-urls';
 
 /** What a credential is for: the pickers that list it and the requests that may carry it. */
-export const CREDENTIAL_SERVICES = ['ci-server', 'scm'] as const;
+export const CREDENTIAL_SERVICES = ['ci-server', 'scm', 'ai'] as const;
 export type CredentialService = (typeof CREDENTIAL_SERVICES)[number];
 
 export const CREDENTIAL_SERVICE_LABELS: Record<CredentialService, string> = {
   'ci-server': 'CI server',
   scm: 'Source control',
+  ai: 'AI provider',
 };
 
 /** The feature a use comes from. */
@@ -28,6 +29,7 @@ export const CREDENTIAL_FEATURES = [
   'scm-comment',
   'scm-status',
   'scm-pull-request',
+  'ai-call',
 ] as const;
 export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 
@@ -38,13 +40,14 @@ export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'scm-comment': 'Pull request comment',
   'scm-status': 'Commit status',
   'scm-pull-request': 'Branch, commit or pull request',
+  'ai-call': 'AI model call',
 };
 
 /**
  * The features whose uses only read: counted in one log row per credential,
  * feature, project, result and hour. Every other use is a row of its own.
  */
-export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = ['ci-check', 'scm-read'];
+export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = ['ci-check', 'scm-read', 'ai-call'];
 
 /** The features of an SCM provider's writes, each logged as a row of its own. */
 export type ScmWriteFeature = 'scm-comment' | 'scm-status' | 'scm-pull-request' | 'ci-dispatch';
@@ -77,17 +80,18 @@ export function isCredentialSecretEnv(name: string): boolean {
 export type CredentialScope = { allProjects: true } | { allProjects: false; projectIds: number[] };
 
 /**
- * What names a credential: a CI action, a project's source control, or the
- * instance's source control (Settings → Source control).
+ * What names a credential: a CI action, a project's source control, the
+ * instance's source control (Settings → Source control), or an AI role
+ * (Settings → AI).
  */
 export interface CredentialReference {
-  kind: 'ci-action' | 'project-scm' | 'instance-scm';
+  kind: 'ci-action' | 'project-scm' | 'instance-scm' | 'ai-role';
   /** The project; null for the instance's source control. */
   projectId: number | null;
   projectName: string | null;
   /** The CI action's id, for a `ci-action`. */
   actionId: string | null;
-  /** What names it: the CI action's name, or `Source control`. */
+  /** What names it: the CI action's name, `Source control`, or the AI role's (`AI · Diagnosis`). */
   name: string;
 }
 
@@ -215,6 +219,35 @@ export function scmCredentialProblem(
   if (scmDestinationHost(fields.destination, gitlabHosts)) return null;
   const { github, bitbucket, gitlab } = SCM_API_DESTINATIONS;
   return `An SCM credential is sent to ${github}, ${bitbucket}, ${gitlab} or a GitLab host of PIWI_SCM_GITLAB_HOSTS, over https, or to a path under its repositories.`;
+}
+
+/** The API every Anthropic role calls unless it names a base URL of its own. */
+export const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/';
+
+/**
+ * The endpoint an AI role's key is sent to, which its credential's destination
+ * must hold: the role's base URL, else Anthropic's API for an Anthropic role.
+ * Null for a local CLI, which takes no key.
+ */
+export function aiEndpoint(provider: string | null | undefined, baseUrl: string | null | undefined): string | null {
+  if (provider === 'anthropic') return normalizeCiServerBaseUrl(baseUrl) ?? ANTHROPIC_ENDPOINT;
+  if (provider === 'openai') return normalizeCiServerBaseUrl(baseUrl);
+  return null;
+}
+
+/**
+ * Why the fields of a credential cannot be saved for its service, or null: an
+ * SCM credential follows {@link scmCredentialProblem}; an AI key names no user,
+ * since it is sent alone. A CI server credential takes any of them.
+ */
+export function credentialServiceProblem(
+  service: CredentialService,
+  fields: { destination: string; user: string | null },
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): string | null {
+  if (service === 'scm') return scmCredentialProblem(fields, gitlabHosts);
+  if (service === 'ai' && fields.user) return 'An AI credential names no user: its key is sent alone.';
+  return null;
 }
 
 /**

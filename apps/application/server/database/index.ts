@@ -242,6 +242,13 @@ async function importProjectCiServerTokens(target: DB): Promise<void> {
     console.error('[Database] Moving the CI server tokens to credentials failed:', err);
   }
   try {
+    const { importAiKeys } = await import('../utils/ai-credentials');
+    const moved = await importAiKeys(target as any);
+    if (moved) console.log(`[Database] ${moved} AI key(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the AI keys to credentials failed:', err);
+  }
+  try {
     const { importScmTokens } = await import('../utils/credentials');
     const moved = await importScmTokens(target as any);
     if (moved) console.log(`[Database] ${moved} SCM token(s) moved to credentials`);

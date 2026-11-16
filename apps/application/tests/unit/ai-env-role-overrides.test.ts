@@ -19,6 +19,22 @@ let envAi: Record<string, string | undefined> = {};
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: envAi }));
 
 const { resolveAiConfig } = await import('../../server/utils/ai-provider');
+
+/** The configuration a call to the model reads: the environment's keys set as the server reads them, then opened. */
+async function resolveForCall() {
+  const vars = [
+    ['apiKey', 'PIWI_AI_API_KEY'],
+    ['researchApiKey', 'PIWI_AI_RESEARCH_API_KEY'],
+    ['embeddingApiKey', 'PIWI_AI_EMBEDDING_API_KEY'],
+    ['assistantApiKey', 'PIWI_AI_ASSISTANT_API_KEY'],
+  ] as const;
+  for (const [field, name] of vars) {
+    const value = (envAi as Record<string, string | undefined> | undefined)?.[field];
+    if (value) process.env[name] = value;
+    else delete process.env[name];
+  }
+  return resolveAiConfig(db, { open: true });
+}
 const { readAiSettings } = await import('../../server/utils/ai-settings');
 const { setAppSetting, deleteAppSetting } = await import('../../server/utils/app-settings');
 const { encryptSecret } = await import('../../server/utils/crypto');
@@ -48,7 +64,7 @@ afterAll(() => {
 
 describe('resolveAiConfig under env-managed AI', () => {
   test('uses the env roles as they are when nothing is stored', async () => {
-    const config = await resolveAiConfig(db);
+    const config = await resolveForCall();
     expect(config).toMatchObject({ source: 'env', model: 'env-model', apiKey: 'env-key' });
     expect(config?.roles.research?.model).toBe('env-research-model');
   });
@@ -58,8 +74,8 @@ describe('resolveAiConfig under env-managed AI', () => {
       roles: { diagnosis: { model: 'picked-model' }, research: { model: 'picked-research', temperature: 0.2 } },
     });
 
-    const config = await resolveAiConfig(db);
-    expect(config?.roles.diagnosis).toEqual({
+    const config = await resolveForCall();
+    expect(config?.roles.diagnosis).toMatchObject({
       provider: 'openai',
       apiKey: 'env-key',
       model: 'picked-model',
@@ -73,8 +89,8 @@ describe('resolveAiConfig under env-managed AI', () => {
   test('adds a role the environment leaves out when it reuses one it sets', async () => {
     await setAppSetting(db, 'ai', { roles: { embedding: { reuse: 'diagnosis', model: 'embed-model' } } });
 
-    const config = await resolveAiConfig(db);
-    expect(config?.roles.embedding).toEqual({
+    const config = await resolveForCall();
+    expect(config?.roles.embedding).toMatchObject({
       provider: 'openai',
       apiKey: 'env-key',
       model: 'embed-model',
@@ -91,7 +107,7 @@ describe('resolveAiConfig under env-managed AI', () => {
       },
     });
 
-    const config = await resolveAiConfig(db);
+    const config = await resolveForCall();
     expect(config?.roles.diagnosis).toMatchObject({
       provider: 'openai',
       apiKey: 'env-key',
@@ -106,7 +122,7 @@ describe('resolveAiConfig under env-managed AI', () => {
       roles: { diagnosis: { model: 'picked-model' }, embedding: { reuse: 'diagnosis', model: 'embed-model' } },
     });
 
-    const [config, settings] = await Promise.all([resolveAiConfig(db), readAiSettings(db)]);
+    const [config, settings] = await Promise.all([resolveForCall(), readAiSettings(db)]);
     expect(settings.envManaged).toBe(true);
     expect(settings.roles.diagnosis?.model).toBe(config?.roles.diagnosis.model);
     expect(settings.roles.research?.model).toBe(config?.roles.research?.model);
@@ -119,8 +135,8 @@ describe('the research and embedding roles of the environment', () => {
   test('take the main provider, base URL and key for each one they do not set', async () => {
     envAi = { ...envAi, researchApiKey: 'research-key', embeddingModel: 'embed-model' };
 
-    const [config, settings] = await Promise.all([resolveAiConfig(db), readAiSettings(db)]);
-    expect(config?.roles.research).toEqual({
+    const [config, settings] = await Promise.all([resolveForCall(), readAiSettings(db)]);
+    expect(config?.roles.research).toMatchObject({
       provider: 'openai',
       apiKey: 'research-key',
       model: 'env-research-model',
@@ -134,7 +150,7 @@ describe('the research and embedding roles of the environment', () => {
   test('a research provider of its own keeps the main base URL when it sets none', async () => {
     envAi = { ...envAi, researchProvider: 'openai' };
 
-    const config = await resolveAiConfig(db);
+    const config = await resolveForCall();
     expect(config?.roles.research).toMatchObject({ provider: 'openai', baseUrl: 'https://llm.internal/v1' });
   });
 });
@@ -161,9 +177,9 @@ describe('resolveAiConfig from settings saved in the flat shape of earlier versi
       researchProvider: 'openai',
     });
 
-    const [config, settings] = await Promise.all([resolveAiConfig(db), readAiSettings(db)]);
+    const [config, settings] = await Promise.all([resolveForCall(), readAiSettings(db)]);
     expect(config).toMatchObject({ source: 'settings', model: 'stored-model', apiKey: 'stored-key' });
-    expect(config?.roles.research).toEqual({
+    expect(config?.roles.research).toMatchObject({
       provider: 'openai',
       apiKey: 'stored-key',
       model: 'stored-research-model',

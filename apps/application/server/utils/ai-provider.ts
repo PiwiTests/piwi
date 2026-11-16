@@ -4,7 +4,9 @@ import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { callCodexCli, streamCodexCli } from './ai-codex-cli';
 import { callDeepseekCli, streamDeepseekCli } from './ai-deepseek-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
-import { overlayStoredRoles, rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
+import { rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
+import { assertAiKey, envAiCredentialIds, envRoles, openAiKeys } from './ai-credentials';
+import type { CredentialActor } from './credentials';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -19,14 +21,14 @@ type RoleKind = 'chat' | 'embedding';
 function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
   // Embeddings require an OpenAI-compatible endpoint; the CLI has no embeddings API.
   if (kind === 'embedding') return role.provider === 'openai' && Boolean(role.baseUrl && role.model);
-  if (role.provider === 'anthropic') return Boolean(role.apiKey);
+  if (role.provider === 'anthropic') return Boolean(role.apiKey || role.credentialId != null);
   if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
   // claude-cli needs no key, base URL or model (the CLI supplies its own default model).
   if (role.provider === 'claude-cli' || role.provider === 'codex-cli' || role.provider === 'deepseek-cli') return true;
   return false;
 }
 
-/** Build a resolved role from raw (already-decrypted) values, or null if incomplete/invalid. */
+/** Build a resolved role from its values and the credential its key is in, or null if incomplete/invalid. */
 function makeRole(
   provider?: string | null,
   apiKey?: string | null,
@@ -34,6 +36,7 @@ function makeRole(
   baseUrl?: string | null,
   kind: RoleKind = 'chat',
   temperature?: number | null,
+  credentialId: number | null = null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
   if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli' && p !== 'codex-cli' && p !== 'deepseek-cli')
@@ -41,6 +44,7 @@ function makeRole(
   const role: ResolvedAiRole = {
     provider: p,
     apiKey: apiKey || '',
+    ...(credentialId != null ? { credentialId } : {}),
     model: model || '',
     baseUrl: baseUrl || null,
     temperature: temperature ?? null,
@@ -51,12 +55,12 @@ function makeRole(
 const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding', 'assistant'];
 
 /**
- * Resolve a role map, following `reuse` links. `readKey` turns each role's
- * `apiKey` into the key to send: stored keys are decrypted, env keys are plain.
+ * Resolve a role map, following `reuse` links. `keyOf` gives each role the
+ * credential its key is in, and a key not moved to the store yet, decrypted.
  */
 function resolveRoles(
   roles: Partial<Record<AiModelRole, RawStoredRole>>,
-  readKey: (key?: string) => string = (enc) => (enc ? decryptSecret(enc, getEncryptionKey()) : ''),
+  keyOf: (role: AiModelRole, cfg: RawStoredRole) => { credentialId: number | null; apiKey: string },
 ): AiConfig['roles'] {
   const out: Record<AiModelRole, ResolvedAiRole | null> = {
     diagnosis: null,
@@ -71,13 +75,28 @@ function resolveRoles(
     if (!cfg) continue;
     if (cfg.reuse && out[cfg.reuse]) {
       const base = out[cfg.reuse]!;
-      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind, cfg.temperature);
+      out[role] = makeRole(
+        base.provider,
+        base.apiKey,
+        cfg.model || base.model,
+        base.baseUrl,
+        kind,
+        cfg.temperature,
+        base.credentialId ?? null,
+      );
     } else {
-      out[role] = makeRole(cfg.provider, readKey(cfg.apiKey), cfg.model, cfg.baseUrl, kind, cfg.temperature);
+      const key = keyOf(role, cfg);
+      out[role] = makeRole(cfg.provider, key.apiKey, cfg.model, cfg.baseUrl, kind, cfg.temperature, key.credentialId);
     }
   }
 
   return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding, assistant: out.assistant };
+}
+
+/** A stored role's credential, or its key not moved to the store yet (the startup import left it), decrypted. */
+function storedKeyOf(_role: AiModelRole, cfg: RawStoredRole): { credentialId: number | null; apiKey: string } {
+  if (cfg.credentialId != null) return { credentialId: cfg.credentialId, apiKey: '' };
+  return { credentialId: null, apiKey: cfg.apiKey ? decryptSecret(cfg.apiKey, getEncryptionKey()) : '' };
 }
 
 /**
@@ -94,6 +113,7 @@ function assembleConfig(
   return {
     provider: diagnosis.provider,
     apiKey: diagnosis.apiKey,
+    ...(diagnosis.credentialId != null ? { credentialId: diagnosis.credentialId } : {}),
     model: diagnosis.model,
     baseUrl: diagnosis.baseUrl,
     temperature: diagnosis.temperature,
@@ -108,21 +128,36 @@ function assembleConfig(
  * define, with the per-role settings saved in Settings → AI laid over them, when
  * the environment manages AI; otherwise the roles saved in Settings. Both read
  * their role map through `rolesFromLegacy` / `storedRoles`, as Settings shows it.
+ *
+ * Each role names the credential its key is in, and holds no key: `open` opens
+ * them for a call to the model (`openAiKeys`, one counted use per credential,
+ * on behalf of `actor`), and only a caller that calls a model passes it.
  */
-export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
+export async function resolveAiConfig(
+  db: DbClient,
+  options: { open?: boolean; actor?: CredentialActor } = {},
+): Promise<AiConfig | null> {
   const envAi = useRuntimeConfig().ai as
     | (Parameters<typeof rolesFromLegacy>[0] & { autoDiagnose?: boolean | string })
     | undefined;
   const stored = await getAppSetting<RawStoredAi>(db, 'ai');
 
+  let config: AiConfig | null;
   if (envAi?.provider) {
-    // Environment keys are plain text; stored ones are decrypted.
-    const roles = resolveRoles(overlayStoredRoles(rolesFromLegacy(envAi), stored), (key) => key ?? '');
-    return assembleConfig(roles, String(envAi.autoDiagnose) === 'true', 'env');
+    const roles = envRoles(envAi, stored);
+    const ids = await envAiCredentialIds(db, roles);
+    config = assembleConfig(
+      resolveRoles(roles, (role) => ({ credentialId: ids.get(role) ?? null, apiKey: '' })),
+      String(envAi.autoDiagnose) === 'true',
+      'env',
+    );
+  } else {
+    config = stored
+      ? assembleConfig(resolveRoles(storedRoles(stored), storedKeyOf), Boolean(stored.autoDiagnose), 'settings')
+      : null;
   }
-
-  if (!stored) return null;
-  return assembleConfig(resolveRoles(storedRoles(stored)), Boolean(stored.autoDiagnose), 'settings');
+  if (!config || !options.open) return config;
+  return openAiKeys(db, config, options.actor ?? { userId: null, apiKeyId: null });
 }
 
 const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
@@ -257,6 +292,7 @@ export interface StreamResult {
 }
 
 export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
+  assertAiKey(config);
   try {
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
@@ -540,6 +576,7 @@ async function callOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions): Pr
  * the model, then a final `'done'` chunk with token counts.
  */
 export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOptions): AsyncGenerator<StreamChunk> {
+  assertAiKey(config);
   try {
     if (config.provider === 'anthropic') {
       yield* streamAnthropic(config, opts);

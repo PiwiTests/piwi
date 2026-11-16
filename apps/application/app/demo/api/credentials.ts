@@ -9,7 +9,7 @@ import { can } from '#shared/permissions';
 import {
   credentialReferenceText,
   parseCredentialInput,
-  scmCredentialProblem,
+  credentialServiceProblem,
   type CredentialInput,
   CREDENTIAL_SERVICES,
   type CredentialService,
@@ -28,7 +28,7 @@ import {
   listCredentialUses,
   loadCredentialRecord,
   parseCredentialUsesFilter,
-  readInstanceScmCredentialIds,
+  namedForEveryProject,
   updateCredential,
 } from '#shared/handlers/credentials';
 import { normalizeScmDestination } from '#shared/scm-urls';
@@ -74,10 +74,13 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
   const parsed = parseCredentialInput(body, { partial: false });
   if (!parsed.value) throw demoHttpError(400, parsed.error);
   const input = parsed.value as CredentialInput;
-  if (input.service === 'scm') {
-    const problem = scmCredentialProblem({ destination: input.destination, user: input.user ?? null });
+  if (input.service !== 'ci-server') {
+    const problem = credentialServiceProblem(input.service, {
+      destination: input.destination,
+      user: input.user ?? null,
+    });
     if (problem) throw demoHttpError(400, problem);
-    input.destination = normalizeScmDestination(input.destination);
+    if (input.service === 'scm') input.destination = normalizeScmDestination(input.destination);
     input.allowedInputs = null;
     input.customRequests = false;
   }
@@ -124,21 +127,23 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (service !== undefined && service !== record.service) {
     throw demoHttpError(400, 'A credential’s service cannot change: create another one.');
   }
-  if (record.service === 'scm') {
-    const problem = scmCredentialProblem({
+  if (record.service !== 'ci-server') {
+    const problem = credentialServiceProblem(record.service, {
       destination: patch.destination ?? record.destination,
       user: patch.user !== undefined ? patch.user : record.user,
     });
     if (problem) throw demoHttpError(400, problem);
-    if (patch.destination !== undefined) patch.destination = normalizeScmDestination(patch.destination);
+    if (patch.destination !== undefined && record.service === 'scm') {
+      patch.destination = normalizeScmDestination(patch.destination);
+    }
     delete patch.allowedInputs;
     delete patch.customRequests;
-    if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db as never)).includes(id)) {
-      throw demoHttpError(
-        409,
-        'This credential is one of the instance’s SCM credentials, which serve every project: take it out of Settings → Source control first.',
-      );
-    }
+  }
+  if (patch.scope && !patch.scope.allProjects && (await namedForEveryProject(db as never, id))) {
+    throw demoHttpError(
+      409,
+      'The instance’s source control or an AI role names this credential, and they serve every project: name another one there first.',
+    );
   }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
     throw demoHttpError(

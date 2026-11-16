@@ -20,7 +20,7 @@ logged.
 
 | Field | What it is |
 |---|---|
-| **Service** | **CI server**, or **Source control** for a GitHub, GitLab or Bitbucket token. |
+| **Service** | **CI server**, **Source control** for a GitHub, GitLab or Bitbucket token, or **AI provider**. |
 | **Name** | Unique on the instance, ignoring case; the name the pickers and the log show. |
 | **Destination** | The base URL the secret may be sent under (`https://jenkins.example.com/`). A request to any other address, or outside its path, is refused. |
 | **User** | The user name sent with the secret as HTTP Basic authentication, when a CI server takes one. |
@@ -74,30 +74,16 @@ credential the request carries, and says when the credential would refuse it.
 Each dispatch and each **Check** checks the credential again before anything is sent: still active, shared with the
 project, and holding the request's URL under its destination, and allowing a Custom request when the action sends one.
 
-## Source control
+## What names a credential
 
-A **Source control** credential holds a GitHub, GitLab or Bitbucket token, sent as a bearer token to the host's API.
-Its destination is that API: `https://api.github.com/`, `https://api.bitbucket.org/`, `https://gitlab.com/` or a GitLab
-host listed in `PIWI_SCM_GITLAB_HOSTS`, or a path under its repositories that keeps the token to one owner on GitHub
-or Bitbucket (`https://api.github.com/repos/acme/`), or to one project on GitLab
-(`https://gitlab.com/api/v4/projects/acme%2Fweb/`). A repository whose API is not under it never gets the token. It is picked in
-three places, the first that applies winning:
+- **A CI action**: a CI server action's requests, or the dispatch and the **Check** of a GitHub, GitLab or Bitbucket
+  action ([Re-run in CI](/features/ci-rerun)).
+- **Source control**: a project's repository calls, else the instance's, with a GitHub, GitLab or Bitbucket token sent
+  to the host's API ([Source control](/guide/source-control#set-the-credential)).
+- **An AI role**: the key of a role of **Settings → AI**, sent to its provider ([AI provider](/guide/ai-provider#api-keys)).
 
-- a GitHub, GitLab or Bitbucket CI action's **Credential**, for its dispatch and its **Check**;
-- the project's **Credential**, in **Project → Settings → Source control**;
-- the instance's **SCM credentials**, in **Settings → Source control**: credentials shared with all projects, the one
-  whose destination holds the repository's API applying, the narrowest first.
-
-Opening it for a repository's calls is counted like a Check, `ok` once opened (a token the host refuses shows on the
-page that read). Each write (a comment, a commit status, an auto-heal branch, commit or pull request, a dispatch) is a
-row of its own, checked again before it is sent. A refused credential is logged; the reads go on without it, and a
-dispatch, or the **Check** of an action that names its own, is refused.
-
-The SCM tokens saved before credentials existed are moved at startup. A project's goes to a credential bound to the API
-of its repository and named by the project; it waits while the project has no repository, or one on a GitLab host
-`PIWI_SCM_GITLAB_HOSTS` does not list. The instance's goes to one credential per API it could reach (GitHub's,
-Bitbucket's, the GitLab cloud's and each listed host's), shared with all projects and listed in **Settings → Source
-control**: delete the ones your repositories do not use.
+Whatever names it, a credential is checked and logged as this page says; each page says what its feature sends and
+how the secrets saved before credentials existed were moved.
 
 ## The CI server credential of the environment
 

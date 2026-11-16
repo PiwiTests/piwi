@@ -6,6 +6,7 @@
  * environment's is listed read-only.
  */
 import { CREDENTIAL_SERVICE_LABELS, type CredentialReference, type CredentialSummary } from '#shared/credentials';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
 type ListAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
@@ -39,8 +40,12 @@ const scopeText = (c: CredentialSummary) =>
 /** Where a reference is changed: a project's CI or Source control settings, or Settings → Source control. */
 function referenceLink(use: CredentialReference): string {
   if (use.kind === 'instance-scm') return '/settings/source-control';
+  if (use.kind === 'ai-role') return '/settings/ai';
   return `/projects/${use.projectId}?tab=settings&section=${use.kind === 'ci-action' ? 'ci' : 'source-control'}`;
 }
+
+/** The variable a credential the environment sets holds its secret in. */
+const envVariable = (c: CredentialSummary) => (c.secretEnv ?? 'PIWI_CI_SERVER_TOKEN') as PiwiEnvVarName;
 
 const formOpen = ref(false);
 const editing = ref<CredentialSummary | null>(null);
@@ -131,7 +136,11 @@ async function remove() {
             <span class="flex flex-wrap items-baseline justify-between gap-x-3">
               <span class="flex items-center gap-1 text-sm font-semibold text-highlighted">
                 {{ credential.name }}
-                <EnvManagedBadge v-if="credential.managedBy === 'env'" :env-vars="['PIWI_CI_SERVER_TOKEN']" size="xs" />
+                <EnvManagedBadge
+                  v-if="credential.managedBy === 'env'"
+                  :env-vars="[envVariable(credential)]"
+                  size="xs"
+                />
               </span>
               <span class="text-xs text-muted">
                 <template v-if="credential.disabled">Disabled</template>
@@ -199,7 +208,7 @@ async function remove() {
             <dt class="text-muted">Secret</dt>
             <dd class="text-highlighted">
               <template v-if="selected.managedBy === 'env'"
-                >In <code class="font-mono">PIWI_CI_SERVER_TOKEN</code></template
+                >In <code class="font-mono">{{ envVariable(selected) }}</code></template
               >
               <template v-else-if="selected.secretEnv">
                 Read from <code class="font-mono">{{ selected.secretEnv }}</code

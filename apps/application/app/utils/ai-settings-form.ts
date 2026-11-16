@@ -25,6 +25,8 @@ export interface RoleForm {
   model: string;
   baseUrl: string;
   apiKey: string;
+  /** A saved `ai` credential picked for the role; undefined keeps the one it names. */
+  credentialId?: number | null;
   /**
    * OpenAI-compat only: sampling temperature override. Empty means "provider default"; a number input
    * may hand over a number.
@@ -75,6 +77,7 @@ export function applyTile(
   form.provider = tile.provider;
   form.reuse = null;
   form.apiKey = '';
+  form.credentialId = undefined;
   form.baseUrl = backToStored ? (stored?.baseUrl ?? '') : (tile.baseUrl ?? '');
   form.model = backToStored ? (stored?.model ?? '') : suggestedModel(tile.id, purpose);
   form.temperature = backToStored && stored?.temperature != null ? String(stored.temperature) : '';
@@ -88,7 +91,10 @@ const sameUrl = (a: string | null | undefined, b: string | null | undefined) =>
  * key only to the provider and base URL it was saved for.
  */
 export function storedKeyApplies(form: RoleForm, stored: AiRoleSettings | null | undefined): boolean {
-  if (!stored?.hasApiKey || stored.reuse || form.reuse) return false;
+  if (form.reuse) return false;
+  // A saved key picked for the role is sent to its endpoint, which the picker checked.
+  if (form.credentialId !== undefined) return form.credentialId !== null;
+  if (!stored?.hasApiKey || stored.reuse) return false;
   return stored.provider === form.provider && sameUrl(stored.baseUrl, form.baseUrl);
 }
 
@@ -144,6 +150,7 @@ export function roleSaveBody(roles: RoleForms, role: AiModelRole, dropStoredKey 
     temperature,
   };
   if (r.apiKey !== '') body.apiKey = r.apiKey;
+  else if (r.credentialId !== undefined) body.credentialId = r.credentialId;
   else if (dropStoredKey) body.apiKey = null;
   return body;
 }

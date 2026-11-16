@@ -40,6 +40,7 @@ import { readAssistantHistory, runAssistantTurn, type AssistantTurnOptions } fro
 import { resolveAssistantLimits, type AssistantLimits } from './limits';
 import { assistantQuestionText, buildAssistantSystemPrompt, loadAssistantPromptParts } from './prompt';
 import { assistantReadTools, assistantToolNames, createAssistantToolbox } from './tools';
+import type { CredentialActor } from '../credentials';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -68,16 +69,20 @@ async function runsInClaudeCode(role: ResolvedAiRole): Promise<boolean> {
   );
 }
 
-/** Whether the assistant can answer here, with the role it would answer with. */
+/**
+ * Whether the assistant can answer here, with the role it would answer with:
+ * its key opened for `actor` when one is given, for a turn; a status opens none.
+ */
 export async function assistantAvailability(
   db: DbClient,
+  actor?: CredentialActor,
 ): Promise<{ status: AssistantStatus; role: ResolvedAiRole | null }> {
   const unavailable = (reason: AssistantStatus['reason']) => ({
     status: { available: false, reason, provider: null, model: null, toolMode: null },
     role: null,
   });
   if (await isAssistantDeclined(db)) return unavailable('declined');
-  const config = await resolveAiConfig(db);
+  const config = await resolveAiConfig(db, { open: actor !== undefined, actor });
   if (!config) return unavailable('not-configured');
   const role = assistantRole(config);
   return {

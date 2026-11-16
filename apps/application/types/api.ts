@@ -1907,7 +1907,12 @@ export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
   provider: AiProvider;
+  /** The key, once `openAiKeys` opened the role's credential for a call; empty until then. */
   apiKey: string;
+  /** The `ai` credential the role's key is in; absent or null for a local CLI or a key not moved to the store. */
+  credentialId?: number | null;
+  /** Why the credential refused to open, which a call with the role throws. */
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   /** OpenAI-compat only: sampling temperature. Omitted from the request when null (provider default applies) — reasoning models (o1/o3/GPT-5-class) reject any explicit value. */
@@ -1925,6 +1930,9 @@ export interface ResolvedAiRole {
 export interface AiConfig {
   provider: AiProvider;
   apiKey: string;
+  /** The diagnosis role's credential, and why it refused to open (see `ResolvedAiRole`). */
+  credentialId?: number | null;
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   temperature: number | null;
@@ -1960,6 +1968,8 @@ export interface AiRoleSettings {
   baseUrl: string | null;
   reuse: AiModelRole | null;
   hasApiKey: boolean;
+  /** The `ai` credential the role's key is in (Settings → Credentials); absent or null when none. */
+  credentialId?: number | null;
   /** OpenAI-compat only: sampling temperature override, or null for the provider default. */
   temperature: number | null;
 }
@@ -2007,7 +2017,10 @@ export interface AiRoleConfigInput {
   provider?: string | null;
   model?: string | null;
   baseUrl?: string | null;
+  /** A key typed for the role: it creates the role's credential, or rotates the one it names; null or '' removes the role's. */
   apiKey?: string | null;
+  /** An `ai` credential to name instead (Settings → Credentials); null removes the role's. */
+  credentialId?: number | null;
   reuse?: AiModelRole | null;
   /** OpenAI-compat only: sampling temperature override, or null/omitted for the provider default. */
   temperature?: number | null;

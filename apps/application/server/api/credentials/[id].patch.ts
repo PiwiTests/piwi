@@ -10,10 +10,10 @@ import {
   credentialScopeRefusal,
   credentialSummary,
   loadCredentialRecord,
-  readInstanceScmCredentialIds,
+  namedForEveryProject,
   updateCredential,
 } from '#shared/handlers/credentials';
-import { parseCredentialInput, scmCredentialProblem } from '#shared/credentials';
+import { credentialServiceProblem, parseCredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm';
 import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
@@ -53,8 +53,9 @@ export default eventHandler(async (event) => {
   if (service !== undefined && service !== record.service) {
     throw apiError({ statusCode: 400, message: 'A credential’s service cannot change: create another one.' });
   }
-  if (record.service === 'scm') {
-    const problem = scmCredentialProblem(
+  if (record.service !== 'ci-server') {
+    const problem = credentialServiceProblem(
+      record.service,
       {
         destination: patch.destination ?? record.destination,
         user: patch.user !== undefined ? patch.user : record.user,
@@ -62,16 +63,18 @@ export default eventHandler(async (event) => {
       configuredGitlabHosts(),
     );
     if (problem) throw apiError({ statusCode: 400, message: problem });
-    if (patch.destination !== undefined) patch.destination = normalizeScmDestination(patch.destination);
+    if (patch.destination !== undefined && record.service === 'scm') {
+      patch.destination = normalizeScmDestination(patch.destination);
+    }
     delete patch.allowedInputs;
     delete patch.customRequests;
-    if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db)).includes(id)) {
-      throw apiError({
-        statusCode: 409,
-        message:
-          'This credential is one of the instance’s SCM credentials, which serve every project: take it out of Settings → Source control first.',
-      });
-    }
+  }
+  if (patch.scope && !patch.scope.allProjects && (await namedForEveryProject(db, id))) {
+    throw apiError({
+      statusCode: 409,
+      message:
+        'The instance’s source control or an AI role names this credential, and they serve every project: name another one there first.',
+    });
   }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
     throw apiError({
