@@ -104,7 +104,8 @@ describe('getSetupStatus', () => {
     expect((await getCapabilityEvidence(db, 1, { fresh: true })).fixtures).toBe(active);
   });
 
-  test('a network request carrying server traces activates the backend-logs capability', async () => {
+  /** A project with one run and one captured request, carrying what an instrumented backend sent on it. */
+  async function seedRequest(backend: { serverLogs?: unknown; serverTraces?: unknown }): Promise<void> {
     await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
     const [run] = await db
       .insert(schema.testRuns)
@@ -121,10 +122,48 @@ describe('getSetupStatus', () => {
       url: 'https://example.test/api',
       method: 'GET',
       status: 200,
-      serverTraces: [{ name: 'db.query', durationMs: 12 }],
+      ...backend,
     });
+  }
+
+  test.each([
+    ['server spans', { serverTraces: [{ name: 'db.query', durationMs: 12 }] }],
+    // The ASP.NET Core package sends `X-Piwi-Logs` on every response (an empty list when nothing was logged) and
+    // `X-Piwi-Trace` only on a probe request.
+    ['backend logs and no spans', { serverLogs: [] }],
+  ])('a network request carrying %s activates the backend-logs capability', async (_label, backend) => {
+    await seedRequest(backend);
 
     expect((await activeIds(db)).has('backend-logs')).toBe(true);
+    expect((await getCapabilityEvidence(db, 1, { fresh: true }))['backend-logs']).toBe(true);
+  });
+
+  test('without backend evidence, backend logs and server probes read undecided, never not applicable', async () => {
+    await seedRequest({});
+
+    const { capabilities } = await getSetupStatus(db);
+    const state = (id: string) => capabilities.find((c) => c.id === id)!.state;
+    expect(state('fixtures')).toBe('active');
+    expect(state('backend-logs')).toBe('undecided');
+    expect(state('server-probes')).toBe('undecided');
+  });
+
+  test('the backend-logs probe reads the partial index of instrumented requests, at both scopes', async () => {
+    await seedRequest({});
+    const statements: Array<{ query: string; params: unknown[] }> = [];
+    const logged = drizzle(db.$client, {
+      schema,
+      logger: { logQuery: (query, params) => statements.push({ query, params }) },
+    });
+
+    await getCapabilityEvidence(logged, undefined, { fresh: true });
+    await getCapabilityEvidence(logged, 1, { fresh: true });
+    const probes = statements.filter((statement) => statement.query.includes('"server_logs" is not null'));
+    expect(probes).toHaveLength(2);
+    for (const probe of probes) {
+      const plan = await db.$client.execute({ sql: `EXPLAIN QUERY PLAN ${probe.query}`, args: probe.params as never });
+      expect(plan.rows.map((row) => String(row.detail)).join('\n')).toContain('USING INDEX idx_nr_instrumented');
+    }
   });
 
   test('a pass on a retry activates the flake-lab capability; a first-attempt pass does not', async () => {

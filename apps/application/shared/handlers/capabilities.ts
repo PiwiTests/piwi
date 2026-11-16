@@ -81,18 +81,14 @@ export async function resolveProjectStates(
       .then((rows) => rows[0]),
   ]);
 
-  // Server probes need a server trace to be applicable (same gate as backend
-  // logs) and read as configured when the project's settings enable the level.
-  const hasServerTrace = (evidence as Record<string, boolean>)['backend-logs'] ?? false;
+  // Server probes read as configured when the project's settings enable the level.
   const serverProbesConfigured = resolveServerProbeSettings(projectRow?.serverProbes ?? null).enabled;
 
   const facts: Partial<Record<CapabilityId, CapabilityFacts>> = {};
   for (const def of CAPABILITIES) {
-    const has = (evidence as Record<string, boolean>)[def.id] ?? false;
     facts[def.id] = {
-      evidence: has,
+      evidence: (evidence as Record<string, boolean>)[def.id] ?? false,
       configured: def.id === 'mcp' ? true : def.id === 'server-probes' ? serverProbesConfigured : undefined,
-      applicable: def.id === 'backend-logs' ? has : def.id === 'server-probes' ? hasServerTrace : true,
       projectDecision: def.levels.includes('project') ? projectDecisions[def.id] : undefined,
       instanceDecision: instanceDecisions[def.id],
     };

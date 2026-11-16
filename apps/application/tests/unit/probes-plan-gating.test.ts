@@ -78,8 +78,7 @@ describe('buildProbePlanForProject server-probes gating', () => {
       });
     }
 
-    // A server trace makes the capability applicable; enabled settings, no
-    // decline and no evidence yet resolve to `available`.
+    // Enabled settings, no decline and no server probe yet resolve to `available`.
     expect((await resolveProjectStates(db, 1))['server-probes']).toBe('available');
 
     // The gated plan is exactly the plan built with the project's own settings.
@@ -106,15 +105,14 @@ describe('buildProbePlanForProject server-probes gating', () => {
     expect(gated.items.every((i) => i.level !== 'server')).toBe(true);
   });
 
-  test('drops the server settings when there is no backend for it to be applicable', async () => {
+  test('keeps the server settings of a project with no backend evidence yet', async () => {
     await seedProject(2, { serverTrace: false });
 
-    // No server trace → not applicable, even though the settings enable the level.
-    expect((await resolveProjectStates(db, 2))['server-probes']).toBe('not-applicable');
+    // No backend evidence reads as not used yet, never as not applicable: the enabled settings make it available.
+    expect((await resolveProjectStates(db, 2))['server-probes']).toBe('available');
 
     const gated = await buildProbePlanForProject(db, 2);
-    const clientOnly = await buildProbePlan(db, 2, { serverProbes: undefined });
-    expect(gated.items).toEqual(clientOnly.items);
-    expect(gated.items.every((i) => i.level !== 'server')).toBe(true);
+    const withSettings = await buildProbePlan(db, 2, { serverProbes: ENABLED });
+    expect(gated.items).toEqual(withSettings.items);
   });
 });

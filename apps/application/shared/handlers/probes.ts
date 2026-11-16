@@ -553,8 +553,8 @@ async function loadUnprobableTestIds(db: DrizzleDB, projectId: number, ids: numb
 /**
  * The probe plan for a project's `GET /probes/plan`, with the level-two server
  * items gated on the project's resolved `server-probes` state: a project that
- * declined the capability, or has no backend for it to be applicable, gets the
- * client plan only. The reporter is not a surface, so the plan itself keeps
+ * declined the capability, or where it does not apply, gets the client plan
+ * only. The reporter is not a surface, so the plan itself keeps
  * working whatever the decisions — this only withholds the server items.
  */
 export async function buildProbePlanForProject(

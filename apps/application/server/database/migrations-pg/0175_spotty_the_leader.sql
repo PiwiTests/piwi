@@ -1,0 +1,2 @@
+DROP INDEX "idx_nr_server_traces";--> statement-breakpoint
+CREATE INDEX "idx_nr_instrumented" ON "network_requests" USING btree ("test_run_id") WHERE server_logs IS NOT NULL OR server_traces IS NOT NULL;

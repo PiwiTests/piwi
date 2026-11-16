@@ -96,7 +96,8 @@ const CARD_COPY: Record<EvidenceCardId, CardCopy> = {
  * `not-captured` is the "you never switched this on" state and always links to
  * the connect wizard; `nothing-happened` is the fixtures running and finding nothing;
  * `not-applicable` is reserved for backend logs, which need a Piwi backend
- * integration on the app under test on top of the fixtures.
+ * integration on the app under test on top of the fixtures, while the project has
+ * no backend logs.
  */
 export function resolveEvidenceState(id: EvidenceCardId, input: EvidenceStateInput): EvidenceState {
   if (input.hasData) {
@@ -113,8 +114,9 @@ export function resolveEvidenceState(id: EvidenceCardId, input: EvidenceStateInp
 
   // Backend logs ride on the fixtures but need instrumentation on the app under
   // test. With the fixtures active and still nothing, the missing piece is the
-  // backend integration, not the fixtures.
-  if (id === 'backendLogs' && input.fixturesActive) {
+  // backend integration, not the fixtures, unless the project's other requests
+  // already carried backend logs.
+  if (id === 'backendLogs' && input.fixturesActive && input.capability !== 'active') {
     return {
       state: 'not-applicable',
       title: copy.title,

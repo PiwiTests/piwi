@@ -48,6 +48,17 @@ describe('resolveEvidenceState', () => {
     }
   });
 
+  test('backend logs missing from one execution of a project that has them — nothing happened', () => {
+    const s = resolveEvidenceState('backendLogs', { hasData: false, fixturesActive: true, capability: 'active' });
+    expect(s.state).toBe('nothing-happened');
+    if (s.state === 'nothing-happened') {
+      expect(s.description).toBe('The fixtures were active and no request returned Piwi backend logs.');
+    }
+    expect(
+      evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive: true, capability: 'undecided' }),
+    ).toBe('needs a Piwi backend integration on the app under test');
+  });
+
   test('backend logs without fixtures — not captured (fixtures come first)', () => {
     const s = resolveEvidenceState('backendLogs', { hasData: false, fixturesActive: false });
     expect(s.state).toBe('not-captured');

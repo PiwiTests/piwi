@@ -121,10 +121,15 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
 }
 
 // The conditions of the partial indexes `idx_trc_passed_aria`, `idx_trc_passed_after_failure` and
-// `idx_nr_server_traces` (server/database/schema.*.ts), spelled the same way.
+// `idx_nr_instrumented` (server/database/schema.*.ts), spelled the same way.
 const PASSED_WITH_ARIA = sql`${testRunsCases.status} = 'passed' and (${testRunsCases.ariaSnapshotPayloadId} is not null or ${testRunsCases.ariaSnapshot} is not null)`;
 const PASSED_AFTER_FAILURE = flakyResultSql();
-const SERVER_TRACE = sql`${networkRequests.serverTraces} is not null`;
+/**
+ * A request a Piwi backend instrumentation answered: it carries its logs (`X-Piwi-Logs`, sent on every response, an
+ * empty list when nothing was logged) or its spans (`X-Piwi-Trace`, which the ASP.NET Core package sends only on a
+ * probe request).
+ */
+const INSTRUMENTED_REQUEST = sql`(${networkRequests.serverLogs} is not null or ${networkRequests.serverTraces} is not null)`;
 
 /**
  * What only the capture fixtures record about a test beside its requests: its
@@ -212,7 +217,7 @@ export async function getCapabilityEvidence(
 /**
  * One probe per detection id, answering whether its evidence exists. The
  * probes that look for rare rows in the largest tables (green samples, retry
- * passes, server traces) match a partial index each; their conditions are
+ * passes, requests an instrumented backend answered) match a partial index each; their conditions are
  * written as literals, which is what lets a cached PostgreSQL plan use the
  * index.
  */
@@ -265,9 +270,9 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .select({ id: networkRequests.id })
               .from(networkRequests)
               .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-              .where(and(eq(testRuns.projectId, pid), SERVER_TRACE))
+              .where(and(eq(testRuns.projectId, pid), INSTRUMENTED_REQUEST))
               .limit(1)
-          : db.select({ id: networkRequests.id }).from(networkRequests).where(SERVER_TRACE).limit(1),
+          : db.select({ id: networkRequests.id }).from(networkRequests).where(INSTRUMENTED_REQUEST).limit(1),
       ),
     // Coverage: active once a test's coverage of a file is stored for the project; an uploaded report's
     // fragments (runtime `report`) are no test's.
@@ -499,21 +504,16 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
 
 /**
  * Build the instance-level facts for one detection id from its evidence and the
- * stored instance decisions. `backend-logs` and `server-probes` are applicable
- * only where a server trace has arrived; `mcp` is always available even with no
- * evidence.
+ * stored instance decisions. `mcp` is always available even with no evidence.
  */
 function instanceFacts(
   id: CapabilityId,
   evidence: CapabilityEvidence,
   decisions: Partial<Record<CapabilityId, InstanceDecision>>,
 ): CapabilityFacts {
-  const has = (evidence as Record<string, boolean>)[id] ?? false;
-  const hasServerTrace = evidence['backend-logs'];
   return {
-    evidence: has,
+    evidence: (evidence as Record<string, boolean>)[id] ?? false,
     configured: id === 'mcp' ? true : undefined,
-    applicable: id === 'backend-logs' ? has : id === 'server-probes' ? hasServerTrace : true,
     instanceDecision: decisions[id],
   };
 }

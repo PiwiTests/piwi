@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
@@ -179,5 +180,44 @@ describe('the Test Map decline holds over passive ingest data', () => {
     await setProjectDecisions(db, 3, { 'test-map': 'enabled' });
     const states = await resolveProjectStates(db, 3);
     expect(states['test-map']).toBe('active');
+  });
+});
+
+describe('backend logs and server probes without backend evidence', () => {
+  // No backend evidence never means a setup without a backend: an instrumented app sends nothing while its capture
+  // is off in the environment the suite runs against, or before its first run arrives. Neither capability is hidden.
+  test('read undecided, and server probes available once the project turns them on', async () => {
+    await seedWithFixtures(1, 'no-backend-evidence');
+
+    let states = await resolveProjectStates(db, 1);
+    expect(states['backend-logs']).toBe('undecided');
+    expect(states['server-probes']).toBe('undecided');
+    const instance = (await getInstanceCapabilities(db)).items;
+    expect(stateOf(instance, 'backend-logs')).toBe('undecided');
+    expect(stateOf(instance, 'server-probes')).toBe('undecided');
+
+    await db
+      .update(schema.projects)
+      .set({ serverProbes: { enabled: true, faults: ['status'], routes: [], dependencyOnStateChanging: false } })
+      .where(eq(schema.projects.id, 1));
+    states = await resolveProjectStates(db, 1);
+    expect(states['server-probes']).toBe('available');
+  });
+
+  test('a request carrying backend logs and no spans makes backend logs active in its project only', async () => {
+    await seedWithFixtures(1, 'no-logs');
+    await seedWithFixtures(2, 'logs-only');
+    const [request] = await db
+      .select({ id: schema.networkRequests.id })
+      .from(schema.networkRequests)
+      .innerJoin(schema.testRuns, eq(schema.networkRequests.testRunId, schema.testRuns.id))
+      .where(eq(schema.testRuns.projectId, 2));
+    // The ASP.NET Core package sends `X-Piwi-Logs` on every response, an empty list when nothing was logged, and
+    // `X-Piwi-Trace` only on a probe request.
+    await db.update(schema.networkRequests).set({ serverLogs: [] }).where(eq(schema.networkRequests.id, request!.id));
+
+    expect((await getCapabilityEvidence(db, 2, { fresh: true }))['backend-logs']).toBe(true);
+    expect((await resolveProjectStates(db, 2))['backend-logs']).toBe('active');
+    expect((await getCapabilityEvidence(db, 1, { fresh: true }))['backend-logs']).toBe(false);
   });
 });
