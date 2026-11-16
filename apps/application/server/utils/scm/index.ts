@@ -8,25 +8,15 @@ import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
 import { localGitProvider, type LocalGitProvider } from './local-git';
 import { projectRepositoryFor } from './project-repository';
+import { configuredGitlabHosts } from './gitlab-hosts';
+
+export { configuredGitlabHosts };
 import { canonicalScmHostname, detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
 /** Returns the SCM provider name for a repository URL, or null if unsupported. */
 export function detectScmProvider(repositoryUrl: string | null | undefined): ScmProviderName | null {
   return detectScmHost(repositoryUrl);
-}
-
-/**
- * Self-hosted GitLab hosts an SCM credential may be sent to, from
- * `PIWI_SCM_GITLAB_HOSTS` (comma-separated host names). `gitlab.com` needs no entry.
- */
-export function configuredGitlabHosts(): Set<string> {
-  return new Set(
-    (process.env.PIWI_SCM_GITLAB_HOSTS ?? '')
-      .split(',')
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean),
-  );
 }
 
 const warnedGitlabHosts = new Set<string>();

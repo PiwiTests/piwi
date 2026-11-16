@@ -31,9 +31,10 @@ logged, and the feature shows nothing rather than failing a run.
 ## Set the credential
 
 Save the token under **Settings → Credentials** (**New credential**, service **Source control**), or with **New
-credential** beside either picker below. Its destination is the host's API, which the form offers in one click
+credential** beside any picker below. Its destination is the host's API, which the form offers in one click
 (`https://api.github.com/`, `https://gitlab.com/`, `https://api.bitbucket.org/`), or a path under it that keeps the
-token to one owner's repositories (`https://api.github.com/repos/acme/`). Then pick it:
+token to one owner's repositories on GitHub or Bitbucket (`https://api.github.com/repos/acme/`), or to one project on
+GitLab (`https://gitlab.com/api/v4/projects/acme%2Fweb/`). Then pick it:
 
 - **Per project**: **Project → Settings → Source control**, field **Credential**. Prefer one per project for write
   access: a token the instance shares can write everywhere it reaches.
@@ -42,11 +43,12 @@ token to one owner's repositories (`https://api.github.com/repos/acme/`). Then p
   whose destination holds the repository's API applies, the narrowest first, so one instance can hold a GitHub and a
   GitLab token.
 - **Per CI action**: a GitHub, GitLab or Bitbucket action of [Re-run in CI](/features/ci-rerun) may name its own, so a
-  token that can only start workflows dispatches, and the project's keeps reading.
+  token scoped to CI dispatches (on GitHub, **Actions: write**, and **Contents: read** for the action's **Check**),
+  and the project's keeps reading and writing feedback.
 
 The token is encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general), never returned by the API, sent
 only to its destination, and each use is in the credential's log. A token saved on a project or the instance before
-credentials existed is moved to one at startup, bound to the API of the repositories it served. The page stays open
+credentials existed is moved to one at startup ([how](/operate/credentials#source-control)). The page stays open
 when the Source control [capability](/operate/capabilities) is declined, so the credentials can still be taken out.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.

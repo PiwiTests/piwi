@@ -23,6 +23,8 @@ import {
 
 const props = defineProps<{
   projectId: number;
+  /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
+  repositoryUrl?: string | null;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
 }>();
@@ -267,6 +269,7 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
       :other-names="otherNames"
       :instance-url="instanceUrl"
       :project-id="projectId"
+      :repository-url="repositoryUrl ?? null"
       @save="saveAction"
     />
   </div>

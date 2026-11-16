@@ -3,6 +3,8 @@ import { requireProjectAccess, requireRouteId } from '../../../../../utils/proje
 import { checkCiAction, getCiActionsSettings } from '../../../../../utils/ci-actions';
 import { ciActionsProblem, resolveCiActionsSettings } from '#shared/ci-actions';
 import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
+import { configuredGitlabHosts } from '../../../../../utils/scm';
+import { readProjectRepositoryUrl } from '../../../../../utils/scm/project-repository';
 
 defineRouteMeta({
   openAPI: {
@@ -37,7 +39,14 @@ export default eventHandler(async (event) => {
     const [action] = problem ? [] : resolveCiActionsSettings(posted).actions;
     if (!action) throw apiError({ statusCode: 400, message: problem ?? 'Invalid CI action' });
     // As a save does: a credential the project may not name answers like one that does not exist.
-    const credentialProblem = await ciActionsCredentialProblem(db, id, { actions: [action] });
+    const credentialProblem = await ciActionsCredentialProblem(
+      db,
+      id,
+      { actions: [action] },
+      [],
+      configuredGitlabHosts(),
+      await readProjectRepositoryUrl(db, id),
+    );
     if (credentialProblem) throw apiError({ statusCode: 400, message: credentialProblem });
     return checkCiAction(db, id, action, use);
   }

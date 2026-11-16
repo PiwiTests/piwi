@@ -235,13 +235,18 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
  */
 async function importProjectCiServerTokens(target: DB): Promise<void> {
   try {
-    const { importProjectCiServerTokens: importTokens, importScmTokens } = await import('../utils/credentials');
+    const { importProjectCiServerTokens: importTokens } = await import('../utils/credentials');
     const moved = await importTokens(target as any);
     if (moved) console.log(`[Database] CI server tokens of ${moved} project(s) moved to credentials`);
-    const scmMoved = await importScmTokens(target as any);
-    if (scmMoved) console.log(`[Database] ${scmMoved} SCM token(s) moved to credentials`);
   } catch (err) {
-    console.error('[Database] Moving the CI server and SCM tokens to credentials failed:', err);
+    console.error('[Database] Moving the CI server tokens to credentials failed:', err);
+  }
+  try {
+    const { importScmTokens } = await import('../utils/credentials');
+    const moved = await importScmTokens(target as any);
+    if (moved) console.log(`[Database] ${moved} SCM token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the SCM tokens to credentials failed:', err);
   }
 }
 

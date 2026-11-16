@@ -199,15 +199,28 @@ export default eventHandler(async (event) => {
   }
   const gitlabHosts = configuredGitlabHosts();
   // Each action's credential is shared with this project, and sent where the action sends.
+  const [stored] = await db
+    .select({ ciRerun: projects.ciRerun, scmCredentialId: projects.scmCredentialId })
+    .from(projects)
+    .where(eq(projects.id, id));
+  const storedRepository = await readProjectRepositoryUrl(db, id);
+  const repository = repositoryUrl === undefined ? storedRepository : repositoryUrl?.trim() || null;
   if (resolvedCiRerun) {
-    const [stored] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, id));
     const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
-    const credentialProblem = await ciActionsCredentialProblem(db, id, resolvedCiRerun, storedActions, gitlabHosts);
+    const credentialProblem = await ciActionsCredentialProblem(
+      db,
+      id,
+      resolvedCiRerun,
+      storedActions,
+      gitlabHosts,
+      repository,
+    );
     if (credentialProblem) throw apiError({ statusCode: 400, message: credentialProblem });
   }
-  if (typeof scmCredentialId === 'number') {
-    const repository = repositoryUrl?.trim() ? repositoryUrl : await readProjectRepositoryUrl(db, id);
-    const problem = await projectScmCredentialProblem(db, id, scmCredentialId, repository ?? null, gitlabHosts);
+  // A credential named before, with the repository unchanged, is not checked again: one narrowed since is refused at use.
+  const repositoryChanged = repositoryUrl !== undefined && repository !== storedRepository;
+  if (typeof scmCredentialId === 'number' && (scmCredentialId !== stored?.scmCredentialId || repositoryChanged)) {
+    const problem = await projectScmCredentialProblem(db, id, scmCredentialId, repository, gitlabHosts);
     if (problem) throw apiError({ statusCode: 400, message: problem });
   }
 

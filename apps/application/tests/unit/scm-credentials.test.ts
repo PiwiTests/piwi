@@ -5,7 +5,7 @@ import { apiError } from '../../server/utils/api-error';
 import { ADMIN_ACCESS, InstanceRole } from '#shared/permissions';
 import type { User } from '../../server/database/schema';
 import { scmCredentialProblem, type CredentialInput } from '#shared/credentials';
-import { scmApiDestination, scmDestinationHost } from '#shared/scm-urls';
+import { normalizeScmDestination, scmApiDestination, scmDestinationHost, scmRepositoryApiUrl } from '#shared/scm-urls';
 import {
   ciActionsCredentialProblem,
   credentialReferences,
@@ -156,6 +156,8 @@ describe('where an SCM credential may be sent', () => {
     expect(scmDestinationHost('https://api.github.com/repos/acme/')).toBe('github');
     expect(scmDestinationHost('https://api.bitbucket.org/2.0/repositories/acme/')).toBe('bitbucket');
     expect(scmDestinationHost('https://gitlab.com/api/v4/projects/acme%2Fdocs/')).toBe('gitlab');
+    // GitLab names a project by its whole path: a group is no path under its API.
+    expect(scmDestinationHost('https://gitlab.com/api/v4/projects/acme/')).toBeNull();
     expect(scmDestinationHost('https://gitlab.example.com/', new Set(['gitlab.example.com']))).toBe('gitlab');
     // Another path of the API, another host, an unlisted GitLab, plain http or another port.
     expect(scmDestinationHost('https://api.github.com/user/')).toBeNull();
@@ -170,6 +172,22 @@ describe('where an SCM credential may be sent', () => {
     expect(scmCredentialProblem({ destination: GITHUB, user: 'bot' })).toMatch(/names no user/);
     expect(scmCredentialProblem({ destination: 'https://jenkins.example.com/', user: null })).toMatch(
       /is sent to https:\/\/api\.github\.com\//,
+    );
+  });
+
+  test('GitHub and Bitbucket owners match in any case; a GitLab project as one encoded segment', () => {
+    expect(scmRepositoryApiUrl('https://github.com/Acme/Shop.git')).toBe('https://api.github.com/repos/acme/shop');
+    expect(scmRepositoryApiUrl('https://gitlab.com/acme/web/docs')).toBe(
+      'https://gitlab.com/api/v4/projects/acme%2Fweb%2Fdocs',
+    );
+    expect(normalizeScmDestination('https://api.github.com/repos/Acme/')).toBe('https://api.github.com/repos/acme/');
+    expect(normalizeScmDestination('https://gitlab.com/api/v4/projects/Acme%2FWeb/')).toBe(
+      'https://gitlab.com/api/v4/projects/Acme%2FWeb/',
+    );
+    // The providers check the destination against the same URL.
+    expect(new GitHubProvider('Acme/Shop', null).apiUrl).toBe('https://api.github.com/repos/acme/shop');
+    expect(new GitLabProvider('gitlab.com', 'acme/web/docs', null).apiUrl).toBe(
+      scmRepositoryApiUrl('https://gitlab.com/acme/web/docs'),
     );
   });
 
@@ -238,9 +256,12 @@ describe('which credential a repository call carries', () => {
     await provider!.fetchPullRequest(3);
     expect(calls.at(-1)?.auth).toBe('Bearer ghp_open');
     await openScmProvider(db as never, 1, SHOP);
-    expect(await uses()).toMatchObject([
-      { credentialId: id, feature: 'scm-read', projectId: 1, result: 'ok', count: 2, destination: api },
-    ]);
+    const rows = await uses();
+    // One row per hour: two rows only when the two opens fall on each side of an hour.
+    expect(rows.every((row) => row.feature === 'scm-read' && row.result === 'ok' && row.destination === api)).toBe(
+      true,
+    );
+    expect(rows.reduce((sum, row) => sum + row.count, 0)).toBe(2);
   });
 
   test('a refused credential is logged, and the repository is read without a token; strict, the call is refused', async () => {
@@ -260,20 +281,30 @@ describe('which credential a repository call carries', () => {
     const calls = recordFetch();
     const provider = await createScmProvider(SHOP, db as never, 1);
     await provider?.fetchPullRequest(3);
+    expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((call) => call.auth === null)).toBe(true);
     expect((await uses())[0]).toMatchObject({ result: 'refused', reason: expect.stringMatching(/sent only under/) });
+    // Another host: a GitLab credential never goes to GitHub.
+    const gitlab = await scmCredential({ destination: 'https://gitlab.com/' });
+    await db.update(schema.projects).set({ scmCredentialId: gitlab }).where(eq(schema.projects.id, 1));
+    calls.length = 0;
+    await (await createScmProvider(SHOP, db as never, 1))?.fetchPullRequest(3);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((call) => call.auth === null)).toBe(true);
   });
 
   test('each write is a row of its own, with its feature and subject, checked again before it is sent', async () => {
     const id = await scmCredential();
     await listInstance([id]);
-    recordFetch();
+    const calls = recordFetch();
     const provider = await openScmProvider(db as never, 1, SHOP, { actor: { userId: 1, apiKeyId: null } });
     expect(await provider!.postCommitStatus('a'.repeat(40), STATUS)).toBe(true);
     expect(await provider!.postPullRequestComment(7, '<!-- piwi -->', 'body')).not.toBeNull();
     await db.update(schema.credentials).set({ disabled: true }).where(eq(schema.credentials.id, id));
     // Disabled since it was opened: the next write is refused and sends nothing, and reports nothing posted.
+    const sent = calls.length;
     expect(await provider!.postCommitStatus('b'.repeat(40), STATUS)).toBe(false);
+    expect(calls).toHaveLength(sent);
     const rows = (await uses()).filter((row) => row.feature !== 'scm-read');
     expect(rows).toMatchObject([
       { feature: 'scm-status', subjectType: 'commit', subjectId: 'a'.repeat(40), result: 'ok', userId: 1 },
@@ -365,8 +396,14 @@ describe('a save naming an SCM credential', () => {
     const gitlab = await scmCredential({ destination: 'https://gitlab.com/' });
     expect(await projectScmCredentialProblem(db as never, 1, own, SHOP)).toBeNull();
     expect(await projectScmCredentialProblem(db as never, 2, own, SHOP)).toMatch(/No SCM credential/);
-    expect(await projectScmCredentialProblem(db as never, 1, gitlab, SHOP)).toMatch(/not to the API/);
+    expect(await projectScmCredentialProblem(db as never, 1, gitlab, SHOP)).toMatch(/does not hold this project/);
     expect(await projectScmCredentialProblem(db as never, 1, gitlab, null)).toBeNull();
+    // Narrowed to another owner, and read from an SSH remote as from its https URL.
+    const other = await scmCredential({ destination: 'https://api.github.com/repos/other/' });
+    expect(await projectScmCredentialProblem(db as never, 1, other, 'git@github.com:acme/shop.git')).toMatch(
+      /does not hold this project/,
+    );
+    expect(await projectScmCredentialProblem(db as never, 1, other, 'git@github.com:other/shop.git')).toBeNull();
     expect(await instanceScmCredentialsProblem(db as never, [gitlab])).toBeNull();
     expect(await instanceScmCredentialsProblem(db as never, [own])).toMatch(/not shared with all projects/);
     expect(await instanceScmCredentialsProblem(db as never, [999])).toMatch(/No SCM credential/);
@@ -447,13 +484,20 @@ describe('importScmTokens', () => {
     expect(await importScmTokens(db as never)).toBe(0);
   });
 
-  test('moves the instance token to one credential per API it served, shared with all projects and listed', async () => {
+  test('moves the instance token to one credential per API it could reach, shared with all projects and listed', async () => {
+    vi.stubEnv('PIWI_SCM_GITLAB_HOSTS', 'gitlab.example.com');
+    await db.delete(schema.projects);
     await db.insert(schema.appSettings).values({ key: 'scm_token', value: { value: seal('ghp_instance') } });
+    // No project has a repository yet: the token reaches every host it reached, and waits for none.
     expect(await importScmTokens(db as never)).toBe(1);
+    vi.unstubAllEnvs();
+    await db.insert(schema.projects).values({ id: 2, name: 'admin', repositoryUrl: 'https://github.com/acme/admin' });
     const rows = await credentialRows();
     expect(rows.map((r) => [r.destination, r.allProjects])).toEqual([
       [GITHUB, true],
+      ['https://api.bitbucket.org/', true],
       ['https://gitlab.com/', true],
+      ['https://gitlab.example.com/', true],
     ]);
     const settings = await db.select().from(schema.appSettings);
     expect(settings).toMatchObject([{ key: 'scm_credentials', value: { ids: rows.map((r) => r.id) } }]);
@@ -470,6 +514,24 @@ describe('importScmTokens', () => {
     await pinProjectRepository(db as never, 4, { scm: { remoteUrl: 'git@github.com:acme/new.git' } });
     expect((await project(4)).scmToken).toBeNull();
     expect((await project(4)).scmCredentialId).toBe((await credentialRows())[0]!.id);
+  });
+
+  test('a token on a GitLab host nobody listed waits, and moves once the host is listed', async () => {
+    await db.insert(schema.projects).values({
+      id: 4,
+      name: 'internal',
+      repositoryUrl: 'https://gitlab.internal.example/acme/app',
+      scmToken: seal('glpat_internal'),
+    });
+    expect(await importScmTokens(db as never)).toBe(0);
+    expect((await project(4)).scmToken).not.toBeNull();
+    vi.stubEnv('PIWI_SCM_GITLAB_HOSTS', 'gitlab.internal.example');
+    try {
+      expect(await importScmTokens(db as never)).toBe(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect((await credentialRows()).map((r) => r.destination)).toEqual(['https://gitlab.internal.example/']);
   });
 
   test('leaves a token that cannot be opened as it is', async () => {

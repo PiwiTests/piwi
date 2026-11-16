@@ -7,12 +7,12 @@ lang: en-US
 # Credentials
 
 A credential is a secret Piwi sends to another service, saved once under **Settings → Credentials** and named wherever
-it is needed. A CI server action of [Re-run in CI](/features/ci-rerun) picks one instead of repeating a user, a token
-and a base URL in every action and every project, and a project's [source control](/guide/source-control) picks the
-token it reads and writes its repository with. A rotation is one change, and every use is logged.
+it is needed: by a CI server action of [Re-run in CI](/features/ci-rerun), instead of a user, a token and a base URL in
+every action, and by a project's [source control](/guide/source-control). A rotation is one change, and every use is
+logged.
 
 <figure>
-  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins credentials, one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
+  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins and two GitHub credentials, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
   <figcaption>Settings → Credentials: a credential's panel, with the CI actions that name it and its log.</figcaption>
 </figure>
 
@@ -55,9 +55,10 @@ administrator may change a credential that reads a variable.
 An administrator (the `credentials:manage` permission) creates, changes, disables and deletes any credential, and is the
 only one who may share one with all projects. A Project admin opens **Settings → Credentials** too, and sees there the
 credentials they manage: the ones they created, shared only with projects they manage and reading no variable. They
-create them there or from a project's **CI** settings. A credential an administrator saved or changed is the
-administrator's: a Project admin picks it, and never loosens its rules or undoes a **Disable**. Anyone who manages a
-project's CI actions picks any credential shared with that project, without ever reading its secret. See
+create them there or from a project's **CI** or **Source control** settings. A credential an administrator saved or
+changed is the administrator's: a Project admin picks it, and never loosens its rules or undoes a **Disable**. Anyone
+who manages a project picks any credential shared with it, for its CI actions or its source control, without ever
+reading its secret. See
 [Access, roles and groups](./project-access).
 
 **Disable** refuses every use of a credential at once, for an incident, without touching the actions that name it.
@@ -77,8 +78,9 @@ project, and holding the request's URL under its destination, and allowing a Cus
 
 A **Source control** credential holds a GitHub, GitLab or Bitbucket token, sent as a bearer token to the host's API.
 Its destination is that API: `https://api.github.com/`, `https://api.bitbucket.org/`, `https://gitlab.com/` or a GitLab
-host listed in `PIWI_SCM_GITLAB_HOSTS`, or a path under its repositories that keeps the token to one owner
-(`https://api.github.com/repos/acme/`). A repository whose API is not under it never gets the token. It is picked in
+host listed in `PIWI_SCM_GITLAB_HOSTS`, or a path under its repositories that keeps the token to one owner on GitHub
+or Bitbucket (`https://api.github.com/repos/acme/`), or to one project on GitLab
+(`https://gitlab.com/api/v4/projects/acme%2Fweb/`). A repository whose API is not under it never gets the token. It is picked in
 three places, the first that applies winning:
 
 - a GitHub, GitLab or Bitbucket CI action's **Credential**, for its dispatch and its **Check**;
@@ -86,16 +88,18 @@ three places, the first that applies winning:
 - the instance's **SCM credentials**, in **Settings → Source control**: credentials shared with all projects, the one
   whose destination holds the repository's API applying, the narrowest first.
 
-Opening it for a repository's reads is counted like a Check; each write (a pull-request comment, a commit status, an
-auto-heal branch, commit or pull request, a dispatch) is a row of its own, checked again before it is sent. A refused
-credential is logged, and the reads go on without it, as for a public repository; a dispatch is refused.
+Opening it for a repository's calls is counted like a Check, `ok` once opened (a token the host refuses shows on the
+page that read). Each write (a comment, a commit status, an auto-heal branch, commit or pull request, a dispatch) is a
+row of its own, checked again before it is sent. A refused credential is logged; the reads go on without it, and a
+dispatch, or the **Check** of an action that names its own, is refused.
 
-The SCM tokens saved before credentials existed are moved at startup: a project's to a credential bound to the API of
-its repository and named by the project, the instance's to one per API of the repositories it served, shared with all
-projects and listed in **Settings → Source control**. A token whose project has no repository yet moves when the first
-run sets one.
+The SCM tokens saved before credentials existed are moved at startup. A project's goes to a credential bound to the API
+of its repository and named by the project; it waits while the project has no repository, or one on a GitLab host
+`PIWI_SCM_GITLAB_HOSTS` does not list. The instance's goes to one credential per API it could reach (GitHub's,
+Bitbucket's, the GitLab cloud's and each listed host's), shared with all projects and listed in **Settings → Source
+control**: delete the ones your repositories do not use.
 
-## The instance credential
+## The CI server credential of the environment
 
 The operator can set one CI server credential through the environment: `PIWI_CI_SERVER_URL`, `PIWI_CI_SERVER_USER` and
 `PIWI_CI_SERVER_TOKEN`. It shows on the page as a read-only credential, shared with all projects, and is sent by a CI
@@ -112,14 +116,14 @@ changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each 
 ## The log
 
 A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
-credential, a deleted one and the instance's included:
+credential, a deleted one and the environment's included:
 
 - **What**: a CI dispatch or a Check, with the CI action it was for; a repository read, a commit status, a
   pull-request comment or an auto-heal write, with its commit, pull request or branch.
 - **Where**: the project, and the request's origin and path (never its query).
 - **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
   Checks, the last of the hour.
-- **How it ended**: `sent` until the service answers, then `ok` or `failed` with the status; `refused` when the
+- **How it ended**: `sent` until the service answers, then `ok` or `failed` with the reason; `refused` when the
   credential's rules stopped it before anything was sent, with the reason.
 
 A dispatch or another write is one row. A Check or a repository read only reads, so the reads of a project are counted

@@ -25,9 +25,13 @@ const { state, dirty } = useStoredForm(() => {
     },
   };
 });
-/** The repository's host, whose API the credential is sent to, as the field reads now. */
-const host = computed(() => detectScmHost(state.value.repositoryUrl.trim() || props.project.repositoryUrl));
-const destination = computed(() => scmApiDestination(state.value.repositoryUrl.trim() || props.project.repositoryUrl));
+/** The repository whose API the credential must hold: the field's, once it reads as one, else the stored one. */
+const repository = computed(() => {
+  const typed = state.value.repositoryUrl.trim();
+  return detectScmHost(typed) ? typed : props.project.repositoryUrl || null;
+});
+const host = computed(() => detectScmHost(repository.value));
+const destination = computed(() => scmApiDestination(repository.value));
 
 const { saving, save } = useProjectPatch(() => props.project.id);
 
@@ -82,8 +86,9 @@ async function submit() {
             v-model="state.scmCredentialId"
             :project-id="project.id"
             :host="host"
+            :repository-url="repository"
             :destination="destination"
-            none-label="The instance’s credential"
+            none-label="The instance’s SCM credentials"
             label="Repository credential"
           />
         </FormFieldGroup>

@@ -34,7 +34,7 @@ const CHIPS: { key: keyof typeof props; label: string; doc: string }[] = [
     Object.entries({
       fixtures: 'Capture fixtures',
       llm: 'AI key',
-      scm: 'SCM token',
+      scm: 'SCM credential',
       backend: 'Backend integration',
       desktop: 'Desktop app',
       extension: 'Browser extension',

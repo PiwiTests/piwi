@@ -292,7 +292,15 @@ export async function demoCiActionCheck(
     if (problem) throw demoHttpError(400, problem);
     action = resolveCiActionsSettings({ enabled: true, actions: [body.action], defaults: {} }).actions[0];
     const credentialProblem = action
-      ? await ciActionsCredentialProblem(db as never, projectId, { actions: [action] })
+      ? await ciActionsCredentialProblem(
+          db as never,
+          projectId,
+          { actions: [action] },
+          [],
+          new Set(),
+          (await db.select({ url: projects.repositoryUrl }).from(projects).where(eq(projects.id, projectId)))[0]?.url ??
+            null,
+        )
       : null;
     if (credentialProblem) throw demoHttpError(400, credentialProblem);
   } else {

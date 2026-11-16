@@ -12,6 +12,7 @@ import {
 } from '#shared/handlers/credentials';
 import { parseCredentialInput, scmCredentialProblem, type CredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm';
+import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -38,6 +39,7 @@ export default eventHandler(async (event) => {
       configuredGitlabHosts(),
     );
     if (problem) throw apiError({ statusCode: 400, message: problem });
+    input.destination = normalizeScmDestination(input.destination);
     input.allowedInputs = null;
     input.customRequests = false;
   }

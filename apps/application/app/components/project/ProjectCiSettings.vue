@@ -39,7 +39,12 @@ async function submit() {
         description="Each action has its own target, inputs and environment, and a CI server action names the credential it sends. Maintainers, Project admins and administrators can use them. Off by default."
         data-tour="project-ci-rerun"
       >
-        <ProjectCiActions v-model="state.ciRerun" :project-id="project.id" :instance-url="instanceUrl" />
+        <ProjectCiActions
+          v-model="state.ciRerun"
+          :project-id="project.id"
+          :repository-url="project.repositoryUrl ?? null"
+          :instance-url="instanceUrl"
+        />
       </FormFieldGroup>
 
       <template #footer>

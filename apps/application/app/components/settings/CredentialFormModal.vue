@@ -237,7 +237,8 @@ async function submit() {
         <FormFieldGroup
           v-if="isScm"
           label="Destination"
-          :description="`The API the token is sent to. A path under its repositories narrows it (${SCM_API_DESTINATIONS.github}repos/acme/); a self-hosted GitLab must be in PIWI_SCM_GITLAB_HOSTS.`"
+          required
+          :description="`The API the token is sent to. A path under its repositories narrows it: one owner on GitHub or Bitbucket (${SCM_API_DESTINATIONS.github}repos/acme/), one project on GitLab. A self-hosted GitLab must be in PIWI_SCM_GITLAB_HOSTS.`"
         >
           <div class="space-y-2">
             <div class="flex flex-wrap gap-2">

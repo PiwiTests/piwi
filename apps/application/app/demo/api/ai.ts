@@ -1041,7 +1041,6 @@ export async function apiGetAiSettings() {
   };
 }
 
-/** PUT /api/settings/ai — no-op in demo (config is fixed). */
 /** PUT /api/settings/ai — the demo keeps the provider read-only, and stores the instance's SCM credentials as the server does. */
 export async function apiPutAiSettings(body: unknown) {
   const sent = (body ?? {}) as { scmToken?: unknown; scmCredentialIds?: unknown };

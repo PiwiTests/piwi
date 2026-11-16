@@ -28,6 +28,7 @@ import type {
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiActionTarget } from '#shared/ci-actions';
+import { scmRepositoryApiUrl } from '#shared/scm-urls';
 
 /** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
 async function githubError(res: Response, action: string): Promise<Error> {
@@ -93,7 +94,7 @@ export class GitHubProvider extends ScmProvider {
 
   /** The repository's API URL, which the credential's destination must hold. */
   get apiUrl(): string {
-    return `https://api.github.com/repos/${this.repoPath}`;
+    return scmRepositoryApiUrl(this.webUrl)!;
   }
 
   protected override makeHeaders() {

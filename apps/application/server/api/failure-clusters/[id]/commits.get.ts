@@ -41,7 +41,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
@@ -57,7 +57,10 @@ export default eventHandler(async (event) => {
 
   if (!repositoryUrl) return { items: [], repositoryUrl: null, aggregate: null, error: null };
 
-  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId, {
+    // The virtual administrator of an instance without sign-in is id 0, no user row.
+    actor: { userId: user.id || null, apiKeyId: (event.context.apiKeyId as number | undefined) ?? null },
+  });
   if (!provider) return { items: [], repositoryUrl, aggregate: null, error: null };
 
   const query = getQuery(event);

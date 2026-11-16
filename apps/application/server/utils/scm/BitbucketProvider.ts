@@ -27,6 +27,7 @@ import { TtlCache } from '../ttl-cache';
 import { splitGitDiff } from './diff-text';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiActionTarget } from '#shared/ci-actions';
+import { scmRepositoryApiUrl } from '#shared/scm-urls';
 import { HEAL_PR_MARKER } from '#shared/heal-pr';
 
 /** Turn a non-2xx Bitbucket response into an Error carrying the API's own message. */
@@ -113,7 +114,7 @@ export class BitbucketProvider extends ScmProvider {
 
   /** The repository's API URL, which the credential's destination must hold. */
   get apiUrl(): string {
-    return this.base;
+    return scmRepositoryApiUrl(this.webUrl)!;
   }
 
   async listBranches(limit = 100): Promise<string[]> {

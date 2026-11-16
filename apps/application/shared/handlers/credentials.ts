@@ -32,7 +32,8 @@ import {
   type CredentialUseEntry,
   type CredentialUseResult,
 } from '#shared/credentials';
-import { detectScmHost, scmDestinationHost, shortCommit } from '#shared/scm-urls';
+import { scmDestinationHost, scmRepositoryApiUrl, shortCommit } from '#shared/scm-urls';
+import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 import type { DrizzleDB } from './db';
 
 /** A credential's record, without its secret: what a use is planned and checked with. */
@@ -551,6 +552,17 @@ function unchangedCredentialUse(action: ActionLike, stored: readonly ActionLike[
   );
 }
 
+/**
+ * Why an SCM credential does not go with a repository's calls, or null: its
+ * destination must hold the repository's API URL (`scmRepositoryApiUrl`). A
+ * repository not known yet, in any remote form, passes.
+ */
+function scmRepositoryProblem(record: CredentialRecord, repositoryUrl: string | null): string | null {
+  const apiUrl = scmRepositoryApiUrl(repositoryUrlFromRemote(repositoryUrl));
+  if (!apiUrl || isUnderBaseUrl(record.destination, apiUrl)) return null;
+  return `The credential "${record.name}" is sent only under ${record.destination}, which does not hold this project's repository (${apiUrl}).`;
+}
+
 /** Whether a credential set in the database for `service` is shared with the project. */
 function sharedWith(record: CredentialRecord | undefined, service: CredentialService, projectId: number): boolean {
   return (
@@ -572,7 +584,8 @@ function sharedWith(record: CredentialRecord | undefined, service: CredentialSer
  * nothing of the others. With the stored actions given, an action whose
  * credential, base URL and preset are unchanged is not checked again: a
  * credential narrowed since then is refused at dispatch, and does not block
- * the project's other changes. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`.
+ * the project's other changes. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`, and
+ * `repositoryUrl` the project's repository, whose API an SCM credential must hold.
  */
 export async function ciActionsCredentialProblem(
   db: DrizzleDB,
@@ -580,6 +593,7 @@ export async function ciActionsCredentialProblem(
   settings: { actions: ActionLike[] },
   stored: readonly ActionLike[] = [],
   gitlabHosts: ReadonlySet<string> = new Set(),
+  repositoryUrl: string | null = null,
 ): Promise<string | null> {
   const wanted = settings.actions.filter(
     (a) => typeof a.target.credentialId === 'number' && !unchangedCredentialUse(a, stored),
@@ -596,6 +610,8 @@ export async function ciActionsCredentialProblem(
       if (scmDestinationHost(record!.destination, gitlabHosts) !== action.target.type) {
         return `"${action.name}": the credential "${record!.name}" is sent to ${record!.destination}, not to the API of this action's host.`;
       }
+      const problem = scmRepositoryProblem(record!, repositoryUrl);
+      if (problem) return `"${action.name}": ${problem}`;
       continue;
     }
     if (!sharedWith(record, 'ci-server', projectId)) {
@@ -615,8 +631,8 @@ export async function ciActionsCredentialProblem(
 /**
  * Why a project cannot name this SCM credential, or null: it must exist, be
  * set in the database for source control and be shared with the project, with
- * one answer for the three; and, when the project has a repository, be sent
- * to the API of the repository's host. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`.
+ * one answer for the three; and, when the project has a repository, hold its
+ * API URL. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`.
  */
 export async function projectScmCredentialProblem(
   db: DrizzleDB,
@@ -627,11 +643,10 @@ export async function projectScmCredentialProblem(
 ): Promise<string | null> {
   const record = (await loadCredentialRecord(db, credentialId)) ?? undefined;
   if (!sharedWith(record, 'scm', projectId)) return `No SCM credential ${credentialId} is shared with this project.`;
-  const host = detectScmHost(repositoryUrl);
-  if (host && scmDestinationHost(record!.destination, gitlabHosts) !== host) {
-    return `The credential "${record!.name}" is sent to ${record!.destination}, not to the API of this project's repository host.`;
+  if (!scmDestinationHost(record!.destination, gitlabHosts)) {
+    return `The credential "${record!.name}" is sent to ${record!.destination}, which is no repository host's API.`;
   }
-  return null;
+  return scmRepositoryProblem(record!, repositoryUrl);
 }
 
 /**

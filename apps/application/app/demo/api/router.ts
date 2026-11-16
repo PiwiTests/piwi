@@ -1044,12 +1044,22 @@ const routes: RouteEntry[] = [
             'scmToken is replaced by credentials: create one with POST /api/credentials (service scm) and name its id in scmCredentialId.',
           );
         }
-        if (typeof update?.scmCredentialId === 'number') {
-          const repository =
-            typeof update.repositoryUrl === 'string' && update.repositoryUrl.trim()
-              ? update.repositoryUrl
-              : ((await db.select({ url: projects.repositoryUrl }).from(projects).where(eq(projects.id, +m[1]!)))[0]
-                  ?.url ?? null);
+        const [stored] = await db
+          .select({
+            ciRerun: projects.ciRerun,
+            scmCredentialId: projects.scmCredentialId,
+            repositoryUrl: projects.repositoryUrl,
+          })
+          .from(projects)
+          .where(eq(projects.id, +m[1]!));
+        const repository =
+          update?.repositoryUrl === undefined ? (stored?.repositoryUrl ?? null) : update.repositoryUrl?.trim() || null;
+        // As the server: a credential named before, with the repository unchanged, is not checked again.
+        const repositoryChanged = update?.repositoryUrl !== undefined && repository !== (stored?.repositoryUrl ?? null);
+        if (
+          typeof update?.scmCredentialId === 'number' &&
+          (update.scmCredentialId !== stored?.scmCredentialId || repositoryChanged)
+        ) {
           const problem = await projectScmCredentialProblem(db as never, +m[1]!, update.scmCredentialId, repository);
           if (problem) throw demoHttpError(400, problem);
         }
@@ -1057,9 +1067,15 @@ const routes: RouteEntry[] = [
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
         if (ciRerun) {
-          const [stored] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, +m[1]!));
           const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
-          const credentialProblem = await ciActionsCredentialProblem(db as never, +m[1]!, ciRerun, storedActions);
+          const credentialProblem = await ciActionsCredentialProblem(
+            db as never,
+            +m[1]!,
+            ciRerun,
+            storedActions,
+            new Set(),
+            repository,
+          );
           if (credentialProblem) throw demoHttpError(400, credentialProblem);
         }
         const project = await updateProject(db, +m[1]!, { ...update, ciRerun });

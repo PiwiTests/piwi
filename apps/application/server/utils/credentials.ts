@@ -31,7 +31,8 @@ import {
   readInstanceScmCredentialIds,
   type CredentialRecord,
 } from '#shared/handlers/credentials';
-import { scmApiDestination } from '#shared/scm-urls';
+import { SCM_API_DESTINATIONS, scmApiDestination, scmDestinationHost } from '#shared/scm-urls';
+import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
 
@@ -549,23 +550,22 @@ function openScmToken(stored: string | null | undefined): string | null {
  * the rules of the CI server tokens' import. A project's token
  * (`projects.scm_token`) becomes a credential bound to the API of the
  * project's repository (`scmApiDestination`), shared with the project and
- * named by it. The instance's (the `scm_token` app setting) becomes one
- * credential per API of the repositories it served (the projects with a
- * repository and neither a token nor a credential of their own), shared with
- * all projects and listed as the instance's (`scm_credentials`). A token equal
- * to one this import already moved, for the same destination, joins that
- * credential. A project token whose project has no repository, and the
- * instance token while no project it serves has one, wait for the first
- * repository to be pinned (`pinProjectRepository`); a token that cannot be
- * opened is left as it is and logged. Each credential has no creator, so an
- * administrator manages it. Returns how many tokens were moved.
+ * named by it; it waits while the project has no repository, or one on a
+ * GitLab host `PIWI_SCM_GITLAB_HOSTS` does not list, and moves once a run or a
+ * project admin sets one (`pinProjectRepository`, the project route). The
+ * instance's (the `scm_token` app setting) becomes one credential per API it
+ * could reach (GitHub's, Bitbucket's, the GitLab cloud's and each listed GitLab
+ * host's), shared with all projects and listed as the instance's
+ * (`scm_credentials`). A token equal to one this import already moved, for the
+ * same destination, joins that credential. Each token moves in a transaction
+ * of its own that first takes it from where it was, so two servers starting
+ * together move it once, and a token that cannot be moved (it does not open,
+ * or `PIWI_SECRET_KEY` is unset) is left as it is and logged. Each credential
+ * has no creator, so an administrator manages it. Returns how many tokens
+ * were moved.
  */
 export async function importScmTokens(db: DbClient): Promise<number> {
-  const [setting] = await db
-    .select({ value: appSettings.value })
-    .from(appSettings)
-    .where(eq(appSettings.key, INSTANCE_SCM_TOKEN_SETTING));
-  const instanceToken = (setting?.value as { value?: string } | undefined)?.value ?? null;
+  const gitlabHosts = configuredGitlabHosts();
   const stored = await db
     .select({
       id: projects.id,
@@ -577,7 +577,6 @@ export async function importScmTokens(db: DbClient): Promise<number> {
     })
     .from(projects)
     .where(isNotNull(projects.scmToken));
-  if (stored.length === 0 && !instanceToken) return 0;
 
   const imported = new Map<string, number>();
   /** The credential of this token for this destination: the one this import made, else a new one. */
@@ -612,63 +611,90 @@ export async function importScmTokens(db: DbClient): Promise<number> {
         rotatedAt: now,
       })
       .returning({ id: credentials.id });
-    imported.set(key, row!.id);
     return row!.id;
   };
 
   let moved = 0;
   for (const project of stored) {
     const destination = scmApiDestination(project.repositoryUrl);
-    if (!destination) continue;
+    if (!destination || !scmDestinationHost(destination, gitlabHosts)) continue;
     const token = openScmToken(project.token);
     if (!token) {
       console.warn(`[credentials] The SCM token of project ${project.id} cannot be opened; it is left as it is`);
       continue;
     }
-    await db.transaction(async (tx) => {
-      const id = await credentialFor(
-        tx as unknown as DbClient,
-        destination,
-        token,
-        `Source control · ${project.label || project.name}`,
-        false,
-      );
-      await tx.insert(credentialProjects).values({ credentialId: id, projectId: project.id }).onConflictDoNothing();
-      await tx
-        .update(projects)
-        .set({ scmToken: null, scmCredentialId: project.credentialId ?? id })
-        .where(eq(projects.id, project.id));
-    });
-    moved++;
+    try {
+      const made = await db.transaction(async (tx) => {
+        // Taken first: a second server moving the same token finds it gone and moves nothing.
+        const taken = await tx
+          .update(projects)
+          .set({ scmToken: null })
+          .where(and(eq(projects.id, project.id), eq(projects.scmToken, project.token!)))
+          .returning({ id: projects.id });
+        if (taken.length === 0) return null;
+        const id = await credentialFor(
+          tx as unknown as DbClient,
+          destination,
+          token,
+          `Source control · ${project.label || project.name}`,
+          false,
+        );
+        await tx.insert(credentialProjects).values({ credentialId: id, projectId: project.id }).onConflictDoNothing();
+        await tx
+          .update(projects)
+          .set({ scmCredentialId: project.credentialId ?? id })
+          .where(eq(projects.id, project.id));
+        return { key: JSON.stringify([destination, token]), id };
+      });
+      if (made) {
+        imported.set(made.key, made.id);
+        moved++;
+      }
+    } catch (err) {
+      console.warn(`[credentials] The SCM token of project ${project.id} could not be moved; it is left as it is`, err);
+    }
   }
 
-  if (!instanceToken) return moved;
-  const token = openScmToken(instanceToken);
+  const [setting] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, INSTANCE_SCM_TOKEN_SETTING));
+  const instanceStored = (setting?.value as { value?: string } | undefined)?.value ?? null;
+  if (!instanceStored) return moved;
+  const token = openScmToken(instanceStored);
   if (!token) {
     console.warn('[credentials] The instance SCM token cannot be opened; it is left as it is');
     return moved;
   }
-  const served = await db
-    .select({ repositoryUrl: projects.repositoryUrl })
-    .from(projects)
-    .where(and(isNull(projects.scmToken), isNull(projects.scmCredentialId), isNotNull(projects.repositoryUrl)));
   const destinations = [
-    ...new Set(served.map((p) => scmApiDestination(p.repositoryUrl)).filter((d): d is string => d !== null)),
+    SCM_API_DESTINATIONS.github,
+    SCM_API_DESTINATIONS.bitbucket,
+    SCM_API_DESTINATIONS.gitlab,
+    ...[...gitlabHosts].map((host) => `https://${host}/`),
   ];
-  if (destinations.length === 0) return moved;
-  await db.transaction(async (tx) => {
-    const ids: number[] = [];
-    for (const destination of destinations) {
-      const name = `Source control (instance) · ${new URL(destination).host}`;
-      ids.push(await credentialFor(tx as unknown as DbClient, destination, token, name, true));
-    }
-    const listed = await readInstanceScmCredentialIds(tx as unknown as DbClient);
-    const value = { ids: [...new Set([...listed, ...ids])] };
-    await tx
-      .insert(appSettings)
-      .values({ key: INSTANCE_SCM_CREDENTIALS_SETTING, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
-    await tx.delete(appSettings).where(eq(appSettings.key, INSTANCE_SCM_TOKEN_SETTING));
-  });
-  return moved + 1;
+  try {
+    const made = await db.transaction(async (tx) => {
+      const taken = await tx
+        .delete(appSettings)
+        .where(eq(appSettings.key, INSTANCE_SCM_TOKEN_SETTING))
+        .returning({ key: appSettings.key });
+      if (taken.length === 0) return false;
+      const ids: number[] = [];
+      for (const destination of [...new Set(destinations)]) {
+        const name = `Source control (instance) · ${new URL(destination).host}`;
+        ids.push(await credentialFor(tx as unknown as DbClient, destination, token, name, true));
+      }
+      const listed = await readInstanceScmCredentialIds(tx as unknown as DbClient);
+      const value = { ids: [...new Set([...listed, ...ids])] };
+      await tx
+        .insert(appSettings)
+        .values({ key: INSTANCE_SCM_CREDENTIALS_SETTING, value, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+      return true;
+    });
+    return made ? moved + 1 : moved;
+  } catch (err) {
+    console.warn('[credentials] The instance SCM token could not be moved; it is left as it is', err);
+    return moved;
+  }
 }

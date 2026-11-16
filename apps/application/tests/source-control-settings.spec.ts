@@ -57,6 +57,8 @@ test.describe.serial('Source control credentials', () => {
       data: { scope: { allProjects: false, projectIds: [1] } },
     });
     expect(narrow.status()).toBe(409);
+    // The other specs run beside this one: the instance lists no credential past this test.
+    expect((await request.put('/api/settings/ai', { data: { scmCredentialIds: [] } })).ok()).toBeTruthy();
   });
 
   test('a project picks its own credential in its Source control settings', async ({ page, request }) => {

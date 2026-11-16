@@ -33,6 +33,8 @@ const props = defineProps<{
   instanceUrl: string | null;
   /** The project the action belongs to, whose credentials a CI server target picks from. */
   projectId: number;
+  /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
+  repositoryUrl?: string | null;
 }>();
 const emit = defineEmits<{ save: [action: CiAction, defaultFor: CiActionKind[]] }>();
 const open = defineModel<boolean>('open', { default: false });
@@ -201,7 +203,7 @@ function submit() {
           v-if="repositoryHost"
           label="Credential"
           help="settings.credentials"
-          description="The SCM credential its dispatch and Check carry: one that may only start workflows keeps the project’s for reading."
+          description="The SCM credential its dispatch and Check carry: a token scoped to CI, while the project’s keeps reading and writing feedback."
           data-testid="ci-action-scm-credential"
           data-shot="ci-action-scm-credential"
         >
@@ -209,7 +211,8 @@ function submit() {
             v-model="draft.scmCredentialId"
             :project-id="projectId"
             :host="repositoryHost"
-            none-label="The project’s credential"
+            :repository-url="repositoryUrl ?? null"
+            none-label="The project’s SCM credential, else the instance’s"
             label="Dispatch credential"
           />
         </FormFieldGroup>

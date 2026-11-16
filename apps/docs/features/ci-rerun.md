@@ -86,7 +86,7 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch and **Check** carry the action's **Credential**, else the project's
+The dispatch, and a GitHub action's **Check**, carry the action's **Credential**, else the repository's
 [SCM credential](/guide/source-control#set-the-credential), with the scope above.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the

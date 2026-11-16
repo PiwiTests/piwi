@@ -28,6 +28,7 @@ import type {
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
 import type { CiActionTarget } from '#shared/ci-actions';
+import { scmRepositoryApiUrl } from '#shared/scm-urls';
 
 /** Turn a non-2xx GitLab response into an Error carrying the API's own message. */
 async function gitlabError(res: Response, action: string): Promise<Error> {
@@ -108,7 +109,7 @@ export class GitLabProvider extends ScmProvider {
 
   /** The repository's API URL, which the credential's destination must hold. */
   get apiUrl(): string {
-    return `https://${this.hostname}/api/v4/projects/${encodeURIComponent(this.repoPath)}`;
+    return scmRepositoryApiUrl(this.webUrl)!;
   }
 
   async listBranches(limit = 100): Promise<string[]> {

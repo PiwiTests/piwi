@@ -15,7 +15,11 @@ type CredentialsAnswer = ApiResponse<typeof import('~~/server/api/credentials/in
 
 const toast = useToast();
 const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai');
-const { data: listed, refresh: refreshList } = useFetch<CredentialsAnswer>('/api/credentials', { server: false });
+const {
+  data: listed,
+  refresh: refreshList,
+  status: listStatus,
+} = await useFetch<CredentialsAnswer>('/api/credentials');
 
 /** The credentials the instance may list: source control, set in the database, shared with all projects. */
 const candidates = computed(() =>
@@ -23,13 +27,17 @@ const candidates = computed(() =>
     (c) => c.service === 'scm' && c.managedBy === 'db' && c.scope.allProjects,
   ),
 );
-const items = computed(() =>
-  candidates.value.map((c) => ({
+const items = computed(() => [
+  ...candidates.value.map((c) => ({
     label: c.disabled ? `${c.name} (disabled)` : c.name,
     value: c.id,
     description: c.destination,
   })),
-);
+  // A listed id the answer does not hold (it could not be read): named, so the menu never shows a bare id.
+  ...(settings.value?.scmCredentialIds ?? [])
+    .filter((id) => !candidates.value.some((c) => c.id === id))
+    .map((id) => ({ label: `Credential ${id}`, value: id, description: 'Not readable here' })),
+]);
 const canEncrypt = computed(() => listed.value?.canEncrypt ?? true);
 
 const picked = ref<number[]>([]);
@@ -60,8 +68,15 @@ async function save() {
 const creating = ref(false);
 async function created(credential: CredentialSummary) {
   await refreshList();
-  if (credential.scope.allProjects && !picked.value.includes(credential.id))
-    picked.value = [...picked.value, credential.id];
+  if (!credential.scope.allProjects) {
+    toast.add({
+      title: 'Not listed here',
+      description: `“${credential.name}” is not shared with all projects: a project picks it in its Source control settings.`,
+      color: 'neutral',
+    });
+    return;
+  }
+  if (!picked.value.includes(credential.id)) picked.value = [...picked.value, credential.id];
 }
 </script>
 
@@ -102,6 +117,7 @@ async function created(credential: CredentialSummary) {
             New credential
           </UButton>
         </div>
+        <ErrorText v-if="listStatus === 'error'" text="The credentials could not be read." class="mt-1" />
         <p class="mt-1 text-xs text-muted">
           Only a credential shared with all projects is listed.
           <NuxtLink to="/settings/credentials" :class="SENTENCE_LINK_CLASS">Settings → Credentials</NuxtLink>

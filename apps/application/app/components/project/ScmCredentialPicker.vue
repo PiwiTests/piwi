@@ -2,19 +2,23 @@
 /**
  * Picks the SCM credential something of a project carries: the project's
  * repository calls, or a GitHub, GitLab or Bitbucket CI action's dispatch. It
- * lists the source control credentials shared with the project, for the
- * repository host when one is known, and creates one for it (New credential,
+ * lists the source control credentials shared with the project whose
+ * destination holds the repository's API (or, before the project has a
+ * repository, the ones for its host), and creates one for it (New credential,
  * shared with the project and sent to the host's API). With none picked, the
  * fallback `noneLabel` names applies.
  */
 import type { CredentialOption, CredentialSummary } from '#shared/credentials';
-import { SCM_API_DESTINATIONS, scmDestinationHost, type ScmProviderName } from '#shared/scm-urls';
+import { isUnderBaseUrl } from '#shared/ci-server';
+import { SCM_API_DESTINATIONS, scmDestinationHost, scmRepositoryApiUrl, type ScmProviderName } from '#shared/scm-urls';
 import type { ApiResponse } from '~~/types/api';
 
 const props = defineProps<{
   projectId: number;
   /** The repository host, whose API the credential must be sent to; null lists every SCM credential. */
   host: ScmProviderName | null;
+  /** The project's repository, whose API URL the credential's destination must hold; null before it has one. */
+  repositoryUrl?: string | null;
   /** The destination a new credential starts with: the API of the project's repository host. */
   destination?: string | null;
   /** What applies with none picked: the instance's credentials, or the project's. */
@@ -35,11 +39,11 @@ const canEncrypt = computed(() => data.value?.canEncrypt ?? true);
 
 /** The host a destination is for; a destination on another host is a GitLab of `PIWI_SCM_GITLAB_HOSTS`. */
 const hostOf = (destination: string): ScmProviderName => scmDestinationHost(destination) ?? 'gitlab';
-const credentials = computed(() =>
-  ((data.value?.credentials ?? []) as CredentialOption[]).filter(
-    (c) => !props.host || hostOf(c.destination) === props.host,
-  ),
-);
+const apiUrl = computed(() => scmRepositoryApiUrl(props.repositoryUrl));
+/** Whether a credential would go with the repository's calls. */
+const fits = (c: { destination: string }) =>
+  apiUrl.value ? isUnderBaseUrl(c.destination, apiUrl.value) : !props.host || hostOf(c.destination) === props.host;
+const credentials = computed(() => ((data.value?.credentials ?? []) as CredentialOption[]).filter(fits));
 const chosen = computed(() => credentials.value.find((c) => c.id === model.value) ?? null);
 
 const NONE = -1;
@@ -50,6 +54,10 @@ const items = computed(() => [
     value: c.id,
     description: c.destination,
   })),
+  // The credential named, while it is not among them: named, so the select never shows a bare id.
+  ...(model.value !== null && !chosen.value
+    ? [{ label: listedOk.value ? 'A credential that does not fit' : 'Reading the credentials…', value: model.value }]
+    : []),
 ]);
 const value = computed({
   get: () => model.value ?? NONE,
@@ -66,7 +74,9 @@ const description = computed(() => {
       : 'Reading the credentials shared with this project…';
   }
   const credential = chosen.value;
-  if (!credential) return 'The credential named is not shared with this project any more: pick another one.';
+  if (!credential) {
+    return 'The credential named is not shared with this project, or is not sent to this repository’s API: pick another one.';
+  }
   if (credential.disabled) return `“${credential.name}” is disabled: every call goes without it until it is enabled.`;
   if (credential.secretEnvSet === false) {
     return `“${credential.name}” reads its secret from ${credential.secretEnv}, which is not set on the server.`;
@@ -77,10 +87,19 @@ const description = computed(() => {
 const creating = ref(false);
 const newDestination = computed(() => props.destination ?? (props.host ? SCM_API_DESTINATIONS[props.host] : null));
 
+const toast = useToast();
 async function created(credential: CredentialSummary) {
   await refresh();
-  if (!credential.scope.allProjects && !credential.scope.projectIds.includes(props.projectId)) return;
-  model.value = credential.id;
+  const shared = credential.scope.allProjects || credential.scope.projectIds.includes(props.projectId);
+  if (shared && fits(credential)) {
+    model.value = credential.id;
+    return;
+  }
+  toast.add({
+    title: 'Not picked',
+    description: `“${credential.name}” is saved, but it is not shared with this project or not sent to this repository’s API.`,
+    color: 'neutral',
+  });
 }
 </script>
 

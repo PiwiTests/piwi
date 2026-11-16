@@ -12,19 +12,31 @@ import {
 } from '#shared/ci-actions';
 import { resolveCiRerunSettings } from '#shared/ci-rerun';
 
-const fileAt = vi.hoisted(() => ({ result: null as null | { content: string } | Error, asked: [] as string[][] }));
+const fileAt = vi.hoisted(() => ({
+  result: null as null | { content: string } | Error,
+  asked: [] as string[][],
+  options: [] as Array<Record<string, unknown> | undefined>,
+}));
 vi.mock('../../server/utils/scm/project-repository', () => ({
   readProjectRepositoryUrl: async () => 'https://github.com/acme/shop.git',
 }));
 vi.mock('../../server/utils/scm', () => ({
-  createScmProvider: async () => ({
-    provider: 'github',
-    fetchFileAtRef: async (path: string, ref: string) => {
-      fileAt.asked.push([path, ref]);
-      if (fileAt.result instanceof Error) throw fileAt.result;
-      return fileAt.result;
-    },
-  }),
+  createScmProvider: async (_url: string, _db: unknown, _projectId: number, options?: Record<string, unknown>) => {
+    fileAt.options.push(options);
+    // A credential the action names that its rules refuse: the provider is never built.
+    if (options?.credentialId === 99) {
+      const { CredentialRefusedError } = await import('../../server/utils/credentials');
+      throw new CredentialRefusedError('The credential "Dispatch only" is disabled.');
+    }
+    return {
+      provider: 'github',
+      fetchFileAtRef: async (path: string, ref: string) => {
+        fileAt.asked.push([path, ref]);
+        if (fileAt.result instanceof Error) throw fileAt.result;
+        return fileAt.result;
+      },
+    };
+  },
 }));
 
 const { checkCiAction, workflowDispatchInputs } = await import('../../server/utils/ci-actions');
@@ -550,6 +562,20 @@ describe('Check on a GitHub action', () => {
     expect((await checkCiAction(db, 1, github(), use)).message).toContain('not valid YAML');
     const byId = github({ target: { type: 'github', workflow: '1234', ref: 'main', argsInput: 'args' } });
     expect((await checkCiAction(db, 1, byId, use)).message).toContain('numeric id');
+  });
+
+  test('reads with the credential the action names, and a refusal is its answer', async () => {
+    const named = (credentialId: number) =>
+      github({ target: { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args', credentialId } });
+    expect(await checkCiAction(db, 1, named(5), use)).toMatchObject({ ok: true });
+    expect(fileAt.options.at(-1)).toMatchObject({ credentialId: 5, strict: true });
+    expect(await checkCiAction(db, 1, named(99), use)).toMatchObject({
+      ok: null,
+      message: 'The credential "Dispatch only" is disabled.',
+    });
+    // An action that names none reads with the project's, and goes on without it when it is refused.
+    await checkCiAction(db, 1, github(), use);
+    expect(fileAt.options.at(-1)).toMatchObject({ credentialId: null, strict: false });
   });
 
   test('says what cannot be checked on GitLab and Bitbucket', async () => {

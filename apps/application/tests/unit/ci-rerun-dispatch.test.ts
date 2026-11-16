@@ -13,16 +13,21 @@ delete process.env.PIWI_DATABASE_URL;
 
 const dispatched: Array<{ args: string; request: Record<string, unknown>; settings: unknown }> = [];
 let answer: Record<string, unknown> = {};
+/** The options each repository provider was opened with. */
+const opened: Array<Record<string, unknown> | undefined> = [];
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: (url: string | null) => (url?.includes('gitlab') ? 'gitlab' : url ? 'github' : null),
   hasScmCredential: async () => true,
-  createScmProvider: async () => ({
-    provider: 'gitlab',
-    dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
-      dispatched.push({ args, request, settings });
-      return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };
-    },
-  }),
+  createScmProvider: async (_url: string, _db: unknown, _projectId: number, options?: Record<string, unknown>) => {
+    opened.push(options);
+    return {
+      provider: 'gitlab',
+      dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
+        dispatched.push({ args, request, settings });
+        return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };
+      },
+    };
+  },
 }));
 
 const {
@@ -138,6 +143,34 @@ describe('a CI re-run dispatch', () => {
       files: ['tests/checkout.spec.ts'],
       byName: 'Ada',
     });
+    // The dispatch cannot do without its credential: a refusal stops it, and its log names the action and the user.
+    expect(opened.at(-1)).toMatchObject({ strict: true, credentialId: null, actor: { userId: 7 } });
+    expect(dispatched[0]!.request.actionId).toBeTruthy();
+  });
+
+  test('carries the SCM credential the action names', async () => {
+    await seed(GITHUB);
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'gh',
+              name: 'Dispatch',
+              target: { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args', credentialId: 5 },
+              inputs: [],
+              accepts: ['tests'],
+            },
+          ],
+          defaults: { rerun: 'gh' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    expect(opened.at(-1)).toMatchObject({ strict: true, credentialId: 5 });
+    expect(dispatched.at(-1)!.request.actionId).toBe('gh');
   });
 
   test('is unavailable before the click when no affected test has a file path it can name', async () => {

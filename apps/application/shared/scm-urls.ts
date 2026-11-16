@@ -186,7 +186,42 @@ export function scmDestinationHost(
   const provider = name ?? (gitlabHosts.has(host) ? 'gitlab' : null);
   if (!provider) return null;
   const path = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
-  return path === '/' || path.startsWith(SCM_API[provider].repositories) ? provider : null;
+  if (path === '/') return provider;
+  if (!path.startsWith(SCM_API[provider].repositories)) return null;
+  // GitLab names a project by its whole path, `group%2Fproject`, encoded as one segment: a destination narrows it to one project.
+  if (provider === 'gitlab') {
+    return /^[^/]*%2F[^/]*\/$/i.test(path.slice(SCM_API.gitlab.repositories.length)) ? provider : null;
+  }
+  return provider;
+}
+
+/**
+ * An SCM credential's destination as it is stored: GitHub and Bitbucket
+ * ignore the case of an owner and a repository, so their path is kept in
+ * lower case, as {@link scmRepositoryApiUrl} writes it.
+ */
+export function normalizeScmDestination(destination: string): string {
+  const host = scmDestinationHost(destination);
+  if (host !== 'github' && host !== 'bitbucket') return destination;
+  const url = new URL(destination);
+  return `${url.origin}${url.pathname.toLowerCase()}`;
+}
+
+/**
+ * The API URL of a repository, which an SCM credential's destination must
+ * hold for the credential to go with its calls: GitHub's and Bitbucket's in
+ * lower case, GitLab's with the project's path as one encoded segment. Null
+ * for a host Piwi has no client for.
+ */
+export function scmRepositoryApiUrl(repositoryUrl: string | null | undefined): string | null {
+  const repo = repositoryUrl ? repoBase(repositoryUrl) : null;
+  if (!repo) return null;
+  const url = new URL(repo.base);
+  const path = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+  if (!path.includes('/')) return null;
+  if (repo.host === 'gitlab') return `https://${url.hostname}${SCM_API.gitlab.repositories}${encodeURIComponent(path)}`;
+  const [owner, name] = path.toLowerCase().split('/');
+  return `${SCM_API[repo.host].origin}${SCM_API[repo.host].repositories}${owner}/${name}`;
 }
 
 /**

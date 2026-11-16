@@ -31,6 +31,7 @@ import {
   readInstanceScmCredentialIds,
   updateCredential,
 } from '#shared/handlers/credentials';
+import { normalizeScmDestination } from '#shared/scm-urls';
 import type { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
 
@@ -76,6 +77,7 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
   if (input.service === 'scm') {
     const problem = scmCredentialProblem({ destination: input.destination, user: input.user ?? null });
     if (problem) throw demoHttpError(400, problem);
+    input.destination = normalizeScmDestination(input.destination);
     input.allowedInputs = null;
     input.customRequests = false;
   }
@@ -128,6 +130,7 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
       user: patch.user !== undefined ? patch.user : record.user,
     });
     if (problem) throw demoHttpError(400, problem);
+    if (patch.destination !== undefined) patch.destination = normalizeScmDestination(patch.destination);
     delete patch.allowedInputs;
     delete patch.customRequests;
     if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db as never)).includes(id)) {

@@ -15,6 +15,7 @@ import {
 } from '#shared/handlers/credentials';
 import { parseCredentialInput, scmCredentialProblem } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm';
+import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -61,6 +62,7 @@ export default eventHandler(async (event) => {
       configuredGitlabHosts(),
     );
     if (problem) throw apiError({ statusCode: 400, message: problem });
+    if (patch.destination !== undefined) patch.destination = normalizeScmDestination(patch.destination);
     delete patch.allowedInputs;
     delete patch.customRequests;
     if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db)).includes(id)) {

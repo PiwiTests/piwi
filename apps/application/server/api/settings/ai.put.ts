@@ -47,6 +47,25 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
+  // The SCM fields are checked before anything is written.
+  if ((body as { scmToken?: unknown }).scmToken !== undefined) {
+    throw apiError({
+      statusCode: 400,
+      message:
+        'An SCM token is saved as a credential (Settings → Credentials), then listed here with scmCredentialIds.',
+    });
+  }
+  let scmCredentialIds: number[] | undefined;
+  if (body.scmCredentialIds !== undefined) {
+    const raw = body.scmCredentialIds ?? [];
+    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw apiError({ statusCode: 400, message: 'scmCredentialIds is a list of credential ids.' });
+    }
+    scmCredentialIds = [...new Set(raw)];
+    const problem = await instanceScmCredentialsProblem(db, scmCredentialIds);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+  }
+
   // Custom instructions and the SCM credentials are stored independently of the provider config.
   if (body.customInstructions !== undefined) {
     const trimmed = body.customInstructions?.trim() || null;
@@ -62,22 +81,9 @@ export default eventHandler(async (event) => {
     else await deleteAppSetting(db, 'ai_language');
   }
 
-  if ((body as { scmToken?: unknown }).scmToken !== undefined) {
-    throw apiError({
-      statusCode: 400,
-      message:
-        'An SCM token is saved as a credential (Settings → Credentials), then listed here with scmCredentialIds.',
-    });
-  }
-  if (body.scmCredentialIds !== undefined) {
-    const raw = body.scmCredentialIds ?? [];
-    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id) || id <= 0)) {
-      throw apiError({ statusCode: 400, message: 'scmCredentialIds is a list of credential ids.' });
-    }
-    const ids = [...new Set(raw)];
-    const problem = await instanceScmCredentialsProblem(db, ids);
-    if (problem) throw apiError({ statusCode: 400, message: problem });
-    if (ids.length > 0) await setAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING, { ids });
+  if (scmCredentialIds !== undefined) {
+    if (scmCredentialIds.length > 0)
+      await setAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING, { ids: scmCredentialIds });
     else await deleteAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING);
   }
 
