@@ -368,7 +368,8 @@ What the package does to a user's run, process by process.
   presses its buttons, and Escape, which an inert bar leaves to the page, closes the page's
   own dialog and resumes nothing. A draw the page did not answer the hold for within 10
   seconds takes none of the message's presses. The message lets go of its own hold as it
-  ends while its stop holds; once the stop ended, it sends neither.
+  ends while its stop holds; once the stop ended, it sends neither. An agent's action holds
+  the bar inert by its own token the same way, and lets go as it ends (`actOnRef`).
 - At a stop no bar shows, Pick a locator, Record, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
@@ -453,6 +454,22 @@ What the package does to a user's run, process by process.
   locator (which replaces the failing locator, and is folded into its snapshot) and
   Record. Any answer lets the test end as it failed, and the editor service lets
   one go at once in a run nobody watches.
+- **The run's own connection** (`internal/streaming/run-hub-link.ts`), open from `onBegin` to `onEnd` beside the
+  workers': it tells the hub how many tests the run has, each that ended for good, the run's page on the instance
+  once known (`tests/run-hub-page.spec.ts`), how many were ended at a stop, how the run ended and its first failure,
+  through `hideSecretsInText` (`tests/run-hub-link.spec.ts`).
+- `waiting` says the call a Pause waits in, and `give-up` (in `features`) ends the test there as asked: the call is
+  given up through its `signal` where it carries one, else the attempt is skipped at its next locator call
+  (`tests/run-channel-give-up.spec.ts`).
+- `front` (in `features`) brings a stop's window to the front, at a stop its pause bar shows, as asked:
+  `page.bringToFront` through `internalCall` (`tests/run-channel-code.spec.ts`).
+- `trace` (in `features`) answers the hub, and the hub alone, with the path of the running attempt's own trace file,
+  or why there is none, from the runner's `_tracing.traceOptions()` (feature-checked: `runnerTraces`,
+  `attemptTraceFile`, `tests/run-channel-trace.spec.ts`).
+- **Its other tests.** `tests/run-channel-view.spec.ts` and `tests/run-channel-lane.spec.ts` drive the views, their
+  masks and their input, `tests/page-view-bar.spec.ts` the pause bar under a view, `tests/run-channel-layers.spec.ts`
+  and `tests/run-channel-filmstrip.spec.ts` the lane's layers, and `tests/run-channel-agent.spec.ts` an agent's
+  requests.
 - While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
   `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
   connection is open or not, so a process the test starts does not connect to the run
@@ -526,7 +543,7 @@ What the package does to a user's run, process by process.
   title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
   no screencast runs and no frame goes.
 - While a viewer shows the worker in full (`full`), the worker also follows the call its test is in
-  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
+  (`live-call-log.ts`). In a run Piwi may pause (`mayPause`: outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
   `--debug`), from Playwright's in-process instrumentation: a listener added to the context's server
   object (`context._connection.toImpl(context).instrumentation`, each member checked first) with
   that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
@@ -624,6 +641,15 @@ What the package does to a user's run, process by process.
   watches, and the stop held is posted again on each stream the worker opens, so a run
   shared during a stop shows it; a CI run never stops, so this is for the run a person
   shares.
+- **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
+  project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
+  `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of
+  a page zoomed in.
+- **Its tests.** `tests/live-view.spec.ts`, `tests/live-view-share.spec.ts` and `tests/live-view-worker.spec.ts` drive
+  the stream, who it posts for and when, `tests/live-view-binary.spec.ts` the two frame encodings,
+  `tests/live-view-call-log.spec.ts` the call a full view follows, `tests/live-view-layers.spec.ts` its layers,
+  `tests/live-view-mask.spec.ts` the masks, and `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts`
+  Inspect (`internal/capture/live-inspect.ts`).
 
 **In the reporter process**
 

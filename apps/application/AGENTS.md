@@ -44,14 +44,12 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
 - **Import `shared/` as `#shared/...`** from `app/`, `server/` and the demo, never with a relative path or
   `~~/shared/...`. `shared/` holds the types, constants and pure helpers the app, the server and the demo share.
 - **Code both this app and Piwi Runner's window use lives in the `@piwitests/run-ui` layer** (`packages/run-ui/`,
-  extended in `nuxt.config.ts`): the team run request confirmation and connection (`DesktopTeamRunRequestModal`,
-  `DesktopTeamInstance`, `useDesktopTeamRequests`, the `desktop-team-requests.client.ts` plugin), the host's event
-  stream (`subscribeDesktopEvents`), the live view of the runs the shell starts (`useDesktopRunHub`, the
-  `DesktopRun*` components, `@piwitests/run-ui/run-view`), `ErrorText`, `LocatorCode`, `CodeBlock`, `useCopy`, the
-  Tauri bridge (`useTauri.ts`), `errorMessage`, `copyPreview`, the status palette, the search fold and the syntax
-  highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules that a vitest file loads
-  without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`, `@piwitests/run-ui/text`,
-  `@piwitests/run-ui/status-palette`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
+  extended in `nuxt.config.ts`): the team run request and its connection, the host's event stream, the live view of
+  the runs the shell starts, `ErrorText`, `LocatorCode`, `CodeBlock`, `useCopy`, the Tauri bridge, the status
+  palette, the search fold and the syntax highlighter
+  ([what it holds](../../packages/run-ui/ARCHITECTURE.md#what-it-holds)). Use them by auto-import and never keep a
+  copy here; a plain TypeScript module that a vitest file loads without Nuxt imports the layer's exports by name
+  (`@piwitests/run-ui/highlight`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **What the Local runs tray shares with Piwi Picker's Runs window lives in `@piwitests/run-model`**
   (`packages/run-model/`): what a stop takes, its place and error, a test's name, a worker's status and tab, its
   controls, who is present, the tab shown, the live view's input, and their English words (`RUN_WORDS_EN`, which the

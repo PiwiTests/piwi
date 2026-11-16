@@ -155,16 +155,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   stop passes the stop's `since` (End the test while a Pause waits, `give-up`, answers none); Run to caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
-  control, a code action, a press, key or pick on the Paused page, never a pointer moving; never one only watched), or
-  while no other held stop's file was opened or left closed and no Step or Run to caret from the IDE waits,
-  `Glue.RESERVED_MILLIS` at most. While an editor is in use, any other stays closed (2024.1 opens no file without
-  selecting it), counts as opened and is listed in the status bar item's menu. The Paused page tab keeps a held stop,
-  then waits as long for the stepped slot, and is selected unless the Worker tab is in sight.** `Glue.StopsShown`
-  decides (a refusal, `ok: false`, undoing what nothing changed since), with `Glue.selectsPausedPage`, and
-  `PiwiRunSessions.draw` opens, drawing again as a wait ends (an `Alarm`), after a refusal and after acting that ends a
-  wait, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service sends.
-  ([Run control](ARCHITECTURE.md#run-control))
+- **A new stop takes the focus only on the worker slot the person is on, or while no other held stop's file was opened
+  or left closed and no Step or Run to caret from the IDE waits, `Glue.RESERVED_MILLIS` at most.** `Glue.StopsShown`
+  decides, with `Glue.selectsPausedPage` for the Paused page tab, and `PiwiRunSessions.draw` opens, as in the VS Code
+  extension; checked by `GlueTest`, fed the pushes the service sends. What counts as the slot the person is on, and
+  what an editor in use and the Paused page tab do meanwhile: [Run control](ARCHITECTURE.md#run-control).
 - **One page per worker, as in the VS Code extension: a headless stop shows in the Worker tab while it watches the
   stop's slot in sight (`workerShows`), else in the Paused page tab, named after the worker too; once the Worker tab's
   watch of a slot is accepted, it takes that slot's headless stop from the Paused page tab** (`takeSlot`), and a held

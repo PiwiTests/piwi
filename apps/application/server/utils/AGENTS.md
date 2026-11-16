@@ -236,13 +236,11 @@ The desktop build's server is the hub of the Playwright runs its shell starts (`
 runs (`@piwitests/editor/run-host`), plus these:
 
 - **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
-  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by the editor's `ShellRuns`, which
-  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs, the agents' tools and
-  Inspect, through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`, `sendToWindow`),
-  and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call `@piwitests/editor/shell-runs-routes`.
-  What the desktop needs that they lack is an option or a hook of theirs that names no app feature (`declines`,
-  `host`, `token`, `words`, `RunHub.join`), added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
-  (a real run through the built reporter) drive the wiring.
+  are the editor service's classes, wired by its `ShellRuns`, which Piwi Runner's host runs too: `DesktopRuns` only
+  gives it the app's words and hooks, and what the desktop needs that they lack is an option or a hook of theirs that
+  names no app feature, added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and
+  `desktop-runs-run.test.ts` (a real run through the built reporter) drive the wiring
+  ([the classes and hooks](../../ARCHITECTURE.md#server-utilities)).
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
   `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
   the window reaches the same hub as a joined peer through `/api/desktop/runs/*`, behind the desktop guard. None of the
