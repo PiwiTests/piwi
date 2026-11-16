@@ -96,7 +96,7 @@ import type { LightboxSubject } from '~/utils/lightbox';
 import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
 import { formatTimelineTime, pauseReasonText } from '~/utils/timeline';
 import { RESOURCE_TRACK_COLOR, seriesPaths } from '~/utils/resource-tracks';
-import { resourceFacts, resourceReading, timelineResourceRows } from '~/utils/timeline-resource-rows';
+import { resourceFacts, timelineResourceRows } from '~/utils/timeline-resource-rows';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -281,8 +281,9 @@ const resourceRows = computed(() => timelineResourceRows(data.value?.resources))
 const resourcesOn = computed(() => showResources.value && resourceRows.value.length > 0);
 const resourcesTop = computed(() => lanesTop.value + lanesHeight.value);
 const resourcesHeight = computed(() => (resourcesOn.value ? resourceRows.value.length * RESOURCE_ROW_H : 0));
+const resourceFillHeight = RESOURCE_ROW_H - 4;
 const resourcePaths = computed(() =>
-  resourceRows.value.map((row) => seriesPaths(row.points, row.yMax, row.step, RESOURCE_ROW_H - 4)),
+  resourceRows.value.map((row) => seriesPaths(row.points, row.yMax, row.step, resourceFillHeight)),
 );
 const resourceFactsText = computed(() => resourceFacts(data.value?.resources).join(' · '));
 const resourcesClipId = `failure-timeline-resources-${useId()}`;
@@ -292,43 +293,26 @@ function resourceTransform(index: number): string {
   const k = end > start ? plotWidth.value / (end - start) : 0;
   return `translate(${plotLeft - start * k}, ${resourcesTop.value + index * RESOURCE_ROW_H + 2}) scale(${k}, 1)`;
 }
-const resourceFillHeight = RESOURCE_ROW_H - 4;
-/** Room the line's labels take beside it, past which they go on its left. */
-const CURSOR_LABEL_ROOM = 110;
-// The moment under the pointer while the rows show: anywhere over the plot, the lanes included.
-const resourceHover = ref<{ x: number; at: number; clientX: number } | null>(null);
+// The moment under the pointer while the rows show, anywhere over the plot, the lanes included. Only the cursor
+// reads it, so a pointer move redraws the cursor and not the card.
+const cursorState = reactive({ on: false, x: 0, clientX: 0, at: 0 });
 function onPlotMove(event: MouseEvent): void {
   const svg = event.currentTarget as SVGSVGElement;
   const box = svg.getBoundingClientRect();
   const x = event.clientX - box.left;
   const y = event.clientY - box.top;
   if (!resourcesOn.value || x < plotLeft || x > plotRight.value || y < TOP || y > marksBottom.value) {
-    resourceHover.value = null;
+    cursorState.on = false;
     return;
   }
   const { start, end } = domain.value;
-  resourceHover.value = { x, at: start + ((x - plotLeft) / plotWidth.value) * (end - start), clientX: event.clientX };
+  Object.assign(cursorState, {
+    on: true,
+    x,
+    clientX: event.clientX,
+    at: start + ((x - plotLeft) / plotWidth.value) * (end - start),
+  });
 }
-/**
- * Each row's value at the pointer, beside the line: on the side a bar's tooltip leaves free, else on its right, or on
- * its left near the plot's right edge.
- */
-const resourceCursor = computed(() => {
-  const hover = resourceHover.value;
-  if (!hover) return null;
-  const flip = hovered.value ? pos.value.x > hover.clientX : hover.x > plotRight.value - CURSOR_LABEL_ROOM;
-  return {
-    x: hover.x,
-    labelX: hover.x + (flip ? -5 : 5),
-    anchor: flip ? 'end' : 'start',
-    time: formatRel(hover.at),
-    readings: resourceRows.value.map((row, i) => ({
-      kind: row.kind,
-      y: resourcesTop.value + i * RESOURCE_ROW_H + RESOURCE_ROW_H / 2,
-      text: resourceReading(row, hover.at),
-    })),
-  };
-});
 
 const marksBottom = computed(() => resourcesTop.value + resourcesHeight.value);
 const svgHeight = computed(() => marksBottom.value + AXIS_H);
@@ -881,7 +865,7 @@ function revealItem(item: TimelineItem) {
           :height="svgHeight"
           class="block"
           @mousemove="onPlotMove"
-          @mouseleave="resourceHover = null"
+          @mouseleave="cursorState.on = false"
         >
           <!-- Default-window shade (only meaningful in whole-test view) -->
           <rect
@@ -1174,50 +1158,27 @@ function revealItem(item: TimelineItem) {
           </g>
 
           <!-- The moment under the pointer: a line across the whole chart, its time on the axis, each row's value beside it -->
-          <g v-if="resourceCursor" class="pointer-events-none" data-testid="timeline-resources-cursor">
-            <line
-              :x1="resourceCursor.x"
-              :x2="resourceCursor.x"
-              :y1="TOP"
-              :y2="marksBottom"
-              stroke-dasharray="3 3"
-              class="stroke-gray-400 dark:stroke-gray-500"
-            />
-            <text
-              :x="resourceCursor.labelX"
-              :y="marksBottom + 12"
-              :text-anchor="resourceCursor.anchor"
-              paint-order="stroke"
-              stroke-width="4"
-              stroke-linejoin="round"
-              class="fill-gray-900 dark:fill-white stroke-[var(--ui-bg)] text-[10px] font-medium tabular-nums"
-            >
-              {{ resourceCursor.time }}
-            </text>
-            <text
-              v-for="reading in resourceCursor.readings"
-              :key="reading.kind"
-              :x="resourceCursor.labelX"
-              :y="reading.y"
-              :text-anchor="resourceCursor.anchor"
-              dominant-baseline="middle"
-              paint-order="stroke"
-              stroke-width="4"
-              stroke-linejoin="round"
-              class="stroke-[var(--ui-bg)] text-[10px] font-medium tabular-nums"
-              :class="reading.text ? 'fill-gray-900 dark:fill-white' : 'fill-gray-400 dark:fill-gray-500'"
-              :data-resource-reading="reading.kind"
-            >
-              {{ reading.text ?? 'not read' }}
-            </text>
-          </g>
+          <FailureTimelineCursor
+            v-if="resourcesOn"
+            :state="cursorState"
+            :rows="resourceRows"
+            :rows-top="resourcesTop"
+            :row-height="RESOURCE_ROW_H"
+            :top="TOP"
+            :bottom="marksBottom"
+            :time-y="marksBottom + 12"
+            :plot-left="plotLeft"
+            :plot-right="plotRight"
+            :format-time="formatRel"
+            :tooltip-x="hovered ? pos.x : null"
+          />
         </svg>
       </div>
 
       <!-- What the test measured itself. -->
       <p
         v-if="showAxis && resourcesOn && resourceFactsText"
-        data-testid="timeline-resources-readout"
+        data-testid="timeline-resources-facts"
         class="text-xs text-muted tabular-nums"
       >
         {{ resourceFactsText }}

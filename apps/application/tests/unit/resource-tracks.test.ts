@@ -4,6 +4,8 @@ import {
   availableWorkerMetrics,
   buildResourceBands,
   buildWorkerStrips,
+  CURSOR_LABEL_ROOM,
+  cursorLabelSide,
   formatTrackValue,
   layOutTimelineRows,
   shownTracks,
@@ -250,10 +252,34 @@ describe('trackReadings', () => {
     expect(trackReadings(band!, tracks, 1000, leftOpen)[2]!.text).toBe('3 open, 1 left open');
     expect(trackReadings(band!, tracks, 20_000)[0]).toEqual({ kind: 'cpu', value: null, text: 'not read' });
   });
+});
 
+describe('workerMetricColor', () => {
   test('colors a strip as its track, the wait for a CPU as the CPU', () => {
     expect(workerMetricColor('wait')).toBe(workerMetricColor('cpu'));
-    expect(new Set(['cpu', 'memory', 'pages'].map((kind) => workerMetricColor(kind as 'cpu'))).size).toBe(3);
+    expect(new Set((['cpu', 'memory', 'pages'] as const).map(workerMetricColor)).size).toBe(3);
+  });
+});
+
+describe('cursorLabelSide', () => {
+  const bounds = { left: 0, right: 1000 };
+
+  test('puts the labels right of the line, left of it near the right edge', () => {
+    expect(cursorLabelSide(500, bounds)).toBe('right');
+    expect(cursorLabelSide(1000 - CURSOR_LABEL_ROOM + 1, bounds)).toBe('left');
+  });
+
+  test('puts them on the side an open tooltip leaves free, when it has room', () => {
+    expect(cursorLabelSide(500, bounds, 'right')).toBe('left');
+    expect(cursorLabelSide(500, bounds, 'left')).toBe('right');
+    // Too near the left edge to go left of the line: under the tooltip rather than over the row names.
+    expect(cursorLabelSide(CURSOR_LABEL_ROOM - 1, bounds, 'right')).toBe('right');
+    // Too near the right edge to go right of it: under the tooltip rather than past the chart.
+    expect(cursorLabelSide(1000 - CURSOR_LABEL_ROOM + 1, bounds, 'left')).toBe('left');
+  });
+
+  test('keeps them right of the line when neither side has room', () => {
+    expect(cursorLabelSide(50, { left: 0, right: 100 })).toBe('right');
   });
 });
 

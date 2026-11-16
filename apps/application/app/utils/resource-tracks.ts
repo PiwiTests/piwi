@@ -20,13 +20,13 @@ export const RESOURCE_TRACK_KINDS: ReadonlyArray<{ kind: ResourceTrackKind; labe
 ];
 
 /**
- * Each track's color, a text color its marks paint with `currentColor`: one hue per track, none of them an outcome's
- * or the accent, so a track never reads as a test's status. The area under a track deepens toward its top, so a
- * high value stands out (`RESOURCE_FILL_STOPS`).
+ * Each track's color, a text color its marks paint with `currentColor`: one hue per track, none of them a red, an
+ * orange or a green, an outcome's or the accent, so a track never reads as a test's status or as a duration that
+ * stands out. The area under a track deepens toward its top, so a high value stands out (`RESOURCE_FILL_STOPS`).
  */
 export const RESOURCE_TRACK_COLOR: Record<ResourceTrackKind, string> = {
-  cpu: 'text-orange-600 dark:text-orange-500',
-  memory: 'text-sky-500',
+  cpu: 'text-teal-700 dark:text-teal-600',
+  memory: 'text-sky-500 dark:text-sky-400',
   pages: 'text-indigo-500',
 };
 
@@ -210,7 +210,7 @@ export function shownTracks(band: ResourceBand, visibility: ResourceTrackVisibil
   );
 }
 
-/** How far from a reading the readout still shows it. */
+/** How far from a reading the label beside the pointer's line still shows it. */
 const READING_REACH_MS = 6000;
 
 /**
@@ -269,14 +269,14 @@ export function seriesPaths(
   return { line: line.join(''), area: `M${first},${height}${line.join('').replace(/^M/, 'L')}L${last},${height}Z` };
 }
 
-/** A track's value as the readout prints it. */
+/** A track's value as the label beside the pointer's line prints it. */
 export function formatTrackValue(kind: ResourceTrackKind, value: number): string {
   if (kind === 'cpu') return `${Math.round(value)}%`;
   if (kind === 'memory') return formatSize(value);
   return `${value} open`;
 }
 
-/** What one track reads at a moment, as the label beside the line across the timeline prints it. */
+/** What one track reads at a moment, as the label beside the pointer's line prints it. */
 export interface TrackReading {
   kind: ResourceTrackKind;
   /** Null where no reading is near. */
@@ -306,6 +306,26 @@ export function trackReadings(
     }
     return { kind: track.kind, value, text };
   });
+}
+
+/** The room the labels beside the pointer's line take, in px. */
+export const CURSOR_LABEL_ROOM = 130;
+
+/**
+ * Which side of the pointer's line (at `x`, between `bounds`) its labels go:
+ * the side an open tooltip leaves free when it has room, else the right, or
+ * the left when the right lacks room and the left has it.
+ */
+export function cursorLabelSide(
+  x: number,
+  bounds: { left: number; right: number },
+  tooltipSide: 'left' | 'right' | null = null,
+): 'left' | 'right' {
+  const roomRight = bounds.right - x >= CURSOR_LABEL_ROOM;
+  const roomLeft = x - bounds.left >= CURSOR_LABEL_ROOM;
+  if (tooltipSide === 'right' && roomLeft) return 'left';
+  if (tooltipSide === 'left' && roomRight) return 'right';
+  return roomRight || !roomLeft ? 'right' : 'left';
 }
 
 // ── Under each worker ─────────────────────────────────────────────────────────

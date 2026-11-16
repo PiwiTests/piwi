@@ -615,11 +615,13 @@ const hover = reactive<{ item: TimelineItem | null; pos: { x: number; y: number 
 watch(visibleItems, (items) => {
   if (!hover.item) return;
   hover.item = items.find((item) => item.key === hover.item!.key) ?? null;
+  resourceHover.overBar = hover.item !== null;
 });
 
 function onBarEnter(item: TimelineItem, event: MouseEvent) {
   hover.item = item;
   hover.pos = { x: event.clientX, y: event.clientY };
+  resourceHover.overBar = true;
 }
 
 function onBarMove(event: MouseEvent) {
@@ -628,54 +630,94 @@ function onBarMove(event: MouseEvent) {
 
 function onBarLeave() {
   hover.item = null;
+  resourceHover.overBar = false;
 }
 
 // The moment under the pointer, read only by the line across the timeline
 // with the tracks' values beside it, and by the strip's readout, like the
 // bars' hover state. While the timeline draws resource tracks or strips, the
-// line follows a mouse anywhere over the plot, the test bars included.
+// line follows a mouse anywhere over the plot, the test bars included, and
+// goes where a finger taps.
 const resourceHover = reactive<{
   /** Whether the line is drawn. */
   on: boolean;
-  /** Whether the line's labels go on its left, near the viewport's right edge. */
-  flip: boolean;
   strip: { set: WorkerStripSet; strip: WorkerStrip } | null;
   t: number;
   pos: { x: number; y: number };
-}>({ on: false, flip: false, strip: null, t: 0, pos: { x: 0, y: 0 } });
+  /** The line's X in the viewport, and the X of the visible plot's edges there. */
+  clientX: number;
+  bounds: { left: number; right: number };
+  /** Whether the pointer is over a test bar, whose tooltip opens beside it. */
+  overBar: boolean;
+}>({
+  on: false,
+  strip: null,
+  t: 0,
+  pos: { x: 0, y: 0 },
+  clientX: 0,
+  bounds: { left: 0, right: 0 },
+  overBar: false,
+});
 
 watch(workerStrips, (strips) => {
   if (resourceHover.strip && resourceHover.strip.set !== strips) resourceHover.strip = null;
 });
 
-/** Room the line's labels take beside it, past which they go on its left. */
-const CURSOR_LABEL_ROOM = 160;
-
-function trackPointer(event: PointerEvent): void {
+/** Place the line at `clientX` in the viewport: the moment under it at the current zoom and pan. */
+function placeCursor(clientX: number): void {
   const container = containerRef.value;
-  const drawsResources = bandLayout.value.length > 0 || workerStrips.value !== null;
-  if (event.pointerType === 'touch' || isPanning.value || !container || !drawsResources) {
+  if (!container || (bandLayout.value.length === 0 && !workerStrips.value)) {
     resourceHover.on = false;
     return;
   }
   const rect = container.getBoundingClientRect();
-  const t = (event.clientX - rect.left - panX.value - TIMELINE_LAYOUT.labelWidth) / pxPerMs.value;
+  // The SVG starts inside the container's border, moved by the pan.
+  const plotLeft = rect.left + container.clientLeft + panX.value + TIMELINE_LAYOUT.labelWidth;
+  const t = (clientX - plotLeft) / pxPerMs.value;
   resourceHover.on = t >= 0 && t <= plotEnd.value;
-  resourceHover.flip = rect.right - event.clientX < CURSOR_LABEL_ROOM;
   resourceHover.t = Math.max(0, Math.min(plotEnd.value, t));
+  resourceHover.clientX = clientX;
+  resourceHover.bounds = { left: Math.max(rect.left, plotLeft), right: rect.right };
+}
+
+function trackPointer(event: PointerEvent): void {
   resourceHover.pos = { x: event.clientX, y: event.clientY };
+  if (isPanning.value) resourceHover.on = false;
+  else placeCursor(event.clientX);
 }
 
 function onContainerPointerMove(event: PointerEvent): void {
   onPointerMove(event);
+  // A finger that moves pans or scrolls the timeline: only its tap places the line.
+  if (event.pointerType !== 'touch') trackPointer(event);
+}
+
+/** Before the strip under it hears a tap, which reports itself again. */
+function onContainerPointerUp(event: PointerEvent): void {
+  const tapped = event.pointerType === 'touch' && !isPanning.value;
+  onPointerUp(event);
+  if (!tapped) return;
+  resourceHover.strip = null;
   trackPointer(event);
 }
 
-function onContainerPointerLeave(event: PointerEvent): void {
-  onPointerUp(event);
+function hideCursor(): void {
   resourceHover.on = false;
   resourceHover.strip = null;
 }
+
+/** A mouse leaving the timeline takes the line away; a finger's tap leaves it until a tap outside. */
+function onContainerPointerLeave(event: PointerEvent): void {
+  onPointerUp(event);
+  if (event.pointerType !== 'touch') hideCursor();
+}
+
+onClickOutside(containerRef, hideCursor);
+
+// A zoom or a pan the pointer did not make (a live run refitting, a row expanded) keeps the line under the pointer.
+watch([pxPerMs, panX], () => {
+  if (resourceHover.on) placeCursor(resourceHover.clientX);
+});
 
 function onStripHover(strip: WorkerStrip): void {
   if (!workerStrips.value) return;
@@ -783,7 +825,7 @@ function selectSpanTest(tail: SpanTail): void {
       @wheel.prevent="onWheel"
       @pointerdown="onPointerDown"
       @pointermove="onContainerPointerMove"
-      @pointerup="onPointerUp"
+      @pointerup.capture="onContainerPointerUp"
       @pointercancel="onPointerUp"
       @pointerleave="onContainerPointerLeave"
     >

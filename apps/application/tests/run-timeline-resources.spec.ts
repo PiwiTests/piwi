@@ -112,19 +112,23 @@ test.describe('Run timeline resource tracks', () => {
     const band = page.getByTestId('timeline-resource-band');
     const box = (await band.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
-    const cursor = page.getByTestId('timeline-resource-cursor');
+    const cursor = page.getByTestId('resource-cursor');
     await expect(cursor.locator('[data-resource-reading="cpu"]')).toHaveText('90%');
     await expect(cursor.locator('[data-resource-reading="memory"]')).toHaveText('3.0 GB');
     await expect(cursor.locator('[data-resource-reading="pages"]')).toHaveText('3 open');
-    await expect(page.getByTestId('timeline-resource-cursor-time')).toHaveText('2.0s');
+    await expect(cursor.getByTestId('resource-cursor-time')).toHaveText('2.0s');
 
-    // The line follows the pointer over the test bars too, the tracks' values beside it.
+    // The line follows the pointer over the test bars too: 0.3 s into the two-second first test, the first reading.
     const bar = page.locator('[data-timeline-test]').first();
     const barBox = (await bar.boundingBox())!;
-    await page.mouse.move(barBox.x + barBox.width * 0.25, barBox.y + barBox.height / 2);
-    await expect(cursor.locator('[data-resource-reading="cpu"]')).toBeVisible();
+    await page.mouse.move(barBox.x + barBox.width * 0.15, barBox.y + barBox.height / 2);
+    await expect(cursor.getByTestId('resource-cursor-time')).toHaveText(/^\d{3}ms$/);
+    await expect(cursor.locator('[data-resource-reading="cpu"]')).toHaveText('20%');
 
+    // It goes once the pointer leaves the timeline.
     await page.mouse.move(0, 0);
+    await expect(cursor).toHaveCount(0);
+
     await page.getByTestId('timeline-resources-menu').click();
     // The tracks above the rows come first in the menu; the strip under each worker names some alike.
     await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).first().click();
@@ -276,12 +280,12 @@ test.describe('Run timeline leaks', () => {
     await expect(page.getByTestId('timeline-lingering')).toHaveText('1 lingering');
     await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
 
-    // The open pages track draws the page left open; its readout says so.
+    // The open pages track draws the page left open; the label beside the pointer's line says so.
     await expect(page.locator('[data-resource-left-open]')).toHaveCount(1);
     const band = page.getByTestId('timeline-resource-band');
     const bandBox = (await band.boundingBox())!;
     await page.mouse.move(bandBox.x + bandBox.width * 0.85, bandBox.y + bandBox.height / 2);
-    await expect(page.getByTestId('timeline-resource-cursor').locator('[data-resource-reading="pages"]')).toContainText(
+    await expect(page.getByTestId('resource-cursor').locator('[data-resource-reading="pages"]')).toContainText(
       '1 left open',
     );
 
@@ -316,5 +320,121 @@ test.describe('Run timeline leaks', () => {
     await expect(page.locator('[data-resource-left-open]')).toHaveCount(0);
     await page.getByRole('switch', { name: 'Show leaks' }).click();
     await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
+  });
+});
+
+test.describe('Execution timeline resource rows', () => {
+  let executionId = 0;
+  const t0 = Date.now() - 60_000;
+  const MB = 1024 ** 2;
+
+  test.beforeAll(async ({ request }) => {
+    const response = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_TIMELINE_RESOURCES,
+        status: 'failed',
+        startTime: new Date(t0).toISOString(),
+        duration: 4000,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'exports the monthly report',
+            status: 'failed',
+            duration: 4000,
+            location: 'tests/report.spec.ts:5:3',
+            error: "TimeoutError: locator.click: Timeout 3000ms exceeded.\n  - waiting for getByRole('button')",
+            retries: 0,
+            workerIndex: 0,
+            startedAt: t0,
+            steps: [
+              { title: "page.goto('/report')", duration: 900, category: 'navigation', startTime: t0 },
+              {
+                title: "getByRole('button', { name: 'Export' }).click()",
+                duration: 3000,
+                category: 'action',
+                failed: true,
+                startTime: t0 + 1000,
+              },
+            ],
+          },
+        ],
+        resourceReport: {
+          v: 1,
+          findings: [],
+          counts: { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
+          profile: null,
+          workers: [],
+          artifactBytes: {},
+          workerHealth: null,
+          timeline: {
+            startedAt: t0,
+            cpuPct: [],
+            memoryBytes: [],
+            pages: [
+              {
+                worker: 0,
+                points: [
+                  [0, 1],
+                  [4000, 0],
+                ],
+              },
+            ],
+            workers: [
+              {
+                worker: 0,
+                cpuCores: [
+                  [500, 0.5],
+                  [1500, 1.5],
+                  [2500, 1],
+                  [3500, 0.8],
+                ],
+                memoryBytes: [
+                  [500, 200 * MB],
+                  [3500, 300 * MB],
+                ],
+              },
+            ],
+          },
+        },
+      },
+      timeout: 20000,
+    });
+    expect(response.ok()).toBeTruthy();
+    const { runId } = (await response.json()) as { runId: number };
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    executionId = run.testCases[0].executionId;
+  });
+
+  test('draws the line under the pointer across every lane, each row’s value beside it', async ({ page }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Timeline', exact: true })
+      .click();
+    const toggle = page.getByTestId('timeline-resources-toggle');
+    if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+    const rows = page.locator('[data-timeline-resources]');
+    await expect(rows.locator('[data-timeline-resource]')).toHaveCount(3);
+
+    // Over the Steps lane, the chart's first, well above the resources rows.
+    const chart = rows.locator('xpath=ancestor::*[local-name()="svg"][1]');
+    const box = (await chart.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.6, box.y + 19);
+    const cursor = page.getByTestId('resource-cursor');
+    await expect(cursor.locator('[data-resource-reading="cpu"]')).toHaveText(/^[\d.]+ cores?$/);
+    await expect(cursor.locator('[data-resource-reading="memory"]')).toHaveText(/^\d+ MB$/);
+    await expect(cursor.locator('[data-resource-reading="pages"]')).toHaveText('1 open page');
+    await expect(cursor.getByTestId('resource-cursor-time')).toHaveText(/^t[-+]/);
+    const line = (await cursor.locator('line').boundingBox())!;
+    const rowsBox = (await rows.boundingBox())!;
+    expect(line.y).toBeLessThan(box.y + 19);
+    expect(line.y + line.height).toBeGreaterThanOrEqual(rowsBox.y + rowsBox.height - 1);
+
+    await page.mouse.move(0, 0);
+    await expect(cursor).toHaveCount(0);
   });
 });
