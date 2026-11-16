@@ -12,7 +12,7 @@ material: open it when you need to understand the code.
 | `app/components/CodeBlock.vue`                               | A code block with a copy button                                                                                             |
 | `app/composables/useDesktopTeamRequests.ts`                  | The connection and the queue of requests the confirmation shows                                                             |
 | `app/composables/useTauri.ts`, `useCopy.ts`                  | The Tauri bridge (`tauriCore`, `tauriEvent`, `tauriWindowLabel`) and the clipboard                                          |
-| `app/utils/run-target-words.ts`, `text.ts`                   | The words of the connection and the request, `errorMessage`, `copyPreview`                                                  |
+| `app/utils/run-target-words.ts`, `text.ts`                   | The words of the connection and the request, `errorMessage`, `copyPreview` (`@piwitests/run-ui/text`)                       |
 | `app/utils/desktop-events.ts`                                | The one shared `EventSource` on `/api/desktop/events` (`subscribeDesktopEvents`)                                            |
 | `app/plugins/desktop-team-requests.client.ts`                | Feeds the host's run-request queue from that stream inside the shell's main window                                          |
 | `src/highlight.ts` (`@piwitests/run-ui/highlight`)           | The one syntax-highlighting setup, also used by the server's exports and notifications                                      |

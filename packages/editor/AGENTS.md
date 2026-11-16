@@ -73,13 +73,14 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
-  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
-  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the instance's 401 for a key it no
-  longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance that sends no code): a 403
-  or any other 401, a proxy's among them, stops the host and keeps the key (`tests/request-host.test.ts`). The
-  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. What it ends of the
-  requests the instance counts as the target's, and the project names it passes on, are in
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). What it ends
+  of the requests the instance counts as the target's, and the project names it passes on, are in
   [ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy) (`tests/run-target-routes.test.ts`).
+- **The request host tells the shell to forget the key (`onKeyRevoked`) only when the instance says it no longer holds
+  it**: on the stream's `revoked` event, or on a 401 with `data.errorCode` `RUN_TARGET_KEY_REVOKED` (or its message,
+  from an instance that sends no code). A 403 or any other 401, a proxy's among them, stops the host and keeps the
+  key, but a 403 on one request's own route (claim, answer, state), which refuses that request alone
+  (`tests/request-host.test.ts`).
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
   fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
@@ -225,14 +226,14 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   the app's `desktop-runs*.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
-  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks
-  and the refusal of a browser on the shell-only ones are `src/run-target-routes.ts`, and who may call a host is
-  `src/host-guard.ts`: the desktop app's Nitro routes and guard call them, never a copy.
-  The window's session and its two event streams are `src/run-target-session.ts` and `src/run-target-stream.ts`, the
-  app's routes being adapters of them too. `tests/run-target-routes.test.ts` holds the contract on the bare `node:http`
-  host (`src/run-target-http.ts`), and `apps/application/tests/unit/desktop-run-target.test.ts`,
-  `desktop-session-routes.test.ts` and `desktop-events-stream.test.ts` the body, id, browser, session and stream checks
-  through the Nitro routes: a change here runs both. ([ARCHITECTURE.md](ARCHITECTURE.md#the-run-targets-streams))
+  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`; its routes, their body
+  checks and the refusal of a browser on the shell-only ones (`src/run-target-routes.ts`), its guard
+  (`src/host-guard.ts`), the window's session and its two event streams are what the desktop app's Nitro routes and
+  guard call, never a copy. A change here runs both suites:
+  `tests/run-target-routes.test.ts` holds the contract on the bare `node:http` host, and
+  `apps/application/tests/unit/desktop-run-target.test.ts`, `desktop-session-routes.test.ts` and
+  `desktop-events-stream.test.ts` the body, id, browser, session and stream checks through the Nitro routes.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-run-targets-streams))
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the

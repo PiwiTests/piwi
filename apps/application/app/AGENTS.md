@@ -138,14 +138,15 @@ views are exempt only where a rule says so.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`: the execution's outcome,
   the cluster state's dot). Nothing else in the block repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated element
-  meant to be clicked. Every other button is `color="neutral"`: `variant="outline"` for a secondary action,
-  `variant="ghost"` for a disclosure or a menu trigger; no `warning`, `success` or `soft` buttons for ordinary actions.
-  A selection is neutral too: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
+  meant to be clicked: every other button is `color="neutral"` (`variant="outline"` for a secondary action,
+  `variant="ghost"` for a disclosure or a menu trigger), with no `warning`, `success` or `soft` button for an ordinary
+  action, and the one exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure
+  pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the affected tests' components (add a new
+  one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered pages.
+- **A selection is neutral too**: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
   `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
-  of status-colored marks), `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and the
-  layer's `ui-classes.ts` for the last two. The one exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
-  affected tests' components (add a new one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered
-  pages.
+  of status-colored marks) and `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and, for
+  the last two, the layer's `ui-classes.ts`; `tests/unit/evidence-accent.test.ts` holds the failure pages to them.
 - **A link inside a sentence keeps the sentence's color**:
   `underline decoration-dotted underline-offset-2 hover:decoration-solid`. `text-primary` links are for navigation lists
   and tables.
@@ -272,13 +273,11 @@ views are exempt only where a rule says so.
   (`debugInIde` in `useOpenInIde`: `debug=1` on `buildVscodeExtensionUrl` and on `buildPiwiPluginOpenUrl`'s open, never
   on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
   a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
-- **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
-  from `plugins/desktop-run-hub.client.ts`, whatever the layout: a run of the Local runs tray runs, or the hub says it
-  has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
-  window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
-  **Hold failures** switch is on (off by default, on for a reproduction and a run started with it on,
-  `desktopHoldsByDefault`, and **Run again** keeps this window's choice; never for a run nobody attends, `desktopHoldRefusal`),
-  each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
+- **The desktop window holds the stream of its runs' hub only while it has a run to show, and says `show` only for the
+  running runs whose Hold failures switch is on**, never for a run nobody attends (`useDesktopRunHub.want`, from
+  `plugins/desktop-run-hub.client.ts`; `desktopHoldsByDefault`, `desktopHoldRefusal`): while the stream is open, every
+  headless stop waits for the window. When it opens, and which runs it holds:
+  [`ARCHITECTURE.md`](../ARCHITECTURE.md#route-families) (`tests/desktop-run-view.spec.ts`,
   `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **A reload of the desktop window keeps its Local runs** (`plugins/desktop-local-runs.client.ts`): a field added to
   `LocalRun` is plain JSON, since the store writes the runs to session storage, and a separate output window is fed by

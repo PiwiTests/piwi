@@ -9,11 +9,11 @@ import {
   type PageEvent,
 } from '@piwitests/core/live-layers';
 import { hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
-import { MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
+import { MAX_POSITION_TITLE, MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
 import { pageEventsWanted, tellPageEvent } from './lane-layers.js';
 import { callSitePath } from './locator-healing.js';
-import { runEventsWanted, tellEvent } from './run-channel.js';
+import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run-channel.js';
 
 /**
  * What the running test does, told to whoever follows it: to the editor while an agent follows the run (the run
@@ -25,8 +25,10 @@ import { runEventsWanted, tellEvent } from './run-channel.js';
  * errors it threw, its failed requests, each request that waits `PENDING_REQUEST_MS` and more for its answer (told again
  * as long again passes, then once as it ends), the errors and warnings a backend logged on a response
  * (`X-Piwi-Logs`, read as the capture fixtures read it, `readServerLogs`), and each call the test makes through an API
- * request context (`tellApiCall`). Every text has its credentials hidden (`@piwitests/core/mask`). Nothing is sent, nor
- * a request followed, while nobody follows the run, nor between tests.
+ * request context (`tellApiCall`). To the editor while it asks (`positions`, which it asks to mark the running line),
+ * where each call of the test begins in the user's code, from the same listener (`tellPosition`). Every text has its
+ * credentials hidden (`@piwitests/core/mask`). Nothing is sent, nor a request followed, while nobody follows the run or
+ * asks for positions, nor between tests.
  */
 
 /** The parts of Playwright's API-call zone read here (internal). */
@@ -84,7 +86,7 @@ export function callPlace(
 export function callTitle(zone: ApiZone, channel: ApiChannel | undefined): string {
   const selector = typeof channel?.params?.selector === 'string' ? ` ${channel.params.selector}` : '';
   const title = zone.title || `${zone.apiName || 'call'}${selector}`;
-  return hideSecretsInText(hideTypedText(title)).slice(0, 300);
+  return hideSecretsInText(hideTypedText(title)).slice(0, MAX_POSITION_TITLE);
 }
 
 /** The first lines of a call's error, its credentials hidden. */
@@ -94,8 +96,8 @@ function errorText(error: unknown): string {
 }
 
 /**
- * Hear the calls of the worker's Playwright, each told as it ends while an agent follows the run. False when the
- * instrumentation is missing.
+ * Hear the calls of the worker's Playwright: where each begins in the user's code, told while the editor asks
+ * (`positions`), and each told as it ends while an agent follows the run. False when the instrumentation is missing.
  */
 export function watchCalls(playwright: unknown): boolean {
   const instrumentation = (playwright as { _instrumentation?: Instrumentation } | null)?._instrumentation;
@@ -105,6 +107,10 @@ export function watchCalls(playwright: unknown): boolean {
   const titles = new WeakMap<object, string>();
   instrumentation.addListener({
     onApiCallBegin: (zone: ApiZone, channel?: ApiChannel) => {
+      if (positionsWanted()) {
+        const place = callPlace(zone.frames);
+        if (place) tellPosition(callTitle(zone, channel), place);
+      }
       if (!runEventsWanted()) return;
       begun.set(zone, Date.now());
       titles.set(zone, callTitle(zone, channel));

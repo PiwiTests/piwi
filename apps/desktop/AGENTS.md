@@ -67,19 +67,17 @@ shell and are feature-equivalent.
   - Piwi Picker's pairing start, which answers only an extension's JSON request and keeps at most three waiting;
   - the pairing poll, which answers only with the secret the start gave. The token goes out once, after **Allow** in
     the window (`DesktopPickerPairingModal`), behind the guard.
-- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
-  `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
-  `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
-  `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
-  `desktop-<run id>`, which the window knows the run by). A job in a throwaway worktree (`worktree.rs`) runs instead on
-  the run channel of the live editor whose workspace holds its linked folder, when one does (`job_hub_env`, from the
-  route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server. A run nobody attends (Flake Lab, a bisect, a lab job, one
-  with `--ui`, or with `--repeat-each` above 1 unless it stops at its first failure) ends its ref in `-unattended`
-  (`attended_args`, mirrored by `desktopArgsAttended`), and the server never holds its failures. The hub's WebSocket
-  takes the desktop token in `hello`; it is `ShellRuns` (`packages/editor/src/shell-runs.ts`), which
-  `apps/application/server/utils/desktop-runs.ts` wires. Agents steer those runs only through `/mcp`, behind the same
-  token (`server/utils/mcp/run-tools.ts`), and never a run nobody attends. Piwi Runner's requested runs take the same
-  `bundled_hub_env` from Runner's host (`a_requested_run_names_the_hosts_hub_and_nothing_else` in `runner_app.rs`).
+- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test adds the hub's
+  environment (`bundled_hub_env`, and `job_hub_env` for a job in a worktree): the server's `PIWI_RUN_CHANNEL` and the
+  address its picks go to (`PIWI_EDITOR_SEND`), read from `GET /api/desktop/run-channel` on a connection that first
+  proved the host holds the token (`connect_proving_token`), and the `PIWI_RUN_REF` the shell names the run by
+  (`hub_env.rs`). Which spawns, their refs and a worktree job's editor:
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#runs-the-shell-starts).
+- **A run nobody attends ends its ref in `-unattended`, and the server never holds its failures** (`attended_args`,
+  mirrored by `desktopArgsAttended`): Flake Lab, a bisect, a lab job, a run with `--ui`, or with `--repeat-each` above
+  1 unless it stops at its first failure.
+- **The hub's WebSocket takes the desktop token in `hello`, and agents steer those runs only through `/mcp`, behind
+  the same token** (`server/utils/mcp/run-tools.ts`), never a run nobody attends.
 - **A test filter the window sends is anchored at the folder Playwright runs in before it runs.** The window writes
   each spec relative to the config's folder; `spec_filter::anchored_filters` makes it the whole path from the run's
   folder (`playwright_folder`), with its `file:` URL as an alternative on Windows, so it never takes a spec whose path
@@ -103,25 +101,15 @@ shell and are feature-equivalent.
   file's token gets.
 
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
-  (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
+  (`src-tauri/src/run_target.rs`). The window names the request id alone: the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
-  `isBrowserRequest`), refuses no arguments, a folder linked since, a folder another local or requested run is going in
-  (`runs_in`, `hold_folder`; the server hears those folders whenever a local run starts or ends, `hand_local_runs`, so
-  it checks a waiting request again) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
-  the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
-  `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
-  2 s each, each on its own thread, waited for 3 s in all) and deletes its folder before it stops the server. A run
-  that ends once the quit began ends stopped (`end_child`), and only that quit post tells the server of it
-  (`quit_requested_runs`); from then on no requested run is held or takes its folder (`hold`, `hold_folder`), and a run
-  spawned meanwhile is killed (`spawn_tests`). At startup each app removes its own leftover folders
-  (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
-  The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
-  each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a
-  restarted server ends only the requests the shell lost. A requested run's end stays held until the server answers its
-  `/ended` with a 200 (`tell_ended`); one still held goes in `PUT /key`'s `ended` and is forgotten once the server names
-  it back. A stop from the dashboard reaches the shell on its
-  notification stream, and so does `key-revoked`, which forgets the key only when it names the connected instance
-  (`key_revoked`).
+  `isBrowserRequest`), writes the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it
+  when the run ends. It refuses a request with no arguments, a folder linked since, a folder another local or
+  requested run is going in, or arguments past `REQUEST_ARGS_MAX_CHARS`. How a quit, a restart and a leftover folder
+  end a requested run: [`ARCHITECTURE.md`](ARCHITECTURE.md#requested-runs).
+- **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
+  set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that
+  names the connected instance (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`,
