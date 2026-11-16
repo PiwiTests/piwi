@@ -1669,7 +1669,9 @@ const tests = {
     // A yes: the test runs headed, with one worker, and its run alone stops at the failing line.
     await api.openDebugLink(link, (_prompt, answer) => Promise.resolve(answer));
     const run = await waitFor(() => (api.lastRun() !== before ? api.lastRun() : null), 'the debug run');
-    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3 --project=chromium --workers=1 --headed');
+    // The test by its whole path, anchored at its start.
+    const spec = `^${require('node:fs').realpathSync(workspace)}/tests/checkout.spec.ts:3`;
+    assert.equal(run.command, `npx playwright test "${spec}" --project=chromium --workers=1 --headed`);
     assert.ok(run.env.PIWI_PAUSE_AT.split(';').includes('tests/pages/checkout.page.ts:5'), run.env.PIWI_PAUSE_AT);
     assert.equal(vscode.debug.breakpoints.length, breakpoints, 'no breakpoint added to the editor’s');
     const { socket, heard, send, heardOne, answers } = runWorker(run.env.PIWI_RUN_CHANNEL, run.ref, [

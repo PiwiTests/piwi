@@ -338,7 +338,7 @@ object PiwiCommands {
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
-                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label, command.name) }
                     .getOrDefault(false)
                 if (!started) run(project, cwd, line, env, ref, command.label, command.name)
             }, project.disposed)

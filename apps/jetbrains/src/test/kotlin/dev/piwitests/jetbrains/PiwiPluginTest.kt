@@ -689,6 +689,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             com.intellij.execution.RunManager.getInstance(project).removeConfiguration(settings)
         }
+        // Named after the service's run name, whatever its arguments spell.
+        val anchored = listOf("^(?:C:/w/my shop/tests/a.spec.ts|file:///C:/w/my.20shop/tests/a.spec.ts):3")
+        val named = PlaywrightRunnerLauncher.configure(project, "C:\\w\\my shop", anchored, env, name = "a.spec.ts:3")!!
+        try {
+            assertEquals("Piwi: a.spec.ts:3", named.name)
+        } finally {
+            com.intellij.execution.RunManager.getInstance(project).removeConfiguration(named)
+        }
     }
 
     fun testFindsThePlaywrightConfigsAndHandsTheirFoldersToTheService() {
