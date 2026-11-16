@@ -167,6 +167,10 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   not you watch its lane, from a small `position` message each worker sends on the run channel. Design record in
   [proposals/running-line-every-lane.md](proposals/running-line-every-lane.md).
 
+- **The full test tree in both editors**: every test of the checkout, listed by Playwright itself, runnable alone or by
+  folder, spec, describe block or Playwright project, in VS Code's Testing view and a Tests tab in JetBrains, with
+  Piwi's results added from the instance. Design record in [proposals/ide-test-tree.md](proposals/ide-test-tree.md).
+
 - **Demo examples in the docs** — every feature page links to a concrete example in the live demo (a verified flake
   fix, a stored AI diagnosis, a broken locator with its replacements), from one registry of examples the seed is
   checked against, so a link never opens the wrong test when the demo data changes. The screenshot scenes and the
