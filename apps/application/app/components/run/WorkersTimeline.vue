@@ -420,10 +420,10 @@ function stripTop(lane: number): number | null {
   return index < 0 ? null : (rowsLayout.value.rows[index]?.stripTop ?? null);
 }
 
-/** The tracks a band draws, for the readout. */
-function tracksFor(band: ResourceBand) {
-  return bandLayout.value.find((entry) => entry.band.key === band.key)?.tracks ?? [];
-}
+/** Each band with the tracks it draws and where it sits, for the values beside the line across the timeline. */
+const cursorBands = computed(() =>
+  bandLayout.value.map((entry) => ({ band: entry.band, tracks: entry.tracks, top: bandTop(entry) })),
+);
 
 const expandedCount = computed(() => expandedExecutions.value.size);
 
@@ -630,42 +630,59 @@ function onBarLeave() {
   hover.item = null;
 }
 
-// The moment under the pointer in a resource band, read only by the readout
-// and the line across the rows, like the bars' hover state.
+// The moment under the pointer, read only by the line across the timeline
+// with the tracks' values beside it, and by the strip's readout, like the
+// bars' hover state. While the timeline draws resource tracks or strips, the
+// line follows a mouse anywhere over the plot, the test bars included.
 const resourceHover = reactive<{
-  band: ResourceBand | null;
+  /** Whether the line is drawn. */
+  on: boolean;
+  /** Whether the line's labels go on its left, near the viewport's right edge. */
+  flip: boolean;
   strip: { set: WorkerStripSet; strip: WorkerStrip } | null;
   t: number;
   pos: { x: number; y: number };
-}>({ band: null, strip: null, t: 0, pos: { x: 0, y: 0 } });
+}>({ on: false, flip: false, strip: null, t: 0, pos: { x: 0, y: 0 } });
 
-watch([bandLayout, workerStrips], ([layout, strips]) => {
-  if (resourceHover.band && !layout.some((entry) => entry.band.key === resourceHover.band!.key)) {
-    resourceHover.band = null;
-  }
+watch(workerStrips, (strips) => {
   if (resourceHover.strip && resourceHover.strip.set !== strips) resourceHover.strip = null;
 });
 
-function moveResourceHover(t: number, event: MouseEvent): void {
+/** Room the line's labels take beside it, past which they go on its left. */
+const CURSOR_LABEL_ROOM = 160;
+
+function trackPointer(event: PointerEvent): void {
+  const container = containerRef.value;
+  const drawsResources = bandLayout.value.length > 0 || workerStrips.value !== null;
+  if (event.pointerType === 'touch' || isPanning.value || !container || !drawsResources) {
+    resourceHover.on = false;
+    return;
+  }
+  const rect = container.getBoundingClientRect();
+  const t = (event.clientX - rect.left - panX.value - TIMELINE_LAYOUT.labelWidth) / pxPerMs.value;
+  resourceHover.on = t >= 0 && t <= plotEnd.value;
+  resourceHover.flip = rect.right - event.clientX < CURSOR_LABEL_ROOM;
   resourceHover.t = Math.max(0, Math.min(plotEnd.value, t));
   resourceHover.pos = { x: event.clientX, y: event.clientY };
 }
 
-function onResourceHover(band: ResourceBand, t: number, event: MouseEvent): void {
-  resourceHover.band = band;
+function onContainerPointerMove(event: PointerEvent): void {
+  onPointerMove(event);
+  trackPointer(event);
+}
+
+function onContainerPointerLeave(event: PointerEvent): void {
+  onPointerUp(event);
+  resourceHover.on = false;
   resourceHover.strip = null;
-  moveResourceHover(t, event);
 }
 
-function onStripHover(strip: WorkerStrip, t: number, event: MouseEvent): void {
+function onStripHover(strip: WorkerStrip): void {
   if (!workerStrips.value) return;
-  resourceHover.band = null;
   resourceHover.strip = { set: workerStrips.value, strip };
-  moveResourceHover(t, event);
 }
 
-function onResourceLeave(): void {
-  resourceHover.band = null;
+function onStripLeave(): void {
   resourceHover.strip = null;
 }
 
@@ -765,10 +782,10 @@ function selectSpanTest(tail: SpanTail): void {
       :style="{ height: contentHeight + 'px' }"
       @wheel.prevent="onWheel"
       @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
+      @pointermove="onContainerPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
-      @pointerleave="onPointerUp"
+      @pointerleave="onContainerPointerLeave"
     >
       <svg
         class="overflow-visible"
@@ -839,8 +856,6 @@ function selectSpanTest(tail: SpanTail): void {
           :px-per-ms="pxPerMs"
           :plot-width="plotEnd * pxPerMs"
           :left-open="leftOpenFor(entry.band)"
-          @hover="onResourceHover"
-          @leave="onResourceLeave"
         />
 
         <TimelineSpanTails
@@ -861,7 +876,7 @@ function selectSpanTest(tail: SpanTail): void {
           :px-per-ms="pxPerMs"
           :plot-width="plotEnd * pxPerMs"
           @hover="onStripHover"
-          @leave="onResourceLeave"
+          @leave="onStripLeave"
         />
 
         <TimelineBar
@@ -899,12 +914,18 @@ function selectSpanTest(tail: SpanTail): void {
           :ghost-width="ghostWidth"
         />
 
-        <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />
+        <TimelineResourceCursor
+          :state="resourceHover"
+          :px-per-ms="pxPerMs"
+          :content-height="contentHeight"
+          :bands="cursorBands"
+          :left-open-for="leftOpenFor"
+        />
       </svg>
     </div>
 
     <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" :attempts="attemptsFor" />
-    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" :left-open-for="leftOpenFor" />
+    <TimelineResourceTooltip :state="resourceHover" />
     <TimelineSpanTooltip :state="spanHover" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />

@@ -3,13 +3,14 @@
  * One band of resource tracks: the CPU, memory and open pages one reporter
  * measured, stacked above the worker rows of its shard. Each path is built
  * once in milliseconds and scaled to the zoom by its group's transform, so a
- * zoom moves the tracks without rebuilding them. The pointer over the band
- * reports the moment under it, for the readout and the line across the rows.
+ * zoom moves the tracks without rebuilding them. Each track has its own color
+ * (`RESOURCE_TRACK_COLOR`), the area under it deepening toward its top.
  */
 import { computed } from 'vue';
 import type { SeriesPoint } from '#shared/types';
 import { TIMELINE_LAYOUT } from '~/utils/timeline';
 import {
+  RESOURCE_TRACK_COLOR,
   RESOURCE_TRACK_KINDS,
   seriesPaths,
   trackPaths,
@@ -30,11 +31,6 @@ const props = defineProps<{
   leftOpen?: SeriesPoint[] | null;
 }>();
 
-const emit = defineEmits<{
-  hover: [band: ResourceBand, t: number, event: MouseEvent];
-  leave: [];
-}>();
-
 const { labelWidth, trackHeight, trackGap } = TIMELINE_LAYOUT;
 const trackStride = trackHeight + trackGap;
 
@@ -48,6 +44,8 @@ const drawn = computed(() =>
     track,
     top: i * trackStride,
     name: props.band.prefix ? `${props.band.prefix} ${LABEL[track.kind]}` : LABEL[track.kind],
+    color: RESOURCE_TRACK_COLOR[track.kind],
+    fillId: `timeline-${props.band.key}-${track.kind}-fill`,
     ...trackPaths(track, trackHeight),
     leftOpen:
       track.kind === 'pages' && props.leftOpen?.length
@@ -55,13 +53,6 @@ const drawn = computed(() =>
         : '',
   })),
 );
-
-function onMove(event: MouseEvent): void {
-  const svg = (event.currentTarget as SVGElement).ownerSVGElement;
-  if (!svg) return;
-  const x = event.clientX - svg.getBoundingClientRect().left;
-  emit('hover', props.band, (x - labelWidth) / props.pxPerMs, event);
-}
 </script>
 
 <template>
@@ -70,6 +61,13 @@ function onMove(event: MouseEvent): void {
       <clipPath :id="clipId">
         <rect :x="labelWidth" :y="0" :width="Math.max(0, plotWidth)" :height="height" />
       </clipPath>
+      <ResourceFillGradient
+        v-for="item in drawn"
+        :id="item.fillId"
+        :key="item.fillId"
+        :height="trackHeight"
+        :color-class="item.color"
+      />
     </defs>
     <g v-for="item in drawn" :key="item.track.kind" :data-resource-track="item.track.kind">
       <text :x="6" :y="item.top + 9" class="fill-gray-500 text-[11px] font-medium">{{ item.name }}</text>
@@ -91,8 +89,8 @@ function onMove(event: MouseEvent): void {
         class="stroke-gray-400 dark:stroke-gray-500"
       />
       <g :clip-path="`url(#${clipId})`">
-        <g :transform="`translate(${labelWidth}, ${item.top}) scale(${pxPerMs}, 1)`">
-          <path :d="item.area" class="fill-gray-400/20 dark:fill-gray-400/15" />
+        <g :transform="`translate(${labelWidth}, ${item.top}) scale(${pxPerMs}, 1)`" :class="item.color">
+          <path :d="item.area" :fill="`url(#${item.fillId})`" />
           <path
             v-if="item.leftOpen"
             :d="item.leftOpen"
@@ -105,7 +103,7 @@ function onMove(event: MouseEvent): void {
             stroke-width="1.5"
             stroke-linejoin="round"
             vector-effect="non-scaling-stroke"
-            class="stroke-gray-500 dark:stroke-gray-400"
+            stroke="currentColor"
           />
         </g>
       </g>
@@ -117,9 +115,6 @@ function onMove(event: MouseEvent): void {
       :height="height"
       fill="transparent"
       data-testid="timeline-resource-band"
-      @mousemove="onMove"
-      @mouseenter="onMove"
-      @mouseleave="emit('leave')"
     />
   </g>
 </template>

@@ -112,10 +112,17 @@ test.describe('Run timeline resource tracks', () => {
     const band = page.getByTestId('timeline-resource-band');
     const box = (await band.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
-    const tooltip = page.getByTestId('timeline-resource-tooltip');
-    await expect(tooltip).toContainText('90%');
-    await expect(tooltip).toContainText('3 open · Worker 1: 1 · Worker 2: 2');
-    await expect(page.getByTestId('timeline-resource-cursor')).toBeAttached();
+    const cursor = page.getByTestId('timeline-resource-cursor');
+    await expect(cursor.locator('[data-resource-reading="cpu"]')).toHaveText('90%');
+    await expect(cursor.locator('[data-resource-reading="memory"]')).toHaveText('3.0 GB');
+    await expect(cursor.locator('[data-resource-reading="pages"]')).toHaveText('3 open');
+    await expect(page.getByTestId('timeline-resource-cursor-time')).toHaveText('2.0s');
+
+    // The line follows the pointer over the test bars too, the tracks' values beside it.
+    const bar = page.locator('[data-timeline-test]').first();
+    const barBox = (await bar.boundingBox())!;
+    await page.mouse.move(barBox.x + barBox.width * 0.25, barBox.y + barBox.height / 2);
+    await expect(cursor.locator('[data-resource-reading="cpu"]')).toBeVisible();
 
     await page.mouse.move(0, 0);
     await page.getByTestId('timeline-resources-menu').click();
@@ -274,7 +281,9 @@ test.describe('Run timeline leaks', () => {
     const band = page.getByTestId('timeline-resource-band');
     const bandBox = (await band.boundingBox())!;
     await page.mouse.move(bandBox.x + bandBox.width * 0.85, bandBox.y + bandBox.height / 2);
-    await expect(page.getByTestId('timeline-resource-tooltip')).toContainText('1 left open by earlier tests');
+    await expect(page.getByTestId('timeline-resource-cursor').locator('[data-resource-reading="pages"]')).toContainText(
+      '1 left open',
+    );
 
     const leaked = page.locator('[data-span-tails-verdict="leaked"]');
     const box = (await leaked.boundingBox())!;

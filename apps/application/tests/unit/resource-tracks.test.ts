@@ -11,7 +11,9 @@ import {
   stripReading,
   sumSteps,
   trackPaths,
+  trackReadings,
   valueAt,
+  workerMetricColor,
 } from '../../app/utils/resource-tracks';
 import type { TimelineItem, WorkerRow } from '../../app/composables/useTimelineModel';
 import type { RunExecutionCost, RunResourceTimelinePart } from '../../shared/handlers/run-resources';
@@ -229,6 +231,29 @@ describe('formatTrackValue', () => {
     expect(formatTrackValue('cpu', 63.4)).toBe('63%');
     expect(formatTrackValue('memory', 2.5 * GB)).toBe('2.5 GB');
     expect(formatTrackValue('pages', 4)).toBe('4 open');
+  });
+});
+
+describe('trackReadings', () => {
+  const [band] = buildResourceBands([part(null)], [row(null, 0, [0, 2], 0), row(null, 1, [1], 1)], 10_000, false);
+  const tracks = shownTracks(band!, ALL_RESOURCE_TRACKS);
+
+  test('reads every track at a moment, the memory with how it was measured', () => {
+    expect(trackReadings(band!, tracks, 1000).map((reading) => reading.text)).toEqual(['40%', '2.0 GB PSS', '3 open']);
+  });
+
+  test('says how many open pages earlier tests left open, and where no reading is near', () => {
+    const leftOpen: Array<[number, number]> = [
+      [0, 1],
+      [1500, 0],
+    ];
+    expect(trackReadings(band!, tracks, 1000, leftOpen)[2]!.text).toBe('3 open, 1 left open');
+    expect(trackReadings(band!, tracks, 20_000)[0]).toEqual({ kind: 'cpu', value: null, text: 'not read' });
+  });
+
+  test('colors a strip as its track, the wait for a CPU as the CPU', () => {
+    expect(workerMetricColor('wait')).toBe(workerMetricColor('cpu'));
+    expect(new Set(['cpu', 'memory', 'pages'].map((kind) => workerMetricColor(kind as 'cpu'))).size).toBe(3);
   });
 });
 

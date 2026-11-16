@@ -19,6 +19,20 @@ export const RESOURCE_TRACK_KINDS: ReadonlyArray<{ kind: ResourceTrackKind; labe
   { kind: 'pages', label: 'Pages', menuLabel: 'Open pages' },
 ];
 
+/**
+ * Each track's color, a text color its marks paint with `currentColor`: one hue per track, none of them an outcome's
+ * or the accent, so a track never reads as a test's status. The area under a track deepens toward its top, so a
+ * high value stands out (`RESOURCE_FILL_STOPS`).
+ */
+export const RESOURCE_TRACK_COLOR: Record<ResourceTrackKind, string> = {
+  cpu: 'text-orange-600 dark:text-orange-500',
+  memory: 'text-sky-500',
+  pages: 'text-indigo-500',
+};
+
+/** The opacity of a track's color in the area under it: at its baseline, then at its top. */
+export const RESOURCE_FILL_STOPS = { bottom: 0.06, top: 0.4 } as const;
+
 /** Which tracks are shown: all of them until the viewer turns one off. */
 export type ResourceTrackVisibility = Record<ResourceTrackKind, boolean>;
 export const ALL_RESOURCE_TRACKS: ResourceTrackVisibility = { cpu: true, memory: true, pages: true };
@@ -262,6 +276,38 @@ export function formatTrackValue(kind: ResourceTrackKind, value: number): string
   return `${value} open`;
 }
 
+/** What one track reads at a moment, as the label beside the line across the timeline prints it. */
+export interface TrackReading {
+  kind: ResourceTrackKind;
+  /** Null where no reading is near. */
+  value: number | null;
+  text: string;
+}
+
+/**
+ * Each track's reading at `t`: the CPU, the memory with how it was measured
+ * (PSS or RSS), and the open pages with how many of them earlier tests left
+ * open (`leftOpen`, a step series).
+ */
+export function trackReadings(
+  band: ResourceBand,
+  tracks: ResourceTrack[],
+  t: number,
+  leftOpen?: SeriesPoint[] | null,
+): TrackReading[] {
+  return tracks.map((track) => {
+    const value = valueAt(track.points, t, track.step);
+    if (value === null) return { kind: track.kind, value, text: 'not read' };
+    let text = formatTrackValue(track.kind, value);
+    if (track.kind === 'memory' && band.memoryKind) text += ` ${band.memoryKind.toUpperCase()}`;
+    if (track.kind === 'pages' && leftOpen?.length) {
+      const left = Math.min(value, valueAt(leftOpen, t, true) ?? 0);
+      if (left > 0) text += `, ${left} left open`;
+    }
+    return { kind: track.kind, value, text };
+  });
+}
+
 // ── Under each worker ─────────────────────────────────────────────────────────
 
 export type WorkerMetricKind = 'pages' | 'cpu' | 'wait' | 'memory';
@@ -273,6 +319,11 @@ export const WORKER_METRICS: ReadonlyArray<{ kind: WorkerMetricKind; menuLabel: 
   { kind: 'wait', menuLabel: 'Waiting for a CPU' },
   { kind: 'memory', menuLabel: 'Memory' },
 ];
+
+/** A strip's color: its track's, and the CPU's for the wait for a CPU. */
+export function workerMetricColor(kind: WorkerMetricKind): string {
+  return RESOURCE_TRACK_COLOR[kind === 'wait' ? 'cpu' : kind];
+}
 
 /** One test's value, drawn across its bar. */
 export interface StripSpan {

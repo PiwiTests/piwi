@@ -2,13 +2,20 @@
 /**
  * The strip under each worker row: one metric for every worker, on one scale
  * so the rows compare. Open pages draw as a level held until it changes, the
- * sampler's readings as a line, a test's cost as a bar across the test. Each path is built once in
+ * sampler's readings as a line, a test's cost as a bar across the test, in the
+ * color of the matching resource track. Each path is built once in
  * milliseconds and scaled to the zoom by its group's transform, like the
  * resource tracks; the pointer reports the strip and moment under it.
  */
 import { computed } from 'vue';
 import { TIMELINE_LAYOUT } from '~/utils/timeline';
-import { seriesPaths, spansPath, type WorkerStrip, type WorkerStripSet } from '~/utils/resource-tracks';
+import {
+  seriesPaths,
+  spansPath,
+  workerMetricColor,
+  type WorkerStrip,
+  type WorkerStripSet,
+} from '~/utils/resource-tracks';
 
 const props = defineProps<{
   set: WorkerStripSet;
@@ -25,6 +32,8 @@ const emit = defineEmits<{
 }>();
 
 const { labelWidth, stripPlot } = TIMELINE_LAYOUT;
+
+const color = computed(() => workerMetricColor(props.set.kind));
 
 const paths = computed(() =>
   props.set.strips.map((strip) => ({
@@ -50,6 +59,7 @@ function onMove(strip: WorkerStrip, event: MouseEvent): void {
       <clipPath id="timeline-worker-strip-clip">
         <rect :x="labelWidth" :y="0" :width="Math.max(0, plotWidth)" :height="stripPlot" />
       </clipPath>
+      <ResourceFillGradient id="timeline-worker-strip-fill" :height="stripPlot" :color-class="color" />
     </defs>
     <template v-for="item in paths" :key="item.strip.lane">
       <g v-if="stripTop(item.strip.lane) !== null" :transform="`translate(0, ${stripTop(item.strip.lane)})`">
@@ -62,8 +72,8 @@ function onMove(strip: WorkerStrip, event: MouseEvent): void {
           class="stroke-gray-200 dark:stroke-gray-700"
         />
         <g clip-path="url(#timeline-worker-strip-clip)">
-          <g :transform="`translate(${labelWidth}, 0) scale(${pxPerMs}, 1)`">
-            <path :d="item.area" class="fill-gray-400/40 dark:fill-gray-400/30" />
+          <g :transform="`translate(${labelWidth}, 0) scale(${pxPerMs}, 1)`" :class="color">
+            <path :d="item.area" fill="url(#timeline-worker-strip-fill)" />
             <path v-if="item.leftOpen" :d="item.leftOpen" class="fill-red-500/45 dark:fill-red-400/40" />
             <path
               v-if="item.line"
@@ -71,7 +81,7 @@ function onMove(strip: WorkerStrip, event: MouseEvent): void {
               fill="none"
               stroke-width="1"
               vector-effect="non-scaling-stroke"
-              class="stroke-gray-500 dark:stroke-gray-400"
+              stroke="currentColor"
             />
           </g>
         </g>
