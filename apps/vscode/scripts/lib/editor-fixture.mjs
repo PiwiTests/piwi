@@ -210,15 +210,20 @@ export default wrapConfig(
 `;
 
 /**
- * Enough of the reporter's types, and of Nitro's auto-imports, for the editor's TypeScript to report nothing of its own.
+ * Enough of the reporter's types, and of Nitro's auto-imports, for the editor's TypeScript to report nothing of its own,
+ * and enough of the reporter for Playwright to load the config and the specs, as the editor service lists the tests.
  * Playwright itself is this repository's, copied in by `writeWorkspace`.
  */
 const TYPE_STUBS = {
   'node_modules/@piwitests/reporter/package.json': JSON.stringify({
     name: '@piwitests/reporter',
     version: '0.56.0',
+    main: 'index.js',
     types: 'index.d.ts',
   }),
+  'node_modules/@piwitests/reporter/index.js': `exports.piwiFixtures = {};
+exports.wrapConfig = (config) => config;
+`,
   'node_modules/@piwitests/reporter/index.d.ts': `export declare const piwiFixtures: any;
 export declare function wrapConfig(config: any, options: any): any;
 `,
