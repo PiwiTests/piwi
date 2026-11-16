@@ -30,6 +30,7 @@ import {
   CodeActionKind,
   CompletionItemKind,
   DiagnosticSeverity,
+  DidChangeWatchedFilesNotification,
   InsertTextFormat,
   TextDocuments,
   TextDocumentSyncKind,
@@ -95,6 +96,7 @@ import {
   stableReplacement,
   TEST_CALL,
   testCalls,
+  describeEnds,
   caseOfCall,
   caseOfCallOrTitle,
   withoutComments,
@@ -180,7 +182,6 @@ import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { RunStreams } from './run-stream.js';
 import { CiSessions } from './ci-sessions.js';
 import { CiWatch } from './ci-watch.js';
-import { specPattern } from '@piwitests/core/spec-filter';
 import {
   breakpointLines,
   declaredNamesAt,
@@ -189,7 +190,10 @@ import {
   recordPlace,
   recordPlacer,
 } from './recorder/page-candidates.js';
-import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
+import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
+import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
+import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
+import { configTree, locationArg, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
@@ -280,6 +284,8 @@ import {
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
+  TEST_ITEMS_CHANGED_NOTIFICATION,
+  TEST_RUNS_REQUEST,
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
@@ -419,7 +425,8 @@ import {
   type TestsForFileParams,
   type TestItemsParams,
   type TestItemsResult,
-  type SpecTests,
+  type TreeTest,
+  type TestRunsParams,
   type RunCommandArgs,
   type TraceParams,
   type PiwiCommand,
@@ -439,6 +446,16 @@ import {
 
 /** How often every context fetches its indexes again. */
 const REFRESH_MS = 5 * 60_000;
+/** How long Playwright may take to list a config's tests. */
+const LIST_TIMEOUT_MS = 120_000;
+/** The most output kept from a listing. */
+const LIST_MAX_OUTPUT = 64 * 1024 * 1024;
+/** The wait after a listing ends before the tree it changed is pushed, so listings that end together push once. */
+const TEST_ITEMS_PUSH_MS = 200;
+/** The wait after a file changes on disk before the specs that changed are listed, so a burst lists them once. */
+const WATCHED_FILES_MS = 300;
+/** The scripts whose changes the service follows, for the listing: a spec saved, created or deleted. */
+const WATCHED_SCRIPTS = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 /** The first wait before an instance that did not answer is read again; doubled each time, up to `REFRESH_MS`. */
 const UNREACHABLE_RETRY_MS = 15_000;
 /** How often the latest run is read again while it runs, and otherwise. */
@@ -517,6 +534,8 @@ export interface ServerOptions {
   traceDisplay?: () => boolean;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
+  /** Runs a config's Playwright in list mode for the test tree; with the config's own Playwright by default. */
+  listTests?: ListRunner;
   /**
    * What the service's discovery file says (`~/.piwi/editors/<pid>.json`): called once the run channel and the hub
    * listen, and with null as the service stops. The process's entry writes and removes the file (`main.ts`).
@@ -1033,6 +1052,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let lastRunStatus = '';
   /** Whether the client previews an edit whose change annotation asks for confirmation. */
   let previewsEdits = false;
+  /** Whether the client watches files for the service when asked (`workspace/didChangeWatchedFiles`). */
+  let watchesFiles = false;
   /** The runs' streams: the contexts' runs in progress and the CI sessions read one connection per run. */
   const runStreams = new RunStreams();
   /** The client's one watch of a CI run's lane on the instance, read-only. */
@@ -2152,6 +2173,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const projectOptions =
     options.readProjectOptions ??
     ((configFile: string) => readProjectOptions(configFile, path.join(distDir, 'piwi-use-reporter.cjs')));
+  /** Each config's listing, for the test tree: asked for by the first `piwi/testItems` of the whole tree. */
+  const testListings = new TestListings(
+    options.listTests ??
+      ((configFile, args) =>
+        listWithReporter(configFile, path.join(distDir, 'piwi-use-reporter.cjs'), args, {
+          timeoutMs: LIST_TIMEOUT_MS,
+          doing: `list the tests of ${path.basename(configFile)}`,
+          env: { [LIST_TESTS_ENV]: '1' },
+          maxOutput: LIST_MAX_OUTPUT,
+        })),
+    () => pushTestItemsSoon(),
+  );
   /**
    * The record channel every test run the service builds names (`PIWI_RECORD_CHANNEL`, and `PIWI_RUN_CHANNEL`): a test
    * paused there asks to record from where it is, which the client is asked to start (`piwi/recordRequested`), and
@@ -2842,6 +2875,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const root = uriToPath(params.rootUri);
       if (root) folders = [root];
     }
+    watchesFiles = params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration === true;
     const workspaceEdit = params.capabilities.workspace?.workspaceEdit;
     previewsEdits = !!workspaceEdit?.documentChanges && !!workspaceEdit.changeAnnotationSupport;
     const init = params.initializationOptions as InitializationOptions | undefined;
@@ -2896,6 +2930,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     applyBaselines();
     void refreshAll();
     void pruneEvidence();
+    // A spec saved, created or deleted is listed again, for the test tree.
+    if (watchesFiles) {
+      void connection.client
+        .register(DidChangeWatchedFilesNotification.type, { watchers: [{ globPattern: WATCHED_SCRIPTS }] })
+        .catch(() => {});
+    }
     refreshTimer = setInterval(() => void refreshAll(), options.refreshMs ?? REFRESH_MS);
     refreshTimer.unref?.();
     pollRuns();
@@ -3445,6 +3485,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     lines: string[],
     cases: CatalogCase[],
     pass: Placer,
+    calls: TestCall[] = testCalls(lines),
   ): Array<{
     call: TestCall;
     found?: CatalogCase;
@@ -3458,7 +3499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     own?: OwnRunTest;
   }> => {
     const { failingNow, fixedNow } = byCase(context.failures);
-    return testCalls(lines).map((call) => {
+    return calls.map((call) => {
       const found = caseOfCall(cases, call);
       const own = ownTestOf(context, file, call);
       if (!found) return { call, status: own?.status ?? null, duration: null, ...(own ? { own } : {}) };
@@ -3851,76 +3892,297 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
-  connection.onRequest(TEST_ITEMS_REQUEST, async (params: TestItemsParams | null): Promise<TestItemsResult> => {
+  /** Whether a spec open in the editor has changes it did not save: its text differs from the file's. */
+  const unsaved = (file: string): boolean => {
+    const open = openDocument(file);
+    if (!open) return false;
+    try {
+      return open.getText() !== fs.readFileSync(file, 'utf-8');
+    } catch {
+      return true;
+    }
+  };
+
+  /** When a file last changed on disk (ms); null when it is gone. */
+  const modifiedAt = (file: string): number | null => {
+    try {
+      return fs.statSync(file).mtimeMs;
+    } catch {
+      return null;
+    }
+  };
+
+  /** A test of a spec as the tree reads it: its call, its projects and its describe blocks' lines. */
+  interface ReadTest {
+    call: TestCall;
+    playwright: Array<{ project: string; id: string }>;
+    suiteRanges: Array<{ start: number; end: number } | null>;
+    /** Its Playwright tags, from the listing; null for a test read from the text. */
+    tags: string[] | null;
+  }
+
+  /**
+   * A spec's tests as the listing gives them: one per test, with each project it runs in, at the line its call starts
+   * on, which ends where the spec's text says the call there ends.
+   */
+  const listedTests = (listed: readonly ListedTest[], lines: string[]): ReadTest[] => {
+    const parsed = testCalls(lines);
+    const ends = describeEnds(lines);
+    const byKey = new Map<string, ReadTest>();
+    const read: ReadTest[] = [];
+    for (const t of [...listed].sort((a, b) => a.line - b.line || a.column - b.column)) {
+      const suite = t.suites.map((s) => s.title);
+      const key = [...suite, t.title].join('\x1f');
+      const held = byKey.get(key);
+      if (held) {
+        held.playwright.push({ project: t.project, id: t.id });
+        continue;
+      }
+      const line = t.line - 1;
+      const test: ReadTest = {
+        call: {
+          line,
+          endLine: parsed.find((c) => c.line === line)?.endLine ?? line,
+          title: t.title,
+          suite,
+          suiteUnread: false,
+        },
+        playwright: [{ project: t.project, id: t.id }],
+        suiteRanges: t.suites.map((s) => ({ start: s.line - 1, end: ends.get(s.line - 1) ?? s.line - 1 })),
+        tags: t.tags,
+      };
+      byKey.set(key, test);
+      read.push(test);
+    }
+    return read;
+  };
+
+  /** A spec's tests as its text reads, each with the projects of the listed test of its titles, if any. */
+  const textTests = (listed: readonly ListedTest[], lines: string[]): ReadTest[] =>
+    testCalls(lines).map((call) => {
+      const key = [...call.suite, call.title].join('\x1f');
+      const same = listed.filter((t) => [...t.suites.map((s) => s.title), t.title].join('\x1f') === key);
+      return {
+        call,
+        playwright: same.map((t) => ({ project: t.project, id: t.id })),
+        suiteRanges: call.suite.map(() => null),
+        tags: same[0]?.tags ?? null,
+      };
+    });
+
+  /** A test of the catalog that no test of the checkout is, as the tree shows it. */
+  const missingTest = (context: PiwiContext, c: CatalogCase): TreeTest => ({
+    title: c.title,
+    suite: c.suitePath ? c.suitePath.split('\x1f') : [],
+    line: 0,
+    endLine: 0,
+    location: '',
+    testCaseId: c.id,
+    status: c.status ? testLineStatus(c.status) : null,
+    failure: null,
+    url: context.client?.testUrl(c.id) ?? null,
+    tags: playwrightTags(c.tags),
+    owner: c.owner?.trim() || null,
+    quarantined: context.quarantined.has(c.id),
+    resultDurationMs: typeof c.lastDuration === 'number' ? Math.round(c.lastDuration) : null,
+    root: context.root,
+    uri: '',
+    playwright: [],
+  });
+
+  /** Start the listing of each config not listed yet. */
+  const startListings = () => {
+    for (const context of contexts) {
+      if (testListings.listed(context.root)) continue;
+      const configFile = playwrightConfigFile(context.root);
+      if (configFile) testListings.listAll(context.root, configFile);
+    }
+  };
+
+  /**
+   * The test tree (`piwi/testItems`). A spec takes its tests from the listing while the listing has seen it as it
+   * stands (saved, and listed since it last changed, and loading), else from its text, as before a config's first
+   * listing or for one Playwright cannot list.
+   */
+  const testItemsOf = async (params: TestItemsParams | null): Promise<TestItemsResult> => {
+    const whole = params?.catalog !== false;
+    if (whole) startListings();
     const pass = placer();
-    const specs = new Map<PiwiContext, SpecTests[]>();
-    /** A spec of the context's folder as it stands, with the catalog's cases of its tests. */
-    const add = (context: PiwiContext, file: string, relative: string, cases: CatalogCase[]) => {
-      const text = readText(file);
-      if (text === null) return;
-      const uri = pathToFileURL(file).href;
-      const tests = specTests(context, file, text.split(/\r?\n/), cases, pass).map(
-        ({ call, found, failure, status, duration }) => ({
-          title: call.title,
-          suite: call.suite,
-          line: call.line,
-          endLine: call.endLine,
-          location: `${relative}:${call.line + 1}`,
-          testCaseId: found?.id ?? null,
-          status,
-          failure: failure ?? null,
-          url: found ? (context.client?.testUrl(found.id) ?? null) : null,
-          tags: playwrightTags(found?.tags),
-          owner: found?.owner?.trim() || null,
-          quarantined: found ? context.quarantined.has(found.id) : false,
-          resultDurationMs: duration,
-        }),
-      );
-      specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);
-    };
-    /** The specs answered, by path. */
-    const answered = new Set<string>();
-    if (params?.catalog !== false) {
-      for (const context of contexts) {
-        // The catalog's specs the workspace holds, each from the config whose folder holds it.
-        const byFile = new Map<string, CatalogCase[]>();
+    const named = new Set<string>();
+    for (const uri of Array.isArray(params?.uris) ? params.uris : []) {
+      const file = typeof uri === 'string' ? uriToPath(uri) : null;
+      if (file) named.add(file);
+    }
+    /** The catalog's tests the checkout does not hold, placed once whichever config reads them. */
+    const placedMissing = new Set<string>();
+    const result: TestItemsResult = { contexts: [] };
+    for (const context of contexts) {
+      const state = testListings.state(context.root);
+      const listing = state?.listing ?? null;
+      /** The specs answered, by path, with the catalog's cases of each when they were read with the catalog. */
+      const specs = new Map<string, { relative: string; cases: CatalogCase[] | null }>();
+      const add = (file: string, relative: string, cases: CatalogCase[] | null) => {
+        if (!specs.has(file)) specs.set(file, { relative, cases });
+      };
+      const casesByFile = new Map<string, CatalogCase[]>();
+      const notHeld: CatalogCase[] = [];
+      if (whole) {
         const found = new Map<string, string | null>();
         for (const c of await context.allCases()) {
           if (!found.has(c.filePath)) {
             found.set(c.filePath, resolveReportedFile([context.root, context.repoRoot], c.filePath));
           }
           const file = found.get(c.filePath);
-          if (file) byFile.set(file, [...(byFile.get(file) ?? []), c]);
+          const relative = file ? relativeTo(context.root, file) : null;
+          if (!file) notHeld.push(c);
+          else if (relative && contextFor(file) === context) {
+            casesByFile.set(relative, [...(casesByFile.get(relative) ?? []), c]);
+          }
         }
-        for (const [file, cases] of byFile) {
-          const relative = relativeTo(context.root, file);
-          if (!relative || !SPEC_FILE.test(relative) || contextFor(file) !== context) continue;
-          answered.add(file);
-          add(context, file, relative, cases);
+        if (listing) {
+          for (const relative of [...listing.specs.keys(), ...listing.broken.keys()]) {
+            add(path.join(context.root, ...relative.split('/')), relative, casesByFile.get(relative) ?? []);
+          }
+        }
+        for (const [relative, cases] of casesByFile) {
+          if (!SPEC_FILE.test(relative)) continue;
+          const file = path.join(context.root, ...relative.split('/'));
+          // With a listing, a spec it does not hold is one it has not seen yet: a spec created since.
+          if (listing && (modifiedAt(file) ?? 0) <= listing.at) continue;
+          add(file, relative, cases);
         }
       }
+      for (const file of named) {
+        const relative = relativeTo(context.root, file);
+        if (!relative || contextFor(file) !== context) continue;
+        if (!SPEC_FILE.test(relative) && !listing?.specs.has(relative)) continue;
+        add(file, relative, whole ? (casesByFile.get(relative) ?? []) : null);
+      }
+      const treeSpecs: TreeSpec[] = [];
+      const missing: MissingTest[] = [];
+      for (const [file, { relative, cases: known }] of specs) {
+        const text = readText(file);
+        if (text === null) continue;
+        const cases = known ?? (await context.casesOf(relative).catch(() => []));
+        const lines = text.split(/\r?\n/);
+        const listed = listing?.specs.get(relative) ?? [];
+        const fresh =
+          listed.length > 0 &&
+          !listing!.broken.has(relative) &&
+          !unsaved(file) &&
+          (listing!.listedAt.get(relative) ?? 0) >= (modifiedAt(file) ?? Infinity);
+        const read = fresh ? listedTests(listed, lines) : textTests(listed, lines);
+        const tests = specTests(
+          context,
+          file,
+          lines,
+          cases,
+          pass,
+          read.map((r) => r.call),
+        );
+        const uri = pathToFileURL(file).href;
+        treeSpecs.push({
+          uri,
+          file: relative,
+          entries: tests.map(({ call, found, failure, status, duration }, i) => ({
+            test: {
+              title: call.title,
+              suite: call.suite,
+              line: call.line,
+              endLine: call.endLine,
+              location: `${relative}:${call.line + 1}`,
+              testCaseId: found?.id ?? null,
+              status,
+              failure: failure ?? null,
+              url: found ? (context.client?.testUrl(found.id) ?? null) : null,
+              tags: read[i]!.tags ?? playwrightTags(found?.tags),
+              owner: found?.owner?.trim() || null,
+              quarantined: found ? context.quarantined.has(found.id) : false,
+              resultDurationMs: duration,
+              root: context.root,
+              uri,
+              playwright: read[i]!.playwright,
+            },
+            suiteRanges: read[i]!.suiteRanges,
+          })),
+        });
+        // A test of the catalog the listing does not give in this spec: deleted or renamed here, or another branch's.
+        if (fresh && whole) {
+          const matched = new Set(tests.flatMap((t) => (t.found ? [t.found.id] : [])));
+          for (const c of cases)
+            if (!matched.has(c.id)) missing.push({ file: relative, test: missingTest(context, c) });
+        }
+      }
+      if (whole && listing) {
+        for (const c of notHeld) {
+          const key = context.client?.testUrl(c.id) ?? `${context.root}\0${c.id}`;
+          if (placedMissing.has(key)) continue;
+          placedMissing.add(key);
+          missing.push({ file: c.filePath, test: missingTest(context, c) });
+        }
+      }
+      const nodes = configTree(context.root, treeSpecs, missing);
+      if (!nodes.length && !state?.error) continue;
+      result.contexts.push({
+        root: context.root,
+        label: contextLabel(context.root, folders),
+        listing: state ? { at: state.listing?.at ?? null, error: state.error, running: state.running } : null,
+        nodes,
+      });
     }
-    for (const uri of Array.isArray(params?.uris) ? params.uris : []) {
-      const file = typeof uri === 'string' ? uriToPath(uri) : null;
-      const context = file ? contextFor(file) : null;
-      const relative = file && context ? relativeTo(context.root, file) : null;
-      if (!file || !context || !relative || !SPEC_FILE.test(relative) || answered.has(file)) continue;
-      answered.add(file);
-      add(context, file, relative, await context.casesOf(relative));
-    }
-    return {
-      contexts: contexts.flatMap((context) => {
-        const held = specs.get(context);
-        if (!held) return [];
-        return [
-          {
-            root: context.root,
-            label: contextLabel(context.root, folders),
-            specs: held.sort((a, b) => a.file.localeCompare(b.file)),
-          },
-        ];
-      }),
-    };
+    return result;
+  };
+
+  /** The whole tree last sent or answered, which a push compares with. */
+  let testItemsSent = '';
+  let testItemsTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The whole tree, as the client asks for it: with the specs open in the editor. */
+  const wholeTestItems = () =>
+    testItemsOf({ uris: documents.all().map((d) => d.uri) }).then((answer) => {
+      testItemsSent = JSON.stringify(answer);
+      return answer;
+    });
+  /** A listing ended: the whole tree goes to the client when it changed. */
+  const pushTestItemsSoon = () => {
+    if (testItemsTimer || stopped) return;
+    testItemsTimer = setTimeout(() => {
+      testItemsTimer = null;
+      const before = testItemsSent;
+      void wholeTestItems()
+        .then((answer) => {
+          if (testItemsSent !== before && !stopped) {
+            void connection.sendNotification(TEST_ITEMS_CHANGED_NOTIFICATION, answer);
+          }
+        })
+        .catch(() => {});
+    }, TEST_ITEMS_PUSH_MS);
+    testItemsTimer.unref?.();
+  };
+
+  connection.onRequest(TEST_ITEMS_REQUEST, async (params: TestItemsParams | null): Promise<TestItemsResult> => {
+    const answer = await testItemsOf(params);
+    if (params?.catalog !== false) testItemsSent = JSON.stringify(answer);
+    return answer;
+  });
+
+  /** The runs of the nodes a client picked in its test tree, read from the tree as it stands (`nodeRuns`). */
+  connection.onRequest(TEST_RUNS_REQUEST, async (params: TestRunsParams | null): Promise<RunTestsArgs[]> => {
+    const ids = (value: unknown) =>
+      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    const tree = await testItemsOf({ uris: documents.all().map((d) => d.uri) });
+    const repeat = typeof params?.repeat === 'number' ? params.repeat : null;
+    const contexts = tree.contexts.map((c) => ({ ...c, folder: canonicalPath(c.root) }));
+    return nodeRuns(contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
+      uri: run.uri ?? pathToFileURL(run.root).href,
+      root: run.root,
+      testIds: [],
+      ...(run.all ? { all: true } : { locations: run.locations }),
+      ...(run.projects.length ? { projects: run.projects } : {}),
+      ...(run.grep ? { grep: run.grep } : {}),
+      ...(run.grepInvert ? { grepInvert: run.grepInvert } : {}),
+      ...(repeat !== null ? { repeat } : {}),
+      ...(params?.debug === true ? { headed: true, holdFailures: true, debugging: true } : {}),
+    }));
   });
 
   connection.onRequest(COVERAGE_REQUEST, async (params: CoverageParams): Promise<CoverageResult> => {
@@ -4169,21 +4431,35 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return run;
   };
 
-  /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
+  /**
+   * Whether a location names a spec under the context's folder, as `piwi/testAt` gives it (a spec the listing holds
+   * too, whatever its name), or a folder of it, by its path and a slash.
+   */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
+    if (typeof location === 'string' && location.endsWith('/')) {
+      const folder = location.slice(0, -1);
+      if (!isTestLocation(folder) || folder.includes(':')) return false;
+      try {
+        return fs.statSync(path.join(context.root, folder)).isDirectory();
+      } catch {
+        return false;
+      }
+    }
     if (!isTestLocation(location)) return false;
     const spec = locationSpec(location);
-    return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
+    const listed = testListings.state(context.root)?.listing?.specs.has(spec) === true;
+    return (SPEC_FILE.test(spec) || listed) && fs.existsSync(path.join(context.root, spec));
   };
 
   /**
-   * The Playwright arguments that run the tests `params` names: by location, each spec as Playwright's file filter
-   * reads it (`specPattern`), else by id from the instance.
+   * The Playwright arguments that run the tests `params` names: by location, each as Playwright's file filter reads it
+   * (`locationArg`), else by id from the instance.
    */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
+    if (params.all === true) return [];
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) => `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`);
+      return params.locations.map((l) => locationArg(commandFolder(context), l));
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -4221,7 +4497,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
     const test = debugTest(text, relative, debug.title);
     if (typeof test === 'string') return refuse(test);
-    const args = debugArgs(`${specPattern(relative)}:${test.line + 1}`, debug.project, test, debug.title);
+    const args = debugArgs(
+      locationArg(commandFolder(context), `${relative}:${test.line + 1}`),
+      debug.project,
+      test,
+      debug.title,
+    );
     const command = playwrightTestCommand(args);
     if (!command) {
       return refuse(
@@ -4259,9 +4540,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (params.debug) return debugRunArgs(context, params);
     if (!context) return null;
     const repeat = params.repeat ?? null;
-    const tests = await testArgs(context, params);
+    const named = await testArgs(context, params);
+    // The projects and the titles the tests run in and by, as Playwright's options.
+    const option = (name: string, value: unknown) => (typeof value === 'string' && value ? [name, value] : []);
+    const tests = named && [
+      ...named,
+      ...(Array.isArray(params.projects) ? params.projects.flatMap((p) => option('--project', p)) : []),
+      ...option('--grep', params.grep),
+      ...option('--grep-invert', params.grepInvert),
+    ];
     const args = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
-    const command = args?.length ? playwrightTestCommand(args) : null;
+    const command = args && (args.length || params.all === true) ? playwrightTestCommand(args) : null;
     if (!args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref, repeat);
@@ -4278,8 +4567,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         params,
       );
     }
-    const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
-    repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
+    const target = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
+    repeatedCommands.set(ref, { root: context.root, repeat, target: target.join(' ') || 'every test' });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
@@ -4734,8 +5023,47 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(REFRESH_REQUEST, async () => {
+    // Read the configs again: each listed one is listed whole again.
+    for (const context of contexts) {
+      const configFile = testListings.listed(context.root) ? playwrightConfigFile(context.root) : null;
+      if (configFile) testListings.listAll(context.root, configFile);
+    }
     await refreshAll();
     return null;
+  });
+
+  /** The files that changed on disk since the last listing they asked for. */
+  const changedFiles = new Set<string>();
+  let changedFilesTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * List again the specs of a listed config that changed on disk (a spec, or a file the listing holds), and the whole
+   * config when a file it reads changed.
+   */
+  const listChangedFiles = () => {
+    changedFilesTimer = null;
+    const byRoot = new Map<string, string[]>();
+    for (const file of changedFiles) {
+      if (file.split(/[\\/]/).includes('node_modules')) continue;
+      const context = contextFor(file);
+      const relative = context ? relativeTo(context.root, file) : null;
+      if (!context || !relative || !testListings.listed(context.root)) continue;
+      const listing = testListings.state(context.root)?.listing;
+      if (!SPEC_FILE.test(relative) && !listing?.specs.has(relative) && !listing?.broken.has(relative)) continue;
+      byRoot.set(context.root, [...(byRoot.get(context.root) ?? []), relative]);
+    }
+    changedFiles.clear();
+    for (const context of contexts) testListings.checkConfig(context.root);
+    for (const [root, files] of byRoot) testListings.listSpecs(root, files);
+  };
+
+  connection.onDidChangeWatchedFiles((params) => {
+    for (const change of params?.changes ?? []) {
+      const file = typeof change?.uri === 'string' ? uriToPath(change.uri) : null;
+      if (file) changedFiles.add(file);
+    }
+    if (changedFilesTimer || !changedFiles.size) return;
+    changedFilesTimer = setTimeout(listChangedFiles, WATCHED_FILES_MS);
+    changedFilesTimer.unref?.();
   });
 
   connection.onRequest(REFRESH_RUN_REQUEST, async (): Promise<RunStatusResult> => {
@@ -5080,6 +5408,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (runTimer) clearTimeout(runTimer);
     if (placeTimer) clearTimeout(placeTimer);
     if (runTestsPending) clearTimeout(runTestsPending);
+    if (testItemsTimer) clearTimeout(testItemsTimer);
+    if (changedFilesTimer) clearTimeout(changedFilesTimer);
     for (const t of timers.values()) clearTimeout(t);
   };
 }

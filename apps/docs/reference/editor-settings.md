@@ -45,7 +45,7 @@ the choice of the desktop app on this machine only.
 | `piwi.breakpoints` | Which runs pause at the editor's breakpoints, Debug with Piwi, every run or none: [Editor breakpoints](/features/editor-breakpoints) | Debug with Piwi | Yours |
 | `piwi.runHeaded` | Whether every run Piwi starts runs headed, its browser window shown | off | Yours |
 | `piwi.runHoldFailures` | [Hold failures](/features/watch-a-run) from each run's start: Auto, On or Off | Auto | Yours |
-| `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results | on | Yours, which a project may set |
+| `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results; off leaves the view to another extension's tree, such as Microsoft's Playwright Test | on | Yours, which a project may set |
 | JetBrains: **Run the tests in the IDE's Playwright runner** | Whether a run starts in the IDE's Playwright runner (a test tree, Debug, Rerun Failed Tests) or in the Run tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate and Rider; where it lacks one, the option is off and says why | off | Yours |
 
 ## In the editor

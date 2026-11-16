@@ -226,6 +226,26 @@ object PiwiCommands {
     }
 
     /**
+     * Run the nodes of the Tests tab, as the service builds their runs (`piwi/testRuns`): each node by the narrowest filter
+     * Playwright takes for it, one run per config and set of projects, each started as [runTests] starts a run. The
+     * files are saved first: a run reads the specs as saved.
+     */
+    fun runTestNodes(project: Project, nodes: List<String>, repeat: Int?, debug: Boolean) {
+        FileDocumentManager.getInstance().saveAllDocuments()
+        background(project, "Piwi: resolving the tests") {
+            val server = project.service<PiwiProjectService>().server()
+            val params = TestRunsParams(nodes, repeat = repeat, debug = debug.takeIf { it })
+            val runs = server?.testRuns(params)?.orNull()
+            when {
+                server == null -> notify(project, NOT_RUNNING, NotificationType.WARNING)
+                runs == null -> notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
+                runs.isEmpty() -> notify(project, "None of the selected tests can run from this checkout.", NotificationType.WARNING)
+                else -> runs.forEach { runTests(project, it) }
+            }
+        }
+    }
+
+    /**
      * Run a command line of the service: as a test run of its own when the service follows it (`RunCommandArgs.follow`,
      * `piwi/followCommand`), listed, paused and stopped as the others, the documents saved first so it runs the files as
      * they stand (a fix plan's edit just applied), else in the Run tool window as it is.
@@ -318,7 +338,7 @@ object PiwiCommands {
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
-                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label, command.name) }
                     .getOrDefault(false)
                 if (!started) run(project, cwd, line, env, ref, command.label, command.name)
             }, project.disposed)

@@ -12,10 +12,10 @@ import type {
   LiveRun,
   RunEnded,
   RunStatusResult,
-  SpecTest,
   StatusResult,
   TestAtResult,
   TestItemsResult,
+  TestTreeNode,
 } from '@piwitests/editor/protocol';
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
 import { CLIENT_WORDS } from '@piwitests/editor/words';
@@ -97,8 +97,8 @@ import {
   testItemTags,
   failuresViewDescription,
   testOutcome,
-  testRunsOf,
   testTree,
+  treeHoldsSpec,
   treeTests,
   unfollowedOutcome,
   withSpec,
@@ -2400,7 +2400,9 @@ describe('an open link from the dashboard', () => {
 });
 
 describe('the Testing view', () => {
-  const test1 = (over: Partial<SpecTest> = {}): SpecTest => ({
+  const CHECKOUT = 'file:///w/tests/cart/checkout.spec.ts';
+  const ROWS = 'file:///w/tests/rows.spec.ts';
+  const test1 = (over: Partial<TreeTest> = {}): TreeTest => ({
     title: 'pays',
     suite: [],
     line: 2,
@@ -2414,92 +2416,124 @@ describe('the Testing view', () => {
     owner: null,
     quarantined: false,
     resultDurationMs: null,
+    root: '/w',
+    uri: CHECKOUT,
+    playwright: [],
     ...over,
   });
+  const node = (
+    kind: TestTreeNode['kind'],
+    id: string,
+    label: string,
+    children: TestTreeNode[] = [],
+    uri: string | null = null,
+  ): TestTreeNode => ({
+    id,
+    label,
+    kind,
+    uri,
+    range: null,
+    sortText: label,
+    runnable: true,
+    test: null,
+    project: null,
+    children,
+  });
+  const leaf = (id: string, test: TreeTest): TestTreeNode => ({
+    ...node('test', id, test.title, [], test.uri),
+    range: { start: test.line, end: test.endLine },
+    test,
+  });
+  const checkoutId = 'spec\x1f/w\x1ftests/cart/checkout.spec.ts';
+  const rowsId = 'spec\x1f/w\x1ftests/rows.spec.ts';
+  const checkout = node(
+    'spec',
+    checkoutId,
+    'checkout.spec.ts',
+    [
+      node(
+        'describe',
+        `${checkoutId}\x1ecart`,
+        'cart',
+        [
+          leaf(
+            `${checkoutId}\x1fcart\x1fpays`,
+            test1({ suite: ['cart'], line: 3, location: 'tests/cart/checkout.spec.ts:4' }),
+          ),
+          leaf(
+            `${checkoutId}\x1fcart\x1fpays\x1f2`,
+            test1({ suite: ['cart'], line: 7, endLine: 9, testCaseId: 2, location: 'tests/cart/checkout.spec.ts:8' }),
+          ),
+        ],
+        CHECKOUT,
+      ),
+      leaf(
+        `${checkoutId}\x1fis new`,
+        test1({
+          title: 'is new',
+          line: 12,
+          testCaseId: null,
+          status: null,
+          location: 'tests/cart/checkout.spec.ts:13',
+        }),
+      ),
+    ],
+    CHECKOUT,
+  );
+  const tests = (children: TestTreeNode[]) => node('folder', 'folder\x1f/w\x1ftests', 'tests', children);
+  const cart = (children: TestTreeNode[]) => node('folder', 'folder\x1f/w\x1ftests/cart', 'cart', children);
   const answer: TestItemsResult = {
     contexts: [
       {
         root: '/w',
         label: 'shop',
-        specs: [
-          {
-            uri: 'file:///w/tests/cart/checkout.spec.ts',
-            file: 'tests/cart/checkout.spec.ts',
-            tests: [
-              test1({ title: 'pays', suite: ['cart'], line: 3, location: 'tests/cart/checkout.spec.ts:4' }),
-              test1({
-                title: 'pays',
-                suite: ['cart'],
-                line: 7,
-                endLine: 9,
-                testCaseId: 2,
-                location: 'tests/cart/checkout.spec.ts:8',
-              }),
-              test1({
-                title: 'is new',
-                line: 12,
-                testCaseId: null,
-                status: null,
-                location: 'tests/cart/checkout.spec.ts:13',
-              }),
-            ],
-          },
-          { uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [] },
-        ],
+        listing: null,
+        nodes: [tests([cart([checkout]), node('spec', rowsId, 'rows.spec.ts', [], ROWS)])],
       },
     ],
   };
+  /** Each spec of an answer as `label: tests`, as its folders nest them. */
+  const specs = (result: TestItemsResult): string[] => {
+    const of = (nodes: readonly TestTreeNode[]): string[] =>
+      nodes.flatMap((n) => (n.kind === 'spec' ? [`${n.label}: ${treeTests([n]).length}`] : of(n.children)));
+    return result.contexts.flatMap((c) => of(c.nodes));
+  };
 
-  test('nests each spec under its folders, and its tests under their describe blocks, told apart by their order', () => {
+  test('shows one config’s nodes as the service builds them, its tests first to last', () => {
     const tree = testTree(answer);
-    expect(tree.map((n) => [n.kind, n.label])).toEqual([['folder', 'tests']]);
-    const tests = tree[0]!;
-    expect(tests.children.map((n) => [n.kind, n.label, n.sortText])).toEqual([
-      ['folder', 'cart', '0cart'],
-      ['spec', 'rows.spec.ts', '1rows.spec.ts'],
-    ]);
-    const spec = tests.children[0]!.children[0]!;
-    expect(spec).toMatchObject({ kind: 'spec', id: 'file:///w/tests/cart/checkout.spec.ts', uri: spec.id });
-    expect(spec.children.map((n) => [n.kind, n.label])).toEqual([
-      ['suite', 'cart'],
-      ['test', 'is new'],
-    ]);
-    const suite = spec.children[0]!;
-    expect(suite.children.map((n) => [n.id, n.range])).toEqual([
-      [`${spec.id}\x1fcart\x1fpays`, { start: 3, end: 4 }],
-      [`${spec.id}\x1fcart\x1fpays\x1f2`, { start: 7, end: 9 }],
-    ]);
-    expect(suite.children[0]!.test).toMatchObject({ root: '/w', uri: spec.id, testCaseId: 1 });
+    expect(tree).toBe(answer.contexts[0]!.nodes);
     expect(treeTests(tree).map((t) => t.location)).toEqual([
       'tests/cart/checkout.spec.ts:4',
       'tests/cart/checkout.spec.ts:8',
       'tests/cart/checkout.spec.ts:13',
     ]);
+    expect(treeHoldsSpec(answer, ROWS)).toBe(true);
+    expect(treeHoldsSpec(answer, 'file:///w/tests/other.spec.ts')).toBe(false);
   });
 
-  test('tells a describe block from a test of the same title beside it', () => {
-    const spec = {
-      uri: 'file:///w/tests/login.spec.ts',
-      file: 'tests/login.spec.ts',
-      tests: [
-        test1({ title: 'login', suite: [], line: 2 }),
-        test1({ title: 'with SSO', suite: ['login'], line: 6, testCaseId: 2 }),
+  test('puts each Playwright config at the top when there are several, or when one could not be listed, saying why', () => {
+    const two: TestItemsResult = {
+      contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', listing: null, nodes: [] }],
+    };
+    expect(testTree(two).map((n) => [n.kind, n.label, n.id, n.error])).toEqual([
+      ['config', 'shop', 'config\x1f/w', null],
+      ['config', 'e2e', 'config\x1f/w/e2e', null],
+    ]);
+    const failed: TestItemsResult = {
+      contexts: [
+        {
+          ...answer.contexts[0]!,
+          listing: { at: null, error: 'Playwright is not installed in /w: run npm install there.', running: false },
+        },
       ],
     };
-    const [node] = testTree({ contexts: [{ root: '/w', label: 'shop', specs: [spec] }] });
-    const children = node!.children[0]!.children;
-    expect(children.map((n) => n.kind)).toEqual(['test', 'suite']);
-    expect(new Set(children.map((n) => n.id)).size).toBe(2);
-  });
-
-  test('puts each Playwright config at the top when there are several', () => {
-    const two: TestItemsResult = {
-      contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', specs: [] }],
-    };
-    expect(testTree(two).map((n) => [n.kind, n.label, n.id])).toEqual([
-      ['config', 'shop', 'config\x1f/w'],
-      ['config', 'e2e', 'config\x1f/w/e2e'],
-    ]);
+    const [config] = testTree(failed);
+    expect(config).toMatchObject({
+      kind: 'config',
+      error: 'Playwright is not installed in /w: run npm install there.',
+      runnable: true,
+    });
+    expect(config!.children).toBe(answer.contexts[0]!.nodes);
   });
 
   test('says flaky beside a flaky test, which the view shows as passed, and tags it so its filter finds it', () => {
@@ -2519,6 +2553,7 @@ describe('the Testing view', () => {
       resultDurationMs: null,
       root: '/w',
       uri: 'file:///w/checkout.spec.ts',
+      playwright: [],
     });
     expect(testItemTags(test('flaky'))).toEqual(['flaky']);
     for (const status of ['passed', 'failed', 'skipped', 'running', 'unknown', null] as const) {
@@ -2561,61 +2596,22 @@ describe('the Testing view', () => {
     expect(failureMessage({ ...failure, message: '', diagnosed: true })).toBe('Failed');
   });
 
-  test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {
-    const tests = treeTests(testTree(answer));
-    expect(testRunsOf(tests.slice(0, 2))).toEqual([
-      { uri: 'file:///w/tests/cart/checkout.spec.ts', root: '/w', testIds: [1, 2] },
-    ]);
-    expect(testRunsOf(tests)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4', 'tests/cart/checkout.spec.ts:8', 'tests/cart/checkout.spec.ts:13'],
-      },
-    ]);
-    // Debug with Piwi: headed, holding the failures.
-    expect(testRunsOf(tests.slice(0, 2), undefined, true)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [1, 2],
-        headed: true,
-        holdFailures: true,
-        debugging: true,
-      },
-    ]);
-    expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4'],
-        repeat: 3,
-      },
-    ]);
-    const other = { ...tests[0]!, root: '/w/e2e', uri: 'file:///w/e2e/a.spec.ts' };
-    expect(testRunsOf([tests[0]!, other]).map((r) => r.root)).toEqual(['/w', '/w/e2e']);
-  });
-
-  test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave', () => {
-    const edited = test1({ title: 'pays', line: 9, location: 'tests/rows.spec.ts:10' });
+  test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave with its folders', () => {
+    const edited = test1({ line: 9, location: 'tests/rows.spec.ts:10', uri: ROWS });
     const one: TestItemsResult = {
       contexts: [
         {
           ...answer.contexts[0]!,
-          specs: [{ uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [edited] }],
+          nodes: [tests([node('spec', rowsId, 'rows.spec.ts', [leaf(`${rowsId}\x1fpays`, edited)], ROWS)])],
         },
       ],
     };
-    const merged = withSpec(answer, 'file:///w/tests/rows.spec.ts', one);
-    expect(merged.contexts[0]!.specs.map((s) => [s.file, s.tests.length])).toEqual([
-      ['tests/cart/checkout.spec.ts', 3],
-      ['tests/rows.spec.ts', 1],
-    ]);
-    const gone = withSpec(answer, 'file:///w/tests/rows.spec.ts', { contexts: [] });
-    expect(gone.contexts[0]!.specs.map((s) => s.file)).toEqual(['tests/cart/checkout.spec.ts']);
-    expect(withSpec({ contexts: [] }, 'file:///w/tests/rows.spec.ts', one).contexts[0]!.specs).toHaveLength(1);
+    expect(specs(withSpec(answer, ROWS, one))).toEqual(['checkout.spec.ts: 3', 'rows.spec.ts: 1']);
+    expect(specs(withSpec(answer, ROWS, { contexts: [] }))).toEqual(['checkout.spec.ts: 3']);
+    // The cart folder held checkout.spec.ts alone: it leaves with it.
+    const gone = withSpec(answer, CHECKOUT, { contexts: [] });
+    expect(gone.contexts[0]!.nodes[0]!.children.map((n) => n.label)).toEqual(['rows.spec.ts']);
+    expect(specs(withSpec({ contexts: [] }, ROWS, one))).toEqual(['rows.spec.ts: 1']);
   });
 
   test('publishes the results again when the run, its baseline or the runs laid over it change, and names them', () => {

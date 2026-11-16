@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import type { FullConfig } from '@playwright/test/reporter';
+import type { FullConfig, Suite } from '@playwright/test/reporter';
 import {
   configFingerprint,
   configInputs,
@@ -102,7 +102,8 @@ describe('the reporter', () => {
       } as unknown as FullConfig;
       const reporter = new UseReporter();
       expect(reporter.printsToStdio()).toBe(true);
-      reporter.onBegin(config);
+      // Without PIWI_LIST_TESTS: the options alone, the tests not read.
+      reporter.onBegin(config, {} as Suite);
       expect(write).toHaveBeenCalledTimes(1);
       const line = String(write.mock.calls[0]![0]);
       expect(line.endsWith('\n')).toBe(true);

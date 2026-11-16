@@ -612,15 +612,18 @@ export function combinedOutcome(outcomes: readonly TestOutcome[]): TestOutcome {
 }
 
 /**
- * The tests a run's change begins, each attempt once, by its spec and the line of its `test(…)` call: the Testing view
- * shows them running from the run's own events, whether an instance follows the run or not.
+ * The tests a run's change begins, each attempt once, by Playwright's id, its spec and the line of its `test(…)` call:
+ * the Testing view shows them running from the run's own events, whether an instance follows the run or not.
  */
-export function testsBegun(before: RunSession | undefined, now: RunSession): Array<{ uri: string; line: number }> {
+export function testsBegun(
+  before: RunSession | undefined,
+  now: RunSession,
+): Array<{ id: string; uri: string; line: number }> {
   return now.workers.flatMap((worker) => {
     const was = before?.workers.find((w) => w.worker === worker.worker);
     const test = worker.test;
     if (!test || (test.id === was?.test?.id && test.retry === was.test.retry)) return [];
-    return [{ uri: test.uri, line: test.line }];
+    return [{ id: test.id, uri: test.uri, line: test.line }];
   });
 }
 
