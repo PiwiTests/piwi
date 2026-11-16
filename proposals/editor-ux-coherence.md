@@ -261,14 +261,13 @@ recording in `STATUS_COLORS`' failed and running fills, the JetBrains schemes bl
 Darcula's background, and VS Code's held failure's arrow takes the failed fill (LI3); VS Code's running ring spins,
 still under the system's reduced motion (TL5 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100
 columns of its font, every text the page fills itself holding a long sentence and an address (ST14). §14 adds the
-findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
-P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
-lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
+findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), is built
+whole, and §8 names what the editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
 live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
 restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+[live-runs.md](../adr/live-runs.md) P10 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
 builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
 step moves the document to `adr/`.
 
@@ -697,7 +696,7 @@ VS Code: Run, Debug and Coverage profiles, the instance's coverage as `FileCover
 durations, descriptions and TestTags from `SpecTest`. JetBrains: an SMTRunner console fed by the run channel in
 [LI9](#li9)'s Run tab, so every Piwi run gets the IDE's test tree; the result icon a switchable Gutter Icons entry;
 Piwi's coverage bar beside the IDE's own, not over it. Piwi's own marks stay for flaky, quarantine, history and
-[live-view-next.md](live-view-next.md) Part 6's CI position. **Lives in** both clients and the service (FSL).
+the CI position of [live-runs.md](../adr/live-runs.md) P10. **Lives in** both clients and the service (FSL).
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 (a results-only Testing view, built) and §6.4 (offer
