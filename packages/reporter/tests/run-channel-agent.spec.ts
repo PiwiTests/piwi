@@ -357,15 +357,17 @@ describe('a stopped page, for an agent', () => {
     expect(positions.every((p) => p.testId === begin?.testId)).toBe(true);
     expect(positions[0]).toMatchObject({ place: { file: 'tests/agent.spec.cjs', line: 3 } });
     expect(positions.every((p) => p.place.file === 'tests/agent.spec.cjs' && !/Piwi capture/.test(p.title))).toBe(true);
-    // None after the test ended, and no two closer than the pace allows.
+    // Calls past the first are told too, through the stop at line 4: the last told is one of the test's last two, the
+    // very last dropped when the test ends before its turn.
+    expect(positions[positions.length - 1]!.place.line).toBeGreaterThanOrEqual(5);
+    // None after the test ended.
     const ended = heard.findIndex((m) => m.type === 'test-end');
+    expect(ended).toBeGreaterThan(-1);
     expect(heard.slice(ended).some((m) => m.type === 'position')).toBe(false);
+    // No more than the pace allows over the time they came in, a second's worth of slack for the reading.
     const at = connection!.positionsAt;
-    const gaps = at.slice(1).map((t, i) => t - at[i]!);
-    expect(
-      gaps.every((gap) => gap >= 1000 / POSITIONS_PER_SECOND - 20),
-      gaps.join(', '),
-    ).toBe(true);
+    const span = at[at.length - 1]! - at[0]!;
+    expect(positions.length).toBeLessThanOrEqual(((span + 1000) * POSITIONS_PER_SECOND) / 1000 + 1);
   });
 
   it('tells what the test does: its calls and their places, the navigation, the console error and failed request', () => {

@@ -915,6 +915,7 @@ describe('the run channel', () => {
       for (const wrong of [
         { testId: '' },
         { testId: 4 },
+        { testId: 'x'.repeat(257) },
         { title: '' },
         { place: null },
         { place: { file: '', line: 3 } },

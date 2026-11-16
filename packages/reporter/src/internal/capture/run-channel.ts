@@ -323,7 +323,7 @@ let testRunning = false;
 let runningTestId: string | null = null;
 /** The editor asked where each call begins (`positions`), and when one was last told; the latest untold, and its timer. */
 let positionsOn = false;
-let positionToldAt = 0;
+let positionToldAt = -Infinity;
 let pendingPosition: { title: string; place: Place } | null = null;
 let positionTimer: ReturnType<typeof setTimeout> | null = null;
 /** The pace of the events, and how many it did not send since the last one sent. */
@@ -391,6 +391,9 @@ export async function openRunChannel(
   shown = new Set();
   runName = `piwi-${ref}-w${worker.workerIndex}`;
   eventsOn = false;
+  positionsOn = false;
+  positionToldAt = -Infinity;
+  dropPendingPosition();
   layersAsked = new Set();
   host = null;
   opening.unref();
@@ -570,17 +573,21 @@ export function positionsWanted(): boolean {
 export function tellPosition(title: string, place: Place): void {
   if (!positionsWanted()) return;
   pendingPosition = { title, place };
-  const wait = positionToldAt + 1000 / POSITIONS_PER_SECOND - Date.now();
+  // A position already waits for its turn: this one takes its place.
+  if (positionTimer) return;
+  const wait = positionToldAt + 1000 / POSITIONS_PER_SECOND - performance.now();
   if (wait <= 0) return sendPendingPosition();
-  positionTimer ??= setTimeout(sendPendingPosition, wait);
+  positionTimer = setTimeout(sendPendingPosition, wait);
+  positionTimer.unref?.();
 }
 
 function sendPendingPosition(): void {
+  if (positionTimer) clearTimeout(positionTimer);
   positionTimer = null;
   const position = pendingPosition;
   pendingPosition = null;
   if (!position || !positionsWanted()) return;
-  positionToldAt = Date.now();
+  positionToldAt = performance.now();
   tellHub({ type: 'position', testId: runningTestId!, title: position.title, place: position.place });
 }
 

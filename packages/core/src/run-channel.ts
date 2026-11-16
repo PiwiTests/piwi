@@ -1137,7 +1137,8 @@ export function parseRunToHub(line: string): RunToHub | null {
     case 'position': {
       const { testId, title } = value;
       const place = readPlace(value.place);
-      if (typeof testId !== 'string' || !testId || typeof title !== 'string' || !title || !place) return null;
+      if (typeof testId !== 'string' || !testId || testId.length > 256) return null;
+      if (typeof title !== 'string' || !title || !place) return null;
       return { type: 'position', testId, title: title.slice(0, MAX_POSITION_TITLE), place };
     }
     case 'test-end': {

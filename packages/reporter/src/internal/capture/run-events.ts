@@ -9,7 +9,7 @@ import {
   type PageEvent,
 } from '@piwitests/core/live-layers';
 import { hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
-import { MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
+import { MAX_POSITION_TITLE, MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
 import { pageEventsWanted, tellPageEvent } from './lane-layers.js';
 import { callSitePath } from './locator-healing.js';
@@ -25,8 +25,10 @@ import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run
  * errors it threw, its failed requests, each request that waits `PENDING_REQUEST_MS` and more for its answer (told again
  * as long again passes, then once as it ends), the errors and warnings a backend logged on a response
  * (`X-Piwi-Logs`, read as the capture fixtures read it, `readServerLogs`), and each call the test makes through an API
- * request context (`tellApiCall`). Every text has its credentials hidden (`@piwitests/core/mask`). Nothing is sent, nor
- * a request followed, while nobody follows the run, nor between tests.
+ * request context (`tellApiCall`). To the editor while it asks (`positions`, which it asks to mark the running line),
+ * where each call of the test begins in the user's code, from the same listener (`tellPosition`). Every text has its
+ * credentials hidden (`@piwitests/core/mask`). Nothing is sent, nor a request followed, while nobody follows the run or
+ * asks for positions, nor between tests.
  */
 
 /** The parts of Playwright's API-call zone read here (internal). */
@@ -84,7 +86,7 @@ export function callPlace(
 export function callTitle(zone: ApiZone, channel: ApiChannel | undefined): string {
   const selector = typeof channel?.params?.selector === 'string' ? ` ${channel.params.selector}` : '';
   const title = zone.title || `${zone.apiName || 'call'}${selector}`;
-  return hideSecretsInText(hideTypedText(title)).slice(0, 300);
+  return hideSecretsInText(hideTypedText(title)).slice(0, MAX_POSITION_TITLE);
 }
 
 /** The first lines of a call's error, its credentials hidden. */
