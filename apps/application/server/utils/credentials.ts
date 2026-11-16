@@ -20,12 +20,12 @@ import {
   credentialLogDestination,
   credentialRefusal,
   isCredentialSecretEnv,
-  MAX_CREDENTIAL_NAME_LENGTH,
   type CredentialFeature,
   type CredentialService,
   type CredentialUseResult,
 } from '#shared/credentials';
 import {
+  freeCredentialName,
   INSTANCE_SCM_CREDENTIALS_SETTING,
   loadCredentialRecord,
   readInstanceScmCredentialIds,
@@ -458,16 +458,7 @@ export async function pruneCredentialUses(db: DbClient, olderThanDays: number): 
 }
 
 /** `name`, or `name (2)`, `name (3)`… : the first no credential has, ignoring case. */
-export async function freeName(db: DbClient, name: string): Promise<string> {
-  const rows = await db.select({ name: credentials.name }).from(credentials);
-  const taken = new Set(rows.map((r) => r.name.toLowerCase()));
-  const base = name.slice(0, MAX_CREDENTIAL_NAME_LENGTH - 5);
-  if (!taken.has(base.toLowerCase())) return base;
-  for (let n = 2; ; n++) {
-    const candidate = `${base} (${n})`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
-}
+export const freeName = (db: DbClient, name: string): Promise<string> => freeCredentialName(db as never, name);
 
 /** The base URL and token a project's `ci_server_token` holds, or null. */
 function openProjectToken(stored: string | null): { url: string; token: string } | null {

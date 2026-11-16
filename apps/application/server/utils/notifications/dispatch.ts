@@ -33,6 +33,8 @@ import { canReadSnapshot } from '#shared/handlers/reports';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 import { slackDigestMessage, slackEventMessage } from './slack-message';
 import { postSlackMessage, slackRetryAfterMs, storedSlackDestination } from './slack-api';
+import { channelCredentialId, postSlackWithCredential } from './slack-credentials';
+import type { DbClient } from '../../database';
 import { emailDestinationVerified } from './email-verified';
 import { getProjectScope, scopeAllows, type DrizzleDB, type ProjectScope } from '../project-access';
 
@@ -86,9 +88,31 @@ async function sendToEmail(to: string, event: NotificationEvent, payload: Notifi
   await sendEmail({ to, subject: renderEventSubject(event, payload), html, text });
 }
 
-/** Post to a saved Slack channel, through its webhook or the Web API. */
-async function postToSlack(config: Record<string, unknown>, body: Record<string, unknown>) {
+/**
+ * Post to a saved Slack channel, through its webhook or the Web API: with the
+ * credential a channel of the instance names, as one row of its log, else with
+ * the token a personal channel keeps.
+ */
+async function postToSlack(db: Db, c: ChannelRow, body: Record<string, unknown>, projectId: number | null = null) {
+  const config = (c.config ?? {}) as Record<string, unknown>;
+  const credentialId = channelCredentialId(config);
+  if (credentialId != null) {
+    const slackChannelId = typeof config.channelId === 'string' ? config.channelId.trim() : '';
+    await postSlackWithCredential(db as unknown as DbClient, {
+      credentialId,
+      channel: { id: c.id, slackChannelId },
+      message: body,
+      projectId,
+    });
+    return;
+  }
   await postSlackMessage(storedSlackDestination(config), body);
+}
+
+/** The project an outbox row is about, for the log of the credential it is sent with. */
+function deliveryProjectId(d: DeliveryRow): number | null {
+  const projectId = (d.payload as { projectId?: unknown } | null)?.projectId;
+  return typeof projectId === 'number' ? projectId : null;
 }
 
 async function postToTeams(config: Record<string, unknown>, body: Record<string, unknown>) {
@@ -102,12 +126,13 @@ async function postToTeams(config: Record<string, unknown>, body: Record<string,
   if (!res.ok) throw new Error(`Microsoft Teams webhook returned ${res.status}`);
 }
 
-async function sendToSlack(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
-  await postToSlack(config, slackEventMessage(event, payload, siteBase()));
+async function sendToSlack(db: Db, c: ChannelRow, d: DeliveryRow) {
+  const message = slackEventMessage(d.event as NotificationEvent, (d.payload ?? {}) as NotificationPayload, siteBase());
+  await postToSlack(db, c, message, deliveryProjectId(d));
 }
 
-async function sendSlackDigest(config: Record<string, unknown>, items: DigestItem[]) {
-  await postToSlack(config, slackDigestMessage(items, siteBase()));
+async function sendSlackDigest(db: Db, c: ChannelRow, items: DigestItem[]) {
+  await postToSlack(db, c, slackDigestMessage(items, siteBase()));
 }
 
 async function sendToWebhook(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
@@ -147,7 +172,7 @@ async function sendQualityReport(db: Db, d: DeliveryRow, c: ChannelRow) {
   if (c.type === 'personal_email' || c.type === 'email') {
     await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload, shareUrl);
   } else if (c.type === 'slack') {
-    await postToSlack(config, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+    await postToSlack(db, c, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
   } else if (c.type === 'teams') {
     await postToTeams(config, teamsReportMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
   } else if (c.type === 'webhook') {
@@ -167,7 +192,7 @@ async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
 
   if (c.type === 'personal_email' || c.type === 'email') {
     await sendToEmail(await resolveEmailAddress(db, c), event, payload);
-  } else if (c.type === 'slack') await sendToSlack(config, event, payload);
+  } else if (c.type === 'slack') await sendToSlack(db, c, d);
   else if (c.type === 'teams') await postToTeams(config, teamsEventMessage(event, payload, siteBase()));
   else if (c.type === 'webhook') await sendToWebhook(config, event, payload);
   else if (c.type === 'browser') {
@@ -196,7 +221,7 @@ async function sendDigest(db: Db, c: ChannelRow, rows: DeliveryRow[]) {
     const { subject, html, text } = renderDigestEmail(digestItems(rows));
     await sendEmail({ to, subject, html, text });
   } else if (c.type === 'slack') {
-    await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, digestItems(rows));
+    await sendSlackDigest(db, c, digestItems(rows));
   } else if (c.type === 'teams') {
     await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(digestItems(rows), siteBase()));
   } else {

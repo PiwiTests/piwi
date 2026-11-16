@@ -12,7 +12,7 @@ import { isUnderBaseUrl, normalizeCiServerBaseUrl, urlPathClimbs } from '#shared
 import { SCM_API_DESTINATIONS, scmDestinationHost } from '#shared/scm-urls';
 
 /** What a credential is for: the pickers that list it and the requests that may carry it. */
-export const CREDENTIAL_SERVICES = ['ci-server', 'scm', 'ai', 'jira', 'zephyr-scale'] as const;
+export const CREDENTIAL_SERVICES = ['ci-server', 'scm', 'ai', 'jira', 'zephyr-scale', 'slack'] as const;
 export type CredentialService = (typeof CREDENTIAL_SERVICES)[number];
 
 export const CREDENTIAL_SERVICE_LABELS: Record<CredentialService, string> = {
@@ -21,7 +21,11 @@ export const CREDENTIAL_SERVICE_LABELS: Record<CredentialService, string> = {
   ai: 'AI provider',
   jira: 'Jira Cloud',
   'zephyr-scale': 'Zephyr Scale',
+  slack: 'Slack',
 };
+
+/** The destination of a Slack credential: the Web API a channel's bot token is sent to. */
+export const SLACK_API_ENDPOINT = 'https://slack.com/api/';
 
 /** The feature a use comes from. */
 export const CREDENTIAL_FEATURES = [
@@ -34,6 +38,7 @@ export const CREDENTIAL_FEATURES = [
   'ai-call',
   'integration-read',
   'integration-write',
+  'notification',
 ] as const;
 export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 
@@ -47,6 +52,7 @@ export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'ai-call': 'AI model call',
   'integration-read': 'Integration read',
   'integration-write': 'Integration write',
+  notification: 'Notification',
 };
 
 /**
@@ -93,17 +99,17 @@ export type CredentialScope = { allProjects: true } | { allProjects: false; proj
 /**
  * What names a credential: a CI action, a project's source control, the
  * instance's source control (Settings → Source control), an AI role
- * (Settings → AI), or a Jira or Zephyr Scale connection (Settings →
- * Integrations).
+ * (Settings → AI), a Jira or Zephyr Scale connection (Settings →
+ * Integrations), or a Slack channel of the instance (Settings → Notifications).
  */
 export interface CredentialReference {
-  kind: 'ci-action' | 'project-scm' | 'instance-scm' | 'ai-role' | 'connection';
+  kind: 'ci-action' | 'project-scm' | 'instance-scm' | 'ai-role' | 'connection' | 'channel';
   /** The project; null for the instance's source control. */
   projectId: number | null;
   projectName: string | null;
   /** The CI action's id, for a `ci-action`. */
   actionId: string | null;
-  /** What names it: the CI action's name, `Source control`, the AI role's (`AI · Diagnosis`) or the connection's. */
+  /** What names it: the CI action's name, `Source control`, the AI role's (`AI · Diagnosis`), the connection's or the channel's. */
   name: string;
 }
 
@@ -262,6 +268,7 @@ export function credentialServiceProblem(
   if (service === 'zephyr-scale' && fields.user)
     return 'A Zephyr Scale credential names no user: its token is sent alone.';
   if (service === 'jira' && !fields.user) return 'A Jira credential names the account’s e-mail as its user.';
+  if (service === 'slack' && fields.user) return 'A Slack credential names no user: its bot token is sent alone.';
   return null;
 }
 

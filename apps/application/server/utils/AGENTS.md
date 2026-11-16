@@ -304,6 +304,9 @@ runs (`@piwitests/editor/run-host`), plus these:
   (`integrations/connections.ts`), which open the connection's credential as one counted read; each of the clients'
   writes goes through the credential's `writeGate`, and a POST that only reads is listed in the Jira client's
   `READ_POSTS` (`tests/unit/connection-credentials.test.ts`).
+- **A Slack channel of the instance sends only with the credential its config names** (`config.credentialId`,
+  `postSlackWithCredential` in `notifications/slack-credentials.ts`), one log row per message; a personal channel keeps
+  its own token, since its owner holds no right on the instance's credentials (`tests/unit/slack-credentials.test.ts`).
 - **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
   shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
   console with it.

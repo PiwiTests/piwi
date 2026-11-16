@@ -9,7 +9,7 @@ lang: en-US
 Connect Zephyr Scale Cloud, the test management app for Jira, to the dashboard, and bind a project to a Zephyr
 project. Piwi reads the project's test cases and, once the binding is live, writes a finished run's results back as
 one test run ([Results in Zephyr Scale](/features/test-management)). The connection holds the token in one place, a
-[credential](./credentials#jira-and-zephyr-scale-connections) managed by an administrator.
+[credential](./credentials#connections-and-slack-channels) managed by an administrator.
 
 A connection is instance infrastructure, like an [issue tracker connection](./integrations): one row per external
 system, shared by every project, with its token encrypted with `PIWI_SECRET_KEY`. Zephyr Scale is never

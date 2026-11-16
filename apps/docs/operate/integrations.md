@@ -14,7 +14,7 @@ issues from a failure is [Issue tracking (Jira)](/features/issue-tracking). Zeph
 
 A connection is instance infrastructure: one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and its token is a
-[credential](./credentials#jira-and-zephyr-scale-connections).
+[credential](./credentials#connections-and-slack-channels).
 
 <figure>
   <img src="/screenshots/integrations-settings.png" alt="Settings → Integrations: a Jira card with a connected system, its verified status, and a test-connection button">

@@ -6,7 +6,7 @@
  * `server/utils/credentials.ts`' alone, and nothing here selects the column
  * that holds it.
  */
-import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import {
   apiKeys,
   appSettings,
@@ -14,6 +14,7 @@ import {
   credentials,
   credentialUses,
   integrationConnections,
+  notificationChannels,
   projects,
   users,
 } from '../../server/database/schema';
@@ -23,6 +24,7 @@ import { isUnderBaseUrl } from '#shared/ci-server';
 import {
   CREDENTIAL_FEATURES,
   CREDENTIAL_USE_RESULTS,
+  MAX_CREDENTIAL_NAME_LENGTH,
   type CredentialFeature,
   type CredentialInput,
   type CredentialOption,
@@ -237,7 +239,7 @@ async function aiRoleCredentialIds(db: DrizzleDB): Promise<Array<[string, number
  * control, the instance's source control, the AI roles.
  */
 export async function credentialReferences(db: DrizzleDB): Promise<Map<number, CredentialReference[]>> {
-  const [rows, instanceIds, aiRoles, connections] = await Promise.all([
+  const [rows, instanceIds, aiRoles, connections, channels] = await Promise.all([
     db
       .select({
         id: projects.id,
@@ -253,6 +255,10 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
       .select({ name: integrationConnections.name, credentialId: integrationConnections.credentialId })
       .from(integrationConnections)
       .where(isNotNull(integrationConnections.credentialId)),
+    db
+      .select({ name: notificationChannels.name, config: notificationChannels.config })
+      .from(notificationChannels)
+      .where(and(eq(notificationChannels.type, 'slack'), isNull(notificationChannels.userId))),
   ]);
   const references = new Map<number, CredentialReference[]>();
   const add = (credentialId: number, reference: CredentialReference) => {
@@ -274,6 +280,11 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
       actionId: null,
       name: connection.name,
     });
+  }
+  for (const channel of channels) {
+    const id = (channel.config as { credentialId?: unknown } | null)?.credentialId;
+    if (typeof id !== 'number') continue;
+    add(id, { kind: 'channel', projectId: null, projectName: null, actionId: null, name: channel.name });
   }
   for (const project of rows) {
     const projectName = project.label || project.name;
@@ -370,6 +381,18 @@ export async function listCredentialOptions(
       lastUsedAt: iso(record.lastUsedAt),
       canManage: canManageCredential(viewer, record),
     }));
+}
+
+/** `name`, or `name (2)`, `name (3)`… : the first no credential has, ignoring case. */
+export async function freeCredentialName(db: DrizzleDB, name: string): Promise<string> {
+  const rows = await db.select({ name: credentials.name }).from(credentials);
+  const taken = new Set(rows.map((r) => r.name.toLowerCase()));
+  const base = name.slice(0, MAX_CREDENTIAL_NAME_LENGTH - 5);
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
 }
 
 /** Whether another credential has this name, ignoring case. */
@@ -495,6 +518,7 @@ function credentialSubjectName(type: string | null, id: string | null): string |
   if (type === 'pull-request') return `pull request #${id}`;
   if (type === 'commit') return `commit ${shortCommit(id)}`;
   if (type === 'branch') return `branch ${id}`;
+  if (type === 'channel') return `channel ${id}`;
   return null;
 }
 
@@ -552,6 +576,21 @@ export async function listCredentialUses(
     }
     return names.get(row.subjectId) ?? null;
   };
+  const channelIds = [
+    ...new Set(page.filter((row) => row.subjectType === 'channel').map((row) => Number(row.subjectId))),
+  ].filter((id) => Number.isInteger(id));
+  const channelNames = new Map(
+    channelIds.length === 0
+      ? []
+      : (
+          await db
+            .select({ id: notificationChannels.id, name: notificationChannels.name })
+            .from(notificationChannels)
+            .where(inArray(notificationChannels.id, channelIds))
+        ).map((channel) => [String(channel.id), channel.name]),
+  );
+  const channelName = (row: (typeof page)[number]): string | null =>
+    row.subjectType === 'channel' && row.subjectId ? (channelNames.get(row.subjectId) ?? null) : null;
   return {
     items: page.map((row) => ({
       id: row.id,
@@ -563,7 +602,8 @@ export async function listCredentialUses(
       apiKey: row.apiKey ?? null,
       subjectType: row.subjectType ?? null,
       subjectId: row.subjectId ?? null,
-      subjectName: actionName(row) ?? credentialSubjectName(row.subjectType ?? null, row.subjectId ?? null),
+      subjectName:
+        actionName(row) ?? channelName(row) ?? credentialSubjectName(row.subjectType ?? null, row.subjectId ?? null),
       destination: row.destination ?? null,
       result: row.result as CredentialUseResult,
       reason: row.reason ?? null,
@@ -690,12 +730,12 @@ export async function projectScmCredentialProblem(
 
 /**
  * Whether something that serves every project names the credential (the
- * instance's source control, an AI role, a Jira or Zephyr Scale connection),
- * so its scope stays all projects.
+ * instance's source control, an AI role, a Jira or Zephyr Scale connection,
+ * a Slack channel of the instance), so its scope stays all projects.
  */
 export async function namedForEveryProject(db: DrizzleDB, credentialId: number): Promise<boolean> {
   const references = (await credentialReferences(db)).get(credentialId) ?? [];
-  return references.some((r) => r.kind === 'instance-scm' || r.kind === 'ai-role' || r.kind === 'connection');
+  return references.some((r) => r.kind !== 'ci-action' && r.kind !== 'project-scm');
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   MAX_CREDENTIAL_NAME_LENGTH,
   CREDENTIAL_SERVICE_LABELS,
   CREDENTIAL_SERVICES,
+  SLACK_API_ENDPOINT,
   type CredentialService,
   type CredentialSummary,
 } from '#shared/credentials';
@@ -116,12 +117,15 @@ const isCiServer = computed(() => form.value.service === 'ci-server');
 const isJira = computed(() => form.value.service === 'jira');
 /** A Jira or Zephyr Scale credential, which a connection of Settings → Integrations names. */
 const isConnection = computed(() => isJira.value || form.value.service === 'zephyr-scale');
+/** A Slack bot token, which a channel of the instance names (Settings → Notifications). */
+const isSlack = computed(() => form.value.service === 'slack');
 const NAME_PLACEHOLDERS: Record<CredentialService, string> = {
   'ci-server': 'e.g. Jenkins · piwi-bot',
   scm: 'e.g. GitHub · acme',
   ai: 'e.g. Anthropic · team',
   jira: 'e.g. Jira · acme',
   'zephyr-scale': 'e.g. Zephyr Scale · acme',
+  slack: 'e.g. Slack · piwi-bot',
 };
 const DESTINATION_HINTS: Partial<Record<CredentialService, { description: string; placeholder: string }>> = {
   ai: {
@@ -136,6 +140,10 @@ const DESTINATION_HINTS: Partial<Record<CredentialService, { description: string
   'zephyr-scale': {
     description: 'The API of the Zephyr Scale region. A request elsewhere is refused.',
     placeholder: 'https://api.zephyrscale.smartbear.com/v2/',
+  },
+  slack: {
+    description: 'Slack’s Web API, which a channel posts its messages through. A request elsewhere is refused.',
+    placeholder: SLACK_API_ENDPOINT,
   },
 };
 const destinationHint = computed(
@@ -400,7 +408,9 @@ async function submit() {
                 ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
                 : isConnection
                   ? 'A connection serves every project bound to it: Settings → Integrations lists only a credential shared with all of them.'
-                  : 'The projects whose CI actions may name it.'
+                  : isSlack
+                    ? 'A channel of the instance serves every project: Settings → Notifications lists only a credential shared with all of them.'
+                    : 'The projects whose CI actions may name it.'
           "
         >
           <div class="space-y-2">

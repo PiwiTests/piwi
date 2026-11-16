@@ -1,17 +1,18 @@
 <script setup lang="ts">
 /**
- * Picks a credential saved under Settings → Credentials for a Jira or Zephyr
- * Scale connection, in place of a token typed in its form: those of the
- * provider, shared with all projects and sent under the connection's address,
- * besides the one it names already. Once one is picked, it says whose token
- * the connection signs in with, and the form hides its token fields.
+ * Picks a credential saved under Settings → Credentials, in place of a token
+ * typed in a form that serves every project (a Jira or Zephyr Scale
+ * connection, a Slack channel of the instance): those of the service, saved in
+ * the database, shared with all projects and sent under the form's address,
+ * besides the one it names already. Once one is picked, it says whose token is
+ * sent, and the form hides its token fields.
  */
 import { isUnderBaseUrl } from '#shared/ci-server';
-import type { CredentialSummary } from '#shared/credentials';
+import type { CredentialService, CredentialSummary } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
 
 const props = defineProps<{
-  service: 'jira' | 'zephyr-scale';
+  service: CredentialService;
   /** The address the connection's credential is sent under, as the form reads now; null before it has one. */
   endpoint: string | null;
   /** The credential the connection names already, which the list leaves out. */
@@ -67,7 +68,7 @@ watch(
       data-testid="saved-credential-picked"
     >
       <p class="text-sm text-highlighted">
-        Signs in with “{{ picked?.name ?? 'the credential picked' }}”<template v-if="picked?.user">
+        Uses “{{ picked?.name ?? 'the credential picked' }}”<template v-if="picked?.user">
           as {{ picked.user }}</template
         >; each use is logged under Settings → Credentials.
       </p>

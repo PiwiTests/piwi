@@ -31,14 +31,19 @@ export const SLACK_POST_MESSAGE_GUIDE_URL = 'https://docs.slack.dev/reference/me
 
 /**
  * How a Slack channel posts: through an incoming webhook (`webhookUrl`), or
- * through the Web API with a bot token (`token`, encrypted at rest) and a
- * channel ID (`channelId`).
+ * through the Web API with a bot token and a channel ID (`channelId`): the
+ * token a credential holds (`credentialId`) for a channel of the instance, the
+ * one a personal channel keeps (`token`, encrypted at rest) otherwise.
  */
 export type SlackDelivery = 'webhook' | 'api';
 
-/** The delivery a Slack channel's config describes: a `token` or a `channelId` field means the Web API. */
+/** The delivery a Slack channel's config describes: a `token`, `credentialId` or `channelId` field means the Web API. */
 export function slackDelivery(config: Record<string, unknown>): SlackDelivery {
-  return typeof config.channelId === 'string' || typeof config.token === 'string' ? 'api' : 'webhook';
+  return typeof config.channelId === 'string' ||
+    typeof config.token === 'string' ||
+    typeof config.credentialId === 'number'
+    ? 'api'
+    : 'webhook';
 }
 
 /**
@@ -205,7 +210,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * The problem with a channel's destination, or null when it can be saved: an
  * email channel needs an address, the webhook types an http(s) URL, a Slack
- * channel posting through the Web API a bot token and a channel ID. Shape only —
+ * channel posting through the Web API a bot token (or a saved credential) and
+ * a channel ID. Shape only —
  * whether the destination accepts a delivery is what a test proves.
  */
 export function channelConfigProblem(type: ChannelType, config: Record<string, unknown>): string | null {
@@ -216,7 +222,8 @@ export function channelConfigProblem(type: ChannelType, config: Record<string, u
   }
   if (type === 'slack' && slackDelivery(config) === 'api') {
     const token = typeof config.token === 'string' ? config.token.trim() : '';
-    if (!token.startsWith('xox')) return 'Enter the app’s bot token, starting with xoxb-.';
+    const named = typeof config.credentialId === 'number';
+    if (!named && !token.startsWith('xox')) return 'Enter the app’s bot token, starting with xoxb-.';
     const channelId = typeof config.channelId === 'string' ? config.channelId.trim() : '';
     return SLACK_CHANNEL_ID_PATTERN.test(channelId)
       ? null
