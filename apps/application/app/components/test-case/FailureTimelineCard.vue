@@ -34,8 +34,11 @@
  * With the run's resource report, a **Resources** switch (off until the viewer
  * turns it on, the choice kept per browser) adds rows under the lanes on the
  * same clock: the CPU and memory of the worker that ran the test with the
- * browsers it started, and the pages open in that worker; the failure line
- * crosses them, and a readout under the axis gives their values at the pointer.
+ * browsers it started, and the pages open in that worker, each in its own color;
+ * the failure line crosses them. While they show, a line follows the pointer
+ * across the whole chart, the lanes included, with the moment on the axis and
+ * each row's value beside it; a line under the axis says what the test
+ * measured itself.
  *
  * A test that stood paused at an editor breakpoint keeps its clock: each stop
  * is a Paused band on the axis, a row of its own above the lanes and a hatched
@@ -92,8 +95,8 @@ import {
 import type { LightboxSubject } from '~/utils/lightbox';
 import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
 import { formatTimelineTime, pauseReasonText } from '~/utils/timeline';
-import { seriesPaths } from '~/utils/resource-tracks';
-import { resourceFacts, resourceReadout, timelineResourceRows } from '~/utils/timeline-resource-rows';
+import { RESOURCE_TRACK_COLOR, seriesPaths } from '~/utils/resource-tracks';
+import { resourceFacts, timelineResourceRows } from '~/utils/timeline-resource-rows';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -278,8 +281,9 @@ const resourceRows = computed(() => timelineResourceRows(data.value?.resources))
 const resourcesOn = computed(() => showResources.value && resourceRows.value.length > 0);
 const resourcesTop = computed(() => lanesTop.value + lanesHeight.value);
 const resourcesHeight = computed(() => (resourcesOn.value ? resourceRows.value.length * RESOURCE_ROW_H : 0));
+const resourceFillHeight = RESOURCE_ROW_H - 4;
 const resourcePaths = computed(() =>
-  resourceRows.value.map((row) => seriesPaths(row.points, row.yMax, row.step, RESOURCE_ROW_H - 4)),
+  resourceRows.value.map((row) => seriesPaths(row.points, row.yMax, row.step, resourceFillHeight)),
 );
 const resourceFactsText = computed(() => resourceFacts(data.value?.resources).join(' · '));
 const resourcesClipId = `failure-timeline-resources-${useId()}`;
@@ -289,17 +293,26 @@ function resourceTransform(index: number): string {
   const k = end > start ? plotWidth.value / (end - start) : 0;
   return `translate(${plotLeft - start * k}, ${resourcesTop.value + index * RESOURCE_ROW_H + 2}) scale(${k}, 1)`;
 }
-const resourceHover = ref<{ x: number; at: number } | null>(null);
-function onResourceMove(event: MouseEvent): void {
-  const svg = (event.currentTarget as SVGElement).ownerSVGElement;
-  if (!svg) return;
-  const x = Math.max(plotLeft, Math.min(plotRight.value, event.clientX - svg.getBoundingClientRect().left));
+// The moment under the pointer while the rows show, anywhere over the plot, the lanes included. Only the cursor
+// reads it, so a pointer move redraws the cursor and not the card.
+const cursorState = reactive({ on: false, x: 0, clientX: 0, at: 0 });
+function onPlotMove(event: MouseEvent): void {
+  const svg = event.currentTarget as SVGSVGElement;
+  const box = svg.getBoundingClientRect();
+  const x = event.clientX - box.left;
+  const y = event.clientY - box.top;
+  if (!resourcesOn.value || x < plotLeft || x > plotRight.value || y < TOP || y > marksBottom.value) {
+    cursorState.on = false;
+    return;
+  }
   const { start, end } = domain.value;
-  resourceHover.value = { x, at: start + ((x - plotLeft) / plotWidth.value) * (end - start) };
+  Object.assign(cursorState, {
+    on: true,
+    x,
+    clientX: event.clientX,
+    at: start + ((x - plotLeft) / plotWidth.value) * (end - start),
+  });
 }
-const resourceReadoutText = computed(() =>
-  resourceHover.value ? resourceReadout(resourceRows.value, resourceHover.value.at) : '',
-);
 
 const marksBottom = computed(() => resourcesTop.value + resourcesHeight.value);
 const svgHeight = computed(() => marksBottom.value + AXIS_H);
@@ -846,7 +859,14 @@ function revealItem(item: TimelineItem) {
 
       <!-- SVG axis -->
       <div v-if="showAxis && data" ref="wrapper" class="w-full">
-        <svg v-if="plotWidth > 0" :width="svgWidth" :height="svgHeight" class="block">
+        <svg
+          v-if="plotWidth > 0"
+          :width="svgWidth"
+          :height="svgHeight"
+          class="block"
+          @mousemove="onPlotMove"
+          @mouseleave="cursorState.on = false"
+        >
           <!-- Default-window shade (only meaningful in whole-test view) -->
           <rect
             v-if="windowShade"
@@ -1071,6 +1091,13 @@ function revealItem(item: TimelineItem) {
               <clipPath :id="resourcesClipId">
                 <rect :x="plotLeft" :y="resourcesTop" :width="plotWidth" :height="resourcesHeight" />
               </clipPath>
+              <ResourceFillGradient
+                v-for="row in resourceRows"
+                :id="`${resourcesClipId}-${row.kind}-fill`"
+                :key="row.kind"
+                :height="resourceFillHeight"
+                :color-class="RESOURCE_TRACK_COLOR[row.kind]"
+              />
             </defs>
             <g v-for="(row, i) in resourceRows" :key="row.kind" :data-timeline-resource="row.kind">
               <text
@@ -1090,37 +1117,19 @@ function revealItem(item: TimelineItem) {
                 class="stroke-gray-100 dark:stroke-gray-800"
               />
               <g :clip-path="`url(#${resourcesClipId})`">
-                <g :transform="resourceTransform(i)">
-                  <path :d="resourcePaths[i]?.area" class="fill-gray-400/20 dark:fill-gray-400/15" />
+                <g :transform="resourceTransform(i)" :class="RESOURCE_TRACK_COLOR[row.kind]">
+                  <path :d="resourcePaths[i]?.area" :fill="`url(#${resourcesClipId}-${row.kind}-fill)`" />
                   <path
                     :d="resourcePaths[i]?.line"
                     fill="none"
                     stroke-width="1.5"
                     stroke-linejoin="round"
                     vector-effect="non-scaling-stroke"
-                    class="stroke-gray-500 dark:stroke-gray-400"
+                    stroke="currentColor"
                   />
                 </g>
               </g>
             </g>
-            <line
-              v-if="resourceHover"
-              :x1="resourceHover.x"
-              :x2="resourceHover.x"
-              :y1="resourcesTop"
-              :y2="resourcesTop + resourcesHeight"
-              class="stroke-gray-400 dark:stroke-gray-500 pointer-events-none"
-            />
-            <rect
-              :x="plotLeft"
-              :y="resourcesTop"
-              :width="plotWidth"
-              :height="resourcesHeight"
-              fill="transparent"
-              @mousemove="onResourceMove"
-              @mouseenter="onResourceMove"
-              @mouseleave="resourceHover = null"
-            />
           </g>
 
           <!-- Failure marker line -->
@@ -1147,19 +1156,32 @@ function revealItem(item: TimelineItem) {
               {{ tickLabels[i] }}
             </text>
           </g>
+
+          <!-- The moment under the pointer: a line across the whole chart, its time on the axis, each row's value beside it -->
+          <FailureTimelineCursor
+            v-if="resourcesOn"
+            :state="cursorState"
+            :rows="resourceRows"
+            :rows-top="resourcesTop"
+            :row-height="RESOURCE_ROW_H"
+            :top="TOP"
+            :bottom="marksBottom"
+            :time-y="marksBottom + 12"
+            :plot-left="plotLeft"
+            :plot-right="plotRight"
+            :format-time="formatRel"
+            :tooltip-x="hovered ? pos.x : null"
+          />
         </svg>
       </div>
 
-      <!-- What the resources rows read at the pointer, and what the test measured itself. -->
+      <!-- What the test measured itself. -->
       <p
-        v-if="showAxis && resourcesOn && (resourceReadoutText || resourceFactsText)"
-        data-testid="timeline-resources-readout"
+        v-if="showAxis && resourcesOn && resourceFactsText"
+        data-testid="timeline-resources-facts"
         class="text-xs text-muted tabular-nums"
       >
-        <template v-if="resourceHover && resourceReadoutText"
-          >{{ formatRel(resourceHover.at) }} · {{ resourceReadoutText }}</template
-        >
-        <template v-else>{{ resourceFactsText }}</template>
+        {{ resourceFactsText }}
       </p>
 
       <!-- Filmstrip: the page before each step, from this run's trace screen snapshots. -->

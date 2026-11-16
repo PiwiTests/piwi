@@ -103,7 +103,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A text from a run never renders as HTML, and an image from a run is sized before it is decoded.** Labels set
   `html.disable`, and a tooltip goes through `Glue.htmlTooltip`, which escapes it: the platform renders every
   component's tooltip as HTML. A filmstrip image is decoded only once its JPEG header names a size within twice a
-  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest` and `PausedPagePanelTest`.
+  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest`, `PausedPagePanelTest` and `PiwiTestCardTest`.
 - **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, the
   desktop app, or the `PIWI_DASHBOARD_URL` of the IDE's environment (which reaches every open project). An instance's
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
@@ -256,7 +256,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   and receives the service's notifications (`PiwiLsp4jClient`).
 - `PiwiProjectService.kt`: one project's state: the pushed answers, the configs found, the credentials, the settings.
 - `Protocol.kt`: the protocol for lsp4j. `Glue.kt`: the pure half.
-- `PiwiTestAnnotator.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor shows on a file.
+- `PiwiTestAnnotator.kt`, `PiwiTestCard.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor
+  shows on a file (`PiwiTestCard.kt`: the card a click on a test's result icon opens).
 - `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiRunsTab.kt`: the **Piwi** tool window, the status bar item, and
   the tool window's **Runs** tab.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
@@ -273,7 +274,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
-  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`, `PausedPagePanelTest`).
+  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`, `PausedPagePanelTest`,
+  `PiwiTestCardTest`).
 - `scripts/`: the screenshots script and `xinput.py`.
 
 ## ARCHITECTURE.md sections

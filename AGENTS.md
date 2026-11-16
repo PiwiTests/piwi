@@ -130,7 +130,7 @@ integration gets its own `LICENSE` file and a `license` field that match the sid
 ### Commits & PR titles (MUST follow: CI lints every commit)
 
 `commitlint.config.js` is the source of truth; [`CONTRIBUTING.md`](CONTRIBUTING.md) has the full guide and the type →
-release-bump table. release-please reads PR titles (squash-merge subjects) to compute version bumps.
+release-bump table. PRs land as merge commits; release-please reads each commit and the merge commit's PR title.
 
 Format `type(scope): subject`:
 

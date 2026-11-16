@@ -5,7 +5,7 @@ import { sanitizeResourceReport } from '../../shared/resource-report';
 import {
   readingAt,
   resourceFacts,
-  resourceReadout,
+  resourceReading,
   timelineResourceRows,
 } from '../../app/utils/timeline-resource-rows';
 import type { WireExecutionResources, WireResourceReport } from '../../shared/types';
@@ -155,7 +155,12 @@ describe('timelineResourceRows', () => {
     expect(readingAt(cpu!, 0)).toBe(2);
     expect(readingAt(pages!, 0)).toBe(1);
     expect(readingAt(pages!, 2_000)).toBe(3);
-    expect(resourceReadout(timelineResourceRows(resources), 0)).toBe('2 cores · 300 MB · 1 open page');
+    expect(timelineResourceRows(resources).map((row) => resourceReading(row, 0))).toEqual([
+      '2 cores',
+      '300 MB',
+      '1 open page',
+    ]);
+    expect(resourceReading(cpu!, 1e9)).toBeNull();
   });
 
   test('says what the test found open and how long its browsers waited', () => {

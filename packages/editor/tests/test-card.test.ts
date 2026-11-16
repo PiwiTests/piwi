@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { TestExecution } from '../src/piwi-client';
 import { TEST_HISTORY_ROWS } from '../src/piwi-client';
-import { agoWords, cardStatus, durationWords, median, runResults, testCard } from '../src/test-card';
+import { agoWords, cardStatus, durationWords, failureWhy, median, runResults, testCard } from '../src/test-card';
 
 const NOW = Date.parse('2026-11-15T12:00:00.000Z');
 
@@ -48,19 +48,46 @@ describe("a test's card", () => {
       [2, 'flaky'],
       [1, 'passed'],
     ]);
+    const bar = (fill: string, run: number, label: string) =>
+      `[<span style="background-color:${fill};">&ensp;</span>](https://piwi.test/test-runs/${run} "${label}")`;
     expect(card.markdown).toBe(
       [
         '**Piwi** · cart › adds a mug',
-        '[✓](https://piwi.test/test-runs/1 "run #1 · passed · 2.0 s") [◐](https://piwi.test/test-runs/2 "run #2 · flaky · 800 ms") [✗](https://piwi.test/test-runs/3 "run #3 · failed · 1.2 s")',
-        'Passed 1 of the last 3 runs · 1 flaky · median 1.2 s',
-        'Last failed in run #3, 2 d ago: `Error: expect(locator).toBeVisible() failed`',
+        [
+          bar('#10b981', 1, 'run #1 · passed · 2.0 s'),
+          bar('#d946ef', 2, 'run #2 · flaky · 800 ms'),
+          bar('#f43f5e', 3, 'run #3 · failed · 1.2 s'),
+          'Passed 1 of the last 3 runs · 1 flaky · median 1.2 s',
+        ].join(' '),
+        'Last failed in run #3, 2 d ago<br><span style="color:var(--vscode-errorForeground);">getByRole(…) never became visible</span>',
         'owner alice · @smoke',
       ].join('\n\n'),
     );
-    expect(card.html).toContain('<a href="https://piwi.test/test-runs/3" title="run #3 · failed · 1.2 s">✗</a>');
-    expect(card.html).toContain(
-      'Last failed in run #3, 2 d ago: <code>Error: expect(locator).toBeVisible() failed</code>',
-    );
+    expect(card.results.map((r) => r.label)).toEqual([
+      'run #3 · failed · 1.2 s',
+      'run #2 · flaky · 800 ms',
+      'run #1 · passed · 2.0 s',
+    ]);
+    expect(card.summary).toBe('Passed 1 of the last 3 runs · 1 flaky · median 1.2 s');
+    expect(card.failure).toEqual({
+      runId: 3,
+      url: 'https://piwi.test/test-runs/3',
+      where: 'Last failed in run #3, 2 d ago',
+      why: 'getByRole(…) never became visible',
+    });
+    expect(card.about).toEqual(['owner alice', '@smoke']);
+  });
+
+  test('says why a test failed by the headline of its error, from the error alone', () => {
+    expect(
+      failureWhy('Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false'),
+    ).toBe('Expected true, got false — toBe');
+    expect(failureWhy('\u001b[31mError: boom\u001b[39m')).toBe('boom');
+    expect(failureWhy('Test timeout of 30000ms exceeded.')).toBe('Test timed out after 30 s');
+    expect(failureWhy('  \n')).toBeNull();
+    const card = testCard({ ...input, executions: [execution(1, 'failed', { error: null })] });
+    expect(card.failure).toMatchObject({ where: 'Last failed in run #1, 2 h ago', why: null });
+    expect(card.markdown).toContain('\n\nLast failed in run #1, 2 h ago\n\n');
   });
 
   test('reads one result per run from its final attempts, whatever its retries, repetitions and projects', () => {
@@ -83,7 +110,9 @@ describe("a test's card", () => {
       ...input,
       executions: [execution(3, 'failed', { error: '\u001b[31mError: boom\u001b[39m' })],
     });
-    expect(card.markdown).toContain('`Error: boom`');
+    expect(card.markdown).toContain(
+      'Last failed in run #3, 2 h ago<br><span style="color:var(--vscode-errorForeground);">boom</span>',
+    );
   });
 
   test('leaves out the oldest run of a full history, which may be cut short', () => {
@@ -112,10 +141,30 @@ describe("a test's card", () => {
     expect(card.markdown).toContain('Passed 1 of the last 1 run · median 900 ms');
   });
 
+  test('leaves out an attempt whose run id is not one, as its links and words would carry it', () => {
+    const odd = { ...execution(2, 'failed'), runId: '1 [Run](command:piwi.runTests)' as unknown as number };
+    const card = testCard({
+      ...input,
+      executions: [odd, execution(1, 'passed', { runId: 0 }), execution(3, 'passed')],
+    });
+    expect(card.results.map((r) => r.runId)).toEqual([3]);
+    expect(card.markdown).not.toContain('command:');
+  });
+
+  test('escapes what a run says, so only the strip and the failure are HTML', () => {
+    const card = testCard({
+      ...input,
+      owner: '<img src=x>',
+      executions: [execution(1, 'failed', { error: 'Error: <b>boom</b> & *more*' })],
+    });
+    expect(card.markdown).toContain('\\<b\\>boom\\</b\\> & \\*more\\*</span>');
+    expect(card.markdown).toContain('owner \\<img src=x\\>');
+  });
+
   test('says when it has no result yet, and escapes what the test names', () => {
     const card = testCard({ ...input, title: 'a <b> test', owner: null, tags: [], executions: [] });
     expect(card.markdown).toBe('**Piwi** · a \\<b\\> test\n\nNo result yet');
-    expect(card.html).toBe('<b>Piwi</b> · a &lt;b&gt; test<br>No result yet');
+    expect(card).toMatchObject({ summary: 'No result yet', failure: null, about: [] });
   });
 
   test('keeps the latest twenty results', () => {

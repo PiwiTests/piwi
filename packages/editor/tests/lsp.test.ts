@@ -1045,10 +1045,23 @@ describe('the Piwi language server', () => {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // The diagnostic on this line says what failed and why: the hover gives the detail, then the failure's page.
+    expect(hover.contents.value).not.toContain('**CI failure**');
+    expect(hover.contents.value).toMatch(/^```text\nError: locator\.click: Timeout 5000ms exceeded\./);
+    expect(hover.contents.value).toContain(`\n\n[Open in dashboard](${url}/test-run-cases/900)`);
     expect(hover.contents.value).toMatch(/!\[Failure screenshot\]\(file:\/\/.*900\.png\)/);
     expect(hover.contents.value).toContain(
       'Known issue: [SHOP-12 Cart rows missing](https://jira.test/browse/SHOP-12) · In Progress',
+    );
+    // Over the line's indentation, outside the diagnostic's range, the editor shows no diagnostic: the hover says it.
+    const indented = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 4, character: 0 },
+    })) as { contents: { value: string } };
+    expect(indented.contents.value).toMatch(
+      new RegExp(
+        `^\\*\\*CI failure\\*\\* · \\[removes a row\\]\\(${url}/test-run-cases/900\\) · run #41\n\nlocator\\('`,
+      ),
     );
     expect(hover.contents.value).toContain("**`locator('.cart-row').nth(2)`**");
 
@@ -2257,7 +2270,17 @@ describe('local runs over the latest CI run', () => {
         textDocument: { uri: uri('tests/pages/checkout.page.ts') },
         position: { line: 3, character: 30 },
       })) as { contents: { value: string } };
-      expect(hover.contents.value).toContain(`**Local failure** · [pays](${url}/test-run-cases/950) · local run #42`);
+      expect(hover.contents.value).toMatch(/^```text\nError: /);
+      expect(hover.contents.value).not.toContain('**Local failure**');
+      expect(hover.contents.value).not.toContain("getByRole('button', { name: 'Pay now' }) was not visible\n\n");
+      expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/950)`);
+      // The client may spell the file's URI otherwise (`file:///c%3A/…` on Windows): the diagnostic is still this line's.
+      const spelled = uri('tests/pages/checkout.page.ts').replace('/checkout.page.ts', '/%63heckout.page.ts');
+      const otherwise = (await client.sendRequest('textDocument/hover', {
+        textDocument: { uri: spelled },
+        position: { line: 3, character: 30 },
+      })) as { contents: { value: string } };
+      expect(otherwise.contents.value).toBe(hover.contents.value);
 
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
@@ -2426,7 +2449,13 @@ describe('failures follow the edits', () => {
       textDocument: { uri: uri(page) },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/900)`);
+    // The spec's line calling the page object has no diagnostic: its hover says the failing line changed since the run.
+    const calling = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(rows) },
+      position: { line: 8, character: 10 },
+    })) as { contents: { value: string } };
+    expect(calling.contents.value).toContain(
       `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
     );
     // The diagnostic shows the headline: the hover gives the error's detail alone.
@@ -3826,9 +3855,7 @@ describe('the baseline chosen in the editor', () => {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
-      `**Local failure** · [removes a row](${url}/test-run-cases/1190) · local run #119`,
-    );
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/1190)`);
   });
 
   test('the ladder reads the checked-out branch, as without a choice', async () => {
@@ -4102,6 +4129,62 @@ describe('the severity of a failure', () => {
     } finally {
       stopSeverity();
       severityClient.dispose();
+    }
+  });
+});
+
+describe('a file whose URI the client spells otherwise', () => {
+  test('gets its analysis and its failures in one set, under the URI the client sent while it is open', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopSpelled = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const spelledClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    // An editor keeps one set per file, whichever form of its URI the set came under, as VS Code and JetBrains do.
+    const held = new Map<string, Array<{ code?: string; severity?: number }>>();
+    const sent = new Map<string, Array<{ code?: string }>>();
+    spelledClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      held.set(fileURLToPath(p.uri), p.diagnostics);
+      sent.set(p.uri, p.diagnostics);
+    });
+    spelledClient.listen();
+    const page = uri('tests/pages/checkout.page.ts');
+    // As VS Code spells a Windows path (`file:///c%3A/…`): another form of the same file.
+    const spelled = page.replace('/checkout.page.ts', '/%63heckout.page.ts');
+    const onPage = () => held.get(fileURLToPath(page)) ?? [];
+    const has = (code: string) => onPage().some((d) => d.code === code);
+    try {
+      await spelledClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await spelledClient.sendNotification('initialized', {});
+      await waitFor(() => (has('ci-failure') ? true : undefined));
+
+      await spelledClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: spelled, languageId: 'typescript', version: 1, text: PAGE_OBJECT },
+      });
+      await waitFor(() => (has('brittle') && has('ci-failure') ? true : undefined));
+      expect(sent.get(page)).toEqual([]);
+      expect(sent.get(spelled)?.map((d) => d.code)).toEqual(expect.arrayContaining(['brittle', 'ci-failure']));
+
+      // The failures sent again keep the analysis beside them.
+      await spelledClient.sendNotification('piwi/setCredentials', { failureSeverity: 'warning' });
+      await waitFor(() => (onPage().find((d) => d.code === 'ci-failure')?.severity === 2 ? true : undefined));
+      expect(has('brittle')).toBe(true);
+
+      // Closed, the file keeps its failures under the form the service writes.
+      await spelledClient.sendNotification('textDocument/didClose', { textDocument: { uri: spelled } });
+      await waitFor(() => (!has('brittle') && has('ci-failure') ? true : undefined));
+      expect(sent.get(spelled)).toEqual([]);
+      expect(sent.get(page)?.map((d) => d.code)).toEqual(['ci-failure']);
+    } finally {
+      stopSpelled();
+      spelledClient.dispose();
     }
   });
 });

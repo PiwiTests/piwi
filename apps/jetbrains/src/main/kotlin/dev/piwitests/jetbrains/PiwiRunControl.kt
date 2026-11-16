@@ -3172,7 +3172,11 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
 }
 
 /** A label that shows its text as it is: a text from the run never renders as HTML. */
-private fun plainLabel(text: String = "") = JBLabel(text).apply { putClientProperty("html.disable", true) }
+private fun plainLabel(words: String = "") = JBLabel().apply {
+    // Set before the text: a label made with its text reads it as HTML first.
+    putClientProperty("html.disable", true)
+    text = words
+}
 
 /** A text that wraps, read-only, for words from the run. */
 private fun plainArea() = JBTextArea().apply {
