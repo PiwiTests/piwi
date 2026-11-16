@@ -209,24 +209,27 @@ function isRunRequestTitle(value: unknown): value is string {
  * `absolutePath` is the spec's path as Playwright loads it: the config's folder, as Playwright resolves it (links
  * resolved the same way, or nothing matches), joined with the test's `filePath`, which the target checked names an
  * existing regular file, with `\` read as a separator as the parser reads it. Every `\` is written as `/`, which
- * Playwright also tests on Windows. A target passes this, the project as one `--project=<name>` element, and every
- * other argument as elements of the argv it spawns, never through a shell.
+ * Playwright tests on Windows from 1.63. Up to 1.62 it tests the native path and the file's `file:` URL instead, so on
+ * Windows the target passes `fileUrl`, the spec's URL as Node's `pathToFileURL` writes it, which the pattern takes as
+ * an alternative. A target passes this, the project as one `--project=<name>` element, and every other argument as
+ * elements of the argv it spawns, never through a shell.
  *
  * A line selects every test that starts on it, and the tests of a `describe` that starts on it (tests made in a loop
  * share one line), so the target shows what `playwright test --list` finds with these arguments before **Run**.
  */
-export function specFileArgument(absolutePath: string, line: number): string {
+export function specFileArgument(absolutePath: string, line: number, fileUrl?: string): string {
   if (!Number.isInteger(line) || line < 1) throw new RangeError(`A line number is a whole number from 1: ${line}`);
-  return `${specFilePattern(absolutePath)}:${line}`;
+  return `${specFilePattern(absolutePath, fileUrl)}:${line}`;
 }
 
 /**
  * The Playwright CLI argument that selects every test of one spec file: {@link specFileArgument} without a line, for
  * a target that selects the tests by title (a `--grep` beside it) because its folder is not on the request's commit.
  */
-export function specFilePattern(absolutePath: string): string {
-  const escaped = absolutePath.replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  return `/^${escaped}$/`;
+export function specFilePattern(absolutePath: string, fileUrl?: string): string {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const escaped = escape(absolutePath.replaceAll('\\', '/'));
+  return fileUrl ? `/^(?:${escaped}|${escape(fileUrl)})$/` : `/^${escaped}$/`;
 }
 
 /** Whether a value is a Playwright project name a request may carry. */
