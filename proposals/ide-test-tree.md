@@ -2,7 +2,7 @@
 
 **Status.** Proposed 2026-11-16, nothing built. The maintainer asked whether both editors can show every test of the
 workspace and run any of them, alone or by group, and whether the list should come from the Piwi instance or from the
-source code.
+source code. Its open questions were decided the same day ([§9](#9-decisions)).
 
 **Summary.** VS Code's Testing view already shows Piwi's tests and runs any node, but its list is incomplete: the spec
 files come from the instance's catalog (plus the specs open in the editor), and the tests inside each spec from a
@@ -78,14 +78,16 @@ nothing offline. The line parse alone keeps gaps 4 to 6.
 
 Checked on Playwright 1.64.1 with a config of two projects, a loop of three tests and a describe block of two:
 `playwright test --list` answered in about 0.8 s, listed every test once per project with its `file:line` (and, with
-`--reporter=json`, its id), and ran neither `globalSetup` nor `webServer`.
+`--reporter=json`, its id), and ran neither `globalSetup` nor `webServer`; neither ran on 1.59.0 either, the oldest
+Playwright the reporter supports.
 
 ### 3.1 The listing
 
 - **How.** Per config, with the project's own Playwright and Node, as the options read does: `playwright test --list`
   with the service's reporter, which also prints, when the service asks for it, one `PIWI_TESTS <json>` line from
   `onBegin(config, suite)`: each test's Playwright id, title path (describe titles, then title), location (file, line,
-  column), project name, tags and expected status. No new file in `dist/`.
+  column), project name, tags and expected status. No new file in `dist/`. The options read stays a process of its
+  own: it loads no spec, so the recorder's answer stays fast.
 - **When.** At start; when the config changes (the fingerprint the options read already computes); when a spec is
   created, deleted or renamed; when a spec is saved, the listing of that spec alone (`playwright test --list <spec>`),
   merged into the config's. Never as the person types.
@@ -110,14 +112,19 @@ for never starting Playwright on a keystroke.
 ### 3.3 The catalog
 
 Each listed test is matched to the catalog by file, describe path and title, the catalog's own key (`caseOfCall`), and
-takes its result, flaky mark, owner, quarantine, duration, link and id. A catalog case no listed test matches (a test
-deleted or renamed here, or one of another branch) is not shown. Without an instance the tree is complete, without
-results, and gap 3 then limits only what is added to the tests.
+takes its result, flaky mark, owner, quarantine, duration, link and id. The catalog is read whole, as today
+(`allCases`, once per refresh), and gap 3 then limits only what is added to the tests. Without an instance the tree is
+complete, without results.
+
+A catalog case no listed test matches (a test deleted or renamed here, or one of another branch) goes in a **Not in
+this checkout** group at the end of its config, by spec path then describe path, shown dimmed, each test opening its
+page on the dashboard. Nothing in the group runs: the checkout has no code for it.
 
 ## 4. The tree
 
 - **Levels**: config (when there are several), folders, spec, describe blocks, test, then the test's Playwright
-  projects when it runs in more than one.
+  projects when it runs in more than one; the config's **Not in this checkout** group last
+  ([§3.3](#33-the-catalog)).
 - **Ids** are paths, joined by `\x1f` as VS Code's are today: the config's folder, the file, the describe titles, the
   title, the project. They are the same whichever source gave the node, so an editor keeps a node's expanded state and
   result when the listing replaces the line parse.
@@ -154,6 +161,10 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 - **Locations, not catalog ids**: a run from the tree needs no instance and runs tests the instance does not know. The
   other entry points (a failure node, a test line's lens) keep `testIds`.
 - **The profiles stay**: Run, Debug, Coverage and Verify ×3 with Piwi, the last through `repeat`.
+- **No run by tag**: the editors' filters read the tags (Playwright's, `owner:<name>`, `quarantined`, `@piwi:flaky`),
+  and a run of the filtered tree runs the nodes it shows (to check in VS Code, [§6](#6-the-clients)). No `--grep @tag`
+  run is added.
+- **The Not in this checkout group runs nothing**: `piwi/testRuns` leaves its nodes out.
 
 ## 6. The clients
 
@@ -162,6 +173,10 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 - The Testing view draws the service's nodes, and a profile sends the picked node ids to `piwi/testRuns`, then runs the
   `RunTestsArgs` it answers through `runTests`, as tasks, as today. `testTree` and `testRunsOf` leave `glue.ts`.
 - What follows a run (the test run, its output, the coverage) does not change.
+- Every node of the checkout carries a `piwi:runnable` tag, and the four profiles take only nodes with it
+  (`TestRunProfile.tag`), so the **Not in this checkout** group shows no Run button.
+- To check in stage 2: with a filter on, the view's **Run Tests** runs only the tests the filter shows. If it runs
+  them all, the docs say to run the filtered nodes from their own menu.
 - With Microsoft's Playwright Test extension installed, the view shows two trees
   ([developer-loop-audit.md](developer-loop-audit.md) S9): the docs say what each one gives, and `piwi.testExplorer`
   turns Piwi's off.
@@ -169,7 +184,10 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 ### JetBrains
 
 - A **Tests** tab in the Piwi tool window, beside Failures: a `Tree` of the service's nodes with each node's result
-  icon (the marks both editors share), speed search, and double-click to open the source.
+  icon (the marks both editors share), speed search, and double-click to open the source (the dashboard's page for a
+  node of the **Not in this checkout** group, which offers no run action).
+- A filter field above the tree takes a title, a tag, an owner or a result, as VS Code's filter does, and the
+  toolbar's actions then act on the nodes it shows.
 - On any node, the toolbar and the context menu offer **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with
   Piwi**, the registered actions wrapped to act on the node (`registeredWith`), sent to `piwi/testRuns`. The run shows
   in its Run tab, as every Piwi run does.
@@ -180,9 +198,10 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 
 All in `packages/editor/src/protocol.ts`, mirrored in `Protocol.kt` in the same change, with no compatibility path:
 
-- `TestItemsResult.contexts[]` gives `nodes` (each with `id`, `kind`, `label`, `uri`, `line`, `endLine`, `children`,
-  and for a test the fields of `SpecTest`) in place of `specs`, and `listing`: when the config was last listed, and why
-  the last listing failed, if it did.
+- `TestItemsResult.contexts[]` gives `nodes` in place of `specs`: each with `id`, `kind` (`config`, `folder`,
+  `spec`, `describe`, `test`, `project`, `notInCheckout`), `label`, `uri`, `line`, `endLine`, `children`, `runnable` (false in
+  the **Not in this checkout** group), and for a test the fields of `SpecTest`. And `listing`: when the config was last
+  listed, and why the last listing failed, if it did.
 - `piwi/testItemsChanged`, pushed with the whole answer.
 - `piwi/testRuns`: `{ nodes: string[]; exclude?: string[]; repeat?: number; debug?: boolean; coverage?: boolean }` →
   `RunTestsArgs[]`.
@@ -202,15 +221,15 @@ Each a pull request with the `ide` scope.
    [developer-loop-audit.md](developer-loop-audit.md) and LI8 of [editor-ux-coherence.md](editor-ux-coherence.md)
    updated.
 
-## 9. Open questions
+## 9. Decisions
 
-1. **Playwright projects as the last level** (proposed), as a level under the config, or as a choice of projects that
-   applies to every run?
-2. **Running by tag**: VS Code's filter already reads the tags, and running the filtered view runs what it shows. Is a
-   `--grep @tag` run needed, and where would JetBrains offer it?
-3. **One process for both reads**: the listing also gives what the options read gives. Should the listing replace it?
-4. **A large suite**: how long does the listing of a 5,000-test suite take? To measure before choosing whether saving
-   a spec lists that spec alone (proposed) or the whole config.
-5. **The catalog read**: keep reading the whole catalog, or only the cases of the listed specs, through the catalog's
-   `file` filter?
-6. **The catalog's tests not in the checkout**: hidden (proposed), or a separate group?
+Taken by the maintainer on 2026-11-16.
+
+| # | Question | Decision | Rejected |
+| --- | --- | --- | --- |
+| 1 | Where the Playwright projects go | Under each test that runs in more than one ([§4](#4-the-tree)) | A level under the config, which repeats the tree per project; a choice of projects for every run, which shows no result per project |
+| 2 | A run by tag | None: the filters read the tags, and a run of the filtered tree runs what it shows ([§5](#5-running-a-node)) | A **Run by tag…** action; the tags as a grouping of the tree |
+| 3 | What a saved spec lists again | That spec alone ([§3.1](#31-the-listing)) | The whole config, slow on a large suite |
+| 4 | One process for the listing and the options read | Two processes ([§3.1](#31-the-listing)) | One listing for both, which makes the recorder wait for every spec to load |
+| 5 | How much of the catalog is read | The whole catalog, as today ([§3.3](#33-the-catalog)) | Only the listed specs' cases: a request per spec, or a new endpoint |
+| 6 | The catalog's tests the checkout lacks | A **Not in this checkout** group that runs nothing ([§3.3](#33-the-catalog)) | Hidden |
