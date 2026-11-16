@@ -2072,7 +2072,7 @@ describe('the test tree', () => {
           root: dir,
           testIds: [],
           locations: ['tests/listed.spec.ts:2'],
-          grep: 'listed.spec.ts adds mug 1',
+          grep: 'listed.spec.ts( @[^ ]+)* adds mug 1',
           ...debugging,
         },
         {
@@ -2089,7 +2089,7 @@ describe('the test tree', () => {
         return ((await client.sendRequest('piwi/runArgs', run)) as RunCommand).command;
       };
       expect(await command([mug.id])).toBe(
-        'npx playwright test tests/listed.spec.ts:2 --grep "listed.spec.ts adds mug 1"',
+        'npx playwright test tests/listed.spec.ts:2 --grep "listed.spec.ts( @[^ ]+)* adds mug 1"',
       );
       expect(await command([firefox.id])).toBe('npx playwright test tests/listed.spec.ts:4 --project firefox');
       // A folder by its whole path.

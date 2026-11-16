@@ -129,14 +129,22 @@ function spellings(root: string, file: string): string[] {
   return [absolute.split(path.sep).join('/'), pathToFileURL(absolute).href].map(filePattern);
 }
 
+/**
+ * A regular expression as a file filter Playwright reads with the file system's case: between slashes, which Playwright
+ * reads as written, where file names are case-sensitive; bare, which it reads ignoring case, on Windows and macOS.
+ */
+function asFilter(pattern: string): string {
+  return process.platform === 'win32' || process.platform === 'darwin' ? pattern : `/${pattern}/`;
+}
+
 /** Playwright's file filter for one spec of the config's folder `root`: a regular expression its whole path matches. */
 export function specFilter(root: string, file: string): string {
-  return `^(?:${spellings(root, file).join('|')})$`;
+  return asFilter(`^(?:${spellings(root, file).join('|')})$`);
 }
 
 /** Playwright's file filter for every spec of the config's folder `root` but these. */
 export function excludingFilter(root: string, files: readonly string[]): string {
-  return `^(?!(?:${files.flatMap((file) => spellings(root, file)).join('|')})$)`;
+  return asFilter(`^(?!(?:${files.flatMap((file) => spellings(root, file)).join('|')})$)`);
 }
 
 /** A file an error names, when it is a spec of the config's folder. */

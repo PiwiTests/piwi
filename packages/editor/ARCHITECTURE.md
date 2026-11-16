@@ -515,11 +515,12 @@ config's last listing:
   (`WATCHED_FILES_MS`), past `MAX_SPECS` the config whole. The service asks the client to watch the scripts
   (`workspace/didChangeWatchedFiles`, registered when the client takes dynamic registrations);
 - one listing runs per config at a time, and what is asked meanwhile runs after it, merged;
-- a spec is named by its whole path and by its `file:` URL, which Playwright also tests on Windows (`specFilter`), so
-  no other spec loads with it;
+- a spec is named by its whole path and by its `file:` URL, which Playwright also tests on Windows (`specFilter`), with
+  the file system's case (between slashes, which Playwright reads as written, except on Windows and macOS), so no
+  other spec loads with it;
 - Playwright lists nothing once one spec does not load, so the listing runs again without the specs that failed
-  (`excludingFilter`, by the same two spellings), and keeps why each failed (`broken`); an error that still leaves no
-  test listed (a module every spec imports) fails the listing as a whole. A listing that fails as a whole (Playwright missing, a config that throws, `LIST_TIMEOUT_MS`) keeps the last listing and
+  (`excludingFilter`, by the same two spellings), and keeps why each failed (`broken`); an error the retry cannot place
+  on a spec (in a module a spec imports) leaves no test listed, and fails the listing as a whole. A listing that fails as a whole (Playwright missing, a config that throws, `LIST_TIMEOUT_MS`) keeps the last listing and
   says why (`TestListing.error`);
 - a listing of some specs keeps their tests alone; a test of a spec outside the config's folder is left out, as everywhere in the service;
 - once a listing ends, the whole tree is pushed (`piwi/testItemsChanged`) when it differs from the last one sent or
@@ -561,15 +562,17 @@ filter Playwright takes for it, so a run needs no instance and a group is one ar
 | --- | --- |
 | A config | none (`RunTestsArgs.all`): `npx playwright test` |
 | A folder | its whole path, from the config's folder as the file system spells it, and as its `file:` URL does when that differs, then `/.` (`folderFilter`: `/repo/e2e/tests/cart/.`): Playwright matches a filter anywhere in a spec's path, and on Windows in its `file:` URL too, so `tests/cart/` would also take `e2e-tests/cart/`, and reads a filter that starts and ends with `/` as `/…/` syntax |
-| A spec | its path |
+| A spec | its path (`tests/cart.spec.ts`) |
 | A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
 | A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
 | A project's node | its test's, in that project alone (`--project`) |
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
-The filters of one config, set of projects and titles make one run, split where its locations would pass 8,000
-characters (`cmd.exe` stops at 8,191; a folder counts as written, in its two spellings), never widened to tests that
-were not picked. `--grep` matches a test's project, spec, each describe block and its tags, title and tags joined by
+Every location is written by `locationArg`, from the config's folder as the file system spells it: a path, and its
+`file:` URL's spelling when that differs (`(?:tests/my cart.spec.ts|tests/my.20cart.spec.ts):3`), which Playwright
+tests on Windows. The filters of one config, set of projects and titles make one run, split where its locations, as
+written, would pass 8,000 characters (`cmd.exe` stops at 8,191), never widened to tests that were not picked.
+`--grep` matches a test's project, spec and its tags, each describe block and its tags, title and tags joined by
 spaces, case-insensitive: a title is matched within that line's tests alone, after its spec's name and describe blocks,
 each followed by any tags (`TAG_GAP`), so neither matches it, and `titlePattern` writes it as `specPattern`
 writes a path, a backslash and a control character as `.` too. `piwi/runArgs` takes the new fields: `all`, `projects`, `grep`,

@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import type { TestTreeNode, TreeTest } from '../src/protocol';
 import { CONFIG_NODE } from '../src/protocol';
-import { configTree, folderFilter, nodeRuns, NOT_IN_CHECKOUT, titlePattern, type TreeEntry } from '../src/test-tree';
+import {
+  configTree,
+  folderFilter,
+  locationArg,
+  nodeRuns,
+  NOT_IN_CHECKOUT,
+  titlePattern,
+  type TreeEntry,
+} from '../src/test-tree';
 
 const ROOT = '/w';
 
@@ -247,11 +255,13 @@ describe('the runs of the nodes picked', () => {
 
   test('a test of a line that holds others runs by its spec’s name and title too, without those its title matches', () => {
     expect(runs([byLabel('adds mug 1')])).toEqual([
-      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 1', 'mugs.spec.ts adds mug 10'],
+      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts( @[^ ]+)* adds mug 1', 'mugs.spec.ts( @[^ ]+)* adds mug 10'],
     ]);
-    expect(runs([byLabel('adds mug 10')])).toEqual([['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 10', null]]);
+    expect(runs([byLabel('adds mug 10')])).toEqual([
+      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts( @[^ ]+)* adds mug 10', null],
+    ]);
     expect(runs([byLabel('adds mug 2 (large)')])).toEqual([
-      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 2 [(]large[)]', null],
+      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts( @[^ ]+)* adds mug 2 [(]large[)]', null],
     ]);
     // The spec whole needs none.
     expect(runs([byLabel('mugs.spec.ts')])).toEqual([['tests/mugs.spec.ts', '', null, null]]);
@@ -273,6 +283,8 @@ describe('the runs of the nodes picked', () => {
             entry({ uri: LOOP, suite: ['cart'], title: 'is a!b', line: 4 }, cart),
             entry({ uri: LOOP, suite: ['group 1'], title: 'x', line: 9 }, [{ start: 8, end: 10 }]),
             entry({ uri: LOOP, suite: ['group 2'], title: 'x', line: 9 }, [{ start: 8, end: 10 }]),
+            entry({ uri: LOOP, suite: ['bag'], title: 'adds', line: 12 }, [{ start: 11, end: 13 }]),
+            entry({ uri: LOOP, suite: ['bag @slow'], title: 'adds', line: 12 }, [{ start: 11, end: 13 }]),
           ],
         },
       ],
@@ -290,13 +302,27 @@ describe('the runs of the nodes picked', () => {
         pick(suite, title).map((n) => n.id),
       ).map((r) => [r.locations.join(' '), r.grep, r.grepInvert]);
     expect(loopRuns('cart', 'costs $5')).toEqual([
-      ['tests/loop.spec.ts:3', 'loop.spec.ts cart( @[#-~]+)* costs .5', 'loop.spec.ts cart( @[#-~]+)* costs 15'],
+      [
+        'tests/loop.spec.ts:3',
+        'loop.spec.ts( @[^ ]+)* cart( @[^ ]+)* costs .5',
+        'loop.spec.ts( @[^ ]+)* cart( @[^ ]+)* costs 15',
+      ],
     ]);
     expect(loopRuns('cart', 'costs 15')).toEqual([
-      ['tests/loop.spec.ts:3', 'loop.spec.ts cart( @[#-~]+)* costs 15', null],
+      ['tests/loop.spec.ts:3', 'loop.spec.ts( @[^ ]+)* cart( @[^ ]+)* costs 15', null],
     ]);
     expect(loopRuns('cart', 'is a%b')).toEqual([['tests/loop.spec.ts:5', null, null]]);
-    expect(loopRuns('group 1', 'x')).toEqual([['tests/loop.spec.ts:10', 'loop.spec.ts group 1( @[#-~]+)* x', null]]);
+    // A describe block's title that ends in a tag, which the tag gap lets through, is left out.
+    expect(loopRuns('bag', 'adds')).toEqual([
+      [
+        'tests/loop.spec.ts:13',
+        'loop.spec.ts( @[^ ]+)* bag( @[^ ]+)* adds',
+        'loop.spec.ts( @[^ ]+)* bag @slow( @[^ ]+)* adds',
+      ],
+    ]);
+    expect(loopRuns('group 1', 'x')).toEqual([
+      ['tests/loop.spec.ts:10', 'loop.spec.ts( @[^ ]+)* group 1( @[^ ]+)* x', null],
+    ]);
   });
 
   test('a node holding an excluded one runs by its children’s filters; a node no run takes runs nothing', () => {
@@ -335,8 +361,8 @@ describe('the runs of the nodes picked', () => {
     expect(split.length).toBeGreaterThan(1);
     expect(split.flatMap((r) => r.locations)).toHaveLength(400);
     for (const run of split) expect(run.locations.join(' ').length).toBeLessThanOrEqual(8000);
-    // A folder is written from the config's folder, in two spellings.
-    const deep = '/w/a-rather-long-folder-name-for-the-repository';
+    // A location counts as written: a folder from the config's folder, in two spellings when they differ.
+    const deep = '/w/プロジェクト my repository';
     const folders = configTree(
       deep,
       Array.from({ length: 60 }, (_, i) => ({
@@ -351,15 +377,14 @@ describe('the runs of the nodes picked', () => {
       folders[0]!.children.map((n) => n.id),
     );
     expect(byFolder.flatMap((r) => r.locations)).toHaveLength(60);
+    expect(byFolder.length).toBeGreaterThan(1);
     for (const run of byFolder) {
-      expect(run.locations.every((l) => l.endsWith('/'))).toBe(true);
-      const written = run.locations.reduce((sum, l) => sum + 2 * (deep.length + l.length) + 11, 0);
+      const written = run.locations.reduce((sum, l) => sum + locationArg(deep, l).length + 3, 0);
       expect(written).toBeLessThanOrEqual(8000);
     }
-    expect(byFolder.length).toBeGreaterThan(1);
   });
 
-  test('a folder by its whole path, and by its file: URL when it spells it apart', () => {
+  test('a location as the command line writes it, by its file: URL too when it spells it apart', () => {
     const matches = (filter: string, file: string) => new RegExp(filter, 'gi').test(file);
     expect(folderFilter('/w/tests')).toBe('/w/tests/.');
     const spaced = folderFilter('/w/my tests');
@@ -368,6 +393,14 @@ describe('the runs of the nodes picked', () => {
     expect(matches(spaced, 'file:///w/my%20tests/sub/a.spec.ts')).toBe(true);
     expect(matches(spaced, '/w/e2e-my tests/a.spec.ts')).toBe(false);
     expect(matches(folderFilter('/w/tests (old)'), '/w/tests (old)/a.spec.ts')).toBe(true);
+    expect(locationArg('/w', 'tests/')).toBe('/w/tests/.');
+    expect(locationArg('/w', 'tests/cart.spec.ts:3')).toBe('tests/cart.spec.ts:3');
+    expect(locationArg('/w/my repo', 'tests/my cart (1).spec.ts:3')).toBe(
+      '(?:tests/my cart [(]1[)].spec.ts|tests/my.20cart.20[(]1[)].spec.ts):3',
+    );
+    expect(locationArg('/w', 'tests/panier é.spec.ts')).toBe(
+      '(?:tests/panier é.spec.ts|tests/panier.20.C3.A9.spec.ts)',
+    );
   });
 
   test('a title as --grep reads it, with no character a shell expands', () => {

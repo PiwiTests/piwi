@@ -100,8 +100,15 @@ describe('the reporter’s lines', () => {
   });
 });
 
+/** A file filter as Playwright reads it: between slashes as written, else ignoring case. */
+const playwrightRegExp = (filter: string) => {
+  const between = /^\/(.*)\/([gi]*)$/.exec(filter);
+  return between ? new RegExp(between[1]!, between[2]) : new RegExp(filter, 'gi');
+};
+
 describe('the file filters', () => {
-  const matches = (filter: string, file: string) => new RegExp(filter, 'gi').test(file);
+  const matches = (filter: string, file: string) => playwrightRegExp(filter).test(file);
+  const caseSensitive = process.platform !== 'win32' && process.platform !== 'darwin';
 
   test('one spec: its whole path, either separator, or its file: URL', () => {
     const filter = specFilter('/work', 'my tests/cart.spec.ts');
@@ -112,6 +119,8 @@ describe('the file filters', () => {
     expect(matches(filter, '/work/my tests/my-cart.spec.ts')).toBe(false);
     expect(matches(filter, '/work/my tests/cartXspec.ts')).toBe(false);
     expect(matches(filter, '/work/my tests/cart.spec.tsx')).toBe(false);
+    // With the file system's case.
+    expect(matches(filter, '/work/my tests/Cart.spec.ts')).toBe(!caseSensitive);
   });
 
   test('every spec but some, by their whole paths or their file: URLs', () => {
@@ -122,6 +131,7 @@ describe('the file filters', () => {
     expect(matches(filter, 'file:///work/my%20tests/a%20(1).spec.ts')).toBe(false);
     expect(matches(filter, '/work/tests/unbroken.spec.ts')).toBe(true);
     expect(matches(filter, '/work/sub/tests/broken.spec.ts')).toBe(true);
+    expect(matches(filter, '/work/tests/Broken.spec.ts')).toBe(caseSensitive);
   });
 });
 
@@ -212,7 +222,7 @@ describe('each config’s listing', () => {
     const calls: Array<{ args: string[]; answer: () => void }> = [];
     const run: ListRunner = (_config, args) =>
       new Promise((resolve) => {
-        const tests = args.length ? all.filter((t) => args.some((a) => new RegExp(a).test(`/w/${t.file}`))) : all;
+        const tests = args.length ? all.filter((t) => args.some((a) => playwrightRegExp(a).test(`/w/${t.file}`))) : all;
         calls.push({ args, answer: () => resolve({ stdout: testsLine(tests), stderr: '' }) });
       });
     return { calls, run };
@@ -265,7 +275,9 @@ describe('each config’s listing', () => {
   test('a spec listed alone replaces its own tests, a spec with none leaves the listing', async () => {
     let tests = [listed({ file: 'tests/a.spec.ts', id: 'a' }), listed({ file: 'tests/b.spec.ts', id: 'b' })];
     const run: ListRunner = (_config, args) => {
-      const picked = args.length ? tests.filter((t) => args.some((a) => new RegExp(a).test(`/w/${t.file}`))) : tests;
+      const picked = args.length
+        ? tests.filter((t) => args.some((a) => playwrightRegExp(a).test(`/w/${t.file}`)))
+        : tests;
       return Promise.resolve({ stdout: testsLine(picked), stderr: '' });
     };
     const listings = new TestListings(

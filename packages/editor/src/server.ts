@@ -182,7 +182,6 @@ import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { RunStreams } from './run-stream.js';
 import { CiSessions } from './ci-sessions.js';
 import { CiWatch } from './ci-watch.js';
-import { specPattern } from '@piwitests/core/spec-filter';
 import {
   breakpointLines,
   declaredNamesAt,
@@ -194,7 +193,7 @@ import {
 import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
 import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
-import { configTree, folderFilter, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
+import { configTree, locationArg, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
@@ -4148,7 +4147,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
     const tree = await testItemsOf({ uris: documents.all().map((d) => d.uri) });
     const repeat = typeof params?.repeat === 'number' ? params.repeat : null;
-    return nodeRuns(tree.contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
+    const contexts = tree.contexts.map((c) => ({ ...c, folder: canonicalPath(c.root) }));
+    return nodeRuns(contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
       uri: run.uri ?? pathToFileURL(run.root).href,
       root: run.root,
       testIds: [],
@@ -4428,18 +4428,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
-   * The Playwright arguments that run the tests `params` names: by location, each spec as Playwright's file filter
-   * reads it (`specPattern`), else by id from the instance.
+   * The Playwright arguments that run the tests `params` names: by location, each as Playwright's file filter reads it
+   * (`locationArg`), else by id from the instance.
    */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (params.all === true) return [];
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) =>
-        l.endsWith('/')
-          ? folderFilter(path.join(commandFolder(context), l.slice(0, -1)))
-          : `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`,
-      );
+      return params.locations.map((l) => locationArg(commandFolder(context), l));
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -4477,7 +4473,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
     const test = debugTest(text, relative, debug.title);
     if (typeof test === 'string') return refuse(test);
-    const args = debugArgs(`${specPattern(relative)}:${test.line + 1}`, debug.project, test, debug.title);
+    const args = debugArgs(
+      locationArg(commandFolder(context), `${relative}:${test.line + 1}`),
+      debug.project,
+      test,
+      debug.title,
+    );
     const command = playwrightTestCommand(args);
     if (!command) {
       return refuse(
