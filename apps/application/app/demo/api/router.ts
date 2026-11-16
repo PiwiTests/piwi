@@ -514,6 +514,7 @@ import {
   demoRerunExecution,
 } from './ci-rerun';
 import {
+  demoAllCredentialUses,
   demoCreateCredential,
   demoCredentialUses,
   demoDeleteCredential,
@@ -1044,7 +1045,9 @@ const routes: RouteEntry[] = [
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
         if (ciRerun) {
-          const credentialProblem = await ciActionsCredentialProblem(db as never, +m[1]!, ciRerun);
+          const [stored] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, +m[1]!));
+          const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
+          const credentialProblem = await ciActionsCredentialProblem(db as never, +m[1]!, ciRerun, storedActions);
           if (credentialProblem) throw demoHttpError(400, credentialProblem);
         }
         const project = await updateProject(db, +m[1]!, { ...update, ciRerun });
@@ -3840,6 +3843,12 @@ const routes: RouteEntry[] = [
     permission: ['credentials:manage', 'project:manage'],
     handler: async (_m, body, _q, ctx) =>
       demoCreateCredential(await getDemoDb(), demoViewer(ctx), body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/uses$/,
+    permission: 'credentials:manage',
+    handler: async (_m, _b, q) => demoAllCredentialUses(await getDemoDb(), Object.fromEntries(q ?? [])),
   },
   {
     method: 'GET',

@@ -413,12 +413,12 @@ describe('checking a job on a CI server', () => {
     expect(await uses()).toEqual([expect.objectContaining({ credentialId: id, result: 'refused', count: 1 })]);
   });
 
-  test('says so when the credential the action names no longer exists', async () => {
+  test('says so when the credential the action names does not exist', async () => {
     const results = await check(
       target({ preset: 'jenkins', baseUrl: base, credentialId: 9999, rerun: { job: 'good' } }),
     );
     expect(results).toEqual([
-      expect.objectContaining({ ok: false, message: expect.stringContaining('no longer exists') }),
+      expect.objectContaining({ ok: false, message: expect.stringContaining('does not exist') }),
     ]);
     expect(seen).toEqual([]);
   });

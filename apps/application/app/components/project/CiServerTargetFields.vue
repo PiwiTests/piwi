@@ -20,15 +20,24 @@ const props = defineProps<{
   inputs?: [string, string][];
 }>();
 const state = defineModel<CiServerFormState>({ required: true });
+/** Why a save of the project would refuse this target's credential, or null: the editor refuses it first. */
+const problem = defineModel<string | null>('problem', { default: null });
 
 type CredentialsAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
-const { data: listed, refresh } = useFetch<CredentialsAnswer>('/api/credentials', {
+const {
+  data: listed,
+  refresh,
+  status,
+} = useFetch<CredentialsAnswer>('/api/credentials', {
   key: `ci-credentials-${props.projectId}`,
   query: { projectId: props.projectId, service: 'ci-server' },
   server: false,
 });
 const credentials = computed(() => (listed.value?.credentials ?? []) as CredentialOption[]);
 const chosen = computed(() => credentials.value.find((c) => c.id === state.value.credentialId) ?? null);
+/** Whether the list has answered: until then a named credential is not known to be missing. */
+const listedOk = computed(() => status.value === 'success');
+const canEncrypt = computed(() => listed.value?.canEncrypt ?? true);
 
 /** No credential picked: the instance's, when it sets one. */
 const NONE = -1;
@@ -53,11 +62,18 @@ const previewOpts = computed(() => ({
   inputs: props.inputs,
 }));
 const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
+/** The preview waits for the list when the action names a credential, whose destination may be its base URL. */
+const previewReady = computed(() => listedOk.value || state.value.credentialId === null);
 
 /** The base URL a request uses when the field is empty: the credential's destination, else the instance's. */
 const fallbackUrl = computed(() => chosen.value?.destination ?? props.instanceUrl);
 
 const credentialDescription = computed(() => {
+  if (state.value.credentialId && !listedOk.value) {
+    return status.value === 'error'
+      ? 'The credentials shared with this project could not be read.'
+      : 'Reading the credentials shared with this project…';
+  }
   const request = preview.value;
   if (request.carriesAuth === false) return 'This request carries no credential: its auth is none.';
   const credential = chosen.value;
@@ -86,8 +102,26 @@ const credentialDescription = computed(() => {
 });
 
 const creating = ref(false);
+watch(
+  [chosen, listedOk, () => state.value.preset, () => state.value.baseUrl, () => state.value.credentialId],
+  () => {
+    const credential = chosen.value;
+    const baseUrl = normalizeCiServerBaseUrl(state.value.baseUrl);
+    if (!state.value.credentialId || !listedOk.value) problem.value = null;
+    else if (!credential) problem.value = 'Pick a credential shared with this project.';
+    else if (baseUrl && !isUnderBaseUrl(credential.destination, baseUrl)) {
+      problem.value = `The base URL is not under ${credential.destination}, where “${credential.name}” is sent: clear it, or pick another credential.`;
+    } else if (state.value.preset === 'custom' && !credential.customRequests) {
+      problem.value = `“${credential.name}” does not go with a Custom request: pick another credential.`;
+    } else problem.value = null;
+  },
+  { immediate: true },
+);
+
 async function created(credential: CredentialSummary) {
   await refresh();
+  // A credential no longer shared with this project, once its scope was edited in the form, is not picked.
+  if (!credential.scope.allProjects && !credential.scope.projectIds.includes(props.projectId)) return;
   state.value.credentialId = credential.id;
   if (normalizeCiServerBaseUrl(state.value.baseUrl) === credential.destination) state.value.baseUrl = '';
 }
@@ -112,6 +146,8 @@ function customize() {
           variant="outline"
           size="sm"
           icon="i-lucide-key-round"
+          :disabled="!canEncrypt"
+          :title="canEncrypt ? undefined : 'Set PIWI_SECRET_KEY on the server to save a credential'"
           data-testid="ci-server-credential-new"
           @click="creating = true"
         >
@@ -203,8 +239,11 @@ function customize() {
 
     <div class="space-y-1">
       <p class="text-xs text-muted">The request this action sends, with sample values</p>
-      <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
-      <p v-else class="text-xs text-error">{{ preview.error }}</p>
+      <template v-if="previewReady">
+        <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
+        <p v-else class="text-xs text-error">{{ preview.error }}</p>
+      </template>
+      <p v-else class="text-xs text-muted">Reading the credential…</p>
     </div>
 
     <CredentialFormModal

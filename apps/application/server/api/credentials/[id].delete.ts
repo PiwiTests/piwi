@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Delete a credential',
     description:
-      'Deletes a credential and its secret. Its log stays, under the name it recorded, until the nightly sweep prunes it. A credential a CI action still names answers 409 with those actions (`data.usedBy`): pick another credential in each first. A credential the environment sets cannot be deleted (409). Someone who holds `credentials:manage` deletes any credential; a Project admin those they created that are shared only with projects they manage. Any other answers 404.',
+      'Deletes a credential and its secret. Its log stays, under the name it recorded, until the nightly sweep prunes it. A credential a CI action still names answers 409 with those actions (`data.usedBy`): pick another credential in each first. A credential the environment sets cannot be deleted (409). Someone who holds `credentials:manage` deletes any credential; a Project admin those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },

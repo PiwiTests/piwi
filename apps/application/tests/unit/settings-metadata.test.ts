@@ -168,13 +168,19 @@ describe('canOpenSettingsPath', () => {
     for (const page of restricted) expect(isInstancePermission(page.permission)).toBe(true);
   });
 
-  test('refuses every restricted page to a member, whatever their project roles, and to nobody', () => {
+  test('refuses every restricted page to a member without its project permission, and to nobody', () => {
     for (const page of restricted) {
       expect(canOpenSettingsPath(page.to, viewer)).toBe(false);
-      expect(canOpenSettingsPath(page.to, projectAdmin)).toBe(false);
+      expect(canOpenSettingsPath(page.to, projectAdmin)).toBe(page.projectPermission === 'project:manage');
       expect(canOpenSettingsPath(page.to, null)).toBe(false);
       expect(canOpenSettingsPath(page.to, undefined)).toBe(false);
     }
+  });
+
+  test('opens a page with a project permission to whoever holds it on one project', () => {
+    const ofOneProject = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 3, role: ProjectRole.PROJECT_ADMIN }]);
+    expect(canOpenSettingsPath('/settings/credentials', ofOneProject)).toBe(true);
+    expect(canOpenSettingsPath('/settings/storage', ofOneProject)).toBe(false);
   });
 
   test('lets an administrator open every settings page', () => {

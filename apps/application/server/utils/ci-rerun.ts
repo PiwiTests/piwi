@@ -56,7 +56,7 @@ import {
 } from './ci-server-dispatch';
 import { loadCredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
-import { credentialEnvRefusal } from './credentials';
+import { CredentialRefusedError, credentialEnvRefusal } from './credentials';
 import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import type { RunMetadata } from './run-json-types';
@@ -104,7 +104,7 @@ async function ciServerReadiness(
   projectId: number,
   action: CiAction & { target: { type: 'ci-server' } },
   runId: number | null,
-): Promise<{ reason: string | null; hasToken: boolean }> {
+): Promise<{ reason: string | null; hasToken: boolean; credentialRefused?: boolean }> {
   const target = ciServerTargetOf(action.target);
   if (!ciServerRequestTemplate(target, 'rerun')) {
     return { reason: 'No CI server is configured for this project.', hasToken: false };
@@ -133,7 +133,8 @@ async function ciServerReadiness(
         ? (credentialRefusal(record, { projectId, url: request.url, custom: request.custom }) ??
           credentialEnvRefusal(record))
         : 'The credential this CI action names does not exist: pick another one.';
-      if (refusal) return { reason: refusal, hasToken: false };
+      // A dispatch still goes to `withCredential`, which refuses it again and logs the refusal.
+      if (refusal) return { reason: refusal, hasToken: false, credentialRefused: Boolean(record) };
     }
     return { reason: null, hasToken: request.credential !== null };
   } catch (e) {
@@ -149,6 +150,8 @@ interface DispatchReadiness {
   enabled: boolean;
   hasToken: boolean;
   action: CiAction | null;
+  /** Unavailable only because the action's credential refuses the request, which a dispatch then logs. */
+  credentialRefused?: boolean;
 }
 
 /**
@@ -204,6 +207,7 @@ async function dispatchReadiness(
       enabled: true,
       hasToken: ready.hasToken,
       action,
+      ...(ready.credentialRefused ? { credentialRefused: true } : {}),
     };
   }
   if (!hasScmToken) {
@@ -231,6 +235,21 @@ export async function ciRerunAvailability(
   actionId?: string | null,
   cases?: () => Promise<RetryCase[]>,
 ): Promise<CiRerunAvailability> {
+  return (await rerunReadiness(db, projectId, lastSeenRunId, actionId, cases)).availability;
+}
+
+/**
+ * `ciRerunAvailability`, and whether a re-run is unavailable only because the
+ * action's credential refuses it: a dispatch then goes on to `withCredential`,
+ * which logs the refusal before it answers.
+ */
+async function rerunReadiness(
+  db: DbClient,
+  projectId: number,
+  lastSeenRunId: number,
+  actionId?: string | null,
+  cases?: () => Promise<RetryCase[]>,
+): Promise<{ availability: CiRerunAvailability; credentialRefused: boolean }> {
   const ready = await dispatchReadiness(db, projectId, lastSeenRunId, 'tests', actionId);
   const availability: CiRerunAvailability = {
     available: ready.available,
@@ -240,7 +259,10 @@ export async function ciRerunAvailability(
     hasToken: ready.hasToken,
     action: actionRef(ready.action),
   };
-  return cases && availability.available ? withRetryCases(availability, await cases()) : availability;
+  return {
+    availability: cases && availability.available ? withRetryCases(availability, await cases()) : availability,
+    credentialRefused: ready.credentialRefused === true,
+  };
 }
 
 /** The branch a re-run runs on: the branch of the run it re-runs, when that run has one. */
@@ -418,10 +440,14 @@ export async function rerunClusterInCi(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return { ok: false, error: 'not-found', message: 'Failure cluster not found' };
 
-  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId, options.actionId, () =>
-    clusterRerunCases(db, cluster.id),
+  const { availability, credentialRefused } = await rerunReadiness(
+    db,
+    cluster.projectId,
+    cluster.lastSeenRunId,
+    options.actionId,
+    () => clusterRerunCases(db, cluster.id),
   );
-  if (!availability.available) {
+  if (!availability.available && !credentialRefused) {
     return {
       ok: false,
       error: 'unavailable',
@@ -435,7 +461,7 @@ export async function rerunClusterInCi(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
+      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }
@@ -474,10 +500,14 @@ export async function rerunExecutionInCi(
   const target = await executionRerunTarget(db, executionId);
   if (!target) return { ok: false, error: 'not-found', message: 'Test run case not found' };
 
-  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, async () => [
-    target.rerunCase,
-  ]);
-  if (!availability.available) {
+  const { availability, credentialRefused } = await rerunReadiness(
+    db,
+    target.projectId,
+    target.runId,
+    null,
+    async () => [target.rerunCase],
+  );
+  if (!availability.available && !credentialRefused) {
     return {
       ok: false,
       error: 'unavailable',
@@ -496,7 +526,7 @@ export async function rerunExecutionInCi(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
+      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }
@@ -628,9 +658,9 @@ export async function runFlakeLabInCi(
 ): Promise<FlakeLabCiOutcome> {
   const [tc] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, testCaseId));
   if (!tc) return { ok: false, error: 'not-found', message: 'Test case not found' };
-  const availability = await flakeLabCiAvailability(db, tc.projectId, testCaseId);
-  if (!availability.available) {
-    return { ok: false, error: 'unavailable', message: availability.reason ?? 'Flake Lab in CI is not available' };
+  const ready = await dispatchReadiness(db, tc.projectId, await latestTestRunId(db, testCaseId), 'flakeLab');
+  if (!ready.available && !ready.credentialRefused) {
+    return { ok: false, error: 'unavailable', message: ready.reason ?? 'Flake Lab in CI is not available' };
   }
   try {
     const runId = await latestTestRunId(db, testCaseId);
@@ -645,6 +675,10 @@ export async function runFlakeLabInCi(
     });
     return { ok: true, dispatch: { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id } };
   } catch (e) {
-    return { ok: false, error: 'dispatch-failed', message: e instanceof Error ? e.message : 'Dispatch failed' };
+    return {
+      ok: false,
+      error: e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
+      message: e instanceof Error ? e.message : 'Dispatch failed',
+    };
   }
 }

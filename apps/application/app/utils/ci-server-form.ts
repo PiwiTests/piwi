@@ -161,12 +161,15 @@ export interface CiServerFormCredential {
   destination: string;
   customRequests: boolean;
   disabled: boolean;
+  /** False when the variable its secret is read from is not set on the server. */
+  secretEnvSet?: boolean | null;
 }
 
 /**
  * Whether the request a dispatch sends carries a credential: `credential` for
  * the one the action names, `refused` when that one would refuse it (a URL
- * outside its destination, a Custom request it does not allow, disabled), the
+ * outside its destination, a Custom request it does not allow, disabled, its
+ * variable unset), the
  * instance's for a preset's request under the instance URL, or `none`. Decided
  * on the rendered request URL, as the server decides it.
  */
@@ -192,6 +195,7 @@ export function ciServerPreviewCredential(
   if (credential) {
     const refused =
       credential.disabled ||
+      credential.secretEnvSet === false ||
       !isUnderBaseUrl(credential.destination, requestUrl) ||
       (preset === 'custom' && !credential.customRequests);
     return refused ? 'refused' : 'credential';

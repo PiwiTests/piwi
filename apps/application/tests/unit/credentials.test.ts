@@ -14,7 +14,9 @@ import {
 import {
   canManageCredential,
   canReadCredential,
+  ciActionsCredentialProblem,
   credentialScopeRefusal,
+  listCredentialUses,
   insertCredential,
   loadCredentialRecord,
   updateCredential,
@@ -48,6 +50,7 @@ vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
 vi.stubGlobal('apiError', apiError);
+vi.stubGlobal('setResponseStatus', () => {});
 
 const {
   CredentialRefusedError,
@@ -55,6 +58,7 @@ const {
   importProjectCiServerTokens,
   instanceCredential,
   pruneCredentialUses,
+  maskCredentialAnswer,
   sealCredentialEnv,
   sealCredentialSecret,
   withCredential,
@@ -72,6 +76,10 @@ const patchCredential = underRoutePermission(
 const deleteCredentialRoute = underRoutePermission(
   state,
   (await import('../../server/api/credentials/[id].delete')).default as unknown as Handler,
+);
+const createCredentialRoute = underRoutePermission(
+  state,
+  (await import('../../server/api/credentials/index.post')).default as unknown as Handler,
 );
 
 const SECRET_KEY = '0123456789abcdef'.repeat(4);
@@ -983,5 +991,123 @@ describe('a secret read from a server variable', () => {
     expect((await call(patchCredential, own, { secret: 'typed-again' })).credential).toMatchObject({
       secretEnv: null,
     });
+  });
+});
+
+describe('the review’s rules', () => {
+  const avery = {
+    user: { id: 1, username: 'avery', name: null, role: InstanceRole.ADMINISTRATOR } as unknown as User,
+    access: ADMIN_ACCESS,
+  };
+  const quinn = {
+    user: { id: 2, username: 'quinn', name: null, role: InstanceRole.MEMBER } as unknown as User,
+    access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.PROJECT_ADMIN }]),
+  };
+  const call = (handler: Handler, id: number, body?: unknown) => handler({ params: { id: String(id) }, body });
+  const posted = {
+    name: 'Quinn Jenkins',
+    service: 'ci-server',
+    secret: 'quinn-secret',
+    destination: DEST,
+    scope: { allProjects: false, projectIds: [1] },
+  };
+
+  test('a change by an administrator makes a Project admin’s credential the administrator’s', async () => {
+    const id = await create({ createdBy: 2 });
+    state.caller = avery;
+    await call(patchCredential, id, { disabled: true });
+    expect((await loadCredentialRecord(db as never, id))!.createdBy).toBe(1);
+    state.caller = quinn;
+    await expect(call(patchCredential, id, { disabled: false, customRequests: true })).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(await loadCredentialRecord(db as never, id)).toMatchObject({ disabled: true, customRequests: false });
+  });
+
+  test('a Project admin creates a credential for the projects they manage, never for all, nor from a variable', async () => {
+    state.caller = quinn;
+    expect((await createCredentialRoute({ body: posted })).credential).toMatchObject({
+      name: 'Quinn Jenkins',
+      canManage: true,
+      scope: { allProjects: false, projectIds: [1] },
+    });
+    expect(
+      (await loadCredentialRecord(
+        db as never,
+        (await createCredentialRoute({ body: { ...posted, name: 'Second' } })).credential.id as number,
+      ))!.createdBy,
+    ).toBe(2);
+    await expect(
+      createCredentialRoute({ body: { ...posted, name: 'All', scope: { allProjects: true } } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(
+      createCredentialRoute({ body: { ...posted, name: 'Other', scope: { allProjects: false, projectIds: [2] } } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    const { secret: _secret, ...withoutSecret } = posted;
+    await expect(
+      createCredentialRoute({ body: { ...withoutSecret, name: 'Variable', secretEnv: 'PIWI_CREDENTIAL_QUINN' } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(createCredentialRoute({ body: { ...posted, name: 'quinn JENKINS' } })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+  });
+
+  test('a name is unique ignoring case in the database too', async () => {
+    await create({ name: 'Team Jenkins' });
+    await expect(create({ name: 'TEAM jenkins' })).rejects.toThrow();
+  });
+
+  test('never opens a variable outside PIWI_CREDENTIAL_*, even one sealed for it', async () => {
+    const input: Omit<CredentialInput, 'secret'> = {
+      name: 'Home',
+      description: null,
+      service: 'ci-server',
+      user: null,
+      secretEnv: 'HOME',
+      destination: DEST,
+      scope: { allProjects: false, projectIds: [1] },
+      allowedInputs: null,
+      customRequests: false,
+      disabled: false,
+    };
+    const id = await insertCredential(db as never, input, sealCredentialEnv(DEST, 'HOME'), 1);
+    const send = vi.fn();
+    await expect(withCredential(db as never, useOf(id), send)).rejects.toThrow('cannot be opened');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test('masks the secret in an answer whose JSON escapes it', () => {
+    const opened = { user: 'team-bot', secret: 'ab/cd+ef' };
+    const answer = maskCredentialAnswer('{"message":"token ab\\/cd+ef rejected","nested":["\\u0061b/cd+ef"]}', opened);
+    expect(answer).not.toContain('cd+ef');
+    expect(JSON.parse(answer)).toEqual({ message: 'token **** rejected', nested: ['****'] });
+    expect(maskCredentialAnswer('plain ab/cd+ef', opened)).toBe('plain ****');
+  });
+
+  test('the log of every credential keeps a deleted one’s rows, under its name', async () => {
+    const id = await create();
+    await withCredential(db as never, useOf(id), async () => 'sent');
+    await db.delete(schema.credentials).where(eq(schema.credentials.id, id));
+    expect((await listCredentialUses(db as never, id, {})).items).toEqual([]);
+    expect((await listCredentialUses(db as never, null, {})).items).toEqual([
+      expect.objectContaining({ credentialName: 'Team Jenkins', result: 'ok' }),
+    ]);
+  });
+
+  test('a save checks only the actions whose credential, base URL or preset changed', async () => {
+    const id = await create();
+    const action = (over: Record<string, unknown> = {}) => ({
+      id: 'nightly',
+      name: 'Nightly',
+      target: { type: 'ci-server', preset: 'jenkins', credentialId: id, fields: { job: 'e2e' }, ...over },
+    });
+    await db.update(schema.credentials).set({ allProjects: false }).where(eq(schema.credentials.id, id));
+    await db.delete(schema.credentialProjects);
+    const refused = 'no CI server credential';
+    expect(await ciActionsCredentialProblem(db as never, 1, { actions: [action()] })).toContain(refused);
+    expect(await ciActionsCredentialProblem(db as never, 1, { actions: [action()] }, [action()])).toBeNull();
+    expect(
+      await ciActionsCredentialProblem(db as never, 1, { actions: [action({ baseUrl: DEST })] }, [action()]),
+    ).toContain(refused);
   });
 });

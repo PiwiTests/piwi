@@ -39,6 +39,8 @@ const open = defineModel<boolean>('open', { default: false });
 
 const draft = ref<CiActionDraft>(ciActionDraft(null));
 const error = ref<string | null>(null);
+/** What the CI server target says a save of the project would refuse about its credential. */
+const credentialProblem = ref<string | null>(null);
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
@@ -82,6 +84,10 @@ const inputPairs = computed<[string, string][]>(() =>
 );
 
 function submit() {
+  if (isCiServer.value && credentialProblem.value) {
+    error.value = credentialProblem.value;
+    return;
+  }
   const result = ciActionFromDraft(draft.value, { otherNames: props.otherNames, instanceUrl: props.instanceUrl });
   if (!result.action) {
     error.value = result.error;
@@ -181,6 +187,7 @@ function submit() {
         <div v-else class="rounded-md border border-default p-3">
           <CiServerTargetFields
             v-model="draft.ciServer"
+            v-model:problem="credentialProblem"
             :instance-url="instanceUrl"
             :project-id="projectId"
             :inputs="inputPairs"

@@ -515,7 +515,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
-      'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, and the one CI server token they share.',
+      'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, each CI server one naming its credential.',
     doc: 'features/ci-rerun',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },

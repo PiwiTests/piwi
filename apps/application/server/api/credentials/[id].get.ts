@@ -15,7 +15,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Get a credential',
     description:
-      'Returns a credential the caller may read, never its secret: its fields, its scope, the CI actions that name it (`usedBy`) and when it was last used. Someone who holds `credentials:manage` reads every credential; a Project admin reads those they created that are shared only with projects they manage. Any other answers 404.',
+      'Returns a credential the caller may read, never its secret: its fields, its scope, the CI actions that name it (`usedBy`) and when it was last used. Someone who holds `credentials:manage` reads every credential; a Project admin reads those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },

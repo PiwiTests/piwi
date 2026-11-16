@@ -39,7 +39,7 @@ import {
   recordClusterDispatch,
   rerunFiles,
 } from '#shared/handlers/ci-rerun-target';
-import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
+import { ciActionsCredentialProblem, loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
 import type { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
@@ -151,7 +151,7 @@ async function availability(
   if (!reason && target.credentialId && 'url' in prepared && prepared.sendsCredential) {
     reason = credential
       ? credentialRefusal(credential, { projectId, url: prepared.url, custom: target.preset === 'custom' })
-      : 'The credential this CI action names no longer exists: pick another one.';
+      : 'The credential this CI action names does not exist: pick another one.';
   }
   const hasToken = !reason && !!credential && 'url' in prepared && prepared.sendsCredential;
   return { available: !reason, reason, provider: 'ci-server', enabled: true, hasToken, action: ref };
@@ -291,6 +291,10 @@ export async function demoCiActionCheck(
     const problem = ciActionsProblem({ actions: [body.action] });
     if (problem) throw demoHttpError(400, problem);
     action = resolveCiActionsSettings({ enabled: true, actions: [body.action], defaults: {} }).actions[0];
+    const credentialProblem = action
+      ? await ciActionsCredentialProblem(db as never, projectId, { actions: [action] })
+      : null;
+    if (credentialProblem) throw demoHttpError(400, credentialProblem);
   } else {
     const { settings } = await projectCiActions(db, projectId);
     action = settings.actions.find((a) => a.id === actionId);
@@ -300,16 +304,30 @@ export async function demoCiActionCheck(
   if (target.type !== 'ci-server') return { ok: null, missing: [], message: CANNOT_CHECK[target.type] };
   if (target.preset === 'custom') return { ok: null, missing: [], message: CANNOT_CHECK.custom };
   const server = ciServerTargetOf(target);
-  const { baseUrl } = await targetCredential(db, server);
+  const { credential, baseUrl } = await targetCredential(db, server);
   if (!baseUrl) return { ok: false, missing: [], message: NO_TARGET };
   if (!baseUrl.startsWith('https:')) return { ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM };
-  const [plan] = ciServerCheckPlans(
-    server,
-    baseUrl,
-    action.inputs.map((i) => i.name),
-  );
+  const inputNames = action.inputs.map((i) => i.name);
+  const [plan] = ciServerCheckPlans(server, baseUrl, inputNames);
   if (!plan) return { ok: null, missing: [], message: 'Nothing was checked.' };
   if ('error' in plan) return { ok: false, missing: [], message: plan.error };
-  const finding = ciServerCheckFinding(plan, DEMO_JOB_JSON);
-  return { ok: finding.ok, missing: finding.missing, message: finding.message };
+  // As the server: the credential's rules refuse the read, and it sends only the inputs it allows.
+  if (server.credentialId) {
+    const refusal = credential
+      ? credentialRefusal(credential, { projectId, url: plan.url, custom: false })
+      : 'The credential this CI action names does not exist: pick another one.';
+    if (refusal) return { ok: false, missing: [], message: refusal };
+  }
+  const allowed = credential?.allowedInputs ?? null;
+  const notSent = allowed ? inputNames.filter((name) => !allowed.includes(name)) : [];
+  const finding = ciServerCheckFinding(
+    notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
+    DEMO_JOB_JSON,
+  );
+  if (notSent.length === 0) return { ok: finding.ok, missing: finding.missing, message: finding.message };
+  return {
+    ok: false,
+    missing: finding.missing,
+    message: `${finding.message} Not sent: ${notSent.join(', ')}, because the credential "${credential!.name}" does not allow these inputs.`,
+  };
 }

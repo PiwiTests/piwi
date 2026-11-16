@@ -1,8 +1,8 @@
 /**
  * The credential manager's secrets: sealing one with its destination, opening
  * it for one use after the checks, recording every use, the credential the
- * environment sets, and the import of the project CI server tokens stored
- * before the manager.
+ * environment sets, and the import of the project CI server tokens
+ * (`projects.ci_server_token`).
  *
  * `withCredential` is the one way to a secret. It refuses a use the
  * credential's rules do not allow (`credentialRefusal`), records the refusal,
@@ -34,7 +34,7 @@ const MAX_REASON = 500;
 const HOUR_MS = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * HOUR_MS;
 
-/** Days the log is kept when `PIWI_CREDENTIAL_LOG_DAYS` is unset. */
+/** Days the log is kept when `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` is unset. */
 export const DEFAULT_CREDENTIAL_LOG_DAYS = 365;
 
 /** A secret sealed with the destination it may be sent under, as `credentials.secret` stores it. */
@@ -232,6 +232,32 @@ export function maskCredentialSecret(text: string, opened: OpenedCredential | nu
   return masked;
 }
 
+/**
+ * An answer's text with the secret masked, as written and, for a JSON answer,
+ * in each string once decoded: a JSON escape (`\/`, a `\u` code) hides it from the
+ * text alone. A JSON answer comes back serialized again.
+ */
+export function maskCredentialAnswer(text: string, opened: OpenedCredential): string {
+  const masked = maskCredentialSecret(text, opened);
+  let json: unknown;
+  try {
+    json = JSON.parse(masked);
+  } catch {
+    return masked;
+  }
+  const walk = (value: unknown): unknown => {
+    if (typeof value === 'string') return maskCredentialSecret(value, opened);
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [maskCredentialSecret(key, opened), walk(item)]),
+      );
+    }
+    return value;
+  };
+  return JSON.stringify(walk(json));
+}
+
 const cut = (text: string | null): string | null => (text ? text.slice(0, MAX_REASON) : null);
 
 /**
@@ -410,8 +436,9 @@ function openProjectToken(stored: string | null): { url: string; token: string }
  * Move the project CI server tokens (`projects.ci_server_token`) into
  * credentials, once: each token becomes a credential bound to the URL it was
  * sealed with, shared with its project, with the user name of the actions it
- * served, and allowed with a Custom request and every input, as the token was.
- * A token equal to one already imported, with the same URL and user, joins
+ * served, and allowed with a Custom request and every input. It has no
+ * creator, so an administrator manages it. A token equal to one already
+ * imported, with the same URL and user, joins
  * that credential's projects instead. Each CI server action the token served
  * (its base URL, else the instance's, under the token's URL) names the
  * credential and drops its user name, and the project's token is emptied, in

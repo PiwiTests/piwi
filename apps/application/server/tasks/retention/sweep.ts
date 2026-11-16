@@ -36,7 +36,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_CREDENTIAL_LOG_DAYS, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_RETENTION_CREDENTIAL_LOG_DAYS, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -126,7 +126,7 @@ export default defineTask({
       if (pruned > 0) result.mcpToolCallsPruned = pruned;
     }
 
-    const credentialLogDays = envInt('PIWI_CREDENTIAL_LOG_DAYS') ?? DEFAULT_CREDENTIAL_LOG_DAYS;
+    const credentialLogDays = envInt('PIWI_RETENTION_CREDENTIAL_LOG_DAYS') ?? DEFAULT_CREDENTIAL_LOG_DAYS;
     if (credentialLogDays > 0) {
       const pruned = await pruneCredentialUses(db, credentialLogDays);
       if (pruned > 0) result.credentialUsesPruned = pruned;

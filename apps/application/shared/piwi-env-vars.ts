@@ -406,7 +406,7 @@ export const PIWI_ENV_VARS = {
     since: '0.59.0',
     docs: 'features/assistant#privacy',
   },
-  PIWI_CREDENTIAL_LOG_DAYS: {
+  PIWI_RETENTION_CREDENTIAL_LOG_DAYS: {
     description:
       'Days the log of every credential use (Settings → Credentials) is kept before the nightly sweep deletes it (default 365; 0 keeps it forever).',
     category: 'database',

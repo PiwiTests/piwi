@@ -429,6 +429,17 @@ export const SETTINGS_ANCHORS = [
     doc: 'operate/credentials',
     sample: { route: '/settings/credentials' },
   },
+  {
+    id: 'credentials-log',
+    kind: 'field',
+    pages: ['/settings/credentials'],
+    describes:
+      'The log of every credential, deleted ones included: each use, who started it, for which project and action, and how it ended.',
+    requires: { permission: 'credentials:manage' },
+    help: 'settings.credentials.log',
+    doc: 'operate/credentials#the-log',
+    sample: { route: '/settings/credentials' },
+  },
 
   // Integrations
   {
@@ -913,18 +924,6 @@ export const SETTINGS_ANCHORS = [
 
 /** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
 export const SETTINGS_EXEMPTIONS = [
-  {
-    rule: 'field',
-    key: 'credentials.log',
-    reason:
-      'The log shows in the panel a credential row opens, and a row is no anchor a guide can open, so no sample renders it.',
-  },
-  {
-    rule: 'help',
-    key: 'settings.credentials.log',
-    reason:
-      'The log’s hint shows in the panel a credential row opens, and a row is no anchor a guide can open, so no sample renders it.',
-  },
   {
     rule: 'field',
     key: 'account.connected-accounts',

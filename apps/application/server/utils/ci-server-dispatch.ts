@@ -25,7 +25,7 @@ import { isDesktopRuntime } from './ai-claude-cli';
 import {
   CredentialRefusedError,
   instanceCredential,
-  maskCredentialSecret,
+  maskCredentialAnswer,
   withCredential,
   type CredentialActor,
 } from './credentials';
@@ -139,7 +139,7 @@ function toCiServerCredential(record: CredentialRecord, source: CiServerCredenti
 export async function ciServerCredential(db: DbClient, target: CiServerTarget): Promise<CiServerCredential | null> {
   if (target.credentialId != null) {
     const record = await loadCredentialRecord(db, target.credentialId);
-    if (!record) throw new Error('The credential this CI action names no longer exists: pick another one.');
+    if (!record) throw new Error('The credential this CI action names does not exist: pick another one.');
     return toCiServerCredential(record, 'action');
   }
   const instance = await instanceCredential(db, 'ci-server');
@@ -372,7 +372,7 @@ async function sendWithCredential(
     async (opened) => {
       const answer = await sendCiServerRequest(rebuild({ ...credential, user: opened.user, token: opened.secret }));
       // A CI server may repeat the credential in its answer (an error message): nothing past here reads it.
-      return { ...answer, text: maskCredentialSecret(answer.text, opened) };
+      return { ...answer, text: maskCredentialAnswer(answer.text, opened) };
     },
     (answer) => (answer.status >= 200 && answer.status < 300 ? null : `The CI server answered ${answer.status}`),
   );

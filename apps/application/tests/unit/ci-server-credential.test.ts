@@ -283,10 +283,10 @@ describe('the credential a target’s requests carry', () => {
     });
   });
 
-  test('cannot be one that no longer exists', async () => {
+  test('cannot be one that does not exist', async () => {
     await expect(
       ciServerCredential(db as never, target({ preset: 'jenkins', credentialId: 9999, rerun: { job: 'e2e' } })),
-    ).rejects.toThrow('no longer exists');
+    ).rejects.toThrow('does not exist');
   });
 
   test('is the instance’s when the action names none and the environment sets one, else none', async () => {

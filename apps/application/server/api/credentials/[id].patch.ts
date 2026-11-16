@@ -2,6 +2,7 @@ import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { requireRouteId } from '../../utils/project-access';
 import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
+import { isUniqueViolation } from '../../utils/db-errors';
 import {
   canManageCredential,
   credentialNameTaken,
@@ -19,7 +20,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Update a credential',
     description:
-      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage. Any other answers 404.',
+      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
@@ -76,7 +77,16 @@ export default eventHandler(async (event) => {
     : secret
       ? sealCredentialSecret(destination, secret)
       : undefined;
-  await updateCredential(db, id, patch, sealed);
+  // A change by an administrator makes the credential theirs: its creator never loosens it afterwards.
+  const owner = can(access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
+  try {
+    await updateCredential(db, id, patch, sealed, owner);
+  } catch (e) {
+    // Two renames to one name at once: the database's unique index answers for the slower one.
+    if (isUniqueViolation(e))
+      throw apiError({ statusCode: 409, message: `A credential is already named "${patch.name}".` });
+    throw e;
+  }
   const updated = (await loadCredentialRecord(db, id))!;
   return {
     credential: withSecretEnvState(credentialSummary(updated, (await credentialReferences(db)).get(id) ?? [], viewer)),

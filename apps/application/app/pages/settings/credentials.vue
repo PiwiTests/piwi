@@ -10,8 +10,10 @@ import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 type ListAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
 
 const toast = useToast();
-const { can } = useAuth();
+const { can, canAnywhere } = useAuth();
 const canManage = computed(() => can('credentials:manage'));
+/** A Project admin creates credentials for the projects they manage; an administrator for any. */
+const canCreate = computed(() => canManage.value || canAnywhere('project:manage'));
 
 const { data, refresh } = await useFetch<ListAnswer>('/api/credentials');
 const credentials = computed(() => (data.value?.credentials ?? []) as CredentialSummary[]);
@@ -92,7 +94,7 @@ async function remove() {
     >
       <template #actions>
         <UButton
-          v-if="canManage"
+          v-if="canCreate"
           label="New credential"
           icon="i-lucide-plus"
           size="sm"
@@ -144,6 +146,19 @@ async function remove() {
           </button>
         </li>
       </ul>
+    </SectionCard>
+
+    <SectionCard
+      v-if="canManage"
+      title="Log"
+      icon="i-lucide-scroll-text"
+      subtitle="Every use of every credential, deleted ones included"
+      help="settings.credentials.log"
+      data-testid="credentials-log"
+      data-tour="credentials-log"
+      data-shot="credentials-log"
+    >
+      <CredentialActivity />
     </SectionCard>
 
     <USlideover v-model:open="panelOpen" :title="selected?.name ?? 'Credential'">

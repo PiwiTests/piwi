@@ -39,18 +39,19 @@ PIWI_CREDENTIAL_JENKINS=11a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6
 ```
 
 The variable is read at each use, so changing it and restarting the server is the rotation. Its name is sealed with
-the destination like a saved secret, so changing the destination asks for the name again. The panel says when the
-variable is not set on the server, and a dispatch is then refused and logged. Only an administrator may change a
-credential that reads a variable.
+the destination like a saved secret, so a new destination is saved with the name again (the form sends it). The
+panel says when the variable is not set on the server, and a dispatch is then refused and logged. Only an
+administrator may change a credential that reads a variable.
 
 ## Who manages them
 
 An administrator (the `credentials:manage` permission) creates, changes, disables and deletes any credential, and is the
-only one who may share one with all projects. A Project admin creates credentials from a project's **CI** settings,
-shares them with the projects they manage, and changes the ones they created while they are shared only with those
-projects. A credential an administrator saved stays the administrator's: a Project admin picks it, and never loosens its
-rules. Anyone who manages a project's CI actions picks any credential shared with that project, without ever reading
-its secret. See [Access, roles and groups](./project-access).
+only one who may share one with all projects. A Project admin opens **Settings → Credentials** too, and sees there the
+credentials they manage: the ones they created, shared only with projects they manage and reading no variable. They
+create them there or from a project's **CI** settings. A credential an administrator saved or changed is the
+administrator's: a Project admin picks it, and never loosens its rules or undoes a **Disable**. Anyone who manages a
+project's CI actions picks any credential shared with that project, without ever reading its secret. See
+[Access, roles and groups](./project-access).
 
 **Disable** refuses every use of a credential at once, for an incident, without touching the actions that name it.
 **Delete** is refused while a CI action names the credential: the answer lists them.
@@ -72,24 +73,28 @@ server action that names no credential, only with a preset's request under `PIWI
 inputs `PIWI_CI_SERVER_ALLOWED_INPUTS` lists. Its uses are logged like any other. See the
 [configuration reference](/reference/configuration).
 
-A CI server token stored on a project, as the **CI** section held one before credentials, is moved to a credential at
-startup: bound to the URL it was saved with, shared with its project, allowed with a Custom request and every input as
-the token was, and named by the CI server actions it served. Two projects holding the same token for the same URL and
-user share one credential.
+A CI server token stored on a project (`projects.ci_server_token`) is moved to a credential at startup: bound to the
+URL it was saved with, shared with its project, allowed with a Custom request and every input, and named by the CI
+server actions it served. Two projects holding the same token for the same URL and user share one credential. An
+administrator manages it, since the database does not say who saved the token. A token that cannot be opened (a
+changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each start.
 
 ## The log
 
-A credential's panel lists every use, newest first:
+A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
+credential, a deleted one and the instance's included:
 
 - **What**: a CI dispatch, or a Check, with the CI action it was for.
 - **Where**: the project, and the request's origin and path (never its query).
-- **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script).
+- **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
+  Checks, the last of the hour.
 - **How it ended**: `sent` until the CI server answers, then `ok` or `failed` with the status; `refused` when the
   credential's rules stopped it before anything was sent, with the reason.
 
 A dispatch is one row. A Check only reads, so the Checks of a project are counted in one row per result and hour. The
-secret is masked in any reason a CI server's answer holds. The log is kept 365 days, or `PIWI_CREDENTIAL_LOG_DAYS`
-(0 keeps it forever), by the nightly sweep; a deleted credential's rows stay under its name until then.
+secret is masked in any reason a CI server's answer holds. The log is kept 365 days, or
+`PIWI_RETENTION_CREDENTIAL_LOG_DAYS` (0 keeps it forever), by the nightly sweep; a deleted credential's rows stay in the
+page's **Log**, under its name, until then.
 
 ## Related
 

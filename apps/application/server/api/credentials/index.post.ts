@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
+import { isUniqueViolation } from '../../utils/db-errors';
 import {
   credentialNameTaken,
   credentialReferences,
@@ -49,20 +50,28 @@ export default eventHandler(async (event) => {
     ? sealCredentialEnv(input.destination, input.secretEnv)
     : sealCredentialSecret(input.destination, input.secret!);
   const { secret: _secret, ...fields } = input;
-  const id = await insertCredential(
-    db,
-    {
-      ...fields,
-      description: input.description ?? null,
-      user: input.user ?? null,
-      allowedInputs: input.allowedInputs ?? null,
-      customRequests: input.customRequests ?? false,
-      disabled: input.disabled ?? false,
-    },
-    sealed,
-    // The virtual administrator of an instance without sign-in is id 0, no user row.
-    user.id || null,
-  );
+  let id: number;
+  try {
+    id = await insertCredential(
+      db,
+      {
+        ...fields,
+        description: input.description ?? null,
+        user: input.user ?? null,
+        allowedInputs: input.allowedInputs ?? null,
+        customRequests: input.customRequests ?? false,
+        disabled: input.disabled ?? false,
+      },
+      sealed,
+      // The virtual administrator of an instance without sign-in is id 0, no user row.
+      user.id || null,
+    );
+  } catch (e) {
+    // Two creates of one name at once: the database's unique index answers for the slower one.
+    if (isUniqueViolation(e))
+      throw apiError({ statusCode: 409, message: `A credential is already named "${input.name}".` });
+    throw e;
+  }
   const record = (await loadCredentialRecord(db, id))!;
   setResponseStatus(event, 201);
   return {

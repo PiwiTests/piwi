@@ -3207,7 +3207,8 @@ export const credentials = sqliteTable(
     lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   },
   (t) => ({
-    nameIdx: uniqueIndex('idx_credentials_name').on(t.name),
+    // Unique ignoring case, as the routes compare names.
+    nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
   }),
 );
 
@@ -3229,7 +3230,7 @@ export const credentialProjects = sqliteTable(
 );
 
 // Every use of a credential, refusals included: one row per use that changes something outside Piwi, one row per
-// credential, feature, project, result and hour for a read (`count`). Kept PIWI_CREDENTIAL_LOG_DAYS days.
+// credential, feature, project, result and hour for a read (`count`). Kept PIWI_RETENTION_CREDENTIAL_LOG_DAYS days.
 export const credentialUses = sqliteTable(
   'credential_uses',
   {

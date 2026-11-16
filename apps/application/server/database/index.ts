@@ -226,7 +226,7 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
- * Move the project CI server tokens stored before the credential manager into
+ * Move the project CI server tokens (`projects.ci_server_token`) into
  * credentials (`importProjectCiServerTokens`). Startup waits for it, so no
  * dispatch runs while an action still waits for its credential. A token that
  * cannot be opened is left for the next start, and a failure is logged.

@@ -1247,6 +1247,13 @@
       "when": 1794853779382,
       "tag": "0177_credential_secret_env",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1794856658555,
+      "tag": "0178_credential_name_lower",
+      "breakpoints": true
     }
   ]
 }

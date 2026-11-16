@@ -157,7 +157,9 @@ export async function loadCredentialRecords(db: DrizzleDB): Promise<CredentialRe
  * Whether a caller may change a credential and read its log: anyone who holds
  * `credentials:manage`, or the Project admin who created it while it is shared
  * only with projects they manage and its secret is not read from a variable,
- * which is the operator's. A credential an administrator saved for a
+ * which is the operator's. A change by someone who holds `credentials:manage`
+ * makes the credential theirs (`created_by`), so its creator never loosens
+ * what an administrator set or undoes a Disable. A credential an administrator saved for a
  * project stays theirs: its project's admins pick it, and never loosen its
  * rules. Nobody changes a credential the environment sets.
  */
@@ -346,15 +348,18 @@ export async function insertCredential(
  * Change a stored credential. `sealed` is the new secret, or the variable it
  * is read from (`patch.secretEnv`, null for a typed one), sealed with the
  * destination the update leaves; given when either was sent, it moves the
- * rotation date.
+ * rotation date. `owner`, when given, becomes the user the credential is
+ * managed by (`created_by`).
  */
 export async function updateCredential(
   db: DrizzleDB,
   id: number,
   patch: Partial<Omit<CredentialInput, 'secret'>>,
   sealed?: string,
+  owner?: number | null,
 ): Promise<void> {
   const set: Partial<typeof credentials.$inferInsert> = {};
+  if (owner !== undefined) set.createdBy = owner;
   if (patch.name !== undefined) set.name = patch.name;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.user !== undefined) set.userName = patch.user;
@@ -403,13 +408,16 @@ export function parseCredentialUsesFilter(query: Record<string, unknown>): Crede
   return { projectId: positive(query.projectId), feature, result, before: positive(query.before) };
 }
 
-/** A page of a credential's log, newest first, and the cursor of the next page. */
+/**
+ * A page of a credential's log, or of every credential's (`credentialId`
+ * null, deleted ones included), newest first, and the cursor of the next page.
+ */
 export async function listCredentialUses(
   db: DrizzleDB,
-  credentialId: number,
+  credentialId: number | null,
   filter: CredentialUsesFilter,
 ): Promise<{ items: CredentialUseEntry[]; nextCursor: number | null }> {
-  const conditions = [eq(credentialUses.credentialId, credentialId)];
+  const conditions = credentialId === null ? [] : [eq(credentialUses.credentialId, credentialId)];
   if (filter.projectId) conditions.push(eq(credentialUses.projectId, filter.projectId));
   if (filter.feature) conditions.push(eq(credentialUses.feature, filter.feature));
   if (filter.result) conditions.push(eq(credentialUses.result, filter.result));
@@ -422,6 +430,7 @@ export async function listCredentialUses(
       projectId: credentialUses.projectId,
       projectName: projects.name,
       projectLabel: projects.label,
+      projectCiRerun: projects.ciRerun,
       userName: users.name,
       username: users.username,
       apiKey: apiKeys.name,
@@ -438,10 +447,21 @@ export async function listCredentialUses(
     .leftJoin(projects, eq(projects.id, credentialUses.projectId))
     .leftJoin(users, eq(users.id, credentialUses.userId))
     .leftJoin(apiKeys, eq(apiKeys.id, credentialUses.apiKeyId))
-    .where(and(...conditions))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(credentialUses.id))
     .limit(CREDENTIAL_USES_PAGE_SIZE + 1);
   const page = rows.slice(0, CREDENTIAL_USES_PAGE_SIZE);
+  const actionNames = new Map<number, Map<string, string>>();
+  const actionName = (row: (typeof page)[number]): string | null => {
+    if (row.subjectType !== 'ci-action' || !row.subjectId || row.projectId == null) return null;
+    let names = actionNames.get(row.projectId);
+    if (!names) {
+      const actions = row.projectCiRerun ? resolveCiActionsSettings(row.projectCiRerun).actions : [];
+      names = new Map(actions.map((a) => [a.id, a.name]));
+      actionNames.set(row.projectId, names);
+    }
+    return names.get(row.subjectId) ?? null;
+  };
   return {
     items: page.map((row) => ({
       id: row.id,
@@ -453,6 +473,7 @@ export async function listCredentialUses(
       apiKey: row.apiKey ?? null,
       subjectType: row.subjectType ?? null,
       subjectId: row.subjectId ?? null,
+      subjectName: actionName(row),
       destination: row.destination ?? null,
       result: row.result as CredentialUseResult,
       reason: row.reason ?? null,
@@ -464,21 +485,39 @@ export async function listCredentialUses(
   };
 }
 
+type ActionLike = { id?: string; name: string; target: { type: string } & Record<string, unknown> };
+
+/** Whether a posted action names the credential, base URL and preset its stored version already did. */
+function unchangedCredentialUse(action: ActionLike, stored: readonly ActionLike[]): boolean {
+  const before = stored.find((s) => s.id !== undefined && s.id === action.id);
+  if (!before || before.target.type !== 'ci-server') return false;
+  return (
+    before.target.credentialId === action.target.credentialId &&
+    (before.target.baseUrl ?? null) === (action.target.baseUrl ?? null) &&
+    before.target.preset === action.target.preset
+  );
+}
+
 /**
  * Why a project's CI actions cannot be saved with the credentials they name,
  * or null: each one must exist, be set in the database for a CI server, and be
  * shared with the project; an action's own base URL must lie under its
  * destination, and a Custom request needs a credential that allows one. The
  * same answer for a credential that does not exist and one not shared with
- * the project, so a project admin learns nothing of the others.
+ * the project, so a project admin learns nothing of the others. With the
+ * stored actions given, an action whose credential, base URL and preset are
+ * unchanged is not checked again: a credential narrowed since then is refused
+ * at dispatch, and does not block the project's other changes.
  */
 export async function ciActionsCredentialProblem(
   db: DrizzleDB,
   projectId: number,
-  settings: { actions: Array<{ name: string; target: { type: string } & Record<string, unknown> }> },
+  settings: { actions: ActionLike[] },
+  stored: readonly ActionLike[] = [],
 ): Promise<string | null> {
   const wanted = settings.actions.filter(
-    (a) => a.target.type === 'ci-server' && typeof a.target.credentialId === 'number',
+    (a) =>
+      a.target.type === 'ci-server' && typeof a.target.credentialId === 'number' && !unchangedCredentialUse(a, stored),
   );
   if (wanted.length === 0) return null;
   const records = new Map((await loadCredentialRecords(db)).map((r) => [r.id, r]));

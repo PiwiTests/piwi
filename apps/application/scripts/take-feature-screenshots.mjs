@@ -3682,6 +3682,25 @@ const SCENES = [
     of: '[data-shot="credentials-list"]',
   })),
   ...[
+    { name: 'settings-credentials-log', width: 1280, height: 900 },
+    { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: the log of every credential, deleted ones included, each row naming its credential and CI action, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-log"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="credentials-log"]')
+        .getByTestId('credential-use')
+        .first()
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'settings-credential-variable', width: 1280, height: 1000 },
     { name: 'settings-credential-variable-mobile', width: 375, height: 1500 },
   ].map(({ name, width, height }) => ({

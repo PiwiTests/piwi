@@ -1348,13 +1348,13 @@ export const HELP_TOPICS = {
       'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
     ].join('\n'),
     doc: 'operate/credentials',
-    envVars: ['PIWI_CREDENTIAL_LOG_DAYS', 'PIWI_CI_SERVER_TOKEN'],
+    envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS', 'PIWI_CI_SERVER_TOKEN'],
   },
   'settings.credentials.log': {
     title: 'Credential log',
-    text: 'Every use of the credential, newest first: a dispatch is one row, settled once the CI server answers (`ok` or `failed`), and a Check is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_CREDENTIAL_LOG_DAYS` days.',
+    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch is one row, settled once the CI server answers (`ok` or `failed`), and a Check is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
     doc: 'operate/credentials#the-log',
-    envVars: ['PIWI_CREDENTIAL_LOG_DAYS'],
+    envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS'],
   },
   'settings.integrations.zephyr-connection': {
     title: 'Zephyr Scale Cloud',

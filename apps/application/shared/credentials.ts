@@ -106,12 +106,14 @@ export interface CredentialUseEntry {
   feature: CredentialFeature;
   projectId: number | null;
   projectName: string | null;
-  /** Who started it: a user's name, else null for the instance itself. */
+  /** Who started it: a user's name, else null for the instance itself; for a counted read, the last of its hour. */
   actor: string | null;
   /** The API key it came through, by name, when it came through one. */
   apiKey: string | null;
   subjectType: string | null;
   subjectId: string | null;
+  /** The CI action's name, while its project still has it. */
+  subjectName: string | null;
   destination: string | null;
   result: CredentialUseResult;
   reason: string | null;

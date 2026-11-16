@@ -132,7 +132,9 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
     throw demoHttpError(409, `A credential is already named "${patch.name}".`);
   }
   // The demo keeps no secret: a rotation stores none, and only moves the date and the variable named.
-  await updateCredential(db as never, id, patch, secret || patch.secretEnv ? '' : undefined);
+  const owner =
+    can(viewer.access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
+  await updateCredential(db as never, id, patch, secret || patch.secretEnv ? '' : undefined, owner);
   return { credential: await summaryOf(db, viewer, id) };
 }
 
@@ -160,4 +162,9 @@ export async function demoCredentialUses(
 ) {
   await manageable(db, viewer, id);
   return listCredentialUses(db as never, id, parseCredentialUsesFilter(query));
+}
+
+/** `GET /api/credentials/uses` in the demo: the seeded log of every credential. */
+export async function demoAllCredentialUses(db: DemoDB, query: Record<string, unknown>) {
+  return listCredentialUses(db as never, null, parseCredentialUsesFilter(query));
 }

@@ -692,7 +692,19 @@ describe('a CI server dispatch', () => {
     expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe(
       'The credential "Team Jenkins" is not shared with this project.',
     );
+
+    // A re-run asked for anyway, as a route or the MCP tool asks for it, is refused by the credential and logged.
+    const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada', apiKeyId: null });
+    expect(outcome).toEqual({
+      ok: false,
+      error: 'unavailable',
+      message: 'The credential "Team Jenkins" is not shared with this project.',
+    });
     expect(received).toHaveLength(0);
+    const rows = await db.select().from(schema.credentialUses);
+    expect(rows).toEqual([
+      expect.objectContaining({ credentialId: id, feature: 'ci-dispatch', result: 'refused', projectId: 1, userId: 7 }),
+    ]);
   });
 
   test('picks the action of the run’s environment', async () => {

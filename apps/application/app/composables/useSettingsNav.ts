@@ -1,7 +1,10 @@
 import type { NavigationMenuItem } from '@nuxt/ui';
 import { toValue, type MaybeRefOrGetter } from 'vue';
-import { buildSettingsNavSections, type SettingsPageId } from '~/utils/settings-metadata';
+import { buildSettingsNavSections, SETTINGS_PAGES, type SettingsPageId } from '~/utils/settings-metadata';
 import { CAPABILITIES, type CapabilityId } from '#shared/capabilities';
+
+/** The project permissions a settings page may be opened with (`projectPermission`). */
+const SETTINGS_PROJECT_PERMISSIONS = [...new Set(SETTINGS_PAGES.flatMap((page) => page.projectPermission ?? []))];
 
 /**
  * Reactive wrapper around `buildSettingsNavSections`.
@@ -17,7 +20,7 @@ import { CAPABILITIES, type CapabilityId } from '#shared/capabilities';
  * badges are shown.
  */
 export async function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<SettingsPageId, boolean>>) {
-  const { canSeeAdmin } = useAuth();
+  const { canSeeAdmin, canAnywhere } = useAuth();
   const isDesktop = useIsDesktop();
   const { isHidden } = await useInstanceCapabilities();
 
@@ -30,6 +33,7 @@ export async function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<Settin
   return computed<NavigationMenuItem[][]>(() =>
     buildSettingsNavSections({
       canSeeAdmin: canSeeAdmin.value,
+      projectPermissions: new Set(SETTINGS_PROJECT_PERMISSIONS.filter((permission) => canAnywhere(permission))),
       isDesktop,
       envManaged: envManaged ? toValue(envManaged) : undefined,
       declinedCapabilities: declinedCapabilities.value,

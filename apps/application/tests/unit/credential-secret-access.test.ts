@@ -9,12 +9,12 @@ import { describe, expect, test } from 'vitest';
  * opens it. Any other code of the server, the shared modules or the app (the
  * demo included) that reads the secret column, or selects whole credential
  * rows, fails here. The schema and the migrations declare the column and are
- * not scanned.
+ * not scanned; the rest of `server/database/` is.
  */
 
 const APP_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SCANNED = ['server', 'shared', 'app'];
-const SKIPPED = ['server/database/'];
+const SKIPPED = ['server/database/schema', 'server/database/migrations'];
 const OWNER = 'server/utils/credentials.ts';
 const EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs|vue)$/;
 
@@ -67,7 +67,10 @@ describe('the credential secret', () => {
       expect(files).toContain(path);
     }
     expect(files.some((path) => path.startsWith('app/demo/'))).toBe(true);
-    expect(files.some((path) => path.startsWith('server/database/'))).toBe(false);
+    expect(files).toContain('server/database/index.ts');
+    expect(
+      files.some((path) => path.startsWith('server/database/schema') || path.startsWith('server/database/migrations')),
+    ).toBe(false);
     expect(secretReads(readFileSync(join(APP_ROOT, OWNER), 'utf8'))).toContain('reads the secret column');
   });
 

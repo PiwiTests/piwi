@@ -437,11 +437,7 @@ export interface ProjectWithTestRuns {
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
@@ -491,11 +487,7 @@ export interface ProjectDetails {
   description?: string | null;
   diagnosisInstructions?: string | null;
   hasScmToken: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
   /** The project's CI actions (secrets excluded). */

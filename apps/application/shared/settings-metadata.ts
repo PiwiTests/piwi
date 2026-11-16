@@ -14,7 +14,13 @@
  * env-var lists for banners + tooltips), and the assistant's `explain_setting`
  * tool. `app/utils/settings-metadata.ts` re-exports it, so the app auto-imports it.
  */
-import { can, type AccessSummary, type InstancePermission } from '#shared/permissions';
+import {
+  can,
+  holdsAnywhere,
+  type AccessSummary,
+  type InstancePermission,
+  type ProjectPermission,
+} from '#shared/permissions';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import type { CapabilityId } from '#shared/capabilities';
 import { helpEnvVars, type HelpTopicKey } from '#shared/help-content';
@@ -81,6 +87,11 @@ export interface SettingsPageMeta {
    * user. Only an administrator holds an instance permission.
    */
   permission?: InstancePermission;
+  /**
+   * A project permission that also opens the page, held on any project: the
+   * page then shows its holder what they manage in their projects.
+   */
+  projectPermission?: ProjectPermission;
   /**
    * Pages that only make sense when authentication is enabled (managing your
    * own account, managing users). Hidden in the desktop build, which is
@@ -238,6 +249,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     to: '/settings/credentials',
     group: 'instance',
     permission: 'credentials:manage',
+    projectPermission: 'project:manage',
     introHelp: 'settings.credentials',
     fields: [
       { id: 'credentials.list', label: 'Credentials', help: 'settings.credentials' },
@@ -408,7 +420,9 @@ export function getSettingsPage(id: SettingsPageId): SettingsPageMeta {
  */
 export function canOpenSettingsPath(path: string, access: AccessSummary | null | undefined): boolean {
   const page = SETTINGS_PAGES.find((p) => p.to === path.replace(/\/+$/, ''));
-  return !page?.permission || (!!access && can(access, page.permission));
+  if (!page?.permission) return true;
+  if (!access) return false;
+  return can(access, page.permission) || (!!page.projectPermission && holdsAnywhere(access, page.projectPermission));
 }
 
 // ── Nav construction ───────────────────────────────────────────────────────
@@ -433,6 +447,8 @@ export interface SettingsNavContext {
    * entirely: every visitor is a virtual administrator then.
    */
   canSeeAdmin: boolean;
+  /** The project permissions the viewer holds on at least one project, which open a page's `projectPermission`. */
+  projectPermissions?: ReadonlySet<ProjectPermission>;
   /**
    * Desktop build: single-user with auth off, so `authOnly` pages are hidden;
    * `desktopOnly` pages show in it alone.
@@ -460,7 +476,9 @@ export interface SettingsNavContext {
 export function buildSettingsNavSections(ctx: SettingsNavContext): SettingsNavItem[][] {
   const visible = SETTINGS_PAGES.filter(
     (page) =>
-      (!page.permission || ctx.canSeeAdmin) &&
+      (!page.permission ||
+        ctx.canSeeAdmin ||
+        (!!page.projectPermission && !!ctx.projectPermissions?.has(page.projectPermission))) &&
       !(ctx.isDesktop && page.authOnly) &&
       !(!ctx.isDesktop && page.desktopOnly) &&
       !(page.capability && ctx.declinedCapabilities?.has(page.capability)),
