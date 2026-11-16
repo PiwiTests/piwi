@@ -359,15 +359,17 @@ export class ClientLaneView {
   }
 
   /**
-   * The lane's call log changed: the call its running test is in, at its place in the run's code, or none when the call
-   * names no place. A log of a test the lane no longer runs, or of one stopped, changes nothing.
+   * The lane's call log changed: the call its running test is in, at its place in the run's code. A call that names no
+   * place leaves the line where the test's last placed call was, as a position does; a log of a test the lane no longer
+   * runs, or of one stopped, changes nothing.
    */
   private running(layer: Extract<LaneViewLayer, { layer: 'calls' }>): void {
     const running = this.sessions.laneRunning(layer.ref, layer.lane);
     if (!running || running.worker !== layer.worker || running.test !== layer.test) return;
     const { title, file, line } = layer.log.call;
     const uri = file && line && line > 0 ? this.sessions.placeUri(layer.ref, layer.worker, file) : null;
-    const call: RunningCall | null = uri && line ? { test: running.test, title, uri, line: line - 1 } : null;
+    if (!uri || !line) return;
+    const call: RunningCall = { test: running.test, title, uri, line: line - 1 };
     this.lines?.fromLog({ ref: layer.ref, lane: layer.lane, worker: layer.worker }, call);
   }
 

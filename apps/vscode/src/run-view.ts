@@ -180,6 +180,9 @@ const STARTING_MS = 120_000;
 /** How long a stop's file is waited for as it opens, before the next stop's turn. */
 const OPEN_MS = 5_000;
 
+/** How long the running lines told together are waited for before they are drawn, once. */
+const RUNNING_DRAW_MS = 30;
+
 export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
   heard(session: RunSession): void;
@@ -428,14 +431,17 @@ export function registerRunControl(
     return hover;
   };
 
-  /** The lines the service tells together are drawn once, after the last of them. */
+  /**
+   * The lines the service tells together are drawn once, `RUNNING_DRAW_MS` after the first: the client reads each
+   * notification on a tick of its own.
+   */
   let runningDrawSoon: ReturnType<typeof setTimeout> | null = null;
   const drawRunningSoon = () => {
     if (runningDrawSoon) return;
     runningDrawSoon = setTimeout(() => {
       runningDrawSoon = null;
       drawRunning();
-    }, 0);
+    }, RUNNING_DRAW_MS);
   };
   /** The running line of each lane in the visible editors of its file, at its line now. */
   const drawRunning = () => {

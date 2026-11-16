@@ -9,8 +9,9 @@ asks (`positions` in `@piwitests/core/run-channel`). The service keeps a running
 worker's positions, sent together at most every 250 ms. `piwi.runningLines` (`all`, the default; `watched`; `off`)
 reaches it in the credentials. The JetBrains plugin draws every lane, VS Code redraws once per burst, and both name
 the workers of a line in one mark. A `test.step` with a location does not move the line: only an API call does. A run nobody attends is marked as any
-other: only a desktop app's checkout is left out. The maintainer chose this design record before building the rest of LR9 of
-[editor-ux-coherence.md](../proposals/editor-ux-coherence.md).
+other: only a desktop app's checkout is left out. It built the rest of LR9 of
+[editor-ux-coherence.md](../proposals/editor-ux-coherence.md), whose Status names it; the maintainer chose a design
+record first.
 
 **Summary.** Today the editors mark the running line of one lane: the one the editor watches. The call that line comes
 from rides on the lane view's call log, which a worker sends only while its lane is watched, and both the service and

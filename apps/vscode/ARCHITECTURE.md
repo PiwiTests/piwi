@@ -184,6 +184,7 @@ other one is each person's own, application-scoped, which a committed `.vscode/s
 | `piwi.locatorWarnings`       | `true`, `false`                          | The brittle locators' diagnostics (`EditorCredentials.locatorWarnings`). Application scope.                 |
 | `piwi.failingTestTint`       | `true`, `false`                          | A failing test's and its failing line's background (`decorateTests`). Application scope.                    |
 | `piwi.ciPositions`           | `true`, `false`                          | The CI positions at the ends of lines ([CI runs](#ci-runs-of-the-branch)). Application scope.               |
+| `piwi.runningLines`          | `all`, `watched`, `off`                  | The running lines of your run (`EditorCredentials.runningLines`). Application scope.                        |
 | `piwi.mcpAuthorization`      | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it.             |
 | `piwi.serveRunsToAgents`     | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                               |
 | `piwi.testExplorer`          | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                                           |

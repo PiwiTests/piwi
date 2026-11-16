@@ -962,8 +962,8 @@ watches takes it from its call log: the lane view asks `calls` beside the layers
 takes it from its worker's `position` messages, which `RunSessions` asks a worker whose `run-attach` lists `positions`
 for (`{ type: 'positions', on }`) while the choice is `all`, a desktop app's checkout left out; a lane whose watch ends
 keeps its line only while its worker sends positions. A line goes (`call: null`) as the test ends or stops (a stop has
-a mark of its own), as the worker leaves or the run ends (`changed`, on every session change), for a call that names
-no place in the user's code, and as the choice stops marking it (`switched`); a call log or a position of a test the
+a mark of its own), as the worker leaves or the run ends (`changed`, on every session change), and as the choice stops
+marking it (`switched`); a call that names no place in the user's code leaves it where the last placed call was; a call log or a position of a test the
 lane no longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, the lines
 that changed going together at most every 250 ms (`RUNNING_LINES_PACE_MS`). The call log reaches the client as
 `piwi/laneLayer` only when its layers name it. A client without the option hears none, and a service that predates

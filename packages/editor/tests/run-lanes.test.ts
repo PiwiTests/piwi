@@ -686,14 +686,15 @@ describe('a lane the editor client watches', () => {
     w.read({ type: 'running', stop: 1 });
     w.read(callLog('t0', 'Click', 5));
     expect(last(lines)).toMatchObject({ call: { line: 4 } });
-    // A call with no place in the user's code names no line.
+    // A call with no place in the user's code leaves the line where the last placed call was.
+    const placed = lines.length;
     w.read({
       type: 'lane-layer',
       test: 't0',
       layer: 'calls',
       log: { ...callLogOf('Expect', 5), call: { title: 'Expect', file: null, line: null } },
     });
-    expect(last(lines)).toEqual({ ...at, call: null });
+    expect(lines).toHaveLength(placed);
     w.read(callLog('t0', 'Click', 6));
     // The test's end takes it, and a late call log of that test brings none back.
     w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
@@ -874,6 +875,29 @@ describe('the running line of every lane', () => {
     // With none marked, the watch asks no call log.
     const layersHeard = w0.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
     expect(last(layersHeard)).toEqual([]);
+  });
+
+  test('keeps the next test’s line waiting to be told, though the line shown before it went', async () => {
+    const { join, told, lines } = marked(() => 'all', 40);
+    const w = join(0, 0, ['view-lane', 'layers', 'positions']);
+    w.read(position('t0', 'Click', 5));
+    w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+    lines.changed();
+    w.read({
+      type: 'test-begin',
+      testId: 't9',
+      title: ['b'],
+      file: 'tests/a.spec.ts',
+      line: 1,
+      project: '',
+      retry: 0,
+      cannotPause: null,
+    });
+    w.read(position('t9', 'Fill', 6));
+    // Another worker's change comes before the pace ends.
+    lines.changed();
+    await waitFor(() => (told.length > 1 ? true : undefined));
+    expect(told.map((line) => line.call?.title ?? null)).toEqual(['Click', 'Fill']);
   });
 
   test('tells the lines that changed together, once a pace at most', async () => {

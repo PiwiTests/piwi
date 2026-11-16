@@ -59,8 +59,8 @@ export class RunningLines {
     if (!this.wantsPositions() || !this.options.lanePositions(at.ref, at.lane)) this.clearLane(key);
   }
 
-  /** The call log of a lane the client watches says where its running test is, or that its call names no place. */
-  fromLog(at: Lane, call: RunningCall | null): void {
+  /** The call log of a lane the client watches says where its running test is. */
+  fromLog(at: Lane, call: RunningCall): void {
     if (this.marks()) this.set(at, call);
   }
 
@@ -72,7 +72,8 @@ export class RunningLines {
   /** A session changed: the line of a lane whose test ended or stopped, whose worker left or whose run ended goes. */
   changed(): void {
     for (const [key, line] of [...this.shown, ...this.pending]) {
-      if (!line.call) continue;
+      // A line waiting to be told replaces the one shown.
+      if (!line.call || (this.pending.has(key) && this.pending.get(key) !== line)) continue;
       const running = this.options.laneRunning(line.ref, line.lane);
       if (running?.worker !== line.worker || running.test !== line.call.test) this.set(line, null, key);
     }

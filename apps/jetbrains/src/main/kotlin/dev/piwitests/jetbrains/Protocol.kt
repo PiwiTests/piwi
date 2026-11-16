@@ -1470,9 +1470,10 @@ data class LaneThumb(val call: String = "", val title: String = "", val index: I
 
 /**
  * `piwi/runningLine`, to a client that takes it (`runningLine` in its initialization options): the call the running
- * test of the slot the IDE watches (`piwi/laneView`) is in, of the worker `worker`; or none (`call` null) once the line
- * goes: the test ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run
- * did. Sent only when it differs from the last one sent for the slot.
+ * test of a slot is in, of the worker `worker`, for each slot `runningLines` in the credentials marks; or none (`call`
+ * null) once the line goes: the test ended or stopped (a stop has a mark of its own), the worker left, the run ended or
+ * the setting no longer marks the slot. Sent only when it differs from the last one sent for the slot, the lines that
+ * changed together.
  */
 data class RunningLine(val ref: String = "", val lane: Int = 0, val worker: Int = 0, val call: RunningCall? = null)
 

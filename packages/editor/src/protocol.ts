@@ -2693,11 +2693,11 @@ export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
  * `piwi/runningLine` (notification, server to client), to a client that takes it (`InitializationOptions.runningLine`):
  * the call the running test of a lane is in, its title (`Click getByRole('button', { name: 'Pay' })`) and its place in
  * the run's code (`uri` and the 0-based `line`, as a stop's: a client maps it through the edits since the run
- * started); or null once the line goes: the test ended or stopped (a stop has a mark of its own), the call names no
- * place, the worker left, the run ended, or the setting no longer marks the lane. Each lane of a run the editor follows
- * (a desktop app's checkout left out) as `EditorCredentials.runningLines` chooses: the lane the editor watches
- * (`piwi/laneView`) from its call log, every other one from its worker's positions, which an older reporter does not
- * send. Sent only when it differs from the last one sent for the lane, of the worker `worker` and its test `test`
+ * started); or null once the line goes: the test ended or stopped (a stop has a mark of its own), the worker left, the
+ * run ended, or the setting no longer marks the lane. A call that names no place leaves the line where it was. Each
+ * lane of a run the editor follows (a desktop app's checkout left out) as `EditorCredentials.runningLines` chooses: the
+ * lane the editor watches (`piwi/laneView`) from its call log, every other one from its worker's positions, which an
+ * older reporter does not send. Sent only when it differs from the last one sent for the lane, of the worker `worker` and its test `test`
  * (Playwright's id); the lines that changed go together, at most four times a second.
  */
 export interface RunningLine {
