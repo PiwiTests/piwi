@@ -2092,7 +2092,7 @@ describe('the test tree', () => {
         'npx playwright test tests/listed.spec.ts:2 --grep "listed.spec.ts adds mug 1"',
       );
       expect(await command([firefox.id])).toBe('npx playwright test tests/listed.spec.ts:4 --project firefox');
-      // A folder by its whole path: `tests/` alone would take `e2e-tests/` too.
+      // A folder by its whole path.
       expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe(
         `npx playwright test ${fs.realpathSync(dir)}/tests/.`,
       );

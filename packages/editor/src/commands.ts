@@ -184,7 +184,12 @@ export function runName(args: readonly string[]): string {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (!arg.startsWith('-')) {
-      const file = arg.split(/[\\/]/).filter(Boolean).pop();
+      // A folder's filter: its path, or its spellings (`(?:a|b)/.`), and `/.`.
+      const file = arg
+        .replace(/^\(\?:(.*?)\|.*\)(?=\/\.$)/, '$1')
+        .split(/[\\/]/)
+        .filter((part) => part && part !== '.')
+        .pop();
       if (file) files.push(file.replace(/\[(.)\]/g, '$1'));
       continue;
     }

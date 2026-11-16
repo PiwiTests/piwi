@@ -101,32 +101,27 @@ describe('the reporter’s lines', () => {
 });
 
 describe('the file filters', () => {
-  test('every spec but some, as the file system spells them and as their file: URL does', () => {
-    const filter = excludingFilter(['my tests/bad.spec.ts']);
-    const matches = (file: string) => new RegExp(filter, 'gi').test(file);
-    expect(matches('C:\\repo\\my tests\\bad.spec.ts')).toBe(false);
-    expect(matches('file:///C:/repo/my%20tests/bad.spec.ts')).toBe(false);
-    expect(matches('file:///C:/repo/my%20tests/good.spec.ts')).toBe(true);
-  });
-
   const matches = (filter: string, file: string) => new RegExp(filter, 'gi').test(file);
 
-  test('one spec: its path at the end of the file’s, from a separator on, either separator', () => {
-    const filter = specFilter('tests/cart.spec.ts');
-    expect(matches(filter, '/work/tests/cart.spec.ts')).toBe(true);
-    expect(matches(filter, 'C:\\work\\tests\\cart.spec.ts')).toBe(true);
-    expect(matches(filter, 'file:///C:/work/tests/cart.spec.ts')).toBe(true);
-    expect(matches(filter, '/work/tests/my-cart.spec.ts')).toBe(false);
-    expect(matches(filter, '/work/tests/cartXspec.ts')).toBe(false);
-    expect(matches(filter, '/work/tests/cart.spec.tsx')).toBe(false);
+  test('one spec: its whole path, either separator, or its file: URL', () => {
+    const filter = specFilter('/work', 'my tests/cart.spec.ts');
+    expect(matches(filter, '/work/my tests/cart.spec.ts')).toBe(true);
+    expect(matches(filter, '\\work\\my tests\\cart.spec.ts')).toBe(true);
+    expect(matches(filter, 'file:///work/my%20tests/cart.spec.ts')).toBe(true);
+    expect(matches(filter, '/work/sub/my tests/cart.spec.ts')).toBe(false);
+    expect(matches(filter, '/work/my tests/my-cart.spec.ts')).toBe(false);
+    expect(matches(filter, '/work/my tests/cartXspec.ts')).toBe(false);
+    expect(matches(filter, '/work/my tests/cart.spec.tsx')).toBe(false);
   });
 
-  test('every spec but some', () => {
-    const filter = excludingFilter(['tests/broken.spec.ts', 'tests/a (1).spec.ts']);
+  test('every spec but some, by their whole paths or their file: URLs', () => {
+    const filter = excludingFilter('/work', ['tests/broken.spec.ts', 'my tests/a (1).spec.ts']);
     expect(matches(filter, '/work/tests/cart.spec.ts')).toBe(true);
     expect(matches(filter, '/work/tests/broken.spec.ts')).toBe(false);
-    expect(matches(filter, '/work/tests/a (1).spec.ts')).toBe(false);
+    expect(matches(filter, '/work/my tests/a (1).spec.ts')).toBe(false);
+    expect(matches(filter, 'file:///work/my%20tests/a%20(1).spec.ts')).toBe(false);
     expect(matches(filter, '/work/tests/unbroken.spec.ts')).toBe(true);
+    expect(matches(filter, '/work/sub/tests/broken.spec.ts')).toBe(true);
   });
 });
 
@@ -148,7 +143,7 @@ describe('a listing', () => {
       tests: [listed({ file: 'tests/cart.spec.ts' })],
       broken: new Map([['tests/broken.spec.ts', 'SyntaxError: Unexpected token (line 3)']]),
     });
-    expect(asked).toEqual([[], [excludingFilter(['tests/broken.spec.ts'])]]);
+    expect(asked).toEqual([[], [excludingFilter('/work', ['tests/broken.spec.ts'])]]);
   });
 
   test('says why when Playwright lists nothing at all, or cannot run', async () => {
@@ -166,6 +161,14 @@ describe('a listing', () => {
     });
   });
 
+  test('says why when a file every spec reads does not load', async () => {
+    const helper = `${testsLine([])}PIWI_ERROR {"message":"ReferenceError: x is not defined","file":"tests/helpers.ts","line":2}\n`;
+    const run: ListRunner = () => Promise.resolve({ stdout: helper, stderr: '' });
+    expect(await listTests(run, '/work/playwright.config.ts', null)).toEqual({
+      error: 'Playwright could not list the tests of playwright.config.ts: ReferenceError: x is not defined.',
+    });
+  });
+
   test('lists a config’s tests with its own Playwright, once per project, a spec that does not load apart', async () => {
     const config = project('real', {
       'playwright.config.js':
@@ -180,10 +183,11 @@ describe('a listing', () => {
       ].join('\n'),
       'tests/broken.spec.js':
         "const { test } = require('@playwright/test');\ntest('ok', async () => {});\nthis is not js\n",
+      'tests/old/tests/cart.spec.js': 'this is not js\n',
     });
     const result = await listTests(playwright, config, null);
     if ('error' in result) throw new Error(result.error);
-    expect([...result.broken.keys()]).toEqual(['tests/broken.spec.js']);
+    expect([...result.broken.keys()].sort()).toEqual(['tests/broken.spec.js', 'tests/old/tests/cart.spec.js']);
     expect(result.broken.get('tests/broken.spec.js')).toMatch(/\(line 3\)$/);
     const seen = result.tests.map((t) => [t.project, t.file, t.line, t.suites, t.title, t.tags]);
     expect(seen).toEqual(
@@ -196,7 +200,7 @@ describe('a listing', () => {
     );
     expect(result.tests).toHaveLength(6);
     expect(new Set(result.tests.map((t) => t.id)).size).toBe(6);
-    // One spec alone.
+    // One spec alone, though a spec whose path ends as its own does not load.
     const one = await listTests(playwright, config, ['tests/cart.spec.js']);
     expect('tests' in one && one.tests.length).toBe(6);
   }, 120_000);
@@ -235,13 +239,12 @@ describe('each config’s listing', () => {
     expect(changed).toEqual(['/w']);
     // The two specs asked meanwhile, in one listing.
     expect(calls).toHaveLength(2);
-    expect(calls[1]!.args).toEqual([specFilter('tests/a.spec.ts'), specFilter('tests/b.spec.ts')]);
+    expect(calls[1]!.args).toEqual([specFilter('/w', 'tests/a.spec.ts'), specFilter('/w', 'tests/b.spec.ts')]);
   });
 
-  test('a listing of some specs keeps theirs alone, though their filters take another spec too', async () => {
+  test('a listing of some specs keeps theirs alone, whatever else Playwright lists', async () => {
     const a = listed({ file: 'tests/a.spec.ts', id: 'a' });
     const sub = listed({ file: 'sub/tests/a.spec.ts', id: 'sub' });
-    // Playwright reads `tests/a.spec.ts`'s filter as the end of a path: `sub/tests/a.spec.ts` matches it too.
     const run: ListRunner = () => Promise.resolve({ stdout: testsLine([a, sub]), stderr: '' });
     const listings = new TestListings(
       run,

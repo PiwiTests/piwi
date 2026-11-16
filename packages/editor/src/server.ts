@@ -194,7 +194,7 @@ import {
 import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
 import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
-import { configTree, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
+import { configTree, folderFilter, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
@@ -4435,11 +4435,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (params.all === true) return [];
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      // A folder by its whole path, ending in `/.`: Playwright reads a file filter as a regular expression against the
-      // whole path, so `tests/` would take `e2e-tests/` and `my-tests/` too, and one that ends in `/` as `/…/` syntax.
       return params.locations.map((l) =>
         l.endsWith('/')
-          ? `${specPattern(path.join(commandFolder(context), l.slice(0, -1)))}/.`
+          ? folderFilter(path.join(commandFolder(context), l.slice(0, -1)))
           : `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`,
       );
     }

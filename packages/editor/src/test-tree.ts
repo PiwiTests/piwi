@@ -4,6 +4,7 @@
  * of the checkout is, in the **Not in this checkout** group. Built from what the service read of each spec, whichever
  * source gave it (the listing or the spec's text), so a node's id stays as one source replaces the other.
  */
+import { pathToFileURL } from 'node:url';
 import { specPattern } from '@piwitests/core/spec-filter';
 import { CONFIG_NODE, type TestTreeNode, type TreeTest } from './protocol.js';
 
@@ -183,12 +184,33 @@ export interface NodeRun {
 const MAX_LOCATIONS_CHARS = 8000;
 
 /**
+ * The most characters a location takes on the command line, with its space: a folder is written from the config's
+ * folder, in two spellings.
+ */
+const locationChars = (root: string, location: string) =>
+  (location.endsWith('/') ? 2 * (root.length + location.length) + 10 : location.length) + 1;
+
+/** The tags Playwright's `--grep` reads after a describe block's title, each a space and an `@` word. */
+const TAG_GAP = '( @[#-~]+)*';
+
+/**
  * A title as Playwright's `--grep` reads it, a regular expression with no character a shell expands, written as
  * `specPattern` writes a path (`[(]` for a character a regular expression reads apart, `.` for one a shell expands), a
  * backslash and a control character as `.` too.
  */
 export function titlePattern(title: string): string {
   return specPattern(title.replace(/[\\\p{Cc}]/gu, '.'));
+}
+
+/**
+ * The file filter of a folder (a whole path): the path as the file system spells it and as its `file:` URL does, then
+ * `/.` (a filter ending in `/` reads as `/…/` syntax). Playwright tests a file filter, a regular expression, against a
+ * file's whole path, and on Windows against its `file:` URL too.
+ */
+export function folderFilter(folder: string): string {
+  const spelled = specPattern(folder);
+  const url = specPattern(pathToFileURL(folder).pathname.replace(/^\/(?=[A-Za-z]:)/, ''));
+  return url === spelled ? `${spelled}/.` : `(?:${spelled}|${url})/.`;
 }
 
 /** One node's filter. */
@@ -207,8 +229,9 @@ interface Filter {
  * the nodes `excluded` names: each node by the narrowest filter Playwright takes for it, a node holding an excluded one
  * by its children's. A config runs whole; a folder by its path and a slash; a spec by its path; a describe block, and a
  * test, by `file:line`; a project's node as its test, in that project alone. A test whose line holds others (a loop's)
- * also runs by its title (`--grep`), without the others of that line whose title holds its own (`--grep-invert`), so
- * it runs in a run of its own. One run per config, set of projects and titles; a node that is not runnable runs nothing.
+ * also runs by its spec's name, describe blocks and title (`--grep`), without the others of that line this matches
+ * (`--grep-invert`), in a run of its own; when two tests of the line match each other, the whole line runs. One run per
+ * config, set of projects and titles; a node that is not runnable runs nothing.
  */
 export function nodeRuns(
   contexts: ReadonlyArray<{ root: string; nodes: readonly TestTreeNode[] }>,
@@ -252,18 +275,23 @@ export function nodeRuns(
       }
     };
     same(spec.children);
-    // Playwright matches `--grep` against the project, the spec, the describe blocks, the title and the tags, joined by
-    // spaces: the spec's name and the describe blocks before the title keep the spec's name or a describe block from
-    // matching it, and the tests of the line whose title starts with this one are left out.
+    // Playwright matches `--grep` against the project, the spec, each describe block followed by its tags, the title
+    // and the test's tags, joined by spaces. The pattern starts at the spec's name and lets each describe block's tags
+    // through. The tests of the line it also matches are left out, unless one of them matches this one's pattern back:
+    // their titles cannot be told apart, and the whole line runs.
     const file = fileOf(spec, root);
+    const base = titlePattern(file.slice(file.lastIndexOf('/') + 1));
+    const path = (t: TestTreeNode) => [...t.test!.suite, t.test!.title];
     const titled = (t: TestTreeNode) =>
-      titlePattern([file.slice(file.lastIndexOf('/') + 1), ...t.test!.suite, t.test!.title].join(' '));
-    const title = test.test!.title.toLowerCase();
-    const longer = others.filter((o) => o.test!.title.toLowerCase().startsWith(title));
+      [base, ...t.test!.suite.map((s) => titlePattern(s) + TAG_GAP), titlePattern(t.test!.title)].join(' ');
+    const starts = (pattern: string[], words: string[]) =>
+      new RegExp(`^(?:${pattern.map(titlePattern).join(' ')})`, 'i').test(words.join(' '));
+    const taken = others.filter((o) => starts(path(test), path(o)));
+    const apart = others.length > 0 && !taken.some((o) => starts(path(o), path(test)));
     push(root, spec.uri, `${file}:${line + 1}`, {
       projects,
-      ...(others.length ? { grep: titled(test) } : {}),
-      ...(longer.length ? { grepInvert: longer.map(titled).join('|') } : {}),
+      ...(apart ? { grep: titled(test) } : {}),
+      ...(apart && taken.length ? { grepInvert: taken.map(titled).join('|') } : {}),
     });
   };
 
@@ -325,12 +353,13 @@ export function nodeRuns(
     const parts: string[][] = [[]];
     let length = 0;
     for (const location of run.locations) {
-      if (length + location.length + 1 > MAX_LOCATIONS_CHARS && parts[parts.length - 1]!.length) {
+      const cost = locationChars(run.root, location);
+      if (length + cost > MAX_LOCATIONS_CHARS && parts[parts.length - 1]!.length) {
         parts.push([]);
         length = 0;
       }
       parts[parts.length - 1]!.push(location);
-      length += location.length + 1;
+      length += cost;
     }
     return parts.map((locations) => ({ ...run, locations }));
   });

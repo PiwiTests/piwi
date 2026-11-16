@@ -6,6 +6,7 @@
  * nothing once one spec fails, so the listing is run once more without the specs that failed.
  */
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { configFingerprint, firstLine, ProjectOptionsError, type ListOutput } from './recorder/project-options.js';
 import { ERROR_LINE, TESTS_LINE, type ListErrorLine, type ListedTestLine } from './recorder/use-reporter.js';
 
@@ -111,7 +112,7 @@ export function parseErrorLines(output: string): ListErrorLine[] {
   });
 }
 
-/** A file of the config's folder (`tests/cart.spec.ts`) as a regular expression's text: its parts, either separator. */
+/** A path (`/work/tests/cart.spec.ts`) as a regular expression's text: its parts, either separator. */
 function filePattern(file: string): string {
   return file
     .split('/')
@@ -120,23 +121,22 @@ function filePattern(file: string): string {
 }
 
 /**
- * Playwright's file filter for one spec of the config's folder: a regular expression that the end of the spec's path
- * matches, from a separator on, so `cart.spec.ts` does not take `my-cart.spec.ts`.
+ * The paths Playwright tests a file filter against, for a spec of the config's folder `root`: the whole path, and
+ * its `file:` URL (`%20` for a space), which Playwright also tries on Windows.
  */
-export function specFilter(file: string): string {
-  return `(?:^|[\\\\/])${filePattern(file)}$`;
+function spellings(root: string, file: string): string[] {
+  const absolute = path.join(root, file);
+  return [absolute.split(path.sep).join('/'), pathToFileURL(absolute).href].map(filePattern);
 }
 
-/**
- * Playwright's file filter for every spec but these: a regular expression that their paths do not match, as the file
- * system spells them or as their `file:` URL does (`%20` for a space), which Playwright also tries on Windows.
- */
-export function excludingFilter(files: readonly string[]): string {
-  const spellings = files.flatMap((file) => {
-    const encoded = file.split('/').map(encodeURIComponent).join('/');
-    return encoded === file ? [file] : [file, encoded];
-  });
-  return `^(?!.*(?:^|[\\\\/])(?:${spellings.map(filePattern).join('|')})$)`;
+/** Playwright's file filter for one spec of the config's folder `root`: a regular expression its whole path matches. */
+export function specFilter(root: string, file: string): string {
+  return `^(?:${spellings(root, file).join('|')})$`;
+}
+
+/** Playwright's file filter for every spec of the config's folder `root` but these. */
+export function excludingFilter(root: string, files: readonly string[]): string {
+  return `^(?!(?:${files.flatMap((file) => spellings(root, file)).join('|')})$)`;
 }
 
 /** A file an error names, when it is a spec of the config's folder. */
@@ -162,6 +162,7 @@ export async function listTests(
   files: readonly string[] | null,
 ): Promise<ListResult> {
   const name = path.basename(configFile);
+  const root = path.dirname(configFile);
   type Once = { output: ListOutput; tests: ListedTest[] | null; errors: ListErrorLine[] } | { error: string };
   const once = async (args: string[]): Promise<Once> => {
     try {
@@ -174,7 +175,7 @@ export async function listTests(
     }
   };
   if (files && !files.length) return { tests: [], broken: new Map() };
-  let result = await once(files ? files.map(specFilter) : []);
+  let result = await once(files ? files.map((f) => specFilter(root, f)) : []);
   const broken = new Map<string, string>();
   for (let tries = 0; tries < 2; tries++) {
     if ('error' in result) return { error: result.error };
@@ -186,10 +187,10 @@ export async function listTests(
     for (const { spec, why } of failed) broken.set(spec, why);
     const left = files ? files.filter((f) => !broken.has(f)) : null;
     if (left && !left.length) return { tests: [], broken };
-    result = await once(left ? left.map(specFilter) : [excludingFilter([...broken.keys()])]);
+    result = await once(left ? left.map((f) => specFilter(root, f)) : [excludingFilter(root, [...broken.keys()])]);
   }
   if ('error' in result) return { error: result.error };
-  if (!result.tests) {
+  if (!result.tests || (!result.tests.length && result.errors.length)) {
     const said = result.errors[0]?.message ?? firstLine(result.output.stderr || result.output.stdout);
     return { error: `Playwright could not list the tests of ${name}: ${said.replace(/[.!?…]?$/, '.')}` };
   }
@@ -310,8 +311,7 @@ function merged(
     listing.broken.delete(file);
     listing.listedAt.set(file, at);
   }
-  // A spec's filter also takes a spec whose path ends as its own (`sub/tests/a.spec.ts`): a listing of some specs keeps
-  // theirs alone, each spec's tests in an array of its own.
+  // A listing of some specs keeps theirs alone, each spec's tests in an array of its own.
   const asked = files ? new Set(files) : null;
   const added = new Map<string, ListedTest[]>();
   for (const test of result.tests) {

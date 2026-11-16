@@ -188,6 +188,8 @@ describe('runName', () => {
     expect(runName(['tests/checkout.spec.ts:12', '--repeat-each', '3'])).toBe('checkout.spec.ts:12 ×3');
     expect(runName(['tests/checkout.spec.ts:12', '--repeat-each=1'])).toBe('checkout.spec.ts:12');
     expect(runName(['checkout', 'tests/e2e/'])).toBe('checkout and 1 more');
+    expect(runName(['/w/tests/e2e/.'])).toBe('e2e');
+    expect(runName(['(?:/w/my tests [(]1[)]|/w/my.20tests.20[(]1[)])/.'])).toBe('my tests (1)');
     expect(runName(['--grep=(?:^| )(?:pays|refunds)$'])).toBe('tests by title');
   });
 
