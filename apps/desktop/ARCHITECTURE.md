@@ -62,13 +62,14 @@ supervisor's to restart, and its "restarting" text stays, with a window launched
 
 The bundled server is the hub of every Playwright run the shell starts.
 
-- **Which spawns.** Each spawn of a test (`runner.rs`, `repro.rs`, and in `worktree.rs` the reproduce, bisect and
-  `piwi flake` runs) adds `bundled_hub_env`: the server's `PIWI_RUN_CHANNEL` and the address its picks go to
-  (`PIWI_EDITOR_SEND`, the server's own route), read from `GET /api/desktop/run-channel` only after `health_ok` proved
-  the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`, `desktop-<run id>`, which the window knows the run by).
-- **A job in a throwaway worktree** (`worktree.rs`) runs instead on the run channel of the live editor whose workspace
-  holds its linked folder, when one does (`job_hub_env`, from the route's `editor` for `?folder=`), as
-  `desktop-<id>-at-<commit>`, its picks still to the server.
+- **Which spawns.** A run of the window (`spawn_tests` in `runner.rs`) and a reproduction (`repro.rs`) add
+  `bundled_hub_env`: the server's `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's
+  own route), read from `GET /api/desktop/run-channel` on a connection that first proved the host holds the token
+  (`connect_proving_token`), and `PIWI_RUN_REF` (`hub_env.rs`, `desktop-<run id>`, which the window knows the run by).
+- **A job in a throwaway worktree** (`worktree.rs`: the reproduce, bisect and `piwi flake` runs) adds `job_hub_env`
+  instead: the run channel of the live editor whose workspace holds its linked folder, when one does (from the
+  route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server, else the bundled
+  server's.
 - **A run nobody attends** (Flake Lab, a bisect, a lab job, one with `--ui`, or with `--repeat-each` above 1 unless it
   stops at its first failure) ends its ref in `-unattended` (`attended_args`, mirrored by `desktopArgsAttended`), and
   the server never holds its failures.

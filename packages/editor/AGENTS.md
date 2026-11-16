@@ -78,7 +78,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   [ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy) (`tests/run-target-routes.test.ts`).
 - **The request host tells the shell to forget the key (`onKeyRevoked`) only when the instance says it no longer holds
   it**: on the stream's `revoked` event, or on a 401 with `data.errorCode` `RUN_TARGET_KEY_REVOKED` (or its message,
-  from an instance that sends no code). A 403 or any other 401, a proxy's among them, stops the host and keeps the key
+  from an instance that sends no code). A 403 or any other 401, a proxy's among them, stops the host and keeps the
+  key, but a 403 on one request's own route (claim, answer, state), which refuses that request alone
   (`tests/request-host.test.ts`).
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan

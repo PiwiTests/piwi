@@ -67,10 +67,11 @@ shell and are feature-equivalent.
   - Piwi Picker's pairing start, which answers only an extension's JSON request and keeps at most three waiting;
   - the pairing poll, which answers only with the secret the start gave. The token goes out once, after **Allow** in
     the window (`DesktopPickerPairingModal`), behind the guard.
-- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test adds
-  `bundled_hub_env`: the server's `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`), read from
-  `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and the `PIWI_RUN_REF` the
-  shell names the run by (`hub_env.rs`). Which spawns, their refs and a worktree job's editor:
+- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test adds the hub's
+  environment (`bundled_hub_env`, and `job_hub_env` for a job in a worktree): the server's `PIWI_RUN_CHANNEL` and the
+  address its picks go to (`PIWI_EDITOR_SEND`), read from `GET /api/desktop/run-channel` on a connection that first
+  proved the host holds the token (`connect_proving_token`), and the `PIWI_RUN_REF` the shell names the run by
+  (`hub_env.rs`). Which spawns, their refs and a worktree job's editor:
   [`ARCHITECTURE.md`](ARCHITECTURE.md#runs-the-shell-starts).
 - **A run nobody attends ends its ref in `-unattended`, and the server never holds its failures** (`attended_args`,
   mirrored by `desktopArgsAttended`): Flake Lab, a bisect, a lab job, a run with `--ui`, or with `--repeat-each` above

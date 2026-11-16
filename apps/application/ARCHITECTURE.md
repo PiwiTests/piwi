@@ -469,8 +469,9 @@ The main files of `server/utils/`, by area.
   editor service's `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by its `ShellRuns`,
   which Piwi Runner's host runs too. `DesktopRuns` gives it the app's words and adds the editors' runs, the agents'
   tools and Inspect through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`,
-  `sendToWindow`), and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call
-  `@piwitests/editor/shell-runs-routes`. What the desktop needs that the editor's classes lack is an option or a hook
+  `sendToWindow`). The `/api/desktop/run-channel` route and, of `/api/desktop/runs/*`, `started`, `ended`, `commands`
+  and `picks` call `@piwitests/editor/shell-runs-routes`, and `events` serves the hub's stream through
+  `@piwitests/editor/shell-runs-http`. What the desktop needs that the editor's classes lack is an option or a hook
   of theirs that names no app feature (`declines`, `host`, `token`, `words`, `RunHub.join`).
 
 ### Scheduled tasks
