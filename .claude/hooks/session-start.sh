@@ -30,11 +30,23 @@ quietly() {
   fi
 }
 
-# The repository pins its Node major in .node-version (CI, engines). Another Node still runs most checks, so this
-# warns rather than stops: a failure caused by the version then reads as one.
+# The repository pins its Node major in .node-version (CI, engines). The image keeps each Node it ships under
+# /opt/node<major>: the pinned one goes first on PATH, for this hook and for every later command of the session, so
+# the install below runs under that Node's npm. An image without it keeps its default Node, which still runs most
+# checks, so this warns rather than stops: a failure caused by the version then reads as one.
 wanted_node="$(cut -d . -f 1 .node-version 2>/dev/null | tr -d 'v \r' || true)"
 if [ -n "$wanted_node" ] && [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
-  echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
+  pinned_bin="/opt/node$wanted_node/bin"
+  if [[ "$wanted_node" =~ ^[0-9]+$ ]] && [ -x "$pinned_bin/node" ]; then
+    export PATH="$pinned_bin:$PATH"
+    path_line="case \":\$PATH:\" in *\":$pinned_bin:\"*) ;; *) export PATH=\"$pinned_bin:\$PATH\" ;; esac"
+    if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+      echo "$path_line" >>"$CLAUDE_ENV_FILE"
+    fi
+    echo "[session-start] Node $(node --version) from $pinned_bin runs this session (.node-version pins $wanted_node)"
+  else
+    echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
+  fi
 fi
 
 # Node's default heap limit here is about 2 GB, which `nuxt dev`, `nuxt build` and `nuxt generate` outgrow while they
@@ -48,13 +60,13 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$heap_line" "$CLAUDE_ENV_FILE" 
   echo "[session-start] Node heap limit raised to 6 GB for this session"
 fi
 
-# Install exactly what package-lock.json pins, as CI does, without writing it: the
-# container's npm 10 would rewrite the npm 11 lockfile under `npm install`, leaving
-# every session with a lockfile change unrelated to its task. npm ci deletes
+# Install exactly what package-lock.json pins, as CI does, without writing it: an
+# npm other than the one that wrote the lockfile rewrites it under `npm install`,
+# leaving the session with a lockfile change unrelated to its task. npm ci deletes
 # node_modules first (~35s against ~5s for an up-to-date install), so a resumed or
 # compacted session skips it while the tree is the one npm ci installed from this
-# very lockfile under this Node. node_modules/.package-lock.json cannot tell: npm 10
-# writes it in its own form, so it never equals the committed lockfile.
+# very lockfile under this Node. node_modules/.package-lock.json cannot tell: npm
+# writes it in a form of its own, which never equals the committed lockfile.
 stamp="node_modules/.session-start-install"
 installed="$(node --version) $(sha256sum package-lock.json | cut -d ' ' -f 1)"
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$installed" ]; then
