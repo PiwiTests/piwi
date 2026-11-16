@@ -275,6 +275,43 @@ const SCENES = {
     fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
   },
 
+  /** A failing test's card: the hover on its `test(…)` line, with its latest runs, its last failure and its links. */
+  async 'test-card'(page, workspace) {
+    // The hover below its line, so the tests above it stay in view.
+    const settingsFile = path.join(workspace, '.vscode', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, 'editor.hover.above': false }, null, 2));
+    await openFile(page, SPEC_FILE);
+    await clearNotifications(page);
+    await showPanel(page, false);
+    await page.locator('.monaco-editor .view-lines').first().click();
+    await goToLine(page, 5);
+    await settle(page);
+    const token = page
+      .locator('.monaco-editor .view-line', { hasText: 'pays by card' })
+      .first()
+      .locator('span', { hasText: 'pays by card' })
+      .first();
+    const card = page.locator('.monaco-hover:not(.hidden)', { hasText: 'Last failed in run' }).first();
+    // The first hover asks for the test's history; a later one shows the card if the first gave up waiting.
+    for (let tries = 0; ; tries++) {
+      await token.hover();
+      if (
+        await card.waitFor({ state: 'visible', timeout: 5_000 }).then(
+          () => true,
+          () => false,
+        )
+      )
+        break;
+      if (tries >= 3) throw new Error('the hover never showed the test card');
+      await page.mouse.move(10, 400);
+    }
+    await settle(page, 1500);
+    await shoot(page, 'test-card');
+    await page.mouse.move(10, 400);
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+  },
+
   /** The Testing view: the spec's tests with the latest run's results, and a failure's message at its line. */
   async testing(page) {
     await openFile(page, SPEC_FILE);

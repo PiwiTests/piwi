@@ -11,6 +11,16 @@ lang: en-US
 A test's card answers "my bug or a flake?" without leaving the editor. In VS Code it is the test's hover on its
 `test(…)` line; in a JetBrains IDE, a click on the test's result icon opens it.
 
+<figure>
+  <img src="/screenshots/vscode-test-card.png" alt="VS Code: the hover on a failing test's line, its card: the latest runs as colored bars, how many passed and the median duration, the run it last failed in and why, then Run, Open in dashboard and More…">
+  <figcaption>VS Code: the card in the hover on the test's line.</figcaption>
+</figure>
+
+<figure>
+  <img src="/screenshots/jetbrains-test-card.png" alt="WebStorm: the card a click on a failing test's result icon opens: the test's title, its latest runs as colored bars and how they went, the run it last failed in and why, then Run, Open in dashboard and More…">
+  <figcaption>A JetBrains IDE: the card a click on the test's result icon opens.</figcaption>
+</figure>
+
 ## What it shows
 
 - **The strip**: the test's latest runs, oldest on the left, one bar each in the dashboard's color for its outcome:
