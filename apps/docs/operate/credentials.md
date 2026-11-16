@@ -17,7 +17,7 @@ and a base URL in every action and every project, and a rotation is one change. 
 | **Name** | Unique on the instance, ignoring case; the name the pickers and the log show. |
 | **Destination** | The base URL the secret may be sent under (`https://jenkins.example.com/`). A request to any other address, or outside its path, is refused. |
 | **User** | The user name sent with the secret as HTTP Basic authentication, when the service takes one. |
-| **Secret** | The API token. Encrypted with `PIWI_SECRET_KEY`, together with the destination, and never returned by any page, API answer or log. |
+| **Secret** | The API token, saved encrypted with `PIWI_SECRET_KEY`, together with the destination, or read from a server variable (below). Never returned by any page, API answer or log. |
 | **Projects** | The projects whose CI actions may name it: a list, or all projects, present and future. |
 | **Inputs** | The CI action inputs a request carrying it may send beside the arguments and the dispatch id: every input, or the names listed. |
 | **Custom requests** | Whether a Custom CI server request may carry it. Off by default: a Custom request can reach any path under the destination, a CI server's script console included. |
@@ -25,6 +25,23 @@ and a base URL in every action and every project, and a rotation is one change. 
 Saving a secret needs `PIWI_SECRET_KEY` (see the [production checklist](./production-checklist)); without it, the
 form says so and nothing is saved. Changing the destination asks for the secret again, since the secret is sealed with
 the one destination it may be sent under.
+
+## A secret from a server variable
+
+An administrator can have a credential read its secret from a variable of the server's environment instead of saving
+it: **Secret source** → **Read from a server variable**, then the variable's name. Only a variable named
+`PIWI_CREDENTIAL_…` (capitals, digits and `_`) can be named, so no other variable of the server, such as
+`PIWI_SECRET_KEY` or a database URL, can be sent anywhere. Set it as the server's other variables are set, from a
+secrets store or the container's environment:
+
+```bash [.env]
+PIWI_CREDENTIAL_JENKINS=11a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6
+```
+
+The variable is read at each use, so changing it and restarting the server is the rotation. Its name is sealed with
+the destination like a saved secret, so changing the destination asks for the name again. The panel says when the
+variable is not set on the server, and a dispatch is then refused and logged. Only an administrator may change a
+credential that reads a variable.
 
 ## Who manages them
 

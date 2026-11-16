@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { requireRouteId } from '../../utils/project-access';
+import { withSecretEnvState } from '../../utils/credentials';
 import {
   canManageCredential,
   credentialReferences,
@@ -31,5 +32,7 @@ export default eventHandler(async (event) => {
   if (!record || !(can(access, 'credentials:manage') || canManageCredential(viewer, record))) {
     throw apiError({ statusCode: 404, message: 'Credential not found' });
   }
-  return { credential: credentialSummary(record, (await credentialReferences(db)).get(id) ?? [], viewer) };
+  return {
+    credential: withSecretEnvState(credentialSummary(record, (await credentialReferences(db)).get(id) ?? [], viewer)),
+  };
 });

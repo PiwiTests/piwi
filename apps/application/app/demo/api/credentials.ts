@@ -2,7 +2,8 @@
  * The credential routes in the browser demo, on the server's shared handlers.
  * The demo sends nothing, so it stores no secret: a credential it saves holds
  * every field but the secret, which the form still asks for, and the seeded
- * log is the only one it shows.
+ * log is the only one it shows. It has no environment, so a variable a secret
+ * is read from is never known to be set.
  */
 import { can } from '#shared/permissions';
 import {
@@ -74,6 +75,9 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
   if (await credentialNameTaken(db as never, input.name)) {
     throw demoHttpError(409, `A credential is already named "${input.name}".`);
   }
+  if (input.secretEnv && !can(viewer.access, 'credentials:manage')) {
+    throw demoHttpError(403, 'Reading a secret from a variable takes the credentials:manage permission.');
+  }
   const { secret: _secret, ...fields } = input;
   const id = await insertCredential(
     db as never,
@@ -109,11 +113,14 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (service !== undefined && service !== record.service) {
     throw demoHttpError(400, 'A credential’s service cannot change: create another one.');
   }
-  if (patch.destination !== undefined && patch.destination !== record.destination && !secret) {
+  if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
     throw demoHttpError(
       400,
-      'Enter the secret again to change the destination: it is sealed with the one it may be sent under.',
+      'Enter the secret, or name its variable, again to change the destination: it is sealed with the one it may be sent under.',
     );
+  }
+  if (patch.secretEnv && !can(viewer.access, 'credentials:manage')) {
+    throw demoHttpError(403, 'Reading a secret from a variable takes the credentials:manage permission.');
   }
   if (patch.scope) {
     const refusal = can(viewer.access, 'credentials:manage')
@@ -124,8 +131,8 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (patch.name !== undefined && (await credentialNameTaken(db as never, patch.name, id))) {
     throw demoHttpError(409, `A credential is already named "${patch.name}".`);
   }
-  // The demo keeps no secret: a rotation stores none and only moves the date.
-  await updateCredential(db as never, id, patch, secret ? '' : undefined);
+  // The demo keeps no secret: a rotation stores none, and only moves the date and the variable named.
+  await updateCredential(db as never, id, patch, secret || patch.secretEnv ? '' : undefined);
   return { credential: await summaryOf(db, viewer, id) };
 }
 

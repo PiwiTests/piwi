@@ -126,6 +126,7 @@ async function remove() {
               </span>
               <span class="text-xs text-muted">
                 <template v-if="credential.disabled">Disabled</template>
+                <template v-else-if="credential.secretEnvSet === false">Variable not set</template>
                 <ClientOnly v-else-if="credential.lastUsedAt">
                   <span :title="prettyDateFormat(credential.lastUsedAt)">
                     Used {{ formatRelativeTime(credential.lastUsedAt) }}
@@ -174,6 +175,10 @@ async function remove() {
               <template v-if="selected.managedBy === 'env'"
                 >In <code class="font-mono">PIWI_CI_SERVER_TOKEN</code></template
               >
+              <template v-else-if="selected.secretEnv">
+                Read from <code class="font-mono">{{ selected.secretEnv }}</code
+                ><template v-if="selected.secretEnvSet === false">, which is not set on the server</template>
+              </template>
               <template v-else>Saved <ClientDate :date="selected.rotatedAt" /></template>
             </dd>
             <dt class="text-muted">State</dt>

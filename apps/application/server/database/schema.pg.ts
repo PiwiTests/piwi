@@ -3153,7 +3153,8 @@ export const credentials = pgTable(
     service: text('service').notNull(), // CredentialService
     userName: text('user_name'), // the user name a Basic credential pairs with the secret; not secret
     destination: text('destination').notNull(), // the base URL the secret may be sent under
-    secret: text('secret'), // AES-256-GCM JSON { destination, secret }; null for a credential set by environment variables
+    secret: text('secret'), // AES-256-GCM JSON { destination, secret } or { destination, env }; null for one the environment sets
+    secretEnv: text('secret_env'), // the PIWI_CREDENTIAL_* variable the secret is read from at each use; null for a saved secret
     allProjects: boolean('all_projects').notNull().default(false), // else the rows of credential_projects
     allowedInputs: jsonb('allowed_inputs'), // string[]: the CI action inputs a request carrying it may send; null for every input
     customRequests: boolean('custom_requests').notNull().default(false), // whether a Custom CI server request may carry it

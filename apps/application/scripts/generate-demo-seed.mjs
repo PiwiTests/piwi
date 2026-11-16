@@ -3746,7 +3746,8 @@ const CONNECTED_APP_KEYS = [
   },
 ];
 // Settings → Credentials: the Jenkins user the API project's CI actions name, and one shared with every project that
-// no action names yet. The demo stores no secret. Its log: dispatches, a refusal and the Check reads of one hour.
+// no action names yet, whose secret is read from a server variable. The demo stores no secret. Its log: dispatches, a
+// refusal and the Check reads of one hour.
 const CREDENTIALS = [
   {
     id: 1,
@@ -3774,6 +3775,7 @@ const CREDENTIALS = [
     user_name: 'release-bot',
     destination: 'https://jenkins.example.com/job/release/',
     secret: null,
+    secret_env: 'PIWI_CREDENTIAL_RELEASE_BOT',
     all_projects: 1,
     allowed_inputs: ['TARGET_ENV'],
     custom_requests: 0,

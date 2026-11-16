@@ -18,6 +18,7 @@ import {
   CREDENTIAL_READ_FEATURES,
   credentialLogDestination,
   credentialRefusal,
+  isCredentialSecretEnv,
   MAX_CREDENTIAL_NAME_LENGTH,
   type CredentialFeature,
   type CredentialService,
@@ -41,15 +42,61 @@ export function sealCredentialSecret(destination: string, secret: string): strin
   return encryptSecret(JSON.stringify({ destination, secret }), getEncryptionKey());
 }
 
-/** The secret of a stored credential, or null when it cannot be opened for its destination. */
-function openStoredSecret(stored: string | null, destination: string): string | null {
-  if (!stored?.startsWith(ENCRYPTED_PREFIX)) return null;
+/**
+ * The name of the `PIWI_CREDENTIAL_*` variable a secret is read from, sealed
+ * with the destination it may be sent under, so a row edited in the database
+ * to another destination or variable does not open.
+ */
+export function sealCredentialEnv(destination: string, env: string): string {
+  return encryptSecret(JSON.stringify({ destination, env }), getEncryptionKey());
+}
+
+/** A variable's value, trimmed, or null when it is unset or empty. */
+function readSecretEnv(name: string): string | null {
+  return process.env[name]?.trim() || null;
+}
+
+/**
+ * The secret of a stored credential, or why it cannot be had: the seal opens
+ * for its destination and its variable, and the variable it names is set.
+ */
+function openStoredSecret(
+  stored: string | null,
+  destination: string,
+  secretEnv: string | null,
+  name: string,
+): { secret: string } | { refusal: string } {
+  const unopened = { refusal: `The credential "${name}" cannot be opened: save its secret again.` };
+  if (!stored?.startsWith(ENCRYPTED_PREFIX)) return unopened;
+  let value: { destination?: unknown; secret?: unknown; env?: unknown };
   try {
-    const value = JSON.parse(decryptSecret(stored, getEncryptionKey())) as { destination?: unknown; secret?: unknown };
-    return value.destination === destination && typeof value.secret === 'string' && value.secret ? value.secret : null;
+    value = JSON.parse(decryptSecret(stored, getEncryptionKey())) as typeof value;
   } catch {
-    return null;
+    return unopened;
   }
+  if (value.destination !== destination) return unopened;
+  if (secretEnv !== null || value.env !== undefined) {
+    if (value.env !== secretEnv || !secretEnv || !isCredentialSecretEnv(secretEnv)) return unopened;
+    const secret = readSecretEnv(secretEnv);
+    return secret ? { secret } : { refusal: credentialEnvRefusal({ name, secretEnv })! };
+  }
+  return typeof value.secret === 'string' && value.secret ? { secret: value.secret } : unopened;
+}
+
+/** Why a credential cannot be used on this server before anything is sent, or null: the variable its secret is read from is unset. */
+export function credentialEnvRefusal(credential: { name: string; secretEnv: string | null }): string | null {
+  if (!credential.secretEnv || readSecretEnv(credential.secretEnv) !== null) return null;
+  return `The credential "${credential.name}" reads its secret from ${credential.secretEnv}, which is not set on the server.`;
+}
+
+/** A credential as an answer shows it, with whether the variable its secret is read from is set on this server. */
+export function withSecretEnvState<T extends { secretEnv: string | null; secretEnvSet: boolean | null }>(
+  credential: T,
+): T {
+  return {
+    ...credential,
+    secretEnvSet: credential.secretEnv ? readSecretEnv(credential.secretEnv) !== null : null,
+  };
 }
 
 /** The credential the environment sets for a service, as its row holds it, or null when its variables are unset. */
@@ -204,7 +251,12 @@ export async function withCredential<T>(
   failure?: (value: T) => string | null,
 ): Promise<T> {
   const [row] = await db
-    .select({ secret: credentials.secret, managedBy: credentials.managedBy, service: credentials.service })
+    .select({
+      secret: credentials.secret,
+      secretEnv: credentials.secretEnv,
+      managedBy: credentials.managedBy,
+      service: credentials.service,
+    })
     .from(credentials)
     .where(eq(credentials.id, use.credentialId));
   const record = row ? await loadCredentialRecord(db, use.credentialId) : null;
@@ -212,11 +264,14 @@ export async function withCredential<T>(
   let refusal = record ? credentialRefusal(record, use) : 'The credential was deleted: pick another one.';
   let secret: string | null = null;
   if (!refusal && record && row) {
-    secret =
-      row.managedBy === 'env'
-        ? (envCredential(record.service)?.secret ?? null)
-        : openStoredSecret(row.secret, record.destination);
-    if (!secret) refusal = `The credential "${name}" cannot be opened: save its secret again.`;
+    if (row.managedBy === 'env') {
+      secret = envCredential(record.service)?.secret ?? null;
+      if (!secret) refusal = `The credential "${name}" is set by environment variables that are unset.`;
+    } else {
+      const opened = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
+      if ('secret' in opened) secret = opened.secret;
+      else refusal = opened.refusal;
+    }
   }
   const base = {
     credentialId: record ? record.id : null,

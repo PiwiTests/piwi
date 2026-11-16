@@ -56,6 +56,7 @@ import {
 } from './ci-server-dispatch';
 import { loadCredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
+import { credentialEnvRefusal } from './credentials';
 import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import type { RunMetadata } from './run-json-types';
@@ -129,8 +130,9 @@ async function ciServerReadiness(
     if (request.credential?.source === 'action') {
       const record = await loadCredentialRecord(db, request.credential.id);
       const refusal = record
-        ? credentialRefusal(record, { projectId, url: request.url, custom: request.custom })
-        : 'The credential this CI action names no longer exists: pick another one.';
+        ? (credentialRefusal(record, { projectId, url: request.url, custom: request.custom }) ??
+          credentialEnvRefusal(record))
+        : 'The credential this CI action names does not exist: pick another one.';
       if (refusal) return { reason: refusal, hasToken: false };
     }
     return { reason: null, hasToken: request.credential !== null };

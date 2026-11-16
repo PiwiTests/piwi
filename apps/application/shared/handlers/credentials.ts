@@ -41,6 +41,8 @@ export interface CredentialRecord extends CredentialRules {
   description: string | null;
   allowedInputs: string[] | null;
   managedBy: 'db' | 'env';
+  /** The `PIWI_CREDENTIAL_*` variable its secret is read from; null for a saved secret. */
+  secretEnv: string | null;
   /** Who created it, while that user exists. */
   createdBy: number | null;
   createdAt: Date;
@@ -67,6 +69,7 @@ const RECORD_COLUMNS = {
   customRequests: credentials.customRequests,
   disabled: credentials.disabled,
   managedBy: credentials.managedBy,
+  secretEnv: credentials.secretEnv,
   createdBy: credentials.createdBy,
   createdAt: credentials.createdAt,
   rotatedAt: credentials.rotatedAt,
@@ -85,6 +88,7 @@ interface RecordRow {
   customRequests: boolean;
   disabled: boolean;
   managedBy: string;
+  secretEnv: string | null;
   createdBy: number | null;
   createdAt: Date | number;
   rotatedAt: Date | number;
@@ -108,6 +112,7 @@ function toRecord(row: RecordRow, projectIds: number[]): CredentialRecord {
     customRequests: Boolean(row.customRequests),
     disabled: Boolean(row.disabled),
     managedBy: row.managedBy === 'env' ? 'env' : 'db',
+    secretEnv: row.secretEnv ?? null,
     createdBy: row.createdBy ?? null,
     createdAt: toDate(row.createdAt)!,
     rotatedAt: toDate(row.rotatedAt)!,
@@ -151,19 +156,21 @@ export async function loadCredentialRecords(db: DrizzleDB): Promise<CredentialRe
 /**
  * Whether a caller may change a credential and read its log: anyone who holds
  * `credentials:manage`, or the Project admin who created it while it is shared
- * only with projects they manage. A credential an administrator saved for a
+ * only with projects they manage and its secret is not read from a variable,
+ * which is the operator's. A credential an administrator saved for a
  * project stays theirs: its project's admins pick it, and never loosen its
  * rules. Nobody changes a credential the environment sets.
  */
 export function canManageCredential(
   viewer: CredentialViewer,
-  credential: Pick<CredentialRecord, 'allProjects' | 'projectIds' | 'managedBy' | 'createdBy'>,
+  credential: Pick<CredentialRecord, 'allProjects' | 'projectIds' | 'managedBy' | 'createdBy' | 'secretEnv'>,
 ): boolean {
   if (credential.managedBy === 'env') return false;
   if (can(viewer.access, 'credentials:manage')) return true;
   return (
     viewer.userId != null &&
     credential.createdBy === viewer.userId &&
+    credential.secretEnv === null &&
     !credential.allProjects &&
     credential.projectIds.length > 0 &&
     credential.projectIds.every((projectId) => can(viewer.access, 'project:manage', projectId))
@@ -239,6 +246,8 @@ export function credentialSummary(
     customRequests: record.customRequests,
     disabled: record.disabled,
     managedBy: record.managedBy,
+    secretEnv: record.secretEnv,
+    secretEnvSet: null,
     createdAt: record.createdAt.toISOString(),
     rotatedAt: record.rotatedAt.toISOString(),
     lastUsedAt: iso(record.lastUsedAt),
@@ -272,6 +281,8 @@ export async function listCredentialOptions(
       customRequests: record.customRequests,
       disabled: record.disabled,
       managedBy: record.managedBy,
+      secretEnv: record.secretEnv,
+      secretEnvSet: null,
       rotatedAt: record.rotatedAt.toISOString(),
       lastUsedAt: iso(record.lastUsedAt),
       canManage: canManageCredential(viewer, record),
@@ -296,8 +307,9 @@ async function writeScope(db: DrizzleDB, id: number, scope: CredentialInput['sco
 }
 
 /**
- * Store a new credential with its secret already sealed (`sealed`, or null in
- * the demo, which sends nothing). Returns its id.
+ * Store a new credential with its secret, or the variable it is read from,
+ * already sealed with its destination (`sealed`, or null in the demo, which
+ * sends nothing). Returns its id.
  */
 export async function insertCredential(
   db: DrizzleDB,
@@ -315,6 +327,7 @@ export async function insertCredential(
       userName: input.user,
       destination: input.destination,
       secret: sealed,
+      secretEnv: input.secretEnv ?? null,
       allProjects: input.scope.allProjects,
       allowedInputs: input.allowedInputs,
       customRequests: input.customRequests,
@@ -330,8 +343,9 @@ export async function insertCredential(
 }
 
 /**
- * Change a stored credential. `sealed` is the new secret sealed with the
- * destination the update leaves, given when one was typed; it moves the
+ * Change a stored credential. `sealed` is the new secret, or the variable it
+ * is read from (`patch.secretEnv`, null for a typed one), sealed with the
+ * destination the update leaves; given when either was sent, it moves the
  * rotation date.
  */
 export async function updateCredential(
@@ -351,6 +365,7 @@ export async function updateCredential(
   if (patch.scope !== undefined) set.allProjects = patch.scope.allProjects;
   if (sealed !== undefined) {
     set.secret = sealed;
+    set.secretEnv = patch.secretEnv ?? null;
     set.rotatedAt = new Date();
   }
   if (Object.keys(set).length > 0) await db.update(credentials).set(set).where(eq(credentials.id, id));

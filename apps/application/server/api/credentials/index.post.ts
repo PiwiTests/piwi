@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
-import { sealCredentialSecret } from '../../utils/credentials';
+import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
 import {
   credentialNameTaken,
   credentialReferences,
@@ -17,7 +17,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Create a credential',
     description:
-      'Saves a credential: `{ name, service, secret, destination, scope, user?, description?, allowedInputs?, customRequests?, disabled? }`. `destination` is the base URL the secret may be sent under (an http(s) URL without a user, query or fragment), `scope` is `{ allProjects: true }` or `{ allProjects: false, projectIds }`, `allowedInputs` the CI action inputs a request carrying it may send (null or absent for every input), and `customRequests` whether a Custom CI server request may carry it (off by default). The secret is encrypted with its destination and never returned, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A name another credential has, ignoring case, answers 409. Someone who holds `credentials:manage` gives any scope; a Project admin names only projects they manage, and never all projects (403). Returns the credential as `GET /api/credentials/:id` does.',
+      'Saves a credential: `{ name, service, secret, destination, scope, user?, description?, allowedInputs?, customRequests?, disabled? }`, or `secretEnv` in place of `secret`: the name of a `PIWI_CREDENTIAL_*` variable the secret is read from at each use, which only someone who holds `credentials:manage` may give (403), so no other variable of the server can be sent. `destination` is the base URL the secret may be sent under (an http(s) URL without a user, query or fragment), `scope` is `{ allProjects: true }` or `{ allProjects: false, projectIds }`, `allowedInputs` the CI action inputs a request carrying it may send (null or absent for every input), and `customRequests` whether a Custom CI server request may carry it (off by default). The secret, or the name of its variable, is encrypted with its destination and never returned, so saving a credential answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A name another credential has, ignoring case, answers 409. Someone who holds `credentials:manage` gives any scope; a Project admin names only projects they manage, and never all projects (403). Returns the credential as `GET /api/credentials/:id` does.',
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
 });
@@ -38,7 +38,16 @@ export default eventHandler(async (event) => {
   if (await credentialNameTaken(db, input.name)) {
     throw apiError({ statusCode: 409, message: `A credential is already named "${input.name}".` });
   }
-  const sealed = sealCredentialSecret(input.destination, input.secret);
+  // The server's environment is the operator's: only credentials:manage reads a secret from it.
+  if (input.secretEnv && !can(access, 'credentials:manage')) {
+    throw apiError({
+      statusCode: 403,
+      message: 'Reading a secret from a variable takes the credentials:manage permission.',
+    });
+  }
+  const sealed = input.secretEnv
+    ? sealCredentialEnv(input.destination, input.secretEnv)
+    : sealCredentialSecret(input.destination, input.secret!);
   const { secret: _secret, ...fields } = input;
   const id = await insertCredential(
     db,
@@ -56,5 +65,7 @@ export default eventHandler(async (event) => {
   );
   const record = (await loadCredentialRecord(db, id))!;
   setResponseStatus(event, 201);
-  return { credential: credentialSummary(record, (await credentialReferences(db)).get(id) ?? [], viewer) };
+  return {
+    credential: withSecretEnvState(credentialSummary(record, (await credentialReferences(db)).get(id) ?? [], viewer)),
+  };
 });

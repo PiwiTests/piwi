@@ -66,6 +66,9 @@ const credentialDescription = computed(() => {
   }
   if (credential) {
     if (credential.disabled) return `“${credential.name}” is disabled: a dispatch is refused until it is enabled.`;
+    if (credential.secretEnvSet === false) {
+      return `“${credential.name}” reads its secret from ${credential.secretEnv}, which is not set on the server: a dispatch is refused.`;
+    }
     if (request.url && !isUnderBaseUrl(credential.destination, request.url)) {
       return `“${credential.name}” is sent only under ${credential.destination}, and this request goes elsewhere: a dispatch is refused.`;
     }

@@ -3680,6 +3680,25 @@ const SCENES = [
     of: '[data-shot="credentials-list"]',
   })),
   ...[
+    { name: 'settings-credential-variable', width: 1280, height: 1000 },
+    { name: 'settings-credential-variable-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential whose secret is read from a PIWI_CREDENTIAL_* variable of the server, its panel saying the variable is not set, then its edit form, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-2').click({ timeout: 90000 });
+      await page.getByTestId('credential-panel').getByText('not set on the server').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('panel');
+      await page.getByRole('button', { name: 'Edit or rotate' }).click();
+      await page.getByTestId('credential-secret-env').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('form');
+    },
+  })),
+  ...[
     { name: 'settings-credential-panel', width: 1280, height: 1000 },
     { name: 'settings-credential-panel-mobile', width: 375, height: 1500 },
   ].map(({ name, width, height }) => ({

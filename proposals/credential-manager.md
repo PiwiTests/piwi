@@ -2,7 +2,7 @@
 
 **Status.** Proposed and confirmed 2026-11-16. Step 1 of the [Delivery](#delivery) is built: the store, the log,
 Settings → Credentials, the credential of each CI server action, the environment's CI server credential and the import
-of the project CI server tokens. It replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per
+of the project CI server tokens, and a secret read from a server variable (D13). It replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per
 project); D7 stands, as the environment credential's input list. Steps 2 and 3 remain.
 
 **Summary.** Piwi stores the secrets it sends to other services in six places, each with its own copy, its own rules and
@@ -71,6 +71,7 @@ Confirmed with the maintainer on 2026-11-16; [Answered questions](#answered-ques
 | D10 | **A CI action names its credential.** A CI server action holds `credentialId`, which lifts the one-token-per-project limit (ci-actions D6); its base URL defaults to the credential's destination and its user name is the credential's, so the action repeats neither. A GitHub, GitLab or Bitbucket action may hold one too (step 2), else it uses the project's SCM credential. An action without a credential sends the instance's (D8) under its URL. `ciServerToken`, `hasCiServerToken` and `ciServerTokenUrl` leave the project API (`BREAKING CHANGE`): a project no longer has one CI server token for a write to replace. |
 | D11 | **The input rule of the instance credential becomes a field of every CI server credential**: `allowedInputs`, the inputs a request carrying it may send (null for every input). The env-managed credential reads `PIWI_CI_SERVER_ALLOWED_INPUTS`; an imported project token gets null, as it sends every input today.                                                                                                                                                                                                                                                                                                                |
 | D12 | **A Custom request carries a credential only when the credential allows it** (`customRequests`, off by default). A Custom request reaches any path under the destination, a CI server's script console included, so whoever manages the credential decides. An imported project token allows it, as it went with a Custom request before; the env-managed credential never does.                                                                                                                                                                                                                                                     |
+| D13 | **A secret may be read from a server variable** named `PIWI_CREDENTIAL_*` (`secretEnv`), at each use, instead of being saved. Only `credentials:manage` names one, and only that prefix, so no other variable of the server (`PIWI_SECRET_KEY`, a database URL) can be sent; the name is sealed with the destination like a saved secret. Added on 2026-11-16 at the maintainer's request.                                                                                                                                                                                                                                           |
 
 ## Design
 
@@ -79,13 +80,14 @@ Confirmed with the maintainer on 2026-11-16; [Answered questions](#answered-ques
 `CredentialSummary` (`shared/credentials.ts`) is what the API answers, never with the secret: `id`, `name` (unique,
 ignoring case), `description`, `service` (`ci-server` in step 1), `user`, `destination` (the normalized base URL),
 `scope` (`{ allProjects: true }` or `{ allProjects: false, projectIds }`), `allowedInputs` (null for every input),
-`customRequests` (D12), `disabled`, `managedBy` (`db` or `env`), `createdAt`, `rotatedAt`, `lastUsedAt`, `usedBy` (the
+`customRequests` (D12), `secretEnv` and `secretEnvSet` (D13), `disabled`, `managedBy` (`db` or `env`), `createdAt`, `rotatedAt`, `lastUsedAt`, `usedBy` (the
 CI actions that name it) and `canManage`.
 
 Tables, in both schemas:
 
-- `credentials`: the record, the secret in `secret` (sealed `{ destination, secret }`, so a row edited in the
-  database to another destination does not open), `created_by` for D5.
+- `credentials`: the record, the secret in `secret` (sealed `{ destination, secret }`, or `{ destination, env }` for a
+  secret read from a variable, so a row edited in the database to another destination or variable does not open),
+  `secret_env` for D13, `created_by` for D5.
 - `credential_projects`: `(credential_id, project_id)`, deleted with either side.
 - `credential_uses`: `credential_id` (set null on delete) and `credential_name`, `feature` (`ci-dispatch`,
   `ci-check`), `project_id`, `user_id`, `api_key_id`, `subject_type` and `subject_id` (the CI action), `destination`

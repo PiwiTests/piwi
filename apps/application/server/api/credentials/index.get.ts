@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { requireProjectAccess } from '../../utils/project-access';
 import { canEncryptSecrets } from '../../utils/crypto';
-import { ensureEnvCredentials } from '../../utils/credentials';
+import { ensureEnvCredentials, withSecretEnvState } from '../../utils/credentials';
 import { listCredentialOptions, listCredentialSummaries } from '#shared/handlers/credentials';
 import { CREDENTIAL_SERVICES, type CredentialService } from '#shared/credentials';
 import { parseRouteId } from '#shared/route-id';
@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'List credentials',
     description:
-      'Lists the credentials Piwi sends to other services, never their secrets. Without `projectId`, it answers the credentials the caller may change, with their scope, the CI actions that name them (`usedBy`) and when each was last used: every credential for someone who holds `credentials:manage` (the ones the environment sets included, read-only), and for a Project admin those they created that are shared only with projects they manage. With `projectId`, it answers the credentials a CI action of that project may name (set in the database and shared with it), without their scope, for a Project admin of that project; `service` narrows them. `canEncrypt` says whether a secret can be saved (`PIWI_SECRET_KEY` is set).',
+      'Lists the credentials Piwi sends to other services, never their secrets. Without `projectId`, it answers the credentials the caller may change, with their scope, the CI actions that name them (`usedBy`) and when each was last used: every credential for someone who holds `credentials:manage` (the ones the environment sets included, read-only), and for a Project admin those they created that are shared only with projects they manage. With `projectId`, it answers the credentials a CI action of that project may name (set in the database and shared with it), without their scope, for a Project admin of that project; `service` narrows them. `secretEnv` names the `PIWI_CREDENTIAL_*` variable a credential reads its secret from, and `secretEnvSet` whether it is set on the server. `canEncrypt` says whether a credential can be saved (`PIWI_SECRET_KEY` is set).',
     parameters: [
       { name: 'projectId', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'service', in: 'query', required: false, schema: { type: 'string', enum: ['ci-server'] } },
@@ -36,7 +36,8 @@ export default eventHandler(async (event) => {
     const service = (CREDENTIAL_SERVICES as readonly unknown[]).includes(query.service)
       ? (query.service as CredentialService)
       : undefined;
-    return { credentials: await listCredentialOptions(db, projectId, viewer, service), canEncrypt };
+    const options = await listCredentialOptions(db, projectId, viewer, service);
+    return { credentials: options.map(withSecretEnvState), canEncrypt };
   }
-  return { credentials: await listCredentialSummaries(db, viewer), canEncrypt };
+  return { credentials: (await listCredentialSummaries(db, viewer)).map(withSecretEnvState), canEncrypt };
 });

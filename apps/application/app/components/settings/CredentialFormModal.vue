@@ -4,11 +4,14 @@
  * destination, the projects that may use it, the inputs a request carrying it
  * may send, and whether a Custom request may carry it. The secret is
  * write-only: left empty on a change, the stored one stays, and a new
- * destination asks for it again.
+ * destination asks for it again. An administrator may have it read from a
+ * `PIWI_CREDENTIAL_*` variable of the server instead.
  */
 import { normalizeCiServerBaseUrl } from '#shared/ci-server';
 import {
+  CREDENTIAL_SECRET_ENV_PREFIX,
   credentialDestinationProblem,
+  isCredentialSecretEnv,
   MAX_CREDENTIAL_DESCRIPTION_LENGTH,
   MAX_CREDENTIAL_NAME_LENGTH,
   type CredentialService,
@@ -48,6 +51,8 @@ const blank = () => ({
   description: '',
   user: '',
   secret: '',
+  secretSource: 'saved' as 'saved' | 'env',
+  secretEnv: '',
   destination: '',
   allProjects: false,
   projectIds: [] as number[],
@@ -70,6 +75,8 @@ watch(open, (isOpen) => {
         description: c.description ?? '',
         user: c.user ?? '',
         secret: '',
+        secretSource: c.secretEnv ? ('env' as const) : ('saved' as const),
+        secretEnv: c.secretEnv ?? '',
         destination: c.destination,
         allProjects: c.scope.allProjects,
         projectIds: c.scope.allProjects ? [] : [...c.scope.projectIds],
@@ -81,6 +88,16 @@ watch(open, (isOpen) => {
 });
 
 const editing = computed(() => props.credential !== null);
+const SOURCE_ITEMS = [
+  { label: 'Saved here, encrypted', value: 'saved' },
+  { label: 'Read from a server variable', value: 'env' },
+];
+const ENV_PLACEHOLDER = `${CREDENTIAL_SECRET_ENV_PREFIX}JENKINS`;
+const readsEnv = computed(() => form.value.secretSource === 'env');
+/** Whether the variable to send differs from the stored one: a new one, or one the credential did not read. */
+const envChanged = computed(
+  () => readsEnv.value && form.value.secretEnv.trim() !== (props.credential?.secretEnv ?? ''),
+);
 /** Whether the destination typed differs from the stored one, which needs the secret again. */
 const destinationMoved = computed(
   () =>
@@ -95,8 +112,14 @@ function problem(): string | null {
   if (!f.destination.trim()) return 'Enter the base URL the secret may be sent under.';
   const destination = credentialDestinationProblem(f.destination.trim());
   if (destination) return destination;
-  if (!editing.value && !f.secret.trim()) return 'Enter the secret.';
-  if (destinationMoved.value && !f.secret.trim()) return 'Enter the secret again: the destination changed.';
+  if (readsEnv.value) {
+    if (!isCredentialSecretEnv(f.secretEnv.trim())) {
+      return `Name a variable of the server that starts with ${CREDENTIAL_SECRET_ENV_PREFIX}, in capitals.`;
+    }
+  } else {
+    if ((!editing.value || props.credential!.secretEnv) && !f.secret.trim()) return 'Enter the secret.';
+    if (destinationMoved.value && !f.secret.trim()) return 'Enter the secret again: the destination changed.';
+  }
   if (!f.allProjects && f.projectIds.length === 0) return 'Pick the projects that may use it.';
   return null;
 }
@@ -119,7 +142,13 @@ async function submit() {
           .map((name) => name.trim())
           .filter(Boolean),
     customRequests: f.customRequests,
-    ...(f.secret.trim() ? { secret: f.secret.trim() } : {}),
+    ...(readsEnv.value
+      ? envChanged.value || destinationMoved.value || !editing.value
+        ? { secretEnv: f.secretEnv.trim() }
+        : {}
+      : f.secret.trim()
+        ? { secret: f.secret.trim() }
+        : {}),
   };
   saving.value = true;
   try {
@@ -180,21 +209,56 @@ async function submit() {
             />
           </UFormField>
           <UFormField
-            label="Secret"
-            name="credentialSecret"
-            :required="!editing || destinationMoved"
-            :description="editing ? 'Leave empty to keep the stored one.' : 'Encrypted, and never shown again.'"
+            v-if="shareAll"
+            label="Secret source"
+            name="credentialSecretSource"
+            description="Saved here, or read on the server."
           >
-            <UInput
-              v-model="form.secret"
-              type="password"
-              autocomplete="new-password"
-              :placeholder="editing ? '•••••••• (unchanged)' : 'API token'"
-              aria-label="Credential secret"
-              class="w-full font-mono"
+            <USelect
+              v-model="form.secretSource"
+              :items="SOURCE_ITEMS"
+              aria-label="Secret source"
+              class="w-full"
+              data-testid="credential-secret-source"
             />
           </UFormField>
         </div>
+        <UFormField
+          v-if="readsEnv"
+          label="Variable"
+          name="credentialSecretEnv"
+          required
+          :description="`Read on the server at each use. Only a variable named ${CREDENTIAL_SECRET_ENV_PREFIX}…, so no other variable of the server can be sent.`"
+        >
+          <UInput
+            v-model="form.secretEnv"
+            autocomplete="off"
+            :placeholder="ENV_PLACEHOLDER"
+            aria-label="Variable the secret is read from"
+            class="w-full font-mono"
+            data-testid="credential-secret-env"
+          />
+        </UFormField>
+        <UFormField
+          v-else
+          label="Secret"
+          name="credentialSecret"
+          :required="!editing || destinationMoved || Boolean(credential?.secretEnv)"
+          :description="
+            editing && !credential?.secretEnv
+              ? 'Leave empty to keep the stored one.'
+              : 'Encrypted, and never shown again.'
+          "
+        >
+          <UInput
+            v-model="form.secret"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="editing && !credential?.secretEnv ? '•••••••• (unchanged)' : 'API token'"
+            aria-label="Credential secret"
+            class="w-full font-mono"
+          />
+        </UFormField>
         <FormFieldGroup label="Projects" description="The projects whose CI actions may name it.">
           <div class="space-y-2">
             <USwitch v-if="shareAll" v-model="form.allProjects" label="All projects, present and future" />

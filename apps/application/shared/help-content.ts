@@ -1343,6 +1343,7 @@ export const HELP_TOPICS = {
       '- **Destination**: the base URL the secret may be sent under. A request elsewhere is refused, and changing the destination asks for the secret again.',
       '- **Projects**: the projects that may use it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
       '- **Inputs and Custom requests**: the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
+      '- **Secret source**: saved here, encrypted, or, for an administrator, read at each use from a server variable named `PIWI_CREDENTIAL_…`.',
       '',
       'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
     ].join('\n'),

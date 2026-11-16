@@ -26,8 +26,8 @@ import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './
 /**
  * The credential manager: reading a posted credential, the rules that refuse a
  * use, the one way to a secret (`withCredential`) and its log, who manages a
- * credential, the credential the environment sets, and the import of the
- * project CI server tokens stored before it.
+ * credential, the credential the environment sets, a secret read from a
+ * server variable, and the import of the project CI server tokens.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -55,8 +55,10 @@ const {
   importProjectCiServerTokens,
   instanceCredential,
   pruneCredentialUses,
+  sealCredentialEnv,
   sealCredentialSecret,
   withCredential,
+  withSecretEnvState,
 } = await import('../../server/utils/credentials');
 const { encryptSecret } = await import('../../server/utils/crypto');
 const { ciServerBaseUrl, ciServerCredential } = await import('../../server/utils/ci-server-dispatch');
@@ -204,8 +206,8 @@ describe('parseCredentialInput', () => {
     };
     expect(error(without('name'))).toBe('A credential needs a name.');
     expect(error(without('service'))).toBe('The service is one of ci-server.');
-    expect(error(without('secret'))).toBe('A credential needs its secret.');
-    expect(error({ ...create, secret: '   ' })).toBe('A credential needs its secret.');
+    expect(error(without('secret'))).toBe('A credential needs its secret, or the variable it is read from.');
+    expect(error({ ...create, secret: '   ' })).toBe('A credential needs its secret, or the variable it is read from.');
     expect(error(without('destination'))).toMatch(/http\(s\) URL/);
     expect(error(without('scope'))).toMatch(/allProjects/);
   });
@@ -535,12 +537,14 @@ describe('who manages a credential', () => {
       projectIds: number[];
       managedBy: 'db' | 'env';
       createdBy: number | null;
+      secretEnv: string | null;
     }> = {},
   ) => ({
     allProjects: false,
     projectIds: [1],
     managedBy: 'db' as const,
     createdBy: 2,
+    secretEnv: null,
     ...over,
   });
 
@@ -556,6 +560,7 @@ describe('who manages a credential', () => {
     expect(canManageCredential(quinn, record({ allProjects: true, projectIds: [] }))).toBe(false);
     expect(canManageCredential(quinn, record({ projectIds: [] }))).toBe(false);
     expect(canManageCredential(quinn, record({ managedBy: 'env' }))).toBe(false);
+    expect(canManageCredential(quinn, record({ secretEnv: 'PIWI_CREDENTIAL_TEAM' }))).toBe(false);
   });
 
   test('a Project admin never manages an administrator’s credential, even one shared only with their project', () => {
@@ -857,5 +862,126 @@ describe('importProjectCiServerTokens', () => {
     const [target] = await targets(21);
     expect(target).toMatchObject({ type: 'ci-server', baseUrl: A });
     expect(target!.credentialId).toEqual(expect.any(Number));
+  });
+});
+
+describe('a secret read from a server variable', () => {
+  const VARIABLE = 'PIWI_CREDENTIAL_TEAM_JENKINS';
+  const avery = {
+    user: { id: 1, username: 'avery', name: null, role: InstanceRole.ADMINISTRATOR } as unknown as User,
+    access: ADMIN_ACCESS,
+  };
+  const quinn = {
+    user: { id: 2, username: 'quinn', name: null, role: InstanceRole.MEMBER } as unknown as User,
+    access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.PROJECT_ADMIN }]),
+  };
+  const call = (handler: Handler, id: number, body?: unknown) => handler({ params: { id: String(id) }, body });
+
+  async function createFromVariable(createdBy: number | null = 1): Promise<number> {
+    const input: Omit<CredentialInput, 'secret'> = {
+      name: 'Team Jenkins',
+      description: null,
+      service: 'ci-server',
+      user: 'team-bot',
+      secretEnv: VARIABLE,
+      destination: DEST,
+      scope: { allProjects: false, projectIds: [1] },
+      allowedInputs: null,
+      customRequests: false,
+      disabled: false,
+    };
+    return insertCredential(db as never, input, sealCredentialEnv(DEST, VARIABLE), createdBy);
+  }
+
+  afterEach(() => {
+    delete process.env[VARIABLE];
+  });
+
+  test('is named PIWI_CREDENTIAL_* only, and never beside a typed secret', () => {
+    const base = {
+      name: 'Team Jenkins',
+      service: 'ci-server',
+      destination: DEST,
+      scope: { allProjects: false, projectIds: [1] },
+    };
+    expect(parseCredentialInput({ ...base, secretEnv: ` ${VARIABLE} ` }, { partial: false }).value).toMatchObject({
+      secretEnv: VARIABLE,
+    });
+    for (const secretEnv of ['PIWI_SECRET_KEY', 'PIWI_DATABASE_URL', 'PIWI_CREDENTIAL_', 'piwi_credential_x', 'HOME']) {
+      expect(parseCredentialInput({ ...base, secretEnv }, { partial: false }).error, secretEnv).toContain(
+        'PIWI_CREDENTIAL_',
+      );
+    }
+    expect(parseCredentialInput({ ...base, secretEnv: VARIABLE, secret: 'x' }, { partial: false }).error).toContain(
+      'not both',
+    );
+    expect(parseCredentialInput(base, { partial: false }).error).toContain('the variable it is read from');
+  });
+
+  test('is read at each use, and a use while it is unset is refused before anything is sent', async () => {
+    const id = await createFromVariable();
+    process.env[VARIABLE] = ' env-secret ';
+    const opened = await withCredential(db as never, useOf(id), async (credential) => credential);
+    expect(opened).toEqual({ user: 'team-bot', secret: 'env-secret' });
+
+    delete process.env[VARIABLE];
+    const send = vi.fn();
+    await expect(withCredential(db as never, useOf(id), send)).rejects.toThrow(
+      `reads its secret from ${VARIABLE}, which is not set on the server`,
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect((await uses()).map((u) => u.result)).toEqual(['ok', 'refused']);
+  });
+
+  test('does not open once its row names another variable or destination than it was sealed with', async () => {
+    const id = await createFromVariable();
+    process.env[VARIABLE] = 'env-secret';
+    process.env.PIWI_CREDENTIAL_OTHER = 'other-secret';
+    try {
+      await db
+        .update(schema.credentials)
+        .set({ secretEnv: 'PIWI_CREDENTIAL_OTHER' })
+        .where(eq(schema.credentials.id, id));
+      await expect(withCredential(db as never, useOf(id), async () => 'sent')).rejects.toThrow('cannot be opened');
+    } finally {
+      delete process.env.PIWI_CREDENTIAL_OTHER;
+    }
+  });
+
+  test('says whether the variable is set, and nothing for a saved secret', async () => {
+    process.env[VARIABLE] = 'env-secret';
+    expect(withSecretEnvState({ secretEnv: VARIABLE, secretEnvSet: null })).toEqual({
+      secretEnv: VARIABLE,
+      secretEnvSet: true,
+    });
+    delete process.env[VARIABLE];
+    expect(withSecretEnvState({ secretEnv: VARIABLE, secretEnvSet: null }).secretEnvSet).toBe(false);
+    expect(withSecretEnvState({ secretEnv: null, secretEnvSet: null }).secretEnvSet).toBeNull();
+  });
+
+  test('is named by an administrator alone, and a credential that reads one is theirs', async () => {
+    const own = await create({ createdBy: 2 });
+    state.caller = quinn;
+    await expect(call(patchCredential, own, { secretEnv: VARIABLE })).rejects.toMatchObject({ statusCode: 403 });
+    expect((await loadCredentialRecord(db as never, own))!.secretEnv).toBeNull();
+
+    state.caller = avery;
+    process.env[VARIABLE] = 'env-secret';
+    expect((await call(patchCredential, own, { secretEnv: VARIABLE })).credential).toMatchObject({
+      secretEnv: VARIABLE,
+      secretEnvSet: true,
+    });
+    const record = (await loadCredentialRecord(db as never, own))!;
+    expect(canManageCredential({ access: quinn.access, userId: 2 }, record)).toBe(false);
+
+    await expect(call(patchCredential, own, { destination: 'https://ci.example.com/' })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(
+      (await call(patchCredential, own, { destination: 'https://ci.example.com/', secretEnv: VARIABLE })).credential,
+    ).toMatchObject({ destination: 'https://ci.example.com/', secretEnv: VARIABLE });
+    expect((await call(patchCredential, own, { secret: 'typed-again' })).credential).toMatchObject({
+      secretEnv: null,
+    });
   });
 });

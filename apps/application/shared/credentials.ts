@@ -44,6 +44,19 @@ export const MAX_CREDENTIAL_SECRET_LENGTH = 8192;
 export const MAX_CREDENTIAL_ALLOWED_INPUTS = 50;
 export const MAX_CREDENTIAL_PROJECTS = 500;
 
+/**
+ * The prefix of the variables a credential may read its secret from. The
+ * operator names a variable so to offer it: no other variable of the server's
+ * environment (`PIWI_SECRET_KEY`, a database URL) can be sent anywhere.
+ */
+export const CREDENTIAL_SECRET_ENV_PREFIX = 'PIWI_CREDENTIAL_';
+const SECRET_ENV_NAME = new RegExp(`^${CREDENTIAL_SECRET_ENV_PREFIX}[A-Z0-9_]{1,100}$`);
+
+/** Whether a credential may read its secret from a variable of this name. */
+export function isCredentialSecretEnv(name: string): boolean {
+  return SECRET_ENV_NAME.test(name);
+}
+
 /** Which projects may use a credential. */
 export type CredentialScope = { allProjects: true } | { allProjects: false; projectIds: number[] };
 
@@ -71,6 +84,10 @@ export interface CredentialSummary {
   customRequests: boolean;
   disabled: boolean;
   managedBy: 'db' | 'env';
+  /** The `PIWI_CREDENTIAL_*` variable the secret is read from at each use; null for a saved secret. */
+  secretEnv: string | null;
+  /** Whether that variable is set on the server; null when there is none, or nobody can tell (the demo). */
+  secretEnvSet: boolean | null;
   createdAt: string;
   rotatedAt: string;
   lastUsedAt: string | null;
@@ -104,13 +121,14 @@ export interface CredentialUseEntry {
   lastAt: string;
 }
 
-/** A credential as a create or an update writes it; the secret only when one is typed. */
+/** A credential as a create or an update writes it: the secret when one is typed, or the variable it is read from. */
 export interface CredentialInput {
   name: string;
   description: string | null;
   service: CredentialService;
   user: string | null;
-  secret: string;
+  secret?: string;
+  secretEnv?: string;
   destination: string;
   scope: CredentialScope;
   allowedInputs: string[] | null;
@@ -156,9 +174,11 @@ export function credentialDestinationProblem(raw: unknown): string | null {
 
 /**
  * A posted credential, or why it cannot be saved. A create needs every field
- * but the description, the user, the allowed inputs and the two switches; an
- * update (`partial`) reads only the fields it holds. The destination is stored
- * normalized (`https://ci.example.com/`), and a secret holds no line break.
+ * but the description, the user, the allowed inputs and the two switches, and
+ * either a secret or the `PIWI_CREDENTIAL_*` variable it is read from
+ * (`secretEnv`), not both; an update (`partial`) reads only the fields it
+ * holds. The destination is stored normalized (`https://ci.example.com/`), and
+ * a secret holds no line break.
  */
 export function parseCredentialInput(
   raw: unknown,
@@ -196,9 +216,20 @@ export function parseCredentialInput(
     if (LINE_BREAK.test(user)) return fail('A user name holds no line break.');
     value.user = user || null;
   }
-  if (has('secret')) {
+  const secretEnv = str(raw.secretEnv);
+  if (secretEnv && typeof raw.secret === 'string' && raw.secret.trim()) {
+    return fail('Give the secret or the variable it is read from, not both.');
+  }
+  if (secretEnv) {
+    if (!isCredentialSecretEnv(secretEnv)) {
+      return fail(
+        `A secret is read only from a variable named ${CREDENTIAL_SECRET_ENV_PREFIX}…, in capitals, digits and "_".`,
+      );
+    }
+    value.secretEnv = secretEnv;
+  } else if (has('secret')) {
     const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
-    if (!secret) return fail('A credential needs its secret.');
+    if (!secret) return fail('A credential needs its secret, or the variable it is read from.');
     if (secret.length > MAX_CREDENTIAL_SECRET_LENGTH)
       return fail(`A secret is at most ${MAX_CREDENTIAL_SECRET_LENGTH} characters.`);
     if (LINE_BREAK.test(secret)) return fail('A secret holds no line break.');
