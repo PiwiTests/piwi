@@ -139,7 +139,7 @@ describe('resolveCapabilities', () => {
     expect(states['server-probes']).toBe('declined');
   });
 
-  test('server-probes is not-applicable without a server trace, even when configured', () => {
+  test('server-probes that does not apply reads not-applicable, even when configured', () => {
     const states = resolveCapabilities({
       'test-map': { evidence: false },
       'server-probes': { evidence: false, configured: true, applicable: false },

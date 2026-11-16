@@ -1064,10 +1064,10 @@ export const networkRequests = pgTable(
     runIdx: index('idx_nr_run').on(t.testRunId),
     caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
     normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
-    // Server traces arrive only from instrumented backends; the capability probe looks for one.
-    serverTracesIdx: index('idx_nr_server_traces')
+    // Only a request an instrumented backend answered carries its logs or its spans; the capability probe looks for one.
+    instrumentedIdx: index('idx_nr_instrumented')
       .on(t.testRunId)
-      .where(sql`server_traces IS NOT NULL`),
+      .where(sql`server_logs IS NOT NULL OR server_traces IS NOT NULL`),
   }),
 );
 
