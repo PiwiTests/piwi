@@ -1875,6 +1875,11 @@ holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project nam
 requests and in its describe answer (`projects`) reach the window through `onProjectNames`; a request object never
 carries one, as the parser refuses fields it does not know.
 
+The request host tells the shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the
+instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance
+that sends no code). The instance's stream sends `revoked` as the key or its owner is deleted, and when its own check of
+the key, as it subscribes and every minute after, is refused with a 401; any other refusal there closes the stream.
+
 Its requests go through `src/http.ts`. When the service's environment names a proxy (`HTTPS_PROXY`, `HTTP_PROXY`,
 `NO_PROXY`, upper or lower case, which both clients set from the editor's proxy settings):
 

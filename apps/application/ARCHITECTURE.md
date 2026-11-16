@@ -16,7 +16,7 @@ OpenAPI spec ([`/_openapi.json`](#backend)) are the authority.
   [code the server and the demo share](#code-the-server-and-the-demo-share).
 - [Front end](#front-end): [pages](#pages), [the failure pages](#failure-pages), [components](#components),
   [shared building blocks](#shared-building-blocks), [composables](#composables), [utils](#utils),
-  [coverage insights](#coverage-insights-in-the-ui).
+  [coverage insights](#coverage-insights-in-the-ui), [brand assets](#brand-assets).
 - [Demo SPA](#demo-spa): the in-browser mirror of the server.
 - [Extension points](#extension-points): where to add things whose wiring spans several files.
 - [Key features](#key-features): what the dashboard does, in one paragraph.
@@ -321,6 +321,15 @@ Each entry names folders under `server/api/`.
   page, a running row of a run the shell started offers Pause and watch (`TestRowDesktopWorker`), its worker found
   among the live runs that report the run (`useDesktopRunSessions`, `desktopSessionsOfRun`, `desktopRowWorker`).
   Agents reach the same runs through `/mcp` (the run tools, below).
+  - **When the desktop window holds the hub's stream** (`useDesktopRunHub.want`, from
+    `plugins/desktop-run-hub.client.ts`, whatever the layout): while a run of the Local runs tray runs, or while the hub
+    says it has a live one (`hub-runs`, which a reload hears at once). While the stream is open every headless stop
+    waits for the window, so the tray opens on each stop it hears, once. The window says `show` only for the running
+    runs whose **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
+    `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
+    `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
+    Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
+    `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,
@@ -452,6 +461,18 @@ The main files of `server/utils/`, by area.
 - `otel.ts`, `server/plugins/opentelemetry.ts`: OpenTelemetry tracing, on when an OTLP endpoint is set: a span per
   request (and per request the server makes to itself during SSR), a span per SQL statement through
   `@kubiks/otel-drizzle`, and `Server-Timing: traceparent` on responses.
+
+**The desktop build**
+
+- `desktop-runs.ts`: the hub of the Playwright runs the shell starts, opened by `server/plugins/desktop-runs.ts` only
+  with `PIWI_DESKTOP_TOKEN`. The run channel, the sessions, the hub, the code from a stop and the run's lines are the
+  editor service's `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by its `ShellRuns`,
+  which Piwi Runner's host runs too. `DesktopRuns` gives it the app's words and adds the editors' runs, the agents'
+  tools and Inspect through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`,
+  `sendToWindow`). The `/api/desktop/run-channel` route and, of `/api/desktop/runs/*`, `started`, `ended`, `commands`
+  and `picks` call `@piwitests/editor/shell-runs-routes`, and `events` serves the hub's stream through
+  `@piwitests/editor/shell-runs-http`. What the desktop needs that the editor's classes lack is an option or a hook
+  of theirs that names no app feature (`declines`, `host`, `token`, `words`, `RunHub.join`).
 
 ### Scheduled tasks
 
@@ -798,6 +819,19 @@ and render nothing elsewhere:
 Their wording is in `app/utils/coverage-insights.ts`. Both AI contexts, the server's and the demo's, carry the
 divergence through `coverageDivergenceContext` (`#shared/handlers/coverage-insights`).
 
+### Brand assets
+
+`scripts/generate-brand-assets.mjs` (`npm run app:generate:brand`) writes every logo, favicon and app icon in the
+repository from the drawing and the brand colors in that file: navy ink, violet `#7c3aed` and the mint of the check.
+
+- The dashboard's and the docs site's SVG logos, favicons, touch icon and social card, and `shared/brand-mark.json`.
+- The browser extension's, the VS Code extension's and the JetBrains plugin's icons, the editors' outline mark among
+  them: the plugin's `icons/expui/` and `PiwiIconMappings.json`, and VS Code's `media/piwi-icons.woff`, built with
+  `svgicons2svgfont`, `svg2ttf` and `ttf2woff` from fills, as an icon font takes no strokes.
+- The font also draws the plugin's `testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg`, `reload.svg`, `region.svg`,
+  `mock.svg` and `unreachable.svg` (`ICON_FONT_GLYPHS`): regenerate after editing one.
+- The glyphs of the desktop apps' tray menus (`MENU_ICONS`, `apps/desktop/src-tauri/menu-icons/`).
+
 ## Demo SPA
 
 `PIWI_DEMO_MODE=true` builds a client-only SPA with no server:
@@ -813,8 +847,16 @@ divergence through `coverageDivergenceContext` (`#shared/handlers/coverage-insig
   per language, both in `app/utils/demo-tour/`.
 - The anchors are the registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour`
   attribute, with the pages it renders on, how to reveal it and a seeded sample where it renders.
-- With no model, the demo's assistant answers the prepared questions of `shared/demo/assistant-questions.mjs`,
-  matched by `app/demo/api/assistant-match.ts` and computed from the seed by `app/demo/api/assistant-answers.ts`.
+- With no model, the demo's assistant answers the prepared questions of `shared/demo/assistant-questions.mjs`
+  (`DEMO_ASSISTANT_QUESTIONS`: each question's answer, the pages that offer it as an **Ask about this page**
+  suggestion, and a seeded sample route). `app/demo/api/assistant-match.ts` matches a typed question to an answer by
+  its words and its page, and `app/demo/api/assistant-answers.ts` computes the answer from the in-browser database
+  through the shared handlers the read tools call: each read is streamed as the `tool` the server's assistant would
+  call, with the entities it named; its blocks go through `checkAssistantBlock`; its guides come from `rankAnchors`
+  (on a project's pages, with that project's capability states, as the server reads them) and the authored guides;
+  its proposals are held to the action's capability and permission on the target's project; and a reply to one of its
+  blocks gets the follow-up. A question no answer matches gets the page's prepared questions to pick from, and the
+  authored guides that fit it.
 
 - The demo build puts the hash of `public/demo/seed.version.json` in `runtimeConfig.public.demoDataVersion`. The
   layout compares it to the copy in IndexedDB and offers a "New demo data available" reset.

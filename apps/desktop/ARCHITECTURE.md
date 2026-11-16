@@ -57,3 +57,51 @@ again a few times (`session_url_retrying`, at startup through `open_first_sessio
 restart); the tries end once the proof no longer holds. A server that still gives no code gets no session, and the
 window shows the stopped splash, revealed, only while the proof holds: a sidecar that exits meanwhile is the
 supervisor's to restart, and its "restarting" text stays, with a window launched to the tray still hidden.
+
+## Runs the shell starts
+
+The bundled server is the hub of every Playwright run the shell starts.
+
+- **Which spawns.** A run of the window (`spawn_tests` in `runner.rs`) and a reproduction (`repro.rs`) add
+  `bundled_hub_env`: the server's `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's
+  own route), read from `GET /api/desktop/run-channel` on a connection that first proved the host holds the token
+  (`connect_proving_token`), and `PIWI_RUN_REF` (`hub_env.rs`, `desktop-<run id>`, which the window knows the run by).
+- **A job in a throwaway worktree** (`worktree.rs`: the reproduce, bisect and `piwi flake` runs) adds `job_hub_env`
+  instead: the run channel of the live editor whose workspace holds its linked folder, when one does (from the
+  route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server, else the bundled
+  server's.
+- **A run nobody attends** (Flake Lab, a bisect, a lab job, one with `--ui`, or with `--repeat-each` above 1 unless it
+  stops at its first failure) ends its ref in `-unattended` (`attended_args`, mirrored by `desktopArgsAttended`), and
+  the server never holds its failures.
+- **The hub.** Its WebSocket takes the desktop token in `hello`; it is `ShellRuns`
+  (`packages/editor/src/shell-runs.ts`), which `apps/application/server/utils/desktop-runs.ts` wires. Agents steer
+  those runs only through `/mcp`, behind the same token (`server/utils/mcp/run-tools.ts`), and never a run nobody
+  attends.
+- **Piwi Runner.** Its requested runs take the same `bundled_hub_env` from Runner's host
+  (`a_requested_run_names_the_hosts_hub_and_nothing_else` in `runner_app.rs`).
+
+## Requested runs
+
+A run a team instance asked for starts from the bundled server's launch (`src-tauri/src/run_target.rs`): the window
+names the request id alone, and the shell takes the command **Run** approved, its folder and the request token once
+from `POST /api/desktop/run-target/requests/:id/launch` (shell-only, `isBrowserRequest`).
+
+- **What the shell refuses.** No arguments, a folder linked since, a folder another local or requested run is going in
+  (`runs_in`, `hold_folder`; the server hears those folders whenever a local run starts or ends, `hand_local_runs`, so
+  it checks a waiting request again), or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap).
+- **The token.** The shell writes it to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it
+  when the run ends.
+- **On quit.** `shut_down` stops the local runs, then posts the end of every requested run still held
+  (`end_requested_runs_on_quit`, 2 s each, each on its own thread, waited for 3 s in all) and deletes its folder
+  before it stops the server. A run that ends once the quit began ends stopped (`end_child`), and only that quit post
+  tells the server of it (`quit_requested_runs`); from then on no requested run is held or takes its folder (`hold`,
+  `hold_folder`), and a run spawned meanwhile is killed (`spawn_tests`).
+- **At startup.** Each app removes its own leftover folders (`piwi-request-*`, Runner `piwi-runner-request-*`) older
+  than a day that no run holds (`sweep_leftover_request_dirs`).
+- **The key.** The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the
+  server after each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held
+  (`running`) so a restarted server ends only the requests the shell lost.
+- **A run's end.** It stays held until the server answers its `/ended` with a 200 (`tell_ended`); one still held goes
+  in `PUT /key`'s `ended` and is forgotten once the server names it back.
+- **From the dashboard.** A stop reaches the shell on its notification stream, and so does `key-revoked`, which
+  forgets the key only when it names the connected instance (`key_revoked`).

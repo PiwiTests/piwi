@@ -110,13 +110,8 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 ## Brand assets
 
 - **Every logo, favicon and app icon in the repository is written by `scripts/generate-brand-assets.mjs`**
-  (`npm run app:generate:brand`) from the drawing and the brand colors in that file: navy ink, violet `#7c3aed` and the
-  mint of the check. That covers the dashboard's and the docs site's SVG logos, favicons, touch icon and social card,
-  the browser extension's, the VS Code extension's and the JetBrains plugin's icons (the editors' outline mark among
-  them: the plugin's `icons/expui/` and `PiwiIconMappings.json`, VS Code's `media/piwi-icons.woff`, built with
-  `svgicons2svgfont`, `svg2ttf` and `ttf2woff` from fills, as an icon font takes no strokes), and
-  `shared/brand-mark.json`. The font also draws the plugin's `testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg`,
-  `reload.svg`, `region.svg`, `mock.svg` and `unreachable.svg` (`ICON_FONT_GLYPHS`): regenerate after editing one.
-  It also draws the glyphs of the desktop apps' tray menus (`MENU_ICONS`, `apps/desktop/src-tauri/menu-icons/`).
-  Never edit one by hand: change the script and regenerate them all.
+  (`npm run app:generate:brand`) from the drawing and the brand colors in that file, VS Code's icon font and the
+  desktop apps' tray glyphs (`MENU_ICONS`) included. Never edit one by hand: change the script and regenerate them
+  all, and regenerate after editing one of the plugin's SVGs the font draws (`ICON_FONT_GLYPHS`)
+  ([what it writes](../ARCHITECTURE.md#brand-assets)).
 - **The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.**

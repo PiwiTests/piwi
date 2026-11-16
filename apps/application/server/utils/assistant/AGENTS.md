@@ -115,15 +115,11 @@ tool calls in-process, or an AI CLI calls the tools itself through the turn's MC
 ## Demo
 
 - **The demo answers prepared questions, computed from the seed.** With no model, it answers
-  `DEMO_ASSISTANT_QUESTIONS` (`shared/demo/assistant-questions.mjs`: each question's answer, the pages that offer it as
-  an **Ask about this page** suggestion, and a seeded sample route). `app/demo/api/assistant-match.ts` matches a typed
-  question to an answer by its words and its page. `app/demo/api/assistant-answers.ts` computes the answer from the
-  in-browser database through the shared handlers the read tools call: each read is streamed as the `tool` the
-  server's assistant would call, with the entities it named; its blocks go through `checkAssistantBlock`; its guides
-  come from `rankAnchors` (on a project's pages, with that project's capability states, as the server reads them) and
-  the authored guides; its proposals are held to the action's capability and permission on the target's project; and
-  a reply to one of its blocks gets the follow-up. A question no answer matches gets the page's prepared questions to
-  pick from, and the authored guides that fit it.
+  `DEMO_ASSISTANT_QUESTIONS` (`shared/demo/assistant-questions.mjs`) from the in-browser database, through the shared
+  handlers the read tools call, and holds what it shows to the server's checks: its blocks go through
+  `checkAssistantBlock`, its guides come from `rankAnchors` and the authored guides, and its proposals are held to
+  the action's capability and permission on the target's project. How a question is matched and answered:
+  [`ARCHITECTURE.md`](../../../ARCHITECTURE.md#demo-spa).
 - **Never write a seeded fact into a prepared answer: read it.** `tests/unit/demo-assistant-answers.test.ts` computes
   every answer at its sample on the generated seed, and `scripts/check-demo-runtime.mjs` asks one question of each kind
   from the panel of the built demo. A seed change that breaks one updates the answer or its sample, never the check.
