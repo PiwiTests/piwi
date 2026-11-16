@@ -111,7 +111,7 @@ test('the hover on the failing locator names the failing test and the run', asyn
     .first();
   await token.hover();
   const hover = page.locator('.monaco-hover:not(.hidden)').first();
-  await expect(hover).toContainText('CI failure');
+  await expect(hover).toContainText('Open in dashboard');
   await expect(hover).toContainText('pays by card');
   await expect(hover).toContainText('run #124');
   await page.mouse.move(10, 400);

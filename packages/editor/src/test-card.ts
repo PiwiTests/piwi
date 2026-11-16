@@ -2,9 +2,10 @@
  * A test's card (`piwi/testCard`), laid out as the dashboard's test row: its latest results as a strip, each to its
  * run, how they went, its last failure, its owner, tags and quarantine, in the words both clients show.
  */
+import { describeFailureText } from '@piwitests/core/describe-failure';
 import { stripAnsi } from '@piwitests/core/error-parse';
 import { TEST_HISTORY_ROWS, type TestExecution } from './piwi-client.js';
-import { TEST_CARD_RESULTS, type TestCard, type TestCardResult } from './protocol.js';
+import { TEST_CARD_RESULTS, type TestCard, type TestCardFailure, type TestCardResult } from './protocol.js';
 
 /** What a card is built from: the test, its history newest first, and the instance's pages. */
 export interface TestCardInput {
@@ -20,11 +21,16 @@ export interface TestCardInput {
   now: number;
 }
 
-/** Each result's mark in the strip. */
-const MARKS: Record<TestCardResult['status'], string> = { passed: '✓', failed: '✗', flaky: '◐', skipped: '○' };
-
-/** The longest part of a failure's message a card shows. */
-const MAX_FAILURE = 160;
+/**
+ * Each result's bar in the strip: the `fill` of the dashboard's `STATUS_COLORS`, as the JetBrains plugin's card draws
+ * them (`PiwiTestCard.STATUS_FILLS`); `apps/application/tests/unit/status-mark-colors.test.ts` holds both to it.
+ */
+export const STRIP_FILLS: Record<TestCardResult['status'], string> = {
+  passed: '#10b981',
+  failed: '#f43f5e',
+  flaky: '#d946ef',
+  skipped: '#a1a1aa',
+};
 
 /**
  * An attempt's outcome as the card counts it: a timeout a failure, a pass after a failed attempt flaky; null for one it
@@ -53,7 +59,8 @@ export function runResults(executions: TestExecution[]): RunResult[] {
   const cut = executions.length >= TEST_HISTORY_ROWS ? executions[executions.length - 1]?.runId : undefined;
   const runs = new Map<number, Map<string, TestExecution>>();
   for (const e of executions) {
-    if (e.runId === cut) continue;
+    // A run's id goes into the card's links and words: an id that is not one is left out.
+    if (!Number.isSafeInteger(e.runId) || e.runId <= 0 || e.runId === cut) continue;
     const finals = runs.get(e.runId) ?? new Map<string, TestExecution>();
     runs.set(e.runId, finals);
     const key = `${e.repeatEachIndex ?? 0}\n${e.browserName ?? ''}`;
@@ -102,20 +109,15 @@ export function agoWords(at: string | null, now: number): string | null {
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 }
 
-/** The first line of a failure's message, without its terminal colors, cut to `MAX_FAILURE` characters. */
-function failureLine(error: string): string {
-  const line =
-    stripAnsi(error)
-      .split('\n')
-      .find((l) => l.trim())
-      ?.trim() ?? '';
-  return line.length > MAX_FAILURE ? `${line.slice(0, MAX_FAILURE - 1)}…` : line;
+/**
+ * Why a test failed, in one line: the headline of its error (`Expected true, got false — toBe`), from the error alone,
+ * without the step it failed in, which a history does not hold; null for an error with nothing to say.
+ */
+export function failureWhy(error: string): string | null {
+  return describeFailureText(stripAnsi(error))?.headline.trim() || null;
 }
 
 const mdText = (text: string) => text.replace(/[\\`*_[\]<>#|]/g, (c) => `\\${c}`);
-const mdCode = (text: string) => `\`${text.replace(/`/g, "'")}\``;
-const html = (text: string) =>
-  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** A test's card from its history. */
 export function testCard(input: TestCardInput): TestCard {
@@ -126,6 +128,9 @@ export function testCard(input: TestCardInput): TestCard {
     url: input.runUrl(shown.runId),
     at: shown.startTime,
     durationMs: shown.duration,
+    label: [`run #${shown.runId}`, status, shown.duration !== null ? durationWords(shown.duration) : '']
+      .filter(Boolean)
+      .join(' · '),
   }));
   const counted = results.filter((r) => r.status !== 'skipped');
   const passed = counted.filter((r) => r.status === 'passed').length;
@@ -144,8 +149,14 @@ export function testCard(input: TestCardInput): TestCard {
       : 'No result yet';
   const failed = runs.find((r) => r.status === 'failed')?.shown;
   const failedAgo = failed ? agoWords(failed.startTime, input.now) : null;
-  const failedWhere = failed ? `Last failed in run #${failed.runId}${failedAgo ? `, ${failedAgo}` : ''}` : null;
-  const failedWhy = failed?.error ? failureLine(failed.error) : null;
+  const failure: TestCardFailure | null = failed
+    ? {
+        runId: failed.runId,
+        url: input.runUrl(failed.runId),
+        where: `Last failed in run #${failed.runId}${failedAgo ? `, ${failedAgo}` : ''}`,
+        why: failed.error ? failureWhy(failed.error) : null,
+      }
+    : null;
   const about = [
     input.owner ? `owner ${input.owner}` : '',
     input.tags.length ? input.tags.map((t) => `@${t}`).join(' ') : '',
@@ -153,28 +164,28 @@ export function testCard(input: TestCardInput): TestCard {
   ].filter(Boolean);
   // The strip reads as the dashboard's: oldest on the left, newest on the right.
   const strip = [...results].reverse();
-  const tip = (r: TestCardResult) =>
-    [`run #${r.runId}`, r.status, r.durationMs !== null ? durationWords(r.durationMs) : ''].filter(Boolean).join(' · ');
 
+  // A bar is a link whose text is a colored space; its title names the run.
+  const bar = (r: TestCardResult) =>
+    `[<span style="background-color:${STRIP_FILLS[r.status]};">&ensp;</span>](${r.url} "${r.label}")`;
   const markdown = [
     `**Piwi** · ${mdText(input.title)}`,
-    strip.length ? strip.map((r) => `[${MARKS[r.status]}](${r.url} "${tip(r)}")`).join(' ') : '',
-    summary,
-    failedWhere ? `${failedWhere}${failedWhy ? `: ${mdCode(failedWhy)}` : ''}` : '',
+    strip.length ? `${strip.map(bar).join(' ')} ${summary}` : summary,
+    failure
+      ? `${failure.where}${failure.why ? `<br><span style="color:var(--vscode-errorForeground);">${mdText(failure.why)}</span>` : ''}`
+      : '',
     about.map(mdText).join(' · '),
   ]
     .filter(Boolean)
     .join('\n\n');
-  const htmlText = [
-    `<b>Piwi</b> · ${html(input.title)}`,
-    strip.length
-      ? strip.map((r) => `<a href="${html(r.url)}" title="${html(tip(r))}">${MARKS[r.status]}</a>`).join(' ')
-      : '',
-    html(summary),
-    failedWhere ? `${html(failedWhere)}${failedWhy ? `: <code>${html(failedWhy)}</code>` : ''}` : '',
-    about.map(html).join(' · '),
-  ]
-    .filter(Boolean)
-    .join('<br>');
-  return { testCaseId: input.testCaseId, title: input.title, url: input.url, results, markdown, html: htmlText };
+  return {
+    testCaseId: input.testCaseId,
+    title: input.title,
+    url: input.url,
+    results,
+    summary,
+    failure,
+    about,
+    markdown,
+  };
 }

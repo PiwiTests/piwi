@@ -335,6 +335,19 @@ export interface TestCardResult {
   url: string;
   at: string | null;
   durationMs: number | null;
+  /** The result in words, as its mark's tooltip says it: `run #3 · failed · 1.2 s`. */
+  label: string;
+}
+
+/** The latest failure of a test's history: its run, when, and why in one line. */
+export interface TestCardFailure {
+  runId: number;
+  /** The run's page. */
+  url: string;
+  /** `Last failed in run #3, 2 d ago`. */
+  where: string;
+  /** Why it failed, in one line: its error's headline (`Expected true, got false — toBe`); null without an error. */
+  why: string | null;
 }
 
 export interface TestCard {
@@ -345,12 +358,18 @@ export interface TestCard {
   url: string;
   /** Its latest results, newest first, the most `TEST_CARD_RESULTS`. */
   results: TestCardResult[];
+  /** How those results went: `Passed 1 of the last 3 runs · 1 flaky · median 1.2 s`, `No result yet`. */
+  summary: string;
+  /** Its latest failure; null when no run of its history failed. */
+  failure: TestCardFailure | null;
+  /** Its owner, its tags and its quarantine, each in words (`owner alice`, `@smoke @slow`, `quarantined 3 d · …`). */
+  about: string[];
   /**
-   * The card in words, newest result on the right as the dashboard's strip: as Markdown for a hover, and as HTML of
-   * plain tags (`b`, `a`, `br`, `code`) for a client that draws HTML.
+   * The card in words, newest result on the right as the dashboard's strip, as Markdown for VS Code's hover, with the
+   * inline HTML it renders with `supportHtml`: a `span` of a background color for each result, and why it failed in
+   * the theme's error color.
    */
   markdown: string;
-  html: string;
 }
 
 export const TEST_CARD_REQUEST = 'piwi/testCard';

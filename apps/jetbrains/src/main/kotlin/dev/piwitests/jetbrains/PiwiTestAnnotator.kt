@@ -150,7 +150,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                             ApplicationManager.getApplication().invokeLater({
                                 // The editor clicked may have closed while the card was asked for.
                                 if (!point.component.isShowing) return@invokeLater
-                                if (card?.html == null) showActions() else showCard(card, testCaseId, point, showActions)
+                                if (card == null) showActions() else showCard(card, testCaseId, point, showActions)
                             }, service.gone)
                         }
                     }
@@ -214,23 +214,21 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             return group
         }
 
-        /** The card at `point`: its HTML, then Run, Open in dashboard and More…, which opens the test's list. */
+        /** The card at `point` (`PiwiTestCard`), then Run, Open in dashboard and More…, which opens the test's list. */
         private fun showCard(card: TestCard, testCaseId: Int, point: RelativePoint, showActions: () -> Unit) {
             var popup: com.intellij.openapi.ui.popup.JBPopup? = null
-            val links = "<br><a href=\"$RUN_LINK\">Run</a> · <a href=\"$OPEN_LINK\">Open in dashboard</a> · " +
-                "<a href=\"$MORE_LINK\">More…</a>"
-            val listener = javax.swing.event.HyperlinkListener { event ->
-                if (event.eventType != javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) return@HyperlinkListener
+            /** `act`, once the card has closed. */
+            fun closing(act: () -> Unit): () -> Unit = {
                 popup?.cancel()
-                when (val href = event.description) {
-                    RUN_LINK -> PiwiCommands.runTests(project, RunTestsArgs(uri!!, listOf(testCaseId)))
-                    OPEN_LINK -> card.url?.let { com.intellij.ide.BrowserUtil.browse(it) }
-                    MORE_LINK -> showActions()
-                    else -> if (href.startsWith("http://") || href.startsWith("https://")) com.intellij.ide.BrowserUtil.browse(href)
-                }
+                act()
             }
-            val label = com.intellij.codeInsight.hint.HintUtil.createInformationLabel("<html>${card.html}$links</html>", listener, null, null)
-            popup = JBPopupFactory.getInstance().createComponentPopupBuilder(label, null)
+            val browse = { url: String -> closing { com.intellij.ide.BrowserUtil.browse(url) }() }
+            val links = listOfNotNull(
+                PiwiTestCard.Link("Run", AllIcons.Actions.Execute, closing { PiwiCommands.runTests(project, RunTestsArgs(uri!!, listOf(testCaseId))) }),
+                card.url?.let { url -> PiwiTestCard.Link("Open in dashboard", PiwiIcons.OPEN_IN_DASHBOARD, closing { com.intellij.ide.BrowserUtil.browse(url) }) },
+                PiwiTestCard.Link("More…", AllIcons.Actions.More, closing(showActions)),
+            )
+            popup = JBPopupFactory.getInstance().createComponentPopupBuilder(PiwiTestCard.panel(card, line.status, links, browse), null)
                 .setRequestFocus(false)
                 .setCancelOnClickOutside(true)
                 .createPopup()
@@ -245,10 +243,6 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     companion object {
         /** How long a click on a test's result waits for its card before it opens the test's list. */
         const val CARD_WAIT_MILLIS = 1_500L
-
-        private const val RUN_LINK = "piwi:run"
-        private const val OPEN_LINK = "piwi:open"
-        private const val MORE_LINK = "piwi:more"
 
         /** The 0-based line a `piwi.record` command names (its second argument). */
         fun recordLine(command: PiwiCommand): Int? = (command.arguments?.getOrNull(1) as? Number)?.toInt()
