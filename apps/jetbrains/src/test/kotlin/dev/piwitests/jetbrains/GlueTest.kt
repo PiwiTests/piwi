@@ -4373,4 +4373,96 @@ class GlueTest {
         assertEquals(-1, Glue.findIn(text, "checkout", 0))
         assertEquals(-1, Glue.findIn(text, "", 0))
     }
+
+    // ── The Tests tab ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private fun treeTest(title: String, status: String? = null, tags: List<String> = emptyList(), owner: String? = null) =
+        TreeTest(title = title, suite = emptyList(), status = status, tags = tags, owner = owner, root = "/w", uri = "file:///w/a.spec.ts")
+
+    private fun treeNode(
+        id: String,
+        kind: String,
+        label: String,
+        sortText: String = label,
+        children: List<TestTreeNode> = emptyList(),
+        test: TreeTest? = null,
+        runnable: Boolean = true,
+    ) = TestTreeNode(id = id, label = label, kind = kind, sortText = sortText, runnable = runnable, test = test, children = children)
+
+    private val testsAnswer = TestItemsResult(
+        listOf(
+            TestItemsContext(
+                root = "/w",
+                label = "shop",
+                nodes = listOf(
+                    treeNode("missing", "notInCheckout", "Not in this checkout", "2", runnable = false, children = listOf(
+                        treeNode("missing/gone", "test", "was deleted", test = treeTest("was deleted", "passed").copy(uri = ""), runnable = false),
+                    )),
+                    treeNode("spec/a", "spec", "a.spec.ts", "1a.spec.ts", children = listOf(
+                        treeNode("spec/a/refunds", "test", "refunds", "000006", test = treeTest("refunds", "failed", owner = "Ada L")),
+                        treeNode("spec/a/pays", "test", "pays", "000002", test = treeTest("pays", "passed", tags = listOf("@smoke")), children = listOf(
+                            treeNode("spec/a/pays\u001dchromium", "project", "chromium", "0"),
+                            treeNode("spec/a/pays\u001dfirefox", "project", "firefox", "1"),
+                        )),
+                    )),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun testTheTestsTabShowsTheServicesNodesInTheirOrderAConfigsNodeWhenSeveralOrWhenOneCannotBeListed() {
+        val nodes = Glue.testsTree(testsAnswer)
+        assertEquals(listOf("a.spec.ts", "Not in this checkout"), nodes.map { it.label })
+        assertEquals(listOf("pays", "refunds"), nodes[0].children.map { it.label })
+        assertEquals(listOf("chromium", "firefox"), nodes[0].children[0].children.map { it.label })
+        // A spec's result: the first of failed, flaky, passed its tests have.
+        assertEquals("failed", Glue.testsStatus(nodes[0]))
+        assertEquals("passed", Glue.testsStatus(nodes[0].children[0]))
+        val failed = testsAnswer.copy(
+            contexts = testsAnswer.contexts!!.map { it.copy(listing = TestListing(error = "Playwright is not installed in /w: run npm install there.")) },
+        )
+        val configs = Glue.testsTree(failed)
+        assertEquals(listOf("config\u001f/w"), configs.map { it.id })
+        assertEquals("Playwright is not installed in /w: run npm install there.", configs[0].error)
+        assertEquals(listOf("a.spec.ts", "Not in this checkout"), configs[0].children.map { it.label })
+        assertEquals(emptyList<Glue.TestsNode>(), Glue.testsTree(null))
+        assertEquals("Reading the tests…", Glue.testsEmptyText(null, false))
+        assertEquals("No test matches the filter.", Glue.testsEmptyText(testsAnswer, true))
+    }
+
+    @Test
+    fun testTheTestsTabsFilterKeepsTheTestsWhoseTitleTagOwnerOrResultHoldsItsWordsAndASpecWhole() {
+        val nodes = Glue.testsTree(testsAnswer)
+        fun labels(filter: String) = Glue.testsFiltered(nodes, filter).flatMap { n -> listOf(n.label) + n.children.map { "  ${it.label}" } }
+        assertEquals(listOf("a.spec.ts", "  pays"), labels("@smoke"))
+        assertEquals(listOf("a.spec.ts", "  refunds"), labels("owner:ada-l failed"))
+        assertEquals(listOf("Not in this checkout", "  was deleted"), labels("deleted"))
+        assertEquals(listOf("a.spec.ts", "  pays", "  refunds"), labels("A.SPEC"))
+        assertSame(nodes, Glue.testsFiltered(nodes, "  "))
+        assertEquals(emptyList<Glue.TestsNode>(), Glue.testsFiltered(nodes, "nothing like it"))
+    }
+
+    @Test
+    fun testARunOfTheTestsTabSendsTheRunnableNodesAndWithTheFilterOnTheTestsItShows() {
+        val nodes = Glue.testsTree(testsAnswer)
+        val spec = nodes[0]
+        val firefox = spec.children[0].children[1]
+        assertEquals(listOf("spec/a", "spec/a/pays\u001dfirefox"), Glue.testsRunIds(listOf(spec, firefox, nodes[1]), false))
+        // With the filter on: the tests the spec shows, not the spec whole.
+        val shown = Glue.testsFiltered(nodes, "@smoke")
+        assertEquals(listOf("spec/a/pays"), Glue.testsRunIds(shown, true))
+        assertEquals(emptyList<String>(), Glue.testsRunIds(listOf(nodes[1]), true))
+    }
+
+    @Test
+    fun testTheTestsTabWritesADurationAndReadsTheTreeAgainWhenItsRunsChange() {
+        assertEquals("850 ms", Glue.testsDuration(850))
+        assertEquals("1.2 s", Glue.testsDuration(1234))
+        assertEquals("2 min 5 s", Glue.testsDuration(125_000))
+        assertNull(Glue.testsDuration(null))
+        val runs = RunStatusResult(listOf(RunStatus(root = "/w", failures = 1)))
+        assertEquals(Glue.testsResultsKey(runs), Glue.testsResultsKey(RunStatusResult(listOf(RunStatus(root = "/w", failures = 1)))))
+        assertNotEquals(Glue.testsResultsKey(runs), Glue.testsResultsKey(RunStatusResult(listOf(RunStatus(root = "/w", failures = 2)))))
+    }
 }

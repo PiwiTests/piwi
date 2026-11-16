@@ -6,9 +6,10 @@ list should come from the Piwi instance or from the source code. **Stage 1 is bu
 (`packages/editor/src/test-listing.ts`), the tree in the service (`src/test-tree.ts`, `piwi/testItems` as nodes,
 `piwi/testItemsChanged`), and VS Code's Testing view drawing it, a project's node showing that project's result from
 the editor's own runs. **Stage 2 is built**: `piwi/testRuns` runs each picked node by its narrowest filter
-(`nodeRuns`), a project's node in its project alone, and VS Code's profiles go through it. `Protocol.kt` mirrors the
-types and requests, which the JetBrains plugin does not call yet. Remaining: the JetBrains Tests tab (stage 3) and the
-docs' screenshots (stage 4).
+(`nodeRuns`), a project's node in its project alone, and VS Code's profiles go through it. **Stage 3 is built**: the
+JetBrains plugin's **Tests** tab (`PiwiTestsTab.kt`), read once first selected, with its filter and `Piwi.Tests.*`
+actions; WebStorm 2024.1's LSP client takes the service's watched-files registration (`LspDynamicCapabilities`), not yet
+checked in a running IDE. Remaining: the docs' screenshots of both editors (stage 4).
 
 **Summary.** VS Code's Testing view already shows Piwi's tests and runs any node, but its list is incomplete: the spec
 files come from the instance's catalog (plus the specs open in the editor), and the tests inside each spec from a
@@ -233,7 +234,7 @@ Each a pull request with the `ide` scope.
    two projects and a loop.
 2. **Running a node** (built): `piwi/testRuns` and its filters (`tests/commands.test.ts` for each kind of node), VS Code's
    profiles on it.
-3. **The JetBrains Tests tab**, checked by `PiwiPluginTest` on the same fixture.
+3. **The JetBrains Tests tab** (built), checked by `GlueTest` and `PiwiPluginTest`.
 4. **Docs and screenshots**: the editor feature pages, `vscode.md` and `jetbrains.md`, both screenshot sets; P1 of
    [developer-loop-audit.md](developer-loop-audit.md) and LI8 of [editor-ux-coherence.md](editor-ux-coherence.md)
    updated.

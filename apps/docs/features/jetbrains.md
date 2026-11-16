@@ -66,7 +66,8 @@ The rest is native, and every action that is not about a selected item is under 
 line** on the debugger's Show Execution Point key:
 
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
-  since the IDE highlights open files only.
+  since the IDE highlights open files only, and a **Tests** tab: the tree of
+  [VS Code's Testing view](./editor-runs#the-testing-view-vs-code), with a filter, each node run from its right-click.
 - **Code Vision** shows the lines above files, locators and failing lines, a line's entries side by side (a failing
   line's reason and **Run with Piwi**), up to the number the IDE's Code Vision settings show
   per line (five by default), in a group named Piwi under **Settings → Editor → Inlay Hints → Code Vision**, where they

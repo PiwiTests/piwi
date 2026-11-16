@@ -4421,4 +4421,143 @@ object Glue {
         val at = text.indexOf(query, from.coerceIn(0, text.length), ignoreCase = true)
         return if (at >= 0) at else text.indexOf(query, 0, ignoreCase = true)
     }
+
+    // ── The Tests tab ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /** The id of a config's node, which the tab adds above the service's nodes: this, then the config's folder. */
+    const val CONFIG_NODE = "config\u001f"
+
+    /**
+     * A node of the Tests tab: one of the service's (`TestTreeNode`), or a Playwright config's (`kind` `config`), which
+     * holds a config's nodes and says why Playwright could not list its tests (`error`). Children in the service's order
+     * (`sortText`).
+     */
+    data class TestsNode(
+        val id: String,
+        val label: String,
+        val kind: String,
+        val uri: String?,
+        /** The 0-based line it opens at: a test's call, a describe block's; null for a node that opens no line. */
+        val line: Int?,
+        val runnable: Boolean,
+        val test: TreeTest?,
+        val project: String?,
+        val error: String?,
+        val children: List<TestsNode>,
+    )
+
+    private fun testsNode(n: TestTreeNode): TestsNode = TestsNode(
+        id = n.id.orEmpty(),
+        label = n.label.orEmpty(),
+        kind = n.kind.orEmpty(),
+        uri = n.uri,
+        line = n.range?.start,
+        runnable = n.runnable,
+        test = n.test,
+        project = n.project,
+        error = null,
+        children = n.children.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode),
+    )
+
+    /**
+     * The Tests tab's tree of the service's answer (`piwi/testItems`): each config's nodes, under a node per config when
+     * there are several or when one could not be listed, which says why, as VS Code's Testing view shows them.
+     */
+    fun testsTree(result: TestItemsResult?): List<TestsNode> {
+        val contexts = result?.contexts.orEmpty()
+        val configs = contexts.size > 1 || contexts.any { it.listing?.error != null }
+        if (!configs) return contexts.firstOrNull()?.nodes.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode)
+        return contexts.map { c ->
+            TestsNode(
+                id = CONFIG_NODE + c.root.orEmpty(),
+                label = c.label.orEmpty(),
+                kind = "config",
+                uri = null,
+                line = null,
+                runnable = true,
+                test = null,
+                project = null,
+                error = c.listing?.error,
+                children = c.nodes.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode),
+            )
+        }
+    }
+
+    /** The order of the results a node's children make its own: the first of these one of them has. */
+    private val TESTS_STATUS_ORDER = listOf("running", "paused", "failed", "flaky", "passed", "skipped")
+
+    /** A node's result: a test's own; any other node's, the first of `TESTS_STATUS_ORDER` its tests have; else null. */
+    fun testsStatus(node: TestsNode): String? {
+        node.test?.let { return it.status }
+        val statuses = node.children.mapNotNull(::testsStatus).toSet()
+        return TESTS_STATUS_ORDER.firstOrNull { it in statuses }
+    }
+
+    /**
+     * Whether a test matches every word of a filter, case aside: its title, one of its tags, its owner (`owner:ada`), its
+     * result (`failed`), `flaky` or `quarantined`.
+     */
+    private fun testMatches(test: TreeTest, words: List<String>): Boolean {
+        val said = listOfNotNull(
+            test.title,
+            test.status,
+            test.owner?.let { "owner:${it.replace(Regex("\\s+"), "-")}" },
+            "quarantined".takeIf { test.quarantined },
+        ) + test.tags.orEmpty()
+        return words.all { word -> said.any { it.contains(word, ignoreCase = true) } }
+    }
+
+    /**
+     * The tree as a filter shows it, as VS Code's Testing view filters by title, tag, owner and result: each test that
+     * matches it, with the nodes above it; a node whose name matches (a spec, a folder), whole. Unchanged without one.
+     */
+    fun testsFiltered(nodes: List<TestsNode>, filter: String): List<TestsNode> {
+        val words = filter.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return nodes
+        fun keep(n: TestsNode): TestsNode? {
+            val test = n.test
+            if (test != null) return n.takeIf { testMatches(test, words) }
+            if (n.kind != "config" && words.all { n.label.contains(it, ignoreCase = true) }) return n
+            val children = n.children.mapNotNull(::keep)
+            return if (children.isEmpty()) null else n.copy(children = children)
+        }
+        return nodes.mapNotNull(::keep)
+    }
+
+    /**
+     * The ids a run of the selected nodes sends (`piwi/testRuns`): the runnable ones; with a filter on, the tests each
+     * shows instead (a project's node as it is), so a run takes what the tab shows.
+     */
+    fun testsRunIds(selected: List<TestsNode>, filtered: Boolean): List<String> {
+        fun shown(n: TestsNode): List<String> = when {
+            !n.runnable -> emptyList()
+            n.test != null || n.kind == "project" -> listOf(n.id)
+            else -> n.children.flatMap(::shown)
+        }
+        return selected.flatMap { if (filtered) shown(it) else listOfNotNull(it.id.takeIf { _ -> it.runnable }) }.distinct()
+    }
+
+    /**
+     * What the test tree's results stand for, per Playwright config: the latest run, the run in progress and its
+     * failures, as VS Code's `resultsKey`; a change reads the tree again.
+     */
+    fun testsResultsKey(runs: RunStatusResult?): String = runs?.contexts.orEmpty().joinToString("\n") {
+        listOf(it.root, it.run?.id, it.live?.runId, it.failures, it.overlays, it.resolved).joinToString("|")
+    }
+
+    /** What the Tests tab says while it shows no test. */
+    fun testsEmptyText(result: TestItemsResult?, filtered: Boolean): String = when {
+        result == null -> "Reading the tests…"
+        filtered -> "No test matches the filter."
+        result.contexts.orEmpty().any { it.listing?.running == true } -> "Playwright is listing the tests…"
+        else -> "No Playwright test found."
+    }
+
+    /** A result's duration as the Tests tab writes it after a test: `850 ms`, `1.2 s`, `2 min 5 s`. */
+    fun testsDuration(ms: Long?): String? = when {
+        ms == null -> null
+        ms < 1_000 -> "$ms ms"
+        ms < 60_000 -> "%.1f s".format(java.util.Locale.ROOT, ms / 1000.0)
+        else -> "${ms / 60_000} min ${(ms % 60_000) / 1000} s"
+    }
 }

@@ -21,6 +21,7 @@ does with it. It is reference material: open the section for the area you change
   - [Tree and nodes](#tree-and-nodes)
   - [Navigation and actions](#navigation-and-actions)
   - [Compare with](#compare-with)
+  - [Tests tab](#tests-tab)
 - [Status bar](#status-bar)
 - [Runs](#runs)
   - [Playwright runner](#playwright-runner)
@@ -368,6 +369,28 @@ The entries are:
 `baselines`. The header line names the baseline, a link to Compare with… (`Glue.toolWindowHeader`). What the ladder is:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
+
+### Tests tab
+
+`PiwiTestsTab.kt` adds the **Tests** tab beside Failures: the tree the editor service builds
+([Test items](../../packages/editor/ARCHITECTURE.md#test-items)), as VS Code's Testing view shows it.
+
+- **When it reads.** `PiwiProjectService.readTestItems` reads `piwi/testItems` once the tab is first selected, which
+  starts the service's listing, then again whenever the runs the tree's results stand for change
+  (`Glue.testsResultsKey`), one read at a time. The tree a listing changes comes pushed (`piwi/testItemsChanged`), and
+  a read started before a push keeps the pushed tree, as the other answers do.
+- **The tree.** `Glue.testsTree` adds a node per config above the service's nodes when there are several or when one
+  could not be listed, its error drawn in red; children in the service's order (`sortText`). Each node draws its
+  result's icon (`PiwiIcons.outcome`, a group's the first of running, failed, flaky, passed, skipped its tests have,
+  `Glue.testsStatus`) and a test its duration; the Not in this checkout group is dimmed. A draw builds the tree again
+  only when its nodes changed, keeping the expanded and selected nodes by id. `TreeSpeedSearch` finds a name.
+- **The filter** (`Glue.testsFiltered`) keeps the tests whose title, tags, owner (`owner:ada`) or result hold every
+  word, case aside, and a folder or spec whose name does, whole.
+- **Opening.** A double click or Enter opens a node's line; a test of Not in this checkout opens its dashboard page.
+- **Running.** `Piwi.Tests.Run`, `Piwi.Tests.Debug` and `Piwi.Tests.Verify`, on the toolbar and the right-click, act
+  on the selected nodes (`TESTS_SELECTION`): `PiwiCommands.runTestNodes` saves the files, asks `piwi/testRuns` for the
+  runs of their ids (`Glue.testsRunIds`: the runnable ones; with the filter on, the tests each shows), and starts each
+  as `runTests` does. ([Test runs](../../packages/editor/ARCHITECTURE.md#test-runs) in the editor service's reference.)
 
 ## Status bar
 
