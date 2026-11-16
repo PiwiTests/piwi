@@ -10,7 +10,6 @@ import { localGitProvider, type LocalGitProvider } from './local-git';
 import { projectRepositoryFor } from './project-repository';
 import { configuredGitlabHosts } from './gitlab-hosts';
 
-export { configuredGitlabHosts };
 import { canonicalScmHostname, detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 

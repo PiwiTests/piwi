@@ -11,7 +11,7 @@ import {
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
 import { credentialServiceProblem, parseCredentialInput, type CredentialInput } from '#shared/credentials';
-import { configuredGitlabHosts } from '../../utils/scm';
+import { configuredGitlabHosts } from '../../utils/scm/gitlab-hosts';
 import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
 

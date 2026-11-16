@@ -12,7 +12,7 @@ import {
   updateProject,
 } from '#shared/handlers/projects';
 import { recountProjectCoverage } from '../../utils/coverage-summary';
-import { configuredGitlabHosts } from '../../utils/scm';
+import { configuredGitlabHosts } from '../../utils/scm/gitlab-hosts';
 import { importScmTokens } from '../../utils/credentials';
 import { readProjectRepositoryUrl } from '../../utils/scm/project-repository';
 import { ciServerTargetProblem } from '#shared/ci-server';

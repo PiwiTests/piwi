@@ -80,11 +80,11 @@ const uses = () =>
     .orderBy(asc(schema.credentialUses.id));
 
 /** A Jira credential saved under Settings → Credentials, as its form saves one. */
-const savedJiraCredential = (fields: { destination?: string; allProjects?: boolean } = {}) =>
+const savedJiraCredential = (fields: { name?: string; destination?: string; allProjects?: boolean } = {}) =>
   insertCredential(
     db as never,
     {
-      name: 'Jira · bot',
+      name: fields.name ?? 'Jira · bot',
       description: null,
       service: 'jira',
       user: 'bot@team.io',
@@ -181,7 +181,7 @@ describe('a saved credential picked for a connection', () => {
     expect(await connectionCredentialProblem(db as never, 'jira', elsewhere, `${SITE}/`)).toContain(
       'is sent only under https://other.atlassian.net/',
     );
-    const narrow = await savedJiraCredential({ allProjects: false });
+    const narrow = await savedJiraCredential({ name: 'Jira · narrow', allProjects: false });
     expect(await connectionCredentialProblem(db as never, 'jira', narrow, `${SITE}/`)).toContain(
       'is not shared with all projects',
     );

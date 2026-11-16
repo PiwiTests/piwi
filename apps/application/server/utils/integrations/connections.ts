@@ -53,8 +53,6 @@ import { connectionPausedUntil } from './connection-pauses';
 import { INTERACTIVE_MAX_WAIT_MS, limiterForConnection, RequestLimiterBusyError } from './test-management/limiter';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
-export { connectionEndpoint };
-
 const ENV_JIRA_NAME = 'Jira (environment)';
 const ENV_ZEPHYR_NAME = 'Zephyr Scale (environment)';
 const DEFAULT_ZEPHYR_REGION = 'us';

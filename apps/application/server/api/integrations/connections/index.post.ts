@@ -7,8 +7,12 @@ import {
   isIntegrationProvider,
   type IntegrationProviderName,
 } from '#shared/integrations/registry';
-import { connectionEndpoint, createConnection } from '../../../utils/integrations/connections';
-import { connectionCredentialProblem, hasTypedToken } from '../../../utils/integrations/connection-credentials';
+import { createConnection } from '../../../utils/integrations/connections';
+import {
+  connectionCredentialProblem,
+  connectionEndpoint,
+  hasTypedToken,
+} from '../../../utils/integrations/connection-credentials';
 
 defineRouteMeta({
   openAPI: {

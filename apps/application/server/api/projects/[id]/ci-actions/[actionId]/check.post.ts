@@ -3,7 +3,7 @@ import { requireProjectAccess, requireRouteId } from '../../../../../utils/proje
 import { checkCiAction, getCiActionsSettings } from '../../../../../utils/ci-actions';
 import { ciActionsProblem, resolveCiActionsSettings } from '#shared/ci-actions';
 import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
-import { configuredGitlabHosts } from '../../../../../utils/scm';
+import { configuredGitlabHosts } from '../../../../../utils/scm/gitlab-hosts';
 import { readProjectRepositoryUrl } from '../../../../../utils/scm/project-repository';
 
 defineRouteMeta({

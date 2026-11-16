@@ -1,10 +1,14 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { connectionEndpoint, getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
+import { getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
 import { connectionBaseUrl, credentialFieldError, providerEndpoint } from '#shared/integrations/registry';
 import { requireRouteId } from '../../../utils/project-access';
-import { connectionCredentialProblem, hasTypedToken } from '../../../utils/integrations/connection-credentials';
+import {
+  connectionCredentialProblem,
+  connectionEndpoint,
+  hasTypedToken,
+} from '../../../utils/integrations/connection-credentials';
 
 defineRouteMeta({
   openAPI: {

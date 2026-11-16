@@ -118,7 +118,8 @@ test.describe.serial('Integrations — the Jira connect form', () => {
 
     await form.getByLabel('Name').fill(NAME);
     await form.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(page.getByText(NAME)).toBeVisible();
+    await expect(page.getByText(NAME, { exact: true }).first()).toBeVisible();
+    await expect(page.getByTestId('connection-credential').filter({ hasText: NAME })).toBeVisible();
 
     const list = await request.get('/api/integrations/connections');
     const { connections } = (await list.json()) as {
