@@ -410,7 +410,10 @@ export interface CapabilityInput {
   evidence: boolean;
   /** Set up but no evidence yet: an AI key, an SCM token, a channel. */
   configured?: boolean;
-  /** Default true; false → not-applicable. */
+  /**
+   * Default true; false → not-applicable. False only where Piwi knows the setup cannot use the capability, never for
+   * missing evidence: no evidence yet reads undecided.
+   */
   applicable?: boolean;
   instanceDecision?: InstanceDecision;
   projectDecision?: ProjectDecision;

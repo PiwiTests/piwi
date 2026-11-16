@@ -15,6 +15,7 @@ import {
   timelineHookColors,
   timelineStepColor,
   formatTimelineTime,
+  timelineTooltipSide,
 } from '~/utils/timeline';
 import { stepHookName } from '#shared/step-tree';
 
@@ -150,11 +151,10 @@ const clickHint = computed(() => {
 
 // Anchor right/bottom of the cursor by default, flipping near the viewport
 // edges so the tooltip never overflows off-screen.
-const TOOLTIP_MAX_WIDTH = 340;
 const positionStyle = computed(() => {
   const { x, y } = props.state.pos;
   if (typeof window === 'undefined') return { left: `${x + 12}px`, top: `${y - 10}px` };
-  const flipX = x + 12 + TOOLTIP_MAX_WIDTH > window.innerWidth;
+  const flipX = timelineTooltipSide(x, window.innerWidth) === 'left';
   const extraRows =
     hookRows.value.length +
     gapText.value.length * 2 +

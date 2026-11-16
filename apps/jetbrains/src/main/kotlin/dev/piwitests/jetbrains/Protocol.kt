@@ -215,23 +215,40 @@ data class CoverageFilesResult(val files: List<CoverageResult>? = null, val trun
 /** `piwi/testCard`: a test's card, laid out as the dashboard's test row. */
 data class TestCardParams(val uri: String, val testCaseId: Int)
 
-/** One of a test's latest results: `passed`, `failed`, `flaky` or `skipped`, its run and its page. */
+/**
+ * One of a test's latest results: `passed`, `failed`, `flaky` or `skipped`, its run and its page, and the result in
+ * words (`run #3 · failed · 1.2 s`).
+ */
 data class TestCardResult(
     val status: String? = null,
     val runId: Int = 0,
     val url: String? = null,
     val at: String? = null,
     val durationMs: Long? = null,
+    val label: String? = null,
 )
 
-/** A test's card: its latest results, newest first, and the card in words, as Markdown and as plain HTML. */
+/** A test's latest failure: its run's page, `Last failed in run #3, 2 d ago`, and why in one line. */
+data class TestCardFailure(
+    val runId: Int = 0,
+    val url: String? = null,
+    val where: String? = null,
+    val why: String? = null,
+)
+
+/**
+ * A test's card: its latest results, newest first, how they went (`summary`), its latest failure, its owner, tags and
+ * quarantine (`about`), and the card in words as Markdown.
+ */
 data class TestCard(
     val testCaseId: Int = 0,
     val title: String? = null,
     val url: String? = null,
     val results: List<TestCardResult>? = null,
+    val summary: String? = null,
+    val failure: TestCardFailure? = null,
+    val about: List<String>? = null,
     val markdown: String? = null,
-    val html: String? = null,
 )
 
 /** `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file. */

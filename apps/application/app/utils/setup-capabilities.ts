@@ -90,7 +90,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Backend logs',
     summary:
       'Server-side warnings, errors and spans captured during each test and shown next to the network request that triggered them.',
-    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core. Installed and still not active? The package writes its logs only in the environments it is active in (Development and Test by default), and the reporter reads them through the capture fixtures.',
     icon: 'i-lucide-server',
     doc: 'guide/backend-logs',
   },

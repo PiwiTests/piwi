@@ -66,8 +66,9 @@ Do **not** demote them yourself: write one version and let the script place it c
 - **Preserve every commit link.** An entry's `([hash](url))` must survive. When several commits
   belong to one entry, list them together: `([hash1](url1), [hash2](url2))`. The `raw` command
   already merges exact-duplicate subjects this way.
-- **Duplicates:** squash + cherry-pick land the same subject on several commits. `raw` collapses
-  identical subjects. Merge a semantic near-duplicate (same change, different wording) by hand while
+- **Duplicates:** a merge commit's pull request title often repeats one of its commits' subjects,
+  and squash + cherry-pick land the same subject on several commits. `raw` collapses identical
+  subjects. Merge a semantic near-duplicate (same change, different wording) by hand while
   drafting, keeping both links. Merged entries of different scopes join them (`**desktop, ide:**`):
   `scripts/ide-changelog.mjs` reads any prefix that lists `ide`, so keep `ide` in it.
 - **Opaque titles:** if an entry's text is a branch slug rather than a description, title it from the

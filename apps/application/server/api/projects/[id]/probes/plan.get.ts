@@ -24,7 +24,8 @@ export default eventHandler(async (event) => {
   const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;
 
   const db = await getDatabase();
-  // The level-two server items drop out when the project declined `server-probes`
-  // or has no backend for it to be applicable; the client plan is unaffected.
+  // The level-two server items drop out when `server-probes` is declined or does
+  // not apply to the project, or no backend instrumentation has answered its
+  // requests yet; the client plan is unaffected.
   return buildProbePlanForProject(db, projectId, { budget });
 });

@@ -420,10 +420,10 @@ function stripTop(lane: number): number | null {
   return index < 0 ? null : (rowsLayout.value.rows[index]?.stripTop ?? null);
 }
 
-/** The tracks a band draws, for the readout. */
-function tracksFor(band: ResourceBand) {
-  return bandLayout.value.find((entry) => entry.band.key === band.key)?.tracks ?? [];
-}
+/** Each band with the tracks it draws and where it sits, for the values beside the line across the timeline. */
+const cursorBands = computed(() =>
+  bandLayout.value.map((entry) => ({ band: entry.band, tracks: entry.tracks, top: bandTop(entry) })),
+);
 
 const expandedCount = computed(() => expandedExecutions.value.size);
 
@@ -615,11 +615,13 @@ const hover = reactive<{ item: TimelineItem | null; pos: { x: number; y: number 
 watch(visibleItems, (items) => {
   if (!hover.item) return;
   hover.item = items.find((item) => item.key === hover.item!.key) ?? null;
+  resourceHover.overBar = hover.item !== null;
 });
 
 function onBarEnter(item: TimelineItem, event: MouseEvent) {
   hover.item = item;
   hover.pos = { x: event.clientX, y: event.clientY };
+  resourceHover.overBar = true;
 }
 
 function onBarMove(event: MouseEvent) {
@@ -628,44 +630,101 @@ function onBarMove(event: MouseEvent) {
 
 function onBarLeave() {
   hover.item = null;
+  resourceHover.overBar = false;
 }
 
-// The moment under the pointer in a resource band, read only by the readout
-// and the line across the rows, like the bars' hover state.
+// The moment under the pointer, read only by the line across the timeline
+// with the tracks' values beside it, and by the strip's readout, like the
+// bars' hover state. While the timeline draws resource tracks or strips, the
+// line follows a mouse anywhere over the plot, the test bars included, and
+// goes where a finger taps.
 const resourceHover = reactive<{
-  band: ResourceBand | null;
+  /** Whether the line is drawn. */
+  on: boolean;
   strip: { set: WorkerStripSet; strip: WorkerStrip } | null;
   t: number;
   pos: { x: number; y: number };
-}>({ band: null, strip: null, t: 0, pos: { x: 0, y: 0 } });
+  /** The line's X in the viewport, and the X of the visible plot's edges there. */
+  clientX: number;
+  bounds: { left: number; right: number };
+  /** Whether the pointer is over a test bar, whose tooltip opens beside it. */
+  overBar: boolean;
+}>({
+  on: false,
+  strip: null,
+  t: 0,
+  pos: { x: 0, y: 0 },
+  clientX: 0,
+  bounds: { left: 0, right: 0 },
+  overBar: false,
+});
 
-watch([bandLayout, workerStrips], ([layout, strips]) => {
-  if (resourceHover.band && !layout.some((entry) => entry.band.key === resourceHover.band!.key)) {
-    resourceHover.band = null;
-  }
+watch(workerStrips, (strips) => {
   if (resourceHover.strip && resourceHover.strip.set !== strips) resourceHover.strip = null;
 });
 
-function moveResourceHover(t: number, event: MouseEvent): void {
+/** Place the line at `clientX` in the viewport: the moment under it at the current zoom and pan. */
+function placeCursor(clientX: number): void {
+  const container = containerRef.value;
+  if (!container || (bandLayout.value.length === 0 && !workerStrips.value)) {
+    resourceHover.on = false;
+    return;
+  }
+  const rect = container.getBoundingClientRect();
+  // The SVG starts inside the container's border, moved by the pan.
+  const plotLeft = rect.left + container.clientLeft + panX.value + TIMELINE_LAYOUT.labelWidth;
+  const t = (clientX - plotLeft) / pxPerMs.value;
+  resourceHover.on = t >= 0 && t <= plotEnd.value;
   resourceHover.t = Math.max(0, Math.min(plotEnd.value, t));
+  resourceHover.clientX = clientX;
+  resourceHover.bounds = { left: Math.max(rect.left, plotLeft), right: rect.right };
+}
+
+function trackPointer(event: PointerEvent): void {
   resourceHover.pos = { x: event.clientX, y: event.clientY };
+  if (isPanning.value) resourceHover.on = false;
+  else placeCursor(event.clientX);
 }
 
-function onResourceHover(band: ResourceBand, t: number, event: MouseEvent): void {
-  resourceHover.band = band;
+function onContainerPointerMove(event: PointerEvent): void {
+  onPointerMove(event);
+  // A finger that moves pans or scrolls the timeline: only its tap places the line.
+  if (event.pointerType !== 'touch') trackPointer(event);
+}
+
+/** Before the strip under it hears a tap, which reports itself again. */
+function onContainerPointerUp(event: PointerEvent): void {
+  const tapped = event.pointerType === 'touch' && !isPanning.value;
+  onPointerUp(event);
+  if (!tapped) return;
   resourceHover.strip = null;
-  moveResourceHover(t, event);
+  trackPointer(event);
 }
 
-function onStripHover(strip: WorkerStrip, t: number, event: MouseEvent): void {
+function hideCursor(): void {
+  resourceHover.on = false;
+  resourceHover.strip = null;
+}
+
+/** A mouse leaving the timeline takes the line away; a finger's tap leaves it until a tap outside. */
+function onContainerPointerLeave(event: PointerEvent): void {
+  onPointerUp(event);
+  if (event.pointerType !== 'touch') hideCursor();
+}
+
+onClickOutside(containerRef, hideCursor);
+
+// A zoom or a pan the pointer did not make (a live run refitting, a row expanded) keeps the line under the pointer.
+watch([pxPerMs, panX], () => {
+  if (resourceHover.on) placeCursor(resourceHover.clientX);
+});
+
+function onStripHover(strip: WorkerStrip): void {
   if (!workerStrips.value) return;
-  resourceHover.band = null;
   resourceHover.strip = { set: workerStrips.value, strip };
-  moveResourceHover(t, event);
 }
 
-function onResourceLeave(): void {
-  resourceHover.band = null;
+function onStripLeave(): void {
   resourceHover.strip = null;
 }
 
@@ -765,10 +824,10 @@ function selectSpanTest(tail: SpanTail): void {
       :style="{ height: contentHeight + 'px' }"
       @wheel.prevent="onWheel"
       @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
+      @pointermove="onContainerPointerMove"
+      @pointerup.capture="onContainerPointerUp"
       @pointercancel="onPointerUp"
-      @pointerleave="onPointerUp"
+      @pointerleave="onContainerPointerLeave"
     >
       <svg
         class="overflow-visible"
@@ -839,8 +898,6 @@ function selectSpanTest(tail: SpanTail): void {
           :px-per-ms="pxPerMs"
           :plot-width="plotEnd * pxPerMs"
           :left-open="leftOpenFor(entry.band)"
-          @hover="onResourceHover"
-          @leave="onResourceLeave"
         />
 
         <TimelineSpanTails
@@ -861,7 +918,7 @@ function selectSpanTest(tail: SpanTail): void {
           :px-per-ms="pxPerMs"
           :plot-width="plotEnd * pxPerMs"
           @hover="onStripHover"
-          @leave="onResourceLeave"
+          @leave="onStripLeave"
         />
 
         <TimelineBar
@@ -899,12 +956,18 @@ function selectSpanTest(tail: SpanTail): void {
           :ghost-width="ghostWidth"
         />
 
-        <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />
+        <TimelineResourceCursor
+          :state="resourceHover"
+          :px-per-ms="pxPerMs"
+          :content-height="contentHeight"
+          :bands="cursorBands"
+          :left-open-for="leftOpenFor"
+        />
       </svg>
     </div>
 
     <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" :attempts="attemptsFor" />
-    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" :left-open-for="leftOpenFor" />
+    <TimelineResourceTooltip :state="resourceHover" />
     <TimelineSpanTooltip :state="spanHover" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />

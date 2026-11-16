@@ -232,7 +232,9 @@ const tests = {
       .flatMap((h) => h.contents)
       .map((c) => (typeof c === 'string' ? c : c.value))
       .join('\n');
-    assert.match(text, /\*\*CI failure\*\* · \[removes a row\]/);
+    // The diagnostic under the pointer says what failed: the hover gives the failure's page.
+    assert.match(text, /\[Open in dashboard\]\(http:\/\/127\.0\.0\.1:\d+\/test-run-cases\/900\)/);
+    assert.doesNotMatch(text, /\*\*CI failure\*\*/);
   },
 
   async 'page. completes with the chains the suite uses on this file’s pages'() {

@@ -2260,7 +2260,7 @@ const RESOURCES_TIMELINE_EXECUTION = 705;
 /**
  * The Timeline tab of a failed execution with its Resources rows switched on: the CPU and memory of the worker that
  * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
- * the readout gives their values, at `width` px in `colorScheme`.
+ * the line under it crosses every lane with each row's value beside it, at `width` px in `colorScheme`.
  */
 /**
  * The leaky run's workers timeline: under each worker's row, what it kept open
@@ -2307,7 +2307,7 @@ function runTimelineLeaksScene(colorScheme, suffix) {
 function timelineResourcesScene(width, colorScheme, suffix) {
   return {
     name: `failure-timeline-resources${suffix}`,
-    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them, at ${width} px (${colorScheme})`,
+    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them: the line across every lane, each row's value beside it, at ${width} px (${colorScheme})`,
     route: `/test-run-cases/${RESOURCES_TIMELINE_EXECUTION}`,
     viewport: { width, height: width < 640 ? 2600 : 1500 },
     colorScheme,
@@ -2318,10 +2318,12 @@ function timelineResourcesScene(width, colorScheme, suffix) {
       if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
       const rows = page.locator('[data-shot="evidence-card"] [data-timeline-resources]');
       await rows.waitFor({ timeout: 30_000 });
+      // The card in view before the pointer moves: a scroll during the shot would carry the chart off the pointer.
+      await page.locator('[data-shot="evidence-card"]').scrollIntoViewIfNeeded();
       await settle();
       const box = await rows.boundingBox();
       if (box) await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
-      await page.getByTestId('timeline-resources-readout').waitFor({ timeout: 10_000 });
+      await page.getByTestId('resource-cursor').waitFor({ timeout: 10_000 });
       await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
     },
   };
@@ -5318,7 +5320,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources',
     description:
-      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
+      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows, each in its color: hovered, each track's value beside the line, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
     tags: ['docs'],
     out: 'docs',
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
@@ -5332,7 +5334,7 @@ const SCENES = [
       await settle();
       const box = await band.boundingBox();
       await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.5);
-      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await page.getByTestId('resource-cursor').waitFor();
       await shoot('hover');
       await page.mouse.move(0, 0);
       // The menu's two groups name some items alike: the tracks above the rows come first.
@@ -5536,7 +5538,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources-sharded',
     description:
-      "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the second shard's hovered",
+      "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the pointer over the second shard's, each shard's values beside the line",
     // The Web Dashboard run before the leaky one ran as two shards, each with its own resource report.
     route: '/test-runs/63?tab=timeline',
     viewport: { width: 1280, height: 1000 },
@@ -5548,7 +5550,7 @@ const SCENES = [
       await settle();
       const box = await band.boundingBox();
       await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
-      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await page.getByTestId('resource-cursor').waitFor();
       await shoot();
     },
   },

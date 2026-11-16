@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statfsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
@@ -27,13 +27,35 @@ export async function migrateToLatest(db: { $client: Client }): Promise<void> {
   await db.$client.migrate(statements);
 }
 
+/** The free space `/dev/shm` must have for a temporary database to go there. */
+const MIN_MEMORY_FREE_BYTES = 1024 ** 3;
+
+const TEMP_DB_PREFIX = 'piwi-unit-db-';
+
+/**
+ * A new folder for a temporary database: in `/dev/shm` when it has room and takes writes, a folder in memory on Linux
+ * where a commit waits on no disk, else in the system's temporary folder (macOS, Windows, a container's small
+ * `/dev/shm`). A `TMPDIR` the environment sets always wins.
+ */
+function makeTempDbDir(): string {
+  if (!process.env.TMPDIR) {
+    try {
+      const { bavail, bsize } = statfsSync('/dev/shm');
+      if (bavail * bsize >= MIN_MEMORY_FREE_BYTES) return mkdtempSync(join('/dev/shm', TEMP_DB_PREFIX));
+    } catch {
+      // No `/dev/shm`, or one this user cannot write to.
+    }
+  }
+  return mkdtempSync(join(tmpdir(), TEMP_DB_PREFIX));
+}
+
 /**
  * A migrated SQLite database in a temporary file. Code that opens a transaction
  * needs one: libsql gives a `:memory:` database a single connection, which an
  * open transaction holds, so no other statement runs beside it.
  */
 export async function openTempDb(): Promise<{ db: TempDb; close: () => Promise<void> }> {
-  const dir = mkdtempSync(join(tmpdir(), 'piwi-unit-db-'));
+  const dir = makeTempDbDir();
   const client = createClient({ url: `file:${join(dir, 'test.db')}` });
   const db = drizzle(client, { schema });
   await migrateToLatest(db);
