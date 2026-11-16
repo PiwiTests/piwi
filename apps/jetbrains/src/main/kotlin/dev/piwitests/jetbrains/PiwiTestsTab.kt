@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.CommonActionsManager
 import com.intellij.ide.DefaultTreeExpander
+import com.intellij.ide.TreeExpander
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -11,6 +12,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -99,8 +101,8 @@ class PiwiTestsTab(private val project: Project) : Disposable {
         filterField.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) = render()
         })
-        val panel = TestsPanel(tree) { TestsSelection(selected(), filtered()) }
         val expander = DefaultTreeExpander(tree)
+        val panel = TestsPanel(tree, expander) { TestsSelection(selected(), filtered()) }
         val common = CommonActionsManager.getInstance()
         val toolbar = actions.createActionToolbar(
             "PiwiTestsTab",
@@ -122,7 +124,10 @@ class PiwiTestsTab(private val project: Project) : Disposable {
                 add(JBScrollPane(tree), BorderLayout.CENTER)
             },
         )
-        val content = ContentFactory.getInstance().createContent(panel, TAB_NAME, false).apply { isCloseable = false }
+        val content = ContentFactory.getInstance().createContent(panel, TAB_NAME, false).apply {
+            isCloseable = false
+            preferredFocusableComponent = tree
+        }
         toolWindow.contentManager.addContent(content)
         toolWindow.contentManager.addContentManagerListener(object : ContentManagerListener {
             override fun selectionChanged(event: ContentManagerEvent) {
@@ -194,12 +199,19 @@ class PiwiTestsTab(private val project: Project) : Disposable {
 
     override fun dispose() {}
 
-    /** The panel: the selected nodes for the `Piwi.Tests.*` actions, a selected test's page for Open in dashboard. */
-    private class TestsPanel(private val tree: JTree, private val selection: () -> TestsSelection) :
-        SimpleToolWindowPanel(true, true) {
+    /**
+     * The panel: the selected nodes for the `Piwi.Tests.*` actions, a selected test's page for Open in dashboard, and the
+     * tree's expander for the IDE's Expand All and Collapse All keys.
+     */
+    private class TestsPanel(
+        private val tree: JTree,
+        private val expander: TreeExpander,
+        private val selection: () -> TestsSelection,
+    ) : SimpleToolWindowPanel(true, true) {
         override fun getData(dataId: String): Any? = when {
             TESTS_SELECTION.`is`(dataId) -> selection()
             DASHBOARD_URL.`is`(dataId) -> nodeOf(tree.lastSelectedPathComponent)?.test?.url
+            PlatformDataKeys.TREE_EXPANDER.`is`(dataId) -> expander
             else -> super.getData(dataId)
         }
     }

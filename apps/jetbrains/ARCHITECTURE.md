@@ -387,6 +387,8 @@ reference.
 - **The filter** (`Glue.testsFiltered`) keeps the tests whose title, tags, owner (`owner:ada`) or result hold every
   word, case aside, and a folder or spec whose name does, whole.
 - **Opening.** A double click or Enter opens a node's line; a test of Not in this checkout opens its dashboard page.
+  Shown, the tab gives its tree the focus (`preferredFocusableComponent`), and the IDE's Expand All and Collapse All
+  keys act on it (`TREE_EXPANDER`).
 - **Running.** `Piwi.Tests.Run`, `Piwi.Tests.Debug` and `Piwi.Tests.Verify`, on the toolbar and the right-click, act
   on the selected nodes (`TESTS_SELECTION`): `PiwiCommands.runTestNodes` saves the files, asks `piwi/testRuns` for the
   runs of their ids (`Glue.testsRunIds`: the runnable ones; with the filter on, the tests each shows), and starts each
