@@ -10,6 +10,11 @@ A credential is a secret Piwi sends to another service, saved once under **Setti
 it is needed. A CI server action of [Re-run in CI](/features/ci-rerun) picks one instead of repeating a user, a token
 and a base URL in every action and every project, and a rotation is one change. Every use is logged.
 
+<figure>
+  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins credentials, one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
+  <figcaption>Settings → Credentials: a credential's panel, with the CI actions that name it and its log.</figcaption>
+</figure>
+
 ## What a credential holds
 
 | Field | What it is |

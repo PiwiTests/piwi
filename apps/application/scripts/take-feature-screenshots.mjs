@@ -3681,6 +3681,21 @@ const SCENES = [
     viewport: { width, height },
     of: '[data-shot="credentials-list"]',
   })),
+  {
+    name: 'credentials-settings',
+    description:
+      'Settings → Credentials at 1280 px: the list, and a credential’s panel with its user, destination, projects, the CI actions that name it and its log',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/credentials',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
   ...[
     { name: 'settings-credentials-log', width: 1280, height: 900 },
     { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },
