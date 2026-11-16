@@ -1,11 +1,15 @@
 # Credential manager
 
-**Status.** Proposed and confirmed 2026-11-16. Steps 1 and 2 of the [Delivery](#delivery) are built: the store, the
-log, Settings → Credentials, the credential of each CI server action, the environment's CI server credential and the
-import of the project CI server tokens, a secret read from a server variable (D13), and the SCM credentials of the
-projects, of the instance and of the repository-host CI actions, with the import of both SCM tokens (D14 to D17). It
-replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per project); D7 stands, as the environment
-credential's input list. Step 3 remains.
+- Status: accepted
+- Date: 2026-11-16
+
+**Status.** Proposed and confirmed 2026-11-16, and built in full. Step 1: the store, the log, Settings → Credentials,
+the credential of each CI server action, the environment's CI server credential and the import of the project CI
+server tokens, and a secret read from a server variable (D13). Step 2: the SCM credentials of the projects, of the
+instance and of the repository-host CI actions, with the import of both SCM tokens (D14 to D17). Step 3: the AI keys
+(D18), the Jira and Zephyr Scale connections (D19) and the Slack channels of the instance (D20), each with its import
+(D21). It replaces D6 of [ci-actions.md](ci-actions.md) (one CI server token per project); D7 stands, as the
+environment credential's input list.
 
 **Summary.** Piwi stores the secrets it sends to other services in six places, each with its own copy, its own rules and
 no record of its use: a project's SCM token, the instance's SCM token, a project's CI server token, the integration
@@ -24,7 +28,7 @@ connections, the channels and the AI keys follow.
   The same Jenkins or GitHub token is pasted in each project, and a rotation is a visit to each project; a project
   forgotten keeps failing, or keeps an old token alive.
 - **One CI server token per project.** A project's CI server token is bound to one base URL
-  ([ci-actions.md](../adr/ci-actions.md), D6), so a project whose actions start builds on two CI servers can give a
+  ([ci-actions.md](ci-actions.md), D6), so a project whose actions start builds on two CI servers can give a
   credential to one of them only. The save answers 400 when the actions use two base URLs.
 - **One SCM token does everything.** The project's SCM token reads the history, posts the pull-request feedback, sets
   the commit status and starts a workflow (`createScmProvider`, `resolveScmToken`). It needs every scope, so a token
@@ -177,8 +181,7 @@ a public repository still reads.
 1. **The store and the CI actions.** The tables and migrations, `withCredential`, the log and its sweep,
    `credentials:manage`, the routes, Settings → Credentials, the CI action picker, the import of the project CI
    server tokens (D9), the env-managed CI server credential (D8), the demo, the docs (`operate/credentials.md`, the
-   CI re-run page), the configuration reference. Supersedes D6 of [ci-actions.md](../adr/ci-actions.md), recorded
-   when this proposal moves to `adr/`.
+   CI re-run page), the configuration reference. Supersedes D6 of [ci-actions.md](ci-actions.md).
 2. **SCM.** The project and instance SCM credentials, a credential per repository-host CI action, the import of both
    SCM tokens (D14 to D17), the pickers in a project's Source control settings, Settings → Source control and the CI
    action editor, the demo and the docs.
