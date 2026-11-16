@@ -33,6 +33,9 @@ const MAX_PAGES = 10 * (RUNS + TESTS);
 /** The most pages one probe may read when the first run it looks at decides, or no project has its rows. */
 const MAX_PAGES_DECIDED_AT_ONCE = 30;
 
+/** The seed writes some 420,000 rows, past the default hook timeout on a busy runner. */
+const SEED_TIMEOUT_MS = 120_000;
+
 describe.skipIf(!postgresUrl)('the capability probes on PostgreSQL', async () => {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
@@ -80,7 +83,7 @@ describe.skipIf(!postgresUrl)('the capability probes on PostgreSQL', async () =>
     await client.unsafe(`insert into test_run_resource_reports (run_id, shard, report, updated_at)
       select id, 0, '{}'::jsonb, now() from test_runs where project_id <> ${BARE_PROJECT}`);
     await client.unsafe('analyze');
-  });
+  }, SEED_TIMEOUT_MS);
 
   afterAll(async () => {
     await client?.end();
