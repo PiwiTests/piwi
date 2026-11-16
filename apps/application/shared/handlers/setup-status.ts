@@ -41,7 +41,7 @@ import {
   prFeedbackPosts,
   assistantMessages,
 } from '../../server/database/schema';
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql, type AnyColumn, type SQL, type Table } from 'drizzle-orm';
 import { notPrivateRun } from '../run-eligibility';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
@@ -118,6 +118,33 @@ export type CapabilityEvidence = Record<SetupCapabilityId, boolean>;
 async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean> {
   const rows = await query;
   return rows.length > 0;
+}
+
+/**
+ * Whether one of a project's runs has a row of `table` (matching `condition`), read run by run through the index on
+ * `runId`, so a project without such a row never reads the rows of the other projects.
+ */
+function projectRunHasRow(
+  db: DrizzleDB,
+  projectId: number,
+  table: Table,
+  runId: AnyColumn,
+  condition?: SQL,
+): Promise<boolean> {
+  const match = condition ? sql` and ${condition}` : sql``;
+  return exists(
+    db,
+    db
+      .select({ id: testRuns.id })
+      .from(testRuns)
+      .where(
+        and(
+          eq(testRuns.projectId, projectId),
+          sql`exists (select 1 from ${table} where ${runId} = ${testRuns.id}${match})`,
+        ),
+      )
+      .limit(1),
+  );
 }
 
 // The conditions of the partial indexes `idx_trc_passed_aria`, `idx_trc_passed_after_failure` and
@@ -239,47 +266,31 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
       ),
     // The fixtures: a captured request, or the page state they record at a test's end, in the newest runs.
     fixtures: async () =>
-      (await exists(
-        db,
-        scoped
-          ? db
-              .select({ id: networkRequests.id })
-              .from(networkRequests)
-              .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-              .where(eq(testRuns.projectId, pid))
-              .limit(1)
-          : db.select({ id: networkRequests.id }).from(networkRequests).limit(1),
-      )) || fixtureEvidenceInNewestRuns(db, projectId),
+      (await (scoped
+        ? projectRunHasRow(db, pid, networkRequests, networkRequests.testRunId)
+        : exists(db, db.select({ id: networkRequests.id }).from(networkRequests).limit(1)))) ||
+      fixtureEvidenceInNewestRuns(db, projectId),
+    // Scoped, read test by test through the snapshots' index on the test, as `projectRunHasRow` reads run by run.
     'locator-healing': () =>
       exists(
         db,
         scoped
           ? db
-              .select({ id: locatorSnapshots.id })
-              .from(locatorSnapshots)
-              .innerJoin(testCases, eq(locatorSnapshots.testCaseId, testCases.id))
-              .where(eq(testCases.projectId, pid))
-              .limit(1)
-          : db.select({ id: locatorSnapshots.id }).from(locatorSnapshots).limit(1),
-      ),
-    // Scoped, the probe starts from the project's runs and looks each one up in the partial index, so a project
-    // without evidence never reads the requests of the others, which may all match.
-    'backend-logs': () =>
-      exists(
-        db,
-        scoped
-          ? db
-              .select({ id: testRuns.id })
-              .from(testRuns)
+              .select({ id: testCases.id })
+              .from(testCases)
               .where(
                 and(
-                  eq(testRuns.projectId, pid),
-                  sql`exists (select 1 from ${networkRequests} where ${networkRequests.testRunId} = ${testRuns.id} and ${INSTRUMENTED_REQUEST})`,
+                  eq(testCases.projectId, pid),
+                  sql`exists (select 1 from ${locatorSnapshots} where ${locatorSnapshots.testCaseId} = ${testCases.id})`,
                 ),
               )
               .limit(1)
-          : db.select({ id: networkRequests.id }).from(networkRequests).where(INSTRUMENTED_REQUEST).limit(1),
+          : db.select({ id: locatorSnapshots.id }).from(locatorSnapshots).limit(1),
       ),
+    'backend-logs': () =>
+      scoped
+        ? projectRunHasRow(db, pid, networkRequests, networkRequests.testRunId, INSTRUMENTED_REQUEST)
+        : exists(db, db.select({ id: networkRequests.id }).from(networkRequests).where(INSTRUMENTED_REQUEST).limit(1)),
     // Coverage: active once a test's coverage of a file is stored for the project; an uploaded report's
     // fragments (runtime `report`) are no test's.
     coverage: () =>
@@ -381,17 +392,9 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           : db.select({ id: quarantinedTests.id }).from(quarantinedTests).limit(1),
       ),
     'green-samples': () =>
-      exists(
-        db,
-        scoped
-          ? db
-              .select({ id: testRunsCases.id })
-              .from(testRunsCases)
-              .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-              .where(and(eq(testRuns.projectId, pid), PASSED_WITH_ARIA))
-              .limit(1)
-          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_WITH_ARIA).limit(1),
-      ),
+      scoped
+        ? projectRunHasRow(db, pid, testRunsCases, testRunsCases.testRunId, PASSED_WITH_ARIA)
+        : exists(db, db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_WITH_ARIA).limit(1)),
     // The Test Map is active once the graph has any node for the project (a
     // route or page discovered from a run), or, instance-wide, any node at all.
     'test-map': () =>
@@ -428,30 +431,14 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
       ),
     // Flake suspects read from history: active once a test has passed after a failed attempt.
     'flake-lab': () =>
-      exists(
-        db,
-        scoped
-          ? db
-              .select({ id: testRunsCases.id })
-              .from(testRunsCases)
-              .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-              .where(and(eq(testRuns.projectId, pid), PASSED_AFTER_FAILURE))
-              .limit(1)
-          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_AFTER_FAILURE).limit(1),
-      ),
+      scoped
+        ? projectRunHasRow(db, pid, testRunsCases, testRunsCases.testRunId, PASSED_AFTER_FAILURE)
+        : exists(db, db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_AFTER_FAILURE).limit(1)),
     // Resources: active once a reporter sent a run's resource report.
     resources: () =>
-      exists(
-        db,
-        scoped
-          ? db
-              .select({ id: testRunResourceReports.id })
-              .from(testRunResourceReports)
-              .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
-              .where(eq(testRuns.projectId, pid))
-              .limit(1)
-          : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
-      ),
+      scoped
+        ? projectRunHasRow(db, pid, testRunResourceReports, testRunResourceReports.runId)
+        : exists(db, db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1)),
     // Agent diagnoses: active once an agent recorded a diagnosis.
     'agent-diagnoses': () =>
       exists(
