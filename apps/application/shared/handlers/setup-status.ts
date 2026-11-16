@@ -120,9 +120,18 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
   return rows.length > 0;
 }
 
+/** `exists` over the rows of `table` (matching `condition`), with `link` further narrowing them when given. */
+function anyRow(table: Table, condition?: SQL, link?: SQL): SQL {
+  const where = [link, condition].filter((part): part is SQL => part !== undefined);
+  return where.length > 0
+    ? sql`exists (select 1 from ${table} where ${sql.join(where, sql` and `)})`
+    : sql`exists (select 1 from ${table})`;
+}
+
 /**
- * Whether one of a project's runs has a row of `table` (matching `condition`), read run by run through the index on
- * `runId`, so a project without such a row never reads the rows of the other projects.
+ * Whether one of a project's runs has a row of `table` (matching `condition`). It reads one index entry when no
+ * project has such a row, else looks the project's runs up newest first through the index on `runId`, so a project
+ * without such a row never reads the rows of the other projects.
  */
 function projectRunHasRow(
   db: DrizzleDB,
@@ -131,7 +140,6 @@ function projectRunHasRow(
   runId: AnyColumn,
   condition?: SQL,
 ): Promise<boolean> {
-  const match = condition ? sql` and ${condition}` : sql``;
   return exists(
     db,
     db
@@ -139,10 +147,12 @@ function projectRunHasRow(
       .from(testRuns)
       .where(
         and(
+          anyRow(table, condition),
           eq(testRuns.projectId, projectId),
-          sql`exists (select 1 from ${table} where ${runId} = ${testRuns.id}${match})`,
+          anyRow(table, condition, sql`${runId} = ${testRuns.id}`),
         ),
       )
+      .orderBy(desc(testRuns.startTime))
       .limit(1),
   );
 }
@@ -280,8 +290,9 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .from(testCases)
               .where(
                 and(
+                  anyRow(locatorSnapshots),
                   eq(testCases.projectId, pid),
-                  sql`exists (select 1 from ${locatorSnapshots} where ${locatorSnapshots.testCaseId} = ${testCases.id})`,
+                  anyRow(locatorSnapshots, undefined, sql`${locatorSnapshots.testCaseId} = ${testCases.id}`),
                 ),
               )
               .limit(1)

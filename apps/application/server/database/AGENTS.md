@@ -56,9 +56,10 @@ merge keeps the branch's history as stable as it can:
   ``sql`${testRunsCases.status} = 'passed'` ``, not `eq(testRunsCases.status, 'passed')`. PostgreSQL's cached generic
   plans and SQLite's planner cannot match a bound parameter to the index's constant, so the query reads every row. The
   capability probes (`shared/handlers/setup-status.ts`) and the `fixme` count (`fixmeSkipPredicate`) rely on this.
-- **A `LIMIT 1` existence check scoped to a project starts from the project's runs or tests** and looks each one up in
-  the large table's index (`projectRunHasRow`), never joins from the large table: PostgreSQL then scans every
-  project's rows and reads the whole table for a project that has none (`tests/unit/capability-probes-pg.test.ts`).
+- **A `LIMIT 1` existence check scoped to a project starts from the project's runs or tests**, newest first, and looks
+  each one up in the large table's index, after one check that any project has such a row (`projectRunHasRow`). A
+  join from the large table makes PostgreSQL read all of it for a project that has none
+  (`tests/unit/capability-probes-pg.test.ts` counts the pages each probe reads).
 - **`test_runs.origin` and `test_runs.commit_sha` derive from the run's `metadata`.** Every insert or update that
   writes `metadata` writes `origin: runOrigin(<the same value>)` and `commit: runCommit(<the same value>)` beside it
   (`updateRunMetadata`, `server/utils/run-metadata.ts`, does both), as `branch` follows `resolveRunBranch`. A query
