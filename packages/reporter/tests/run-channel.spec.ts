@@ -292,7 +292,7 @@ describe('the worker’s run connection', () => {
           'share',
         ],
         holds: ['failure'],
-        features: ['view-lane', 'give-up', 'front', 'layers', 'trace'],
+        features: ['view-lane', 'give-up', 'front', 'layers', 'trace', 'positions'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
