@@ -7,7 +7,9 @@
  */
 import { can } from '#shared/permissions';
 import {
+  credentialReferenceText,
   parseCredentialInput,
+  scmCredentialProblem,
   type CredentialInput,
   CREDENTIAL_SERVICES,
   type CredentialService,
@@ -26,6 +28,7 @@ import {
   listCredentialUses,
   loadCredentialRecord,
   parseCredentialUsesFilter,
+  readInstanceScmCredentialIds,
   updateCredential,
 } from '#shared/handlers/credentials';
 import type { getDemoDb } from '../db.client';
@@ -70,6 +73,12 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
   const parsed = parseCredentialInput(body, { partial: false });
   if (!parsed.value) throw demoHttpError(400, parsed.error);
   const input = parsed.value as CredentialInput;
+  if (input.service === 'scm') {
+    const problem = scmCredentialProblem({ destination: input.destination, user: input.user ?? null });
+    if (problem) throw demoHttpError(400, problem);
+    input.allowedInputs = null;
+    input.customRequests = false;
+  }
   const refusal = can(viewer.access, 'credentials:manage') ? null : credentialScopeRefusal(viewer.access, input.scope);
   if (refusal) throw demoHttpError(403, refusal);
   if (await credentialNameTaken(db as never, input.name)) {
@@ -113,6 +122,21 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (service !== undefined && service !== record.service) {
     throw demoHttpError(400, 'A credential’s service cannot change: create another one.');
   }
+  if (record.service === 'scm') {
+    const problem = scmCredentialProblem({
+      destination: patch.destination ?? record.destination,
+      user: patch.user !== undefined ? patch.user : record.user,
+    });
+    if (problem) throw demoHttpError(400, problem);
+    delete patch.allowedInputs;
+    delete patch.customRequests;
+    if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db as never)).includes(id)) {
+      throw demoHttpError(
+        409,
+        'This credential is one of the instance’s SCM credentials, which serve every project: take it out of Settings → Source control first.',
+      );
+    }
+  }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
     throw demoHttpError(
       400,
@@ -138,7 +162,7 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   return { credential: await summaryOf(db, viewer, id) };
 }
 
-/** `DELETE /api/credentials/:id` in the demo, refused while a CI action names it. */
+/** `DELETE /api/credentials/:id` in the demo, refused while something names it. */
 export async function demoDeleteCredential(db: DemoDB, viewer: CredentialViewer, id: number) {
   const record = await manageable(db, viewer, id);
   if (record.managedBy === 'env') {
@@ -146,8 +170,8 @@ export async function demoDeleteCredential(db: DemoDB, viewer: CredentialViewer,
   }
   const usedBy = (await credentialReferences(db as never)).get(id) ?? [];
   if (usedBy.length > 0) {
-    const names = usedBy.map((r) => `"${r.actionName}" (${r.projectName})`).join(', ');
-    throw demoHttpError(409, `CI actions still name this credential: ${names}. Pick another credential in each first.`);
+    const names = usedBy.map(credentialReferenceText).join(', ');
+    throw demoHttpError(409, `Still named by ${names}: pick another credential in each first.`);
   }
   await deleteCredential(db as never, id);
   return { ok: true };

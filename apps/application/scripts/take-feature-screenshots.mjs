@@ -3672,6 +3672,92 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'project-scm-credential', width: 1280, height: 900 },
+    { name: 'project-scm-credential-mobile', width: 375, height: 1300 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: the SCM credential the project's repository calls carry, picked from the ones shared with it, at ${width} px`,
+    route: '/projects/1?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="project-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByTestId('scm-credential-description')
+        .filter({ hasText: 'is sent to' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-ci-scm-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-scm-credential-mobile', width: 375, height: 1700 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: a new GitHub action's Credential, the project's by default or one shared with the project for its dispatch, at ${width} px`,
+    route: '/projects/1?tab=settings&section=ci',
+    viewport: { width, height },
+    of: '[data-shot="ci-action-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      // Project 1 has no CI action yet: turn them on (nothing is saved) to add one.
+      await page.getByTestId('ci-actions-enabled').click({ timeout: 90000 });
+      await page.getByTestId('ci-action-add').click();
+      await page.locator('[data-shot="ci-action-scm-credential"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-source-control', width: 1280, height: 800 },
+    { name: 'settings-source-control-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Source control: the instance's SCM credentials, for every project that names none, at ${width} px`,
+    route: '/settings/source-control',
+    viewport: { width, height },
+    of: '[data-shot="source-control-token"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('button', { name: 'Instance repository credentials' })
+        .filter({ hasText: 'GitHub · example' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-form', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-form-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a new Source control credential, its destination one click per host, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-new').click({ timeout: 90000 });
+      await page.getByTestId('credential-service').click();
+      await page.getByRole('option', { name: 'Source control' }).click();
+      await page.getByTestId('credential-form').getByRole('button', { name: 'GitHub', exact: true }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: an SCM credential's panel, the project that names it and its log of repository reads, a commit status and a pull-request comment, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-4').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'settings-credentials', width: 1280, height: 800 },
     { name: 'settings-credentials-mobile', width: 375, height: 1100 },
   ].map(({ name, width, height }) => ({

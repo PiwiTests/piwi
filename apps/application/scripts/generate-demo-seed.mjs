@@ -537,6 +537,12 @@ const APP_SETTINGS = [
     value: { decisions: { 'machine-runs': 'enabled' } },
     updated_at: ts('2025-04-20T09:00:00'),
   },
+  // Settings → Source control: the GitHub credential every project without its own reads its repository with.
+  {
+    key: 'scm_credentials',
+    value: { ids: [3] },
+    updated_at: ts('2025-04-02T09:00:00'),
+  },
 ];
 // Runs kept forever: the v2.4.0 release run (by the release marker linked to
 // it below), one older run kept by hand, and one the reporter kept at ingest.
@@ -3745,9 +3751,10 @@ const CONNECTED_APP_KEYS = [
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
-// Settings → Credentials: the Jenkins user the API project's CI actions name, and one shared with every project that
-// no action names yet, whose secret is read from a server variable. The demo stores no secret. Its log: dispatches, a
-// refusal and the Check reads of one hour.
+// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that
+// no action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
+// instance's source control lists, and the shop-web one the checkout project names. The demo stores no secret. Its
+// log: dispatches, a refusal, the Check reads of one hour, repository reads, a commit status and a pull request comment.
 const CREDENTIALS = [
   {
     id: 1,
@@ -3786,8 +3793,50 @@ const CREDENTIALS = [
     rotated_at: ts('2025-04-18T11:00:00') * 1000,
     last_used_at: null,
   },
+  {
+    id: 3,
+    name: 'GitHub · example',
+    description: 'Reads the example repositories; the instance’s source control.',
+    service: 'scm',
+    user_name: null,
+    destination: 'https://api.github.com/repos/example/',
+    secret: null,
+    all_projects: 1,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-02-20T09:00:00') * 1000,
+    rotated_at: ts('2025-04-02T09:00:00') * 1000,
+    last_used_at: ts('2025-04-25T08:40:00') * 1000,
+  },
+  {
+    id: 4,
+    name: 'GitHub · shop-web',
+    description: 'Writes pull-request feedback and commit statuses on shop-web.',
+    service: 'scm',
+    user_name: null,
+    destination: 'https://api.github.com/repos/example/shop-web/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-03-05T10:00:00') * 1000,
+    rotated_at: ts('2025-03-05T10:00:00') * 1000,
+    last_used_at: ts('2025-04-25T09:05:00') * 1000,
+  },
 ];
-const CREDENTIAL_PROJECTS = [{ credential_id: 1, project_id: 2 }];
+const CREDENTIAL_PROJECTS = [
+  { credential_id: 1, project_id: 2 },
+  { credential_id: 4, project_id: 1 },
+];
+/** The SCM credential each project names; the others read with the instance's. */
+const PROJECT_SCM_CREDENTIALS = { 1: 4 };
+for (const project of PROJECTS) project.scm_credential_id = PROJECT_SCM_CREDENTIALS[project.id] ?? null;
 const credentialUse = (id, at, fields) => ({
   id,
   credential_id: 1,
@@ -3838,6 +3887,58 @@ const CREDENTIAL_USES = [
     feature: 'ci-dispatch',
     subject_id: 'rerun-failed-tests',
     destination: 'https://jenkins.example.com/job/api/job/integration/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(6, '2025-04-25T08:02:00', {
+    credential_id: 3,
+    credential_name: 'GitHub · example',
+    feature: 'scm-read',
+    project_id: 3,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: 'https://api.github.com/repos/example/design-system',
+    result: 'ok',
+    reason: null,
+    count: 14,
+    last_at: ts('2025-04-25T08:40:00') * 1000,
+  }),
+  credentialUse(7, '2025-04-25T09:00:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-read',
+    project_id: 1,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+    count: 22,
+    last_at: ts('2025-04-25T09:05:00') * 1000,
+  }),
+  credentialUse(8, '2025-04-25T09:04:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-status',
+    project_id: 1,
+    user_id: null,
+    subject_type: 'commit',
+    subject_id: SCM_REPOS[1].commits[0].sha,
+    destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(9, '2025-04-25T09:05:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-comment',
+    project_id: 1,
+    user_id: null,
+    subject_type: 'pull-request',
+    subject_id: '42',
+    destination: 'https://api.github.com/repos/example/shop-web',
     result: 'ok',
     reason: null,
   }),

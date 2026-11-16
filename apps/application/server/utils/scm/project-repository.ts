@@ -3,13 +3,14 @@ import { projects } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { isEligibleRun } from '#shared/run-eligibility';
 import { repositoryUrlFromRemote, sameRepository } from './git-url';
+import { importScmTokens } from '../credentials';
 
 /** The projects a caller can read: every one, or these ids. */
 type ProjectScope = 'all' | Set<number>;
 
 /**
  * The repository a project's SCM calls read, with the project's or the
- * instance's SCM token: one URL per project, pinned by the first run that
+ * instance's SCM credential: one URL per project, pinned by the first run that
  * names a remote and changed by a project admin. A run that names another
  * repository is ignored for SCM calls, so run metadata never chooses which
  * repository a token reads.
@@ -37,7 +38,8 @@ export async function projectRepositoryFor(
 
 /**
  * Pin a project that has no repository yet to the one a run's metadata names
- * (`scm.remoteUrl`). A project that has one keeps it; a probe or lab run pins
+ * (`scm.remoteUrl`), and move an SCM token that waited for it to a credential
+ * (`importScmTokens`). A project that has one keeps it; a probe or lab run pins
  * nothing.
  */
 export async function pinProjectRepository(db: DbClient, projectId: number, metadata: unknown): Promise<void> {
@@ -45,10 +47,15 @@ export async function pinProjectRepository(db: DbClient, projectId: number, meta
   const scm = (metadata as { scm?: { remoteUrl?: unknown } } | null)?.scm;
   const repositoryUrl = typeof scm?.remoteUrl === 'string' ? repositoryUrlFromRemote(scm.remoteUrl) : null;
   if (!repositoryUrl) return;
-  await db
+  const pinned = await db
     .update(projects)
     .set({ repositoryUrl })
-    .where(and(eq(projects.id, projectId), isNull(projects.repositoryUrl)));
+    .where(and(eq(projects.id, projectId), isNull(projects.repositoryUrl)))
+    .returning({ id: projects.id });
+  // An SCM token that waited for a repository moves to a credential bound to its host's API.
+  if (pinned.length > 0) {
+    await importScmTokens(db).catch((err) => console.warn('[credentials] SCM token import failed', err));
+  }
 }
 
 /** Whether `repositoryUrl` is pinned by one of the projects of `scope`. */

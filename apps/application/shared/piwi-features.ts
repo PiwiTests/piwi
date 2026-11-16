@@ -39,7 +39,7 @@ export type FeatureNeed =
 export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
   fixtures: 'capture fixtures',
   llm: 'an AI key',
-  scm: 'an SCM token',
+  scm: 'an SCM credential',
   backend: 'a backend integration',
   desktop: 'the desktop app',
   extension: 'the browser extension',

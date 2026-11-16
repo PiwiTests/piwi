@@ -1,9 +1,11 @@
 # Credential manager
 
-**Status.** Proposed and confirmed 2026-11-16. Step 1 of the [Delivery](#delivery) is built: the store, the log,
-Settings → Credentials, the credential of each CI server action, the environment's CI server credential and the import
-of the project CI server tokens, and a secret read from a server variable (D13). It replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per
-project); D7 stands, as the environment credential's input list. Steps 2 and 3 remain.
+**Status.** Proposed and confirmed 2026-11-16. Steps 1 and 2 of the [Delivery](#delivery) are built: the store, the
+log, Settings → Credentials, the credential of each CI server action, the environment's CI server credential and the
+import of the project CI server tokens, a secret read from a server variable (D13), and the SCM credentials of the
+projects, of the instance and of the repository-host CI actions, with the import of both SCM tokens (D14 to D17). It
+replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per project); D7 stands, as the environment
+credential's input list. Step 3 remains.
 
 **Summary.** Piwi stores the secrets it sends to other services in six places, each with its own copy, its own rules and
 no record of its use: a project's SCM token, the instance's SCM token, a project's CI server token, the integration
@@ -72,13 +74,17 @@ Confirmed with the maintainer on 2026-11-16; [Answered questions](#answered-ques
 | D11 | **The input rule of the instance credential becomes a field of every CI server credential**: `allowedInputs`, the inputs a request carrying it may send (null for every input). The env-managed credential reads `PIWI_CI_SERVER_ALLOWED_INPUTS`; an imported project token gets null, as it sends every input today.                                                                                                                                                                                                                                                                                                                                                     |
 | D12 | **A Custom request carries a credential only when the credential allows it** (`customRequests`, off by default). A Custom request reaches any path under the destination, a CI server's script console included, so whoever manages the credential decides. An imported project token allows it, as it went with a Custom request before; the env-managed credential never does.                                                                                                                                                                                                                                                                                          |
 | D13 | **A secret may be read from a server variable** named `PIWI_CREDENTIAL_*` (`secretEnv`), at each use, instead of being saved. Only `credentials:manage` names one, and only that prefix, so no other variable of the server (`PIWI_SECRET_KEY`, a database URL) can be sent; the name is sealed with the destination like a saved secret. Added on 2026-11-16 at the maintainer's request.                                                                                                                                                                                                                                                                                |
+| D14 | **An SCM credential is sent to its host's API** (service `scm`): its destination is the API of GitHub (`https://api.github.com/`), Bitbucket (`https://api.bitbucket.org/`), the GitLab cloud (`https://gitlab.com/`) or a GitLab host of `PIWI_SCM_GITLAB_HOSTS`, or a path under one that narrows it (`https://api.github.com/repos/acme/`, one owner's repositories). A call's repository API URL must lie under it. The token goes as a bearer token, with no user name.                                                                                                                                                                                              |
+| D15 | **Which credential a repository call carries**: the CI action's, for its dispatch and its Check, when it names one; else the project's (`projects.scm_credential_id`); else the instance SCM credential whose destination holds the repository's API URL, the narrowest first (the `scm_credentials` app setting, a list, since one token serves one host, all shared with all projects); else none, and the call reads the repository as a public one. A refused credential is logged, and the call goes on without it.                                                                                                                                                  |
+| D16 | **A provider opens its credential once, and logs each write.** Opening a credential for a repository's reads is one counted `scm-read` (D6). Each write (a pull-request comment, a commit status, a heal branch, commit or pull request, a dispatch) goes through `withCredential` again, as one row naming its pull request, commit, branch or CI action, so a Disable stops the next write.                                                                                                                                                                                                                                                                             |
+| D17 | **Both SCM tokens are imported** (D9's rules): a project token becomes a credential bound to the API of the project's repository and shared with it; the instance token one credential per API of the repositories it served (the projects without a token of their own), shared with all projects and listed as the instance's. A token whose project, or every project it served, has no repository yet is imported when the first one is pinned. `scmToken` leaves the project and AI settings APIs (`BREAKING CHANGE`); `hasScmToken` stays, true while a credential is set.                                                                                          |
 
 ## Design
 
 ### 1. The record
 
 `CredentialSummary` (`shared/credentials.ts`) is what the API answers, never with the secret: `id`, `name` (unique,
-ignoring case), `description`, `service` (`ci-server` in step 1), `user`, `destination` (the normalized base URL),
+ignoring case), `description`, `service` (`ci-server`, or `scm` for a repository host), `user`, `destination` (the normalized base URL),
 `scope` (`{ allProjects: true }` or `{ allProjects: false, projectIds }`), `allowedInputs` (null for every input),
 `customRequests` (D12), `secretEnv` and `secretEnvSet` (D13), `disabled`, `managedBy` (`db` or `env`), `createdAt`, `rotatedAt`, `lastUsedAt`, `usedBy` (the
 CI actions that name it) and `canManage`.
@@ -90,7 +96,7 @@ Tables, in both schemas:
   `secret_env` for D13, `created_by` for D5.
 - `credential_projects`: `(credential_id, project_id)`, deleted with either side.
 - `credential_uses`: `credential_id` (set null on delete) and `credential_name`, `feature` (`ci-dispatch`,
-  `ci-check`), `project_id`, `user_id`, `api_key_id`, `subject_type` and `subject_id` (the CI action), `destination`
+  `ci-check`, `scm-read`, `scm-comment`, `scm-status`, `scm-pull-request`), `project_id`, `user_id`, `api_key_id`, `subject_type` and `subject_id` (the CI action, the pull request, the commit or the branch), `destination`
   (origin and path, never the query), `result` (`sent`, `ok`, `failed`, `refused`), `reason`, `count`, `created_at`,
   `last_at`.
 
@@ -111,6 +117,13 @@ A CI server request plans its credential without the secret (`ciServerCredential
 `withCredential` builds it again with the secret inside `send`. The transport rules stay: `safeFetch`'s public-address
 check and the private-host rule of `PIWI_CI_SERVER_HOSTS`, and no redirect is followed.
 
+An SCM provider is opened for one repository (`openScmProvider`, `server/utils/scm/index.ts`): it picks the
+credential (D15), and `withCredential` opens it as one counted read, building the provider inside `send`; the provider
+holds the secret while it lives. Each write method of `ScmProvider` (`postPullRequestComment`, `postCommitStatus`,
+`createBranch`, `commitFiles`, `createPullRequest`, `dispatchRerun`) is a wrapper of the base class that runs the
+provider's `do…` hook through `write`, inside `withCredential` again with the write's feature and subject. A refused open leaves the provider without a token:
+a public repository still reads.
+
 ### 3. Pages and routes
 
 - **Settings → Credentials** (`credentials:manage`, and a Project admin for the credentials they manage): the list
@@ -120,10 +133,13 @@ check and the private-host rule of `PIWI_CI_SERVER_HOSTS`, and no redirect is fo
   the credential, and names them.
 - **The CI action editor**: a credential picker listing the ones shared with the project, **New credential** inline
   (shared with the project), and the request preview naming the credential it carries or saying it would refuse.
+- **Source control**: the project's **Credential** in its Source control settings, the instance's **SCM
+  credentials** in Settings → Source control (credentials shared with all projects), and a GitHub, GitLab or
+  Bitbucket action's **Credential**, each with **New credential** inline.
 - Routes: `GET/POST /api/credentials` (`?projectId=` lists a project's picker), `GET/PATCH/DELETE /api/credentials/:id`,
   `GET /api/credentials/:id/uses`, `GET /api/credentials/uses` (every credential's log). No MCP tool lists or uses a credential directly; the MCP tool that starts a dispatch
   goes through `withCredential` like the buttons, and its API key is the actor.
-- The demo seeds two credentials and a log, with no secret.
+- The demo seeds four credentials (two CI server, two GitHub) and a log, with no secret.
 
 ### 4. Consumers, in delivery order
 
@@ -150,6 +166,8 @@ check and the private-host rule of `PIWI_CI_SERVER_HOSTS`, and no redirect is fo
 | A Project admin loosens the rules of an administrator's credential shared with their project | Only its creator or `credentials:manage` changes it (D5)                                            |
 | A Custom request reaches a CI server's script console with a shared credential               | `customRequests`, off by default (D12)                                                              |
 | A Project admin probes other credentials through Check, by id                                | A posted action's credential is checked as a save checks it, one answer for missing and not shared  |
+| A token sent to another host than the one it was made for (a project's repository moved)     | The destination check against the repository's API URL at each open (D14)                           |
+| A token meant for one workflow dispatch also posting comments and statuses                   | A repository-host CI action names its own credential (D15)                                          |
 | A misuse goes unnoticed                                                                      | The log, with refusals (D4, D6); **Disable** stops every use at once while the incident is examined |
 
 ## Delivery
@@ -160,7 +178,8 @@ check and the private-host rule of `PIWI_CI_SERVER_HOSTS`, and no redirect is fo
    CI re-run page), the configuration reference. Supersedes D6 of [ci-actions.md](../adr/ci-actions.md), recorded
    when this proposal moves to `adr/`.
 2. **SCM.** The project and instance SCM credentials, a credential per repository-host CI action, the import of both
-   SCM tokens.
+   SCM tokens (D14 to D17), the pickers in a project's Source control settings, Settings → Source control and the CI
+   action editor, the demo and the docs.
 3. **Connections, channels and AI keys.** Their credentials move to the store, env-managed ones included.
 
 ## Not in this plan

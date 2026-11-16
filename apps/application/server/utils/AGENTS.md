@@ -15,7 +15,7 @@ in-app assistant).
 | `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
 | `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
 | `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
-| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`               | [Credentials](#credentials)                         |
+| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token | [Credentials](#credentials)                         |
 
 ## SCM providers
 
@@ -295,6 +295,10 @@ runs (`@piwitests/editor/run-host`), plus these:
   (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
   whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
   without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
+- **An SCM provider gets a token only from `openScmProvider`** (`scm/index.ts`), which picks the credential
+  (`scmCredentialFor`) and opens it through `withCredential` as one counted read. Every write of `ScmProvider` is a
+  public wrapper of the base class that runs a `do…` hook through `write`, so it is logged and checked again: a new
+  write is a hook behind such a wrapper, never a public override (`tests/unit/scm-credentials.test.ts`).
 - **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
   shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
   console with it.

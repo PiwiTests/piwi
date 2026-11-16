@@ -8,13 +8,14 @@ import {
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
 import { can } from '#shared/permissions';
+import { credentialReferenceText } from '#shared/credentials';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Credentials'],
     summary: 'Delete a credential',
     description:
-      'Deletes a credential and its secret. Its log stays, under the name it recorded, until the nightly sweep prunes it. A credential a CI action still names answers 409 with those actions (`data.usedBy`): pick another credential in each first. A credential the environment sets cannot be deleted (409). Someone who holds `credentials:manage` deletes any credential; a Project admin those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
+      'Deletes a credential and its secret. Its log stays, under the name it recorded, until the nightly sweep prunes it. A credential still named by a CI action, by the source control of a project or by that of the instance answers 409 with what names it (`data.usedBy`): pick another credential in each first. A credential the environment sets cannot be deleted (409). Someone who holds `credentials:manage` deletes any credential; a Project admin those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
@@ -39,10 +40,10 @@ export default eventHandler(async (event) => {
   }
   const usedBy = (await credentialReferences(db)).get(id) ?? [];
   if (usedBy.length > 0) {
-    const names = usedBy.map((r) => `"${r.actionName}" (${r.projectName})`).join(', ');
+    const names = usedBy.map(credentialReferenceText).join(', ');
     throw apiError({
       statusCode: 409,
-      message: `CI actions still name this credential: ${names}. Pick another credential in each first.`,
+      message: `Still named by ${names}: pick another credential in each first.`,
       data: { usedBy },
     });
   }

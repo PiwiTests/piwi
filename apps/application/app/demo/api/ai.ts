@@ -12,13 +12,12 @@
  * force-refresh snapshots the previous result into the version history first.
  */
 
-import { eq, and, isNotNull } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import {
   failureDiagnoses,
   failureDiagnosisVersions,
   testRunsCases,
   failureClusters,
-  projects,
 } from '../../../server/database/schema';
 import type { FailureDiagnosis } from '../../../server/database/schema';
 import { getDemoDb } from '../db.client';
@@ -30,7 +29,12 @@ import {
   mergeContextLimitsUpdate,
 } from '#shared/ai-context-limits';
 import type { ContextLimits } from '#shared/ai-context-limits';
-import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
+import { deleteAppSetting, getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
+import {
+  INSTANCE_SCM_CREDENTIALS_SETTING,
+  instanceScmCredentialsProblem,
+  readInstanceScmCredentialIds,
+} from '#shared/handlers/credentials';
 import { validatePatch } from '#shared/patch';
 import { hasFailureToDiagnose } from '#shared/ai-diagnosis';
 import { buildDiagnosisVersionValues } from '#shared/handlers/diagnosis-versions';
@@ -1012,9 +1016,8 @@ export async function apiStreamDiagnoseCluster(
 /** GET /api/settings/ai — presents a read-only, env-managed demo provider. */
 export async function apiGetAiSettings() {
   const db = await getDemoDb();
-  // SCM is configured only when a seeded/project token actually exists — the
-  // canned demo SCM needs no token, so this reads false unless one was stored.
-  const scmRows = await db.select({ id: projects.id }).from(projects).where(isNotNull(projects.scmToken)).limit(1);
+  // The instance's SCM credentials, as the server lists them; the canned demo SCM reads with none.
+  const scmCredentialIds = await readInstanceScmCredentialIds(db as never);
   const demoRole = {
     provider: 'demo',
     model: DEMO_MODEL,
@@ -1025,7 +1028,8 @@ export async function apiGetAiSettings() {
   return {
     roles: { diagnosis: demoRole, research: null, embedding: null, assistant: null },
     autoDiagnose: false,
-    hasScmToken: scmRows.length > 0,
+    hasScmToken: scmCredentialIds.length > 0,
+    scmCredentialIds,
     envManaged: true,
     customInstructions: null,
     language: null,
@@ -1038,7 +1042,27 @@ export async function apiGetAiSettings() {
 }
 
 /** PUT /api/settings/ai — no-op in demo (config is fixed). */
-export async function apiPutAiSettings(_body: unknown) {
+/** PUT /api/settings/ai — the demo keeps the provider read-only, and stores the instance's SCM credentials as the server does. */
+export async function apiPutAiSettings(body: unknown) {
+  const sent = (body ?? {}) as { scmToken?: unknown; scmCredentialIds?: unknown };
+  if (sent.scmToken !== undefined) {
+    throw demoHttpError(
+      400,
+      'An SCM token is saved as a credential (Settings → Credentials), then listed here with scmCredentialIds.',
+    );
+  }
+  if (sent.scmCredentialIds !== undefined) {
+    const raw = sent.scmCredentialIds ?? [];
+    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw demoHttpError(400, 'scmCredentialIds is a list of credential ids.');
+    }
+    const db = await getDemoDb();
+    const ids = [...new Set(raw as number[])];
+    const problem = await instanceScmCredentialsProblem(db as never, ids);
+    if (problem) throw demoHttpError(400, problem);
+    if (ids.length > 0) await setAppSetting(db as never, INSTANCE_SCM_CREDENTIALS_SETTING, { ids });
+    else await deleteAppSetting(db as never, INSTANCE_SCM_CREDENTIALS_SETTING);
+  }
   return { success: true };
 }
 

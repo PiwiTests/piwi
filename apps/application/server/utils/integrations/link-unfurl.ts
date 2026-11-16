@@ -24,7 +24,7 @@ const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: nu
  * (`projectConnectionId`) and no other. A link on that connection reads its
  * record through the connection's tracker; any other link keeps the generic
  * unfurl path (rich SCM/OpenGraph), which reads a Jira URL only through that
- * same connection, and uses the instance SCM token only for a repository pinned
+ * same connection, and uses the instance SCM credential only for a repository pinned
  * by a project in `readable`, the projects the caller can read.
  */
 export async function unfurlLink(

@@ -11,6 +11,7 @@ import { parse as parseYaml } from 'yaml';
 import { projects } from '../database/schema';
 import { checkCiServerTarget, type CiServerUse } from './ci-server-dispatch';
 import { createScmProvider } from './scm';
+import { CredentialRefusedError } from './credentials';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import {
   ciActionSentNames,
@@ -51,6 +52,7 @@ async function checkGithubAction(
   db: DbClient,
   projectId: number,
   action: CiAction & { target: { type: 'github' } },
+  use: CiServerUse,
 ): Promise<CiActionCheckResult> {
   const { workflow, ref } = action.target;
   if (/^\d+$/.test(workflow)) {
@@ -64,7 +66,21 @@ async function checkGithubAction(
     return { ok: null, missing: [], message: `"${workflow}" is not a workflow file name, such as e2e.yml.` };
   }
   const repositoryUrl = await readProjectRepositoryUrl(db, projectId);
-  const scm = repositoryUrl ? await createScmProvider(repositoryUrl, db, projectId) : null;
+  // The action's own credential is the one its dispatch carries: a refusal is the answer, never a public read.
+  const credentialId = action.target.credentialId ?? null;
+  let scm: Awaited<ReturnType<typeof createScmProvider>>;
+  try {
+    scm = repositoryUrl
+      ? await createScmProvider(repositoryUrl, db, projectId, {
+          actor: use.actor,
+          credentialId,
+          strict: !!credentialId,
+        })
+      : null;
+  } catch (e) {
+    if (!(e instanceof CredentialRefusedError)) throw e;
+    return { ok: null, missing: [], message: e.message };
+  }
   if (!scm || scm.provider !== 'github') {
     return {
       ok: null,
@@ -84,7 +100,7 @@ async function checkGithubAction(
     return {
       ok: null,
       missing: [],
-      message: `${path} could not be read at ${ref}: it is missing there, or the SCM token cannot read it.`,
+      message: `${path} could not be read at ${ref}: it is missing there, or the SCM credential cannot read it.`,
     };
   }
   let declared: string[] | null;
@@ -125,7 +141,7 @@ export async function checkCiAction(
   const target = action.target;
   switch (target.type) {
     case 'github':
-      return checkGithubAction(db, projectId, { ...action, target });
+      return checkGithubAction(db, projectId, { ...action, target }, use);
     case 'gitlab':
       return {
         ok: null,

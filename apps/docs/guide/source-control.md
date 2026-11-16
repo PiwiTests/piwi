@@ -1,14 +1,15 @@
 ---
 title: Source control
-description: "Connect the dashboard to your GitHub, GitLab or Bitbucket repository with an SCM token, and see which features read or write through it."
+description: "Connect the dashboard to your GitHub, GitLab or Bitbucket repository with an SCM credential, and see which features read or write through it."
 lang: en-US
 ---
 
 # Source control
 
 Piwi reads your repository through the Git host's API with an **SCM token** (a personal or project access token for
-GitHub, GitLab or Bitbucket). Nothing needs it to store runs, but every feature that looks at the code behind a
-failure, or writes back to a pull request, goes through it.
+GitHub, GitLab or Bitbucket), saved once as an [SCM credential](/operate/credentials#source-control). Nothing needs it
+to store runs, but every feature that looks at the code behind a failure, or writes back to a pull request, goes
+through it.
 
 ## What uses it
 
@@ -27,18 +28,26 @@ failure, or writes back to a pull request, goes through it.
 Every call is best-effort: a missing token, a private repository the token cannot see or an unreachable host is
 logged, and the feature shows nothing rather than failing a run.
 
-## Set the token
+## Set the credential
 
-- **Instance-wide**: **Settings → Source control**, field **SCM token** in its **Repository access** card. Every
-  project uses it unless it has its own.
-- **Per project**: **Project → Settings → Source control**, field **SCM token**. It overrides the instance-wide
-  token for that project. Prefer one per project for write access: an instance-wide write token can
-  write everywhere it reaches.
+Save the token under **Settings → Credentials** (**New credential**, service **Source control**), or with **New
+credential** beside either picker below. Its destination is the host's API, which the form offers in one click
+(`https://api.github.com/`, `https://gitlab.com/`, `https://api.bitbucket.org/`), or a path under it that keeps the
+token to one owner's repositories (`https://api.github.com/repos/acme/`). Then pick it:
 
-A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
-the field shows that one is stored. Leave the field empty to keep it. To remove it, click **Remove** beside the
-instance-wide token, then **Save**, or **Remove stored token** under the project field. The page stays open when the
-Source control [capability](/operate/capabilities) is declined, so a stored token can still be removed.
+- **Per project**: **Project → Settings → Source control**, field **Credential**. Prefer one per project for write
+  access: a token the instance shares can write everywhere it reaches.
+- **Instance-wide**: **Settings → Source control**, field **SCM credentials** in its **Repository access** card,
+  for every project that picks none. It lists credentials shared with all projects; for each repository, the one
+  whose destination holds the repository's API applies, the narrowest first, so one instance can hold a GitHub and a
+  GitLab token.
+- **Per CI action**: a GitHub, GitLab or Bitbucket action of [Re-run in CI](/features/ci-rerun) may name its own, so a
+  token that can only start workflows dispatches, and the project's keeps reading.
+
+The token is encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general), never returned by the API, sent
+only to its destination, and each use is in the credential's log. A token saved on a project or the instance before
+credentials existed is moved to one at startup, bound to the API of the repositories it served. The page stays open
+when the Source control [capability](/operate/capabilities) is declined, so the credentials can still be taken out.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
 A private repository needs one, except on the desktop app with a linked folder (below).
@@ -49,8 +58,8 @@ The [desktop app](/features/desktop) needs no token for the read features. When 
 [linked to a folder](/features/desktop#projects-from-local-folders) that is a clone of the repository (one of its
 remotes points at the run's remote URL), Piwi reads the commits, diffs and files with `git` in that folder, on your
 machine. A commit or branch the clone does not have is asked of the host as above, so run `git fetch` in the folder to
-see commits pushed since your last fetch. With a token set, the host is read instead, as on a server, and the write
-features always need one. A repository on another host (a self-hosted Bitbucket or Gitea, a GitLab host not listed
+see commits pushed since your last fetch. With a credential set, the host is read instead, as on a server, and the
+write features always need one. A repository on another host (a self-hosted Bitbucket or Gitea, a GitLab host not listed
 below) is read from the clone alone, token or not: what the clone does not have stays unavailable.
 
 ### Which repository
@@ -60,12 +69,12 @@ records the Git remote URL, the branch and the commit of the checkout it runs in
 [SCM information](/reference/test-metadata#scm-information-git)), and the first run that names a remote sets the
 field. A run whose remote names another repository is left out of every call that uses the token: its commits, diffs
 and source are not read, and nothing is written for it. A project admin can change the field, or clear it so that the
-next run sets it again. With the instance-wide token, a link to a repository no readable project uses is unfurled as a
-public page, without the token.
+next run sets it again. With the instance's credentials, a link to a repository no readable project uses is unfurled
+as a public page, without a token.
 
 Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. A remote on a host's SSH
 alias (`ssh.github.com`, `ssh.bitbucket.org`, `altssh.bitbucket.org`) names the same repository as on the host. List
-each self-hosted GitLab host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token
+each self-hosted GitLab host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends a token
 only to a host you named. A run without a remote URL has nothing to diff.
 
 ### Scopes
@@ -87,7 +96,8 @@ section is absent, it says why.
 - **No commits or diff.** The cluster's **What changed** line keeps the range, shows the host's error when it returned
   one (*GitHub error: Not Found*), and links the host's compare page when there is one; its help hint says what to set
   up: a commit and a repository URL on the run (the reporter reads both from the Git checkout the tests run in, the URL
-  from its `origin` remote), a host Piwi reads, an SCM token, or, with a token set, one that can read the repository.
+  from its `origin` remote), a host Piwi reads, an SCM credential, or, with one set, a token that can read the
+  repository. A refused credential (disabled, not shared with the project, or bound to another host) is in its log.
   A 404 from GitHub on a private repository means the token cannot see it. On the desktop app, the hint says to fetch
   the commits in the linked folder. The cluster's **More actions › Copy git log** copies the command that lists the
   range in your checkout.

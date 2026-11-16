@@ -21,7 +21,7 @@ Integrations, beside **Issue tracker**): a list of named [CI actions](#ci-action
 what it sends.
 
 Its buttons show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once an action serves the
-run (through the repository, with an SCM token) and a test has a path Playwright takes.
+run (through the repository, with an SCM credential) and a test has a path Playwright takes.
 
 *Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run the same tests on your
 machine. On a run's page, its menu adds run options the browser remembers (headed, trace, repeat each up to 10 without
@@ -86,7 +86,8 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch uses the project's [SCM token](/guide/source-control) with the scope above.
+The dispatch and **Check** carry the action's **Credential**, else the project's
+[SCM credential](/guide/source-control#set-the-credential), with the scope above.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the
 quoted arguments without a shell:
@@ -256,7 +257,7 @@ files.
 ## Related
 
 - [Pull-request feedback](./pr-feedback): the result posted on the pull request
-- [Source control](/guide/source-control): the SCM token and its scopes
+- [Source control](/guide/source-control): the SCM credential and its scopes
 - [Failure clusters](./failure-clusters): the clusters a re-run acts on
 - [Flake Lab](./flake-lab): the experiment a Flake Lab action runs in CI
 - [CLI](/reference/cli#rerun): the `rerun` command a pipeline runs

@@ -522,7 +522,7 @@ import {
   demoListCredentials,
   demoUpdateCredential,
 } from './credentials';
-import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
+import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -1029,17 +1029,29 @@ const routes: RouteEntry[] = [
     permission: 'project:manage',
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
-      // and every GET strips it.
       try {
         const db = await getDemoDb();
-        const update = body as Parameters<typeof updateProject>[2] & { ciServerToken?: unknown };
+        const update = body as Parameters<typeof updateProject>[2] & { ciServerToken?: unknown; scmToken?: unknown };
         if (update?.ciServerToken !== undefined) {
           throw demoHttpError(
             400,
             'ciServerToken is replaced by credentials: create one with POST /api/credentials and name its id in the CI server action’s credentialId.',
           );
+        }
+        if (update?.scmToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'scmToken is replaced by credentials: create one with POST /api/credentials (service scm) and name its id in scmCredentialId.',
+          );
+        }
+        if (typeof update?.scmCredentialId === 'number') {
+          const repository =
+            typeof update.repositoryUrl === 'string' && update.repositoryUrl.trim()
+              ? update.repositoryUrl
+              : ((await db.select({ url: projects.repositoryUrl }).from(projects).where(eq(projects.id, +m[1]!)))[0]
+                  ?.url ?? null);
+          const problem = await projectScmCredentialProblem(db as never, +m[1]!, update.scmCredentialId, repository);
+          if (problem) throw demoHttpError(400, problem);
         }
         assertDemoCiActions(update);
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).

@@ -31,7 +31,7 @@ let providerAvailable = true;
 const fetched: Array<[string, string]> = [];
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: () => 'github',
-  resolveScmToken: async () => null,
+  hasScmCredential: async () => false,
   createScmProvider: async () =>
     providerAvailable
       ? {

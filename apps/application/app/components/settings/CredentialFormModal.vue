@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /**
- * Create or change a credential in a modal: its name, user, secret,
- * destination, the projects that may use it, the inputs a request carrying it
- * may send, and whether a Custom request may carry it. The secret is
+ * Create or change a credential in a modal: its service (when it is created
+ * with none given), name, secret, destination and the projects that may use
+ * it; for a CI server, the user, the inputs a request carrying it may send,
+ * and whether a Custom request may carry it. An SCM credential's destination
+ * is a repository host's API, offered as one click per host. The secret is
  * write-only: left empty on a change, the stored one stays, and a new
  * destination asks for it again. An administrator may have it read from a
  * `PIWI_CREDENTIAL_*` variable of the server instead.
@@ -14,17 +16,25 @@ import {
   isCredentialSecretEnv,
   MAX_CREDENTIAL_DESCRIPTION_LENGTH,
   MAX_CREDENTIAL_NAME_LENGTH,
+  CREDENTIAL_SERVICE_LABELS,
+  CREDENTIAL_SERVICES,
   type CredentialService,
   type CredentialSummary,
 } from '#shared/credentials';
+import { SCM_API_DESTINATIONS } from '#shared/scm-urls';
 import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
 const props = defineProps<{
   /** The credential to change, or null to create one. */
   credential: CredentialSummary | null;
-  service: CredentialService;
+  /** The service of a credential to create; absent, the form asks for it. */
+  service?: CredentialService;
   /** The project a credential created from its settings starts shared with. */
   projectId?: number;
+  /** The destination a credential to create starts with (the API of a project's repository host). */
+  destination?: string | null;
+  /** Whether a credential to create starts shared with all projects (the instance's source control). */
+  allProjects?: boolean;
 }>();
 const emit = defineEmits<{ saved: [credential: CredentialSummary] }>();
 const open = defineModel<boolean>('open', { default: false });
@@ -47,6 +57,7 @@ const projectItems = computed(() =>
 );
 
 const blank = () => ({
+  service: (props.service ?? 'ci-server') as CredentialService,
   name: '',
   description: '',
   user: '',
@@ -71,6 +82,7 @@ watch(open, (isOpen) => {
   const c = props.credential;
   form.value = c
     ? {
+        service: c.service,
         name: c.name,
         description: c.description ?? '',
         user: c.user ?? '',
@@ -84,10 +96,25 @@ watch(open, (isOpen) => {
         allowedInputs: (c.allowedInputs ?? []).join(', '),
         customRequests: c.customRequests,
       }
-    : { ...blank(), projectIds: props.projectId ? [props.projectId] : [] };
+    : {
+        ...blank(),
+        destination: props.destination ?? '',
+        allProjects: Boolean(props.allProjects && shareAll.value),
+        projectIds: props.projectId ? [props.projectId] : [],
+      };
 });
 
 const editing = computed(() => props.credential !== null);
+/** The service is asked only for a credential created with none given. */
+const asksService = computed(() => !editing.value && !props.service);
+const SERVICE_ITEMS = CREDENTIAL_SERVICES.map((value) => ({ label: CREDENTIAL_SERVICE_LABELS[value], value }));
+const isScm = computed(() => form.value.service === 'scm');
+/** One click per repository host, for an SCM credential's destination. */
+const SCM_HOSTS = [
+  { label: 'GitHub', destination: SCM_API_DESTINATIONS.github },
+  { label: 'GitLab', destination: SCM_API_DESTINATIONS.gitlab },
+  { label: 'Bitbucket', destination: SCM_API_DESTINATIONS.bitbucket },
+];
 const SOURCE_ITEMS = [
   { label: 'Saved here, encrypted', value: 'saved' },
   { label: 'Read from a server variable', value: 'env' },
@@ -109,7 +136,11 @@ const destinationMoved = computed(
 function problem(): string | null {
   const f = form.value;
   if (!f.name.trim()) return 'Give the credential a name.';
-  if (!f.destination.trim()) return 'Enter the base URL the secret may be sent under.';
+  if (!f.destination.trim()) {
+    return isScm.value
+      ? 'Pick the host whose API the token is sent to.'
+      : 'Enter the base URL the secret may be sent under.';
+  }
   const destination = credentialDestinationProblem(f.destination.trim());
   if (destination) return destination;
   if (readsEnv.value) {
@@ -131,17 +162,21 @@ async function submit() {
   const body = {
     name: f.name.trim(),
     description: f.description.trim() || null,
-    service: props.service,
-    user: f.user.trim() || null,
+    ...(editing.value ? {} : { service: f.service }),
     destination: f.destination.trim(),
     scope: f.allProjects ? { allProjects: true } : { allProjects: false, projectIds: f.projectIds },
-    allowedInputs: f.everyInput
-      ? null
-      : f.allowedInputs
-          .split(',')
-          .map((name) => name.trim())
-          .filter(Boolean),
-    customRequests: f.customRequests,
+    ...(isScm.value
+      ? {}
+      : {
+          user: f.user.trim() || null,
+          allowedInputs: f.everyInput
+            ? null
+            : f.allowedInputs
+                .split(',')
+                .map((name) => name.trim())
+                .filter(Boolean),
+          customRequests: f.customRequests,
+        }),
     ...(readsEnv.value
       ? envChanged.value || destinationMoved.value || !editing.value
         ? { secretEnv: f.secretEnv.trim() }
@@ -176,16 +211,58 @@ async function submit() {
   <UModal v-model:open="open" :title="editing ? 'Edit credential' : 'New credential'">
     <template #body>
       <form method="post" class="space-y-4" data-testid="credential-form" @submit.prevent="submit">
+        <UFormField
+          v-if="asksService"
+          label="Service"
+          name="credentialService"
+          description="What it is sent to: a CI server, or a repository host's API."
+        >
+          <USelect
+            v-model="form.service"
+            :items="SERVICE_ITEMS"
+            aria-label="Credential service"
+            class="w-full"
+            data-testid="credential-service"
+          />
+        </UFormField>
         <UFormField label="Name" name="credentialName" required>
           <UInput
             v-model="form.name"
             :maxlength="MAX_CREDENTIAL_NAME_LENGTH"
-            placeholder="e.g. Jenkins · piwi-bot"
+            :placeholder="isScm ? 'e.g. GitHub · acme' : 'e.g. Jenkins · piwi-bot'"
             aria-label="Credential name"
             class="w-full"
           />
         </UFormField>
+        <FormFieldGroup
+          v-if="isScm"
+          label="Destination"
+          :description="`The API the token is sent to. A path under its repositories narrows it (${SCM_API_DESTINATIONS.github}repos/acme/); a self-hosted GitLab must be in PIWI_SCM_GITLAB_HOSTS.`"
+        >
+          <div class="space-y-2">
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="host in SCM_HOSTS"
+                :key="host.label"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                :class="form.destination === host.destination ? PRESSED_TOGGLE_CLASS : undefined"
+                :aria-pressed="form.destination === host.destination"
+                :label="host.label"
+                @click="form.destination = host.destination"
+              />
+            </div>
+            <UInput
+              v-model="form.destination"
+              :placeholder="SCM_API_DESTINATIONS.github"
+              aria-label="Credential destination"
+              class="w-full font-mono"
+            />
+          </div>
+        </FormFieldGroup>
         <UFormField
+          v-else
           label="Destination"
           name="credentialDestination"
           required
@@ -199,7 +276,7 @@ async function submit() {
           />
         </UFormField>
         <div class="grid gap-4 sm:grid-cols-2">
-          <UFormField label="User" name="credentialUser" description="For Basic auth, with the secret.">
+          <UFormField v-if="!isScm" label="User" name="credentialUser" description="For Basic auth, with the secret.">
             <UInput
               v-model="form.user"
               autocomplete="off"
@@ -254,12 +331,21 @@ async function submit() {
             v-model="form.secret"
             type="password"
             autocomplete="new-password"
-            :placeholder="editing && !credential?.secretEnv ? '•••••••• (unchanged)' : 'API token'"
+            :placeholder="
+              editing && !credential?.secretEnv ? '•••••••• (unchanged)' : isScm ? 'Access token' : 'API token'
+            "
             aria-label="Credential secret"
             class="w-full font-mono"
           />
         </UFormField>
-        <FormFieldGroup label="Projects" description="The projects whose CI actions may name it.">
+        <FormFieldGroup
+          label="Projects"
+          :description="
+            isScm
+              ? 'The projects whose source control and CI actions may name it.'
+              : 'The projects whose CI actions may name it.'
+          "
+        >
           <div class="space-y-2">
             <USwitch v-if="shareAll" v-model="form.allProjects" label="All projects, present and future" />
             <USelectMenu
@@ -275,6 +361,7 @@ async function submit() {
           </div>
         </FormFieldGroup>
         <FormFieldGroup
+          v-if="!isScm"
           label="Inputs"
           description="The CI action inputs a request carrying it may send, beside the arguments and the dispatch id."
         >
@@ -290,6 +377,7 @@ async function submit() {
           </div>
         </FormFieldGroup>
         <USwitch
+          v-if="!isScm"
           v-model="form.customRequests"
           label="Custom requests may carry it"
           description="A Custom request reaches any path under the destination, a script console included."

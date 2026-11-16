@@ -142,3 +142,61 @@ export function branchUrl(repositoryUrl: string | null | undefined, branch: stri
       return `${repo.base}/branch/${encoded}`;
   }
 }
+
+/**
+ * The API each host serves its repositories under, as an SCM credential's
+ * destination names it: the host's API origin, then the path of its
+ * repositories. A destination is the origin alone, or a path under the
+ * repositories' (one owner's, one repository's).
+ */
+const SCM_API: Record<ScmProviderName, { origin: string; repositories: string }> = {
+  github: { origin: 'https://api.github.com', repositories: '/repos/' },
+  gitlab: { origin: 'https://gitlab.com', repositories: '/api/v4/projects/' },
+  bitbucket: { origin: 'https://api.bitbucket.org', repositories: '/2.0/repositories/' },
+};
+
+/** The destination of an SCM credential for each host's whole API. */
+export const SCM_API_DESTINATIONS: Record<ScmProviderName, string> = {
+  github: `${SCM_API.github.origin}/`,
+  gitlab: `${SCM_API.gitlab.origin}/`,
+  bitbucket: `${SCM_API.bitbucket.origin}/`,
+};
+
+/**
+ * The host an SCM credential's destination is for, or null when it is none
+ * Piwi calls: the API of GitHub, Bitbucket, the GitLab cloud or a GitLab host
+ * of `gitlabHosts` (`PIWI_SCM_GITLAB_HOSTS`), over https, whole or narrowed to
+ * a path under its repositories.
+ */
+export function scmDestinationHost(
+  destination: string,
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): ScmProviderName | null {
+  let url: URL;
+  try {
+    url = new URL(destination);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.port || url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  const name = (Object.keys(SCM_API) as ScmProviderName[]).find(
+    (key) => new URL(SCM_API[key].origin).hostname === host,
+  );
+  const provider = name ?? (gitlabHosts.has(host) ? 'gitlab' : null);
+  if (!provider) return null;
+  const path = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  return path === '/' || path.startsWith(SCM_API[provider].repositories) ? provider : null;
+}
+
+/**
+ * The destination of an SCM credential for a repository's host, its whole
+ * API: GitHub's or Bitbucket's, or the GitLab host's (`https://gitlab.com/`,
+ * `https://gitlab.example.com/`). Null for a host Piwi has no client for.
+ */
+export function scmApiDestination(repositoryUrl: string | null | undefined): string | null {
+  const host = detectScmHost(repositoryUrl);
+  if (!host) return null;
+  if (host !== 'gitlab') return SCM_API_DESTINATIONS[host];
+  return `https://${canonicalScmHostname(new URL(repositoryUrl!).hostname)}/`;
+}

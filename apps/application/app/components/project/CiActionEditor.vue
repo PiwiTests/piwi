@@ -50,6 +50,19 @@ watch(open, (isOpen) => {
 });
 
 const isCiServer = computed(() => draft.value.type === 'jenkins' || draft.value.type === 'custom');
+/** The repository host a GitHub, GitLab or Bitbucket action dispatches on, whose SCM credential it may name. */
+const repositoryHost = computed(() =>
+  draft.value.type === 'github' || draft.value.type === 'gitlab' || draft.value.type === 'bitbucket'
+    ? draft.value.type
+    : null,
+);
+// Another host takes another credential: a change of the target's type within one draft drops the one picked.
+watch(
+  () => [draft.value, draft.value.type] as const,
+  ([current, type], [previous, previousType]) => {
+    if (current === previous && type !== previousType) current.scmCredentialId = null;
+  },
+);
 const sendsInputs = computed(() => draft.value.type !== 'custom');
 
 const KIND_HELP: Partial<Record<CiActionKind, string>> = {
@@ -184,7 +197,23 @@ function submit() {
             class="font-mono"
           />
         </div>
-        <div v-else class="rounded-md border border-default p-3">
+        <FormFieldGroup
+          v-if="repositoryHost"
+          label="Credential"
+          help="settings.credentials"
+          description="The SCM credential its dispatch and Check carry: one that may only start workflows keeps the project’s for reading."
+          data-testid="ci-action-scm-credential"
+          data-shot="ci-action-scm-credential"
+        >
+          <ScmCredentialPicker
+            v-model="draft.scmCredentialId"
+            :project-id="projectId"
+            :host="repositoryHost"
+            none-label="The project’s credential"
+            label="Dispatch credential"
+          />
+        </FormFieldGroup>
+        <div v-if="isCiServer" class="rounded-md border border-default p-3">
           <CiServerTargetFields
             v-model="draft.ciServer"
             v-model:problem="credentialProblem"

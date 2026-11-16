@@ -10,7 +10,8 @@ import {
   insertCredential,
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
-import { parseCredentialInput, type CredentialInput } from '#shared/credentials';
+import { parseCredentialInput, scmCredentialProblem, type CredentialInput } from '#shared/credentials';
+import { configuredGitlabHosts } from '../../utils/scm';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -18,7 +19,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Create a credential',
     description:
-      'Saves a credential: `{ name, service, secret, destination, scope, user?, description?, allowedInputs?, customRequests?, disabled? }`, or `secretEnv` in place of `secret`: the name of a `PIWI_CREDENTIAL_*` variable the secret is read from at each use, which only someone who holds `credentials:manage` may give (403), so no other variable of the server can be sent. `destination` is the base URL the secret may be sent under (an http(s) URL without a user, query or fragment), `scope` is `{ allProjects: true }` or `{ allProjects: false, projectIds }`, `allowedInputs` the CI action inputs a request carrying it may send (null or absent for every input), and `customRequests` whether a Custom CI server request may carry it (off by default). The secret, or the name of its variable, is encrypted with its destination and never returned, so saving a credential answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A name another credential has, ignoring case, answers 409. Someone who holds `credentials:manage` gives any scope; a Project admin names only projects they manage, and never all projects (403). Returns the credential as `GET /api/credentials/:id` does.',
+      'Saves a credential: `{ name, service, secret, destination, scope, user?, description?, allowedInputs?, customRequests?, disabled? }`, or `secretEnv` in place of `secret`: the name of a `PIWI_CREDENTIAL_*` variable the secret is read from at each use, which only someone who holds `credentials:manage` may give (403), so no other variable of the server can be sent. `destination` is the base URL the secret may be sent under (an http(s) URL without a user, query or fragment), `scope` is `{ allProjects: true }` or `{ allProjects: false, projectIds }`, `allowedInputs` the CI action inputs a request carrying it may send (null or absent for every input), and `customRequests` whether a Custom CI server request may carry it (off by default). `service` is `ci-server` or `scm`: an SCM credential is sent as a bearer token to the API of a repository host, so its destination is the API of GitHub, of Bitbucket, of the GitLab cloud or of a GitLab host of `PIWI_SCM_GITLAB_HOSTS`, over https, or a path under its repositories (one owner, on GitHub: `/repos/acme/`), it names no user (400 otherwise), and it takes no input list or Custom request. The secret, or the name of its variable, is encrypted with its destination and never returned, so saving a credential answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A name another credential has, ignoring case, answers 409. Someone who holds `credentials:manage` gives any scope; a Project admin names only projects they manage, and never all projects (403). Returns the credential as `GET /api/credentials/:id` does.',
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
 });
@@ -31,6 +32,15 @@ export default eventHandler(async (event) => {
   const parsed = parseCredentialInput(await readBody(event).catch(() => null), { partial: false });
   if (!parsed.value) throw apiError({ statusCode: 400, message: parsed.error });
   const input = parsed.value as CredentialInput;
+  if (input.service === 'scm') {
+    const problem = scmCredentialProblem(
+      { destination: input.destination, user: input.user ?? null },
+      configuredGitlabHosts(),
+    );
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+    input.allowedInputs = null;
+    input.customRequests = false;
+  }
   // Someone who holds credentials:manage gives any scope; a Project admin names only projects they manage.
   const refusal = can(access, 'credentials:manage') ? null : credentialScopeRefusal(access, input.scope);
   if (refusal) throw apiError({ statusCode: 403, message: refusal });

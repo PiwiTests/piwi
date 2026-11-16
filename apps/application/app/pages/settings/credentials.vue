@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * Settings → Credentials: the secrets Piwi sends to other services, each saved
- * once and named by the CI actions that use it. A credential opens in a panel
- * with what names it and its log; the environment's is listed read-only.
+ * once and named by the CI actions and the source control settings that use
+ * it. A credential opens in a panel with what names it and its log; the
+ * environment's is listed read-only.
  */
-import { CREDENTIAL_SERVICE_LABELS, type CredentialSummary } from '#shared/credentials';
+import { CREDENTIAL_SERVICE_LABELS, type CredentialReference, type CredentialSummary } from '#shared/credentials';
 import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
 type ListAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
@@ -34,6 +35,12 @@ const scopeText = (c: CredentialSummary) =>
     : c.scope.projectIds.length === 1
       ? projectName(c.scope.projectIds[0]!)
       : `${c.scope.projectIds.length} projects`;
+
+/** Where a reference is changed: a project's CI or Source control settings, or Settings → Source control. */
+function referenceLink(use: CredentialReference): string {
+  if (use.kind === 'instance-scm') return '/settings/source-control';
+  return `/projects/${use.projectId}?tab=settings&section=${use.kind === 'ci-action' ? 'ci' : 'source-control'}`;
+}
 
 const formOpen = ref(false);
 const editing = ref<CredentialSummary | null>(null);
@@ -111,7 +118,7 @@ async function remove() {
       <EmptyState
         v-if="credentials.length === 0"
         icon="i-lucide-key-round"
-        text="No credential yet. Save one here, then name it in a project’s CI actions."
+        text="No credential yet. Save one here, then name it in a project’s CI actions or Source control settings."
       />
       <ul v-else class="divide-y divide-default" data-testid="credential-list">
         <li v-for="credential in credentials" :key="credential.id">
@@ -140,7 +147,7 @@ async function remove() {
             <span class="text-xs text-muted">
               {{ CREDENTIAL_SERVICE_LABELS[credential.service]
               }}<template v-if="credential.user"> · {{ credential.user }}</template> · {{ scopeText(credential) }} ·
-              used by {{ credential.usedBy.length }} {{ credential.usedBy.length === 1 ? 'action' : 'actions' }}
+              used in {{ credential.usedBy.length }} {{ credential.usedBy.length === 1 ? 'place' : 'places' }}
             </span>
             <span class="text-xs text-muted font-mono break-all">{{ credential.destination }}</span>
           </button>
@@ -168,8 +175,10 @@ async function remove() {
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt class="text-muted">Service</dt>
             <dd class="text-highlighted">{{ CREDENTIAL_SERVICE_LABELS[selected.service] }}</dd>
-            <dt class="text-muted">User</dt>
-            <dd class="text-highlighted font-mono">{{ selected.user ?? '—' }}</dd>
+            <template v-if="selected.service === 'ci-server'">
+              <dt class="text-muted">User</dt>
+              <dd class="text-highlighted font-mono">{{ selected.user ?? '—' }}</dd>
+            </template>
             <dt class="text-muted">Destination</dt>
             <dd class="text-highlighted font-mono break-all">{{ selected.destination }}</dd>
             <dt class="text-muted">Projects</dt>
@@ -177,14 +186,16 @@ async function remove() {
               <template v-if="selected.scope.allProjects">All projects</template>
               <template v-else>{{ selected.scope.projectIds.map(projectName).join(', ') }}</template>
             </dd>
-            <dt class="text-muted">Inputs</dt>
-            <dd class="text-highlighted">
-              <template v-if="selected.allowedInputs === null">Every input</template>
-              <template v-else-if="selected.allowedInputs.length === 0">None</template>
-              <span v-else class="font-mono">{{ selected.allowedInputs.join(', ') }}</span>
-            </dd>
-            <dt class="text-muted">Custom requests</dt>
-            <dd class="text-highlighted">{{ selected.customRequests ? 'Allowed' : 'Refused' }}</dd>
+            <template v-if="selected.service === 'ci-server'">
+              <dt class="text-muted">Inputs</dt>
+              <dd class="text-highlighted">
+                <template v-if="selected.allowedInputs === null">Every input</template>
+                <template v-else-if="selected.allowedInputs.length === 0">None</template>
+                <span v-else class="font-mono">{{ selected.allowedInputs.join(', ') }}</span>
+              </dd>
+              <dt class="text-muted">Custom requests</dt>
+              <dd class="text-highlighted">{{ selected.customRequests ? 'Allowed' : 'Refused' }}</dd>
+            </template>
             <dt class="text-muted">Secret</dt>
             <dd class="text-highlighted">
               <template v-if="selected.managedBy === 'env'"
@@ -203,17 +214,12 @@ async function remove() {
           <div class="space-y-1">
             <p class="text-sm font-semibold text-highlighted">Used by</p>
             <p v-if="selected.usedBy.length === 0" class="text-sm text-muted">
-              No CI action names it{{ selected.managedBy === 'env' ? ': the actions that name none send it' : '' }}.
+              Nothing names it{{ selected.managedBy === 'env' ? ': the CI actions that name none send it' : '' }}.
             </p>
             <ul v-else class="space-y-0.5">
-              <li v-for="use in selected.usedBy" :key="`${use.projectId}-${use.actionId}`" class="text-sm">
-                <NuxtLink
-                  :to="`/projects/${use.projectId}?tab=settings&section=ci`"
-                  class="text-primary hover:underline"
-                >
-                  {{ use.actionName }}
-                </NuxtLink>
-                <span class="text-muted"> · {{ use.projectName }}</span>
+              <li v-for="use in selected.usedBy" :key="`${use.kind}-${use.projectId}-${use.actionId}`" class="text-sm">
+                <NuxtLink :to="referenceLink(use)" class="text-primary hover:underline">{{ use.name }}</NuxtLink>
+                <span class="text-muted"> · {{ use.projectName ?? 'the instance' }}</span>
               </li>
             </ul>
           </div>
@@ -249,7 +255,7 @@ async function remove() {
       </template>
     </USlideover>
 
-    <CredentialFormModal v-model:open="formOpen" :credential="editing" service="ci-server" @saved="saved" />
+    <CredentialFormModal v-model:open="formOpen" :credential="editing" @saved="saved" />
 
     <UModal
       :open="deleting !== null"

@@ -400,8 +400,9 @@ on all of them. A **group** is a named set of users that receives project roles 
 ### Credential
 
 **A secret Piwi sends to another service, saved once and named by id wherever it is needed**: a user, the secret, the
-destination (the base URL it may be sent under) and the projects that may use it. A CI server action names one; every
-use is checked against it and logged. See [Credentials](/operate/credentials).
+destination (the base URL it may be sent under) and the projects that may use it. A CI server action names one, and a
+project's source control names an SCM credential, whose token goes to a Git host's API; every use is checked against it
+and logged. See [Credentials](/operate/credentials).
 
 ## Words kept to one meaning
 

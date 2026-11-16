@@ -59,6 +59,8 @@ export interface CiActionDraft {
   github: { workflow: string; ref: string; argsInput: string; dispatchIdInput: string };
   gitlab: { ref: string; argsVariable: string };
   bitbucket: { pipeline: string; argsVariable: string };
+  /** The SCM credential a GitHub, GitLab or Bitbucket action's dispatch carries; null for the project's. */
+  scmCredentialId: number | null;
   ciServer: CiServerFormState;
   inputs: CiActionInputDraft[];
   accepts: CiActionKind[];
@@ -125,6 +127,7 @@ export function ciActionDraft(action: CiAction | null, settings?: CiActionsSetti
       pipeline: target?.type === 'bitbucket' ? target.pipeline : '',
       argsVariable: target?.type === 'bitbucket' ? target.argsVariable : 'PIWI_RERUN_ARGS',
     },
+    scmCredentialId: target && target.type !== 'ci-server' ? (target.credentialId ?? null) : null,
     ciServer: target?.type === 'ci-server' ? ciServerFormFromAction(target) : ciServerFormState(null),
     inputs: (action?.inputs ?? []).map(inputDraft),
     accepts: action ? [...action.accepts] : ['tests'],
@@ -192,6 +195,7 @@ function targetFromDraft(
   draft: CiActionDraft,
   instanceUrl: string | null,
 ): { target: CiActionTarget; error: null } | { target: null; error: string } {
+  const scmCredential = draft.scmCredentialId ? { credentialId: draft.scmCredentialId } : {};
   if (draft.type === 'github') {
     const { workflow, ref, argsInput, dispatchIdInput } = draft.github;
     if (!workflow.trim()) return { target: null, error: 'GitHub needs the workflow file to dispatch.' };
@@ -204,6 +208,7 @@ function targetFromDraft(
         ref: ref.trim(),
         argsInput: argsInput.trim(),
         ...(dispatchIdInput.trim() ? { dispatchIdInput: dispatchIdInput.trim() } : {}),
+        ...scmCredential,
       },
       error: null,
     };
@@ -213,7 +218,12 @@ function targetFromDraft(
       return { target: null, error: 'GitLab needs a ref and the variable that receives the arguments.' };
     }
     return {
-      target: { type: 'gitlab', ref: draft.gitlab.ref.trim(), argsVariable: draft.gitlab.argsVariable.trim() },
+      target: {
+        type: 'gitlab',
+        ref: draft.gitlab.ref.trim(),
+        argsVariable: draft.gitlab.argsVariable.trim(),
+        ...scmCredential,
+      },
       error: null,
     };
   }
@@ -229,6 +239,7 @@ function targetFromDraft(
         type: 'bitbucket',
         pipeline: draft.bitbucket.pipeline.trim(),
         argsVariable: draft.bitbucket.argsVariable.trim(),
+        ...scmCredential,
       },
       error: null,
     };

@@ -126,12 +126,12 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → Source control**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM credential (the project’s **Source control** settings, or **Settings → Source control**). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
     title: 'Host error',
-    text: 'Piwi asked the host for the commits in this range with the SCM token set, and the host answered with the error the line shows. A 403 or a 404 means the token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
+    text: 'Piwi asked the host for the commits in this range with the SCM credential set, and the host answered with the error the line shows. A 403 or a 404 means its token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
     doc: 'guide/source-control#troubleshooting',
   },
 
@@ -493,8 +493,8 @@ export const HELP_TOPICS = {
     doc: 'features/ai-diagnosis#custom-instructions',
   },
   'project.scm-token': {
-    title: 'SCM token',
-    text: 'A GitHub, GitLab or Bitbucket token Piwi reads the repository with (the commits and diffs behind a failure, uncovered changes, `CODEOWNERS`) and, with write access, posts pull-request feedback and opens auto-heal pull requests with. A project’s own token overrides the one in **Settings → Source control**. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads with git instead, without a token.',
+    title: 'SCM credential',
+    text: 'The credential (**Settings → Credentials**) whose GitHub, GitLab or Bitbucket token Piwi reads the repository with (the commits and diffs behind a failure, uncovered changes, `CODEOWNERS`) and, with write access, posts pull-request feedback and opens auto-heal pull requests with. It is sent only to the API of the repository’s host, and each use is logged. A project’s own goes before the instance’s, picked in **Settings → Source control**. On the desktop app, a project linked to a clone of its repository reads with git instead, without one.',
     doc: 'guide/source-control',
   },
   'case.stability-trend': {
@@ -564,7 +564,7 @@ export const HELP_TOPICS = {
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the project’s SCM token (which needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
     doc: 'features/ci-rerun',
     envVars: [
@@ -1313,13 +1313,13 @@ export const HELP_TOPICS = {
   },
   'settings.pr-feedback': {
     title: 'Pull-request feedback',
-    text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM token with write access.',
+    text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM credential with write access.',
     doc: 'features/pr-feedback',
     envVars: ['PIWI_SITE_URL'],
   },
   'settings.auto-heal': {
     title: 'Auto-heal pull requests',
-    text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM token with write access.',
+    text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM credential with write access.',
     doc: 'features/auto-heal',
     envVars: ['PIWI_SITE_URL'],
   },
@@ -1338,11 +1338,12 @@ export const HELP_TOPICS = {
   'settings.credentials': {
     title: 'Credentials',
     text: [
-      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token.',
+      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token, and a project’s source control picks the token it reads and writes its repository with.',
       '',
       '- **Destination**: the base URL the secret may be sent under. A request elsewhere is refused, and changing the destination asks for the secret again.',
       '- **Projects**: the projects that may use it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
-      '- **Inputs and Custom requests**: the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
+      '- **Inputs and Custom requests**: for a CI server, the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
+      '- **Source control**: a token sent to the API of GitHub, GitLab or Bitbucket, the whole API or a path under its repositories.',
       '- **Secret source**: saved here, encrypted, or, for an administrator, read at each use from a server variable named `PIWI_CREDENTIAL_…`.',
       '',
       'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
@@ -1352,7 +1353,7 @@ export const HELP_TOPICS = {
   },
   'settings.credentials.log': {
     title: 'Credential log',
-    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch is one row, settled once the CI server answers (`ok` or `failed`), and a Check is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
+    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch, a comment, a commit status or a pull request is one row, settled once the service answers (`ok` or `failed`), and a read (a Check, a repository read) is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
     doc: 'operate/credentials#the-log',
     envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS'],
   },

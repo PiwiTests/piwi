@@ -111,6 +111,11 @@ export class BitbucketProvider extends ScmProvider {
     this.base = `https://api.bitbucket.org/2.0/repositories/${workspace}/${repoSlug}`;
   }
 
+  /** The repository's API URL, which the credential's destination must hold. */
+  get apiUrl(): string {
+    return this.base;
+  }
+
   async listBranches(limit = 100): Promise<string[]> {
     const key = `${this.keyPrefix}:branches:${this.workspace}/${this.repoSlug}:${limit}`;
     const hit = listBranchesCache.get(key);
@@ -439,7 +444,7 @@ export class BitbucketProvider extends ScmProvider {
         if (res.status === 404)
           return 'Repository not found on Bitbucket. Check the remote URL in your test run metadata.';
         if (res.status === 401 || res.status === 403)
-          return 'Bitbucket API authentication failed. Check your SCM token in Settings → Source control.';
+          return 'Bitbucket API authentication failed. Check the SCM credential in Settings → Credentials.';
         return `Bitbucket API returned ${res.status}.`;
       }
       return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;
@@ -506,7 +511,7 @@ export class BitbucketProvider extends ScmProvider {
     return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
   }
 
-  override async postPullRequestComment(
+  protected override async doPostPullRequestComment(
     prNumber: number,
     marker: string,
     body: string,
@@ -584,7 +589,7 @@ export class BitbucketProvider extends ScmProvider {
     }
   }
 
-  override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
+  protected override async doPostCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
     if (!this.token || !isValidGitRef(sha)) return false;
     try {
       // Posting a key again replaces that status, so each run updates its own.
@@ -618,7 +623,7 @@ export class BitbucketProvider extends ScmProvider {
     return data.target?.hash ?? null;
   }
 
-  override async createBranch(name: string, fromSha: string): Promise<void> {
+  protected override async doCreateBranch(name: string, fromSha: string): Promise<void> {
     const res = await fetch(`${this.base}/refs/branches`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -628,7 +633,7 @@ export class BitbucketProvider extends ScmProvider {
     if (!res.ok) throw await bitbucketError(res, 'create branch');
   }
 
-  override async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+  protected override async doCommitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
     // Bitbucket's `/src` endpoint takes form fields: `message`, `branch`, and one
     // field per file keyed by its path — creating a single commit on that branch.
     const form = new URLSearchParams();
@@ -650,7 +655,7 @@ export class BitbucketProvider extends ScmProvider {
     return head;
   }
 
-  override async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+  protected override async doCreatePullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
     // Bitbucket Cloud has no draft pull requests; `input.draft` is ignored.
     const res = await fetch(`${this.base}/pullrequests`, {
       method: 'POST',
@@ -675,7 +680,7 @@ export class BitbucketProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(
+  protected override async doDispatchRerun(
     target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},

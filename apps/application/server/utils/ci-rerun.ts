@@ -13,7 +13,8 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
-import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
+import { readProjectRepositoryUrl } from './scm/project-repository';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, NO_RETRY_ARGS, toPosixPath, withRetryCases, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
@@ -173,7 +174,13 @@ async function dispatchReadiness(
   const pick = pickCiAction(settings, kind, { provider: detected, environment, actionId });
   const action = pick.action;
   const provider = action ? action.target.type : detected;
-  const hasScmToken = Boolean(await resolveScmToken(db, projectId));
+  const scmCredentialId = action && action.target.type !== 'ci-server' ? (action.target.credentialId ?? null) : null;
+  const hasScmToken = await hasScmCredential(
+    db,
+    projectId,
+    await readProjectRepositoryUrl(db, projectId),
+    scmCredentialId,
+  );
   if (!settings.enabled) {
     return {
       available: false,
@@ -213,8 +220,8 @@ async function dispatchReadiness(
   if (!hasScmToken) {
     const reason =
       kind === 'flakeLab'
-        ? 'No SCM token is configured to dispatch the experiment.'
-        : 'No SCM token is configured to dispatch the re-run.';
+        ? 'No SCM credential is set to dispatch the experiment: pick one in the project’s Source control settings.'
+        : 'No SCM credential is set to dispatch the re-run: pick one in the project’s Source control settings.';
     return { available: false, reason, provider, enabled: true, hasToken: false, action };
   }
   return { available: true, reason: null, provider, enabled: true, hasToken: true, action };
@@ -325,11 +332,16 @@ async function dispatchWithAction(
   if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
     throw new Error('No supported repository to dispatch to');
   }
-  const scm = await createScmProvider(repositoryUrl, db, input.projectId);
+  const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
+    // The virtual administrator of an instance without sign-in is id 0, no user row.
+    actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
+    credentialId: target.credentialId ?? null,
+    strict: true,
+  });
   if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
 
   const ref = input.runId ? await rerunRef(db, input.runId) : null;
-  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs });
+  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs, actionId: action.id });
   return {
     id,
     actionId: action.id,

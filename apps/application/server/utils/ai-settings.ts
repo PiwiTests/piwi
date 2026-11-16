@@ -10,6 +10,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
+import { readInstanceScmCredentialIds } from '#shared/handlers/credentials';
 import { canEncryptSecrets } from './crypto';
 import { claudeCliEnabled } from './ai-claude-cli';
 import { codexCliEnabled } from './ai-codex-cli';
@@ -211,13 +212,13 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
   const envAi = runtimeConfig.ai as Record<string, string | boolean | undefined> | undefined;
   const envManaged = Boolean(envAi?.provider);
 
-  const [instructions, scmTokenSetting, languageSetting] = await Promise.all([
+  const [instructions, scmCredentialIds, languageSetting] = await Promise.all([
     getAppSetting<{ value?: string }>(db, 'ai_instructions'),
-    getAppSetting<{ value?: string }>(db, 'scm_token'),
+    readInstanceScmCredentialIds(db),
     getAppSetting<{ value?: string }>(db, 'ai_language'),
   ]);
   const customInstructions = instructions?.value || null;
-  const hasScmToken = Boolean(scmTokenSetting?.value);
+  const hasScmToken = scmCredentialIds.length > 0;
   const languageEnvManaged = envAiLanguage() != null;
   const language = envAiLanguage() ?? languageSetting?.value?.trim() ?? null;
 
@@ -243,6 +244,7 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
     },
     autoDiagnose,
     hasScmToken,
+    scmCredentialIds,
     envManaged,
     customInstructions,
     language,

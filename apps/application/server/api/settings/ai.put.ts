@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
-import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
+import { INSTANCE_SCM_CREDENTIALS_SETTING, instanceScmCredentialsProblem } from '#shared/handlers/credentials';
 import {
   AI_ROLES,
   storedRoles,
@@ -21,7 +21,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` or `scmToken` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and the SCM credentials of the instance (`scmCredentialIds`: credentials of the source control service shared with all projects; an empty list clears them). Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
     'x-required-permission': 'settings:manage',
   },
 });
@@ -47,7 +47,7 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Custom instructions and SCM token are stored independently of the provider config.
+  // Custom instructions and the SCM credentials are stored independently of the provider config.
   if (body.customInstructions !== undefined) {
     const trimmed = body.customInstructions?.trim() || null;
     if (trimmed) await setAppSetting(db, 'ai_instructions', { value: trimmed });
@@ -62,10 +62,23 @@ export default eventHandler(async (event) => {
     else await deleteAppSetting(db, 'ai_language');
   }
 
-  if (body.scmToken !== undefined) {
-    const trimmed = body.scmToken?.trim() || null;
-    if (trimmed) await setAppSetting(db, 'scm_token', { value: encryptSecret(trimmed, getEncryptionKey()) });
-    else await deleteAppSetting(db, 'scm_token');
+  if ((body as { scmToken?: unknown }).scmToken !== undefined) {
+    throw apiError({
+      statusCode: 400,
+      message:
+        'An SCM token is saved as a credential (Settings → Credentials), then listed here with scmCredentialIds.',
+    });
+  }
+  if (body.scmCredentialIds !== undefined) {
+    const raw = body.scmCredentialIds ?? [];
+    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw apiError({ statusCode: 400, message: 'scmCredentialIds is a list of credential ids.' });
+    }
+    const ids = [...new Set(raw)];
+    const problem = await instanceScmCredentialsProblem(db, ids);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+    if (ids.length > 0) await setAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING, { ids });
+    else await deleteAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING);
   }
 
   // Only touch the provider config when the request actually carries it.

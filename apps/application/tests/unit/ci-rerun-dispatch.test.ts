@@ -15,7 +15,7 @@ const dispatched: Array<{ args: string; request: Record<string, unknown>; settin
 let answer: Record<string, unknown> = {};
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: (url: string | null) => (url?.includes('gitlab') ? 'gitlab' : url ? 'github' : null),
-  resolveScmToken: async () => 'token',
+  hasScmCredential: async () => true,
   createScmProvider: async () => ({
     provider: 'gitlab',
     dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {

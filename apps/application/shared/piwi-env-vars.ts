@@ -294,7 +294,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SECRET_KEY: {
     description:
-      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, SCM tokens, webhook and integration secrets). Required before the dashboard can save any of them.',
+      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, credentials, webhook and integration secrets). Required before the dashboard can save any of them.',
     category: 'general',
     secret: true,
     example: 'a 64-char random hex string',
@@ -1350,7 +1350,7 @@ export const PIWI_ENV_VARS = {
   // ── Integrations ─────────────────────────────────────────────────────────
   PIWI_SCM_GITLAB_HOSTS: {
     description:
-      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
+      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may send an SCM credential to. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
     category: 'integrations',
     destination: 'Your git host',
     type: 'list',

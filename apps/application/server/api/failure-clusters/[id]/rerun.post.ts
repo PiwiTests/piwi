@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'Re-run a cluster in CI',
     description:
-      "Dispatches the project's default CI action for re-runs to re-run exactly the cluster's affected tests, using the project's SCM token, or one request to the project's CI server when the action targets one. An optional `action` (a CI action id or exact name) picks a different action that accepts tests. Returns the provider's runs URL.",
+      "Dispatches the project's default CI action for re-runs to re-run exactly the cluster's affected tests, using the SCM credential of the action or the project, or one request to the project's CI server when the action targets one. An optional `action` (a CI action id or exact name) picks a different action that accepts tests. Returns the provider's runs URL.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       required: false,

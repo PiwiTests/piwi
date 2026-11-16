@@ -1,6 +1,6 @@
 ---
 title: Credentials
-description: "Save a secret Piwi sends to another service once, bind it to the address it may reach, share it with projects, and read the log of every use."
+description: "Save a secret Piwi sends to a CI server or a Git host once, bind it to the address it may reach, share it with projects, and read the log of every use."
 lang: en-US
 ---
 
@@ -8,7 +8,8 @@ lang: en-US
 
 A credential is a secret Piwi sends to another service, saved once under **Settings → Credentials** and named wherever
 it is needed. A CI server action of [Re-run in CI](/features/ci-rerun) picks one instead of repeating a user, a token
-and a base URL in every action and every project, and a rotation is one change. Every use is logged.
+and a base URL in every action and every project, and a project's [source control](/guide/source-control) picks the
+token it reads and writes its repository with. A rotation is one change, and every use is logged.
 
 <figure>
   <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins credentials, one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
@@ -19,13 +20,14 @@ and a base URL in every action and every project, and a rotation is one change. 
 
 | Field | What it is |
 |---|---|
+| **Service** | **CI server**, or **Source control** for a GitHub, GitLab or Bitbucket token. |
 | **Name** | Unique on the instance, ignoring case; the name the pickers and the log show. |
 | **Destination** | The base URL the secret may be sent under (`https://jenkins.example.com/`). A request to any other address, or outside its path, is refused. |
-| **User** | The user name sent with the secret as HTTP Basic authentication, when the service takes one. |
+| **User** | The user name sent with the secret as HTTP Basic authentication, when a CI server takes one. |
 | **Secret** | The API token, saved encrypted with `PIWI_SECRET_KEY`, together with the destination, or read from a server variable (below). Never returned by any page, API answer or log. |
-| **Projects** | The projects whose CI actions may name it: a list, or all projects, present and future. |
-| **Inputs** | The CI action inputs a request carrying it may send beside the arguments and the dispatch id: every input, or the names listed. |
-| **Custom requests** | Whether a Custom CI server request may carry it. Off by default: a Custom request can reach any path under the destination, a CI server's script console included. |
+| **Projects** | The projects that may name it: a list, or all projects, present and future. |
+| **Inputs** | For a CI server, the CI action inputs a request carrying it may send beside the arguments and the dispatch id: every input, or the names listed. |
+| **Custom requests** | For a CI server, whether a Custom request may carry it. Off by default: a Custom request can reach any path under the destination, a CI server's script console included. |
 
 Saving a secret needs `PIWI_SECRET_KEY` (see the [production checklist](./production-checklist)); without it, the
 form says so and nothing is saved. Changing the destination asks for the secret again, since the secret is sealed with
@@ -59,7 +61,8 @@ project's CI actions picks any credential shared with that project, without ever
 [Access, roles and groups](./project-access).
 
 **Disable** refuses every use of a credential at once, for an incident, without touching the actions that name it.
-**Delete** is refused while a CI action names the credential: the answer lists them.
+**Delete** is refused while something names the credential (a CI action, a project's or the instance's source
+control): the answer lists them.
 
 ## Using one in a CI action
 
@@ -69,6 +72,28 @@ credential the request carries, and says when the credential would refuse it.
 
 Each dispatch and each **Check** checks the credential again before anything is sent: still active, shared with the
 project, and holding the request's URL under its destination, and allowing a Custom request when the action sends one.
+
+## Source control
+
+A **Source control** credential holds a GitHub, GitLab or Bitbucket token, sent as a bearer token to the host's API.
+Its destination is that API: `https://api.github.com/`, `https://api.bitbucket.org/`, `https://gitlab.com/` or a GitLab
+host listed in `PIWI_SCM_GITLAB_HOSTS`, or a path under its repositories that keeps the token to one owner
+(`https://api.github.com/repos/acme/`). A repository whose API is not under it never gets the token. It is picked in
+three places, the first that applies winning:
+
+- a GitHub, GitLab or Bitbucket CI action's **Credential**, for its dispatch and its **Check**;
+- the project's **Credential**, in **Project → Settings → Source control**;
+- the instance's **SCM credentials**, in **Settings → Source control**: credentials shared with all projects, the one
+  whose destination holds the repository's API applying, the narrowest first.
+
+Opening it for a repository's reads is counted like a Check; each write (a pull-request comment, a commit status, an
+auto-heal branch, commit or pull request, a dispatch) is a row of its own, checked again before it is sent. A refused
+credential is logged, and the reads go on without it, as for a public repository; a dispatch is refused.
+
+The SCM tokens saved before credentials existed are moved at startup: a project's to a credential bound to the API of
+its repository and named by the project, the instance's to one per API of the repositories it served, shared with all
+projects and listed in **Settings → Source control**. A token whose project has no repository yet moves when the first
+run sets one.
 
 ## The instance credential
 
@@ -89,20 +114,22 @@ changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each 
 A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
 credential, a deleted one and the instance's included:
 
-- **What**: a CI dispatch, or a Check, with the CI action it was for.
+- **What**: a CI dispatch or a Check, with the CI action it was for; a repository read, a commit status, a
+  pull-request comment or an auto-heal write, with its commit, pull request or branch.
 - **Where**: the project, and the request's origin and path (never its query).
 - **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
   Checks, the last of the hour.
-- **How it ended**: `sent` until the CI server answers, then `ok` or `failed` with the status; `refused` when the
+- **How it ended**: `sent` until the service answers, then `ok` or `failed` with the status; `refused` when the
   credential's rules stopped it before anything was sent, with the reason.
 
-A dispatch is one row. A Check only reads, so the Checks of a project are counted in one row per result and hour. The
-secret is masked in any reason a CI server's answer holds. The log is kept 365 days, or
+A dispatch or another write is one row. A Check or a repository read only reads, so the reads of a project are counted
+in one row per result and hour. The secret is masked in any reason a service's answer holds. The log is kept 365 days, or
 `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` (0 keeps it forever), by the nightly sweep; a deleted credential's rows stay in the
 page's **Log**, under its name, until then.
 
 ## Related
 
 - [Re-run in CI](/features/ci-rerun): the CI actions that name a credential
+- [Source control](/guide/source-control): what reads and writes a repository with an SCM credential
 - [Access, roles and groups](./project-access): who holds `credentials:manage` and `project:manage`
 - [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts every secret

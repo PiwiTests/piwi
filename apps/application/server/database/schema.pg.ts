@@ -52,7 +52,10 @@ export const projects = pgTable(
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
-    scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
+    /** A project's SCM token (encrypted), which the startup import moves to a credential, emptying the column. */
+    scmToken: text('scm_token'),
+    /** The SCM credential the project's repository calls carry (`credentials.id`); null for the instance's. A credential is not deleted while a project names it. */
+    scmCredentialId: integer('scm_credential_id'),
     /** A project's CI server token (`{ url, token }`, encrypted), which the startup import moves to a credential, emptying the column. */
     ciServerToken: text('ci_server_token'),
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin

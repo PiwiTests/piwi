@@ -30,8 +30,8 @@ vi.mock('../../server/utils/scm', () => {
   };
   return {
     createScmProvider: vi.fn(async () => provider),
-    resolveScmToken: vi.fn(async () => 'token'),
-    scmProviderForUrl: vi.fn(() => ({
+    openScmProvider: vi.fn(async () => ({
+      hasToken: true,
       async fetchPullRequest(number: number) {
         return { title: null, state: scm.prStates[number] ?? 'open', author: null, url: null, updatedAt: null };
       },

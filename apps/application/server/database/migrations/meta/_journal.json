@@ -1247,6 +1247,13 @@
       "when": 1794858811087,
       "tag": "0177_credential_fk_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "6",
+      "when": 1794860255808,
+      "tag": "0178_project_scm_credential",
+      "breakpoints": true
     }
   ]
 }

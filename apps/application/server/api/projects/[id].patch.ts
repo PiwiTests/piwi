@@ -12,10 +12,12 @@ import {
   updateProject,
 } from '#shared/handlers/projects';
 import { recountProjectCoverage } from '../../utils/coverage-summary';
-import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
+import { configuredGitlabHosts } from '../../utils/scm';
+import { importScmTokens } from '../../utils/credentials';
+import { readProjectRepositoryUrl } from '../../utils/scm/project-repository';
 import { ciServerTargetProblem } from '#shared/ci-server';
 import { ciActionsProblem, hasCiActions, resolveCiActionsSettings } from '#shared/ci-actions';
-import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
+import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
 import { resolveServerProbeSettings } from '#shared/server-probes';
 import { projectTargetsSchema } from '#shared/analytics/targets';
 import { liveViewRelay } from '../../utils/live-view';
@@ -34,7 +36,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      "Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once, and turned on again, the runs that had a view and still run get it back), whether a signed-in reader of a run outside CI that is not shared live may ask its developer to share it (`askToWatch`, on by default; turning it off drops the asks that wait), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), the tag key patterns (`tagKeys`: `{ issue, testCase }`, each a regular expression without flags of at most 200 characters, tested against a tag without its `@`, that reads the issue key or the test case key out of a test’s tags; it is anchored with `^` and `$` and built from literals, escapes, character classes and quantifiers, with no groups or `|`; a pattern that is left out, null or empty is off, a pattern that breaks the rule, does not compile or matches an empty tag answers HTTP 400, and null turns both off), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. `ciRerun` is `{ enabled, actions, defaults }`: `actions` is a list of named CI actions (at most 20), each `{ id, name, target, inputs, accepts, environment }`. `target` is `{ type: 'github', workflow, ref, argsInput, dispatchIdInput? }`, `{ type: 'gitlab', ref, argsVariable }`, `{ type: 'bitbucket', pipeline, argsVariable }` or `{ type: 'ci-server', preset, baseUrl?, credentialId?, fields, custom? }` (a preset such as `jenkins` with its `fields`, or `custom` with its request; `credentialId` names a CI server credential shared with the project, whose destination is the base URL when `baseUrl` is absent, and without it the instance's credential is sent under `PIWI_CI_SERVER_URL`). `inputs` are sent beside the Playwright arguments, each `{ name, kind: 'fixed', value }` or `{ name, kind: 'choice', options, default }`; `accepts` lists `tests`, `suite` and `flakeLab`; `defaults` is `{ rerun?, flakeLab?, suite? }`, action ids. Names are unique in a project, ignoring case, and at most 80 characters; ids are unique; an input name is letters, digits and `_` (not starting with a digit), a fixed value or a choice option is at most 500 characters, a choice has at most 50 options, an action at most 20 inputs, and a GitLab or Bitbucket input may not be named `CI_*`, `GITLAB_*` or `BITBUCKET_*`. A repeat, a limit passed, an action without a name or a complete target, or a CI server target that cannot dispatch (an unknown preset, a missing required field, a base URL that is not an http(s) URL) answers 400 and leaves the stored settings as they are. A value with no `actions` list (`via`, `ciServer`, one block per provider) is converted to actions when it is saved. A CI server action whose credential, base URL or preset changed, and whose `credentialId` names a credential that does not exist, is not shared with the project or is set by the environment, whose `baseUrl` is not under the credential's destination, or a Custom request whose credential does not allow one, answers 400. `ciServerToken` answers 400: a CI server action names a credential instead (`POST /api/credentials`). Requires `project:manage` (Project admin on the project).",
+      "Updates project metadata including label, description, diagnosis instructions, the SCM credential, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once, and turned on again, the runs that had a view and still run get it back), whether a signed-in reader of a run outside CI that is not shared live may ask its developer to share it (`askToWatch`, on by default; turning it off drops the asks that wait), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), the tag key patterns (`tagKeys`: `{ issue, testCase }`, each a regular expression without flags of at most 200 characters, tested against a tag without its `@`, that reads the issue key or the test case key out of a test’s tags; it is anchored with `^` and `$` and built from literals, escapes, character classes and quantifiers, with no groups or `|`; a pattern that is left out, null or empty is off, a pattern that breaks the rule, does not compile or matches an empty tag answers HTTP 400, and null turns both off), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. `scmCredentialId` names the SCM credential the project's repository calls carry: a credential of the source control service shared with the project and, once the project has a repository, sent to the API of its host (400 otherwise); `null` falls back to the instance's SCM credentials. `scmToken` answers 400: an SCM token is saved as a credential (`POST /api/credentials`). `repositoryUrl` is the repository every SCM call of the project reads (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. `ciRerun` is `{ enabled, actions, defaults }`: `actions` is a list of named CI actions (at most 20), each `{ id, name, target, inputs, accepts, environment }`. `target` is `{ type: 'github', workflow, ref, argsInput, dispatchIdInput?, credentialId? }`, `{ type: 'gitlab', ref, argsVariable, credentialId? }`, `{ type: 'bitbucket', pipeline, argsVariable, credentialId? }` (`credentialId` names an SCM credential shared with the project and sent to that host's API, which its dispatch and Check carry instead of the project's) or `{ type: 'ci-server', preset, baseUrl?, credentialId?, fields, custom? }` (a preset such as `jenkins` with its `fields`, or `custom` with its request; `credentialId` names a CI server credential shared with the project, whose destination is the base URL when `baseUrl` is absent, and without it the instance's credential is sent under `PIWI_CI_SERVER_URL`). `inputs` are sent beside the Playwright arguments, each `{ name, kind: 'fixed', value }` or `{ name, kind: 'choice', options, default }`; `accepts` lists `tests`, `suite` and `flakeLab`; `defaults` is `{ rerun?, flakeLab?, suite? }`, action ids. Names are unique in a project, ignoring case, and at most 80 characters; ids are unique; an input name is letters, digits and `_` (not starting with a digit), a fixed value or a choice option is at most 500 characters, a choice has at most 50 options, an action at most 20 inputs, and a GitLab or Bitbucket input may not be named `CI_*`, `GITLAB_*` or `BITBUCKET_*`. A repeat, a limit passed, an action without a name or a complete target, or a CI server target that cannot dispatch (an unknown preset, a missing required field, a base URL that is not an http(s) URL) answers 400 and leaves the stored settings as they are. A value with no `actions` list (`via`, `ciServer`, one block per provider) is converted to actions when it is saved. A CI server action whose credential, base URL or preset changed, and whose `credentialId` names a credential that does not exist, is not shared with the project or is set by the environment, whose `baseUrl` is not under the credential's destination, or a Custom request whose credential does not allow one, answers 400. `ciServerToken` answers 400: a CI server action names a credential instead (`POST /api/credentials`). Requires `project:manage` (Project admin on the project).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -68,7 +70,9 @@ const updateProjectSchema = z.object({
   description: z.string().optional().nullable(),
   diagnosisInstructions: z.string().optional().nullable(),
   aiLanguage: z.string().max(60).optional().nullable(),
-  scmToken: z.string().optional().nullable(),
+  /** Refused with a 400: an SCM token is saved as a credential, which `scmCredentialId` names. */
+  scmToken: z.unknown().optional(),
+  scmCredentialId: z.number().int().positive().nullable().optional(),
   /** Refused with a 400: a CI server action names a credential (`credentialId`). */
   ciServerToken: z.unknown().optional(),
   repositoryUrl: z.string().max(2000).optional().nullable(),
@@ -144,6 +148,7 @@ export default eventHandler(async (event) => {
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    scmCredentialId,
     ciServerToken,
     repositoryUrl,
     defaultBranch,
@@ -165,10 +170,6 @@ export default eventHandler(async (event) => {
     tagIds,
   } = validation.data;
 
-  // Encrypt SCM token before persisting; omitted keeps the stored value, null or empty clears it
-  const encryptedScmToken =
-    scmToken === undefined ? undefined : scmToken?.trim() ? encryptSecret(scmToken.trim(), getEncryptionKey()) : null;
-
   // An action that cannot dispatch, a repeated name or id, or an input over its limits answers 400.
   const sentCiServer = (ciRerun as { ciServer?: unknown } | null | undefined)?.ciServer;
   const actionsProblem = ciActionsProblem(ciRerun);
@@ -189,12 +190,25 @@ export default eventHandler(async (event) => {
         'ciServerToken is replaced by credentials: create one with POST /api/credentials and name its id in the CI server action’s credentialId.',
     });
   }
-  // Each CI server action names a credential shared with this project, under whose destination it sends.
+  if (scmToken !== undefined) {
+    throw apiError({
+      statusCode: 400,
+      message:
+        'scmToken is replaced by credentials: create one with POST /api/credentials (service scm) and name its id in scmCredentialId.',
+    });
+  }
+  const gitlabHosts = configuredGitlabHosts();
+  // Each action's credential is shared with this project, and sent where the action sends.
   if (resolvedCiRerun) {
     const [stored] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, id));
     const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
-    const credentialProblem = await ciActionsCredentialProblem(db, id, resolvedCiRerun, storedActions);
+    const credentialProblem = await ciActionsCredentialProblem(db, id, resolvedCiRerun, storedActions, gitlabHosts);
     if (credentialProblem) throw apiError({ statusCode: 400, message: credentialProblem });
+  }
+  if (typeof scmCredentialId === 'number') {
+    const repository = repositoryUrl?.trim() ? repositoryUrl : await readProjectRepositoryUrl(db, id);
+    const problem = await projectScmCredentialProblem(db, id, scmCredentialId, repository ?? null, gitlabHosts);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
   }
 
   // The OpenAPI URL before the save: the declared surface is read again only when it changes.
@@ -211,7 +225,7 @@ export default eventHandler(async (event) => {
       description,
       diagnosisInstructions,
       aiLanguage,
-      scmToken: encryptedScmToken,
+      scmCredentialId,
       repositoryUrl,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
       openApiUrl: openApiUrl != null ? openApiUrl.trim() || null : openApiUrl,
@@ -242,6 +256,10 @@ export default eventHandler(async (event) => {
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
+      // A repository set here lets an SCM token that waited for one move to a credential.
+      if (repositoryUrl?.trim()) {
+        await importScmTokens(db).catch((err) => console.warn('[credentials] SCM token import failed', err));
+      }
       // The pages of the project's unfinished runs hear the settings; off, the views open now end and the runs' keys open
       // nothing while it stays off. On again, a run that still runs takes the keys it stores back. Either setting off
       // drops the asks to watch that wait.

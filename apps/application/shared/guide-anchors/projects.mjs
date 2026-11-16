@@ -494,7 +494,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses and generated specs.',
+      'The Source control section: the project’s repository, SCM credential, default branch, commit and gate statuses and generated specs.',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
@@ -504,7 +504,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The project’s SCM token: a read-only Git host token, stored encrypted, that lets diagnosis read the commits behind a failure.',
+      'The project’s SCM credential: the Git host token, saved under Settings → Credentials, that lets diagnosis read the commits behind a failure.',
     help: 'project.scm-token',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },

@@ -9,6 +9,7 @@
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
   apiKeys,
+  appSettings,
   credentialProjects,
   credentials,
   credentialUses,
@@ -31,6 +32,7 @@ import {
   type CredentialUseEntry,
   type CredentialUseResult,
 } from '#shared/credentials';
+import { detectScmHost, scmDestinationHost, shortCommit } from '#shared/scm-urls';
 import type { DrizzleDB } from './db';
 
 /** A credential's record, without its secret: what a use is planned and checked with. */
@@ -197,24 +199,63 @@ export function credentialScopeRefusal(access: AccessSummary, scope: CredentialI
   return outside === undefined ? null : 'A credential names only projects you manage.';
 }
 
-/** The CI actions that name each credential, by credential id. */
+/** The app setting that lists the instance's SCM credentials (`{ ids }`), the fallback of every project's repository calls. */
+export const INSTANCE_SCM_CREDENTIALS_SETTING = 'scm_credentials';
+
+/** The instance's SCM credentials, by id, in the order they were saved. */
+export async function readInstanceScmCredentialIds(db: DrizzleDB): Promise<number[]> {
+  const [row] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, INSTANCE_SCM_CREDENTIALS_SETTING));
+  const ids = (row?.value as { ids?: unknown } | undefined)?.ids;
+  return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
+}
+
+/** What names each credential, by credential id: CI actions, projects' source control, the instance's source control. */
 export async function credentialReferences(db: DrizzleDB): Promise<Map<number, CredentialReference[]>> {
-  const rows = await db
-    .select({ id: projects.id, name: projects.name, label: projects.label, ciRerun: projects.ciRerun })
-    .from(projects);
+  const [rows, instanceIds] = await Promise.all([
+    db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        label: projects.label,
+        ciRerun: projects.ciRerun,
+        scmCredentialId: projects.scmCredentialId,
+      })
+      .from(projects),
+    readInstanceScmCredentialIds(db),
+  ]);
   const references = new Map<number, CredentialReference[]>();
+  const add = (credentialId: number, reference: CredentialReference) => {
+    const list = references.get(credentialId) ?? [];
+    list.push(reference);
+    references.set(credentialId, list);
+  };
+  for (const id of instanceIds) {
+    add(id, { kind: 'instance-scm', projectId: null, projectName: null, actionId: null, name: 'Source control' });
+  }
   for (const project of rows) {
+    const projectName = project.label || project.name;
+    if (project.scmCredentialId != null) {
+      add(project.scmCredentialId, {
+        kind: 'project-scm',
+        projectId: project.id,
+        projectName,
+        actionId: null,
+        name: 'Source control',
+      });
+    }
     if (!project.ciRerun) continue;
     for (const action of resolveCiActionsSettings(project.ciRerun).actions) {
-      if (action.target.type !== 'ci-server' || action.target.credentialId == null) continue;
-      const list = references.get(action.target.credentialId) ?? [];
-      list.push({
+      if (action.target.credentialId == null) continue;
+      add(action.target.credentialId, {
+        kind: 'ci-action',
         projectId: project.id,
-        projectName: project.label || project.name,
+        projectName,
         actionId: action.id,
-        actionName: action.name,
+        name: action.name,
       });
-      references.set(action.target.credentialId, list);
     }
   }
   return references;
@@ -408,6 +449,15 @@ export function parseCredentialUsesFilter(query: Record<string, unknown>): Crede
   return { projectId: positive(query.projectId), feature, result, before: positive(query.before) };
 }
 
+/** How the log names a subject other than a CI action: a pull request, a commit or a branch. */
+function credentialSubjectName(type: string | null, id: string | null): string | null {
+  if (!id) return null;
+  if (type === 'pull-request') return `pull request #${id}`;
+  if (type === 'commit') return `commit ${shortCommit(id)}`;
+  if (type === 'branch') return `branch ${id}`;
+  return null;
+}
+
 /**
  * A page of a credential's log, or of every credential's (`credentialId`
  * null, deleted ones included), newest first, and the cursor of the next page.
@@ -473,7 +523,7 @@ export async function listCredentialUses(
       apiKey: row.apiKey ?? null,
       subjectType: row.subjectType ?? null,
       subjectId: row.subjectId ?? null,
-      subjectName: actionName(row),
+      subjectName: actionName(row) ?? credentialSubjectName(row.subjectType ?? null, row.subjectId ?? null),
       destination: row.destination ?? null,
       result: row.result as CredentialUseResult,
       reason: row.reason ?? null,
@@ -487,57 +537,115 @@ export async function listCredentialUses(
 
 type ActionLike = { id?: string; name: string; target: { type: string } & Record<string, unknown> };
 
+/** The repository hosts whose CI actions may name an SCM credential. */
+const SCM_TARGET_TYPES: readonly string[] = ['github', 'gitlab', 'bitbucket'];
+
 /** Whether a posted action names the credential, base URL and preset its stored version already did. */
 function unchangedCredentialUse(action: ActionLike, stored: readonly ActionLike[]): boolean {
   const before = stored.find((s) => s.id !== undefined && s.id === action.id);
-  if (!before || before.target.type !== 'ci-server') return false;
+  if (!before || before.target.type !== action.target.type) return false;
+  if (before.target.credentialId !== action.target.credentialId) return false;
+  if (before.target.type !== 'ci-server') return SCM_TARGET_TYPES.includes(before.target.type);
   return (
-    before.target.credentialId === action.target.credentialId &&
-    (before.target.baseUrl ?? null) === (action.target.baseUrl ?? null) &&
-    before.target.preset === action.target.preset
+    (before.target.baseUrl ?? null) === (action.target.baseUrl ?? null) && before.target.preset === action.target.preset
+  );
+}
+
+/** Whether a credential set in the database for `service` is shared with the project. */
+function sharedWith(record: CredentialRecord | undefined, service: CredentialService, projectId: number): boolean {
+  return (
+    !!record &&
+    record.managedBy === 'db' &&
+    record.service === service &&
+    (record.allProjects || record.projectIds.includes(projectId))
   );
 }
 
 /**
  * Why a project's CI actions cannot be saved with the credentials they name,
- * or null: each one must exist, be set in the database for a CI server, and be
- * shared with the project; an action's own base URL must lie under its
- * destination, and a Custom request needs a credential that allows one. The
- * same answer for a credential that does not exist and one not shared with
- * the project, so a project admin learns nothing of the others. With the
- * stored actions given, an action whose credential, base URL and preset are
- * unchanged is not checked again: a credential narrowed since then is refused
- * at dispatch, and does not block the project's other changes.
+ * or null: each one must exist, be set in the database for the action's
+ * service (a CI server, or the repository host's API for a GitHub, GitLab or
+ * Bitbucket action), and be shared with the project; a CI server action's own
+ * base URL must lie under its destination, and a Custom request needs a
+ * credential that allows one. The same answer for a credential that does not
+ * exist and one not shared with the project, so a project admin learns
+ * nothing of the others. With the stored actions given, an action whose
+ * credential, base URL and preset are unchanged is not checked again: a
+ * credential narrowed since then is refused at dispatch, and does not block
+ * the project's other changes. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`.
  */
 export async function ciActionsCredentialProblem(
   db: DrizzleDB,
   projectId: number,
   settings: { actions: ActionLike[] },
   stored: readonly ActionLike[] = [],
+  gitlabHosts: ReadonlySet<string> = new Set(),
 ): Promise<string | null> {
   const wanted = settings.actions.filter(
-    (a) =>
-      a.target.type === 'ci-server' && typeof a.target.credentialId === 'number' && !unchangedCredentialUse(a, stored),
+    (a) => typeof a.target.credentialId === 'number' && !unchangedCredentialUse(a, stored),
   );
   if (wanted.length === 0) return null;
   const records = new Map((await loadCredentialRecords(db)).map((r) => [r.id, r]));
   for (const action of wanted) {
     const id = action.target.credentialId as number;
     const record = records.get(id);
-    if (
-      !record ||
-      record.managedBy !== 'db' ||
-      record.service !== 'ci-server' ||
-      !(record.allProjects || record.projectIds.includes(projectId))
-    ) {
+    if (SCM_TARGET_TYPES.includes(action.target.type)) {
+      if (!sharedWith(record, 'scm', projectId)) {
+        return `"${action.name}": no SCM credential ${id} is shared with this project.`;
+      }
+      if (scmDestinationHost(record!.destination, gitlabHosts) !== action.target.type) {
+        return `"${action.name}": the credential "${record!.name}" is sent to ${record!.destination}, not to the API of this action's host.`;
+      }
+      continue;
+    }
+    if (!sharedWith(record, 'ci-server', projectId)) {
       return `"${action.name}": no CI server credential ${id} is shared with this project.`;
     }
     const baseUrl = typeof action.target.baseUrl === 'string' ? action.target.baseUrl : null;
-    if (baseUrl && !isUnderBaseUrl(record.destination, baseUrl)) {
-      return `"${action.name}": its base URL ${baseUrl} is not under ${record.destination}, where the credential "${record.name}" is sent.`;
+    if (baseUrl && !isUnderBaseUrl(record!.destination, baseUrl)) {
+      return `"${action.name}": its base URL ${baseUrl} is not under ${record!.destination}, where the credential "${record!.name}" is sent.`;
     }
-    if (action.target.preset === 'custom' && !record.customRequests) {
-      return `"${action.name}": the credential "${record.name}" does not go with a Custom request.`;
+    if (action.target.preset === 'custom' && !record!.customRequests) {
+      return `"${action.name}": the credential "${record!.name}" does not go with a Custom request.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Why a project cannot name this SCM credential, or null: it must exist, be
+ * set in the database for source control and be shared with the project, with
+ * one answer for the three; and, when the project has a repository, be sent
+ * to the API of the repository's host. `gitlabHosts` is `PIWI_SCM_GITLAB_HOSTS`.
+ */
+export async function projectScmCredentialProblem(
+  db: DrizzleDB,
+  projectId: number,
+  credentialId: number,
+  repositoryUrl: string | null,
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): Promise<string | null> {
+  const record = (await loadCredentialRecord(db, credentialId)) ?? undefined;
+  if (!sharedWith(record, 'scm', projectId)) return `No SCM credential ${credentialId} is shared with this project.`;
+  const host = detectScmHost(repositoryUrl);
+  if (host && scmDestinationHost(record!.destination, gitlabHosts) !== host) {
+    return `The credential "${record!.name}" is sent to ${record!.destination}, not to the API of this project's repository host.`;
+  }
+  return null;
+}
+
+/**
+ * Why the instance cannot list these SCM credentials, or null: each must
+ * exist, be set in the database for source control and be shared with all
+ * projects, since the instance's serve every project.
+ */
+export async function instanceScmCredentialsProblem(db: DrizzleDB, ids: readonly number[]): Promise<string | null> {
+  const records = new Map((await loadCredentialRecords(db)).map((r) => [r.id, r]));
+  for (const id of ids) {
+    const record = records.get(id);
+    if (!record || record.managedBy !== 'db' || record.service !== 'scm') return `No SCM credential ${id} exists.`;
+    if (!record.allProjects) {
+      return `The credential "${record.name}" is not shared with all projects, which the instance's credentials serve.`;
     }
   }
   return null;

@@ -436,7 +436,10 @@ export interface ProjectWithTestRuns {
   ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken?: boolean;
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
@@ -486,7 +489,10 @@ export interface ProjectDetails {
   label?: string | null;
   description?: string | null;
   diagnosisInstructions?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken: boolean;
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
@@ -1970,14 +1976,17 @@ export interface AiSettings {
     assistant: AiRoleSettings | null;
   };
   autoDiagnose: boolean;
+  /** Whether the instance has an SCM credential: `scmCredentialIds` is not empty. */
   hasScmToken: boolean;
+  /** The instance's SCM credentials, which a project's repository calls carry when the project names none. */
+  scmCredentialIds: number[];
   envManaged: boolean;
   customInstructions: string | null;
   /** The AI response language ("French", "Japanese", …); null keeps English prose. */
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
-  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key cannot be saved. */
   canStoreSecrets: boolean;
   /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
   claudeCliAvailable: boolean;
@@ -2011,7 +2020,8 @@ export interface SaveAiSettingsBody {
   roles?: Partial<Record<AiModelRole, AiRoleConfigInput | null>> | null;
   autoDiagnose?: boolean;
   customInstructions?: string | null;
-  scmToken?: string | null;
+  /** The instance's SCM credentials (`credentials.id`, source control, shared with all projects); empty clears them. */
+  scmCredentialIds?: number[] | null;
   /** The instance-wide AI response language; ignored when env-managed. */
   language?: string | null;
 }

@@ -65,9 +65,11 @@ export type CiActionTarget =
       argsInput: string;
       /** The input that receives the dispatch id, sent only when set. */
       dispatchIdInput?: string;
+      /** The SCM credential its dispatch and Check carry (`credentials.id`); absent, the project's. */
+      credentialId?: number;
     }
-  | { type: 'gitlab'; ref: string; argsVariable: string }
-  | { type: 'bitbucket'; pipeline: string; argsVariable: string }
+  | { type: 'gitlab'; ref: string; argsVariable: string; credentialId?: number }
+  | { type: 'bitbucket'; pipeline: string; argsVariable: string; credentialId?: number }
   | {
       type: 'ci-server';
       preset: CiServerPreset;
@@ -156,6 +158,11 @@ function rawCiServerTarget(target: Record<string, unknown>): Record<string, unkn
   };
 }
 
+/** A posted credential id: a positive integer, else absent. */
+function credentialIdOf(raw: unknown): { credentialId?: number } {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? { credentialId: raw } : {};
+}
+
 /** A target from an untrusted payload, or null when it cannot dispatch. */
 function resolveTarget(input: unknown): CiActionTarget | null {
   if (!isRecord(input)) return null;
@@ -165,17 +172,26 @@ function resolveTarget(input: unknown): CiActionTarget | null {
     const argsInput = str(input.argsInput);
     const dispatchIdInput = str(input.dispatchIdInput);
     if (!workflow || !ref || !argsInput) return null;
-    return { type: 'github', workflow, ref, argsInput, ...(dispatchIdInput ? { dispatchIdInput } : {}) };
+    return {
+      type: 'github',
+      workflow,
+      ref,
+      argsInput,
+      ...(dispatchIdInput ? { dispatchIdInput } : {}),
+      ...credentialIdOf(input.credentialId),
+    };
   }
   if (input.type === 'gitlab') {
     const ref = str(input.ref);
     const argsVariable = str(input.argsVariable);
-    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable } : null;
+    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable, ...credentialIdOf(input.credentialId) } : null;
   }
   if (input.type === 'bitbucket') {
     const pipeline = str(input.pipeline);
     const argsVariable = str(input.argsVariable);
-    return pipeline && argsVariable ? { type: 'bitbucket', pipeline, argsVariable } : null;
+    return pipeline && argsVariable
+      ? { type: 'bitbucket', pipeline, argsVariable, ...credentialIdOf(input.credentialId) }
+      : null;
   }
   if (input.type === 'ci-server') {
     const resolved = resolveCiServerTarget(rawCiServerTarget(input));

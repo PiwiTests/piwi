@@ -213,7 +213,7 @@ describe('parseCredentialInput', () => {
       return rest;
     };
     expect(error(without('name'))).toBe('A credential needs a name.');
-    expect(error(without('service'))).toBe('The service is one of ci-server.');
+    expect(error(without('service'))).toBe('The service is one of ci-server, scm.');
     expect(error(without('secret'))).toBe('A credential needs its secret, or the variable it is read from.');
     expect(error({ ...create, secret: '   ' })).toBe('A credential needs its secret, or the variable it is read from.');
     expect(error(without('destination'))).toMatch(/http\(s\) URL/);
@@ -239,7 +239,7 @@ describe('parseCredentialInput', () => {
     expect(error({ ...create, secret: 'a\nb' })).toBe('A secret holds no line break.');
     expect(error({ ...create, secret: 'a\0b' })).toBe('A secret holds no line break.');
     expect(error({ ...create, user: 'bot\r\nX-Injected: 1' })).toBe('A user name holds no line break.');
-    expect(error({ ...create, service: 'smtp' })).toBe('The service is one of ci-server.');
+    expect(error({ ...create, service: 'smtp' })).toBe('The service is one of ci-server, scm.');
   });
 
   test('refuses a destination that is not a plain http(s) base URL', () => {

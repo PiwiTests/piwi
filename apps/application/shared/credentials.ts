@@ -9,29 +9,45 @@
  */
 import { CI_INPUT_NAME } from '#shared/ci-actions';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl, urlPathClimbs } from '#shared/ci-server';
+import { SCM_API_DESTINATIONS, scmDestinationHost } from '#shared/scm-urls';
 
 /** What a credential is for: the pickers that list it and the requests that may carry it. */
-export const CREDENTIAL_SERVICES = ['ci-server'] as const;
+export const CREDENTIAL_SERVICES = ['ci-server', 'scm'] as const;
 export type CredentialService = (typeof CREDENTIAL_SERVICES)[number];
 
 export const CREDENTIAL_SERVICE_LABELS: Record<CredentialService, string> = {
   'ci-server': 'CI server',
+  scm: 'Source control',
 };
 
 /** The feature a use comes from. */
-export const CREDENTIAL_FEATURES = ['ci-dispatch', 'ci-check'] as const;
+export const CREDENTIAL_FEATURES = [
+  'ci-dispatch',
+  'ci-check',
+  'scm-read',
+  'scm-comment',
+  'scm-status',
+  'scm-pull-request',
+] as const;
 export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 
 export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'ci-dispatch': 'CI dispatch',
   'ci-check': 'CI check',
+  'scm-read': 'Repository read',
+  'scm-comment': 'Pull request comment',
+  'scm-status': 'Commit status',
+  'scm-pull-request': 'Branch, commit or pull request',
 };
 
 /**
  * The features whose uses only read: counted in one log row per credential,
  * feature, project, result and hour. Every other use is a row of its own.
  */
-export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = ['ci-check'];
+export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = ['ci-check', 'scm-read'];
+
+/** The features of an SCM provider's writes, each logged as a row of its own. */
+export type ScmWriteFeature = 'scm-comment' | 'scm-status' | 'scm-pull-request' | 'ci-dispatch';
 
 /** How a use ended: `sent` until the request answers, then `ok` or `failed`; `refused` when it was never sent. */
 export const CREDENTIAL_USE_RESULTS = ['sent', 'ok', 'failed', 'refused'] as const;
@@ -60,12 +76,24 @@ export function isCredentialSecretEnv(name: string): boolean {
 /** Which projects may use a credential. */
 export type CredentialScope = { allProjects: true } | { allProjects: false; projectIds: number[] };
 
-/** A CI action that names a credential. */
+/**
+ * What names a credential: a CI action, a project's source control, or the
+ * instance's source control (Settings → Source control).
+ */
 export interface CredentialReference {
-  projectId: number;
-  projectName: string;
-  actionId: string;
-  actionName: string;
+  kind: 'ci-action' | 'project-scm' | 'instance-scm';
+  /** The project; null for the instance's source control. */
+  projectId: number | null;
+  projectName: string | null;
+  /** The CI action's id, for a `ci-action`. */
+  actionId: string | null;
+  /** What names it: the CI action's name, or `Source control`. */
+  name: string;
+}
+
+/** A reference as a sentence names it: the CI action or `Source control`, then its project or the instance. */
+export function credentialReferenceText(reference: CredentialReference): string {
+  return `"${reference.name}" (${reference.projectName ?? 'the instance'})`;
 }
 
 /** A credential as its settings page shows it. Never its secret. */
@@ -112,7 +140,7 @@ export interface CredentialUseEntry {
   apiKey: string | null;
   subjectType: string | null;
   subjectId: string | null;
-  /** The CI action's name, while its project still has it. */
+  /** The CI action's name, while its project still has it; for another subject, how the log names it. */
   subjectName: string | null;
   destination: string | null;
   result: CredentialUseResult;
@@ -172,6 +200,21 @@ export function credentialDestinationProblem(raw: unknown): string | null {
   return typeof raw === 'string' && urlPathClimbs(raw)
     ? 'The destination path cannot hold a segment that climbs once decoded, such as ..%2F.'
     : 'The destination must be an http(s) URL, without a user, a query or a fragment.';
+}
+
+/**
+ * Why an SCM credential's fields cannot be saved, or null: its destination is
+ * a repository host's API ({@link scmDestinationHost}), and it names no user,
+ * since its token is sent as a bearer token.
+ */
+export function scmCredentialProblem(
+  fields: { destination: string; user: string | null },
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): string | null {
+  if (fields.user) return 'An SCM credential names no user: its token is sent as a bearer token.';
+  if (scmDestinationHost(fields.destination, gitlabHosts)) return null;
+  const { github, bitbucket, gitlab } = SCM_API_DESTINATIONS;
+  return `An SCM credential is sent to ${github}, ${bitbucket}, ${gitlab} or a GitLab host of PIWI_SCM_GITLAB_HOSTS, over https, or to a path under its repositories.`;
 }
 
 /**

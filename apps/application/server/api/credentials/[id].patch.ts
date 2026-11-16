@@ -10,9 +10,11 @@ import {
   credentialScopeRefusal,
   credentialSummary,
   loadCredentialRecord,
+  readInstanceScmCredentialIds,
   updateCredential,
 } from '#shared/handlers/credentials';
-import { parseCredentialInput } from '#shared/credentials';
+import { parseCredentialInput, scmCredentialProblem } from '#shared/credentials';
+import { configuredGitlabHosts } from '../../utils/scm';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -49,6 +51,25 @@ export default eventHandler(async (event) => {
   const { secret, service, ...patch } = parsed.value;
   if (service !== undefined && service !== record.service) {
     throw apiError({ statusCode: 400, message: 'A credential’s service cannot change: create another one.' });
+  }
+  if (record.service === 'scm') {
+    const problem = scmCredentialProblem(
+      {
+        destination: patch.destination ?? record.destination,
+        user: patch.user !== undefined ? patch.user : record.user,
+      },
+      configuredGitlabHosts(),
+    );
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+    delete patch.allowedInputs;
+    delete patch.customRequests;
+    if (patch.scope && !patch.scope.allProjects && (await readInstanceScmCredentialIds(db)).includes(id)) {
+      throw apiError({
+        statusCode: 409,
+        message:
+          'This credential is one of the instance’s SCM credentials, which serve every project: take it out of Settings → Source control first.',
+      });
+    }
   }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
     throw apiError({

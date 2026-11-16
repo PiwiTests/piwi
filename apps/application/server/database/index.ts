@@ -226,18 +226,22 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
- * Move the project CI server tokens (`projects.ci_server_token`) into
- * credentials (`importProjectCiServerTokens`). Startup waits for it, so no
- * dispatch runs while an action still waits for its credential. A token that
- * cannot be opened is left for the next start, and a failure is logged.
+ * Move the project CI server tokens (`projects.ci_server_token`) and the SCM
+ * tokens (`projects.scm_token`, the `scm_token` app setting) into credentials
+ * (`importProjectCiServerTokens`, `importScmTokens`). Startup waits for it, so
+ * no dispatch or repository call runs while it still waits for its credential.
+ * A token that cannot be opened, or waits for a repository, is left for later,
+ * and a failure is logged.
  */
 async function importProjectCiServerTokens(target: DB): Promise<void> {
   try {
-    const { importProjectCiServerTokens: importTokens } = await import('../utils/credentials');
+    const { importProjectCiServerTokens: importTokens, importScmTokens } = await import('../utils/credentials');
     const moved = await importTokens(target as any);
     if (moved) console.log(`[Database] CI server tokens of ${moved} project(s) moved to credentials`);
+    const scmMoved = await importScmTokens(target as any);
+    if (scmMoved) console.log(`[Database] ${scmMoved} SCM token(s) moved to credentials`);
   } catch (err) {
-    console.error('[Database] Moving the CI server tokens to credentials failed:', err);
+    console.error('[Database] Moving the CI server and SCM tokens to credentials failed:', err);
   }
 }
 
