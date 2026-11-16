@@ -161,6 +161,7 @@ import {
   type TestExecution,
   type FixPlan,
   type FlakeLabEntry,
+  type RunArgsAnswer,
 } from './piwi-client.js';
 import { testCard } from './test-card.js';
 import { requireDesktopProof } from './http.js';
@@ -491,6 +492,9 @@ const SCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
 /** The commands whose runs the hub names to Piwi Picker, at most. */
 const MAX_RUN_COMMANDS = 50;
+
+/** The longest the filters of a run by test id may be together, written by the service (`cmd.exe` stops at 8,191). */
+const MAX_TEST_FILTER_CHARS = 8000;
 
 /** The service's version, which the build writes in; `0.0.0-dev` unbundled. */
 declare const __PIWI_EDITOR_VERSION__: string | undefined;
@@ -4439,7 +4443,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
+    const own = ownTestFilters(context, answer.tests);
+    if (own) return own;
     return Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+  };
+
+  /**
+   * The filters of the tests the instance resolved, written by the service from their specs and lines as the checkout
+   * holds them (`locationArg`), so each takes its spec alone: each test by `file:line`, or each spec whole when that
+   * would make too long a command, a spec the checkout does not hold left out. Null when none is left, or the specs
+   * alone are too long: the run then takes the instance's own filters.
+   */
+  const ownTestFilters = (context: PiwiContext, tests: RunArgsAnswer['tests']): string[] | null => {
+    const held = tests.filter((t) => specLocation(context, t.filePath));
+    if (!held.length) return null;
+    const written = (locations: string[]) => {
+      const args = [...new Set(locations)].map((l) => locationArg(commandFolder(context), l));
+      // Each filter quoted, and a space.
+      return args.reduce((chars, arg) => chars + arg.length + 3, 0) <= MAX_TEST_FILTER_CHARS ? args : null;
+    };
+    return (
+      written(held.map((t) => (t.line ? `${t.filePath}:${t.line}` : t.filePath))) ??
+      written(held.map((t) => t.filePath))
+    );
   };
 
   /** The commands that run each test several times, by ref: what their end says when their run reaches no instance. */
@@ -4694,11 +4720,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
-  connection.onRequest(RUN_SELECTION_REQUEST, (params: RunSelectionParams): RunCommand | null => {
+  connection.onRequest(RUN_SELECTION_REQUEST, async (params: RunSelectionParams): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
     const selection = context?.selections.find((s) => s.key === params.key);
-    const args = selection ? playwrightArgsOf(selection.command) : null;
+    // Its tests by the service's own filters, else by the command the instance resolved it to.
+    const answer =
+      selection?.tests.size && context?.client && context.project
+        ? await context.client.runArgs(context.project.id, [...selection.tests]).catch(() => null)
+        : null;
+    const own = context && answer ? ownTestFilters(context, answer.tests) : null;
+    const args = own ?? (selection ? playwrightArgsOf(selection.command) : null);
     const command = args?.length ? playwrightTestCommand(args) : null;
     if (!context || !args || !command) return null;
     const ref = newRunRef();

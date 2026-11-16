@@ -414,6 +414,13 @@ export function forgetShared(answers: ResponseCache): void {
 /** The most attempts the instance answers for a test's history. */
 export const TEST_HISTORY_ROWS = 50;
 
+/** What the instance answers for running some tests: its own arguments and command, and each test's spec and line. */
+export interface RunArgsAnswer {
+  args: string[];
+  command: string;
+  tests: Array<{ filePath: string; line: number | null }>;
+}
+
 export class PiwiClient {
   /**
    * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; a
@@ -610,13 +617,24 @@ export class PiwiClient {
     return body.items ?? [];
   }
 
-  /** The Playwright arguments and command that run these tests, through the selection resolver. */
-  async runArgs(projectId: number, testIds: number[]): Promise<{ args: string[]; command: string }> {
-    const body = await this.post<{ materialization?: { args?: string[]; command?: string } }>(
+  /**
+   * The Playwright arguments and command that run these tests, through the selection resolver, and each test's spec
+   * (relative to the config's folder) and line, which the service writes as its own filters (`ownTestFilters`).
+   */
+  async runArgs(projectId: number, testIds: number[]): Promise<RunArgsAnswer> {
+    const body = await this.post<{ tests?: unknown; materialization?: { args?: string[]; command?: string } }>(
       `/api/projects/${projectId}/selections/preview`,
       { definition: { include: [{ ids: testIds }] }, format: 'args' },
     );
-    return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
+    const tests = Array.isArray(body.tests)
+      ? body.tests.flatMap((t: unknown) => {
+          const test = t as { filePath?: unknown; line?: unknown } | null;
+          if (!test || typeof test.filePath !== 'string') return [];
+          const line = typeof test.line === 'number' && Number.isInteger(test.line) && test.line > 0 ? test.line : null;
+          return [{ filePath: test.filePath, line }];
+        })
+      : [];
+    return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '', tests };
   }
 
   /**
