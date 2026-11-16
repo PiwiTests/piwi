@@ -743,7 +743,16 @@ export interface EditorCredentials {
    * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
    */
   mcpAuthorization?: McpAuthorization | null;
+  /**
+   * The running lines the client marks (`piwi/runningLine`), to a client that marks them
+   * (`InitializationOptions.runningLine`): `all`, each lane's of the runs the editor follows; `watched`, the lane's it
+   * watches alone; `off`, none. `all` when absent.
+   */
+  runningLines?: RunningLinesChoice | null;
 }
+
+/** The running lines the editor's setting marks (`EditorCredentials.runningLines`). */
+export type RunningLinesChoice = 'all' | 'watched' | 'off';
 
 /** The lines above the code the editor's setting shows (`EditorCredentials.codeLens`). */
 export type CodeLensChoice = 'all' | 'problems' | 'off';
@@ -800,8 +809,8 @@ export interface InitializationOptions {
    */
   shareWindow?: boolean;
   /**
-   * The client marks the line of the call the test of the lane it watches is in (`piwi/runningLine`). Without it, the
-   * service sends none.
+   * The client marks the line of the call each lane's running test is in (`piwi/runningLine`), as
+   * `EditorCredentials.runningLines` chooses. Without it, the service sends none.
    */
   runningLine?: boolean;
 }
@@ -2682,11 +2691,14 @@ export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
 
 /**
  * `piwi/runningLine` (notification, server to client), to a client that takes it (`InitializationOptions.runningLine`):
- * the call the running test of the lane the editor watches (`piwi/laneView`) is in, from the lane's call log, its
- * title (`Click getByRole('button', { name: 'Pay' })`) and its place in the run's code (`uri` and the 0-based `line`,
- * as a stop's: a client maps it through the edits since the run started); or null once the line goes: the test
- * ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run did. Sent only
- * when it differs from the last one sent for the lane, of the worker `worker` and its test `test` (Playwright's id).
+ * the call the running test of a lane is in, its title (`Click getByRole('button', { name: 'Pay' })`) and its place in
+ * the run's code (`uri` and the 0-based `line`, as a stop's: a client maps it through the edits since the run
+ * started); or null once the line goes: the test ended or stopped (a stop has a mark of its own), the call names no
+ * place, the worker left, the run ended, or the setting no longer marks the lane. Each lane of a run the editor follows
+ * (a desktop app's checkout left out) as `EditorCredentials.runningLines` chooses: the lane the editor watches
+ * (`piwi/laneView`) from its call log, every other one from its worker's positions, which an older reporter does not
+ * send. Sent only when it differs from the last one sent for the lane, of the worker `worker` and its test `test`
+ * (Playwright's id); the lines that changed go together, at most four times a second.
  */
 export interface RunningLine {
   ref: string;

@@ -808,7 +808,7 @@ class GlueTest {
     private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
 
     @Test
-    fun `the running line of a watched slot is marked until its test ends or stops, or its run ends`() {
+    fun `the running line of a slot is marked until its test ends or stops, or its run ends`() {
         val call = RunningCall("t1", "Click getByRole('button', { name: 'Pay' })", specUri, 7)
         val line = RunningLine("ed-1", 1, 3, call)
         val lines = Glue.withRunningLine(emptyMap(), line)
@@ -818,6 +818,12 @@ class GlueTest {
         assertEquals(mapOf(("ed-1" to 0) to other), Glue.withRunningLine(lines + (("ed-1" to 0) to other), line.copy(call = null)))
         assertEquals("Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })", Glue.runningLineText(line))
         assertEquals("Piwi: Worker 2 runs ${"x".repeat(59)}…", Glue.runningLineText(line.copy(call = call.copy(title = "x".repeat(80)))))
+        // Slots at one line are named in one text, each worker beside its call.
+        val fill = RunningLine("ed-1", 2, 4, call.copy(title = "Fill getByLabel('Name')"))
+        assertEquals(
+            "Piwi: Worker 1, Worker 2 run Click getByRole('button', { name: 'Pay' }); Worker 3 runs Fill getByLabel('Name')",
+            Glue.runningLineText(listOf(fill, line, other)),
+        )
 
         val running = mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest())))
         assertEquals(listOf(line), Glue.runningLinesShown(lines, running))
@@ -2561,7 +2567,7 @@ class GlueTest {
             "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
             "breakpoints" to Glue.BREAKPOINTS_CHOICES,
             "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
-            "codeLens" to Glue.CODE_LENS_CHOICES,
+            "codeLens" to Glue.CODE_LENS_CHOICES, "runningLines" to Glue.RUNNING_LINES_CHOICES,
         )
         assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
         // A team's option is the project's shared setting, a project's the person's in this project (`PiwiLocalSettings`),

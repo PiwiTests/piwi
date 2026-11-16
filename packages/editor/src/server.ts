@@ -209,6 +209,7 @@ import { OwnRunTests, type OwnRunTest } from './own-run-tests.js';
 import { RunSessions } from './run-sessions.js';
 import { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 import { ClientLaneView, ClientPageView } from './client-page-view.js';
+import { RunningLines } from './running-lines.js';
 import { RunHub } from './run-hub.js';
 import { StopActions, checkoutCopyWhy, checkoutRecordWhy } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
@@ -353,6 +354,7 @@ import {
   LANE_FRAME_NOTIFICATION,
   LANE_LAYER_NOTIFICATION,
   RUNNING_LINE_NOTIFICATION,
+  type RunningLinesChoice,
   type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
@@ -2167,8 +2169,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let stopsRuns = false;
   /** Whether the client runs a command the service built for an agent (`InitializationOptions.startsRuns`). */
   let startsRuns = false;
-  /** Whether the client marks the running call's line of the lane it watches (`InitializationOptions.runningLine`). */
+  /** Whether the client marks the running call's line of each lane (`InitializationOptions.runningLine`). */
   let marksRunningLine = false;
+  /** The running lines the client marks, as its setting chooses (`EditorCredentials.runningLines`); null for none. */
+  const runningLinesChoice = (): RunningLinesChoice | null => {
+    if (!marksRunningLine) return null;
+    const choice = credentials.runningLines;
+    return choice === 'watched' || choice === 'off' ? choice : 'all';
+  };
   /** The editor's display language, as `initialize` names it. */
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
@@ -2286,6 +2294,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The runs the service built, as their workers tell them on the run channel. */
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
+  let runningLines: RunningLines | null = null;
   /** Whether a page is one of the instance at `serverUrl`: its origin, and under its path. */
   const onInstance = (page: string, serverUrl: string): boolean => {
     try {
@@ -2323,11 +2332,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runTestsChanged();
       clientPageView?.changed();
       clientLaneView?.changed();
+      runningLines?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
       lineChanged();
     },
     presenceChanged: (session) => runHub?.push(session),
+    wantsPositions: () => runningLines?.wantsPositions() ?? false,
+    position: (at, call) => runningLines?.fromPosition(at, call),
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     // A reproduction the desktop app runs in a throwaway checkout holds its failures from its start, as the app's own.
@@ -2383,14 +2395,26 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     (frame) => connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
     () => clientName,
   );
+  runningLines = new RunningLines({
+    laneRunning: (ref, lane) => runSessions.laneRunning(ref, lane),
+    lanePositions: (ref, lane) => runSessions.lanePositions(ref, lane),
+    notify: (line) => connection.sendNotification(RUNNING_LINE_NOTIFICATION, line),
+    choice: runningLinesChoice,
+  });
   clientLaneView = new ClientLaneView(
     runSessions,
     (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
     () => clientName,
     (layer) => connection.sendNotification(LANE_LAYER_NOTIFICATION, layer),
-    (line) => connection.sendNotification(RUNNING_LINE_NOTIFICATION, line),
-    () => marksRunningLine,
+    runningLines,
   );
+  /** The running lines' choice changed: what is marked follows it, and the workers are asked for positions or not. */
+  const runningLinesSwitched = (before: RunningLinesChoice | null) => {
+    if (runningLinesChoice() === before) return;
+    runningLines?.switched();
+    void clientLaneView?.switched();
+    runSessions.positionsChanged();
+  };
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
     sessions: runSessions,
@@ -4974,7 +4998,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
+    const lines = runningLinesChoice();
     credentials = next ?? {};
+    runningLinesSwitched(lines);
     applyBaselines();
     // The failures read so far take the severity these credentials choose, the status item its alarm.
     publishFailures();
@@ -4993,6 +5019,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     shutDown = true;
     clientPageView?.dispose();
     clientLaneView?.dispose();
+    runningLines?.dispose();
     recordChannel?.close();
     recordChannel = null;
     runHub?.close();

@@ -183,6 +183,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                     checkBox("Show where a CI run of the branch stands, at the end of each line it runs")
                         .bindSelected({ user.ciPositions }, { user.ciPositions = it })
                 }
+                row {
+                    comboBox(Glue.RUNNING_LINES_CHOICES, ChoiceRenderer("runningLines"))
+                        .label("The line each running test of your run is at:", LabelPosition.TOP)
+                        .bindItem(
+                            { user.runningLines.takeIf { it in Glue.RUNNING_LINES_CHOICES } ?: "all" },
+                            { user.runningLines = it ?: "all" },
+                        )
+                        .comment("Marked with an inlay naming the worker; a worker of an older reporter only while the Worker tab watches it")
+                }
             }
             group(SettingsWords.GROUPS.getValue("agents")) {
                 kept("$YOURS_EXCEPT Serving the runs to agents is this project's, kept for you only in ${files.workspace}.", "agents")

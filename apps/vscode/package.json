@@ -1791,6 +1791,28 @@
             "markdownDescription": "While a CI run of the branch runs, show where each of its tests stands, at the end of that line. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
             "order": 6,
             "scope": "application"
+          },
+          "piwi.runningLines": {
+            "type": "string",
+            "default": "all",
+            "enum": [
+              "all",
+              "watched",
+              "off"
+            ],
+            "markdownDescription": "While your own run goes, mark the line of the call each running test is in, naming its worker. `watched` marks the line of the worker the Piwi panel watches alone; `off` marks none. A worker of an older reporter is marked only while watched. [Documentation](https://piwitests.dev/reference/editor-settings#in-the-editor)",
+            "enumDescriptions": [
+              "Every running test's line.",
+              "The line of the worker the Piwi panel watches alone.",
+              "None."
+            ],
+            "order": 7,
+            "scope": "application",
+            "enumItemLabels": [
+              "Every running test's",
+              "The watched worker's alone",
+              "None"
+            ]
           }
         }
       },

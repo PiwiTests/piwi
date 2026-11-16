@@ -1023,6 +1023,9 @@ object Glue {
      */
     val CODE_LENS_CHOICES = listOf("all", "problems", "off")
 
+    /** The running lines `piwi.runningLines` marks: every lane's, the watched one's alone, or none. */
+    val RUNNING_LINES_CHOICES = listOf("all", "watched", "off")
+
     /**
      * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
      * `sign-in`, through the instance's OAuth, for a token of its own.
@@ -2495,7 +2498,7 @@ object Glue {
     /** The accessible name of the Worker tab's image while it watches a CI run's worker. */
     const val CI_WORKER_PAGE_NAME = "The page of the CI worker's test"
 
-    /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
+    /** The running lines of the slots, by run and slot, with `line` heard: a line with no call goes. */
     fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {
         val key = line.ref to line.lane
         return if (line.call == null) lines - key else lines + (key to line)
@@ -2517,8 +2520,21 @@ object Glue {
         }
 
     /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */
-    fun runningLineText(line: RunningLine): String =
-        "Piwi: ${workerName(line.lane)} runs ${clipped(line.call?.title.orEmpty())}"
+    fun runningLineText(line: RunningLine): String = runningLineText(listOf(line))
+
+    /**
+     * The text after a line several slots' running calls are at, each worker named beside its call:
+     * `Piwi: Worker 2, Worker 4 run Click; Worker 3 runs Fill`.
+     */
+    fun runningLineText(lines: List<RunningLine>): String {
+        val calls = LinkedHashMap<String, MutableList<String>>()
+        for (line in lines.sortedWith(compareBy<RunningLine>({ it.ref }, { it.lane }))) {
+            calls.getOrPut(line.call?.title.orEmpty()) { mutableListOf() } += workerName(line.lane)
+        }
+        return "Piwi: " + calls.entries.joinToString("; ") { (title, workers) ->
+            "${workers.joinToString(", ")} ${if (workers.size > 1) "run" else "runs"} ${clipped(title)}"
+        }
+    }
 
     /**
      * The Page tab of the Piwi tool window: what the page of the watched slot says, one line each, as the lane's events

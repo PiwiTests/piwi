@@ -59,6 +59,7 @@ the choice of the desktop app on this machine only.
 | `piwi.locatorWarnings` | Whether a locator the [locator stability rules](/reference/locator-stability) find brittle is warned at, with its stable alternative as a quick fix | on | Yours |
 | `piwi.failingTestTint` | Whether a failing test and the line it failed at are tinted; the gutter still marks them, unless `piwi.gutterIcons` is off | on | Yours |
 | `piwi.ciPositions` | Whether a CI run of the branch shows where it stands, at the end of each line: [Editor CI runs](/features/editor-ci-runs) | on | Yours |
+| `piwi.runningLines` | Which lines of your run are marked as running: every running test's, the watched worker's alone, or none: [The running line](/features/watch-running-test#the-running-line) | Every running test's | Yours |
 
 ## Agents (MCP)
 

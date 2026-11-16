@@ -16,6 +16,11 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **The running line of every lane**: the editor marks the line each running test of your own run is at, whether or
+  not you watch its worker, the workers at one line named together, from a small `position` message each worker sends
+  on the run channel; `piwi.runningLines` marks every lane, the watched one alone, or none.
+  [adr/running-line-every-lane.md](adr/running-line-every-lane.md); see
+  [the running line](https://piwitests.dev/features/watch-running-test#the-running-line).
 - **An in-app assistant and guides**: a panel that answers questions about your runs, failures and setup with the AI
   model the instance already uses, reading only what you can read, through the MCP tools and the bundled docs. Its
   answers show code, validated patches, choices with checkboxes, checklists and guides on the real screens, and propose
@@ -162,10 +167,6 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   decisions are catalogued in [proposals/1.0-stabilization.md](proposals/1.0-stabilization.md).
 
 ## Exploring
-
-- **The running line of every lane** — the editor marks the line each running test of your own run is at, whether or
-  not you watch its lane, from a small `position` message each worker sends on the run channel. Design record in
-  [proposals/running-line-every-lane.md](proposals/running-line-every-lane.md).
 
 - **Demo examples in the docs** — every feature page links to a concrete example in the live demo (a verified flake
   fix, a stored AI diagnosis, a broken locator with its replacements), from one registry of examples the seed is

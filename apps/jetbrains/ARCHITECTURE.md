@@ -690,13 +690,14 @@ The watch goes on while the Worker tab or the Page tab is in sight, ends once ne
 shows (`laneSightChanged`, decided once the tool window's change of tabs is done); the run's end turns Watch off.
 
 **The running line and the Page tab.** The descriptor sends `runningLine` in the initialization options, so the
-service tells the call the watched slot's running test is in (`piwi/runningLine`, `PiwiRunSessions.runningLine`, taken
-only for the slot watched then): an inlay after that line in each editor of its file (`RunningLineInlay`, drawn as the
-count at the caret is), naming the worker and the call (`Glue.runningLineText`), at the line the edits since the run
-started brought it to. A file no editor shows is not read: its document is drawn in once an editor opens it
+service tells the call each slot's running test is in, as `piwi.runningLines` chooses (`runningLines` in the
+credentials; `piwi/runningLine`, `PiwiRunSessions.runningLine`, the lines told together drawn once): an inlay after that
+line in each editor of its file (`RunningLineInlay`, drawn as the count at the caret is), naming the worker and the
+call, the slots at one line in one inlay (`Glue.runningLineText`), at the line the edits since the run started brought
+it to. A file no editor shows is not read: its document is drawn in once an editor opens it
 (`getCachedDocument`, `editorCreated`), and a released editor is let go of (`editorReleased`). The service takes it
-away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot, as the
-run ends and as the watch does (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates it
+away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot and as
+the run ends (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates it
 sends none. The watched slot's console errors and uncaught errors, from the events layer the watch asks for anyway, go
 one line each into the **Page** tab of the Piwi tool window (`Glue.PageOutput`, `writePage`, a viewer `ConsoleView`),
 each test named before its first line; the tab is added, never selected, on the first line, and closes: closed by the

@@ -1005,6 +1005,7 @@ data class EditorCredentials(
     val statusBarAlert: String? = null,
     val codeLens: String? = null,
     val locatorWarnings: Boolean? = null,
+    val runningLines: String? = null,
 )
 
 /**
