@@ -223,9 +223,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val concepts = setOf(
             setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
             setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
-            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
-            setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify"),
-            setOf("Piwi.DebugTestAtCursor", "Piwi.Failure.Debug"),
+            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest", "Piwi.Tests.Run"),
+            setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify", "Piwi.Tests.Verify"),
+            setOf("Piwi.DebugTestAtCursor", "Piwi.Failure.Debug", "Piwi.Tests.Debug"),
             setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
             setOf(
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
@@ -1897,6 +1897,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(41, runs?.contexts?.single()?.run?.id)
                 assertEquals("Piwi: 1 failing", Glue.statusView(status, runs).text)
 
+                // The test tree, in the protocol's classes: the fixture has no Playwright, so its config's node says
+                // why, and the spec named is read from its text; its run, by the spec's own filter.
+                val checkoutSpec = File(dir, "tests/checkout.spec.ts").toURI().toString()
+                var items: TestItemsResult? = null
+                while (System.currentTimeMillis() < deadline) {
+                    items = server.testItems(TestItemsParams(uris = listOf(checkoutSpec))).get(5, TimeUnit.SECONDS)
+                    if (items?.contexts?.firstOrNull()?.listing?.error != null) break
+                    Thread.sleep(100)
+                }
+                val config = Glue.testsTree(items).single()
+                assertEquals("config", config.kind)
+                assertTrue(config.error.orEmpty(), config.error.orEmpty().startsWith("Playwright is not installed in "))
+                val specNode = config.children.flatMap { listOf(it) + it.children }
+                    .first { it.kind == "spec" && it.label == "checkout.spec.ts" }
+                val specRuns = server.testRuns(TestRunsParams(listOf(specNode.id))).get(5, TimeUnit.SECONDS)
+                assertEquals(listOf("tests/checkout.spec.ts"), specRuns?.single()?.locations)
+
                 // No desktop app runs here: Connect offers none.
                 assertEquals(null, server.desktop().get(5, TimeUnit.SECONDS)?.url)
 
@@ -2167,6 +2184,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     class TestClient : LanguageClient {
         @Volatile var runStatusChanges = 0
+
+        @JsonNotification("piwi/testItemsChanged")
+        fun testItemsChanged(result: TestItemsResult) {}
 
         val sessions = java.util.concurrent.CopyOnWriteArrayList<RunSession>()
 

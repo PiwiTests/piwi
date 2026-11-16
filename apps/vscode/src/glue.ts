@@ -38,7 +38,6 @@ import type {
   RunStartOptions,
   RunStatusResult,
   RunTestsArgs,
-  SpecTest,
   StatusResult,
   FileSummary,
   SummaryLine,
@@ -46,8 +45,11 @@ import type {
   TestFailure,
   TestItemsResult,
   TestLineStatus,
+  TestTreeNode,
+  TreeTest,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import { CONFIG_NODE } from '@piwitests/editor/protocol';
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import { editorWords } from '@piwitests/editor/words';
 import * as path from 'node:path';
@@ -1889,150 +1891,88 @@ export function withHiddenMessage(value: unknown, key: string): string[] | null 
   return hidden.includes(key) ? null : [...hidden, key];
 }
 
+/** Whether the nodes hold the spec at `uri`. */
+function holdsSpec(nodes: readonly TestTreeNode[], uri: string): boolean {
+  return nodes.some((n) => (n.kind === 'spec' && n.uri === uri) || holdsSpec(n.children, uri));
+}
+
+/** Whether a tree holds the spec at `uri`. */
+export function treeHoldsSpec(answer: TestItemsResult, uri: string): boolean {
+  return answer.contexts.some((c) => holdsSpec(c.nodes, uri));
+}
+
+/** The nodes without the spec at `uri`, and without a folder that held it alone. */
+function withoutSpec(nodes: readonly TestTreeNode[], uri: string): TestTreeNode[] {
+  return nodes.flatMap((n) => {
+    if (n.kind === 'spec' && n.uri === uri) return [];
+    if (n.kind !== 'folder' || !holdsSpec(n.children, uri)) return [n];
+    const children = withoutSpec(n.children, uri);
+    return children.length ? [{ ...n, children }] : [];
+  });
+}
+
+/** The nodes with `fresh` grafted in: a folder both hold takes the fresh one's children, any other fresh node replaces. */
+function grafted(nodes: readonly TestTreeNode[], fresh: readonly TestTreeNode[]): TestTreeNode[] {
+  const out = [...nodes];
+  for (const node of fresh) {
+    const at = out.findIndex((n) => n.id === node.id);
+    if (at < 0) out.push(node);
+    else if (node.kind === 'folder') out[at] = { ...out[at]!, children: grafted(out[at]!.children, node.children) };
+    else out[at] = node;
+  }
+  return out;
+}
+
 /**
- * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`) in place of it: a spec
- * the answer holds joins its Playwright config, in the order of the files; one it does not hold leaves the tree.
+ * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`, the spec with the
+ * folders above it) in place of it: a spec the answer holds joins its Playwright config; one it does not hold leaves
+ * the tree, with the folders it alone was in.
  */
 export function withSpec(answer: TestItemsResult, uri: string, spec: TestItemsResult): TestItemsResult {
-  const fresh = spec.contexts
-    .flatMap((context) => context.specs.map((s) => ({ context, s })))
-    .find((x) => x.s.uri === uri);
-  const contexts = answer.contexts.map((c) => ({ ...c, specs: c.specs.filter((s) => s.uri !== uri) }));
+  const fresh = spec.contexts.find((c) => holdsSpec(c.nodes, uri));
+  const contexts = answer.contexts.map((c) => ({ ...c, nodes: withoutSpec(c.nodes, uri) }));
   if (fresh) {
-    const into = contexts.find((c) => c.root === fresh.context.root);
-    if (into) into.specs = [...into.specs, fresh.s].sort((a, b) => a.file.localeCompare(b.file));
-    else contexts.push({ ...fresh.context, specs: [fresh.s] });
+    const into = contexts.find((c) => c.root === fresh.root);
+    if (into) into.nodes = grafted(into.nodes, fresh.nodes);
+    else contexts.push(fresh);
   }
-  return { contexts: contexts.filter((c) => c.specs.length) };
+  return { contexts: contexts.filter((c) => c.nodes.length || c.listing?.error) };
 }
 
 /** A test of the Testing view's tree, with the Playwright config it runs from. */
-export type TreeTest = SpecTest & { root: string; uri: string };
+export type { TreeTest };
 
-/** A node of the Testing view's Piwi tree: a Playwright config, a folder, a spec, a describe block or a test. */
-export interface TestNode {
-  /**
-   * Unique in the tree, and stable through the edits that move a test: its spec, its describe blocks and its title,
-   * joined by `\x1f` (VS Code refuses `\0` in an id).
-   */
-  id: string;
-  label: string;
-  kind: 'config' | 'folder' | 'spec' | 'suite' | 'test';
-  /** The spec's URI, on a spec, a describe block and a test. */
-  uri: string | null;
-  /** A test's 0-based lines, from the start of its `test(…)` call to its end. */
-  range: { start: number; end: number } | null;
-  /** On a test, what the service says of it. */
-  test: TreeTest | null;
-  /** How the view orders it among its siblings: folders before specs, by name; a spec's content as in the file. */
-  sortText: string;
+/**
+ * A node of the Testing view's Piwi tree: one of the service's (`piwi/testItems`), or a Playwright config's, which
+ * holds a config's nodes and says why Playwright could not list its tests.
+ */
+export interface TestNode extends Omit<TestTreeNode, 'kind' | 'children'> {
+  kind: TestTreeNode['kind'] | 'config';
+  /** Why Playwright could not list the config's tests, on a config's node. */
+  error?: string | null;
   children: TestNode[];
 }
 
 /**
- * The Testing view's tree of the tests the service lists (`piwi/testItems`): a node per Playwright config when there
- * are several, then each spec's folders, the spec, its describe blocks and its tests. Two tests of one title in the
- * same describe blocks of a spec are told apart by their order.
+ * The Testing view's tree of the service's answer: each config's nodes, under a node per config when there are several
+ * or when one could not be listed, which says why.
  */
 export function testTree(result: TestItemsResult): TestNode[] {
-  const several = result.contexts.length > 1;
-  const configs = result.contexts.map((context): TestNode => {
-    const config: TestNode = {
-      id: `config\x1f${context.root}`,
-      label: context.label,
-      kind: 'config',
-      uri: null,
-      range: null,
-      test: null,
-      sortText: context.label,
-      children: [],
-    };
-    const folders = new Map<string, TestNode>();
-    /** The node a spec's folder is, created with the folders above it. */
-    const folderOf = (parts: string[]): TestNode => {
-      let parent = config;
-      for (let i = 0; i < parts.length; i++) {
-        const key = parts.slice(0, i + 1).join('/');
-        let folder = folders.get(key);
-        if (!folder) {
-          folder = {
-            id: `folder\x1f${context.root}\x1f${key}`,
-            label: parts[i]!,
-            kind: 'folder',
-            uri: null,
-            range: null,
-            test: null,
-            sortText: `0${parts[i]}`,
-            children: [],
-          };
-          folders.set(key, folder);
-          parent.children.push(folder);
-        }
-        parent = folder;
-      }
-      return parent;
-    };
-    for (const spec of context.specs) {
-      const parts = spec.file.split('/');
-      const name = parts.pop()!;
-      const specNode: TestNode = {
-        id: spec.uri,
-        label: name,
-        kind: 'spec',
-        uri: spec.uri,
-        range: null,
-        test: null,
-        sortText: `1${name}`,
-        children: [],
-      };
-      folderOf(parts).children.push(specNode);
-      const suites = new Map<string, TestNode>();
-      const seen = new Map<string, number>();
-      for (const test of spec.tests) {
-        let parent = specNode;
-        for (let i = 0; i < test.suite.length; i++) {
-          const key = test.suite.slice(0, i + 1).join('\x1f');
-          let suite = suites.get(key);
-          if (!suite) {
-            // `\x1e`, not `\x1f`: a describe block and a test of the same title side by side are two items.
-            suite = {
-              id: `${spec.uri}\x1e${key}`,
-              label: test.suite[i]!,
-              kind: 'suite',
-              uri: spec.uri,
-              range: null,
-              test: null,
-              sortText: sortLine(test.line),
-              children: [],
-            };
-            suites.set(key, suite);
-            parent.children.push(suite);
-          }
-          parent = suite;
-        }
-        const key = [...test.suite, test.title].join('\x1f');
-        const count = (seen.get(key) ?? 0) + 1;
-        seen.set(key, count);
-        parent.children.push({
-          id: `${spec.uri}\x1f${key}${count > 1 ? `\x1f${count}` : ''}`,
-          label: test.title,
-          kind: 'test',
-          uri: spec.uri,
-          range: { start: test.line, end: test.endLine },
-          test: { ...test, root: context.root, uri: spec.uri },
-          sortText: sortLine(test.line),
-          children: [],
-        });
-      }
-    }
-    return config;
-  });
-  return several ? configs : (configs[0]?.children ?? []);
-}
-
-/** A line as text that sorts in its order. */
-function sortLine(line: number): string {
-  return String(line).padStart(6, '0');
+  const configs = result.contexts.length > 1 || result.contexts.some((c) => c.listing?.error);
+  if (!configs) return result.contexts[0]?.nodes ?? [];
+  return result.contexts.map((context): TestNode => ({
+    id: `${CONFIG_NODE}${context.root}`,
+    label: context.label,
+    kind: 'config',
+    uri: null,
+    range: null,
+    sortText: context.label,
+    runnable: true,
+    test: null,
+    project: null,
+    error: context.listing?.error ?? null,
+    children: context.nodes,
+  }));
 }
 
 /** The tests of a tree, leaves first-to-last. */
@@ -2053,6 +1993,12 @@ export const FLAKY_TAG = 'flaky';
 
 /** The Testing view's tag of a quarantined test: `@piwi:quarantined`. */
 export const QUARANTINED_TAG = 'quarantined';
+
+/**
+ * The Testing view's tag of every item a run takes (`@piwi:runnable`), which the run profiles are limited to: not the
+ * Not in this checkout group.
+ */
+export const RUNNABLE_TAG = 'runnable';
 
 /**
  * The tags the Testing view's filter finds a test by (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`): flaky, for a
@@ -2100,28 +2046,6 @@ export function failureMessage(failure: TestFailure | null): string {
   const message = failure?.message?.trim() ?? '';
   const why = [headline, message && message !== headline ? message : ''].filter(Boolean).join('\n\n') || 'Failed';
   return failure?.state === 'edited' ? `${why}\n\nThe line it failed at changed since the run.` : why;
-}
-
-/**
- * The runs of a Testing view's request: one per Playwright config, its tests by id when Piwi knows them all, else
- * every one by its location; with `repeat`, by their locations, that many times; to debug them (Debug with Piwi),
- * headed, holding their failures.
- */
-export function testRunsOf(tests: readonly TreeTest[], repeat?: number, debug = false): RunTestsArgs[] {
-  const byRoot = new Map<string, TreeTest[]>();
-  for (const t of tests) byRoot.set(t.root, [...(byRoot.get(t.root) ?? []), t]);
-  return [...byRoot].map(([root, held]) => {
-    const ids = held.map((t) => t.testCaseId);
-    const byId = !repeat && ids.every((id) => id !== null);
-    return {
-      uri: held[0]!.uri,
-      root,
-      testIds: byId ? [...new Set(ids as number[])] : [],
-      ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
-      ...(repeat ? { repeat } : {}),
-      ...(debug ? { headed: true, holdFailures: true, debugging: true } : {}),
-    };
-  });
 }
 
 /**

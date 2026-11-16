@@ -16,6 +16,13 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **The full test tree in both editors**: every test of the checkout as `playwright test --list` gives it, in VS
+  Code's Testing view and a Tests tab in JetBrains, a loop's tests one by one and a node per Playwright project, with
+  Piwi's results added from the instance and the tests only the instance knows apart. Any node runs by the narrowest
+  filter Playwright takes: a folder, a spec, a describe block, a test, a project. Design record in
+  [adr/ide-test-tree.md](adr/ide-test-tree.md); see
+  [runs from the editor](https://piwitests.dev/features/editor-runs#the-testing-view-vs-code).
+
 - **An in-app assistant and guides**: a panel that answers questions about your runs, failures and setup with the AI
   model the instance already uses, reading only what you can read, through the MCP tools and the bundled docs. Its
   answers show code, validated patches, choices with checkboxes, checklists and guides on the real screens, and propose
@@ -166,6 +173,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 - **The running line of every lane** — the editor marks the line each running test of your own run is at, whether or
   not you watch its lane, from a small `position` message each worker sends on the run channel. Design record in
   [proposals/running-line-every-lane.md](proposals/running-line-every-lane.md).
+
 
 - **Demo examples in the docs** — every feature page links to a concrete example in the live demo (a verified flake
   fix, a stored AI diagnosis, a broken locator with its replacements), from one registry of examples the seed is

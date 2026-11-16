@@ -90,8 +90,10 @@ data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, va
 data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
 /**
- * `piwi/testItems`: the catalog's specs the workspace holds, unless `catalog` is false, and the specs `uris` names, each
- * test as it stands with its latest result, for a client's own test tree (VS Code's Testing view).
+ * `piwi/testItems`: the tests of the workspace as a tree, for a client's own test tree. Under each Playwright config,
+ * the specs Playwright lists for it, each test as the listing gives it or as the spec's text reads while the spec has
+ * changes the listing has not seen, then the catalog's tests none of them is (`notInCheckout`). `catalog` false
+ * answers the specs `uris` names alone, each with the folders above it.
  */
 data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean? = null)
 
@@ -117,11 +119,62 @@ data class SpecTest(
     val resultDurationMs: Long? = null,
 )
 
-/** The tests of one spec, `file` relative to its Playwright config's folder. */
-data class SpecTestItems(val uri: String? = null, val file: String? = null, val tests: List<SpecTest>? = null)
+/**
+ * A test of the tree: a test of a spec as it stands (`SpecTest`), the folder of the Playwright config it runs from, its
+ * spec (empty for a test the checkout does not hold) and Playwright's id of it in each project, from the listing.
+ */
+data class TreeTest(
+    val title: String? = null,
+    val suite: List<String>? = null,
+    val line: Int = 0,
+    val endLine: Int = 0,
+    val location: String? = null,
+    val testCaseId: Int? = null,
+    val status: String? = null,
+    val failure: TestFailure? = null,
+    val url: String? = null,
+    val tags: List<String>? = null,
+    val owner: String? = null,
+    val quarantined: Boolean = false,
+    val resultDurationMs: Long? = null,
+    val root: String? = null,
+    val uri: String? = null,
+    val playwright: List<PlaywrightTestId>? = null,
+)
 
-/** The specs of each Playwright config holding one, in the configs' order. */
-data class TestItemsContext(val root: String? = null, val label: String? = null, val specs: List<SpecTestItems>? = null)
+/** Playwright's id of a test in one of its projects. */
+data class PlaywrightTestId(val project: String? = null, val id: String? = null)
+
+/** 0-based lines, `start` to `end` inclusive. */
+data class LineRange(val start: Int = 0, val end: Int = 0)
+
+/**
+ * A node of the test tree: `kind` is `folder`, `spec`, `describe`, `test`, `project` or `notInCheckout`; `runnable` is
+ * false in the `notInCheckout` group.
+ */
+data class TestTreeNode(
+    val id: String? = null,
+    val label: String? = null,
+    val kind: String? = null,
+    val uri: String? = null,
+    val range: LineRange? = null,
+    val sortText: String? = null,
+    val runnable: Boolean = false,
+    val test: TreeTest? = null,
+    val project: String? = null,
+    val children: List<TestTreeNode>? = null,
+)
+
+/** A config's listing: when it was last listed whole (ms since the epoch), why the last listing failed, and if one runs. */
+data class TestListing(val at: Long? = null, val error: String? = null, val running: Boolean = false)
+
+/** One Playwright config's tree: its folders and specs, then the `notInCheckout` group. */
+data class TestItemsContext(
+    val root: String? = null,
+    val label: String? = null,
+    val listing: TestListing? = null,
+    val nodes: List<TestTreeNode>? = null,
+)
 
 data class TestItemsResult(val contexts: List<TestItemsContext>? = null)
 
@@ -234,6 +287,24 @@ data class RunTestsArgs(
     val holdFailures: Boolean? = null,
     /** A Debug with Piwi run, which pauses at the IDE's breakpoints while `breakpoints` is `debug`; `debug` is one too. */
     val debugging: Boolean? = null,
+    /** Every test of the config, in place of `locations` and `testIds`. */
+    val all: Boolean? = null,
+    /** The Playwright projects the tests run in alone (`--project`); every project when absent. */
+    val projects: List<String>? = null,
+    /** The title filters of one test of a line that holds several (`--grep`, `--grep-invert`). */
+    val grep: String? = null,
+    val grepInvert: String? = null,
+)
+
+/**
+ * `piwi/testRuns`: the runs of the test tree's nodes picked (a config's node is `config` + `\u001f` + its folder),
+ * without those `exclude` names under them, each by the narrowest filter Playwright takes for it.
+ */
+data class TestRunsParams(
+    val nodes: List<String>,
+    val exclude: List<String>? = null,
+    val repeat: Int? = null,
+    val debug: Boolean? = null,
 )
 
 /**
@@ -1628,6 +1699,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testItems")
     fun testItems(params: TestItemsParams): CompletableFuture<TestItemsResult?>
+
+    @JsonRequest("piwi/testRuns")
+    fun testRuns(params: TestRunsParams): CompletableFuture<List<RunTestsArgs>?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>

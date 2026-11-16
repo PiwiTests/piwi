@@ -227,6 +227,11 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiProjectService>().failuresChanged(failures)
     }
 
+    @JsonNotification("piwi/testItemsChanged")
+    fun testItemsChanged(result: TestItemsResult) {
+        project.service<PiwiProjectService>().testItemsChanged(result)
+    }
+
     /** A file's coverage marks moved with an edit, or its coverage was read again: the marks, and its Code Vision lines. */
     @JsonNotification("piwi/coverageChanged")
     fun coverageChanged(result: CoverageResult) {

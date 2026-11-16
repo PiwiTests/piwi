@@ -21,6 +21,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Failures that follow the edits](#failures-that-follow-the-edits)
   - [File summary and the test at a position](#file-summary-and-the-test-at-a-position)
   - [Test items](#test-items)
+  - [Test runs](#test-runs)
   - [Failure lines and Flake Lab lines](#failure-lines-and-flake-lab-lines)
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
@@ -142,6 +143,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).
+- `src/test-listing.ts`: the listing, the tests Playwright lists for each config (`TestListings`); `src/test-tree.ts`:
+  the test tree both clients draw (`configTree`).
 - `src/coverage.ts`: coverage marks and uncovered changes.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
@@ -219,7 +222,7 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testRuns`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
@@ -235,7 +238,7 @@ the custom messages of `src/protocol.ts`:
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
-  `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
+  `piwi/coverageChanged`, `piwi/testItemsChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, with
   whether it ended with the status it was expected to end with, `ok`, a worker that left mid-test ending it
   `interrupted`, which the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
@@ -494,19 +497,86 @@ a spec under a context's folder answers nulls, and a test Piwi does not know ans
 
 ### Test items
 
-`piwi/testItems` answers the tests of the workspace's specs, for a client's own test tree (VS Code's Testing view). It
-lists:
+`piwi/testItems` answers the test tree, for a client's own test tree (VS Code's Testing view): per Playwright config,
+its nodes (`configTree` in `src/test-tree.ts`), folders, specs, describe blocks, tests, and a node per project under a
+test that runs in several, then the **Not in this checkout** group. A node's id holds no URI: a spec's is its config's
+folder and its path, so an id stays whichever source gave the node, and in both editors' spellings of a URI.
 
-- unless `catalog` is false, the catalog's specs the workspace holds (`PiwiContext.allCases`: the whole catalog, a
-  thousand cases a request and ten requests at most, read once per refresh). Each stored path is found as a run's path
-  is (`resolveReportedFile`), under the context whose folder holds it.
-- the specs `uris` names (`casesOf`), known to the catalog or not.
+**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list` with the project's own
+Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests Playwright lists
+(`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe blocks with their
+lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `TestListings` keeps each
+config's last listing:
 
-Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, one a line, a line
-starting with `//` read as blank, with the titled `test.describe(…)` blocks around it, a test on the line opening its
-block included). It comes
-with the catalog's case of its title in those blocks (`caseOfCall`), its location, its latest result and its failure,
-as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server.ts`.
+- the first `piwi/testItems` of the whole tree lists every config not listed yet; a config nobody asked the tree of is
+  never listed;
+- a listed config is listed whole again when a file it reads changed (`configFingerprint`, checked on every change the
+  client watches) and on `piwi/refresh`; a spec saved, created or deleted is listed alone, a burst of them together
+  (`WATCHED_FILES_MS`), past `MAX_SPECS` the config whole. The service asks the client to watch the scripts
+  (`workspace/didChangeWatchedFiles`, registered when the client takes dynamic registrations);
+- one listing runs per config at a time, and what is asked meanwhile runs after it, merged;
+- a spec is named by its whole path and by its `file:` URL, which Playwright also tests on Windows (`specFilter`), with
+  the file system's case (between slashes, which Playwright reads as written, except on Windows and macOS), so no
+  other spec loads with it;
+- Playwright lists nothing once one spec does not load, so the listing runs again without the specs that failed
+  (`excludingFilter`, by the same two spellings), and keeps why each failed (`broken`); an error the retry cannot place
+  on a spec (in a module a spec imports) leaves no test listed, and fails the listing as a whole. A listing that fails as a whole (Playwright missing, a config that throws, `LIST_TIMEOUT_MS`) keeps the last listing and
+  says why (`TestListing.error`);
+- a listing of some specs keeps their tests alone; a test of a spec outside the config's folder is left out, as everywhere in the service;
+- once a listing ends, the whole tree is pushed (`piwi/testItemsChanged`) when it differs from the last one sent or
+  answered.
+
+**Each spec** takes its tests from the listing while the listing has seen it as it stands: saved (no open document
+whose text differs from the file's), listed since it last changed on disk, and loading. Its tests are then one per
+title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
+spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, with the
+titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
+are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
+(`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
+`specTests` in `src/server.ts`.
+
+**The specs answered**:
+
+- with a listing, the specs it holds, a spec of the catalog created since it ran (one Playwright has not listed yet),
+  and the open specs `uris` names;
+- before a config's first listing, or for one never listed, the catalog's specs the workspace holds
+  (`PiwiContext.allCases`: the whole catalog, a thousand cases a request and ten requests at most, read once per
+  refresh, each stored path found as a run's path is, `resolveReportedFile`, under the context whose folder holds it)
+  and the specs `uris` names (`casesOf`), known to the catalog or not;
+- with `catalog` false, the specs `uris` names alone, each with the folders above it, which the client puts in place in
+  the tree it holds.
+
+**The Not in this checkout group** holds, once a config is listed, the catalog's tests that no test of the checkout
+is: those of a spec the checkout does not hold (placed once, under the first config reading the project), and those of
+a spec the listing gives as it stands that none of its tests is (deleted or renamed here, or another branch's). Its
+nodes are not `runnable`.
+
+### Test runs
+
+`piwi/testRuns` turns the nodes a client picked in the tree (and a config's node, `CONFIG_NODE` and its folder) into
+`RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
+filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
+
+| Node | Filter |
+| --- | --- |
+| A config | none (`RunTestsArgs.all`): `npx playwright test` |
+| A folder | its whole path, from the config's folder as the file system spells it, and as its `file:` URL does when that differs, then `/.` (`folderFilter`: `/repo/e2e/tests/cart/.`): Playwright matches a filter anywhere in a spec's path, and on Windows in its `file:` URL too, so `tests/cart/` would also take `e2e-tests/cart/`, and reads a filter that starts and ends with `/` as `/…/` syntax |
+| A spec | its path (`tests/cart.spec.ts`) |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
+| A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
+| A project's node | its test's, in that project alone (`--project`) |
+
+A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
+Every location is written by `locationArg`, from the config's folder as the file system spells it: a path, and its
+`file:` URL's spelling when that differs (`(?:tests/my cart.spec.ts|tests/my.20cart.spec.ts):3`), which Playwright
+tests on Windows. The filters of one config, set of projects and titles make one run, split where its locations, as
+written, would pass 8,000 characters (`cmd.exe` stops at 8,191), never widened to tests that were not picked.
+`--grep` matches a test's project, spec and its tags, each describe block and its tags, title and tags joined by
+spaces, case-insensitive: a title is matched within that line's tests alone, after its spec's name and describe blocks,
+each followed by any tags (`TAG_GAP`), so neither matches it, and `titlePattern` writes it as `specPattern`
+writes a path, a backslash and a control character as `.` too. `piwi/runArgs` takes the new fields: `all`, `projects`, `grep`,
+`grepInvert`, and a folder or a spec the listing holds in `locations`, whatever its name.
 
 ### Failure lines and Flake Lab lines
 
@@ -1967,7 +2037,7 @@ JetBrains plugin in its `server/`. The service finds the other files next to its
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
 | `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
-| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
+| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
 | `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
 | `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
 
@@ -2051,6 +2121,8 @@ A change is pushed against what the client holds:
   last one sent, or answered to `piwi/status`, `piwi/runStatus` or `piwi/failures`;
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it;
+- `piwi/testItemsChanged` is sent once a listing ends, when the whole tree differs from the last one sent, or answered
+  to a `piwi/testItems` of the whole tree ([Test items](#test-items));
 - `piwi/ciSessionChanged` is sent when a CI run's session differs from the last one sent for it, at most every
   500 ms ([CI runs of the branch](#ci-runs-of-the-branch));
 - `piwi/runSessionChanged` is sent when a run's session differs from the last one sent for it, at the pace

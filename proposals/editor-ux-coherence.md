@@ -701,7 +701,8 @@ Piwi's coverage bar beside the IDE's own, not over it. Piwi's own marks stay for
 **Replaces** coverage VS Code's coverage view never sees, a Debug Test that reaches nothing, two disagreeing state icons
 on one JetBrains line. **Depends on** [LI7](#li7), [LI3](#li3). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) L1 (a results-only Testing view, built) and §6.4 (offer
-the IDE's Playwright runner, built with L2). Steps M8 and L2 (built), [M9](#m9).
+the IDE's Playwright runner, built with L2). Steps M8 and L2 (built), [M9](#m9). The tree of every test before a run,
+VS Code's Testing view's and JetBrains' **Tests** tab, listed by Playwright, is [ide-test-tree.md](../adr/ide-test-tree.md)'s (built).
 
 <a id="li9"></a>
 

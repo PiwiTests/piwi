@@ -869,6 +869,22 @@ export function testCalls(lines: string[]): TestCall[] {
 }
 
 /**
+ * The 0-based line each `test.describe(…)` call of a spec's lines ends on, by the line it starts on; a line whose code
+ * starts with `//` is read as blank.
+ */
+export function describeEnds(lines: string[]): Map<number, number> {
+  const code = lines.map((text) => (/^\s*\/\//.test(text) ? '' : text));
+  const ends = new Map<number, number>();
+  code.forEach((text, i) => {
+    const match = DESCRIBE_CALL.exec(text) ?? DESCRIBE_CALL_UNREAD.exec(text);
+    if (!match) return;
+    const end = callEndLine(code, i, text.indexOf('(', match.index));
+    if (end !== null) ends.set(i, end);
+  });
+  return ends;
+}
+
+/**
  * The catalog's case of a test call: the one of its title in the same describe blocks (`suitePath`, joined by `\x1f`),
  * else the first of its title whose describe blocks the catalog does not say (an older instance). A case of its title
  * in other describe blocks is another test.

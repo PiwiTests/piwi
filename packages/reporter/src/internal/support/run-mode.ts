@@ -34,7 +34,7 @@ export function isUiMode(argv: string[] = process.argv): boolean {
  * planned tests without executing any.
  *
  * Why the reporter cares: list mode still drives the reporter through
- * `onBegin`/`onEnd` and runs `globalSetup`, yet no test runs. Registering a run
+ * `onBegin`/`onEnd`, yet no test runs. Registering a run
  * would leave an empty phantom run on the dashboard — created, finalized and
  * uploaded with zero results — for every `--list`. Skipping registration and
  * submission in list mode avoids those.

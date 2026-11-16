@@ -373,6 +373,15 @@
                     text="Go to the recorded lines" icon="AllIcons.Actions.EditSource"
                     description="Open the lines the recording in progress writes"/>
         </group>
+        <!-- The Tests tab's actions on its selected nodes (`TESTS_SELECTION`): its toolbar, its right-click menu, and Find Action. -->
+        <group id="Piwi.TestsActions">
+            <action id="Piwi.Tests.Run" class="dev.piwitests.jetbrains.RunTestsNodesAction" text="Run with Piwi"
+                    description="Run the selected tests, each folder, spec or describe block by its own filter"/>
+            <action id="Piwi.Tests.Debug" class="dev.piwitests.jetbrains.DebugTestsNodesAction" text="Debug with Piwi"
+                    description="Run the selected tests headed, at your breakpoints, holding each failure"/>
+            <action id="Piwi.Tests.Verify" class="dev.piwitests.jetbrains.VerifyTestsNodesAction" text="Verify ×3 with Piwi"
+                    description="Run the selected tests three times, without retries"/>
+        </group>
         <!-- The Piwi tool window's actions on its selected failure (`FAILURE_NODE`): its right-click menu, and Find Action. -->
         <group id="Piwi.FailureActions">
             <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run with Piwi"
