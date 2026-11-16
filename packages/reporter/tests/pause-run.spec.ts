@@ -77,6 +77,14 @@ async function ownPause(page, where) {
   await page.pause();
   await fetch('${base}/own-pause-end', { method: 'POST', body: JSON.stringify({ where, held: Date.now() - started }) });
 }
+// First: the worker's first page, which the capture fixtures read once, within a test timeout of its own. The tests
+// that fail by design say so (\`test.fail()\`), so the one worker runs every test.
+test.describe(() => {
+  test.describe.configure({ timeout: 60000 });
+  test('warms the worker up', async ({ page }) => {
+    await page.goto('${base}/a');
+  });
+});
 test('stops', async ({ page }) => {
   await page.goto('${base}/a');
   await page.goto('${base}/b'); // bp
@@ -119,10 +127,12 @@ test.describe('a wait that runs out under the bar', () => {
     await fetch('${base}/after-each', { method: 'POST', body: JSON.stringify({ title: testInfo.title, left }) });
   });
   test('poll', async ({ page }) => {
+    test.fail();
     await page.goto('${base}/a');
     await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
   });
   test('poll while picking', async ({ page }) => {
+    test.fail();
     await page.goto('${base}/a');
     await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
   });
@@ -239,23 +249,38 @@ interface DumpedTest {
   network: string | null;
 }
 
-/** The answers the page gives, in the order the bar shows. */
-const ANSWERS: Array<{ answer: string; hold?: number }> = [
-  { answer: 'Resume', hold: HOLD_MS }, // stops: page.goto(/b)
-  { answer: 'Step' }, // stops: keyboard.press
-  { answer: 'Resume' }, // stops: the click after it, no breakpoint
-  { answer: 'Finish' }, // stops: the second click
-  { answer: 'Resume' }, // own context: the assertion
-  { answer: 'Resume', hold: HOLD_MS }, // page.pause()
-  { answer: 'Resume', hold: HOLD_MS }, // a page a hook opened: page.goto(/b)
-  { answer: 'Resume', hold: HOLD_MS }, // poll: inputValue(), past the poll's own deadline
-  { answer: 'Pick a locator' }, // poll while picking: the poll's deadline passes with the picker open
-  { answer: 'Resume', hold: HOLD_MS }, // closes a page under the bar: the click on the page it closes
-  { answer: 'Resume' }, // closes a page under the bar: the click after it
-  { answer: 'Resume', hold: HOLD_MS }, // forgets an await: the click
-  { answer: 'Resume', hold: HOLD_MS }, // forgets to await a navigation: page.goto(/c)
-  { answer: 'Resume' }, // arms its context: page.goto(/b)
-];
+/** What the page answers at a stop: the bar's button a person presses, and how long they take. */
+type Answer = { answer: string; hold?: number };
+
+/** The line of the `page pause` test's own `page.pause()`. */
+function pauseLineOf(spec: string): number {
+  const specLines = spec.split('\n');
+  const pauseTest = specLines.findIndex((line) => line.startsWith("test('page pause'"));
+  return specLines.findIndex((line, i) => i > pauseTest && line.trim() === 'await page.pause();') + 1;
+}
+
+/** The answer at each stop, by the line the stop shows (`Paused at pause.spec.cjs:<line>`). */
+function answersByLine(spec: string, lines: number[]): Map<string, Answer> {
+  const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, navigates, arms] = lines;
+  const pause = pauseLineOf(spec);
+  const answers: Array<[number | undefined, Answer]> = [
+    [goto, { answer: 'Resume', hold: HOLD_MS }],
+    [press, { answer: 'Step' }],
+    [press! + 1, { answer: 'Resume' }], // the click after it, no breakpoint
+    [click, { answer: 'Finish' }],
+    [ownContext, { answer: 'Resume' }],
+    [pause, { answer: 'Resume', hold: HOLD_MS }], // page.pause()
+    [second, { answer: 'Resume', hold: HOLD_MS }], // a page a hook opened
+    [poll, { answer: 'Resume', hold: HOLD_MS }], // past the poll's own deadline
+    [picking, { answer: 'Pick a locator' }], // the poll's deadline passes with the picker open
+    [closing, { answer: 'Resume', hold: HOLD_MS }], // the click on the page it closes
+    [closed, { answer: 'Resume' }], // the click after it
+    [forgets, { answer: 'Resume', hold: HOLD_MS }], // the click the test does not await
+    [navigates, { answer: 'Resume', hold: HOLD_MS }], // the navigation the test does not await
+    [arms, { answer: 'Resume' }],
+  ];
+  return new Map(answers.map(([line, answer]) => [`Paused at pause.spec.cjs:${line}`, answer]));
+}
 
 let server: FakeServer;
 /** Each stop the bar showed, and whether Playwright's Inspector was open just after it showed (with windows). */
@@ -266,6 +291,9 @@ const ownPauses: Record<string, { inspector?: boolean; held?: number }> = {};
 const afterEach: Record<string, number> = {};
 let tests: DumpedTest[] = [];
 let bp: number[] = [];
+let pauseLine = 0;
+/** The answer at each stop, by its place: a test that stops less than it should changes no other test's answers. */
+let answers = new Map<string, Answer>();
 let exitCode: number | null = null;
 let output = '';
 
@@ -280,7 +308,7 @@ beforeAll(async () => {
     if (req.url === '/stop') {
       const stop = JSON.parse(req.body) as (typeof stops)[number];
       stops.push(stop);
-      const next = ANSWERS[stops.length - 1] ?? { answer: 'Resume' };
+      const next = answers.get(stop.where) ?? { answer: 'Resume' };
       // Checked soon after the stop shows, while the run is still held at it.
       const checkAfter = Math.min(next.hold ?? 50, INSPECTOR_CHECK_MS);
       if (WINDOWS) setTimeout(() => (stop.inspector = inspectorOpen()), checkAfter);
@@ -312,6 +340,8 @@ beforeAll(async () => {
 
   const spec = SPEC(server.url);
   bp = spec.split('\n').flatMap((line, i) => (line.endsWith('// bp') ? [i + 1] : []));
+  answers = answersByLine(spec, bp);
+  pauseLine = pauseLineOf(spec);
   write(
     'fixture.cjs',
     `const { test: base, expect } = require('@playwright/test');
@@ -390,8 +420,13 @@ function test(title: string): DumpedTest {
 
 describe('a run with breakpoints', () => {
   it('passes every test a wait did not fail under the bar, a stop longer than the test timeout included', () => {
-    expect(exitCode, output).toBe(1);
-    expect(tests.map((t) => [t.title, t.status])).toEqual([
+    expect(exitCode, output).toBe(0);
+    const said = tests.flatMap((t) => (t.errors.length ? [`${t.title}: ${t.errors.join('\n')}`] : [])).join('\n\n');
+    expect(
+      tests.map((t) => [t.title, t.status]),
+      said,
+    ).toEqual([
+      ['warms the worker up', 'passed'],
       ['stops', 'passed'],
       ['own context', 'passed'],
       ['page pause', 'passed'],
@@ -417,7 +452,7 @@ describe('a run with breakpoints', () => {
       { where: `Paused at pause.spec.cjs:${press! + 1}`, what: 'Click' },
       { where: `Paused at pause.spec.cjs:${click}`, what: 'Click' },
       { where: `Paused at pause.spec.cjs:${ownContext}`, what: 'Expect "toBeVisible"' },
-      { where: expect.stringMatching(/^Paused at pause\.spec\.cjs:\d+$/), what: 'Pause' },
+      { where: `Paused at pause.spec.cjs:${pauseLine}`, what: 'Pause' },
       { where: `Paused at pause.spec.cjs:${second}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${poll}`, what: 'Get input value' },
       { where: `Paused at pause.spec.cjs:${picking}`, what: 'Get input value' },
