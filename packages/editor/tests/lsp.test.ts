@@ -52,6 +52,7 @@ import type {
 } from '../src/protocol';
 import type { LaunchRequest, ServiceToLauncher } from '../src/recorder/ipc';
 import { ProjectOptionsError } from '../src/recorder/project-options';
+import { CONFIG_NODE } from '../src/protocol';
 import type { ListRunner } from '../src/test-listing';
 import type { LauncherEvents } from '../src/recorder/sessions';
 
@@ -2030,8 +2031,8 @@ describe('the test tree', () => {
       const cart = nodeOf(nodes, (n) => n.kind === 'describe' && n.label === 'cart')!;
       expect(cart.range).toEqual({ start: 2, end: 4 });
       expect(cart.children[0]!.children.map((p) => [p.kind, p.label, p.runnable])).toEqual([
-        ['project', 'chromium', false],
-        ['project', 'firefox', false],
+        ['project', 'chromium', true],
+        ['project', 'firefox', true],
       ]);
       // checkout.spec.ts, from the listing or, open with changes, from its text: each test with its projects' ids.
       expect(specs[0]!.tests.map((t) => [t.title, t.testCaseId, t.playwright.map((p) => p.id)])).toEqual([
@@ -2044,6 +2045,42 @@ describe('the test tree', () => {
       expect(testsOf(group.children)).toEqual([
         expect.objectContaining({ title: 'was deleted', testCaseId: 9, status: 'passed', uri: '', location: '' }),
       ]);
+      // Each node picked runs by the narrowest filter Playwright takes, a loop's test by its title too.
+      const mug = nodeOf(nodes, (n) => n.kind === 'test' && n.label === 'adds mug 1')!;
+      const firefox = cart.children[0]!.children[1]!;
+      const debugged = (await client.sendRequest('piwi/testRuns', {
+        nodes: [mug.id, firefox.id],
+        debug: true,
+      })) as RunTestsArgs[];
+      const debugging = { headed: true, holdFailures: true, debugging: true };
+      expect(debugged).toEqual([
+        {
+          uri: uri('tests/listed.spec.ts'),
+          root: dir,
+          testIds: [],
+          locations: ['tests/listed.spec.ts:2'],
+          grep: 'adds mug 1',
+          ...debugging,
+        },
+        {
+          uri: uri('tests/listed.spec.ts'),
+          root: dir,
+          testIds: [],
+          locations: ['tests/listed.spec.ts:4'],
+          projects: ['firefox'],
+          ...debugging,
+        },
+      ]);
+      const command = async (picked: string[]) => {
+        const [run] = (await client.sendRequest('piwi/testRuns', { nodes: picked })) as RunTestsArgs[];
+        return ((await client.sendRequest('piwi/runArgs', run)) as RunCommand).command;
+      };
+      expect(await command([mug.id])).toBe('npx playwright test tests/listed.spec.ts:2 --grep "adds mug 1"');
+      expect(await command([firefox.id])).toBe('npx playwright test tests/listed.spec.ts:4 --project firefox');
+      expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe('npx playwright test tests/');
+      expect(await command([`${CONFIG_NODE}${dir}`])).toBe('npx playwright test');
+      // The Not in this checkout group runs nothing.
+      expect(await client.sendRequest('piwi/testRuns', { nodes: [group.id] })).toEqual([]);
       // An edit the listing has not seen: the spec's tests are read from its text again, a loop's as one test.
       open('tests/listed.spec.ts', LISTED.replace('pays', 'pays twice'));
       const edited = (await client.sendRequest('piwi/testItems', {

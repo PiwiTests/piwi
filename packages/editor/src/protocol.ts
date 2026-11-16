@@ -276,7 +276,7 @@ export interface TestTreeNode {
   range: { start: number; end: number } | null;
   /** How it is ordered among its siblings: folders before specs, by name; a spec's content as in the file. */
   sortText: string;
-  /** Whether a run takes it: false in the `notInCheckout` group, and on a project node. */
+  /** Whether a run takes it: false in the `notInCheckout` group. */
   runnable: boolean;
   /** On a test, what the service says of it. */
   test: TreeTest | null;
@@ -313,6 +313,27 @@ export const TEST_ITEMS_REQUEST = 'piwi/testItems';
 
 /** The whole tree (`piwi/testItems` with no specs named), pushed when a listing changes it. */
 export const TEST_ITEMS_CHANGED_NOTIFICATION = 'piwi/testItemsChanged';
+
+/** The id of a config's node, which a client adds above the service's nodes: this, then the config's folder. */
+export const CONFIG_NODE = 'config\x1f';
+
+/**
+ * `piwi/testRuns`: the runs of the nodes of the test tree a client picked (`TestTreeNode.id`, or a config's node,
+ * `CONFIG_NODE`), without the nodes `exclude` names under them: each node by the narrowest filter Playwright takes for
+ * it (a config whole, a folder or a spec by its path, a describe block or a test by `file:line`, a project with
+ * `--project`, a test that shares its line with others by its title too), one run per config and set of projects, so
+ * that a run needs no instance. A node that is not `runnable` runs nothing.
+ */
+export interface TestRunsParams {
+  nodes: string[];
+  exclude?: string[];
+  /** Runs each test this many times, as `RunTestsArgs.repeat`. */
+  repeat?: number;
+  /** Debug with Piwi: headed, holding the failures, at the editor's breakpoints. */
+  debug?: boolean;
+}
+
+export const TEST_RUNS_REQUEST = 'piwi/testRuns';
 
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
@@ -502,11 +523,22 @@ export interface RunTestsArgs extends RunStartOptions {
   coverage?: 'server' | 'browser';
   /**
    * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
-   * config `uri` or `root` names), or a whole spec by its path alone (`TestAtResult.spec.location`), run in place of
+   * config `uri` or `root` names), a describe block by the line it starts on, a whole spec by its path alone
+   * (`TestAtResult.spec.location`), or a folder of specs by its path and a slash (`tests/cart/`), run in place of
    * `testIds`: a test the instance does not know yet, such as one just recorded, runs too, and the command needs no
    * instance. The spec runs as saved.
    */
   locations?: string[];
+  /** Every test of the config, in place of `locations` and `testIds`. */
+  all?: boolean;
+  /** Runs the tests in these Playwright projects alone (`--project`); in every project when absent. */
+  projects?: string[];
+  /**
+   * Runs only the tests whose title path matches `grep` (`--grep`), and none that `grepInvert` matches
+   * (`--grep-invert`): one test of a line that holds several, as a loop builds them.
+   */
+  grep?: string;
+  grepInvert?: string;
   /**
    * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless unless
    * `headed`: the breakpoints are not passed, and it holds no failure. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run

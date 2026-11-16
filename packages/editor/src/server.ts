@@ -194,7 +194,7 @@ import {
 import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
 import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
-import { configTree, type MissingTest, type TreeSpec } from './test-tree.js';
+import { configTree, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
@@ -285,6 +285,7 @@ import {
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
   TEST_ITEMS_CHANGED_NOTIFICATION,
+  TEST_RUNS_REQUEST,
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
@@ -424,6 +425,7 @@ import {
   type TestItemsParams,
   type TestItemsResult,
   type TreeTest,
+  type TestRunsParams,
   type RunCommandArgs,
   type TraceParams,
   type PiwiCommand,
@@ -4098,6 +4100,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return answer;
   });
 
+  /** The runs of the nodes a client picked in its test tree, read from the tree as it stands (`nodeRuns`). */
+  connection.onRequest(TEST_RUNS_REQUEST, async (params: TestRunsParams | null): Promise<RunTestsArgs[]> => {
+    const ids = (value: unknown) =>
+      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    const tree = await testItemsOf({ uris: documents.all().map((d) => d.uri) });
+    const repeat = typeof params?.repeat === 'number' ? params.repeat : null;
+    return nodeRuns(tree.contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
+      uri: run.uri ?? pathToFileURL(run.root).href,
+      root: run.root,
+      testIds: [],
+      ...(run.all ? { all: true } : { locations: run.locations }),
+      ...(run.projects.length ? { projects: run.projects } : {}),
+      ...(run.grep ? { grep: run.grep } : {}),
+      ...(run.grepInvert ? { grepInvert: run.grepInvert } : {}),
+      ...(repeat !== null ? { repeat } : {}),
+      ...(params?.debug === true ? { headed: true, holdFailures: true, debugging: true } : {}),
+    }));
+  });
+
   connection.onRequest(COVERAGE_REQUEST, async (params: CoverageParams): Promise<CoverageResult> => {
     const uri = params.uri;
     const turn = nextCoverageTurn(uri);
@@ -4344,11 +4365,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return run;
   };
 
-  /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
+  /**
+   * Whether a location names a spec under the context's folder, as `piwi/testAt` gives it (a spec the listing holds
+   * too, whatever its name), or a folder of it, by its path and a slash.
+   */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
+    if (typeof location === 'string' && location.endsWith('/')) {
+      const folder = location.slice(0, -1);
+      if (!isTestLocation(folder) || folder.includes(':')) return false;
+      try {
+        return fs.statSync(path.join(context.root, folder)).isDirectory();
+      } catch {
+        return false;
+      }
+    }
     if (!isTestLocation(location)) return false;
     const spec = locationSpec(location);
-    return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
+    const listed = testListings.state(context.root)?.listing?.specs.has(spec) === true;
+    return (SPEC_FILE.test(spec) || listed) && fs.existsSync(path.join(context.root, spec));
   };
 
   /**
@@ -4356,9 +4390,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * reads it (`specPattern`), else by id from the instance.
    */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
+    if (params.all === true) return [];
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) => `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`);
+      return params.locations.map((l) =>
+        l.endsWith('/')
+          ? `${specPattern(l.slice(0, -1))}/`
+          : `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`,
+      );
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -4434,9 +4473,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (params.debug) return debugRunArgs(context, params);
     if (!context) return null;
     const repeat = params.repeat ?? null;
-    const tests = await testArgs(context, params);
+    const named = await testArgs(context, params);
+    // The projects and the titles the tests run in and by, as Playwright's options.
+    const option = (name: string, value: unknown) => (typeof value === 'string' && value ? [name, value] : []);
+    const tests = named && [
+      ...named,
+      ...(Array.isArray(params.projects) ? params.projects.flatMap((p) => option('--project', p)) : []),
+      ...option('--grep', params.grep),
+      ...option('--grep-invert', params.grepInvert),
+    ];
     const args = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
-    const command = args?.length ? playwrightTestCommand(args) : null;
+    const command = args && (args.length || params.all === true) ? playwrightTestCommand(args) : null;
     if (!args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref, repeat);
@@ -4453,8 +4500,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         params,
       );
     }
-    const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
-    repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
+    const target = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
+    repeatedCommands.set(ref, { root: context.root, repeat, target: target.join(' ') || 'every test' });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);

@@ -4,10 +4,15 @@
  * of the checkout is, in the **Not in this checkout** group. Built from what the service read of each spec, whichever
  * source gave it (the listing or the spec's text), so a node's id stays as one source replaces the other.
  */
-import type { TestTreeNode, TreeTest } from './protocol.js';
+import { CONFIG_NODE, type TestTreeNode, type TreeTest } from './protocol.js';
 
 /** The label of the group of the catalog's tests that the checkout does not hold. */
 export const NOT_IN_CHECKOUT = 'Not in this checkout';
+
+/** The id of a folder's node: its config's folder and its path. */
+const folderId = (root: string, folder: string) => `folder\x1f${root}\x1f${folder}`;
+/** The id of a spec's node: its config's folder and its path. */
+const specId = (root: string, file: string) => `spec\x1f${root}\x1f${file}`;
 
 /** A test of a spec, with the 0-based lines each of its describe blocks starts and ends on, where known. */
 export interface TreeEntry {
@@ -92,7 +97,7 @@ function addTests(parent: TestTreeNode, prefix: string, uri: string | null, entr
           uri,
           range,
           sortText: sortLine(0, i),
-          runnable: false,
+          runnable,
           project: p.project,
         }),
       );
@@ -113,7 +118,7 @@ export function configTree(root: string, specs: readonly TreeSpec[], missing: re
       let folder = folders.get(key);
       if (!folder) {
         folder = node({
-          id: `folder\x1f${root}\x1f${key}`,
+          id: folderId(root, key),
           label: parts[i]!,
           kind: 'folder',
           sortText: `0${parts[i]}`,
@@ -129,7 +134,7 @@ export function configTree(root: string, specs: readonly TreeSpec[], missing: re
     const parts = spec.file.split('/');
     const name = parts.pop()!;
     const specNode = node({
-      id: `spec\x1f${root}\x1f${spec.file}`,
+      id: specId(root, spec.file),
       label: name,
       kind: 'spec',
       uri: spec.uri,
@@ -157,4 +162,168 @@ export function configTree(root: string, specs: readonly TreeSpec[], missing: re
     top.push(group);
   }
   return top;
+}
+
+/** A run of the nodes picked in the tree: the arguments of `piwi/runArgs` but the start options. */
+export interface NodeRun {
+  root: string;
+  /** A spec of the run; null for a whole config, which `root` names. */
+  uri: string | null;
+  locations: string[];
+  /** Every test of the config, in place of `locations`. */
+  all: boolean;
+  /** The projects it runs in alone; every project when empty. */
+  projects: string[];
+  grep: string | null;
+  grepInvert: string | null;
+}
+
+/** The longest the locations of one run may be together: past it, the run is split (`cmd.exe` stops at 8,191). */
+const MAX_LOCATIONS_CHARS = 8000;
+
+/**
+ * A title as Playwright's `--grep` reads it, a regular expression with no character a shell expands: a character a
+ * regular expression reads apart in a class of its own (`[(]`), one a shell expands as `.`, as `specPattern` does a path.
+ */
+export function titlePattern(title: string): string {
+  return title.replace(/[[(){}*+?|]/g, '[$&]').replace(/[$^`"%!\\“”„\p{Cc}]/gu, '.');
+}
+
+/** One node's filter. */
+interface Filter {
+  root: string;
+  uri: string | null;
+  /** Null for a whole config. */
+  location: string | null;
+  projects: string[];
+  grep: string | null;
+  grepInvert: string | null;
+}
+
+/**
+ * The runs of the nodes picked in the trees of `contexts` (a config's node is `CONFIG_NODE` and its folder), without
+ * the nodes `excluded` names: each node by the narrowest filter Playwright takes for it, a node holding an excluded one
+ * by its children's. A config runs whole; a folder by its path and a slash; a spec by its path; a describe block, and a
+ * test, by `file:line`; a project's node as its test, in that project alone. A test whose line holds others (a loop's)
+ * also runs by its title (`--grep`), without the others of that line whose title holds its own (`--grep-invert`), so
+ * it runs in a run of its own. One run per config, set of projects and titles; a node that is not runnable runs nothing.
+ */
+export function nodeRuns(
+  contexts: ReadonlyArray<{ root: string; nodes: readonly TestTreeNode[] }>,
+  picked: readonly string[],
+  excluded: readonly string[] = [],
+): NodeRun[] {
+  const out = new Set(excluded);
+  const index = new Map<
+    string,
+    { node: TestTreeNode; root: string; spec: TestTreeNode | null; parent: TestTreeNode | null }
+  >();
+  const walk = (
+    nodes: readonly TestTreeNode[],
+    root: string,
+    spec: TestTreeNode | null,
+    parent: TestTreeNode | null,
+  ) => {
+    for (const n of nodes) {
+      const own = n.kind === 'spec' ? n : spec;
+      index.set(n.id, { node: n, root, spec: own, parent });
+      walk(n.children, root, own, n);
+    }
+  };
+  for (const c of contexts) walk(c.nodes, c.root, null, null);
+  const holdsExcluded = (n: TestTreeNode): boolean => n.children.some((c) => out.has(c.id) || holdsExcluded(c));
+  const firstUri = (n: TestTreeNode): string | null =>
+    n.kind === 'spec' ? n.uri : n.children.reduce<string | null>((found, c) => found ?? firstUri(c), null);
+  const fileOf = (spec: TestTreeNode, root: string) => spec.id.slice(specId(root, '').length);
+  const filters: Filter[] = [];
+  const push = (root: string, uri: string | null, location: string | null, more: Partial<Filter> = {}) =>
+    filters.push({ root, uri, location, projects: [], grep: null, grepInvert: null, ...more });
+
+  /** A test's filter: its line, and its title when its line holds others. */
+  const testFilter = (test: TestTreeNode, root: string, spec: TestTreeNode, projects: string[]) => {
+    const line = test.test!.line;
+    const others: TestTreeNode[] = [];
+    const same = (nodes: readonly TestTreeNode[]) => {
+      for (const n of nodes) {
+        if (n.kind === 'test' && n !== test && n.test?.line === line) others.push(n);
+        same(n.children);
+      }
+    };
+    same(spec.children);
+    const title = test.test!.title;
+    const holding = others.filter((o) => o.test!.title.toLowerCase().includes(title.toLowerCase()));
+    push(root, spec.uri, `${fileOf(spec, root)}:${line + 1}`, {
+      projects,
+      ...(others.length ? { grep: titlePattern(title) } : {}),
+      ...(holding.length ? { grepInvert: holding.map((o) => titlePattern(o.test!.title)).join('|') } : {}),
+    });
+  };
+
+  const add = (n: TestTreeNode, root: string, spec: TestTreeNode | null, parent: TestTreeNode | null) => {
+    if (!n.runnable || out.has(n.id)) return;
+    const own = n.kind === 'spec' ? n : spec;
+    if (holdsExcluded(n) || (n.kind === 'describe' && !n.range)) {
+      for (const c of n.children) add(c, root, own, n);
+      return;
+    }
+    switch (n.kind) {
+      case 'folder':
+        push(root, firstUri(n), `${n.id.slice(folderId(root, '').length)}/`);
+        return;
+      case 'spec':
+        push(root, n.uri, fileOf(n, root));
+        return;
+      case 'describe':
+        push(root, n.uri, `${fileOf(spec!, root)}:${n.range!.start + 1}`);
+        return;
+      case 'test':
+        testFilter(n, root, spec!, []);
+        return;
+      case 'project':
+        if (parent?.test) testFilter(parent, root, spec!, [n.project!]);
+        return;
+      default:
+        return;
+    }
+  };
+
+  for (const id of picked) {
+    const context = contexts.find((c) => id === `${CONFIG_NODE}${c.root}`);
+    if (context) {
+      if (context.nodes.some((n) => out.has(n.id) || holdsExcluded(n))) {
+        for (const n of context.nodes) add(n, context.root, null, null);
+      } else push(context.root, null, null);
+      continue;
+    }
+    const placed = index.get(id);
+    if (placed) add(placed.node, placed.root, placed.spec, placed.parent);
+  }
+
+  const runs = new Map<string, NodeRun>();
+  for (const f of filters) {
+    const projects = [...new Set(f.projects)].sort();
+    const key = [f.root, projects.join('\x1f'), f.grep ?? '', f.grepInvert ?? ''].join('\0');
+    let run = runs.get(key);
+    if (!run) {
+      run = { root: f.root, uri: f.uri, locations: [], all: false, projects, grep: f.grep, grepInvert: f.grepInvert };
+      runs.set(key, run);
+    }
+    run.uri ??= f.uri;
+    if (f.location === null) run.all = true;
+    else if (!run.locations.includes(f.location)) run.locations.push(f.location);
+  }
+  return [...runs.values()].flatMap((run) => {
+    if (run.all) return [{ ...run, locations: [] }];
+    const parts: string[][] = [[]];
+    let length = 0;
+    for (const location of run.locations) {
+      if (length + location.length + 1 > MAX_LOCATIONS_CHARS && parts[parts.length - 1]!.length) {
+        parts.push([]);
+        length = 0;
+      }
+      parts[parts.length - 1]!.push(location);
+      length += location.length + 1;
+    }
+    return parts.map((locations) => ({ ...run, locations }));
+  });
 }

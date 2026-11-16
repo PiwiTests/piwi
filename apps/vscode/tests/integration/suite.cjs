@@ -190,11 +190,12 @@ const tests = {
     );
   },
 
-  async 'the Testing view runs a test with the command Piwi builds, as the editor’s own run'() {
+  async 'the Testing view runs its tests with the command Piwi builds, as the editor’s own run'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     await vscode.commands.executeCommand('testing.runAll');
     const run = await waitFor(() => api.lastRun(), 'the run the Testing view started');
-    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3');
+    // Every test: the config whole, with no filter.
+    assert.equal(run.command, 'npx playwright test');
     assert.match(run.ref, /^ed-[0-9a-f]{8}$/);
     assert.equal(run.env.PIWI_ORIGIN_REF, run.ref);
   },

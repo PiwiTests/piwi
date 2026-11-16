@@ -937,8 +937,8 @@ when one could not be listed: its item's `error` says why. The service gives the
 refuses `\0` in an id. An item is kept while its id stays, so its result stays too.
 
 **What a run takes**: every item the service says is `runnable` carries the `runnable` tag (`RUNNABLE_TAG`), and the
-four profiles take only items with it (`TestRunProfile.tag`), so neither the **Not in this checkout** group nor a
-project's node shows a Run button, and **Run Tests** leaves them out. A test runs in all its projects.
+four profiles take only items with it (`TestRunProfile.tag`), so the **Not in this checkout** group shows no Run
+button, and **Run Tests** leaves it out.
 
 ### Results and test runs
 
@@ -949,9 +949,11 @@ of its own (`liveRunName`), showing `liveTests` as they come. It ends once the r
 again for it.
 
 **The run profiles**, **Run with Piwi**, **Debug with Piwi** (the Debug kind: headed, holding the failures, Piwi's
-run control rather than a debug session), **Run with Piwi** of the Coverage kind and **Verify ×3 with Piwi**, run the
-picked tests through `runTests`
-(`testRunsOf`: one run per config, by id when every test has one, else by location). A run that names its own start
+run control rather than a debug session), **Run with Piwi** of the Coverage kind and **Verify ×3 with Piwi**, send
+the ids of the picked items, and of those the request excludes, to `piwi/testRuns`, then run each `RunTestsArgs` it
+answers through `runTests`: the service gives each node the narrowest filter Playwright takes for it
+([Test runs](../../packages/editor/ARCHITECTURE.md#test-runs)). The test run shows the tests under the picked items
+queued, a project's node as its test. A run that names its own start
 keeps it (`withRunStart`). Before a Coverage run ends, `showCoverage` adds a `FileCoverage` for each file
 `piwi/coverageFiles` names for its tests, with their coverage alone (`testCoverageOf`: the lines run of the executable
 ones), whose statements `loadDetailedCoverage` gives from the same answer; its output says how many tests the
@@ -1020,7 +1022,7 @@ a stub (`tests/connect.test.ts`). The order in which the service picks a connect
 - the recorded block's text and writes, with the service's import edit, and how they follow a change (`writeBlock`,
   `followBlock`, `followEdit`), and the quick fixes of a recorded line's warning (`locatorChoices`);
 - what runs the test at a line (`testAtRun`);
-- the Testing view's tree and results (`testTree`, `testOutcome`, `testRunsOf`).
+- the Testing view's tree and results (`testTree`, `withSpec`, `testOutcome`).
 
 `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no VS Code API either, each
 with its unit test.

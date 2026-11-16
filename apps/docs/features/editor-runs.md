@@ -73,13 +73,14 @@ hides the result icon and its list.
   <figcaption>The Testing view with the latest run's results, and why <strong>pays by card</strong> failed, at its line.</figcaption>
 </figure>
 
-**Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
-Playwright config, **Debug with Piwi** runs them headed at your breakpoints, holding each failure at its line, and
-**Verify ×3 with Piwi** runs them three times. Under Run with Coverage, **Run with Piwi** then shows their coverage in the
-Test Coverage view ([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as
-[Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. A test the run gave Piwi no
-result for, such as one the instance does not know, passes when the command exited with 0, else is an error. A
-project's node shows its result and does not run alone. Debug runs Piwi's run control, not a debug session. `piwi.testExplorer` turns the view's Piwi tests off.
+**Run with Piwi**, the view's run profile, runs what you pick by the narrowest filter Playwright takes: a config whole, a
+folder or a spec by its path, a describe block or a test by its line (a loop's by its title), a project's node with
+`--project`. **Debug with Piwi** runs them headed at your breakpoints, holding each failure, and **Verify ×3
+with Piwi** runs them three times. Under Run with Coverage, it also shows their coverage in the Test Coverage view
+([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as [Debug in my
+editor](./debug-in-editor) does, stopping once at the line it failed through. A test the run gave Piwi no result for
+passes when the command exited with 0, else is an error. Debug runs Piwi's run control, not a debug session.
+`piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests
 

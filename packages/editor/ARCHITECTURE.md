@@ -21,6 +21,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Failures that follow the edits](#failures-that-follow-the-edits)
   - [File summary and the test at a position](#file-summary-and-the-test-at-a-position)
   - [Test items](#test-items)
+  - [Test runs](#test-runs)
   - [Failure lines and Flake Lab lines](#failure-lines-and-flake-lab-lines)
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
@@ -221,7 +222,7 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testRuns`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
@@ -538,7 +539,30 @@ are one test until the listing sees the spec again. Each test comes with the cat
 **The Not in this checkout group** holds, once a config is listed, the catalog's tests that no test of the checkout
 is: those of a spec the checkout does not hold (placed once, under the first config reading the project), and those of
 a spec the listing gives as it stands that none of its tests is (deleted or renamed here, or another branch's). Its
-nodes are not `runnable`, nor is a project's node.
+nodes are not `runnable`.
+
+### Test runs
+
+`piwi/testRuns` turns the nodes a client picked in the tree (and a config's node, `CONFIG_NODE` and its folder) into
+`RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
+filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
+
+| Node | Filter |
+| --- | --- |
+| A config | none (`RunTestsArgs.all`): `npx playwright test` |
+| A folder | its path and a slash (`tests/cart/`), so `tests/cart` does not take `tests/cart-old` |
+| A spec | its path |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
+| A test | `file:line`; when its line holds others, as a loop builds them, its title too (`--grep`, `titlePattern`), without those of the line whose title holds its own (`--grep-invert`), in a run of its own |
+| A project's node | its test's, in that project alone (`--project`) |
+
+A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
+The filters of one config, set of projects and titles make one run, split where its locations would pass 8,000
+characters (`cmd.exe` stops at 8,191), never widened to tests that were not picked. `--grep` matches a test's project,
+spec, describe blocks, title and tags joined by spaces, case-insensitive: a title is matched within that line's tests
+alone, and `titlePattern` writes each character a regular expression reads apart in a class of its own and each one a
+shell expands as `.`, as `specPattern` writes a path. `piwi/runArgs` takes the new fields: `all`, `projects`, `grep`,
+`grepInvert`, and a folder or a spec the listing holds in `locations`, whatever its name.
 
 ### Failure lines and Flake Lab lines
 

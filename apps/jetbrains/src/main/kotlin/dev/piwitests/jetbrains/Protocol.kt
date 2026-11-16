@@ -150,7 +150,7 @@ data class LineRange(val start: Int = 0, val end: Int = 0)
 
 /**
  * A node of the test tree: `kind` is `folder`, `spec`, `describe`, `test`, `project` or `notInCheckout`; `runnable` is
- * false in the `notInCheckout` group and on a project node.
+ * false in the `notInCheckout` group.
  */
 data class TestTreeNode(
     val id: String? = null,
@@ -270,6 +270,24 @@ data class RunTestsArgs(
     val holdFailures: Boolean? = null,
     /** A Debug with Piwi run, which pauses at the IDE's breakpoints while `breakpoints` is `debug`; `debug` is one too. */
     val debugging: Boolean? = null,
+    /** Every test of the config, in place of `locations` and `testIds`. */
+    val all: Boolean? = null,
+    /** The Playwright projects the tests run in alone (`--project`); every project when absent. */
+    val projects: List<String>? = null,
+    /** The title filters of one test of a line that holds several (`--grep`, `--grep-invert`). */
+    val grep: String? = null,
+    val grepInvert: String? = null,
+)
+
+/**
+ * `piwi/testRuns`: the runs of the test tree's nodes picked (a config's node is `config` + `\u001f` + its folder),
+ * without those `exclude` names under them, each by the narrowest filter Playwright takes for it.
+ */
+data class TestRunsParams(
+    val nodes: List<String>,
+    val exclude: List<String>? = null,
+    val repeat: Int? = null,
+    val debug: Boolean? = null,
 )
 
 /**
@@ -1664,6 +1682,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testItems")
     fun testItems(params: TestItemsParams): CompletableFuture<TestItemsResult?>
+
+    @JsonRequest("piwi/testRuns")
+    fun testRuns(params: TestRunsParams): CompletableFuture<List<RunTestsArgs>?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>

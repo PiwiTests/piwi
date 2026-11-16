@@ -97,7 +97,6 @@ import {
   testItemTags,
   failuresViewDescription,
   testOutcome,
-  testRunsOf,
   testTree,
   treeHoldsSpec,
   treeTests,
@@ -2595,43 +2594,6 @@ describe('the Testing view', () => {
     expect(failureMessage({ ...failure, diagnosed: true })).toBe('Error: locator.click: Timeout 5000ms exceeded.');
     expect(failureMessage({ ...failure, message: 'Timed out', diagnosed: true })).toBe('Timed out');
     expect(failureMessage({ ...failure, message: '', diagnosed: true })).toBe('Failed');
-  });
-
-  test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {
-    const tests = treeTests(testTree(answer));
-    expect(testRunsOf(tests.slice(0, 2))).toEqual([
-      { uri: 'file:///w/tests/cart/checkout.spec.ts', root: '/w', testIds: [1, 2] },
-    ]);
-    expect(testRunsOf(tests)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4', 'tests/cart/checkout.spec.ts:8', 'tests/cart/checkout.spec.ts:13'],
-      },
-    ]);
-    // Debug with Piwi: headed, holding the failures.
-    expect(testRunsOf(tests.slice(0, 2), undefined, true)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [1, 2],
-        headed: true,
-        holdFailures: true,
-        debugging: true,
-      },
-    ]);
-    expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4'],
-        repeat: 3,
-      },
-    ]);
-    const other = { ...tests[0]!, root: '/w/e2e', uri: 'file:///w/e2e/a.spec.ts' };
-    expect(testRunsOf([tests[0]!, other]).map((r) => r.root)).toEqual(['/w', '/w/e2e']);
   });
 
   test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave with its folders', () => {

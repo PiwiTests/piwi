@@ -49,6 +49,7 @@ import type {
   TreeTest,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import { CONFIG_NODE } from '@piwitests/editor/protocol';
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import { editorWords } from '@piwitests/editor/words';
 import * as path from 'node:path';
@@ -1960,7 +1961,7 @@ export function testTree(result: TestItemsResult): TestNode[] {
   const configs = result.contexts.length > 1 || result.contexts.some((c) => c.listing?.error);
   if (!configs) return result.contexts[0]?.nodes ?? [];
   return result.contexts.map((context): TestNode => ({
-    id: `config\x1f${context.root}`,
+    id: `${CONFIG_NODE}${context.root}`,
     label: context.label,
     kind: 'config',
     uri: null,
@@ -1995,7 +1996,7 @@ export const QUARANTINED_TAG = 'quarantined';
 
 /**
  * The Testing view's tag of every item a run takes (`@piwi:runnable`), which the run profiles are limited to: not the
- * Not in this checkout group, nor a project's node.
+ * Not in this checkout group.
  */
 export const RUNNABLE_TAG = 'runnable';
 
@@ -2045,28 +2046,6 @@ export function failureMessage(failure: TestFailure | null): string {
   const message = failure?.message?.trim() ?? '';
   const why = [headline, message && message !== headline ? message : ''].filter(Boolean).join('\n\n') || 'Failed';
   return failure?.state === 'edited' ? `${why}\n\nThe line it failed at changed since the run.` : why;
-}
-
-/**
- * The runs of a Testing view's request: one per Playwright config, its tests by id when Piwi knows them all, else
- * every one by its location; with `repeat`, by their locations, that many times; to debug them (Debug with Piwi),
- * headed, holding their failures.
- */
-export function testRunsOf(tests: readonly TreeTest[], repeat?: number, debug = false): RunTestsArgs[] {
-  const byRoot = new Map<string, TreeTest[]>();
-  for (const t of tests) byRoot.set(t.root, [...(byRoot.get(t.root) ?? []), t]);
-  return [...byRoot].map(([root, held]) => {
-    const ids = held.map((t) => t.testCaseId);
-    const byId = !repeat && ids.every((id) => id !== null);
-    return {
-      uri: held[0]!.uri,
-      root,
-      testIds: byId ? [...new Set(ids as number[])] : [],
-      ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
-      ...(repeat ? { repeat } : {}),
-      ...(debug ? { headed: true, holdFailures: true, debugging: true } : {}),
-    };
-  });
 }
 
 /**

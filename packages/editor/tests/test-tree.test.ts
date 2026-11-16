@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { TestTreeNode, TreeTest } from '../src/protocol';
-import { configTree, NOT_IN_CHECKOUT, type TreeEntry } from '../src/test-tree';
+import { CONFIG_NODE } from '../src/protocol';
+import { configTree, nodeRuns, NOT_IN_CHECKOUT, titlePattern, type TreeEntry } from '../src/test-tree';
 
 const ROOT = '/w';
 
@@ -76,8 +77,8 @@ describe('a config’s tree', () => {
       '    spec checkout.spec.ts',
       '      describe checkout',
       '        test pays',
-      '          project chromium (not runnable)',
-      '          project firefox (not runnable)',
+      '          project chromium',
+      '          project firefox',
       '        test refunds',
     ]);
     const describe = nodes[1]!.children[0]!.children[0]!.children[0]!;
@@ -169,5 +170,131 @@ describe('a config’s tree', () => {
     expect(group.children[1]!.children[0]).toMatchObject({ uri: null, range: null, test: { testCaseId: 9 } });
     // No node of the group shares an id with one of the checkout.
     expect(group.children[0]!.id).not.toBe(nodes[0]!.id);
+  });
+});
+
+describe('the runs of the nodes picked', () => {
+  const CART = 'file:///w/tests/cart/checkout.spec.ts';
+  const MUGS = 'file:///w/tests/mugs.spec.ts';
+  const two = [
+    { project: 'chromium', id: 'c' },
+    { project: 'firefox', id: 'f' },
+  ];
+  const nodes = configTree(
+    ROOT,
+    [
+      {
+        uri: CART,
+        file: 'tests/cart/checkout.spec.ts',
+        entries: [
+          entry({ uri: CART, suite: ['checkout'], line: 3, playwright: two }, [{ start: 2, end: 9 }]),
+          entry({ uri: CART, suite: ['checkout'], title: 'refunds', line: 6 }, [{ start: 2, end: 9 }]),
+        ],
+      },
+      {
+        uri: MUGS,
+        file: 'tests/mugs.spec.ts',
+        entries: [
+          entry({ uri: MUGS, title: 'adds mug 1', line: 1 }),
+          entry({ uri: MUGS, title: 'adds mug 10', line: 1 }),
+          entry({ uri: MUGS, title: 'adds mug 2 (large)', line: 1 }),
+        ],
+      },
+    ],
+    [{ file: 'tests/gone.spec.ts', test: tree({ title: 'was deleted', uri: '' }) }],
+  );
+  const contexts = [{ root: ROOT, nodes }];
+  const find = (pick: (n: TestTreeNode) => boolean, from: readonly TestTreeNode[] = nodes): TestTreeNode => {
+    for (const n of from) {
+      if (pick(n)) return n;
+      const found = n.children.length ? find(pick, n.children) : undefined;
+      if (found) return found;
+    }
+    return undefined as unknown as TestTreeNode;
+  };
+  const byLabel = (label: string) => find((n) => n.label === label);
+  const runs = (picked: TestTreeNode[], excluded: TestTreeNode[] = []) =>
+    nodeRuns(
+      contexts,
+      picked.map((n) => n.id),
+      excluded.map((n) => n.id),
+    ).map((r) => [r.all ? 'all' : r.locations.join(' '), r.projects.join(','), r.grep, r.grepInvert]);
+
+  test('each node by the narrowest filter, in one run per config', () => {
+    expect(runs([byLabel('tests'), byLabel('checkout.spec.ts'), byLabel('checkout'), byLabel('refunds')])).toEqual([
+      [
+        'tests/ tests/cart/checkout.spec.ts tests/cart/checkout.spec.ts:3 tests/cart/checkout.spec.ts:7',
+        '',
+        null,
+        null,
+      ],
+    ]);
+    expect(nodeRuns(contexts, [`${CONFIG_NODE}${ROOT}`])).toEqual([
+      { root: ROOT, uri: null, locations: [], all: true, projects: [], grep: null, grepInvert: null },
+    ]);
+    // A folder's run names a spec of it, for the config.
+    expect(nodeRuns(contexts, [byLabel('cart').id])[0]!.uri).toBe(CART);
+  });
+
+  test('a project’s node runs its test in that project alone, in a run of its own', () => {
+    const pays = find((n) => n.kind === 'test' && n.label === 'pays');
+    const firefox = pays.children[1]!;
+    expect(runs([firefox, byLabel('refunds')])).toEqual([
+      ['tests/cart/checkout.spec.ts:4', 'firefox', null, null],
+      ['tests/cart/checkout.spec.ts:7', '', null, null],
+    ]);
+  });
+
+  test('a test of a line that holds others runs by its title too, without those whose title holds its own', () => {
+    expect(runs([byLabel('adds mug 1')])).toEqual([['tests/mugs.spec.ts:2', '', 'adds mug 1', 'adds mug 10']]);
+    expect(runs([byLabel('adds mug 10')])).toEqual([['tests/mugs.spec.ts:2', '', 'adds mug 10', null]]);
+    expect(runs([byLabel('adds mug 2 (large)')])).toEqual([
+      ['tests/mugs.spec.ts:2', '', 'adds mug 2 [(]large[)]', null],
+    ]);
+    // The spec whole needs none.
+    expect(runs([byLabel('mugs.spec.ts')])).toEqual([['tests/mugs.spec.ts', '', null, null]]);
+  });
+
+  test('a node holding an excluded one runs by its children’s filters; a node no run takes runs nothing', () => {
+    expect(runs([byLabel('checkout.spec.ts')], [byLabel('refunds')])).toEqual([
+      ['tests/cart/checkout.spec.ts:4', '', null, null],
+    ]);
+    const pays = find((n) => n.kind === 'test' && n.label === 'pays');
+    expect(
+      runs(
+        [`${CONFIG_NODE}${ROOT}`].map((id) => ({ id }) as TestTreeNode),
+        [pays.children[0]!],
+      ),
+    ).toEqual([
+      ['tests/cart/checkout.spec.ts:4', 'firefox', null, null],
+      ['tests/cart/checkout.spec.ts:7 tests/mugs.spec.ts', '', null, null],
+    ]);
+    expect(runs([byLabel(NOT_IN_CHECKOUT), byLabel('was deleted')])).toEqual([]);
+    expect(nodeRuns(contexts, ['no such node'])).toEqual([]);
+  });
+
+  test('a run whose locations would make too long a command is split, never widened', () => {
+    const many = configTree(
+      ROOT,
+      Array.from({ length: 400 }, (_, i) => ({
+        uri: `file:///w/tests/a-rather-long-folder-name/spec-${i}.spec.ts`,
+        file: `tests/a-rather-long-folder-name/spec-${i}.spec.ts`,
+        entries: [entry({ line: 2 })],
+      })),
+      [],
+    );
+    const specs = many[0]!.children[0]!.children;
+    const split = nodeRuns(
+      [{ root: ROOT, nodes: many }],
+      specs.map((n) => n.id),
+    );
+    expect(split.length).toBeGreaterThan(1);
+    expect(split.flatMap((r) => r.locations)).toHaveLength(400);
+    for (const run of split) expect(run.locations.join(' ').length).toBeLessThanOrEqual(8000);
+  });
+
+  test('a title as --grep reads it, with no character a shell expands', () => {
+    expect(titlePattern('pays (by card) $5 + 10% off!')).toBe('pays [(]by card[)] .5 [+] 10. off.');
+    expect(titlePattern('a|b [c] {d} *e? ^f "g" \\h `i`')).toBe('a[|]b [[]c] [{]d[}] [*]e[?] .f .g. .h .i.');
   });
 });

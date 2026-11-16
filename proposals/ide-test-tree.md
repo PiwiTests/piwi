@@ -5,9 +5,10 @@ asked whether both editors can show every test of the workspace and run any of t
 list should come from the Piwi instance or from the source code. **Stage 1 is built**: the listing
 (`packages/editor/src/test-listing.ts`), the tree in the service (`src/test-tree.ts`, `piwi/testItems` as nodes,
 `piwi/testItemsChanged`), and VS Code's Testing view drawing it, a project's node showing that project's result from
-the editor's own runs; `Protocol.kt` mirrors the types, which the JetBrains plugin does not call yet. Remaining: running
-a node with its own filter (stage 2: until then a group runs as its tests, by id or by `file:line`, and a project's node
-does not run), the JetBrains Tests tab (stage 3), and the docs' screenshots (stage 4).
+the editor's own runs. **Stage 2 is built**: `piwi/testRuns` runs each picked node by its narrowest filter
+(`nodeRuns`), a project's node in its project alone, and VS Code's profiles go through it. `Protocol.kt` mirrors the
+types and requests, which the JetBrains plugin does not call yet. Remaining: the JetBrains Tests tab (stage 3) and the
+docs' screenshots (stage 4).
 
 **Summary.** VS Code's Testing view already shows Piwi's tests and runs any node, but its list is incomplete: the spec
 files come from the instance's catalog (plus the specs open in the editor), and the tests inside each spec from a
@@ -171,6 +172,11 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 - **Locations, not catalog ids**: a run from the tree needs no instance and runs tests the instance does not know. The
   other entry points (a failure node, a test line's lens) keep `testIds`.
 - **The profiles stay**: Run, Debug, Coverage and Verify ×3 with Piwi, the last through `repeat`.
+- **A title in `--grep`** cannot hold `$` nor a backslash (the service quotes no character a shell expands), so it is
+  matched by the title alone, its special characters in classes of their own (`[(]`), without the tests of the line
+  whose title holds it (`--grep-invert`): `adds mug 1` runs without `adds mug 10`. Playwright matches the project, spec,
+  describe blocks, title and tags joined, so a title that its spec's path or describe blocks hold may still take the
+  other tests of its line.
 - **No run by tag**: the editors' filters read the tags (Playwright's, `owner:<name>`, `quarantined`, `@piwi:flaky`),
   and a run of the filtered tree runs the nodes it shows (to check in VS Code, [§6](#6-the-clients)). No `--grep @tag`
   run is added.
@@ -214,8 +220,8 @@ All in `packages/editor/src/protocol.ts`, mirrored in `Protocol.kt` in the same 
   config's folder, its spec and each project's Playwright id (`TreeTest`). And `listing`: when the config was last
   listed, and why the last listing failed, if it did.
 - `piwi/testItemsChanged`, pushed with the whole answer.
-- `piwi/testRuns`: `{ nodes: string[]; exclude?: string[]; repeat?: number; debug?: boolean; coverage?: boolean }` →
-  `RunTestsArgs[]`.
+- `piwi/testRuns`: `{ nodes: string[]; exclude?: string[]; repeat?: number; debug?: boolean }` → `RunTestsArgs[]`, a
+  config's node named `CONFIG_NODE` and its folder; `RunTestsArgs` gains `all`, `projects`, `grep` and `grepInvert`.
 
 ## 8. Stages
 
@@ -225,7 +231,7 @@ Each a pull request with the `ide` scope.
    its errors, the merge with the line parse and the catalog, `piwi/testItems` as nodes, `piwi/testItemsChanged`), and
    VS Code drawing the service's nodes. Tested in `packages/editor/tests/` on a fixture with a real `@playwright/test`,
    two projects and a loop.
-2. **Running a node**: `piwi/testRuns` and its filters (`tests/commands.test.ts` for each kind of node), VS Code's
+2. **Running a node** (built): `piwi/testRuns` and its filters (`tests/commands.test.ts` for each kind of node), VS Code's
    profiles on it.
 3. **The JetBrains Tests tab**, checked by `PiwiPluginTest` on the same fixture.
 4. **Docs and screenshots**: the editor feature pages, `vscode.md` and `jetbrains.md`, both screenshot sets; P1 of
