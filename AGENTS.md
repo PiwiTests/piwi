@@ -236,8 +236,8 @@ Every guide is read by agents before they edit, so its size is paid on every tas
   code when none fits (with a `CLAUDE.md` holding `@AGENTS.md` next to it, and a link from the guide of the nearest
   directory above it), this root file only when it applies everywhere.
 - **Size limits**, checked by `apps/application/tests/unit/agent-guides.test.ts`: 20,000 characters for this file and
-  30,000 for any other guide (Claude Code keeps only the first 40,000 characters of a guide it loads on its own). Over
-  the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.
+  30,000 for any other guide (with a 200K context window, Claude Code cuts a guide it loads on its own at 40,000).
+  Over the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.
 
 ## Troubleshooting
 
