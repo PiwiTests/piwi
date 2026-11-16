@@ -1,8 +1,8 @@
 /**
- * Wire shapes the integration UI reads. Secret credentials never appear here — a
- * connection summary carries a `hasCredentials` flag and its non-secret credential
- * values (the account email), and the test result carries the resolved account,
- * not the token that resolved it.
+ * Wire shapes the integration UI reads. Secret credentials never appear here: a
+ * connection summary carries a `hasCredentials` flag, the name of the credential
+ * its token is kept in and its non-secret values (the account e-mail), and the
+ * test result carries the resolved account, not the token that resolved it.
  */
 import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
@@ -25,12 +25,15 @@ export interface ConnectionSummary {
   lastCheckedAt: string | null;
   lastError: string | null;
   managedBy: ConnectionManagedBy;
-  /** True when the connection has stored credentials, without revealing them. */
+  /** True when the connection names a credential, without revealing it. */
   hasCredentials: boolean;
+  /** The credential the connection's token is kept in (Settings → Credentials), or null. */
+  credentialId: number | null;
+  credentialName: string | null;
   /**
-   * The non-secret credential values (e.g. the account email), so the settings UI
-   * can show the account and pre-fill the edit form. Secret fields such as the API
-   * token are never included.
+   * The non-secret credential values (the account e-mail, its credential's user), so
+   * the settings UI can show the account and pre-fill the edit form. Secret fields
+   * such as the API token are never included.
    */
   credentialValues: Record<string, string>;
   /** True when an inbound-webhook token is set (the token itself is never returned). */
@@ -45,8 +48,10 @@ export interface ConnectionInput {
   name: string;
   baseUrl: string;
   config?: Record<string, unknown> | null;
-  /** Field-key → value; an empty or omitted map on update keeps the stored one. */
+  /** Field-key → value; a token saves the connection's credential, an empty or omitted map keeps the one named. */
   credentials?: Record<string, string> | null;
+  /** A saved credential the connection names in place of a typed token. */
+  credentialId?: number | null;
 }
 
 /** The result of testing a connection (`POST connections/:id/test`). */

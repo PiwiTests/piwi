@@ -5,7 +5,8 @@
  * API token (classic or scoped, with the Atlassian page to open and the scopes to
  * pick), the account, then a check that signs in and counts the projects before
  * anything is saved. Saves the site URL it read, and the scoped token's cloud id
- * when the check found one.
+ * when the check found one. The token typed is saved as the connection's
+ * credential (Settings → Credentials); a saved credential can be picked instead.
  */
 import { INTEGRATION_PROVIDERS, type CredentialField } from '#shared/integrations/registry';
 import {
@@ -79,7 +80,11 @@ const check = ref<ConnectionCheckResult | null>(null);
 const checkedFor = ref<{ site: string; credentials: string | null } | null>(null);
 const checking = ref<'site' | 'credentials' | null>(null);
 
-const credentialsKey = computed(() => `${form.email}\n${form.apiToken}`);
+/** A saved credential picked in place of the typed account and token, or null. */
+const pickedCredential = ref<number | null>(null);
+const credentialsKey = computed(() => `${pickedCredential.value ?? ''}\n${form.email}\n${form.apiToken}`);
+/** The address the connection's credential is sent under: the site, as the server binds it. */
+const credentialEndpoint = computed(() => (siteAddress.value ? `${siteAddress.value.url}/` : null));
 
 async function runCheck(withCredentials: boolean) {
   const address = siteAddress.value;
@@ -91,7 +96,8 @@ async function runCheck(withCredentials: boolean) {
       body: {
         provider: 'jira',
         baseUrl: address.url,
-        credentials: withCredentials ? { email: form.email, apiToken: form.apiToken } : null,
+        credentials: withCredentials && !pickedCredential.value ? { email: form.email, apiToken: form.apiToken } : null,
+        credentialId: withCredentials ? pickedCredential.value : null,
         connectionId: withCredentials ? (props.connection?.id ?? null) : null,
       },
     });
@@ -128,8 +134,17 @@ const credentialResult = computed(() =>
 const cloudId = computed(() => siteResult.value?.cloudId ?? (storedConfig.cloudId as string | undefined) ?? null);
 
 const canCheckCredentials = computed(
-  () => !!siteAddress.value && !!form.email.trim() && (!!form.apiToken || editing.value),
+  () =>
+    !!siteAddress.value &&
+    (pickedCredential.value !== null || (!!form.email.trim() && (!!form.apiToken || editing.value))),
 );
+
+/** What a blank token keeps, or where a typed one is saved. */
+const tokenDescription = computed(() => {
+  if (!editing.value) return 'Saved as a credential (Settings → Credentials), never shown again.';
+  const name = props.connection?.credentialName;
+  return name ? `Leave blank to keep the token of “${name}”.` : 'Leave blank to keep the stored token.';
+});
 
 function siteLine(site: ConnectionCheckResult['site']): string {
   if (!site.ok) return site.error ?? 'Not a Jira Cloud site.';
@@ -148,7 +163,11 @@ function projectsLine(projects: NonNullable<ConnectionCheckResult['projects']>):
 // ── Save ─────────────────────────────────────────────────────────────────────
 const saving = ref(false);
 const canSave = computed(
-  () => !!siteAddress.value && (editing.value || (!!form.email.trim() && !!form.apiToken && props.canStoreSecrets)),
+  () =>
+    !!siteAddress.value &&
+    (editing.value ||
+      pickedCredential.value !== null ||
+      (!!form.email.trim() && !!form.apiToken && props.canStoreSecrets)),
 );
 
 async function submit() {
@@ -173,7 +192,9 @@ async function submit() {
       provider: 'jira',
       name: form.name.trim() || suggestedName.value,
       baseUrl: address.url,
-      credentials: { email: form.email.trim(), apiToken: form.apiToken },
+      ...(pickedCredential.value !== null
+        ? { credentialId: pickedCredential.value }
+        : { credentials: { email: form.email.trim(), apiToken: form.apiToken } }),
       config,
     };
     if (props.connection) {
@@ -328,8 +349,14 @@ const envSnippet = computed(() =>
 
     <!-- 3. The account -->
     <section class="space-y-3">
+      <SavedCredentialPicker
+        v-model="pickedCredential"
+        service="jira"
+        :endpoint="credentialEndpoint"
+        :current="connection?.credentialId ?? null"
+      />
       <div class="grid gap-3 sm:grid-cols-2 max-w-2xl">
-        <UFormField :label="emailField.label" :description="emailField.help">
+        <UFormField v-if="pickedCredential === null" :label="emailField.label" :description="emailField.help">
           <UInput
             v-model="form.email"
             type="email"
@@ -338,10 +365,7 @@ const envSnippet = computed(() =>
             class="w-full"
           />
         </UFormField>
-        <UFormField
-          :label="tokenField.label"
-          :description="editing ? 'Leave blank to keep the stored token.' : 'Stored encrypted, never shown again.'"
-        >
+        <UFormField v-if="pickedCredential === null" :label="tokenField.label" :description="tokenDescription">
           <UInput
             v-model="form.apiToken"
             type="password"

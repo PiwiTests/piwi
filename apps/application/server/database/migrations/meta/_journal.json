@@ -1254,6 +1254,13 @@
       "when": 1794860255808,
       "tag": "0178_project_scm_credential",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "6",
+      "when": 1794867794242,
+      "tag": "0179_connection_credential",
+      "breakpoints": true
     }
   ]
 }

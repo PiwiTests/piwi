@@ -1183,6 +1183,8 @@ export const integrationConnections = pgTable(
     baseUrl: text('base_url').notNull(),
     config: jsonb('config'), // provider-specific, non-secret (flavor, site id, default space…)
     credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    /** The credential the connection's requests carry (`credentials.id`); the startup import moves `credentials` to one. */
+    credentialId: integer('credential_id'),
     status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
     lastCheckedAt: timestamp('last_checked_at', { mode: 'date' }),
     lastError: text('last_error'),

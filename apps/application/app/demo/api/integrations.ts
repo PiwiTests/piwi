@@ -18,6 +18,7 @@ import { connectionBaseUrl, credentialFieldError, nonSecretCredentials } from '#
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
 import {
   DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CREDENTIAL,
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
 } from '#shared/demo/demo-test-management.mjs';
 import { demoHttpError } from './http-error';
@@ -69,6 +70,8 @@ const DEMO_CONNECTION: ConnectionSummary = {
   lastError: null,
   managedBy: 'db',
   hasCredentials: true,
+  credentialId: null,
+  credentialName: null,
   credentialValues: { email: 'demo@example.com' },
   hasWebhookToken: false,
   createdAt: DEMO_TIME,
@@ -85,6 +88,8 @@ const DEMO_ZEPHYR_CONNECTION: ConnectionSummary = {
   lastError: null,
   managedBy: 'db',
   hasCredentials: true,
+  credentialId: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+  credentialName: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
   credentialValues: {},
   hasWebhookToken: false,
   createdAt: DEMO_TIME,
@@ -141,7 +146,9 @@ export function createDemoConnection(body: Omit<ConnectionInput, 'baseUrl'> & { 
       baseUrl: endpoint.baseUrl,
       config: endpoint.region ? { ...body.config, region: endpoint.region } : (body.config ?? { flavor: 'cloud' }),
       status: 'unverified',
-      hasCredentials: !!body.credentials && Object.keys(body.credentials).length > 0,
+      hasCredentials: !!body.credentialId || (!!body.credentials && Object.keys(body.credentials).length > 0),
+      credentialId: null,
+      credentialName: null,
       credentialValues: nonSecretCredentials(body.provider, body.credentials),
     },
   };

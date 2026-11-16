@@ -226,9 +226,11 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
- * Move the project CI server tokens (`projects.ci_server_token`) and the SCM
- * tokens (`projects.scm_token`, the `scm_token` app setting) into credentials
- * (`importProjectCiServerTokens`, `importScmTokens`). Startup waits for it, so
+ * Move the project CI server tokens (`projects.ci_server_token`), the AI keys,
+ * the Jira and Zephyr Scale tokens (`integration_connections.credentials`) and
+ * the SCM tokens (`projects.scm_token`, the `scm_token` app setting) into
+ * credentials (`importProjectCiServerTokens`, `importAiKeys`,
+ * `importConnectionCredentials`, `importScmTokens`). Startup waits for it, so
  * no dispatch or repository call runs while it still waits for its credential.
  * A token that cannot be opened, or waits for a repository, is left for later,
  * and a failure is logged.
@@ -247,6 +249,13 @@ async function importProjectCiServerTokens(target: DB): Promise<void> {
     if (moved) console.log(`[Database] ${moved} AI key(s) moved to credentials`);
   } catch (err) {
     console.error('[Database] Moving the AI keys to credentials failed:', err);
+  }
+  try {
+    const { importConnectionCredentials } = await import('../utils/integrations/connection-credentials');
+    const moved = await importConnectionCredentials(target as any);
+    if (moved) console.log(`[Database] ${moved} Jira or Zephyr Scale token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the Jira and Zephyr Scale tokens to credentials failed:', err);
   }
   try {
     const { importScmTokens } = await import('../utils/credentials');

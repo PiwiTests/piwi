@@ -4730,6 +4730,8 @@ const SCENES = [
                 lastError: null,
                 managedBy: 'db',
                 hasCredentials: true,
+                credentialId: null,
+                credentialName: null,
                 credentialValues: {},
                 hasWebhookToken: false,
                 createdAt: null,

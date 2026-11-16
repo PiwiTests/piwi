@@ -7,6 +7,7 @@ import { fetchExternalAvatar, isExternalAvatarUrl, isJiraIconPath } from '../../
 import { iconCache } from '../../../../utils/integrations/picker-cache';
 import { PUBLIC_IMAGE_HEADERS } from '../../../../utils/public-image';
 import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -19,7 +20,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const id = requireRouteId(event);
   const db = await requireConnectionAccess(event, id);
   const query = getQuery(event);
@@ -30,7 +31,7 @@ export default eventHandler(async (event) => {
   const cacheKey = `${id}:${path}`;
   let icon = iconCache.get(cacheKey);
   if (icon === undefined) {
-    const tracker = external ? null : await createTracker(db, id);
+    const tracker = external ? null : await createTracker(db, id, requestCredentialActor(event, user));
     if (!external && !tracker) {
       throw apiError({ statusCode: 404, message: CONNECTION_NOT_FOUND });
     }

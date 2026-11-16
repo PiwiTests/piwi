@@ -300,6 +300,10 @@ runs (`@piwitests/editor/run-host`), plus these:
   public wrapper of the base class that runs a `do…` hook through `write`, so it is logged and checked again: a new
   write is a hook behind such a wrapper. Only `LocalGitProvider` overrides a wrapper, to call the hosted provider's
   (`tests/unit/scm-credentials.test.ts`).
+- **A Jira or Zephyr Scale client gets its token only from `openTracker` or `openTestManagement`**
+  (`integrations/connections.ts`), which open the connection's credential as one counted read; each of the clients'
+  writes goes through the credential's `writeGate`, and a POST that only reads is listed in the Jira client's
+  `READ_POSTS` (`tests/unit/connection-credentials.test.ts`).
 - **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
   shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
   console with it.

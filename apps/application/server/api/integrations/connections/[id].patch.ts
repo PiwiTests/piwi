@@ -1,16 +1,17 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
+import { connectionEndpoint, getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
 import { connectionBaseUrl, credentialFieldError, providerEndpoint } from '#shared/integrations/registry';
 import { requireRouteId } from '../../../utils/project-access';
+import { connectionCredentialProblem, hasTypedToken } from '../../../utils/integrations/connection-credentials';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Update an integration connection',
     description:
-      'Updates a connection. A new `baseUrl` (or `region`, for a provider reached on its own regional hosts) is checked as on create. An empty credential map keeps the stored credential. Changed credentials answer HTTP 409 while `PIWI_SECRET_KEY` is unset, since they cannot be encrypted. Environment-managed connections are read-only.',
+      'Updates a connection. A new `baseUrl` (or `region`, for a provider reached on its own regional hosts) is checked as on create. A token typed in `credentials` rotates the credential the connection names, or saves a new one, and an e-mail alone changes its user; `credentialId` names a saved credential instead, and an empty map keeps the one named. A move to another site or region keeps no credential that is not sent there. A typed token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Environment-managed connections are read-only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'connections:manage',
   },
@@ -22,10 +23,11 @@ const schema = z.object({
   region: z.string().max(50).optional(),
   config: z.record(z.string(), z.unknown()).nullable().optional(),
   credentials: z.record(z.string(), z.string()).nullable().optional(),
+  credentialId: z.number().int().positive().nullable().optional(),
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const id = requireRouteId(event, 'id', 'connection ID');
 
   const body = await readBody(event);
@@ -64,6 +66,17 @@ export default eventHandler(async (event) => {
     if (input.config !== undefined && typeof stored === 'string') input.config = { ...input.config, region: stored };
   }
 
-  const connection = await updateConnection(db, id, input);
+  if (input.credentialId != null && !hasTypedToken(input.credentials)) {
+    const config = (input.config === undefined ? row.config : input.config) as Record<string, unknown> | null;
+    const problem = await connectionCredentialProblem(
+      db,
+      row.provider,
+      input.credentialId,
+      connectionEndpoint(row.provider, input.baseUrl ?? row.baseUrl, config),
+    );
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+  }
+
+  const connection = await updateConnection(db, id, { ...input, createdBy: user.id || null });
   return { connection };
 });

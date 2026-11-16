@@ -41,6 +41,7 @@ const scopeText = (c: CredentialSummary) =>
 function referenceLink(use: CredentialReference): string {
   if (use.kind === 'instance-scm') return '/settings/source-control';
   if (use.kind === 'ai-role') return '/settings/ai';
+  if (use.kind === 'connection') return '/settings/integrations';
   return `/projects/${use.projectId}?tab=settings&section=${use.kind === 'ci-action' ? 'ci' : 'source-control'}`;
 }
 

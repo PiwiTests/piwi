@@ -8,8 +8,8 @@ lang: en-US
 
 A credential is a secret Piwi sends to another service, saved once under **Settings → Credentials** and named wherever
 it is needed: by a CI server action of [Re-run in CI](/features/ci-rerun), instead of a user, a token and a base URL in
-every action, and by a project's [source control](/guide/source-control). A rotation is one change, and every use is
-logged.
+every action, by a project's [source control](/guide/source-control), an AI role or a Jira or Zephyr Scale connection.
+A rotation is one change, and every use is logged.
 
 <figure>
   <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins and two GitHub credentials, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
@@ -20,10 +20,10 @@ logged.
 
 | Field | What it is |
 |---|---|
-| **Service** | **CI server**, **Source control** for a GitHub, GitLab or Bitbucket token, or **AI provider**. |
+| **Service** | **CI server**, **Source control** for a GitHub, GitLab or Bitbucket token, **AI provider**, **Jira Cloud** or **Zephyr Scale**. |
 | **Name** | Unique on the instance, ignoring case; the name the pickers and the log show. |
 | **Destination** | The base URL the secret may be sent under (`https://jenkins.example.com/`). A request to any other address, or outside its path, is refused. |
-| **User** | The user name sent with the secret as HTTP Basic authentication, when a CI server takes one. |
+| **User** | The user name sent with the secret as HTTP Basic authentication, when a CI server takes one; for Jira, the account's e-mail. |
 | **Secret** | The API token, saved encrypted with `PIWI_SECRET_KEY`, together with the destination, or read from a server variable (below). Never returned by any page, API answer or log. |
 | **Projects** | The projects that may name it: a list, or all projects, present and future. |
 | **Inputs** | For a CI server, the CI action inputs a request carrying it may send beside the arguments and the dispatch id: every input, or the names listed. |
@@ -81,6 +81,8 @@ project, and holding the request's URL under its destination, and allowing a Cus
 - **Source control**: a project's repository calls, else the instance's, with a GitHub, GitLab or Bitbucket token sent
   to the host's API ([Source control](/guide/source-control#set-the-credential)).
 - **An AI role**: the key of a role of **Settings → AI**, sent to its provider ([AI provider](/guide/ai-provider#api-keys)).
+- **A Jira or Zephyr Scale connection**: its API token, sent to the Jira site or the Zephyr Scale region's API
+  ([below](#jira-and-zephyr-scale-connections)).
 
 Whatever names it, a credential is checked and logged as this page says; each page says what its feature sends and
 how the secrets saved before credentials existed were moved.
@@ -99,13 +101,26 @@ server actions it served. Two projects holding the same token for the same URL a
 administrator manages it, since the database does not say who saved the token. A token that cannot be opened (a
 changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each start.
 
+## Jira and Zephyr Scale connections
+
+The token typed in a connection's form under **Settings → Integrations** is saved as its credential, named after it,
+shared with all projects and sent only under the Jira site (the Atlassian gateway of a scoped token counts as the
+site) or the Zephyr Scale region's API. A token typed later rotates it; **Saved credential** picks another. Opening a
+connection (a picker, a sync, a check) is a counted read; each write (an issue, a comment, a transition, an
+attachment, a results upload, a link) is a row of its own.
+
+`PIWI_JIRA_*` and `PIWI_ZEPHYR_*` make a read-only credential of the environment for their connection, which reads the
+token from the variable. A token a connection held before credentials existed is moved at startup to a credential of
+its own, named after the connection.
+
 ## The log
 
 A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
 credential, a deleted one and the environment's included:
 
 - **What**: a CI dispatch or a Check, with the CI action it was for; a repository read, a commit status, a
-  pull-request comment or an auto-heal write, with its commit, pull request or branch.
+  pull-request comment or an auto-heal write, with its commit, pull request or branch; an AI model call; a read or a
+  write of a Jira or Zephyr Scale connection.
 - **Where**: the project, and the request's origin and path (never its query).
 - **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
   Checks, the last of the hour.
@@ -121,5 +136,6 @@ page's **Log**, under its name, until then.
 
 - [Re-run in CI](/features/ci-rerun): the CI actions that name a credential
 - [Source control](/guide/source-control): what reads and writes a repository with an SCM credential
+- [Jira Cloud](./integrations) and [Zephyr Scale](./zephyr-scale): the connections that name a credential
 - [Access, roles and groups](./project-access): who holds `credentials:manage` and `project:manage`
 - [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts every secret

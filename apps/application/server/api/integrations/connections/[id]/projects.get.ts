@@ -5,6 +5,7 @@ import { createTracker } from '../../../../utils/integrations/connections';
 import { requireConnectionAccess } from '../../../../utils/integrations/connection-access';
 import { projectsCache } from '../../../../utils/integrations/picker-cache';
 import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -17,14 +18,14 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const id = requireRouteId(event);
   const db = await requireConnectionAccess(event, id);
 
   const cached = projectsCache.get(`${id}`);
   if (cached) return { projects: cached };
 
-  const tracker = await createTracker(db, id);
+  const tracker = await createTracker(db, id, requestCredentialActor(event, user));
   if (!tracker) throw apiError({ statusCode: 404, message: CONNECTION_NOT_FOUND });
 
   const projects = await tracker.listProjects();

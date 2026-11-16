@@ -9,6 +9,7 @@ import { INTERACTIVE_MAX_WAIT_MS } from '../../../../utils/integrations/test-man
 import { ZEPHYR_INTERACTIVE_TIMEOUT_MS } from '../../../../utils/integrations/test-management/zephyr-scale';
 import { folderOptions, type TestManagementPickerOptions } from '#shared/integrations/test-management-picker';
 import { TEST_MANAGEMENT_PROJECT_KEY } from '#shared/integrations/test-management-binding';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -27,7 +28,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, id);
+  const user = await requireProjectAccess(event, id);
   const db = await getDatabase();
 
   const query = getQuery(event);
@@ -40,12 +41,18 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid project key' });
   }
 
-  const { client } = await requireTestManagementClient(event, db, connectionId, {
-    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
-    signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
-    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
-    deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
-  });
+  const { client } = await requireTestManagementClient(
+    event,
+    db,
+    connectionId,
+    {
+      timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+      signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
+      maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+      deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    },
+    requestCredentialActor(event, user),
+  );
   const cacheKey = `${connectionId}:${projectKey ?? ''}`;
   const cached = testManagementOptionsCache.get(cacheKey);
   if (cached) return cached;

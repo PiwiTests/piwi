@@ -1191,6 +1191,8 @@ export const integrationConnections = sqliteTable(
     baseUrl: text('base_url').notNull(),
     config: text('config', { mode: 'json' }), // provider-specific, non-secret (flavor, site id, default space…)
     credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    /** The credential the connection's requests carry (`credentials.id`); the startup import moves `credentials` to one. */
+    credentialId: integer('credential_id'),
     status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
     lastCheckedAt: integer('last_checked_at', { mode: 'timestamp_ms' }),
     lastError: text('last_error'),

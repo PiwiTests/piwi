@@ -41,7 +41,7 @@ import type { IssueComment } from '#shared/integrations/run-issue';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
-import { createTracker, getConnectionRow, markConnectionFailed, testManagementForRow } from './connections';
+import { createTracker, getConnectionRow, markConnectionFailed, openTestManagement } from './connections';
 import { connectionPausedUntil, holdConnection } from './connection-pauses';
 import { boundConnectionId } from './bound-connection';
 import { JiraError } from './jira/client';
@@ -830,7 +830,7 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
         return { status: 'done', result };
       }
       const row = await getConnectionRow(db, action.connectionId);
-      const tm = row ? testManagementForRow(row, { maxWaitMs: SYNC_LIMITER_WAIT_MS }) : null;
+      const tm = row ? await openTestManagement(db, row, { maxWaitMs: SYNC_LIMITER_WAIT_MS }) : null;
       if (!tm) return skip(NO_CREDENTIALS);
       try {
         return { status: 'done', result: await applySyncResults(db, tm, action, attempts) };

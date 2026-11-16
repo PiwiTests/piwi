@@ -5,6 +5,7 @@ import { createTracker } from '../../../../utils/integrations/connections';
 import { requireConnectionAccess } from '../../../../utils/integrations/connection-access';
 import { issuePickerCache } from '../../../../utils/integrations/picker-cache';
 import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -17,7 +18,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const id = requireRouteId(event);
   const db = await requireConnectionAccess(event, id);
   const query = getQuery(event);
@@ -28,7 +29,7 @@ export default eventHandler(async (event) => {
   const cached = issuePickerCache.get(cacheKey);
   if (cached) return { issues: cached };
 
-  const tracker = await createTracker(db, id);
+  const tracker = await createTracker(db, id, requestCredentialActor(event, user));
   if (!tracker) throw apiError({ statusCode: 404, message: CONNECTION_NOT_FOUND });
   if (!tracker.pickIssues) return { issues: [] };
 

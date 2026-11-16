@@ -14,7 +14,8 @@ import {
   markConnectionFailed,
   markConnectionOk,
   recordConnectionError,
-  testManagementForRow,
+  connectionHasCredentials,
+  openTestManagement,
 } from '../connections';
 import { readCatalogInfo } from './catalog';
 import type { PageCursor, TestManagementProvider, TmCase, TmPage } from './types';
@@ -189,12 +190,12 @@ async function readAndStore(
   if (!row || !isProviderOfKind(row.provider, 'test-management')) {
     return { ok: false, status: 404, error: 'Connection not found', pausedUntil: null };
   }
-  const client = testManagementForRow(row);
-  if (!client) return { ok: false, status: 502, error: 'This connection has no usable credentials', pausedUntil: null };
   const paused = connectionPausedUntil(connectionId, now());
   if (paused) {
     return { ok: false, status: 429, error: `Paused until ${paused.toISOString()}: rate limited`, pausedUntil: paused };
   }
+  const client = await openTestManagement(db, row);
+  if (!client) return { ok: false, status: 502, error: 'This connection has no usable credentials', pausedUntil: null };
 
   const fetchedAt = now();
   let cases: TmCase[];
@@ -255,7 +256,7 @@ export async function dueCatalogs(db: DbClient, now: Date): Promise<DueCatalog[]
     if (pair.connectionId === null || pair.projectKey === null) continue;
     const row = await getConnectionRow(db, pair.connectionId);
     if (!row || !isProviderOfKind(row.provider, 'test-management') || row.status === 'failed') continue;
-    if (!testManagementForRow(row) || connectionPausedUntil(pair.connectionId, now)) continue;
+    if (!connectionHasCredentials(row) || connectionPausedUntil(pair.connectionId, now)) continue;
     const { fetchedAt } = await readCatalogInfo(db, pair.connectionId, pair.projectKey);
     if (fetchedAt === null || now.getTime() - fetchedAt.getTime() > CATALOG_MAX_AGE_MS) {
       due.push({ connectionId: pair.connectionId, projectKey: pair.projectKey });

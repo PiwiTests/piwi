@@ -12,10 +12,15 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'List credentials',
     description:
-      'Lists the credentials Piwi sends to other services, never their secrets. Without `projectId`, it answers the credentials the caller may change, with their scope, what names them (`usedBy`: CI actions, the source control of a project or of the instance) and when each was last used: every credential for someone who holds `credentials:manage` (the ones the environment sets included, read-only), and for a Project admin those they created that are shared only with projects they manage and read no variable. With `projectId`, it answers the credentials that project may name (set in the database and shared with it), without their scope, for a Project admin of that project; `service` (`ci-server` or `scm`) narrows them. `secretEnv` names the `PIWI_CREDENTIAL_*` variable a credential reads its secret from, and `secretEnvSet` whether it is set on the server. `canEncrypt` says whether a credential can be saved (`PIWI_SECRET_KEY` is set).',
+      'Lists the credentials Piwi sends to other services, never their secrets. Without `projectId`, it answers the credentials the caller may change, with their scope, what names them (`usedBy`: CI actions, the source control of a project or of the instance, AI roles, Jira and Zephyr Scale connections) and when each was last used: every credential for someone who holds `credentials:manage` (the ones the environment sets included, read-only), and for a Project admin those they created that are shared only with projects they manage and read no variable. With `projectId`, it answers the credentials that project may name (set in the database and shared with it), without their scope, for a Project admin of that project; `service` narrows them. `secretEnv` names the `PIWI_CREDENTIAL_*` variable a credential reads its secret from, and `secretEnvSet` whether it is set on the server. `canEncrypt` says whether a credential can be saved (`PIWI_SECRET_KEY` is set).',
     parameters: [
       { name: 'projectId', in: 'query', required: false, schema: { type: 'integer' } },
-      { name: 'service', in: 'query', required: false, schema: { type: 'string', enum: ['ci-server', 'scm'] } },
+      {
+        name: 'service',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['ci-server', 'scm', 'ai', 'jira', 'zephyr-scale'] },
+      },
     ],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },

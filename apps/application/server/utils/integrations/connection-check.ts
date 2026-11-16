@@ -9,13 +9,20 @@ import type { DbClient } from '../../database';
 import { credentialsForCheck, regionCredentialsForCheck } from './connections';
 import { checkJiraCredentials, probeJiraSite } from './jira/check';
 import { checkZephyrCredentials } from './test-management/zephyr-check';
+import type { CredentialActor } from '../credentials';
 
-/** What the connect form sends to check: the address or region typed, the credentials, the connection being edited. */
+/**
+ * What the connect form sends to check: the address or region typed, the credentials, the connection being edited,
+ * and who checks, whom the read of that connection's credential is logged under.
+ */
 export interface ConnectionCheckInput {
   baseUrl?: string;
   region?: string;
   credentials?: Record<string, string> | null;
+  /** A saved credential picked in place of the typed fields. */
+  credentialId?: number | null;
   connectionId?: number | null;
+  actor?: CredentialActor;
 }
 
 /** A check that refuses the input outright: the route answers 400 with its message. */
@@ -36,7 +43,9 @@ async function checkJiraConnection(db: DbClient, input: ConnectionCheckInput): P
   const credentials = await credentialsForCheck(db, {
     siteUrl: site.url,
     credentials: input.credentials,
+    credentialId: input.credentialId,
     connectionId: input.connectionId,
+    actor: input.actor,
   });
   if (!credentials) return result;
   return { ...result, ...(await checkJiraCredentials(site.url, credentials)) };
@@ -53,7 +62,9 @@ async function checkZephyrConnection(db: DbClient, input: ConnectionCheckInput):
     provider: 'zephyr-scale',
     region: endpoint.region!,
     credentials: input.credentials,
+    credentialId: input.credentialId,
     connectionId: input.connectionId,
+    actor: input.actor,
   });
   return { baseUrl: endpoint.baseUrl, ...(await checkZephyrCredentials(endpoint.region!, credentials)) };
 }

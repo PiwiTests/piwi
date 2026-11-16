@@ -6,13 +6,14 @@
  * `server/utils/credentials.ts`' alone, and nothing here selects the column
  * that holds it.
  */
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import {
   apiKeys,
   appSettings,
   credentialProjects,
   credentials,
   credentialUses,
+  integrationConnections,
   projects,
   users,
 } from '../../server/database/schema';
@@ -236,7 +237,7 @@ async function aiRoleCredentialIds(db: DrizzleDB): Promise<Array<[string, number
  * control, the instance's source control, the AI roles.
  */
 export async function credentialReferences(db: DrizzleDB): Promise<Map<number, CredentialReference[]>> {
-  const [rows, instanceIds, aiRoles] = await Promise.all([
+  const [rows, instanceIds, aiRoles, connections] = await Promise.all([
     db
       .select({
         id: projects.id,
@@ -248,6 +249,10 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
       .from(projects),
     readInstanceScmCredentialIds(db),
     aiRoleCredentialIds(db),
+    db
+      .select({ name: integrationConnections.name, credentialId: integrationConnections.credentialId })
+      .from(integrationConnections)
+      .where(isNotNull(integrationConnections.credentialId)),
   ]);
   const references = new Map<number, CredentialReference[]>();
   const add = (credentialId: number, reference: CredentialReference) => {
@@ -260,6 +265,15 @@ export async function credentialReferences(db: DrizzleDB): Promise<Map<number, C
   }
   for (const [name, id] of aiRoles) {
     add(id, { kind: 'ai-role', projectId: null, projectName: null, actionId: null, name });
+  }
+  for (const connection of connections) {
+    add(connection.credentialId!, {
+      kind: 'connection',
+      projectId: null,
+      projectName: null,
+      actionId: null,
+      name: connection.name,
+    });
   }
   for (const project of rows) {
     const projectName = project.label || project.name;
@@ -676,11 +690,12 @@ export async function projectScmCredentialProblem(
 
 /**
  * Whether something that serves every project names the credential (the
- * instance's source control, an AI role), so its scope stays all projects.
+ * instance's source control, an AI role, a Jira or Zephyr Scale connection),
+ * so its scope stays all projects.
  */
 export async function namedForEveryProject(db: DrizzleDB, credentialId: number): Promise<boolean> {
   const references = (await credentialReferences(db)).get(credentialId) ?? [];
-  return references.some((r) => r.kind === 'instance-scm' || r.kind === 'ai-role');
+  return references.some((r) => r.kind === 'instance-scm' || r.kind === 'ai-role' || r.kind === 'connection');
 }
 
 /**

@@ -116,10 +116,13 @@ export const AI_KEY_ENV_VARS = [
 ] as const;
 
 /**
- * The secret of a credential the environment sets: the CI server's token, or
- * the AI key variable its row names, one of {@link AI_KEY_ENV_VARS} alone.
+ * The secret of a credential the environment sets: the CI server's token, the
+ * Jira or Zephyr Scale token, or the AI key variable its row names, one of
+ * {@link AI_KEY_ENV_VARS} alone.
  */
 function envSecret(service: CredentialService, variable: string | null): string | null {
+  if (service === 'jira') return readSecretEnv('PIWI_JIRA_API_TOKEN');
+  if (service === 'zephyr-scale') return readSecretEnv('PIWI_ZEPHYR_API_TOKEN');
   if (service === 'ai') {
     return variable && (AI_KEY_ENV_VARS as readonly string[]).includes(variable) ? readSecretEnv(variable) : null;
   }
@@ -253,6 +256,13 @@ export interface OpenedCredential {
   user: string | null;
   secret: string;
 }
+
+/**
+ * Runs one write of a client that carries a credential (a Jira or Zephyr Scale
+ * client), with the credential's check and log row around it. `failure` reads
+ * a failure from what the write returned.
+ */
+export type CredentialWriteGate = <T>(run: () => Promise<T>, failure: (value: T) => string | null) => Promise<T>;
 
 /** A use the credential's rules refuse; its message names the credential and the reason, never the secret. */
 export class CredentialRefusedError extends Error {}

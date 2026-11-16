@@ -55,6 +55,7 @@ import {
 import {
   DEMO_TEST_MANAGEMENT_CASES,
   DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CREDENTIAL,
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
 } from '../shared/demo/demo-test-management.mjs';
@@ -3753,8 +3754,9 @@ const CONNECTED_APP_KEYS = [
 ];
 // Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that
 // no action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
-// instance's source control lists, and the shop-web one the checkout project names. The demo stores no secret. Its
-// log: dispatches, a refusal, the Check reads of one hour, repository reads, a commit status and a pull request comment.
+// instance's source control lists, the shop-web one the checkout project names, and the Zephyr Scale token of the
+// canned connection. The demo stores no secret. Its log: dispatches, a refusal, the Check reads of one hour,
+// repository reads, a commit status, a pull request comment, and the connection's reads and results upload.
 const CREDENTIALS = [
   {
     id: 1,
@@ -3828,6 +3830,24 @@ const CREDENTIALS = [
     created_at: ts('2025-03-05T10:00:00') * 1000,
     rotated_at: ts('2025-03-05T10:00:00') * 1000,
     last_used_at: ts('2025-04-25T09:05:00') * 1000,
+  },
+  {
+    id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    description: null,
+    service: 'zephyr-scale',
+    user_name: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
+    secret: null,
+    all_projects: 1,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-10T09:00:00') * 1000,
+    rotated_at: ts('2025-04-10T09:00:00') * 1000,
+    last_used_at: ts('2025-04-25T08:15:00') * 1000,
   },
 ];
 const CREDENTIAL_PROJECTS = [
@@ -3939,6 +3959,32 @@ const CREDENTIAL_USES = [
     subject_type: 'pull-request',
     subject_id: '42',
     destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(10, '2025-04-25T08:00:00', {
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    credential_name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    feature: 'integration-read',
+    project_id: null,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
+    result: 'ok',
+    reason: null,
+    count: 6,
+    last_at: ts('2025-04-25T08:15:00') * 1000,
+  }),
+  credentialUse(11, '2025-04-25T08:15:00', {
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    credential_name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    feature: 'integration-write',
+    project_id: null,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
     result: 'ok',
     reason: null,
   }),
@@ -7409,6 +7455,7 @@ const TEST_MANAGEMENT_CONNECTIONS = [
     base_url: DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl,
     config: DEMO_TEST_MANAGEMENT_CONNECTION.config,
     credentials: null,
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
     status: 'unverified',
     last_checked_at: null,
     last_error: null,

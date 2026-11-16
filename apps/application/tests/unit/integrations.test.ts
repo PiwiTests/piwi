@@ -201,11 +201,17 @@ describe('connections and link resolution', () => {
     expect(list[0]!.hasCredentials).toBe(true);
     expect(JSON.stringify(list[0])).not.toContain('secret-token');
 
-    // The stored blob is encrypted, not the plaintext token.
+    // The token is kept in a credential, sealed, and the connection's row holds none.
     const row = await getConnectionRow(dbc, created.id);
-    expect(row?.credentials).toBeTruthy();
-    expect(row?.credentials).not.toContain('secret-token');
-    expect(row?.credentials?.startsWith('v1:')).toBe(true);
+    expect(row?.credentials).toBeNull();
+    expect(row?.credentialId).toBe(created.credentialId);
+    const [credential] = await db
+      .select({ secret: schema.credentials.secret, user: schema.credentials.userName })
+      .from(schema.credentials)
+      .where(eq(schema.credentials.id, created.credentialId!));
+    expect(credential?.user).toBe('me@team.io');
+    expect(credential?.secret).toBeTruthy();
+    expect(credential?.secret).not.toContain('secret-token');
   });
 
   test('an empty credential map keeps the stored credential (redaction round-trip)', async () => {

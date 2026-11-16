@@ -10,8 +10,7 @@ import {
   RequestLimiterBusyError,
   resetLimitersForTests,
 } from '../../server/utils/integrations/test-management/limiter';
-import { testManagementForRow } from '../../server/utils/integrations/connections';
-import { encryptSecret, getEncryptionKey } from '../../server/utils/crypto';
+import { testManagementClientFor } from '../../server/utils/integrations/connections';
 import type { IntegrationConnection } from '../../server/database/schema';
 
 /**
@@ -150,8 +149,8 @@ describe('a saved connection’s client', () => {
       baseUrl: '',
       status: 'unverified',
       config: { region: 'us' },
-      credentials: encryptSecret(JSON.stringify({ apiToken: 'limiter-token-value' }), getEncryptionKey()),
     }) as unknown as IntegrationConnection;
+  const opened = { values: { apiToken: 'limiter-token-value' }, writeGate: <T>(run: () => Promise<T>) => run() };
 
   test('sends its requests spaced by the limiter, so two calls are not made together', async () => {
     process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '20';
@@ -163,7 +162,7 @@ describe('a saved connection’s client', () => {
         }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const client = testManagementForRow(row())!;
+    const client = testManagementClientFor(row(), opened, {})!;
     const calls = [client.listProjects(), client.listProjects()];
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);

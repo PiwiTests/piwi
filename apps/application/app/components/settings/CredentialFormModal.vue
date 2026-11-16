@@ -112,6 +112,39 @@ const isScm = computed(() => form.value.service === 'scm');
 const isAi = computed(() => form.value.service === 'ai');
 /** A CI server credential's user, inputs and Custom request switch; the other services send the secret alone. */
 const isCiServer = computed(() => form.value.service === 'ci-server');
+/** A Jira credential's user is the account's e-mail, sent with the API token. */
+const isJira = computed(() => form.value.service === 'jira');
+/** A Jira or Zephyr Scale credential, which a connection of Settings → Integrations names. */
+const isConnection = computed(() => isJira.value || form.value.service === 'zephyr-scale');
+const NAME_PLACEHOLDERS: Record<CredentialService, string> = {
+  'ci-server': 'e.g. Jenkins · piwi-bot',
+  scm: 'e.g. GitHub · acme',
+  ai: 'e.g. Anthropic · team',
+  jira: 'e.g. Jira · acme',
+  'zephyr-scale': 'e.g. Zephyr Scale · acme',
+};
+const DESTINATION_HINTS: Partial<Record<CredentialService, { description: string; placeholder: string }>> = {
+  ai: {
+    description: 'The provider’s API (Anthropic’s, or an OpenAI-compatible base URL). A call elsewhere is refused.',
+    placeholder: 'https://api.anthropic.com/',
+  },
+  jira: {
+    description:
+      'The Jira site. Its Atlassian gateway, which a scoped token reaches, counts as the site. A request elsewhere is refused.',
+    placeholder: 'https://your-team.atlassian.net/',
+  },
+  'zephyr-scale': {
+    description: 'The API of the Zephyr Scale region. A request elsewhere is refused.',
+    placeholder: 'https://api.zephyrscale.smartbear.com/v2/',
+  },
+};
+const destinationHint = computed(
+  () =>
+    DESTINATION_HINTS[form.value.service] ?? {
+      description: 'The base URL the secret may be sent under. A request elsewhere is refused.',
+      placeholder: 'https://jenkins.example.com/',
+    },
+);
 /** One click per repository host, for an SCM credential's destination. */
 const SCM_HOSTS = [
   { label: 'GitHub', destination: SCM_API_DESTINATIONS.github },
@@ -146,6 +179,7 @@ function problem(): string | null {
   }
   const destination = credentialDestinationProblem(f.destination.trim());
   if (destination) return destination;
+  if (isJira.value && !f.user.trim()) return 'Enter the e-mail of the account the token belongs to.';
   if (readsEnv.value) {
     if (!isCredentialSecretEnv(f.secretEnv.trim())) {
       return `Name a variable of the server that starts with ${CREDENTIAL_SECRET_ENV_PREFIX}, in capitals.`;
@@ -168,6 +202,7 @@ async function submit() {
     ...(editing.value ? {} : { service: f.service }),
     destination: f.destination.trim(),
     scope: f.allProjects ? { allProjects: true } : { allProjects: false, projectIds: f.projectIds },
+    ...(isJira.value ? { user: f.user.trim() } : {}),
     ...(!isCiServer.value
       ? {}
       : {
@@ -232,7 +267,7 @@ async function submit() {
           <UInput
             v-model="form.name"
             :maxlength="MAX_CREDENTIAL_NAME_LENGTH"
-            :placeholder="isScm ? 'e.g. GitHub · acme' : isAi ? 'e.g. Anthropic · team' : 'e.g. Jenkins · piwi-bot'"
+            :placeholder="NAME_PLACEHOLDERS[form.service]"
             aria-label="Credential name"
             class="w-full"
           />
@@ -270,30 +305,29 @@ async function submit() {
           label="Destination"
           name="credentialDestination"
           required
-          :description="
-            isAi
-              ? 'The provider’s API (Anthropic’s, or an OpenAI-compatible base URL). A call elsewhere is refused.'
-              : 'The base URL the secret may be sent under. A request elsewhere is refused.'
-          "
+          :description="destinationHint.description"
         >
           <UInput
             v-model="form.destination"
-            placeholder="https://jenkins.example.com/"
+            :placeholder="destinationHint.placeholder"
             aria-label="Credential destination"
             class="w-full font-mono"
           />
         </UFormField>
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField
-            v-if="isCiServer"
-            label="User"
+            v-if="isCiServer || isJira"
+            :label="isJira ? 'Account e-mail' : 'User'"
             name="credentialUser"
-            description="For Basic auth, with the secret."
+            :required="isJira"
+            :description="
+              isJira ? 'The Atlassian account the API token belongs to.' : 'For Basic auth, with the secret.'
+            "
           >
             <UInput
               v-model="form.user"
               autocomplete="off"
-              placeholder="e.g. piwi-bot"
+              :placeholder="isJira ? 'you@example.com' : 'e.g. piwi-bot'"
               aria-label="Credential user"
               class="w-full font-mono"
             />
@@ -364,7 +398,9 @@ async function submit() {
               ? 'The projects whose source control and CI actions may name it.'
               : isAi
                 ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
-                : 'The projects whose CI actions may name it.'
+                : isConnection
+                  ? 'A connection serves every project bound to it: Settings → Integrations lists only a credential shared with all of them.'
+                  : 'The projects whose CI actions may name it.'
           "
         >
           <div class="space-y-2">

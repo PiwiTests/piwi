@@ -303,6 +303,14 @@ function errorMessage(err: unknown): string {
               <p v-if="conn.credentialValues.email || tokenKindLine(conn)" class="text-xs text-muted break-all">
                 {{ [conn.credentialValues.email, tokenKindLine(conn)].filter(Boolean).join(' · ') }}
               </p>
+              <p v-if="conn.credentialName" class="text-xs text-muted break-all" data-testid="connection-credential">
+                Token kept in
+                <NuxtLink
+                  to="/settings/credentials"
+                  class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  >{{ conn.credentialName }}</NuxtLink
+                >
+              </p>
               <p
                 v-if="expiryLine(conn)"
                 class="text-xs"

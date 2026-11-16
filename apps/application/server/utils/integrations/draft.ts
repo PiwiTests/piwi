@@ -32,7 +32,7 @@ import {
 } from './documents';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { draftShareTokenMinter } from './share-url';
-import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
+import { getConnectionRow, getProjectBinding, listTrackerConnections, openTracker } from './connections';
 import { bindingRowToResolved, bindingTitlePrefix } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
 import { resolveClusterOwner } from './owner';
@@ -238,7 +238,7 @@ export async function buildIssueDraft(
   ];
 
   // Dedupe candidates — a pinned link first, then label/fingerprint search, then fixed-before.
-  const tracker = chosenRow ? trackerForRow(chosenRow) : null;
+  const tracker = chosenRow ? await openTracker(db, chosenRow) : null;
   const candidates = dedupeCandidates([
     await linkedCandidates(db, clusterId),
     tracker && cluster?.fingerprint ? await labelCandidates(tracker, clusterId, cluster.fingerprint) : [],

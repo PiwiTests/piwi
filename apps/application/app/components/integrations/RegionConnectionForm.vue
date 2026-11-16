@@ -2,10 +2,13 @@
 /**
  * The connect and edit form of a provider reached on one of its regional hosts (Zephyr Scale Cloud): a name, the
  * region, and the credential fields the registry lists, then a check that signs in before anything is saved. The
- * server derives the address from the region, so no host is typed. A blank secret on edit keeps the stored one, but
- * only while the region is unchanged: a stored token never goes to another host, so moving the region needs it again.
+ * server derives the address from the region, so no host is typed. A token typed is saved as the connection's
+ * credential (Settings → Credentials), and a saved credential can be picked instead. A blank secret on edit keeps the
+ * stored one, but only while the region is unchanged: a stored token never goes to another host, so moving the region
+ * needs it again.
  */
 import {
+  connectionBaseUrl,
   INTEGRATION_PROVIDERS,
   providerEndpoint,
   type CredentialField,
@@ -47,18 +50,35 @@ const form = reactive({
 const regionLabel = computed(() => regions.find((r) => r.id === form.region)?.label ?? form.region);
 const suggestedName = computed(() => `${meta.label} (${regionLabel.value})`);
 
+/** The service of the credential the connection's token is kept in. */
+const credentialService = props.provider as 'zephyr-scale';
+/** A saved credential picked in place of the typed token, or null. */
+const pickedCredential = ref<number | null>(null);
+/** The address the connection's credential is sent under: the region's API, as the server binds it. */
+const credentialEndpoint = computed(() => {
+  const address = connectionBaseUrl(props.provider, { region: form.region });
+  return 'error' in address ? null : `${address.baseUrl.replace(/\/+$/, '')}/`;
+});
+
 /** A stored secret is kept only while the region it was saved for is the one in the form. */
 const keepsStoredSecrets = computed(() => editing.value && form.region === storedRegion);
 const secretFields = fields.filter((f) => f.secret);
+/** The fields the form shows: the secret ones are hidden while a saved credential is picked. */
+const shownFields = computed(() => (pickedCredential.value === null ? fields : fields.filter((f) => !f.secret)));
 const missingRequired = computed(() =>
-  fields.some((f) => f.required && !form.credentials[f.key]?.trim() && !(f.secret && keepsStoredSecrets.value)),
+  shownFields.value.some(
+    (f) => f.required && !form.credentials[f.key]?.trim() && !(f.secret && keepsStoredSecrets.value),
+  ),
 );
 
 function fieldDescription(field: CredentialField): string | undefined {
   if (!field.secret) return field.help;
-  const note = keepsStoredSecrets.value
-    ? 'Leave blank to keep the stored token.'
-    : 'Stored encrypted, never shown again.';
+  const name = props.connection?.credentialName;
+  const note = !keepsStoredSecrets.value
+    ? 'Saved as a credential (Settings → Credentials), never shown again.'
+    : name
+      ? `Leave blank to keep the token of “${name}”.`
+      : 'Leave blank to keep the stored token.';
   return field.help ? `${field.help} ${note}` : note;
 }
 
@@ -67,7 +87,9 @@ const check = ref<ConnectionCheckResult | null>(null);
 /** The inputs `check` ran with, so a result never shows against fields edited since. */
 const checkedFor = ref<string | null>(null);
 const checking = ref(false);
-const inputsKey = computed(() => `${form.region}\n${JSON.stringify(form.credentials)}`);
+const inputsKey = computed(
+  () => `${form.region}\n${pickedCredential.value ?? ''}\n${JSON.stringify(form.credentials)}`,
+);
 
 async function runCheck() {
   checking.value = true;
@@ -79,6 +101,7 @@ async function runCheck() {
         provider: props.provider,
         region: form.region,
         credentials: filledCredentials(),
+        credentialId: pickedCredential.value,
         connectionId: props.connection?.id ?? null,
       },
     });
@@ -95,7 +118,10 @@ const result = computed(() => (check.value && checkedFor.value === inputsKey.val
 const canCheck = computed(() => !!form.region && !missingRequired.value);
 
 function filledCredentials(): Record<string, string> {
-  return Object.fromEntries(Object.entries(form.credentials).filter(([, value]) => value.trim() !== ''));
+  const shown = new Set(shownFields.value.map((f) => f.key));
+  return Object.fromEntries(
+    Object.entries(form.credentials).filter(([key, value]) => shown.has(key) && value.trim() !== ''),
+  );
 }
 
 function projectsLine(projects: NonNullable<ConnectionCheckResult['projects']>): string {
@@ -107,7 +133,9 @@ function projectsLine(projects: NonNullable<ConnectionCheckResult['projects']>):
 
 // ── Save ─────────────────────────────────────────────────────────────────────
 const saving = ref(false);
-const needsStorage = computed(() => secretFields.some((f) => !!form.credentials[f.key]?.trim()));
+const needsStorage = computed(
+  () => pickedCredential.value === null && secretFields.some((f) => !!form.credentials[f.key]?.trim()),
+);
 const canSave = computed(
   () => !!form.region && !missingRequired.value && (props.canStoreSecrets || !needsStorage.value),
 );
@@ -121,6 +149,7 @@ async function submit() {
       name: form.name.trim() || suggestedName.value,
       region: form.region,
       credentials: filledCredentials(),
+      ...(pickedCredential.value !== null ? { credentialId: pickedCredential.value } : {}),
     };
     if (props.connection) {
       await $fetch(`/api/integrations/connections/${props.connection.id}`, { method: 'PATCH', body });
@@ -186,8 +215,15 @@ function errorMessage(err: unknown): string {
       <UFormField label="Name" description="How this connection is listed.">
         <UInput v-model="form.name" :placeholder="suggestedName" class="w-full" data-testid="connection-name" />
       </UFormField>
+      <SavedCredentialPicker
+        v-model="pickedCredential"
+        class="sm:col-span-2"
+        :service="credentialService"
+        :endpoint="credentialEndpoint"
+        :current="connection?.credentialId ?? null"
+      />
       <UFormField
-        v-for="field in fields"
+        v-for="field in shownFields"
         :key="field.key"
         :label="field.label"
         :description="fieldDescription(field)"

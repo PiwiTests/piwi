@@ -1422,7 +1422,8 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
   },
   PIWI_JIRA_API_TOKEN: {
-    description: 'Jira Cloud API token (from id.atlassian.com). Never returned by the API.',
+    description:
+      'Jira Cloud API token (from id.atlassian.com). With the other PIWI_JIRA_* variables it creates a read-only Jira connection, whose read-only credential (Settings → Credentials) reads the token from here. Never returned by the API.',
     category: 'integrations',
     secret: true,
     since: '0.29.0',
@@ -1431,7 +1432,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_ZEPHYR_API_TOKEN: {
     description:
-      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection. Never returned by the API.',
+      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection, whose read-only credential (Settings → Credentials) reads the token from here. Never returned by the API.',
     category: 'integrations',
     secret: true,
     since: '0.68.0',
