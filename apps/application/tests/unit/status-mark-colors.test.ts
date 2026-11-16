@@ -6,8 +6,8 @@ import { STATUS_COLORS } from '#shared/status-colors';
 /**
  * The outcome marks have one palette in the dashboard, the editors and Piwi Picker: the `fill` of `STATUS_COLORS`, which
  * the VS Code extension's outcome marks, flaky word, failing and recording tints and held failure's arrow, the JetBrains
- * plugin's flaky and running marks and color schemes, Piwi Picker's dots and Runs window counts, and the desktop tray's
- * dot restate, since none of them can import it.
+ * plugin's flaky and running marks and color schemes, the test card's strip in both editors, Piwi Picker's dots and
+ * Runs window counts, and the desktop tray's dot restate, since none of them can import it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
@@ -24,6 +24,18 @@ describe('the outcome marks', () => {
     expect(/stroke="(#[0-9a-f]{6})"/.exec(read('apps/vscode/media/test-running.svg'))?.[1]).toBe(
       STATUS_COLORS.running.fill,
     );
+  });
+
+  test('are the bars of a test card’s strip, the same in both editors', () => {
+    const jetbrains = read('apps/jetbrains/src/main/kotlin/dev/piwitests/jetbrains/PiwiTestCard.kt');
+    const service = read('packages/editor/src/test-card.ts');
+    for (const status of ['passed', 'failed', 'flaky', 'skipped'] as const) {
+      const fill = new RegExp(`"${status}" to Color\\(0x([0-9a-f]{6})\\)`).exec(jetbrains)?.[1];
+      expect(fill ? `#${fill}` : undefined, status).toBe(STATUS_COLORS[status].fill);
+      expect(new RegExp(`^  ${status}: '(#[0-9a-f]{6})',$`, 'm').exec(service)?.[1], status).toBe(
+        STATUS_COLORS[status].fill,
+      );
+    }
   });
 
   test('draw flaky and running the same in both editors', () => {

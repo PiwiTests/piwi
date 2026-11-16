@@ -609,6 +609,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
             testHoverMarkdown(test, document.uri.toString(), card?.markdown ?? null),
           );
           hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
+          // The card's strip and failure are colored spans; every text in it is escaped.
+          hover.supportHtml = true;
           return new vscode.Hover(hover, document.lineAt(test.line).range);
         },
       },
