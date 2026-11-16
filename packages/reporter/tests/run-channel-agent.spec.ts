@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import {
+  POSITIONS_PER_SECOND,
   parseRunToHub,
   type BindAnswer,
   type HubToRun,
@@ -67,6 +68,8 @@ module.exports = class {
 interface Connection {
   socket: net.Socket;
   heard: RunToHub[];
+  /** When each `position` arrived, in order. */
+  positionsAt: number[];
 }
 
 let server: FakeServer;
@@ -196,7 +199,7 @@ beforeAll(async () => {
     socket.setEncoding('utf8');
     socket.on('error', () => socket.destroy());
     let first = true;
-    const own: Connection = { socket, heard: [] };
+    const own: Connection = { socket, heard: [], positionsAt: [] };
     socket.on(
       'data',
       lineReader(
@@ -205,12 +208,14 @@ beforeAll(async () => {
             first = false;
             if (parseHandoffToEditor(line)?.type === 'attach') return void socket.end();
             connection = own;
-            // The agent follows the run from its start.
+            // The agent follows the run from its start, and the editor asks where each call begins.
             socket.write(`${JSON.stringify({ type: 'events', on: true } satisfies HubToRun)}\n`);
+            socket.write(`${JSON.stringify({ type: 'positions', on: true } satisfies HubToRun)}\n`);
           }
           const message = parseRunToHub(line);
           if (!message) return;
           own.heard.push(message);
+          if (message.type === 'position') own.positionsAt.push(Date.now());
           if (message.type === 'stopped') void onStopped(own, message);
         },
         () => socket.destroy(),
@@ -341,6 +346,26 @@ describe('a stopped page, for an agent', () => {
     expect(read.bound).toMatchObject({ ok: true, name: `piwi-${REF}-w0` });
     expect(read.bound!.message).toContain('any process of yours can drive it');
     expect(read.joined).toMatchObject({ contexts: 1, url: `${server.url}/shop` });
+  });
+
+  it('says where each call of the running test begins, in the user’s code, at the pace of the positions', () => {
+    const heard = connection?.heard ?? [];
+    const begin = heard.find((m): m is Extract<RunToHub, { type: 'test-begin' }> => m.type === 'test-begin');
+    const positions = heard.filter((m): m is Extract<RunToHub, { type: 'position' }> => m.type === 'position');
+    expect(positions.length).toBeGreaterThan(0);
+    // Each names the running test, and a place in the spec: the navigation's line first.
+    expect(positions.every((p) => p.testId === begin?.testId)).toBe(true);
+    expect(positions[0]).toMatchObject({ place: { file: 'tests/agent.spec.cjs', line: 3 } });
+    expect(positions.every((p) => p.place.file === 'tests/agent.spec.cjs' && !/Piwi capture/.test(p.title))).toBe(true);
+    // None after the test ended, and no two closer than the pace allows.
+    const ended = heard.findIndex((m) => m.type === 'test-end');
+    expect(heard.slice(ended).some((m) => m.type === 'position')).toBe(false);
+    const at = connection!.positionsAt;
+    const gaps = at.slice(1).map((t, i) => t - at[i]!);
+    expect(
+      gaps.every((gap) => gap >= 1000 / POSITIONS_PER_SECOND - 20),
+      gaps.join(', '),
+    ).toBe(true);
   });
 
   it('tells what the test does: its calls and their places, the navigation, the console error and failed request', () => {

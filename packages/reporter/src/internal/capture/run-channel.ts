@@ -8,6 +8,7 @@ import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
   RUN_FEATURES,
+  POSITIONS_PER_SECOND,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
   RUN_TAKES,
@@ -318,6 +319,13 @@ let runName = '';
 /** The editor asked for the running tests' events (`events`), and a test runs. */
 let eventsOn = false;
 let testRunning = false;
+/** The running test's id, which a `position` names; null between tests. */
+let runningTestId: string | null = null;
+/** The editor asked where each call begins (`positions`), and when one was last told; the latest untold, and its timer. */
+let positionsOn = false;
+let positionToldAt = 0;
+let pendingPosition: { title: string; place: Place } | null = null;
+let positionTimer: ReturnType<typeof setTimeout> | null = null;
 /** The pace of the events, and how many it did not send since the last one sent. */
 let eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
 let droppedEvents = 0;
@@ -527,12 +535,16 @@ export function runChannelOpen(): boolean {
 export function tellHub(message: RunToHub): void {
   if (message.type === 'test-begin') {
     testRunning = true;
+    runningTestId = message.testId;
+    dropPendingPosition();
     laneGeneration++;
     // The filmstrip of the test before goes nowhere any more.
     filmstrip?.forget();
   }
   if (message.type === 'test-end') {
     testRunning = false;
+    runningTestId = null;
+    dropPendingPosition();
     void unbind();
   }
   if (socket && !socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
@@ -544,6 +556,38 @@ export function tellHub(message: RunToHub): void {
  */
 export function tellActing(stop: number, what: RunActing | null): void {
   if (held?.stop === stop) tellHub({ type: 'acting', stop, what });
+}
+
+/** Whether the editor wants where each call of the running test begins: it asked, and a test runs. */
+export function positionsWanted(): boolean {
+  return positionsOn && testRunning && runningTestId !== null && runChannelOpen();
+}
+
+/**
+ * Tell the editor where a call of the running test began, at most `POSITIONS_PER_SECOND` a second: a call begun within
+ * the while after the last one told waits for its end, and only the latest of them is told.
+ */
+export function tellPosition(title: string, place: Place): void {
+  if (!positionsWanted()) return;
+  pendingPosition = { title, place };
+  const wait = positionToldAt + 1000 / POSITIONS_PER_SECOND - Date.now();
+  if (wait <= 0) return sendPendingPosition();
+  positionTimer ??= setTimeout(sendPendingPosition, wait);
+}
+
+function sendPendingPosition(): void {
+  positionTimer = null;
+  const position = pendingPosition;
+  pendingPosition = null;
+  if (!position || !positionsWanted()) return;
+  positionToldAt = Date.now();
+  tellHub({ type: 'position', testId: runningTestId!, title: position.title, place: position.place });
+}
+
+function dropPendingPosition(): void {
+  pendingPosition = null;
+  if (positionTimer) clearTimeout(positionTimer);
+  positionTimer = null;
 }
 
 /** Whether the editor wants the running test's events now: it asked for them, and a test runs. */
@@ -1249,6 +1293,10 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       eventsOn = message.on;
       eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
       droppedEvents = 0;
+      return;
+    case 'positions':
+      positionsOn = message.on;
+      if (!message.on) dropPendingPosition();
       return;
     case 'layers': {
       // A layer asked again sends nothing more: a viewer that came later asks `view-lane` again.

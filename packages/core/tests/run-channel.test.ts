@@ -13,6 +13,8 @@ import {
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
   MAX_WAITING_TITLE,
+  MAX_POSITION_TITLE,
+  POSITIONS_PER_SECOND,
   ENDED_AT_STOP_REASON,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
@@ -897,6 +899,35 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
     });
 
+    test('reads where a call of the running test begins, and the ask for it', () => {
+      const position = {
+        type: 'position',
+        testId: 'id-adds a mug',
+        title: "Click getByRole('button', { name: 'Add' })",
+        place: { file: 'tests/pages/cart.page.ts', line: 12, column: 5 },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(position))).toEqual(position);
+      const noColumn = { ...position, place: { file: 'tests/cart.spec.ts', line: 4 } };
+      expect(parseRunToHub(line(noColumn))).toEqual(noColumn);
+      expect(parseRunToHub(line({ ...position, title: 'x'.repeat(MAX_POSITION_TITLE + 10) }))).toMatchObject({
+        title: 'x'.repeat(MAX_POSITION_TITLE),
+      });
+      for (const wrong of [
+        { testId: '' },
+        { testId: 4 },
+        { title: '' },
+        { place: null },
+        { place: { file: '', line: 3 } },
+        { place: { file: 'tests/cart.spec.ts', line: 0 } },
+      ]) {
+        expect(parseRunToHub(line({ ...position, ...wrong }))).toBeNull();
+      }
+      expect(parseHubToRun(line({ type: 'positions', on: true }))).toEqual({ type: 'positions', on: true });
+      expect(parseHubToRun(line({ type: 'positions', on: false }))).toEqual({ type: 'positions', on: false });
+      expect(parseHubToRun(line({ type: 'positions', on: 'yes' }))).toBeNull();
+      expect(POSITIONS_PER_SECOND).toBe(4);
+    });
+
     test('reads Show the browser at a stop, and its answer', () => {
       const asked = { type: 'request', request: 7, what: 'front', stop: 2 } satisfies HubToRun;
       expect(parseHubToRun(line(asked))).toEqual(asked);
@@ -926,7 +957,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers', 'trace']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers', 'trace', 'positions']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });

@@ -13,7 +13,7 @@ import { MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
 import { pageEventsWanted, tellPageEvent } from './lane-layers.js';
 import { callSitePath } from './locator-healing.js';
-import { runEventsWanted, tellEvent } from './run-channel.js';
+import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run-channel.js';
 
 /**
  * What the running test does, told to whoever follows it: to the editor while an agent follows the run (the run
@@ -94,8 +94,8 @@ function errorText(error: unknown): string {
 }
 
 /**
- * Hear the calls of the worker's Playwright, each told as it ends while an agent follows the run. False when the
- * instrumentation is missing.
+ * Hear the calls of the worker's Playwright: where each begins in the user's code, told while the editor asks
+ * (`positions`), and each told as it ends while an agent follows the run. False when the instrumentation is missing.
  */
 export function watchCalls(playwright: unknown): boolean {
   const instrumentation = (playwright as { _instrumentation?: Instrumentation } | null)?._instrumentation;
@@ -105,6 +105,10 @@ export function watchCalls(playwright: unknown): boolean {
   const titles = new WeakMap<object, string>();
   instrumentation.addListener({
     onApiCallBegin: (zone: ApiZone, channel?: ApiChannel) => {
+      if (positionsWanted()) {
+        const place = callPlace(zone.frames);
+        if (place) tellPosition(callTitle(zone, channel), place);
+      }
       if (!runEventsWanted()) return;
       begun.set(zone, Date.now());
       titles.set(zone, callTitle(zone, channel));

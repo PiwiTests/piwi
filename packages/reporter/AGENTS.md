@@ -112,7 +112,9 @@ responsibilities.
      bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
      (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
      held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
-     and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and
+     and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), says where
+     each call of the running test begins in the user's code while asked (`positions`, in `features`: its title through
+     `hideTypedText` and `hideSecretsInText`, `POSITIONS_PER_SECOND` at most, from the same listener), and
      binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);
    - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in any run, for a
      project with the live view on; outside CI, `none:<why>` for a run without one), each worker's event stream to
