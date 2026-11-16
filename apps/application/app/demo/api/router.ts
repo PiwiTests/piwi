@@ -508,13 +508,20 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
-  demoCiServerTokenMarker,
-  demoCiServerTokenUrl,
   demoClusterRerunInfo,
   demoExecutionRerunInfo,
   demoRerunCluster,
   demoRerunExecution,
 } from './ci-rerun';
+import {
+  demoCreateCredential,
+  demoCredentialUses,
+  demoDeleteCredential,
+  demoGetCredential,
+  demoListCredentials,
+  demoUpdateCredential,
+} from './credentials';
+import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -722,6 +729,11 @@ function demoRequester(ctx: DemoCtx | undefined): number {
 
 function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
   return ctx?.access ?? ADMIN_ACCESS;
+}
+
+/** The acting user as the credential handlers read them: their access and id. */
+function demoViewer(ctx: DemoCtx | undefined) {
+  return { access: demoAccess(ctx), userId: ctx?.actingUserId ?? null };
 }
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
@@ -1004,11 +1016,10 @@ const routes: RouteEntry[] = [
       if (!project) return project;
       const {
         scmToken: _scm,
-        ciServerToken,
+        ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      const ciServerTokenUrl = demoCan(ctx, 'project:manage', +m[1]!) ? demoCiServerTokenUrl(ciServerToken) : null;
-      return { ...rest, ciServerTokenUrl, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null };
     },
   },
   {
@@ -1019,16 +1030,24 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       // A browser demo has no server secret to encrypt with (the server uses
       // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
-      // and every GET strips it. A CI server token is never stored: only the
-      // base URL it would be bound to.
+      // and every GET strips it.
       try {
         const db = await getDemoDb();
-        const update = body as Parameters<typeof updateProject>[2];
+        const update = body as Parameters<typeof updateProject>[2] & { ciServerToken?: unknown };
+        if (update?.ciServerToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'ciServerToken is replaced by credentials: create one with POST /api/credentials and name its id in the CI server action’s credentialId.',
+          );
+        }
         assertDemoCiActions(update);
-        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
-        const project = await updateProject(db, +m[1]!, { ...update, ciRerun, ciServerToken });
+        if (ciRerun) {
+          const credentialProblem = await ciActionsCredentialProblem(db as never, +m[1]!, ciRerun);
+          if (credentialProblem) throw demoHttpError(400, credentialProblem);
+        }
+        const project = await updateProject(db, +m[1]!, { ...update, ciRerun });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -3803,6 +3822,49 @@ const routes: RouteEntry[] = [
       await assertDemoLinkScope(ctx, +m[1]!);
       return deleteLink(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
+  },
+
+  // Credentials — the server's shared handlers; the demo stores no secret
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, _b, q, ctx) =>
+      demoListCredentials(await getDemoDb(), demoViewer(ctx), Object.fromEntries(q ?? []), (projectId) =>
+        assertDemoScope(ctx ? { ...ctx, permission: ['project:manage'] } : ctx, projectId),
+      ),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, body, _q, ctx) =>
+      demoCreateCredential(await getDemoDb(), demoViewer(ctx), body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoGetCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, body, _q, ctx) => demoUpdateCredential(await getDemoDb(), demoViewer(ctx), +m[1]!, body),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoDeleteCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)\/uses$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, q, ctx) =>
+      demoCredentialUses(await getDemoDb(), demoViewer(ctx), +m[1]!, Object.fromEntries(q ?? [])),
   },
 
   // Integrations — one canned connection per provider, answered from constants

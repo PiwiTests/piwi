@@ -20,6 +20,7 @@ import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
 import { pruneMcpOAuth } from '../../utils/mcp-oauth';
 import { endStaleRequests, pruneRunRequests } from '../../utils/run-requests';
+import { DEFAULT_CREDENTIAL_LOG_DAYS, pruneCredentialUses } from '../../utils/credentials';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
 const RECONCILE_DAYS = 7;
@@ -35,7 +36,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_CREDENTIAL_LOG_DAYS, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -123,6 +124,12 @@ export default defineTask({
     if (notificationDays > 0) {
       const pruned = await pruneMcpToolCalls(db, notificationDays);
       if (pruned > 0) result.mcpToolCallsPruned = pruned;
+    }
+
+    const credentialLogDays = envInt('PIWI_CREDENTIAL_LOG_DAYS') ?? DEFAULT_CREDENTIAL_LOG_DAYS;
+    if (credentialLogDays > 0) {
+      const pruned = await pruneCredentialUses(db, credentialLogDays);
+      if (pruned > 0) result.credentialUsesPruned = pruned;
     }
 
     // …and for run requests that ended or expired, after ending those nobody can act on any more.

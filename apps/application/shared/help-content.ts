@@ -564,7 +564,7 @@ export const HELP_TOPICS = {
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the project’s SCM token (which needs write scope); a CI server takes the one **CI server token** of this section, sent only under the one base URL it was saved with, so every CI server action must use the same base URL. Without a token of its own, a request carries the operator’s instance credential and sends no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the project’s SCM token (which needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
     doc: 'features/ci-rerun',
     envVars: [
@@ -1334,6 +1334,26 @@ export const HELP_TOPICS = {
       'PIWI_ZEPHYR_API_TOKEN',
       'PIWI_ZEPHYR_REGION',
     ],
+  },
+  'settings.credentials': {
+    title: 'Credentials',
+    text: [
+      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token.',
+      '',
+      '- **Destination**: the base URL the secret may be sent under. A request elsewhere is refused, and changing the destination asks for the secret again.',
+      '- **Projects**: the projects that may use it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
+      '- **Inputs and Custom requests**: the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
+      '',
+      'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
+    ].join('\n'),
+    doc: 'operate/credentials',
+    envVars: ['PIWI_CREDENTIAL_LOG_DAYS', 'PIWI_CI_SERVER_TOKEN'],
+  },
+  'settings.credentials.log': {
+    title: 'Credential log',
+    text: 'Every use of the credential, newest first: a dispatch is one row, settled once the CI server answers (`ok` or `failed`), and a Check is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_CREDENTIAL_LOG_DAYS` days.',
+    doc: 'operate/credentials#the-log',
+    envVars: ['PIWI_CREDENTIAL_LOG_DAYS'],
   },
   'settings.integrations.zephyr-connection': {
     title: 'Zephyr Scale Cloud',

@@ -34,6 +34,7 @@ export type SettingsPageId =
   | 'source-control'
   | 'auto-heal'
   | 'integrations'
+  | 'credentials'
   | 'ai'
   | 'desktop'
   | 'connect'
@@ -228,6 +229,19 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [
       { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
       { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
+    ],
+  },
+  {
+    id: 'credentials',
+    label: 'Credentials',
+    icon: 'i-lucide-key-round',
+    to: '/settings/credentials',
+    group: 'instance',
+    permission: 'credentials:manage',
+    introHelp: 'settings.credentials',
+    fields: [
+      { id: 'credentials.list', label: 'Credentials', help: 'settings.credentials' },
+      { id: 'credentials.log', label: 'Credential log', help: 'settings.credentials.log' },
     ],
   },
   {

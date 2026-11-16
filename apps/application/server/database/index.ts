@@ -226,6 +226,22 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
+ * Move the project CI server tokens stored before the credential manager into
+ * credentials (`importProjectCiServerTokens`). Startup waits for it, so no
+ * dispatch runs while an action still waits for its credential. A token that
+ * cannot be opened is left for the next start, and a failure is logged.
+ */
+async function importProjectCiServerTokens(target: DB): Promise<void> {
+  try {
+    const { importProjectCiServerTokens: importTokens } = await import('../utils/credentials');
+    const moved = await importTokens(target as any);
+    if (moved) console.log(`[Database] CI server tokens of ${moved} project(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the CI server tokens to credentials failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -260,6 +276,7 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
@@ -317,6 +334,7 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();

@@ -1,7 +1,9 @@
 # Credential manager
 
-**Status.** Proposed 2026-11-16, nothing built. The decisions below are recommendations to confirm with the
-maintainer; [Open questions](#open-questions) lists the ones that change the design.
+**Status.** Proposed and confirmed 2026-11-16. Step 1 of the [Delivery](#delivery) is built: the store, the log,
+Settings → Credentials, the credential of each CI server action, the environment's CI server credential and the import
+of the project CI server tokens. It replaces D6 of [ci-actions.md](../adr/ci-actions.md) (one CI server token per
+project); D7 stands, as the environment credential's input list. Steps 2 and 3 remain.
 
 **Summary.** Piwi stores the secrets it sends to other services in six places, each with its own copy, its own rules and
 no record of its use: a project's SCM token, the instance's SCM token, a project's CI server token, the integration
@@ -53,120 +55,72 @@ environment variables only, and stay out of this plan.
 
 ## Decisions
 
-Proposed 2026-11-16; to confirm.
+Confirmed with the maintainer on 2026-11-16; [Answered questions](#answered-questions) records the choices.
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                                                 |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | **A credential is an instance-level record**: a unique name, a service, an optional user name, a secret, a **destination** (the base URL it may be sent under), a scope (all projects, or a list) and a state (active or disabled). Consumers store its id, never a copy of the secret.                                                                  |
-| D2  | **The secret is write-only.** No API answer, MCP tool, export, page or log holds it, whole or in part. Changing the destination requires entering the secret again, as a CI server token is saved with its URL today.                                                                                                                                    |
-| D3  | **Every use goes through one function, `useCredential`**, which checks the state, the project's scope and the destination of the request, then records the use. No other code decrypts a credential: a unit test fails on any other read of the secret column.                                                                                           |
-| D4  | **Refusals are recorded like uses.** A send refused because the project is out of scope, the URL is outside the destination or the credential is disabled is a log row with its reason, and the consumer's error names the credential and the reason, never the secret.                                                                                  |
-| D5  | **Who manages what.** `credentials:manage`, a new instance permission held by Administrators, creates, rotates, disables, deletes and widens the scope of any credential. A Project admin creates credentials scoped to the projects they manage and picks any credential shared with them; they never widen a scope.                                    |
-| D6  | **A use that changes something outside Piwi is one log row** (a dispatch, a comment, an issue, a commit status, a message); **a read is counted** in one row per credential, feature, project and hour. SCM history reads run on every ingest and would otherwise fill the log.                                                                          |
-| D7  | **The log is kept 365 days**, pruned by the nightly sweep (`PIWI_CREDENTIAL_LOG_DAYS`), with no route that deletes or edits a row. A deleted credential keeps its log rows, which name it.                                                                                                                                                               |
-| D8  | **A credential set by environment variables is a read-only credential** (`managed_by: 'env'`), as the env-managed connections are: `PIWI_CI_SERVER_TOKEN` first, then the Jira, Zephyr Scale and AI variables. Its uses are logged like any other.                                                                                                       |
-| D9  | **Stored secrets are imported once, at startup, and deduplicated.** Each project CI server token and SCM token becomes a credential scoped to its project; secrets equal in value and destination become one credential shared with each of their projects. The consumers then hold its id, and the old column is emptied.                               |
-| D10 | **A CI action names its credential.** A CI server action holds `credentialId`, which lifts the one-token-per-project limit (ci-actions D6); a GitHub, GitLab or Bitbucket action may hold one too, else it uses the project's SCM credential. `ciServerToken` on `PATCH /api/projects/:id` stays as a shortcut that writes the project's own credential. |
-| D11 | **The input rule of the instance credential becomes a field of every CI server credential**: `allowedInputs`, the inputs a request carrying it may send (null for every input). The env-managed credential reads `PIWI_CI_SERVER_ALLOWED_INPUTS`; an imported project token gets null, as it sends every input today.                                    |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | **A credential is an instance-level record**: a unique name, a service, an optional user name, a secret, a **destination** (the base URL it may be sent under), a scope (all projects, or a list) and a state (active or disabled). Consumers store its id, never a copy of the secret.                                                                                                                                                                                                                                                                                                                                              |
+| D2  | **The secret is write-only.** No API answer, MCP tool, export, page or log holds it, whole or in part. Changing the destination requires entering the secret again, as a CI server token is saved with its URL today.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| D3  | **Every use goes through one function, `withCredential`**, which checks the state, the project's scope, the destination of the request and the Custom request rule, records the use, opens the secret for that one request and settles the row with its outcome. No other code reads the secret column: `tests/unit/credential-secret-access.test.ts` fails on any other.                                                                                                                                                                                                                                                            |
+| D4  | **Refusals are recorded like uses.** A send refused because the project is out of scope, the URL is outside the destination or the credential is disabled is a log row with its reason, and the consumer's error names the credential and the reason, never the secret.                                                                                                                                                                                                                                                                                                                                                              |
+| D5  | **Who manages what.** `credentials:manage`, a new instance permission held by Administrators, creates, rotates, disables, deletes and widens the scope of any credential. A Project admin creates credentials shared with the projects they manage, changes the ones they created while shared only with those projects, and picks any credential shared with them. A credential an administrator saved stays theirs, so a project admin never loosens its rules (allowing a Custom request would let them reach a CI server's script console with the administrator's token).                                                       |
+| D6  | **A use that changes something outside Piwi is one log row** (a dispatch, a comment, an issue, a commit status, a message); **a read is counted** in one row per credential, feature, project and hour. SCM history reads run on every ingest and would otherwise fill the log.                                                                                                                                                                                                                                                                                                                                                      |
+| D7  | **The log is kept 365 days**, pruned by the nightly sweep (`PIWI_CREDENTIAL_LOG_DAYS`), with no route that deletes or edits a row. A deleted credential keeps its log rows, which name it.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| D8  | **A credential set by environment variables is a read-only credential** (`managed_by: 'env'`), as the env-managed connections are: `PIWI_CI_SERVER_TOKEN` first, then the Jira, Zephyr Scale and AI variables. Its uses are logged like any other.                                                                                                                                                                                                                                                                                                                                                                                   |
+| D9  | **Stored secrets are imported once, at startup, and deduplicated.** Each project CI server token and SCM token becomes a credential scoped to its project; secrets equal in value and destination become one credential shared with each of their projects. The consumers then hold its id, and the old column is emptied.                                                                                                                                                                                                                                                                                                           |
+| D10 | **A CI action names its credential.** A CI server action holds `credentialId`, which lifts the one-token-per-project limit (ci-actions D6); its base URL defaults to the credential's destination and its user name is the credential's, so the action repeats neither. A GitHub, GitLab or Bitbucket action may hold one too (step 2), else it uses the project's SCM credential. An action without a credential sends the instance's (D8) under its URL. `ciServerToken`, `hasCiServerToken` and `ciServerTokenUrl` leave the project API (`BREAKING CHANGE`): a project no longer has one CI server token for a write to replace. |
+| D11 | **The input rule of the instance credential becomes a field of every CI server credential**: `allowedInputs`, the inputs a request carrying it may send (null for every input). The env-managed credential reads `PIWI_CI_SERVER_ALLOWED_INPUTS`; an imported project token gets null, as it sends every input today.                                                                                                                                                                                                                                                                                                                |
+| D12 | **A Custom request carries a credential only when the credential allows it** (`customRequests`, off by default). A Custom request reaches any path under the destination, a CI server's script console included, so whoever manages the credential decides. An imported project token allows it, as it went with a Custom request before; the env-managed credential never does.                                                                                                                                                                                                                                                     |
 
 ## Design
 
 ### 1. The record
 
-```ts
-type CredentialService =
-  | "github"
-  | "gitlab"
-  | "bitbucket"
-  | "ci-server"
-  | "jira"
-  | "zephyr-scale"
-  | "slack"
-  | "webhook"
-  | "ai";
-
-interface CredentialSummary {
-  id: number;
-  name: string; // unique on the instance, ignoring case
-  description: string | null;
-  service: CredentialService;
-  /** The user name a Basic credential pairs with the secret; not secret, shown. */
-  user: string | null;
-  /** The base URL the secret may be sent under: normalized origin and path prefix, no query. */
-  destination: string;
-  scope: { allProjects: true } | { allProjects: false; projectIds: number[] };
-  /** CI server only: the inputs a request carrying this credential may send; null for every input. */
-  allowedInputs: string[] | null;
-  state: "active" | "disabled";
-  managedBy: "db" | "env";
-  createdBy: number | null;
-  createdAt: string;
-  /** When the secret was last replaced. */
-  rotatedAt: string;
-  lastUsedAt: string | null;
-  /** What references it: the CI actions, projects, connections, channels and AI roles, by name. */
-  usedBy: CredentialReference[];
-}
-```
+`CredentialSummary` (`shared/credentials.ts`) is what the API answers, never with the secret: `id`, `name` (unique,
+ignoring case), `description`, `service` (`ci-server` in step 1), `user`, `destination` (the normalized base URL),
+`scope` (`{ allProjects: true }` or `{ allProjects: false, projectIds }`), `allowedInputs` (null for every input),
+`customRequests` (D12), `disabled`, `managedBy` (`db` or `env`), `createdAt`, `rotatedAt`, `lastUsedAt`, `usedBy` (the
+CI actions that name it) and `canManage`.
 
 Tables, in both schemas:
 
 - `credentials`: the record, the secret in `secret` (sealed `{ destination, secret }`, so a row edited in the
-  database to another destination does not open).
+  database to another destination does not open), `created_by` for D5.
 - `credential_projects`: `(credential_id, project_id)`, deleted with either side.
-- `credential_uses`: `credential_id` (set null on delete) and `credential_name`, `feature` (`ci-dispatch`, `ci-check`,
-  `scm-read`, `scm-write`, `jira`, `zephyr`, `slack`, `webhook`, `ai`), `project_id`, `user_id`, `api_key_id`,
-  `subject_type` and `subject_id` (the CI action and the dispatch id, the cluster, the channel), `destination` (origin and
-  path, never the query), `result` (`ok`, `failed`, `refused`), `reason`, `count`, `created_at`.
+- `credential_uses`: `credential_id` (set null on delete) and `credential_name`, `feature` (`ci-dispatch`,
+  `ci-check`), `project_id`, `user_id`, `api_key_id`, `subject_type` and `subject_id` (the CI action), `destination`
+  (origin and path, never the query), `result` (`sent`, `ok`, `failed`, `refused`), `reason`, `count`, `created_at`,
+  `last_at`.
 
-The service decides which pickers list a credential (a CI server action lists `ci-server` credentials) and which check
-**Check** runs; it never widens what the destination allows.
+The service decides which pickers list a credential; it never widens what the destination allows.
 
 ### 2. Using a credential
 
-```ts
-/** The secret, for one send to `url`, after the checks; records the use. Throws a `CredentialRefused` with the reason. */
-async function useCredential(
-  db: DbClient,
-  input: {
-    credentialId: number;
-    feature: CredentialFeature;
-    projectId: number | null;
-    url: string;
-    actor: { userId: number | null; apiKeyId: number | null } | "system";
-    subject?: { type: string; id: string | number };
-  },
-): Promise<{
-  user: string | null;
-  secret: string;
-  allowedInputs: string[] | null;
-  done: (result: UseResult) => Promise<void>;
-}>;
-```
+`withCredential(db, use, send, failure?)` (`server/utils/credentials.ts`) takes the credential's id, the feature, the
+project, the URL, whether the request is a Custom one, the actor (user and API key) and the subject. It reads the
+credential afresh, so a disable or a scope change applies to the next use, and refuses in a fixed order: disabled, not
+shared with the project, URL outside the destination, a Custom request it does not allow (`credentialRefusal`,
+`shared/credentials.ts`). A refusal is a log row and a `CredentialRefusedError`; `send` is never called. Otherwise a use
+that changes something outside Piwi is written as `sent`, the secret is opened for `send` alone, and the row is settled
+`ok` or `failed`; a read is added to the row of its credential, feature, project, result and hour. A failure's text is
+masked (the secret, its Basic pairs and its URL encoding) before it is stored or thrown.
 
-The order is fixed: the credential exists and is active; the project is in its scope (a project of a credential shared
-with all projects always is); `url` is under its destination (`isUnderBaseUrl`, the function `credentialFor` uses
-today); then the secret is opened and the use is written as started. The consumer calls `done` with the outcome of its
-request, which completes the row. A send keeps the transport rules it has today: `safeFetch` and the private-host rule
-of `PIWI_CI_SERVER_HOSTS` for a CI server, the pinned repository and `PIWI_SCM_GITLAB_HOSTS` for SCM. A redirect to a
-URL outside the destination is not followed with the credential.
-
-Before an error text from the remote side is stored or shown (a connection's `last_error`, a dispatch's message), every
-occurrence of the secret and of its Basic encoding is replaced by `****`.
+A CI server request plans its credential without the secret (`ciServerCredential`, `prepareCiServerRequest`), then
+`withCredential` builds it again with the secret inside `send`. The transport rules stay: `safeFetch`'s public-address
+check and the private-host rule of `PIWI_CI_SERVER_HOSTS`, and no redirect is followed.
 
 ### 3. Pages and routes
 
-- **Settings → Credentials** (`credentials:manage`): the list (name, service, destination, scope, state, last used),
-  and a page per credential with its references (**Used by**), its log (**Activity**, filterable by project, feature
-  and result) and **Check**, **Rotate**, **Disable**, **Delete**. Delete is refused while something references the
-  credential, and names the references.
-- **Pickers**: the CI action form, the project's SCM field, the connection form, the channel form and the AI settings
-  each pick a credential of their service, with **New credential** inline (scoped to the project for a Project admin).
-- Routes: `GET/POST /api/credentials`, `GET/PATCH/DELETE /api/credentials/:id`, `POST /api/credentials/:id/check`,
-  `GET /api/credentials/:id/uses`. A Project admin's `GET /api/credentials?projectId=` lists the credentials in that
-  project's scope, without their scope or log. No MCP tool lists or uses a credential directly; the MCP tools that
-  start a dispatch go through `useCredential` like the buttons, and their API key is the actor.
-- The demo seeds three credentials and their activity, with no secret.
+- **Settings → Credentials** (`credentials:manage`): the list (name, user, projects, the actions that name it,
+  destination, last use), and a panel per credential with its fields, **Used by**, **Edit or rotate**, **Disable**,
+  **Delete** and its log (**Activity**, filtered by result). Delete is refused while a CI action names the credential,
+  and names them.
+- **The CI action editor**: a credential picker listing the ones shared with the project, **New credential** inline
+  (shared with the project), and the request preview naming the credential it carries or saying it would refuse.
+- Routes: `GET/POST /api/credentials` (`?projectId=` lists a project's picker), `GET/PATCH/DELETE /api/credentials/:id`,
+  `GET /api/credentials/:id/uses`. No MCP tool lists or uses a credential directly; the MCP tool that starts a dispatch
+  goes through `withCredential` like the buttons, and its API key is the actor.
+- The demo seeds two credentials and a log, with no secret.
 
 ### 4. Consumers, in delivery order
 
@@ -182,23 +136,25 @@ occurrence of the secret and of its Basic encoding is replaced by `****`.
 
 ## Security
 
-| Threat                                                                                 | What stops it                                                                                       |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| A Project admin aims a shared credential at a server they own (a CI action's base URL) | The destination check at send (D3); changing the destination needs the secret (D2)                  |
-| A Project admin uses a credential not shared with their project, by id through the API | The scope check at send, not only in the picker; the refusal is logged (D4)                         |
-| The secret leaks through an answer, an export, a log or an error from the remote side  | Write-only (D2); the secret and its Basic encoding are masked in any stored or shown error text     |
-| A database dump                                                                        | AES-256-GCM under `PIWI_SECRET_KEY`; this table refuses a value without the `v1:` prefix            |
-| A row edited in the database to another destination                                    | The destination is sealed with the secret and compared when it opens                                |
-| Project inputs steer a job through a credential the operator shared                    | `allowedInputs` on the credential (D11)                                                             |
-| A misuse goes unnoticed                                                                | The log, with refusals (D4, D6); **Disable** stops every use at once while the incident is examined |
+| Threat                                                                                       | What stops it                                                                                       |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| A Project admin aims a shared credential at a server they own (a CI action's base URL)       | The destination check at send (D3); changing the destination needs the secret (D2)                  |
+| A Project admin uses a credential not shared with their project, by id through the API       | The scope check at send, not only in the picker; the refusal is logged (D4)                         |
+| The secret leaks through an answer, an export, a log or an error from the remote side        | Write-only (D2); the secret and its Basic encoding are masked in any stored or shown error text     |
+| A database dump                                                                              | AES-256-GCM under `PIWI_SECRET_KEY`; this table refuses a value without the `v1:` prefix            |
+| A row edited in the database to another destination                                          | The destination is sealed with the secret and compared when it opens                                |
+| Project inputs steer a job through a credential the operator shared                          | `allowedInputs` on the credential (D11)                                                             |
+| A Project admin loosens the rules of an administrator's credential shared with their project | Only its creator or `credentials:manage` changes it (D5)                                            |
+| A Custom request reaches a CI server's script console with a shared credential               | `customRequests`, off by default (D12)                                                              |
+| A misuse goes unnoticed                                                                      | The log, with refusals (D4, D6); **Disable** stops every use at once while the incident is examined |
 
 ## Delivery
 
-1. **The store and the CI actions.** The tables and migrations, `useCredential`, the log and its sweep,
+1. **The store and the CI actions.** The tables and migrations, `withCredential`, the log and its sweep,
    `credentials:manage`, the routes, Settings → Credentials, the CI action picker, the import of the project CI
    server tokens (D9), the env-managed CI server credential (D8), the demo, the docs (`operate/credentials.md`, the
-   CI re-run page), the configuration reference. Supersedes D6 and D7 of [ci-actions.md](../adr/ci-actions.md) with a
-   new ADR when it ships.
+   CI re-run page), the configuration reference. Supersedes D6 of [ci-actions.md](../adr/ci-actions.md), recorded
+   when this proposal moves to `adr/`.
 2. **SCM.** The project and instance SCM credentials, a credential per repository-host CI action, the import of both
    SCM tokens.
 3. **Connections, channels and AI keys.** Their credentials move to the store, env-managed ones included.
@@ -213,12 +169,12 @@ occurrence of the secret and of its Basic encoding is replaced by `****`.
   OIDC token at upload, so a job needs no Piwi secret, is a separate proposal.
 - **The S3 and SMTP secrets**, which stay environment variables.
 
-## Open questions
+## Answered questions
 
-1. **Is the repetition the one this plan removes?** It reads "repeated in each job" as each project and each CI action
-   needing its own copy of the CI server or SCM token. If it means the secrets each CI job's YAML must carry to reach
-   Piwi, the answer is the OIDC proposal of [Not in this plan](#not-in-this-plan), not this one.
-2. **One log row per read, or reads counted by the hour** (D6)?
-3. **Log retention**: 365 days (D7), or follow `PIWI_RETENTION_DAYS`?
-4. **May a Project admin create a credential scoped to their project** (D5)? Refusing it takes away what they can do
-   today, saving their project's tokens.
+Answered by the maintainer on 2026-11-16.
+
+1. **The repetition is the CI actions'.** Each CI server action names a base URL and a user, and the project's one token
+   applies to one base URL: D10 moves both into the credential the action picks.
+2. **Reads are counted by the hour** (D6).
+3. **The log is kept 365 days** (D7), with its own variable.
+4. **A Project admin creates credentials scoped to their projects** (D5).

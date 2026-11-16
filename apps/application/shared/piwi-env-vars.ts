@@ -406,6 +406,16 @@ export const PIWI_ENV_VARS = {
     since: '0.59.0',
     docs: 'features/assistant#privacy',
   },
+  PIWI_CREDENTIAL_LOG_DAYS: {
+    description:
+      'Days the log of every credential use (Settings → Credentials) is kept before the nightly sweep deletes it (default 365; 0 keeps it forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.72.0',
+    docs: 'operate/credentials#the-log',
+  },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
       'AI-diagnosis history versions kept per diagnosis by the nightly sweep (default 20; 0 disables capping).',
@@ -1368,7 +1378,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_TOKEN: {
     description:
-      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
+      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL, by a CI server action that names no credential. It is listed in Settings → Credentials as a read-only credential, and its uses are logged there. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
     category: 'integrations',
     secret: true,
     since: '0.67.0',
@@ -1386,7 +1396,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_ALLOWED_INPUTS: {
     description:
-      "Input names (comma-separated, e.g. TARGET_ENV,SUITE) a CI action may send to a request that carries the instance CI server token. A request under PIWI_CI_SERVER_URL with that token sends the Playwright arguments and the dispatch id and no other input, so a project admin cannot set other parameters on jobs the token can build; names listed here are sent. A project's own token is not limited. Names are case-sensitive; empty by default.",
+      'Input names (comma-separated, e.g. TARGET_ENV,SUITE) a CI action may send to a request that carries the instance CI server token. A request under PIWI_CI_SERVER_URL with that token sends the Playwright arguments and the dispatch id and no other input, so a project admin cannot set other parameters on jobs the token can build; names listed here are sent. A credential saved in Settings → Credentials has its own list. Names are case-sensitive; empty by default.',
     category: 'integrations',
     type: 'list',
     example: 'TARGET_ENV,SUITE',

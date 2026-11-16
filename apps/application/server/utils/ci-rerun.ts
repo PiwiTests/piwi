@@ -49,11 +49,13 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
   ciServerBaseUrl,
   ciServerBaseUrlProblem,
+  ciServerCredential,
   dispatchToCiServer,
-  instanceCiServer,
   prepareCiServerRequest,
-  projectCiServerToken,
+  type CiServerCredential,
 } from './ci-server-dispatch';
+import { loadCredentialRecord } from '#shared/handlers/credentials';
+import { credentialRefusal } from '#shared/credentials';
 import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import type { RunMetadata } from './run-json-types';
@@ -92,8 +94,9 @@ const actionRef = (action: CiAction | null) => (action ? { id: action.id, name: 
 /**
  * Whether a CI server action can be dispatched for a run, and whether it would
  * carry a credential: a request its target builds, a base URL that is https
- * (or http on a listed place), and a request its values fill, built as the
- * dispatch builds it. DNS is checked at dispatch.
+ * (or http on a listed place), a request its values fill, built as the
+ * dispatch builds it, and a credential that allows it. DNS is checked at
+ * dispatch.
  */
 async function ciServerReadiness(
   db: DbClient,
@@ -105,7 +108,13 @@ async function ciServerReadiness(
   if (!ciServerRequestTemplate(target, 'rerun')) {
     return { reason: 'No CI server is configured for this project.', hasToken: false };
   }
-  const baseUrl = ciServerBaseUrl(target);
+  let credential: CiServerCredential | null;
+  try {
+    credential = await ciServerCredential(db, target);
+  } catch (e) {
+    return { reason: e instanceof Error ? e.message : 'The credential cannot be read.', hasToken: false };
+  }
+  const baseUrl = ciServerBaseUrl(target, credential);
   const problem = ciServerBaseUrlProblem(baseUrl);
   if (problem || !baseUrl) return { reason: problem, hasToken: false };
   try {
@@ -115,9 +124,15 @@ async function ciServerReadiness(
       baseUrl,
       values: await ciServerValues(db, runId, target, 'args', 'dispatch'),
       inputs: ciActionInputValues(action),
-      projectToken: await projectCiServerToken(db, projectId),
-      instanceCredential: instanceCiServer().credential,
+      credential,
     });
+    if (request.credential?.source === 'action') {
+      const record = await loadCredentialRecord(db, request.credential.id);
+      const refusal = record
+        ? credentialRefusal(record, { projectId, url: request.url, custom: request.custom })
+        : 'The credential this CI action names no longer exists: pick another one.';
+      if (refusal) return { reason: refusal, hasToken: false };
+    }
     return { reason: null, hasToken: request.credential !== null };
   } catch (e) {
     return { reason: e instanceof Error ? e.message : 'The CI server request cannot be built.', hasToken: false };
@@ -250,6 +265,7 @@ async function dispatchWithAction(
     id: string;
     /** The spec files and the number of tests the arguments name, recorded for matching the run it starts. */
     cases?: RetryCase[];
+    actor: CiRerunActor;
   },
 ): Promise<DispatchedRerun> {
   const { action, args, id } = input;
@@ -263,7 +279,11 @@ async function dispatchWithAction(
   if (target.type === 'ci-server') {
     const server = ciServerTargetOf(target);
     const values = await ciServerValues(db, input.runId, server, args, id);
-    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs);
+    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs, {
+      // The virtual administrator of an instance without sign-in is id 0, no user row.
+      actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
+      actionId: action.id,
+    });
     return {
       id,
       actionId: action.id,
@@ -325,6 +345,7 @@ async function actionFor(
 export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
+  actor: CiRerunActor,
   actionId?: string | null,
 ): Promise<DispatchedRerun> {
   return dispatchRerunOf(db, {
@@ -332,6 +353,7 @@ export async function dispatchClusterRerun(
     runId: cluster.lastSeenRunId,
     cases: await clusterRerunCases(db, cluster.id),
     actionId,
+    actor,
   });
 }
 
@@ -345,7 +367,7 @@ class NoRetryArgsError extends Error {
 /** Dispatch a CI re-run of these cases, through the action the project's settings pick for the run. */
 async function dispatchRerunOf(
   db: DbClient,
-  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null },
+  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null; actor: CiRerunActor },
 ): Promise<DispatchedRerun> {
   const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
   const args = buildRetryArgs(input.cases);
@@ -358,13 +380,15 @@ async function dispatchRerunOf(
     args,
     id: randomBytes(8).toString('hex'),
     cases: input.cases,
+    actor: input.actor,
   });
 }
 
-/** Who asked for a re-run, as the dispatch record names them. */
+/** Who asked for a re-run, as the dispatch record names them, and the API key it came through, for the credential log. */
 export interface CiRerunActor {
   id: number | null;
   name: string | null;
+  apiKeyId?: number | null;
 }
 
 export type ClusterRerunOutcome =
@@ -405,7 +429,7 @@ export async function rerunClusterInCi(
 
   let dispatched: DispatchedRerun;
   try {
-    dispatched = await dispatchClusterRerun(db, cluster, options.actionId);
+    dispatched = await dispatchClusterRerun(db, cluster, actor, options.actionId);
   } catch (e) {
     return {
       ok: false,
@@ -465,6 +489,7 @@ export async function rerunExecutionInCi(
       projectId: target.projectId,
       runId: target.runId,
       cases: [target.rerunCase],
+      actor,
     });
   } catch (e) {
     return {
@@ -614,6 +639,7 @@ export async function runFlakeLabInCi(
       action,
       args: flakeLabCiArgs(testCaseId, kind),
       id: randomBytes(8).toString('hex'),
+      actor,
     });
     return { ok: true, dispatch: { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id } };
   } catch (e) {

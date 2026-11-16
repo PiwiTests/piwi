@@ -36,6 +36,7 @@ export default eventHandler(async (event) => {
   const outcome = await runFlakeLabInCi(db, testCaseId, kind, {
     id: user.id,
     name: user.name || user.username || null,
+    apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
   });
   if (!outcome.ok) throw apiError({ statusCode: STATUS_BY_ERROR[outcome.error], message: outcome.message });
   return { ok: true, dispatch: outcome.dispatch };

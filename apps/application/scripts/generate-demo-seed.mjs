@@ -213,18 +213,18 @@ const PROJECTS = [
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
-    // the CI settings list its CI actions.
+    // the CI settings list its CI actions, each naming the Jenkins credential.
     ci_rerun: {
       enabled: true,
       actions: [
         {
           id: 'rerun-failed-tests',
           name: 'Re-run failed tests',
+          // No base URL: the credential's destination is the one it dispatches under.
           target: {
             type: 'ci-server',
             preset: 'jenkins',
-            baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/integration', ref: 'main' },
           },
           inputs: [],
@@ -237,7 +237,7 @@ const PROJECTS = [
             type: 'ci-server',
             preset: 'jenkins',
             baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/smoke', ref: 'main' },
           },
           inputs: [{ name: 'TARGET_ENV', kind: 'fixed', value: 'staging' }],
@@ -251,7 +251,7 @@ const PROJECTS = [
             type: 'ci-server',
             preset: 'jenkins',
             baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/nightly', ref: 'main' },
           },
           inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
@@ -3745,6 +3745,101 @@ const CONNECTED_APP_KEYS = [
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
+// Settings → Credentials: the Jenkins user the API project's CI actions name, and one shared with every project that
+// no action names yet. The demo stores no secret. Its log: dispatches, a refusal and the Check reads of one hour.
+const CREDENTIALS = [
+  {
+    id: 1,
+    name: 'Jenkins · piwi-bot',
+    description: 'The Jenkins user allowed to build the API jobs.',
+    service: 'ci-server',
+    user_name: 'piwi-bot',
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-03-10T09:00:00') * 1000,
+    rotated_at: ts('2025-04-01T09:00:00') * 1000,
+    last_used_at: ts('2025-04-24T15:42:00') * 1000,
+  },
+  {
+    id: 2,
+    name: 'Jenkins · release-bot',
+    description: 'Starts the release smoke jobs; sends only the target environment.',
+    service: 'ci-server',
+    user_name: 'release-bot',
+    destination: 'https://jenkins.example.com/job/release/',
+    secret: null,
+    all_projects: 1,
+    allowed_inputs: ['TARGET_ENV'],
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-18T11:00:00') * 1000,
+    rotated_at: ts('2025-04-18T11:00:00') * 1000,
+    last_used_at: null,
+  },
+];
+const CREDENTIAL_PROJECTS = [{ credential_id: 1, project_id: 2 }];
+const credentialUse = (id, at, fields) => ({
+  id,
+  credential_id: 1,
+  credential_name: 'Jenkins · piwi-bot',
+  project_id: 2,
+  user_id: DEFAULT_DEMO_USER.id,
+  api_key_id: null,
+  subject_type: 'ci-action',
+  count: 1,
+  created_at: ts(at) * 1000,
+  last_at: ts(at) * 1000,
+  ...fields,
+});
+const CREDENTIAL_USES = [
+  credentialUse(1, '2025-04-22T10:05:00', {
+    feature: 'ci-check',
+    subject_id: 'smoke-staging',
+    destination: 'https://jenkins.example.com/job/api/job/smoke/api/json',
+    result: 'ok',
+    reason: null,
+    count: 3,
+    last_at: ts('2025-04-22T10:31:00') * 1000,
+  }),
+  credentialUse(2, '2025-04-23T09:12:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'rerun-failed-tests',
+    destination: 'https://jenkins.example.com/job/api/job/integration/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(3, '2025-04-23T17:40:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'smoke-staging',
+    destination: 'https://jenkins.example.com/job/api/job/smoke/buildWithParameters',
+    result: 'failed',
+    reason: 'The CI server answered 503',
+  }),
+  credentialUse(4, '2025-04-24T08:02:00', {
+    feature: 'ci-dispatch',
+    project_id: 1,
+    user_id: null,
+    subject_id: 'rerun-checkout',
+    destination: 'https://jenkins.example.com/job/checkout/buildWithParameters',
+    result: 'refused',
+    reason: 'The credential "Jenkins · piwi-bot" is not shared with this project.',
+  }),
+  credentialUse(5, '2025-04-24T15:42:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'rerun-failed-tests',
+    destination: 'https://jenkins.example.com/job/api/job/integration/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+];
 const RUN_TARGETS = [
   {
     id: 1,
@@ -5913,6 +6008,9 @@ const REBASE_SQL = [
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
+  // last_used_at is nullable; NULL + delta stays NULL.
+  `UPDATE credentials SET created_at = created_at + ${D_MS}, rotated_at = rotated_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
+  `UPDATE credential_uses SET created_at = created_at + ${D_MS}, last_at = last_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
@@ -7406,6 +7504,11 @@ const lines = [
   '-- The desktop app the identity the demo opens as connected (Connected apps)',
   insert('api_keys', CONNECTED_APP_KEYS),
   insert('run_targets', RUN_TARGETS),
+  '',
+  '-- Credentials (Settings → Credentials) and their log',
+  insert('credentials', CREDENTIALS),
+  insert('credential_projects', CREDENTIAL_PROJECTS),
+  insert('credential_uses', CREDENTIAL_USES),
   '',
   '-- Starred projects (of the identity the demo opens as)',
   insert('project_stars', PROJECT_STARS),

@@ -527,7 +527,6 @@ export async function getProject(
     ...project,
     effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
-    hasCiServerToken: !!project.ciServerToken,
     ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
     // Validated per-project capability decisions, so the edit form preselects a
@@ -661,8 +660,6 @@ export async function updateProject(
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
     scmToken?: string | null;
-    /** The CI server token, already sealed with its base URL; null removes it. */
-    ciServerToken?: string | null;
     /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
@@ -705,7 +702,6 @@ export async function updateProject(
     diagnosisInstructions,
     aiLanguage,
     scmToken,
-    ciServerToken,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -763,7 +759,6 @@ export async function updateProject(
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
         scmToken: scmToken !== undefined ? scmToken : undefined,
-        ciServerToken,
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,

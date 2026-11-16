@@ -1233,6 +1233,13 @@
       "when": 1794837291726,
       "tag": "0175_spotty_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1794850694606,
+      "tag": "0176_credentials",
+      "breakpoints": true
     }
   ]
 }

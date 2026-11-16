@@ -31,9 +31,8 @@ const props = defineProps<{
   /** The names the project's other actions have. */
   otherNames: string[];
   instanceUrl: string | null;
-  /** Whether the project holds a CI server token, and the base URL it is bound to. */
-  hasToken: boolean;
-  tokenUrl: string | null;
+  /** The project the action belongs to, whose credentials a CI server target picks from. */
+  projectId: number;
 }>();
 const emit = defineEmits<{ save: [action: CiAction, defaultFor: CiActionKind[]] }>();
 const open = defineModel<boolean>('open', { default: false });
@@ -183,8 +182,7 @@ function submit() {
           <CiServerTargetFields
             v-model="draft.ciServer"
             :instance-url="instanceUrl"
-            :has-token="hasToken"
-            :token-url="tokenUrl"
+            :project-id="projectId"
             :inputs="inputPairs"
           />
         </div>

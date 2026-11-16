@@ -2955,7 +2955,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const outcome = await rerunClusterInCi(
       db,
       id,
-      { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null },
+      { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null, apiKeyId: ctx.apiKeyId ?? null },
       { actionId: action || undefined },
     );
     if (!outcome.ok) {

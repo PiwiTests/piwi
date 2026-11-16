@@ -5,8 +5,8 @@ import { waitForHydration } from './utils';
 /**
  * A project's CI actions, in the CI section of its settings: a list of named
  * actions, each with its own target, inputs, what it accepts, an environment
- * and defaults, and one CI server token for all of them. A value with no
- * actions list is converted when it is read.
+ * and defaults, a CI server action naming the credential it sends. A value
+ * with no actions list is converted when it is read.
  */
 test.describe.serial('CI actions', () => {
   let projectId: number;
@@ -223,44 +223,76 @@ test.describe.serial('CI actions', () => {
     expect(await res.json()).toMatchObject({ ok: null, missing: [] });
   });
 
-  test('one CI server token is bound to one base URL: two URLs refuse it, one shows in the field', async ({
+  test('a CI server action names a credential shared with the project, and the editor says it is sent', async ({
     page,
     request,
   }) => {
-    const server = (id: string, baseUrl: string) => ({
-      id,
-      name: id,
-      target: { type: 'ci-server', preset: 'jenkins', baseUrl, fields: { job: 'e2e' } },
+    const NAMES = ['E2E CI actions · shared', 'E2E CI actions · elsewhere'];
+    const listed = (await (await request.get('/api/credentials')).json()) as {
+      credentials: Array<{ id: number; name: string }>;
+    };
+    for (const stale of listed.credentials.filter((c) => NAMES.includes(c.name))) {
+      expect((await request.delete(`/api/credentials/${stale.id}`)).ok()).toBeTruthy();
+    }
+    const create = async (name: string, projectIds: number[]) => {
+      const res = await request.post('/api/credentials', {
+        data: {
+          name,
+          service: 'ci-server',
+          user: 'piwi-bot',
+          secret: 'e2e-secret',
+          destination: 'https://ci-a.example.com/',
+          scope: { allProjects: false, projectIds },
+        },
+      });
+      expect(res.status()).toBe(201);
+      const body = (await res.json()) as { credential: { id: number } & Record<string, unknown> };
+      expect(JSON.stringify(body)).not.toContain('e2e-secret');
+      return body.credential.id;
+    };
+    const shared = await create(NAMES[0]!, [projectId]);
+    const elsewhere = await create(NAMES[1]!, []);
+
+    const action = (credentialId: number, baseUrl?: string) => ({
+      id: 'jenkins',
+      name: 'Jenkins',
+      target: {
+        type: 'ci-server',
+        preset: 'jenkins',
+        credentialId,
+        ...(baseUrl ? { baseUrl } : {}),
+        fields: { job: 'e2e' },
+      },
       inputs: [],
       accepts: ['tests'],
     });
-    const two = await request.patch(`/api/projects/${projectId}`, {
-      data: {
-        ciRerun: {
-          enabled: true,
-          actions: [server('a', 'https://ci-a.example.com/'), server('b', 'https://ci-b.example.com/')],
-          defaults: {},
-        },
-        ciServerToken: 'secret',
-      },
+    const save = (data: Record<string, unknown>) => request.patch(`/api/projects/${projectId}`, { data });
+    const token = await save({ ciServerToken: 'secret' });
+    expect(token.status()).toBe(400);
+    const outside = await save({
+      ciRerun: { enabled: true, actions: [action(shared, 'https://ci-b.example.com/')], defaults: {} },
     });
-    expect(two.status()).toBe(400);
-    expect(((await two.json()) as { message: string }).message).toContain('different base URLs');
-
-    const one = await request.patch(`/api/projects/${projectId}`, {
-      data: {
-        ciRerun: {
-          enabled: true,
-          actions: [server('a', 'https://ci-a.example.com/'), server('b', 'https://ci-a.example.com/')],
-          defaults: {},
-        },
-      },
-    });
-    expect(one.ok()).toBeTruthy();
+    expect(outside.status()).toBe(400);
+    expect(((await outside.json()) as { message: string }).message).toContain('is not under');
+    const notShared = await save({ ciRerun: { enabled: true, actions: [action(elsewhere)], defaults: {} } });
+    expect(notShared.status()).toBe(400);
+    expect(((await notShared.json()) as { message: string }).message).toContain('is shared with this project');
+    const ok = await save({ ciRerun: { enabled: true, actions: [action(shared)], defaults: {} } });
+    expect(ok.ok()).toBeTruthy();
 
     await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
     await waitForHydration(page);
-    await expect(page.getByTestId('ci-server-token')).toBeVisible();
-    await expect(page.getByTestId('ci-server-token-description')).toContainText('https://ci-a.example.com');
+    await page.getByTestId('ci-action-row').filter({ hasText: 'Jenkins' }).getByTestId('ci-action-edit').click();
+    await expect(page.getByTestId('ci-server-credential-description')).toContainText(`“${NAMES[0]}” is sent`);
+    await expect(page.getByTestId('ci-server-target')).toContainText('https://ci-a.example.com/job/e2e/');
+
+    const credential = (await (await request.get(`/api/credentials/${shared}`)).json()) as {
+      credential: { usedBy: Array<{ projectId: number; actionId: string }> };
+    };
+    expect(credential.credential.usedBy).toEqual([expect.objectContaining({ projectId, actionId: 'jenkins' })]);
+    expect((await request.delete(`/api/credentials/${shared}`)).status()).toBe(409);
+    expect((await save({ ciRerun: null })).ok()).toBeTruthy();
+    expect((await request.delete(`/api/credentials/${shared}`)).ok()).toBeTruthy();
+    expect((await request.delete(`/api/credentials/${elsewhere}`)).ok()).toBeTruthy();
   });
 });

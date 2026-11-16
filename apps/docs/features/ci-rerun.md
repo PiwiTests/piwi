@@ -125,7 +125,7 @@ A CI server action is a **preset**, which builds the request from a few fields, 
 
 **Jenkins** takes the job as Jenkins shows its path (`polaris/e2e`; `polaris/e2e/{branch}` for a multibranch pipeline)
 and posts to its `buildWithParameters` with `PIWI_RERUN_ARGS` (the arguments) and `PIWI_ORIGIN_REF` (the dispatch id),
-names you can change, plus the action's inputs. The credential is a user and their API token, sent as Basic
+names you can change, plus the action's inputs. The credential is a Jenkins user and their API token, sent as Basic
 authentication. The link goes to the job's page. The job declares both parameters and runs `rerun`:
 
 ```groovy
@@ -200,13 +200,12 @@ refused. In a JSON body it fills a whole string value.
 
 ### The credential and the hosts
 
-The **CI server token** is one write-only field of the **CI** section: leave it empty to keep it. It is stored with the
-one base URL the CI server actions send under (an action's own, else `PIWI_CI_SERVER_URL`), which the field states, and
-sent only under it. Saving it while the actions use more than one base URL is refused. A project without a token uses
-the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`), only with a preset's request under that URL, and then
-sends only the inputs the operator lists in `PIWI_CI_SERVER_ALLOWED_INPUTS` (comma-separated, empty by default);
-**Check** names the ones left out. A base URL or request path is refused when a segment would climb once a server decodes
-it (`..%2F`, `..;`).
+A CI server action names a [credential](/operate/credentials): a user, a secret and the base URL it may be sent
+under, saved once, shared with projects, and logged on each use. Its base URL can stay empty to use the credential's. A
+request carrying it sends only the inputs it allows; **Check** names the ones left out. With no credential, a preset's
+request under `PIWI_CI_SERVER_URL` carries the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`) and sends
+only the inputs `PIWI_CI_SERVER_ALLOWED_INPUTS` lists. A base URL or request path is refused when a segment would climb
+once a server decodes it (`..%2F`, `..;`).
 
 A request never follows a redirect, and a link from the answer is kept only as an `http(s)` URL or a path from the
 base URL's root. A CI server is reached over `https`; over `http` or on a private address it is reached only when

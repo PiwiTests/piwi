@@ -3639,30 +3639,57 @@ const SCENES = [
     { name: 'project-ci-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions, the one CI server token and its Save, at ${width} px`,
+    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions and its Save, at ${width} px`,
     mode: 'demo',
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
     async run({ page, shoot, settle }) {
       await page.getByTestId('ci-actions-list').waitFor({ timeout: 90000 });
-      await page.getByTestId('ci-server-token').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
   })),
   ...[
-    { name: 'project-ci-token', width: 1280, height: 700 },
-    { name: 'project-ci-token-mobile', width: 375, height: 900 },
+    { name: 'project-ci-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-credential-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the one CI server token field, stating the base URL it is bound to, at ${width} px`,
-    mode: 'demo',
+    description: `Project → Settings → CI: a Jenkins action's editor, its credential picked from the ones shared with the project and the request preview naming it, at ${width} px`,
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
+    of: '[data-shot="ci-server-target"]',
     async run({ page, shoot, settle }) {
-      const field = page.locator('[data-shot="ci-server-token"]');
-      await field.waitFor({ timeout: 90000 });
-      await field.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Re-run failed tests' });
+      await row.getByTestId('ci-action-edit').click({ timeout: 90000 });
+      await page
+        .getByTestId('ci-server-credential-description')
+        .filter({ hasText: 'is sent' })
+        .waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-credentials', width: 1280, height: 800 },
+    { name: 'settings-credentials-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: each credential's user, destination, projects, the actions that name it and its last use, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-list"]',
+  })),
+  ...[
+    { name: 'settings-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential's panel, with what names it, Disable and Delete, and its log, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },

@@ -3,27 +3,32 @@
  * credential, the private-host rule, the request and the reading of its answer.
  *
  * Three rules keep a project's own base URL and templates safe:
- * - A credential is sent only to URLs under the base URL it was saved with: the
- *   instance token under `PIWI_CI_SERVER_URL`, a project token under the URL
- *   stored beside it. A template cannot leave its base URL (`renderCiRequest`),
- *   and no redirect is followed.
- * - The instance token goes only with a preset's request, whose shape the preset
- *   fixes (Jenkins: a job's `buildWithParameters`, and the read of the job's
- *   parameters Check sends), and with no action input except the names in
- *   `PIWI_CI_SERVER_ALLOWED_INPUTS`: a project admin chooses an input, so one the
- *   operator did not list never rides on the instance's credential. A Custom
- *   request carries the project's own token or none.
+ * - A request carries the credential its action names (`credentials`), opened
+ *   by `withCredential` for that request alone, which refuses a URL outside
+ *   the credential's destination, a project it is not shared with, and a
+ *   Custom request it does not allow, and records the use. An action that names
+ *   none carries the instance's (`PIWI_CI_SERVER_TOKEN`), with a preset's
+ *   request under `PIWI_CI_SERVER_URL` only. A template cannot leave its base
+ *   URL (`renderCiRequest`), and no redirect is followed.
+ * - A request sends only the action inputs its credential allows
+ *   (`allowedInputs`; for the instance's, `PIWI_CI_SERVER_ALLOWED_INPUTS`): a
+ *   project admin chooses an input, so one the credential's manager did not
+ *   list never rides on it.
  * - A private address is reached only on a place the operator named (the host
  *   and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS`),
  *   or on the desktop app. Any other host must resolve to public addresses only, checked when the
  *   connection opens.
  */
-import { eq } from 'drizzle-orm';
 import type { Agent } from 'undici';
-import { projects } from '../database/schema';
-import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
 import { assertPublicHttpUrl, publicOnlyLookup } from './safe-fetch';
 import { isDesktopRuntime } from './ai-claude-cli';
+import {
+  CredentialRefusedError,
+  instanceCredential,
+  maskCredentialSecret,
+  withCredential,
+  type CredentialActor,
+} from './credentials';
 import {
   ciAuthHeaderProblem,
   CI_SERVER_HTTPS_PROBLEM,
@@ -40,6 +45,7 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
+import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
 import type { DbClient } from '../database';
 
 /** How long a CI server has to answer a dispatch. */
@@ -49,29 +55,25 @@ const MAX_ANSWER_BYTES = 64 * 1024;
 /** The most of a CI server's error message shown. */
 const MAX_ERROR_MESSAGE = 200;
 
-/** A credential and the base URL it may be sent under. */
+/** The credential a CI server request may carry: the one its action names, or the instance's. */
 export interface CiServerCredential {
+  /** `credentials.id`. */
+  id: number;
+  name: string;
+  /** The base URL it may be sent under. */
   url: string;
   user: string | null;
-  token: string;
+  /** The secret, once `withCredential` opened it for this request; absent while the request is planned. */
+  token?: string;
+  /** The action inputs a request carrying it may send; null for every input. */
+  allowedInputs: string[] | null;
+  /** `action` for the credential the action names, `instance` for the one the environment sets. */
+  source: 'action' | 'instance';
 }
 
-/** The instance's CI server: `PIWI_CI_SERVER_URL`, and its credential when `PIWI_CI_SERVER_TOKEN` is set. */
-export function instanceCiServer(): { url: string | null; credential: CiServerCredential | null } {
-  const url = normalizeCiServerBaseUrl(process.env.PIWI_CI_SERVER_URL);
-  const token = process.env.PIWI_CI_SERVER_TOKEN?.trim();
-  const user = process.env.PIWI_CI_SERVER_USER?.trim() || null;
-  return { url, credential: url && token ? { url, user, token } : null };
-}
-
-/** The input names an action may send on a request that carries the instance credential: `PIWI_CI_SERVER_ALLOWED_INPUTS`, none by default. */
-export function instanceAllowedInputs(): Set<string> {
-  return new Set(
-    (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean),
-  );
+/** The instance's CI server URL, `PIWI_CI_SERVER_URL`, or null when it sets none. */
+export function instanceCiServerUrl(): string | null {
+  return normalizeCiServerBaseUrl(process.env.PIWI_CI_SERVER_URL);
 }
 
 /** A URL's host name, lowercased and without IPv6 brackets, and its port (the scheme's default when absent). */
@@ -89,7 +91,7 @@ function hostAndPort(url: URL): { host: string; port: string } {
  */
 export function ciServerHosts(): Array<{ host: string; port: string | null }> {
   const places: Array<{ host: string; port: string | null }> = [];
-  const instance = instanceCiServer().url;
+  const instance = instanceCiServerUrl();
   if (instance) places.push(hostAndPort(new URL(instance)));
   for (const entry of (process.env.PIWI_CI_SERVER_HOSTS ?? '').split(',')) {
     const name = entry.trim();
@@ -118,9 +120,35 @@ export function mayReachPrivateAddress(url: string): boolean {
   return ciServerHosts().some((place) => place.host === target.host && (place.port ?? target.port) === target.port);
 }
 
-/** The base URL a target dispatches under: the project's, else the instance's. */
-export function ciServerBaseUrl(target: CiServerTarget): string | null {
-  return target.baseUrl ?? instanceCiServer().url;
+function toCiServerCredential(record: CredentialRecord, source: CiServerCredential['source']): CiServerCredential {
+  return {
+    id: record.id,
+    name: record.name,
+    url: record.destination,
+    user: record.user,
+    allowedInputs: record.allowedInputs,
+    source,
+  };
+}
+
+/**
+ * The credential a target's requests may carry, without its secret: the one
+ * its action names, else the instance's when the environment sets one. Throws
+ * when the action names a credential that does not exist.
+ */
+export async function ciServerCredential(db: DbClient, target: CiServerTarget): Promise<CiServerCredential | null> {
+  if (target.credentialId != null) {
+    const record = await loadCredentialRecord(db, target.credentialId);
+    if (!record) throw new Error('The credential this CI action names no longer exists: pick another one.');
+    return toCiServerCredential(record, 'action');
+  }
+  const instance = await instanceCredential(db, 'ci-server');
+  return instance ? toCiServerCredential(instance, 'instance') : null;
+}
+
+/** The base URL a target dispatches under: its own, else its credential's destination, else the instance's. */
+export function ciServerBaseUrl(target: CiServerTarget, credential: CiServerCredential | null): string | null {
+  return target.baseUrl ?? (credential?.source === 'action' ? credential.url : null) ?? instanceCiServerUrl();
 }
 
 /** Why a base URL cannot be dispatched to, or null: it must be https, or http on a host a private address may be reached on. */
@@ -131,45 +159,8 @@ export function ciServerBaseUrlProblem(baseUrl: string | null): string | null {
   return CI_SERVER_HTTPS_PROBLEM;
 }
 
-/** A project's CI server token, sealed with the base URL it may be sent under. */
-export function sealCiServerToken(url: string, token: string): string {
-  return encryptSecret(JSON.stringify({ url, token }), getEncryptionKey());
-}
-
-/** The base URL and token a stored project token holds, or null when it is absent or unreadable. */
-export function openCiServerToken(stored: string | null | undefined): { url: string; token: string } | null {
-  if (!stored) return null;
-  try {
-    const value = JSON.parse(decryptSecret(stored, getEncryptionKey())) as { url?: unknown; token?: unknown };
-    const url = normalizeCiServerBaseUrl(value.url);
-    return url && typeof value.token === 'string' && value.token ? { url, token: value.token } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The project's CI server token and the base URL it is bound to, or null. */
-export async function projectCiServerToken(
-  db: DbClient,
-  projectId: number,
-): Promise<{ url: string; token: string } | null> {
-  const [row] = await db
-    .select({ ciServerToken: projects.ciServerToken })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-  return openCiServerToken(row?.ciServerToken);
-}
-
-/** The first credential whose base URL holds the request's URL, or null. */
-export function credentialFor(
-  requestUrl: string,
-  candidates: Array<CiServerCredential | null | undefined>,
-): CiServerCredential | null {
-  return candidates.find((c): c is CiServerCredential => !!c && isUnderBaseUrl(c.url, requestUrl)) ?? null;
-}
-
-function authHeader(auth: CiServerAuth, credential: CiServerCredential | null): [string, string] | null {
-  if (!credential || auth === 'none') return null;
+function authHeader(auth: CiServerAuth, credential: CiServerCredential): [string, string] | null {
+  if (auth === 'none' || credential.token === undefined) return null;
   if (/[\r\n\0]/.test(credential.token) || /[\r\n\0]/.test(credential.user ?? '')) {
     throw new Error('The CI server credential holds a line break');
   }
@@ -183,24 +174,42 @@ function authHeader(auth: CiServerAuth, credential: CiServerCredential | null): 
   return [auth.header, credential.token];
 }
 
-/** A request ready to send, with its credential, and the one it carries. */
+/** A request ready to send, and the credential it carries. */
 export interface OutgoingCiRequest {
   /** `GET` only for the read Check sends; a dispatch is a `POST` or a `PUT`. */
   method: 'POST' | 'PUT' | 'GET';
   url: string;
   headers: Record<string, string>;
   body: string | null;
-  /** Which credential the request carries. */
-  credential: 'project' | 'instance' | null;
-  /** The action inputs left off because the request carries the instance credential and the operator did not list them. */
+  /** The credential the request carries, whose secret `withCredential` adds; null for none. */
+  credential: CiServerCredential | null;
+  /** Whether the request is a Custom one, which its credential must allow. */
+  custom: boolean;
+  /** The action inputs left off because the credential it carries does not allow them. */
   droppedInputs: string[];
 }
 
 /**
+ * Whether a request carries the credential: never when its auth is none; the
+ * action's own always (`withCredential` then refuses a URL outside its
+ * destination); the instance's only with a preset's request under its URL.
+ */
+function carries(
+  credential: CiServerCredential | null,
+  auth: CiServerAuth,
+  custom: boolean,
+  url: string,
+): credential is CiServerCredential {
+  if (!credential || auth === 'none') return false;
+  if (credential.source === 'action') return true;
+  return !custom && isUnderBaseUrl(credential.url, url);
+}
+
+/**
  * Build a dispatch's request: the target's template filled with its values,
- * under the base URL, and the first credential bound to a URL that holds it.
- * Throws when the target has no request for `kind`, or the template cannot be
- * filled.
+ * under the base URL, the inputs its credential allows, and the credential's
+ * auth header once its secret is given (`credential.token`). Throws when the
+ * target has no request for `kind`, or the template cannot be filled.
  */
 export function prepareCiServerRequest(input: {
   target: CiServerTarget;
@@ -209,26 +218,27 @@ export function prepareCiServerRequest(input: {
   values: CiTemplateValues;
   /** An action's inputs, sent beside the template's own fields. */
   inputs?: Record<string, string>;
-  projectToken: { url: string; token: string } | null;
-  instanceCredential: CiServerCredential | null;
+  credential: CiServerCredential | null;
 }): OutgoingCiRequest {
   const spec = ciServerRequestTemplate(input.target, input.kind);
   if (!spec)
     throw new Error(
       input.kind === 'flakeLab' ? 'No Flake Lab request is configured' : 'No re-run request is configured',
     );
+  const custom = input.target.preset === 'custom';
   const inputs = Object.entries(input.inputs ?? {});
   let rendered = renderCiRequest(input.baseUrl, spec.template, input.values, inputs);
-  const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
-  const credential = credentialFor(rendered.url, [project, instance]);
+  const credential = carries(input.credential, spec.auth, custom, rendered.url) ? input.credential : null;
   let droppedInputs: string[] = [];
-  if (credential && credential === instance && spec.auth !== 'none' && inputs.length > 0) {
-    const allowed = instanceAllowedInputs();
-    const kept = inputs.filter(([name]) => allowed.has(name));
-    if (kept.length < inputs.length) {
-      droppedInputs = inputs.filter(([name]) => !allowed.has(name)).map(([name]) => name);
-      rendered = renderCiRequest(input.baseUrl, spec.template, input.values, kept);
-    }
+  const allowed = credential?.allowedInputs ? new Set(credential.allowedInputs) : null;
+  if (allowed && inputs.some(([name]) => !allowed.has(name))) {
+    droppedInputs = inputs.filter(([name]) => !allowed.has(name)).map(([name]) => name);
+    rendered = renderCiRequest(
+      input.baseUrl,
+      spec.template,
+      input.values,
+      inputs.filter(([name]) => allowed.has(name)),
+    );
   }
   const headers: Record<string, string> = {};
   const setHeader = (name: string, value: string) => {
@@ -238,14 +248,15 @@ export function prepareCiServerRequest(input: {
   setHeader('Accept', 'application/json');
   if (rendered.body) setHeader('Content-Type', rendered.body.contentType);
   for (const [name, value] of rendered.headers) setHeader(name, value);
-  const auth = authHeader(spec.auth, credential);
+  const auth = credential ? authHeader(spec.auth, credential) : null;
   if (auth) setHeader(auth[0], auth[1]);
   return {
     method: rendered.method,
     url: rendered.url,
     headers,
     body: rendered.body?.text ?? null,
-    credential: !credential || !auth ? null : credential === project ? 'project' : 'instance',
+    credential,
+    custom,
     droppedInputs,
   };
 }
@@ -326,9 +337,51 @@ export interface CiServerDispatchResult {
   buildNumber: string | null;
 }
 
+/** Who started a dispatch or a Check, and what it is about, as the credential log records it. */
+export interface CiServerUse {
+  actor: CredentialActor;
+  /** The CI action, by id. */
+  actionId?: string;
+}
+
+/**
+ * Send a prepared request: through `withCredential` when it carries a
+ * credential, which opens the secret for it, refuses a use the credential does
+ * not allow and records the use, else as it is. The answer comes back with the
+ * secret masked in its text, and a status outside 2xx is a failed use.
+ */
+async function sendWithCredential(
+  db: DbClient,
+  request: OutgoingCiRequest,
+  rebuild: (credential: CiServerCredential) => OutgoingCiRequest,
+  use: { projectId: number; feature: 'ci-dispatch' | 'ci-check' } & CiServerUse,
+): Promise<CiServerAnswer> {
+  const credential = request.credential;
+  if (!credential) return sendCiServerRequest(request);
+  return withCredential(
+    db,
+    {
+      credentialId: credential.id,
+      feature: use.feature,
+      projectId: use.projectId,
+      url: request.url,
+      custom: request.custom,
+      actor: use.actor,
+      ...(use.actionId ? { subject: { type: 'ci-action', id: use.actionId } } : {}),
+    },
+    async (opened) => {
+      const answer = await sendCiServerRequest(rebuild({ ...credential, user: opened.user, token: opened.secret }));
+      // A CI server may repeat the credential in its answer (an error message): nothing past here reads it.
+      return { ...answer, text: maskCredentialSecret(answer.text, opened) };
+    },
+    (answer) => (answer.status >= 200 && answer.status < 300 ? null : `The CI server answered ${answer.status}`),
+  );
+}
+
 /**
  * Dispatch a re-run or a Flake Lab experiment to the project's CI server.
- * Throws with a message for the user on any failure.
+ * Throws with a message for the user on any failure, a refused credential
+ * included.
  */
 export async function dispatchToCiServer(
   db: DbClient,
@@ -336,21 +389,20 @@ export async function dispatchToCiServer(
   target: CiServerTarget,
   kind: 'rerun' | 'flakeLab',
   values: CiTemplateValues,
-  inputs: Record<string, string> = {},
+  inputs: Record<string, string>,
+  use: CiServerUse,
 ): Promise<CiServerDispatchResult> {
-  const baseUrl = ciServerBaseUrl(target);
+  const credential = await ciServerCredential(db, target);
+  const baseUrl = ciServerBaseUrl(target, credential);
   const problem = ciServerBaseUrlProblem(baseUrl);
   if (problem || !baseUrl) throw new Error(problem ?? 'No CI server is configured for this project.');
-  const request = prepareCiServerRequest({
-    target,
-    kind,
-    baseUrl,
-    values,
-    inputs,
-    projectToken: await projectCiServerToken(db, projectId),
-    instanceCredential: instanceCiServer().credential,
+  const prepare = (withSecret: CiServerCredential | null) =>
+    prepareCiServerRequest({ target, kind, baseUrl, values, inputs, credential: withSecret });
+  const answer = await sendWithCredential(db, prepare(credential), prepare, {
+    projectId,
+    feature: 'ci-dispatch',
+    ...use,
   });
-  const answer = await sendCiServerRequest(request);
   if (answer.status < 200 || answer.status >= 300) throw ciServerAnswerError(answer);
   const spec = ciServerRequestTemplate(target, kind)!;
   const fields = readCiServerAnswer(baseUrl, spec.template, values, {
@@ -360,60 +412,40 @@ export async function dispatchToCiServer(
   return { url: fields.link, buildNumber: fields.buildNumber };
 }
 
-/** A credential pair the project and the instance offer, the project's first. */
-function credentialCandidates(
-  target: CiServerTarget,
-  projectToken: { url: string; token: string } | null,
-  instanceCredential: CiServerCredential | null,
-): { project: CiServerCredential | null; instance: CiServerCredential | null } {
-  return {
-    project: projectToken ? { url: projectToken.url, user: target.user ?? null, token: projectToken.token } : null,
-    instance: target.preset === 'custom' ? null : instanceCredential,
-  };
-}
-
 /**
  * The read Check sends for a job: a GET of `url`, with the credential a
- * dispatch under the same URL would carry, chosen on the request's URL as
- * `prepareCiServerRequest` chooses it.
+ * dispatch under the same URL would carry and its auth header once its secret
+ * is given.
  */
 export function prepareCiServerCheck(input: {
   target: CiServerTarget;
   url: string;
-  projectToken: { url: string; token: string } | null;
-  instanceCredential: CiServerCredential | null;
+  credential: CiServerCredential | null;
 }): OutgoingCiRequest {
   if (input.target.preset === 'custom') throw new Error('A Custom request cannot be checked');
-  const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
-  const credential = credentialFor(input.url, [project, instance]);
+  const auth = CI_SERVER_PRESET_REGISTRY[input.target.preset].auth;
+  const credential = carries(input.credential, auth, false, input.url) ? input.credential : null;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  const auth = authHeader(CI_SERVER_PRESET_REGISTRY[input.target.preset].auth, credential);
-  if (auth) headers[auth[0]] = auth[1];
-  return {
-    method: 'GET',
-    url: input.url,
-    headers,
-    body: null,
-    credential: !credential || !auth ? null : credential === project ? 'project' : 'instance',
-    droppedInputs: [],
-  };
+  const header = credential ? authHeader(auth, credential) : null;
+  if (header) headers[header[0]] = header[1];
+  return { method: 'GET', url: input.url, headers, body: null, credential, custom: false, droppedInputs: [] };
 }
 
 /** What a non-2xx answer to Check means, for the user. */
 function checkAnswerMessage(answer: CiServerAnswer, sentCredential: boolean): string {
   if (answer.status === 401) {
     return sentCredential
-      ? 'The CI server refused the credential (401): check the user and the API token.'
-      : 'The CI server asks for a credential (401): set the user and an API token.';
+      ? 'The CI server refused the credential (401): check its user and secret.'
+      : 'The CI server asks for a credential (401): pick one for this action.';
   }
   if (answer.status === 403) {
     return sentCredential
-      ? 'The CI server answered 403: the user cannot read this job.'
-      : 'The CI server answered 403 to a request without a credential: set the user and an API token for a URL that holds this job.';
+      ? 'The CI server answered 403: the credential’s user cannot read this job.'
+      : 'The CI server answered 403 to a request without a credential: pick one whose destination holds this job.';
   }
   if (answer.status === 404) {
     return sentCredential
-      ? 'No job at this path, or the user cannot see it (404).'
+      ? 'No job at this path, or the credential’s user cannot see it (404).'
       : 'No job at this path, or the CI server hides it from a request without a credential (404).';
   }
   return `${ciServerAnswerError(answer).message}.`;
@@ -429,17 +461,22 @@ export async function checkCiServerTarget(
   db: DbClient,
   projectId: number,
   target: CiServerTarget,
-  inputNames: string[] = [],
+  inputNames: string[],
+  use: CiServerUse,
 ): Promise<CiServerCheckResult[]> {
-  const baseUrl = ciServerBaseUrl(target);
+  let credential: CiServerCredential | null;
+  try {
+    credential = await ciServerCredential(db, target);
+  } catch (e) {
+    return [{ kind: 'rerun', ok: false, missing: [], message: e instanceof Error ? e.message : String(e) }];
+  }
+  const baseUrl = ciServerBaseUrl(target, credential);
   const problem = ciServerBaseUrlProblem(baseUrl);
   if (problem || !baseUrl) {
     return [
       { kind: 'rerun', ok: false, missing: [], message: problem ?? 'No CI server is configured for this project.' },
     ];
   }
-  const projectToken = await projectCiServerToken(db, projectId);
-  const instanceCredential = instanceCiServer().credential;
   const results: CiServerCheckResult[] = [];
   for (const plan of ciServerCheckPlans(target, baseUrl, inputNames)) {
     if ('error' in plan) {
@@ -447,11 +484,13 @@ export async function checkCiServerTarget(
       continue;
     }
     try {
-      const request = prepareCiServerCheck({ target, url: plan.url, projectToken, instanceCredential });
-      // A request with the instance credential sends only the listed inputs, so the job need declare only those.
-      const allowed = request.credential === 'instance' ? instanceAllowedInputs() : null;
+      const prepare = (withSecret: CiServerCredential | null) =>
+        prepareCiServerCheck({ target, url: plan.url, credential: withSecret });
+      const request = prepare(credential);
+      // A request sends only the inputs its credential allows, so the job need declare only those.
+      const allowed = request.credential?.allowedInputs ? new Set(request.credential.allowedInputs) : null;
       const notSent = allowed ? inputNames.filter((name) => !allowed.has(name)) : [];
-      const answer = await sendCiServerRequest(request);
+      const answer = await sendWithCredential(db, request, prepare, { projectId, feature: 'ci-check', ...use });
       if (answer.status < 200 || answer.status >= 300) {
         results.push({
           kind: plan.kind,
@@ -472,8 +511,8 @@ export async function checkCiServerTarget(
               ...finding,
               ok: false,
               message:
-                `${finding.message} Not sent: ${notSent.join(', ')}, because this request carries the instance credential ` +
-                'and the operator did not list the input in PIWI_CI_SERVER_ALLOWED_INPUTS.',
+                `${finding.message} Not sent: ${notSent.join(', ')}, because the credential "${request.credential!.name}" ` +
+                'does not allow these inputs.',
             },
       );
     } catch (e) {
@@ -482,7 +521,7 @@ export async function checkCiServerTarget(
         kind: plan.kind,
         ok: false,
         missing: [],
-        message: `The CI server could not be reached: ${reason}.`,
+        message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.`,
       });
     }
   }

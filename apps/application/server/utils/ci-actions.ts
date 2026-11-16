@@ -9,7 +9,7 @@
 import { eq } from 'drizzle-orm';
 import { parse as parseYaml } from 'yaml';
 import { projects } from '../database/schema';
-import { checkCiServerTarget } from './ci-server-dispatch';
+import { checkCiServerTarget, type CiServerUse } from './ci-server-dispatch';
 import { createScmProvider } from './scm';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import {
@@ -116,7 +116,12 @@ async function checkGithubAction(
  * workflow file; a CI server preset reads its job; GitLab, Bitbucket and a
  * Custom request name nothing Piwi can read without starting a pipeline.
  */
-export async function checkCiAction(db: DbClient, projectId: number, action: CiAction): Promise<CiActionCheckResult> {
+export async function checkCiAction(
+  db: DbClient,
+  projectId: number,
+  action: CiAction,
+  use: CiServerUse,
+): Promise<CiActionCheckResult> {
   const target = action.target;
   switch (target.type) {
     case 'github':
@@ -148,6 +153,7 @@ export async function checkCiAction(db: DbClient, projectId: number, action: CiA
         projectId,
         ciServerTargetOf(target),
         action.inputs.map((i) => i.name),
+        { ...use, actionId: action.id },
       );
       return result
         ? { ok: result.ok, missing: result.missing, message: result.message }

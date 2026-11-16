@@ -407,6 +407,29 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/tags' },
   },
 
+  // Credentials
+  {
+    id: 'credentials-page',
+    kind: 'page',
+    pages: ['/settings/credentials'],
+    describes:
+      'Settings → Credentials: the secrets Piwi sends to other services, each saved once and named by the CI actions that use it.',
+    requires: { permission: 'credentials:manage' },
+    doc: 'operate/credentials',
+    sample: { route: '/settings/credentials' },
+  },
+  {
+    id: 'credentials-list',
+    kind: 'field',
+    pages: ['/settings/credentials'],
+    describes:
+      'The credentials: each one’s user, destination, projects and the actions that name it; a row opens its details and log.',
+    requires: { permission: 'credentials:manage' },
+    help: 'settings.credentials',
+    doc: 'operate/credentials',
+    sample: { route: '/settings/credentials' },
+  },
+
   // Integrations
   {
     id: 'integrations-page',
@@ -890,6 +913,18 @@ export const SETTINGS_ANCHORS = [
 
 /** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
 export const SETTINGS_EXEMPTIONS = [
+  {
+    rule: 'field',
+    key: 'credentials.log',
+    reason:
+      'The log shows in the panel a credential row opens, and a row is no anchor a guide can open, so no sample renders it.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.log',
+    reason:
+      'The log’s hint shows in the panel a credential row opens, and a row is no anchor a guide can open, so no sample renders it.',
+  },
   {
     rule: 'field',
     key: 'account.connected-accounts',

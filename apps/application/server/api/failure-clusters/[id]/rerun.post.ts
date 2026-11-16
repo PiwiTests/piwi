@@ -35,7 +35,11 @@ export default eventHandler(async (event) => {
   const outcome = await rerunClusterInCi(
     db,
     id,
-    { id: user.id, name: user.name || user.username || null },
+    {
+      id: user.id,
+      name: user.name || user.username || null,
+      apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
+    },
     { actionId: typeof body.action === 'string' && body.action.trim() ? body.action.trim() : undefined },
   );
   if (!outcome.ok) throw apiError({ statusCode: STATUS_BY_ERROR[outcome.error], message: outcome.message });

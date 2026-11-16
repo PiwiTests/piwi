@@ -23,7 +23,11 @@ export default eventHandler(async (event) => {
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
 
   // Availability is re-checked on dispatch so the API is safe on its own.
-  const outcome = await rerunExecutionInCi(db, id, { id: user.id, name: user.name || user.username || null });
+  const outcome = await rerunExecutionInCi(db, id, {
+    id: user.id,
+    name: user.name || user.username || null,
+    apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
+  });
   if (!outcome.ok) throw apiError({ statusCode: STATUS_BY_ERROR[outcome.error], message: outcome.message });
   return { ok: true, dispatch: outcome.dispatch };
 });

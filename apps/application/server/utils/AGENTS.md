@@ -15,6 +15,7 @@ in-app assistant).
 | `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
 | `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
 | `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
+| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`               | [Credentials](#credentials)                         |
 
 ## SCM providers
 
@@ -287,3 +288,13 @@ runs (`@piwitests/editor/run-host`), plus these:
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
   copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).
+
+## Credentials
+
+- **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules
+  (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
+  whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
+  without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
+- **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
+  shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
+  console with it.

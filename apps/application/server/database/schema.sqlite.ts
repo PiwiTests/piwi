@@ -12,7 +12,7 @@ export const projects = sqliteTable(
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
-    /** Per-project CI server token, encrypted with the base URL it may be sent under (`{ url, token }`). */
+    /** A project's CI server token (`{ url, token }`, encrypted), which the startup import moves to a credential, emptying the column. */
     ciServerToken: text('ci_server_token'),
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
@@ -3178,3 +3178,86 @@ export const runRequests = sqliteTable(
     requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
   }),
 );
+
+// Credentials: the secrets Piwi sends to other services, saved once and referenced by id
+// (`server/utils/credentials.ts`). The secret is sealed with the destination it may be sent under and never returned.
+export const credentials = sqliteTable(
+  'credentials',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(), // unique on the instance, ignoring case
+    description: text('description'),
+    service: text('service').notNull(), // CredentialService
+    userName: text('user_name'), // the user name a Basic credential pairs with the secret; not secret
+    destination: text('destination').notNull(), // the base URL the secret may be sent under
+    secret: text('secret'), // AES-256-GCM JSON { destination, secret }; null for a credential set by environment variables
+    allProjects: integer('all_projects', { mode: 'boolean' }).notNull().default(false), // else the rows of credential_projects
+    allowedInputs: text('allowed_inputs', { mode: 'json' }), // string[]: the CI action inputs a request carrying it may send; null for every input
+    customRequests: integer('custom_requests', { mode: 'boolean' }).notNull().default(false), // whether a Custom CI server request may carry it
+    disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false), // every use is refused
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    rotatedAt: integer('rotated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    nameIdx: uniqueIndex('idx_credentials_name').on(t.name),
+  }),
+);
+
+// The projects a credential is shared with, when it is not shared with all projects.
+export const credentialProjects = sqliteTable(
+  'credential_projects',
+  {
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.credentialId, t.projectId] }),
+    projectIdx: index('idx_credential_projects_project').on(t.projectId),
+  }),
+);
+
+// Every use of a credential, refusals included: one row per use that changes something outside Piwi, one row per
+// credential, feature, project, result and hour for a read (`count`). Kept PIWI_CREDENTIAL_LOG_DAYS days.
+export const credentialUses = sqliteTable(
+  'credential_uses',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    credentialId: integer('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
+    credentialName: text('credential_name').notNull(), // the name at the time of use, kept after a delete
+    feature: text('feature').notNull(), // CredentialFeature
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    subjectType: text('subject_type'), // 'ci-action'
+    subjectId: text('subject_id'),
+    destination: text('destination'), // the request's origin and path, never its query
+    result: text('result').notNull(), // 'sent' | 'ok' | 'failed' | 'refused'
+    reason: text('reason'), // why it failed or was refused, the secret masked
+    count: integer('count').notNull().default(1),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastAt: integer('last_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    credentialIdx: index('idx_credential_uses_credential').on(t.credentialId, t.createdAt),
+    projectIdx: index('idx_credential_uses_project').on(t.projectId, t.createdAt),
+    createdIdx: index('idx_credential_uses_created').on(t.createdAt),
+  }),
+);
+
+export type CredentialRow = typeof credentials.$inferSelect;
+export type CredentialUseRow = typeof credentialUses.$inferSelect;
