@@ -152,6 +152,7 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/ci-watch.ts`: the client's watch of a CI run's lane through the instance (`piwi/ciWatch`, `piwi/ciFrame`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
+- `src/running-lines.ts`: the running line of each lane, from the watched lane's call log and the workers' positions.
 - `src/own-run-tests.ts`: the tests of the runs the service follows, as their test lines show them.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
 - `src/trace-viewer.ts`: **Open the trace so far**: the checks a trace file a worker names passes, and Playwright's trace
@@ -257,7 +258,7 @@ The initialization options (`InitializationOptions`) carry the credentials, `run
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
 another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
-agent (`piwi/startRun`), `runningLine` when it marks the line of the call the lane it watches is in
+agent (`piwi/startRun`), `runningLine` when it marks the line of the call each lane's running test is in
 (`piwi/runningLine`, [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)), and
 `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
 requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
@@ -1030,16 +1031,21 @@ was: the worker hears no request of it. `layers` that list `text` anew count as 
 hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
 send them.
 
-**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), the lane view asks the
-lane's call log (`calls`) beside the layers the client names, and tells the call the lane's running test is in as
-`piwi/runningLine` (`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and
-its place as a file URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits
-since the run started). It goes (`call: null`) as the test ends or stops (a stop has a mark of its own), for a call
-that names no place in the user's code, as the watch ends and as the run does; a call log of a test the lane no
-longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, one lane at a
-time: the line of the lane watched before goes first. The call log reaches the client as `piwi/laneLayer` only when
-its layers name it. A client without the option hears none, and a service that predates it sends none: the client
-then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
+**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), `RunningLines`
+(`src/running-lines.ts`) keeps the call each lane's running test is in and tells it as `piwi/runningLine`
+(`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and its place as a file
+URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits since the run
+started), as the credentials' `runningLines` chooses: `all` (the default), `watched` or `off`. The lane the client
+watches takes it from its call log: the lane view asks `calls` beside the layers the client names. Every other lane
+takes it from its worker's `position` messages, which `RunSessions` asks a worker whose `run-attach` lists `positions`
+for (`{ type: 'positions', on }`) while the choice is `all`, a desktop app's checkout left out; a lane whose watch ends
+keeps its line only while its worker sends positions. A line goes (`call: null`) as the test ends or stops (a stop has
+a mark of its own), as the worker leaves or the run ends (`changed`, on every session change), and as the choice stops
+marking it (`switched`); a call that names no place in the user's code leaves it where the last placed call was; a call log or a position of a test the
+lane no longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, the lines
+that changed going together at most every 250 ms (`RUNNING_LINES_PACE_MS`). The call log reaches the client as
+`piwi/laneLayer` only when its layers name it. A client without the option hears none, and a service that predates
+it sends none: the client then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
 `events` layer of the same lane.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick

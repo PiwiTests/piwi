@@ -24,8 +24,8 @@
  * when asked, each time, after a warning (`piwi/stopBind`). **Share live** shares a run on the team instance its
  * reporter reports to (`piwi/shareRun`), after a warning the first time in this window, and **Stop sharing** ends it;
  * the status bar says how a shared run stands and offers it to a run that can be shared, its click opening a menu
- * whose Stop sharing asks to confirm. While the worker panel watches a slot, the line of the call its test is in is
- * dimmed, the call after it (`piwi/runningLine`, `RunningLines`). The pure half is `run-control.ts`.
+ * whose Stop sharing asks to confirm. The line of the call each running test is in is dimmed, the call after it
+ * (`piwi/runningLine`, `RunningLines`), as `piwi.runningLines` chooses. The pure half is `run-control.ts`.
  */
 import type { BreakpointsMode } from './glue';
 import { setContextKey } from './context-keys';
@@ -180,6 +180,9 @@ const STARTING_MS = 120_000;
 /** How long a stop's file is waited for as it opens, before the next stop's turn. */
 const OPEN_MS = 5_000;
 
+/** How long the running lines told together are waited for before they are drawn, once. */
+const RUNNING_DRAW_MS = 30;
+
 export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
   heard(session: RunSession): void;
@@ -196,7 +199,7 @@ export interface RunControl extends vscode.Disposable {
   sessions(): RunSession[];
   /** The lines of a file drawn as an execution point, by its URI. */
   executionPoints(uri: string): number[];
-  /** The lines of a file marked as a watched lane's running call, by its URI. */
+  /** The lines of a file marked as a lane's running call, by its URI. */
   runningLines(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
@@ -262,7 +265,7 @@ export function registerRunControl(
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'execution-point.svg'),
     gutterIconSize: 'contain',
   });
-  /** The line of the call a watched lane's test is in: dim, the call after the line, one per lane (`RunningLines`). */
+  /** The line of the call a lane's test is in: dim, the call after the line, one per line (`RunningLines`). */
   const runningLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
@@ -428,7 +431,19 @@ export function registerRunControl(
     return hover;
   };
 
-  /** The running line of each watched lane in the visible editors of its file, at its line now. */
+  /**
+   * The lines the service tells together are drawn once, `RUNNING_DRAW_MS` after the first: the client reads each
+   * notification on a tick of its own.
+   */
+  let runningDrawSoon: ReturnType<typeof setTimeout> | null = null;
+  const drawRunningSoon = () => {
+    if (runningDrawSoon) return;
+    runningDrawSoon = setTimeout(() => {
+      runningDrawSoon = null;
+      drawRunning();
+    }, RUNNING_DRAW_MS);
+  };
+  /** The running line of each lane in the visible editors of its file, at its line now. */
   const drawRunning = () => {
     runningDrawn.clear();
     for (const editor of vscode.window.visibleTextEditors) {
@@ -1531,7 +1546,7 @@ export function registerRunControl(
     lc.onNotification(RUNNING_LINE_NOTIFICATION, (told: RunningLine) => {
       // Spelled as VS Code spells a document's URI, as a stop's is.
       const call = told?.call ? { ...told.call, uri: vscode.Uri.parse(told.call.uri).toString() } : null;
-      if (told && running.heard({ ...told, call })) drawRunning();
+      if (told && running.heard({ ...told, call })) drawRunningSoon();
     }),
     lc.onNotification(SHARE_WINDOW_NOTIFICATION, (changed: ShareWindowParams) => {
       windowShared = changed?.on === true;
@@ -1552,6 +1567,7 @@ export function registerRunControl(
       dispose: () => {
         panel?.dispose();
         if (resumed) clearTimeout(resumed);
+        if (runningDrawSoon) clearTimeout(runningDrawSoon);
         if (waking) clearTimeout(waking);
         starting.forEach((timer) => clearTimeout(timer));
       },

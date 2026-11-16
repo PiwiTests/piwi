@@ -114,6 +114,7 @@ import {
   type FailureSeverity,
   type StatusBarAlert,
   type McpAuthorization,
+  type RunningLinesChoice,
   type SetBaselineParams,
   type SetRunPairingParams,
   type StartRunParams,
@@ -392,6 +393,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     locatorWarnings: settings.get<boolean>('locatorWarnings') ?? true,
     statusBarAlert: settings.get<StatusBarAlert>('statusBarAlert') ?? 'new',
     mcpAuthorization: settings.get<McpAuthorization>('mcpAuthorization') ?? 'key',
+    runningLines: settings.get<RunningLinesChoice>('runningLines') ?? 'all',
   };
 }
 
@@ -1962,7 +1964,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         e.affectsConfiguration('piwi.codeLens') ||
         e.affectsConfiguration('piwi.locatorWarnings') ||
         e.affectsConfiguration('piwi.statusBarAlert') ||
-        e.affectsConfiguration('piwi.mcpAuthorization')
+        e.affectsConfiguration('piwi.mcpAuthorization') ||
+        e.affectsConfiguration('piwi.runningLines')
       )
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();

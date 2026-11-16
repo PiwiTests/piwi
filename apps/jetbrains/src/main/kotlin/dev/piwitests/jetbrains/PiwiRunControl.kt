@@ -278,9 +278,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val pendingLayers = ConcurrentLinkedQueue<Pair<LaneLayerFields, () -> Boolean>>()
     private val drawingLayers = AtomicBoolean(false)
 
-    /** The call each watched slot's running test is in, by run and slot (`Glue.withRunningLine`); under [lock]. */
+    /** The call each slot's running test is in, by run and slot (`Glue.withRunningLine`); under [lock]. */
     private var runningLines: Map<Pair<String, Int>, RunningLine> = emptyMap()
-    /** What is drawn of each running line, by run and slot. On the event thread. */
+    /** Whether a draw of the running lines waits on the event thread, which the lines told meanwhile join; under [lock]. */
+    private var runningDrawQueued = false
+    /** What is drawn of the running lines, by file URI and line now. On the event thread. */
     private val drawnRunning = HashMap<Pair<String, Int>, DrawnRunning>()
 
     /** The waiting lines marked, by run and worker. On the event thread. */
@@ -777,22 +779,26 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * The call a watched slot's running test is in, or none (`piwi/runningLine`): kept while the Worker tab watches that
-     * slot, and drawn on the event thread. [stopLaneView] drops it under [lock] once the watch ends.
+     * The call a slot's running test is in, or none (`piwi/runningLine`), as the service tells it for each slot
+     * `piwi.runningLines` marks; drawn on the event thread, the lines told together drawn once.
      */
     fun runningLine(line: RunningLine) {
-        synchronized(lock) {
-            val own = watchingLane
-            if (line.call != null && (own == null || own.ref != line.ref || own.lane != line.lane)) return
+        val first = synchronized(lock) {
             runningLines = Glue.withRunningLine(runningLines, line)
+            !runningDrawQueued.also { runningDrawQueued = true }
         }
-        ApplicationManager.getApplication().invokeLater({ drawRunning() }, gone)
+        if (first) {
+            ApplicationManager.getApplication().invokeLater({
+                synchronized(lock) { runningDrawQueued = false }
+                drawRunning()
+            }, gone)
+        }
     }
 
     /**
      * Mark each running line (`Glue.runningLinesShown`) at the line it stands on now with an inlay after it in each
-     * editor of its file, naming the worker and the call; a line whose test ended or stopped, or whose run ended,
-     * goes. On the event thread.
+     * editor of its file, naming the workers and their calls, one inlay for the slots at the same line; a line whose
+     * test ended or stopped, or whose run ended, goes. On the event thread.
      */
     private fun drawRunning() {
         val shown = synchronized(lock) {
@@ -800,19 +806,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             Glue.runningLinesShown(runningLines, sessions).mapNotNull { line ->
                 line.call?.let { line to edits.forward(Glue.fileKey(it.uri), it.line, sinceOf(line.ref)) }
             }
-        }
-        val keys = shown.map { (line, _) -> line.ref to line.lane }.toSet()
-        for (key in drawnRunning.keys - keys) drawnRunning.remove(key)?.dispose()
-        for ((line, at) in shown) {
-            val call = line.call ?: continue
-            val key = line.ref to line.lane
-            val text = Glue.runningLineText(line)
-            drawnRunning[key]?.takeIf { it.uri != call.uri || it.line != at || it.text != text }?.let { drawnRunning.remove(key)?.dispose() }
+        }.groupBy({ (line, at) -> line.call!!.uri to at }, { (line, _) -> line })
+        for (key in drawnRunning.keys - shown.keys) drawnRunning.remove(key)?.dispose()
+        for ((key, lines) in shown) {
+            val (uri, at) = key
+            val text = Glue.runningLineText(lines)
+            drawnRunning[key]?.takeIf { it.text != text }?.let { drawnRunning.remove(key)?.dispose() }
             // A file no editor shows has no document loaded: it is drawn once an editor opens it (`editorCreated`).
-            val file = fileOf(call.uri) ?: continue
+            val file = fileOf(uri) ?: continue
             val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: continue
             if (at < 0 || at >= document.lineCount) continue
-            val drawnLine = drawnRunning.getOrPut(key) { DrawnRunning(call.uri, at, text) }
+            val drawnLine = drawnRunning.getOrPut(key) { DrawnRunning(uri, at, text) }
             for (editor in EditorFactory.getInstance().getEditors(document, project)) {
                 if (drawnLine.inlays[editor]?.isValid == true) continue
                 editor.inlayModel.addAfterLineEndElement(document.getLineEndOffset(at), false, RunningLineInlay(text))
@@ -1651,9 +1655,6 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         pendingLaneFrame.set(null)
         if (previous != null) {
             requestLaneView(previous.copy(on = false))
-            // The running line goes with the watch.
-            synchronized(lock) { runningLines = runningLines - (previous.ref to previous.lane) }
-            ApplicationManager.getApplication().invokeLater({ drawRunning() }, gone)
         }
     }
 

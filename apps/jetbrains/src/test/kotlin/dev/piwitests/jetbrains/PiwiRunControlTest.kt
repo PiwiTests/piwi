@@ -652,23 +652,32 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(RunSession("ed-wait", ended = true))
     }
 
-    /** A running line of a slot the Worker tab watches no more is not taken, however late it comes. */
-    fun testARunningLineOfASlotNoLongerWatchedIsNotTaken() {
+    /** Each slot's running line is marked, watched or not, the slots at the same line named in one inlay. */
+    fun testEverySlotsRunningLineIsMarkedOneInlayALine() {
         val file = file("tests/coupon.spec.ts", coupon)
         myFixture.openFileInEditor(file)
         val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
         hear(RunSession("ed-late", base.path, listOf(RunWorker(0, 1, "running", test()), RunWorker(1, 0, "running", test()))))
-        watched("ed-late", 1) {
-            sessions.runningLine(RunningLine("ed-late", 1, 0, call))
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(1, sessions.runningShown().size)
-            sessions.showWorker("ed-late", 0)
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(emptyList<String>(), sessions.runningShown())
-            sessions.runningLine(RunningLine("ed-late", 1, 0, call.copy(line = 4)))
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(emptyList<String>(), sessions.runningShown())
-        }
+        fun inlays() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
+            .filter { it.renderer is RunningLineInlay }.map { (it.renderer as RunningLineInlay).text }
+        // No slot is watched: each slot's line the service tells is marked, the slots at one line in one inlay.
+        sessions.runningLine(RunningLine("ed-late", 1, 0, call))
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf("Piwi: Worker 1, Worker 2 run Click getByRole('button', { name: 'Apply' })"), inlays())
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call.copy(title = "Fill \"MORNING10\" getByLabel('Coupon code')")))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(
+            listOf("Piwi: Worker 1 runs Fill \"MORNING10\" getByLabel('Coupon code'); Worker 2 runs Click getByRole('button', { name: 'Apply' })"),
+            inlays(),
+        )
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call.copy(line = 4)))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(2, inlays().size)
+        // Watching a slot and ending the watch leaves the lines to the service.
+        watched("ed-late", 1) {}
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(2, sessions.runningShown().size)
     }
 
     /**

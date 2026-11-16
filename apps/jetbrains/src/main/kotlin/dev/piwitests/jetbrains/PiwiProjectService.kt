@@ -140,6 +140,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         var locatorWarnings: Boolean = true,
         var failingTestTint: Boolean = true,
         var ciPositions: Boolean = true,
+        var runningLines: String = "all",
         var mcpAuthorization: String = "key",
     )
 
@@ -173,7 +174,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         }
 
         /** The options the editor service is handed with the credentials. */
-        fun handed(state: State): List<Any> = listOf(state.codeLens, state.locatorWarnings, state.statusBarAlert, state.mcpAuthorization)
+        fun handed(state: State): List<Any> = listOf(state.codeLens, state.locatorWarnings, state.statusBarAlert, state.mcpAuthorization, state.runningLines)
     }
 }
 
@@ -650,6 +651,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             locatorWarnings = user.locatorWarnings,
             mcpAuthorization = user.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
             statusBarAlert = user.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
+            runningLines = user.runningLines.takeIf { it in Glue.RUNNING_LINES_CHOICES },
         )
     }
 

@@ -867,7 +867,7 @@ describe('the running line', () => {
   });
   const same = (_uri: string, line: number) => line;
 
-  test('marks the call each watched lane runs at its line now, with the call after it', () => {
+  test('marks the call each lane runs at its line now, with the call after it', () => {
     const lines = new RunningLines();
     expect(lines.heard(told('ed-1', 0, 4))).toBe(true);
     expect(lines.heard(told('ed-1', 0, 4))).toBe(false);
@@ -890,12 +890,23 @@ describe('the running line', () => {
     ]);
   });
 
+  test('marks a line several lanes are at once, naming each worker beside its call', () => {
+    const lines = new RunningLines();
+    lines.heard(told('ed-1', 3, 4));
+    lines.heard(told('ed-1', 1, 4));
+    expect(lines.marks(spec, 20, same)).toEqual([{ line: 4, text: "Worker 2, Worker 4 · Click getByRole('button')" }]);
+    lines.heard(told('ed-1', 2, 4, "Fill getByLabel('Name')"));
+    expect(lines.marks(spec, 20, same)).toEqual([
+      { line: 4, text: "Worker 2, Worker 4 · Click getByRole('button'); Worker 3 · Fill getByLabel('Name')" },
+    ]);
+  });
+
   test('clears a lane’s line as the service says it goes, and every line of a run that ended or is gone', () => {
     const lines = new RunningLines();
     lines.heard(told('ed-1', 0, 4));
     lines.heard(told('ed-1', 1, 5));
     lines.heard(told('ed-2', 0, 6));
-    // The test ended or stopped, the watch or the call's place went: the service says so.
+    // The test ended or stopped, or the call's place went: the service says so.
     expect(lines.heard(told('ed-1', 1, null))).toBe(true);
     expect(lines.heard(told('ed-1', 1, null))).toBe(false);
     expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([4, 6]);
