@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statfsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
@@ -27,13 +27,30 @@ export async function migrateToLatest(db: { $client: Client }): Promise<void> {
   await db.$client.migrate(statements);
 }
 
+/** The free space `/dev/shm` must have for a temporary database to go there. */
+const MIN_MEMORY_FREE_BYTES = 1024 ** 3;
+
+/**
+ * Where a temporary database goes: `/dev/shm` when it has room, a folder in memory on Linux where a commit waits on
+ * no disk, else the system's temporary folder (macOS, Windows, a container's small `/dev/shm`).
+ */
+function tempDbRoot(): string {
+  try {
+    const { bavail, bsize } = statfsSync('/dev/shm');
+    if (bavail * bsize >= MIN_MEMORY_FREE_BYTES) return '/dev/shm';
+  } catch {
+    // No `/dev/shm` on this system.
+  }
+  return tmpdir();
+}
+
 /**
  * A migrated SQLite database in a temporary file. Code that opens a transaction
  * needs one: libsql gives a `:memory:` database a single connection, which an
  * open transaction holds, so no other statement runs beside it.
  */
 export async function openTempDb(): Promise<{ db: TempDb; close: () => Promise<void> }> {
-  const dir = mkdtempSync(join(tmpdir(), 'piwi-unit-db-'));
+  const dir = mkdtempSync(join(tempDbRoot(), 'piwi-unit-db-'));
   const client = createClient({ url: `file:${join(dir, 'test.db')}` });
   const db = drizzle(client, { schema });
   await migrateToLatest(db);

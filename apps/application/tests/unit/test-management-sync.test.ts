@@ -223,6 +223,8 @@ beforeEach(async () => {
   state.caller = maintainer;
   reset();
   resetLimitersForTests();
+  // Every request goes at once: the limiter's spacing is `test-management-limiter.test.ts`'s to check.
+  vi.spyOn(limiterForConnection(zephyrId), 'wait').mockResolvedValue(undefined);
   logged = [];
   for (const level of ['warn', 'info', 'error', 'log'] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logged.push(args.join(' ')));
