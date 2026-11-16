@@ -264,7 +264,7 @@ export const DEMO_EXAMPLES = [
     doc: 'features/cpu-memory-disk',
     title: 'Web Dashboard › the newest run’s Timeline tab',
     shows:
-      'Above the worker rows, the machine’s CPU and the run’s memory climb with the pages its login fixture leaves open; hover them for the values at each moment.',
+      'Above the worker rows, the machine’s CPU and the run’s memory climb with the pages its login fixture leaves open; the line under the pointer gives their values at each moment.',
     route: '/test-runs/62?tab=timeline',
     expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
   },

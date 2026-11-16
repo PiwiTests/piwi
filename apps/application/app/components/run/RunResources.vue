@@ -10,7 +10,7 @@ import type { WireResourceFinding, WireResourceReport } from '#shared/types';
 import { findingView, formatCpuTime, formatSize } from '#shared/resource-copy';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import { machineFacts, machineHead, resourceTotals } from '~/utils/resources';
-import { ALL_RESOURCE_TRACKS, type ResourceTrackVisibility } from '~/utils/resource-tracks';
+import { ALL_RESOURCE_TRACKS, RESOURCE_TRACK_COLOR, type ResourceTrackVisibility } from '~/utils/resource-tracks';
 
 const props = defineProps<{
   runId: number;
@@ -273,7 +273,8 @@ const costliest = computed(() => data.value?.costliest ?? []);
                 <path
                   :d="cpuPath(part.profile.cpu.series, plotWidth, yScale)"
                   fill="none"
-                  class="stroke-gray-600 dark:stroke-gray-300"
+                  stroke="currentColor"
+                  :class="RESOURCE_TRACK_COLOR.cpu"
                   stroke-width="1.5"
                 />
                 <template v-if="part.profile.memory.peakAtMs !== null && part.profile.wallMs > 0">

@@ -81,7 +81,10 @@ in **Settings → Capabilities**:
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
-workers. Hover a track for its values and the tests running then; the **Resources** menu turns each track off. A sharded run draws one set of tracks per shard, each from its own machine.
+workers, each track in its own color, deeper where its value is high. Over the timeline, the test bars included, a
+line follows the pointer: the moment on the axis, each track's value beside the line, and the tests running then
+under it. The **Resources** menu turns each track off. A sharded run draws one set of tracks per shard, each from its
+own machine.
 
 <figure>
   <img src="/screenshots/run-timeline-resources-hover.png" alt="A run's workers timeline with the CPU, memory and open-pages tracks above the rows, one moment hovered with its values">
@@ -98,7 +101,8 @@ is drawn across its bar.
 With the capture fixtures, each execution's Performance tab shows what its test cost: the CPU of the worker and of
 its browser processes, the largest of those, the worker's event loop, and the pages it found and left open. A
 failed execution's **Timeline** tab draws, behind its **Resources** switch, the CPU, memory and open pages of the
-test's worker under its lanes, with the failure line across them.
+test's worker under its lanes, in the tracks' colors, with the failure line across them. The pointer's line crosses
+every lane, the steps and requests included, with each row's value beside it.
 
 
 ## Cost
