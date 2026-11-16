@@ -2,8 +2,8 @@
  * The resources rows of an execution's failure timeline: the CPU and memory of
  * the worker that ran the test, with the browsers it started, and the pages
  * open in that worker, each a row under the lanes on the timeline's clock; and
- * what they read at a moment, for the readout under the axis. Pure, so the card
- * and the unit tests share one set of rules.
+ * what they read at a moment, for the labels beside the line under the pointer.
+ * Pure, so the card and the unit tests share one set of rules.
  */
 import type { SeriesPoint } from '#shared/types';
 import type { TimelineResources } from '#shared/timeline-resources';
@@ -94,17 +94,13 @@ export function readingAt(row: TimelineResourceRow, at: number): number | null {
   return null;
 }
 
-/** The rows' readings at `at`, as one line: `1.8 cores · 412 MB · 9 open pages`. */
-export function resourceReadout(rows: TimelineResourceRow[], at: number): string {
-  const parts: string[] = [];
-  for (const row of rows) {
-    const value = readingAt(row, at);
-    if (value === null) continue;
-    if (row.kind === 'cpu') parts.push(`${round1(value)} core${value === 1 ? '' : 's'}`);
-    else if (row.kind === 'memory') parts.push(formatSize(value));
-    else parts.push(`${value} open page${value === 1 ? '' : 's'}`);
-  }
-  return parts.join(' · ');
+/** A row's reading at `at` in words (`1.8 cores`, `412 MB`, `9 open pages`); null outside its series. */
+export function resourceReading(row: TimelineResourceRow, at: number): string | null {
+  const value = readingAt(row, at);
+  if (value === null) return null;
+  if (row.kind === 'cpu') return `${round1(value)} core${value === 1 ? '' : 's'}`;
+  if (row.kind === 'memory') return formatSize(value);
+  return `${value} open page${value === 1 ? '' : 's'}`;
 }
 
 /** What the execution measured itself, as short facts: the pages it found open, the wait for a CPU. */

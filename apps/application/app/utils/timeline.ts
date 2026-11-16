@@ -219,6 +219,14 @@ export function pauseReasonText(reason: string | null | undefined): string {
 export const TIMELINE_PAUSE_COLORS = { fill: '#f8fafc', opacity: 0.55, stripe: '#334155', stroke: '#334155' } as const;
 
 /** Human-readable duration used for timeline ticks, bar labels and tooltips. */
+/** The widest a test bar's tooltip opens, in px. */
+export const TIMELINE_TOOLTIP_MAX_WIDTH = 340;
+
+/** Which side of the pointer (at `x`, in a viewport `viewportWidth` wide) a test bar's tooltip opens on. */
+export function timelineTooltipSide(x: number, viewportWidth: number): 'left' | 'right' {
+  return x + 12 + TIMELINE_TOOLTIP_MAX_WIDTH > viewportWidth ? 'left' : 'right';
+}
+
 export function formatTimelineTime(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;

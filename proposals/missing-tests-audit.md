@@ -54,6 +54,10 @@ Medium items:
 
 M6, M8 to M10 and the programs are not started.
 
+- **Fixed outside §10:** PB-16. The server-probe setting shows whatever the project's backend evidence, and that
+  evidence reads the logs header the ASP.NET Core package sends on every response, so its server faults are planned
+  without a trace a probe alone produces ([#1482](https://github.com/PiwiTests/piwi/issues/1482)).
+
 **Summary.** Piwi already stores most of what finding a missing test needs: per-test server lines, browser functions
 and CSS rules, the routes, pages and controls every test reaches, a declared surface, probe outcomes, the diff of
 every pull request, and the failures that escaped. Ten findings lead (§0):

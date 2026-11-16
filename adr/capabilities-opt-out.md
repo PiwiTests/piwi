@@ -1,6 +1,8 @@
 ﻿# Capabilities you can say no to
 
-- Status: accepted
+- Status: superseded
+- Superseded by: [backend-logs-evidence.md](backend-logs-evidence.md), which replaces the `backend-logs` applicability
+  rule (§4, its example in D4 and the last sentence of D7); the other decisions stand
 - Date: 2026-09-22
 
 **Status:** shipped 2026-09-22 in #601 (foundation), #603 and #605 (MCP modules, wizard step), #604 (surfaces); the open remainder is the fixtures-free demo project described in section 9 · **Scope:** every place the dashboard shows or offers an optional capability a team has not switched on: evidence tabs, empty panels, settings navigation, sidebar, project actions, the Setup ladder, the MCP tool list · **Builds on:** [`failure-experience-audit.md`](failure-experience-audit.md) §10 and [`ui-simplification.md`](ui-simplification.md) rule 9

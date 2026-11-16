@@ -3170,11 +3170,15 @@ export async function buildDiagnosisContext(
       capability: fixturesState,
     })!;
   }
+  // A request carries `serverLogs` or `serverTraces`, an empty list included, only when the backend's
+  // instrumentation answered it.
+  const backendAnswered = (rep?.nrItems ?? []).some((r) => r.serverLogs != null || r.serverTraces != null);
   if (!sectionIds.has('serverTraces')) {
     absentReasons.serverTraces = evidenceAbsenceReason('backendLogs', {
       hasData: false,
       fixturesActive,
       capability: backendLogsState,
+      backendAnswered,
     })!;
   }
   if (!sectionIds.has('serverLogs')) {
@@ -3182,6 +3186,7 @@ export async function buildDiagnosisContext(
       hasData: false,
       fixturesActive,
       capability: backendLogsState,
+      backendAnswered,
     })!;
   }
   if (!sectionIds.has('webVitals')) {
