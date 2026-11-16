@@ -7,8 +7,9 @@
  * `parseReleaseNotes`.
  *
  * The file mixes two shapes: release-please's raw sections (`### Features`,
- * `### Bug Fixes`, one `* **scope:** subject ([hash](url))` line per commit, so
- * squash and cherry-pick repeat a subject) and hand-polished ones (a narrative
+ * `### Bug Fixes`, one `* **scope:** subject ([hash](url))` line per commit, so a
+ * merge commit's pull request title, a squash or a cherry-pick repeats a subject)
+ * and hand-polished ones (a narrative
  * intro, `### ✨ Highlights`, `####` groups, `-` bullets). Both parse to the same
  * shape: commit, pull-request and `closes` links dropped, repeats collapsed.
  */

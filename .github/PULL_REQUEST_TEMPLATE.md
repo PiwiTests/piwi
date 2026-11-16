@@ -1,9 +1,10 @@
 <!--
 Thanks for contributing! Two things to know:
 
-1. PRs are squash-merged, so the PR TITLE becomes the commit on main and drives
-   the release changelog. Give it a Conventional Commit title, e.g.
-   `feat(reporter): support custom run labels` — see CONTRIBUTING.md.
+1. PRs are merged with a merge commit. release-please reads every commit that
+   lands on main: each commit of the PR, and the merge commit, whose message
+   carries the PR TITLE. Give the title and every commit a Conventional Commit
+   message, e.g. `feat(reporter): support custom run labels` (see CONTRIBUTING.md).
 2. For non-trivial changes, consider opening an issue/discussion first.
 -->
 
