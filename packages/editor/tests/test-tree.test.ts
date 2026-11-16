@@ -245,11 +245,14 @@ describe('the runs of the nodes picked', () => {
     ]);
   });
 
-  test('a test of a line that holds others runs by its title too, without those whose title holds its own', () => {
-    expect(runs([byLabel('adds mug 1')])).toEqual([['tests/mugs.spec.ts:2', '', 'adds mug 1', 'adds mug 10']]);
-    expect(runs([byLabel('adds mug 10')])).toEqual([['tests/mugs.spec.ts:2', '', 'adds mug 10', null]]);
+  test('a test of a line that holds others runs by its spec’s name and title too, without those whose title starts with its own', () => {
+    // Playwright matches `--grep` against the project, the spec, the describe blocks, the title and the tags joined.
+    expect(runs([byLabel('adds mug 1')])).toEqual([
+      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 1', 'mugs.spec.ts adds mug 10'],
+    ]);
+    expect(runs([byLabel('adds mug 10')])).toEqual([['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 10', null]]);
     expect(runs([byLabel('adds mug 2 (large)')])).toEqual([
-      ['tests/mugs.spec.ts:2', '', 'adds mug 2 [(]large[)]', null],
+      ['tests/mugs.spec.ts:2', '', 'mugs.spec.ts adds mug 2 [(]large[)]', null],
     ]);
     // The spec whole needs none.
     expect(runs([byLabel('mugs.spec.ts')])).toEqual([['tests/mugs.spec.ts', '', null, null]]);

@@ -164,10 +164,10 @@ The service turns the picked nodes into runs, each node with the narrowest filte
 | Node | Arguments |
 | --- | --- |
 | Config | none: the whole config |
-| Folder | its path, ending with `/` (Playwright reads a path filter as a regular expression: `tests/auth/` keeps `tests/authentication/` out) |
+| Folder | its whole path, ending with `/.` (Playwright matches a path filter anywhere in the path: `tests/auth/` alone would also take `e2e-tests/auth/`) |
 | Spec | its path |
 | Describe block | `<spec>:<line>`: Playwright runs every test of the block declared on that line |
-| Test | `<spec>:<line>`; a test that shares its line with others (a loop's) adds `--grep` with its title, escaped and anchored |
+| Test | `<spec>:<line>`; a test that shares its line with others (a loop's) adds `--grep` with its spec's name and title, escaped |
 | Playwright project | its parent's filter, with `--project <name>` |
 
 Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, listed its two tests, and `x.spec.js:2
@@ -182,10 +182,9 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
   other entry points (a failure node, a test line's lens) keep `testIds`.
 - **The profiles stay**: Run, Debug, Coverage and Verify ×3 with Piwi, the last through `repeat`.
 - **A title in `--grep`** cannot hold `$` nor a backslash (the service quotes no character a shell expands), so it is
-  matched by the title alone, its special characters in classes of their own (`[(]`), without the tests of the line
-  whose title holds it (`--grep-invert`): `adds mug 1` runs without `adds mug 10`. Playwright matches the project, spec,
-  describe blocks, title and tags joined, so a title that its spec's path or describe blocks hold may still take the
-  other tests of its line.
+  matched after the spec's name and describe blocks (Playwright matches the project, spec, describe blocks, title and
+  tags joined), its special characters in classes of their own (`[(]`), without the tests of the line whose title
+  starts with it (`--grep-invert`): `mugs.spec.ts adds mug 1` runs without `adds mug 10`.
 - **No run by tag**: the editors' filters read the tags (Playwright's, `owner:<name>`, `quarantined`, `@piwi:flaky`),
   and a run of the filtered tree runs the nodes it shows (to check in VS Code, [§6](#6-the-clients)). No `--grep @tag`
   run is added.

@@ -2059,7 +2059,7 @@ describe('the test tree', () => {
           root: dir,
           testIds: [],
           locations: ['tests/listed.spec.ts:2'],
-          grep: 'adds mug 1',
+          grep: 'listed.spec.ts adds mug 1',
           ...debugging,
         },
         {
@@ -2075,9 +2075,14 @@ describe('the test tree', () => {
         const [run] = (await client.sendRequest('piwi/testRuns', { nodes: picked })) as RunTestsArgs[];
         return ((await client.sendRequest('piwi/runArgs', run)) as RunCommand).command;
       };
-      expect(await command([mug.id])).toBe('npx playwright test tests/listed.spec.ts:2 --grep "adds mug 1"');
+      expect(await command([mug.id])).toBe(
+        'npx playwright test tests/listed.spec.ts:2 --grep "listed.spec.ts adds mug 1"',
+      );
       expect(await command([firefox.id])).toBe('npx playwright test tests/listed.spec.ts:4 --project firefox');
-      expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe('npx playwright test tests/');
+      // A folder by its whole path: `tests/` alone would take `e2e-tests/` too.
+      expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe(
+        `npx playwright test ${fs.realpathSync(dir)}/tests/.`,
+      );
       expect(await command([`${CONFIG_NODE}${dir}`])).toBe('npx playwright test');
       // The Not in this checkout group runs nothing.
       expect(await client.sendRequest('piwi/testRuns', { nodes: [group.id] })).toEqual([]);

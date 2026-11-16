@@ -74,6 +74,11 @@ const listed = (fields: Partial<ListedTestLine>): ListedTestLine => ({
 const testsLine = (tests: ListedTestLine[]) => `PIWI_TESTS ${JSON.stringify(tests)}\n`;
 
 describe('the reporter’s lines', () => {
+  test('leaves out a test of a spec outside the config’s folder', () => {
+    const outside = [listed({ file: '../tests/a.spec.ts' }), listed({ file: '/repo/tests/a.spec.ts' }), listed({})];
+    expect(parseTestsLine(testsLine(outside))).toEqual([listed({})]);
+  });
+
   test('reads the listed tests among Playwright’s output, leaving out one that does not parse', () => {
     const good = listed({ suites: [{ title: 'cart', line: 2 }], tags: ['@smoke'] });
     const output = `Listing tests:\nPIWI_USE {}\n${testsLine([good, { ...good, line: 0 } as ListedTestLine])}Total: 1 test\n`;
@@ -96,6 +101,14 @@ describe('the reporter’s lines', () => {
 });
 
 describe('the file filters', () => {
+  test('every spec but some, as the file system spells them and as their file: URL does', () => {
+    const filter = excludingFilter(['my tests/bad.spec.ts']);
+    const matches = (file: string) => new RegExp(filter, 'gi').test(file);
+    expect(matches('C:\\repo\\my tests\\bad.spec.ts')).toBe(false);
+    expect(matches('file:///C:/repo/my%20tests/bad.spec.ts')).toBe(false);
+    expect(matches('file:///C:/repo/my%20tests/good.spec.ts')).toBe(true);
+  });
+
   const matches = (filter: string, file: string) => new RegExp(filter, 'gi').test(file);
 
   test('one spec: its path at the end of the file’s, from a separator on, either separator', () => {
@@ -223,6 +236,27 @@ describe('each config’s listing', () => {
     // The two specs asked meanwhile, in one listing.
     expect(calls).toHaveLength(2);
     expect(calls[1]!.args).toEqual([specFilter('tests/a.spec.ts'), specFilter('tests/b.spec.ts')]);
+  });
+
+  test('a listing of some specs keeps theirs alone, though their filters take another spec too', async () => {
+    const a = listed({ file: 'tests/a.spec.ts', id: 'a' });
+    const sub = listed({ file: 'sub/tests/a.spec.ts', id: 'sub' });
+    // Playwright reads `tests/a.spec.ts`'s filter as the end of a path: `sub/tests/a.spec.ts` matches it too.
+    const run: ListRunner = () => Promise.resolve({ stdout: testsLine([a, sub]), stderr: '' });
+    const listings = new TestListings(
+      run,
+      () => {},
+      () => 'same',
+    );
+    listings.listAll('/w', '/w/playwright.config.ts');
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      listings.listSpecs('/w', ['tests/a.spec.ts']);
+      await settle();
+    }
+    const listing = listings.state('/w')!.listing!;
+    expect(listing.specs.get('tests/a.spec.ts')).toEqual([a]);
+    expect(listing.specs.get('sub/tests/a.spec.ts')).toEqual([sub]);
   });
 
   test('a spec listed alone replaces its own tests, a spec with none leaves the listing', async () => {

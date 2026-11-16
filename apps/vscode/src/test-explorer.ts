@@ -779,8 +779,10 @@ export class TestExplorer implements vscode.Disposable {
       ...(debug ? { debug: true } : {}),
     };
     const runs = await this.lc.sendRequest<RunTestsArgs[]>(TEST_RUNS_REQUEST, params).catch(() => null);
-    if (!runs) {
-      const message = 'Piwi could not build the commands that run these tests.';
+    if (!runs?.length) {
+      const message = runs
+        ? 'None of these tests can run from this checkout: read the tests again, or run them from their spec.'
+        : 'Piwi could not build the commands that run these tests.';
       for (const item of picked.keys()) {
         this.results.set(item.id, { state: 'errored', message });
         run.errored(item, new vscode.TestMessage(message));

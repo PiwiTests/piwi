@@ -45,11 +45,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isLine = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0;
 
-/** A listed test as the reporter printed it, checked field by field; null when one does not hold. */
+/** Whether a listed file is the config folder's: relative to it, with no `..`. */
+const inConfigFolder = (file: string) => !path.isAbsolute(file) && !file.split('/').includes('..');
+
+/**
+ * A listed test as the reporter printed it, checked field by field; null when one does not hold, and for a spec outside
+ * the config's folder, which the editors' answers leave out.
+ */
 function listedTest(value: unknown): ListedTest | null {
   if (!isRecord(value)) return null;
   const { id, file, line, column, title, suites, project, tags } = value;
   if (!isString(id) || !isString(file) || !isLine(line) || !isString(title) || !isString(project)) return null;
+  if (!inConfigFolder(file)) return null;
   if (!Array.isArray(suites) || !Array.isArray(tags)) return null;
   const kept = suites.flatMap((s) =>
     isRecord(s) && isString(s.title) && isLine(s.line) ? [{ title: s.title, line: s.line }] : [],
@@ -120,16 +127,21 @@ export function specFilter(file: string): string {
   return `(?:^|[\\\\/])${filePattern(file)}$`;
 }
 
-/** Playwright's file filter for every spec but these: a regular expression that their paths do not match. */
+/**
+ * Playwright's file filter for every spec but these: a regular expression that their paths do not match, as the file
+ * system spells them or as their `file:` URL does (`%20` for a space), which Playwright also tries on Windows.
+ */
 export function excludingFilter(files: readonly string[]): string {
-  return `^(?!.*(?:^|[\\\\/])(?:${files.map(filePattern).join('|')})$)`;
+  const spellings = files.flatMap((file) => {
+    const encoded = file.split('/').map(encodeURIComponent).join('/');
+    return encoded === file ? [file] : [file, encoded];
+  });
+  return `^(?!.*(?:^|[\\\\/])(?:${spellings.map(filePattern).join('|')})$)`;
 }
 
-/** A file an error names, when it is a spec of the config's folder: relative, with no `..`. */
+/** A file an error names, when it is a spec of the config's folder. */
 function specOfError(error: ListErrorLine): string | null {
-  const file = error.file;
-  if (!file || path.isAbsolute(file) || file.split('/').includes('..')) return null;
-  return file;
+  return error.file && inConfigFolder(error.file) ? error.file : null;
 }
 
 /** Why a spec did not load, as the tree says it: Playwright's words, then the line they name. */
@@ -298,13 +310,17 @@ function merged(
     listing.broken.delete(file);
     listing.listedAt.set(file, at);
   }
+  // A spec's filter also takes a spec whose path ends as its own (`sub/tests/a.spec.ts`): a listing of some specs keeps
+  // theirs alone, each spec's tests in an array of its own.
+  const asked = files ? new Set(files) : null;
+  const added = new Map<string, ListedTest[]>();
   for (const test of result.tests) {
-    const tests = listing.specs.get(test.file);
-    if (tests) tests.push(test);
-    else {
-      listing.specs.set(test.file, [test]);
-      listing.listedAt.set(test.file, at);
-    }
+    if (asked && !asked.has(test.file)) continue;
+    added.set(test.file, [...(added.get(test.file) ?? []), test]);
+  }
+  for (const [file, tests] of added) {
+    listing.specs.set(file, tests);
+    listing.listedAt.set(file, at);
   }
   for (const [file, why] of result.broken) {
     listing.broken.set(file, why);

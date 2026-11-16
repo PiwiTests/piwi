@@ -4,6 +4,7 @@
  * of the checkout is, in the **Not in this checkout** group. Built from what the service read of each spec, whichever
  * source gave it (the listing or the spec's text), so a node's id stays as one source replaces the other.
  */
+import { specPattern } from '@piwitests/core/spec-filter';
 import { CONFIG_NODE, type TestTreeNode, type TreeTest } from './protocol.js';
 
 /** The label of the group of the catalog's tests that the checkout does not hold. */
@@ -182,11 +183,12 @@ export interface NodeRun {
 const MAX_LOCATIONS_CHARS = 8000;
 
 /**
- * A title as Playwright's `--grep` reads it, a regular expression with no character a shell expands: a character a
- * regular expression reads apart in a class of its own (`[(]`), one a shell expands as `.`, as `specPattern` does a path.
+ * A title as Playwright's `--grep` reads it, a regular expression with no character a shell expands, written as
+ * `specPattern` writes a path (`[(]` for a character a regular expression reads apart, `.` for one a shell expands), a
+ * backslash and a control character as `.` too.
  */
 export function titlePattern(title: string): string {
-  return title.replace(/[[(){}*+?|]/g, '[$&]').replace(/[$^`"%!\\“”„\p{Cc}]/gu, '.');
+  return specPattern(title.replace(/[\\\p{Cc}]/gu, '.'));
 }
 
 /** One node's filter. */
@@ -250,12 +252,18 @@ export function nodeRuns(
       }
     };
     same(spec.children);
-    const title = test.test!.title;
-    const holding = others.filter((o) => o.test!.title.toLowerCase().includes(title.toLowerCase()));
-    push(root, spec.uri, `${fileOf(spec, root)}:${line + 1}`, {
+    // Playwright matches `--grep` against the project, the spec, the describe blocks, the title and the tags, joined by
+    // spaces: the spec's name and the describe blocks before the title keep the spec's name or a describe block from
+    // matching it, and the tests of the line whose title starts with this one are left out.
+    const file = fileOf(spec, root);
+    const titled = (t: TestTreeNode) =>
+      titlePattern([file.slice(file.lastIndexOf('/') + 1), ...t.test!.suite, t.test!.title].join(' '));
+    const title = test.test!.title.toLowerCase();
+    const longer = others.filter((o) => o.test!.title.toLowerCase().startsWith(title));
+    push(root, spec.uri, `${file}:${line + 1}`, {
       projects,
-      ...(others.length ? { grep: titlePattern(title) } : {}),
-      ...(holding.length ? { grepInvert: holding.map((o) => titlePattern(o.test!.title)).join('|') } : {}),
+      ...(others.length ? { grep: titled(test) } : {}),
+      ...(longer.length ? { grepInvert: longer.map(titled).join('|') } : {}),
     });
   };
 

@@ -4041,7 +4041,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             suiteRanges: read[i]!.suiteRanges,
           })),
         });
-        // A test of the catalog the listing no longer gives in this spec: deleted or renamed here, or another branch's.
+        // A test of the catalog the listing does not give in this spec: deleted or renamed here, or another branch's.
         if (fresh && whole) {
           const matched = new Set(tests.flatMap((t) => (t.found ? [t.found.id] : [])));
           for (const c of cases)
@@ -4393,9 +4393,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (params.all === true) return [];
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
+      // A folder by its whole path, ending in `/.`: Playwright reads a file filter as a regular expression against the
+      // whole path, so `tests/` would take `e2e-tests/` and `my-tests/` too, and one that ends in `/` as `/…/` syntax.
       return params.locations.map((l) =>
         l.endsWith('/')
-          ? `${specPattern(l.slice(0, -1))}/`
+          ? `${specPattern(path.join(commandFolder(context), l.slice(0, -1)))}/.`
           : `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`,
       );
     }
