@@ -32,7 +32,7 @@ import {
   startStub,
   writeWorkspace,
 } from '../../vscode/scripts/lib/editor-fixture.mjs';
-import { cutWindow, hasSolidSquare, imageSize, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
+import { cutWindow, hasSolidSquare, imageSize, pixelsMatching, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(here, '..');
@@ -395,6 +395,33 @@ async function shoot(name, { dir = outDir, failing = false } = {}) {
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
 }
 
+/**
+ * Where the first failing test's result icon is on the screen: the dark theme's `TestError` disc (#DB5C5C), the topmost
+ * one of an icon's size in the gutter, which the editor's scroll moves from one launch to the next.
+ */
+async function failingIcon() {
+  const raw = path.join(os.tmpdir(), `piwi-jetbrains-gutter-${process.pid}.png`);
+  execFileSync('import', ['-display', DISPLAY, '-window', 'root', raw]);
+  const near = (value, target) => Math.abs(value - target) <= 24;
+  const hits = await pixelsMatching(
+    raw,
+    { left: 75 * SCALE, top: 125 * SCALE, width: 90 * SCALE, height: 650 * SCALE },
+    (r, g, b) => near(r, 219) && near(g, 92) && near(b, 92),
+  );
+  fs.rmSync(raw, { force: true });
+  const rows = new Map();
+  for (const [x, y] of hits) {
+    const row = Math.floor(y / (20 * SCALE));
+    rows.set(row, [...(rows.get(row) ?? []), [x, y]]);
+  }
+  const disc = [...rows.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .find(([, pixels]) => pixels.length >= 20 * SCALE * SCALE)?.[1];
+  if (!disc) throw new Error('No failing result icon in the gutter.');
+  const mean = (values) => Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+  return { x: mean(disc.map(([x]) => x)), y: mean(disc.map(([, y]) => y)) };
+}
+
 /** Whether the config directory holds a license or a trial: the IDE writes it as `<product>.key`. */
 function licensed(config) {
   return fs.readdirSync(config).some((name) => name.endsWith('.key'));
@@ -539,6 +566,26 @@ const SCENES = {
       xinput('key', KEYS.piwiToolWindow.xinput);
       await sleep(4000);
       await shoot('failures', { failing: true });
+    },
+  },
+
+  /**
+   * A failing test's card: a click on its result icon, the first failing one in the gutter, opens its latest runs, its
+   * last failure and its links.
+   */
+  'test-card': {
+    file: SPEC_FILE,
+    line: 5,
+    column: 5,
+    async run() {
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      const { x, y } = await failingIcon();
+      xinput('move', x, y, 'sleep', 0.5, 'click', 1);
+      await sleep(4000);
+      await shoot('test-card', { failing: true });
+      xinput('key', 'Escape');
+      await sleep(500);
     },
   },
 

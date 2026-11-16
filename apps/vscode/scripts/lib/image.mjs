@@ -24,6 +24,19 @@ export async function countPixels(image, region, match) {
   return count;
 }
 
+/** The pixels of `image` within `region` that `match(r, g, b)` takes, as `[x, y]` in the image. */
+export async function pixelsMatching(image, region, match) {
+  const { data, info } = await sharp(image).extract(region).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const hits = [];
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const i = (y * info.width + x) * info.channels;
+      if (match(data[i], data[i + 1], data[i + 2])) hits.push([x + region.left, y + region.top]);
+    }
+  }
+  return hits;
+}
+
 /**
  * Whether `region` of `image` holds a `size` × `size` square whose every pixel `match(r, g, b)` takes: a filled shape,
  * such as an icon's disc, apart from a text's strokes of the same color, which are thinner.

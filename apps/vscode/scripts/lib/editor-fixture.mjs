@@ -551,6 +551,32 @@ const CASES = TESTS.map((t) => ({
   flakyRuns: t.status === 'flaky' ? 7 : 0,
 }));
 
+/**
+ * A test's attempts over the latest fourteen runs, newest first, as a test's card reads them: a failing test failed in
+ * the two latest runs and passed on a retry once before, a flaky test passed on a retry twice, every other one passed;
+ * a run a while back skipped them all.
+ */
+function testHistory(testCaseId) {
+  const t = TESTS.find((candidate) => candidate.id === testCaseId);
+  if (!t) return [];
+  const failure = RUN_FAILURES.find((f) => f.testCaseId === testCaseId);
+  return Array.from({ length: 14 }, (_, i) => {
+    const runId = 124 - i;
+    const failed = t.status === 'failed' && i < 2;
+    const flaky = (t.status === 'failed' && i === 4) || (t.status === 'flaky' && (i === 1 || i === 6));
+    return {
+      runId,
+      status: i === 9 ? 'skipped' : failed ? 'failed' : 'passed',
+      passedAfterFailure: flaky,
+      duration: failed ? (failure?.duration ?? 15_000) : 2_400 + ((i * 337) % 1_300),
+      error: failed ? (failure?.message ?? null) : null,
+      retries: flaky ? 1 : 0,
+      browserName: 'chromium',
+      startTime: ago(130 + i * 720),
+    };
+  });
+}
+
 /** The failure screenshot every execution serves: the demo's checkout page with its error banner. */
 const SCREENSHOT = path.join(
   repoRoot,
@@ -627,6 +653,8 @@ export function startStub(commit, { testFunctions = [] } = {}) {
         sourceLine: null,
       });
     if (p === '/api/test-runs/124') return json({ ...branchFailures(commit).run, metadata: { piwiOrigin: 'ci' } });
+    const history = /^\/api\/test-cases\/(\d+)\/history$/.exec(p);
+    if (history) return json({ items: testHistory(Number(history[1])) });
     if (p === '/api/links') return json({ items: [] });
     if (p === `/api/projects/${PROJECT.id}/timeout-opportunities`) return json({ items: [] });
     if (p === `/api/projects/${PROJECT.id}/flake-lab`) return json({ tests: [] });
