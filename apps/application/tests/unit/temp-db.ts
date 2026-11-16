@@ -30,18 +30,23 @@ export async function migrateToLatest(db: { $client: Client }): Promise<void> {
 /** The free space `/dev/shm` must have for a temporary database to go there. */
 const MIN_MEMORY_FREE_BYTES = 1024 ** 3;
 
+const TEMP_DB_PREFIX = 'piwi-unit-db-';
+
 /**
- * Where a temporary database goes: `/dev/shm` when it has room, a folder in memory on Linux where a commit waits on
- * no disk, else the system's temporary folder (macOS, Windows, a container's small `/dev/shm`).
+ * A new folder for a temporary database: in `/dev/shm` when it has room and takes writes, a folder in memory on Linux
+ * where a commit waits on no disk, else in the system's temporary folder (macOS, Windows, a container's small
+ * `/dev/shm`). A `TMPDIR` the environment sets always wins.
  */
-function tempDbRoot(): string {
-  try {
-    const { bavail, bsize } = statfsSync('/dev/shm');
-    if (bavail * bsize >= MIN_MEMORY_FREE_BYTES) return '/dev/shm';
-  } catch {
-    // No `/dev/shm` on this system.
+function makeTempDbDir(): string {
+  if (!process.env.TMPDIR) {
+    try {
+      const { bavail, bsize } = statfsSync('/dev/shm');
+      if (bavail * bsize >= MIN_MEMORY_FREE_BYTES) return mkdtempSync(join('/dev/shm', TEMP_DB_PREFIX));
+    } catch {
+      // No `/dev/shm`, or one this user cannot write to.
+    }
   }
-  return tmpdir();
+  return mkdtempSync(join(tmpdir(), TEMP_DB_PREFIX));
 }
 
 /**
@@ -50,7 +55,7 @@ function tempDbRoot(): string {
  * open transaction holds, so no other statement runs beside it.
  */
 export async function openTempDb(): Promise<{ db: TempDb; close: () => Promise<void> }> {
-  const dir = mkdtempSync(join(tempDbRoot(), 'piwi-unit-db-'));
+  const dir = makeTempDbDir();
   const client = createClient({ url: `file:${join(dir, 'test.db')}` });
   const db = drizzle(client, { schema });
   await migrateToLatest(db);

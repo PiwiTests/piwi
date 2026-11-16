@@ -122,6 +122,9 @@ async function refusal(promise: Promise<unknown>): Promise<{ statusCode: number;
   throw new Error('expected a refusal');
 }
 
+/** The time of each case of the first group, whose first case runs the sync's code for the first time in its worker. */
+const COLD_GROUP_TIMEOUT_MS = 15_000;
+
 /** The run the tests sync; `findRun` looks for `Piwi #12`, the name the cycle fixture carries. */
 const RUN_ID = 12;
 const OLD = new Date('2026-11-10T09:00:00Z');
@@ -223,7 +226,7 @@ beforeEach(async () => {
   state.caller = maintainer;
   reset();
   resetLimitersForTests();
-  // Every request goes at once: the limiter's spacing is `test-management-limiter.test.ts`'s to check.
+  // Every request goes at once.
   vi.spyOn(limiterForConnection(zephyrId), 'wait').mockResolvedValue(undefined);
   logged = [];
   for (const level of ['warn', 'info', 'error', 'log'] as const) {
@@ -242,7 +245,7 @@ beforeEach(async () => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe('what a finished run queues', () => {
+describe('what a finished run queues', { timeout: COLD_GROUP_TIMEOUT_MS }, () => {
   test('sends one result per key the catalog holds, links the test cycle and the run, and records both', async () => {
     await seedRun();
     await fillCatalog();
