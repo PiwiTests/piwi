@@ -212,11 +212,12 @@ describe('a spec whose path holds a character a regular expression reads', () =>
 });
 
 describe('Copy as command', () => {
-  test('the copied command runs what the local run runs', () => {
+  test('the copied command runs what the local run runs, its spec written from a folder’s start', () => {
     const options = { runMode: 'headed' as const, trace: true, repeatEach: 25 };
     const copied = buildRetryCommand([CASE], { options: localRunCopyOptions(options) });
-    const plan = buildLocalRunPlan([CASE], options);
-    expect(splitRerunArgs(copied)).toEqual(['npx', 'playwright', 'test', ...plan[0]!.args]);
+    // The shell anchors the local run's spec at the folder it runs in.
+    const [spec, ...flags] = buildLocalRunPlan([CASE], options)[0]!.args;
+    expect(splitRerunArgs(copied)).toEqual(['npx', 'playwright', 'test', `/${spec}`, ...flags]);
   });
 
   test('a run that stops at its first failing repetition copies its limit', () => {

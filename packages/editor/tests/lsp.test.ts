@@ -192,6 +192,8 @@ let fixtureCommit = '';
 
 /** What the instance answers for a run's arguments and the smoke selection's command, once a test sets them. */
 let hostileMaterialization: unknown = null;
+/** The tests the instance's selection preview names, with their specs and lines; none while null. */
+let previewTests: unknown = null;
 let hostileSelectionCommand: string | null = null;
 
 /**
@@ -809,6 +811,7 @@ beforeAll(async () => {
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
+          ...(previewTests ? { tests: previewTests } : {}),
           materialization: hostileMaterialization ?? {
             args: ['tests/checkout.spec.ts:3'],
             command: 'npx playwright test tests/checkout.spec.ts:3',
@@ -2361,6 +2364,7 @@ describe('the command line of a run', () => {
   afterAll(async () => {
     hostileMaterialization = null;
     hostileSelectionCommand = null;
+    previewTests = null;
     await client.sendRequest('piwi/refresh');
   });
 
@@ -2375,6 +2379,31 @@ describe('the command line of a run', () => {
 
     hostileMaterialization = { args: ['--config=evil.config.ts'], command: 'npx playwright test' };
     expect(await runArgs()).toBeNull();
+  });
+
+  test('takes each test by its whole path when the instance names its spec, never a spec whose path ends as its own', async () => {
+    hostileMaterialization = null;
+    const own = `npx playwright test "^${dir}/tests/checkout.spec.ts:3"`;
+    previewTests = [
+      { filePath: 'tests/checkout.spec.ts', line: 3 },
+      { filePath: 'tests/missing.spec.ts', line: 1 },
+      { filePath: '../outside.spec.ts', line: 2 },
+      { filePath: 42, line: 4 },
+    ];
+    expect(((await runArgs()) as RunCommand).command).toBe(own);
+    // A saved selection's tests too.
+    const selection = await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+    });
+    expect((selection as RunCommand).command).toBe(own);
+    // Too many lines for one command: each spec whole.
+    previewTests = Array.from({ length: 400 }, (_, i) => ({ filePath: 'tests/checkout.spec.ts', line: i + 1 }));
+    expect(((await runArgs()) as RunCommand).command).toBe(`npx playwright test "^${dir}/tests/checkout.spec.ts"`);
+    // No spec the checkout holds: the instance's own filters.
+    previewTests = [{ filePath: 'tests/missing.spec.ts', line: 1 }];
+    expect(((await runArgs()) as RunCommand).command).toBe('npx playwright test tests/checkout.spec.ts:3');
+    previewTests = null;
   });
 
   test('is refused for a selection whose command is anything but npx playwright test and its arguments', async () => {

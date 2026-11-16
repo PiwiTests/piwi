@@ -34,7 +34,7 @@ describe('buildRerunCommand', () => {
         { filePath: 'a.spec.ts', title: 'pays', line: 1, projectName: 'chromium' },
         { filePath: 'b.spec.ts', title: 'refunds', line: 2, projectName: 'firefox' },
       ]),
-    ).toBe('npx playwright test "a.spec.ts" "b.spec.ts" -g "pays|refunds" --project="chromium" --project="firefox"');
+    ).toBe('npx playwright test "/a.spec.ts" "/b.spec.ts" -g "pays|refunds" --project="chromium" --project="firefox"');
   });
 
   test('runs every project when one name cannot be quoted for every shell', () => {
@@ -43,7 +43,7 @@ describe('buildRerunCommand', () => {
         { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
         { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'Edge 100%' },
       ]),
-    ).toBe('npx playwright test "a.spec.ts" "b.spec.ts" -g "a|b"');
+    ).toBe('npx playwright test "/a.spec.ts" "/b.spec.ts" -g "a|b"');
   });
 
   test('is empty when the cases name no file and no title, rather than run every test', () => {
@@ -57,18 +57,18 @@ describe('buildRerunCommand', () => {
   test('keeps every case: a title that cannot name its test drops the titles, a path that cannot the files', () => {
     const a = { filePath: 'a.spec.ts', title: '$', line: 1, projectName: null };
     const b = { filePath: 'b.spec.ts', title: 'pays', line: 2, projectName: null };
-    expect(buildRerunCommand([a, b])).toBe('npx playwright test "a.spec.ts" "b.spec.ts"');
+    expect(buildRerunCommand([a, b])).toBe('npx playwright test "/a.spec.ts" "/b.spec.ts"');
     expect(buildRerunCommand([{ ...a, filePath: '.', title: 'refunds' }, b])).toBe(
       'npx playwright test -g "refunds|pays"',
     );
-    expect(buildRerunCommand([{ ...a, filePath: '.' }, b])).toBe('npx playwright test "b.spec.ts"');
+    expect(buildRerunCommand([{ ...a, filePath: '.' }, b])).toBe('npx playwright test "/b.spec.ts"');
   });
 
   test('names the cases it leaves out', () => {
     const titleOnly = { filePath: '.', title: 'refunds', line: 1, projectName: null };
     const fileOnly = { filePath: 'b.spec.ts', title: '$', line: 2, projectName: null };
     expect(buildRerunPlan([titleOnly, fileOnly])).toEqual({
-      command: 'npx playwright test "b.spec.ts"',
+      command: 'npx playwright test "/b.spec.ts"',
       leftOut: [titleOnly],
     });
     expect(buildRerunPlan([{ ...titleOnly, title: '' }])).toEqual({
@@ -95,7 +95,7 @@ describe('buildRerunCommand', () => {
       line: i + 1,
       projectName: null,
     }));
-    expect(buildRerunCommand(cases)).toBe('npx playwright test "tests/long.spec.ts"');
+    expect(buildRerunCommand(cases)).toBe('npx playwright test "/tests/long.spec.ts"');
   });
 
   test('never passes a spec that would be read as an option', () => {
@@ -115,7 +115,7 @@ describe('buildRetryArgs', () => {
       { filePath: 'tests/checkout.spec.ts', title: 'pays', line: 12, projectName: 'chromium' },
       { filePath: 'tests/checkout.spec.ts', title: 'refunds', line: 40, projectName: 'chromium' },
     ]);
-    expect(args).toBe('"tests/checkout.spec.ts:12" "tests/checkout.spec.ts:40" --project="chromium"');
+    expect(args).toBe('"/tests/checkout.spec.ts:12" "/tests/checkout.spec.ts:40" --project="chromium"');
   });
 
   test('names each project when the cases span more than one', () => {
@@ -123,7 +123,7 @@ describe('buildRetryArgs', () => {
       { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
       { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
     ]);
-    expect(args).toBe('"a.spec.ts:1" "b.spec.ts:2" --project="chromium" --project="firefox"');
+    expect(args).toBe('"/a.spec.ts:1" "/b.spec.ts:2" --project="chromium" --project="firefox"');
   });
 
   test('never passes a spec that would be read as an option', () => {
@@ -132,7 +132,7 @@ describe('buildRetryArgs', () => {
         { filePath: '-u', title: 'u', line: null, projectName: null },
         { filePath: 'ok.spec.ts', title: 'ok', line: 3, projectName: null },
       ]),
-    ).toBe('"ok.spec.ts:3"');
+    ).toBe('"/ok.spec.ts:3"');
   });
 
   test('names a file without a line once', () => {
@@ -140,17 +140,17 @@ describe('buildRetryArgs', () => {
       { filePath: 'tests/x.spec.ts', title: 'x', line: null, projectName: null },
       { filePath: 'tests/x.spec.ts', title: 'y', line: null, projectName: null },
     ]);
-    expect(args).toBe('"tests/x.spec.ts"');
+    expect(args).toBe('"/tests/x.spec.ts"');
   });
 
   test('falls back to the file path when a case has no line', () => {
     const args = buildRetryArgs([{ filePath: 'tests/x.spec.ts', title: 'x', line: null, projectName: null }]);
-    expect(args).toBe('"tests/x.spec.ts"');
+    expect(args).toBe('"/tests/x.spec.ts"');
   });
 
   test('normalizes Windows separators', () => {
     const args = buildRetryArgs([{ filePath: 'tests\\win.spec.ts', title: 'w', line: 5, projectName: null }]);
-    expect(args).toBe('"tests/win.spec.ts:5"');
+    expect(args).toBe('"/tests/win.spec.ts:5"');
   });
 });
 

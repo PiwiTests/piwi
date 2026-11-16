@@ -22,6 +22,7 @@ mod repro;
 mod run_target;
 mod runner;
 mod session;
+mod spec_filter;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;

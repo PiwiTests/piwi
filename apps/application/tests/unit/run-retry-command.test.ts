@@ -48,7 +48,7 @@ describe('the run page retry command under --repeat-each', () => {
     ]);
 
     expect(failedCases.value).toHaveLength(1);
-    expect(command.value).toBe('npx playwright test "checkout.spec.ts:12" --project="chromium"');
+    expect(command.value).toBe('npx playwright test "/checkout.spec.ts:12" --project="chromium"');
   });
 
   test('names a test once however many of its repetitions failed', async () => {
@@ -100,6 +100,6 @@ describe('the run options it carries', () => {
 
   test('a remembered value out of bounds reads as its default', async () => {
     const { command } = await retryCommandOf([pays(0, 0, 'failed')], { repeatEach: 50, workers: 9 });
-    expect(command.value).toBe('npx playwright test "checkout.spec.ts:12" --project="chromium"');
+    expect(command.value).toBe('npx playwright test "/checkout.spec.ts:12" --project="chromium"');
   });
 });

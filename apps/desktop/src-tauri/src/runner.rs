@@ -919,6 +919,13 @@ fn tell_run_started(app: &AppHandle, run_ref: String, args: Vec<String>) {
     });
 }
 
+/// The folder a run started in `folder` reads as its own (Playwright's `process.cwd()`): the path with its links
+/// resolved on macOS and Linux, as the shell spells it on Windows.
+pub(crate) fn playwright_folder(folder: &Path) -> String {
+    let real = if cfg!(windows) { dunce::simplified(folder).to_path_buf() } else { real_path(folder) };
+    real.to_string_lossy().into_owned()
+}
+
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
 /// bundled Node sidecar and the folder's own Playwright package. Returns a run
 /// id; progress arrives as `piwi:local-run` events carrying that id.
@@ -944,6 +951,7 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    let args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
     let id = spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);

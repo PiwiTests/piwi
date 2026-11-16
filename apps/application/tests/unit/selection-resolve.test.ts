@@ -491,7 +491,7 @@ describe('hash and materialization', () => {
     await seedExecution(a, 'passed', { line: 12 });
     await seedExecution(a, 'passed', { line: 20 }); // most recent
     const r = await resolveSelectionDefinition(db, 1, {}, { format: 'args' });
-    expect(r.materialization.args).toEqual(['tests/a.spec.ts:20']);
+    expect(r.materialization.args).toEqual(['/tests/a.spec.ts:20']);
   });
 });
 

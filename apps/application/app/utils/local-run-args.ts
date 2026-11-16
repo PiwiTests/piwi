@@ -3,7 +3,8 @@
  *
  * Unlike `buildRetryCommand` (a copy-pastable shell string), the shell executes
  * the run itself with no shell in between, so each step is a plain argv array —
- * no escaping, no `&&`. Cases are grouped by Playwright project exactly like
+ * no escaping, no `&&`. A spec filter is written relative to the config's folder;
+ * the shell anchors it at the folder it runs the step in (`spec_filter.rs`). Cases are grouped by Playwright project exactly like
  * the copyable command: a `--project` filter and a `file:line` filter must pair
  * up, so mixed-project retries become sequential steps.
  */

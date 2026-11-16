@@ -121,7 +121,7 @@ describe('a CI re-run dispatch', () => {
     const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
     expect(outcome.ok).toBe(true);
     expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]!.args).toBe('"tests/checkout.spec.ts:30" "tests/checkout.spec.ts:12" --project="chromium"');
+    expect(dispatched[0]!.args).toBe('"/tests/checkout.spec.ts:30" "/tests/checkout.spec.ts:12" --project="chromium"');
     expect(dispatched[0]!.request.ref).toBe('feature/coupon');
     const record = await lastDispatch();
     expect(dispatched[0]!.request.dispatchId).toBe(record.id);
@@ -503,7 +503,7 @@ describe('a CI server dispatch', () => {
     });
     const form = new URLSearchParams(received[0]!.body);
     expect(form.get('PIWI_RERUN_ARGS')).toBe(
-      '"tests/checkout.spec.ts:30" "tests/checkout.spec.ts:12" --project="chromium"',
+      '"/tests/checkout.spec.ts:30" "/tests/checkout.spec.ts:12" --project="chromium"',
     );
     expect(form.get('PIWI_ORIGIN_REF')).toBe(record.id);
     expect(record).toMatchObject({
@@ -669,7 +669,7 @@ describe('a CI server dispatch', () => {
     const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
     expect((await rerunExecutionInCi(db as never, execution!.id, { id: null, name: null })).ok).toBe(true);
     expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe(
-      '"tests/checkout.spec.ts:12" --project="chromium"',
+      '"/tests/checkout.spec.ts:12" --project="chromium"',
     );
     const { id, at } = await lastDispatch();
     const ci = { provider: 'Jenkins', buildNumber: '88', buildUrl: `${base}job/e2e/88/` };

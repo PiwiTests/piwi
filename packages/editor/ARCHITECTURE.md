@@ -798,7 +798,11 @@ said once per run; a Pause, a Step or a Run to someone asked for waits.
 
 `piwi/runArgs` runs tests either way:
 
-- by id, with the instance's arguments;
+- by id: the instance resolves the ids to tests (`selections/preview`), and the service writes each test's spec and
+  line itself, from its whole path (`ownTestFilters`, `locationArg`), each spec whole when the lines would pass 8,000
+  characters, a spec the checkout does not hold left out. Without a spec it holds, it runs by the instance's own
+  arguments, relative paths that also take a spec whose path ends as theirs. `piwi/runSelection` takes a saved
+  selection's tests the same way, else its stored command;
 - by location (`RunTestsArgs.locations`): a spec under the context's folder and the line of its `test(…)` call
   (`isTestLocation`, `specLocation`). This needs no instance, so it runs a test just recorded.
 - to debug a failure (`RunTestsArgs.debug`): the test of a spec its title names, headed with one worker, stopping once

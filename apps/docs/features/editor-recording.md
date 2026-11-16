@@ -77,7 +77,7 @@ actions for the test that holds the block, the new test or the test you recorded
   cursor ×3** does.
 
 Both save the file, then run the test by the line of its `test(…)` call
-(`npx playwright test tests/checkout.spec.ts:42`), so neither needs an instance. A verification that reached none is
+(`npx playwright test "^/repo/tests/checkout.spec.ts:42"`, by its whole path), so neither needs an instance. A verification that reached none is
 told by its exit code, which cannot tell a pass from a skip: `None of 3 runs failed: tests/checkout.spec.ts:42`, or
 `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`. Steps recorded into a
 page object or a helper offer neither action: no test holds them.

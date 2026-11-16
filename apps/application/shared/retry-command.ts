@@ -103,9 +103,28 @@ export function isTitleFilter(title: string): boolean {
   return [...title].some((ch) => ch.trim() !== '' && !SHELL_EXPANDED.test(ch));
 }
 
-/** The quoted spec paths of `values` that Playwright takes as test filters (see {@link isSpecFilter}). */
+/**
+ * A spec filter (`specPattern`'s path relative to the config's folder, with its `:line`) after a `/`, as a copied
+ * command names it. Playwright matches a file filter anywhere in a spec's whole path, so the `/` keeps the match at a
+ * folder's start: `tests/a.spec.ts` alone would also take `xtests/a.spec.ts`. A spec of a folder whose path ends as
+ * its own (`e2e/tests/a.spec.ts`) still matches, since the dashboard does not know the checkout's folder. A path that
+ * already starts at a root is left as it is.
+ */
+function atFolderStart(spec: string): string {
+  return spec.startsWith('/') || /^[A-Za-z]:\//.test(spec) ? spec : `/${spec}`;
+}
+
+/** A spec's path as a copied command names it (see {@link atFolderStart}). */
+export function commandSpec(filePath: string): string {
+  return atFolderStart(specPattern(filePath));
+}
+
+/**
+ * The quoted spec filters of `values` that Playwright takes as test filters (see {@link isSpecFilter}), each after a
+ * `/` (see {@link atFolderStart}).
+ */
 function quoteSpecs(values: string[]): string[] {
-  return quoteAll(values.filter(isSpecFilter));
+  return quoteAll(values.filter(isSpecFilter).map(atFolderStart));
 }
 
 /**
