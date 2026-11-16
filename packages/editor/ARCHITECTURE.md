@@ -142,6 +142,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).
+- `src/test-listing.ts`: the listing, the tests Playwright lists for each config (`TestListings`); `src/test-tree.ts`:
+  the test tree both clients draw (`configTree`).
 - `src/coverage.ts`: coverage marks and uncovered changes.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
@@ -235,7 +237,7 @@ the custom messages of `src/protocol.ts`:
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
-  `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
+  `piwi/coverageChanged`, `piwi/testItemsChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, with
   whether it ended with the status it was expected to end with, `ok`, a worker that left mid-test ending it
   `interrupted`, which the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
@@ -488,19 +490,55 @@ a spec under a context's folder answers nulls, and a test Piwi does not know ans
 
 ### Test items
 
-`piwi/testItems` answers the tests of the workspace's specs, for a client's own test tree (VS Code's Testing view). It
-lists:
+`piwi/testItems` answers the test tree, for a client's own test tree (VS Code's Testing view): per Playwright config,
+its nodes (`configTree` in `src/test-tree.ts`), folders, specs, describe blocks, tests, and a node per project under a
+test that runs in several, then the **Not in this checkout** group. A node's id holds no URI: a spec's is its config's
+folder and its path, so an id stays whichever source gave the node, and in both editors' spellings of a URI.
 
-- unless `catalog` is false, the catalog's specs the workspace holds (`PiwiContext.allCases`: the whole catalog, a
-  thousand cases a request and ten requests at most, read once per refresh). Each stored path is found as a run's path
-  is (`resolveReportedFile`), under the context whose folder holds it.
-- the specs `uris` names (`casesOf`), known to the catalog or not.
+**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list` with the project's own
+Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests Playwright lists
+(`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe blocks with their
+lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `TestListings` keeps each
+config's last listing:
 
-Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, one a line, a line
-starting with `//` read as blank, with the titled `test.describe(…)` blocks around it, a test on the line opening its
-block included). It comes
-with the catalog's case of its title in those blocks (`caseOfCall`), its location, its latest result and its failure,
-as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server.ts`.
+- the first `piwi/testItems` of the whole tree lists every config not listed yet; a config nobody asked the tree of is
+  never listed;
+- a listed config is listed whole again when a file it reads changed (`configFingerprint`, checked on every change the
+  client watches) and on `piwi/refresh`; a spec saved, created or deleted is listed alone, a burst of them together
+  (`WATCHED_FILES_MS`), past `MAX_SPECS` the config whole. The service asks the client to watch the scripts
+  (`workspace/didChangeWatchedFiles`, registered when the client takes dynamic registrations);
+- one listing runs per config at a time, and what is asked meanwhile runs after it, merged;
+- Playwright lists nothing once one spec does not load, so the listing runs again without the specs that failed
+  (`excludingFilter`), and keeps why each failed (`broken`). A listing that fails as a whole (Playwright missing, a
+  config that throws, `LIST_TIMEOUT_MS`) keeps the last listing and says why (`TestListing.error`);
+- once a listing ends, the whole tree is pushed (`piwi/testItemsChanged`) when it differs from the last one sent or
+  answered.
+
+**Each spec** takes its tests from the listing while the listing has seen it as it stands: saved (no open document
+whose text differs from the file's), listed since it last changed on disk, and loading. Its tests are then one per
+title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
+spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, with the
+titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
+are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
+(`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
+`specTests` in `src/server.ts`.
+
+**The specs answered**:
+
+- with a listing, the specs it holds, a spec of the catalog created since it ran (one Playwright has not listed yet),
+  and the open specs `uris` names;
+- before a config's first listing, or for one never listed, the catalog's specs the workspace holds
+  (`PiwiContext.allCases`: the whole catalog, a thousand cases a request and ten requests at most, read once per
+  refresh, each stored path found as a run's path is, `resolveReportedFile`, under the context whose folder holds it)
+  and the specs `uris` names (`casesOf`), known to the catalog or not;
+- with `catalog` false, the specs `uris` names alone, each with the folders above it, which the client puts in place in
+  the tree it holds.
+
+**The Not in this checkout group** holds, once a config is listed, the catalog's tests that no test of the checkout
+is: those of a spec the checkout does not hold (placed once, under the first config reading the project), and those of
+a spec the listing gives as it stands that none of its tests is (deleted or renamed here, or another branch's). Its
+nodes are not `runnable`, nor is a project's node.
 
 ### Failure lines and Flake Lab lines
 
@@ -1961,7 +1999,7 @@ JetBrains plugin in its `server/`. The service finds the other files next to its
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
 | `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
-| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
+| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
 | `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
 | `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
 
@@ -2045,6 +2083,8 @@ A change is pushed against what the client holds:
   last one sent, or answered to `piwi/status`, `piwi/runStatus` or `piwi/failures`;
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it;
+- `piwi/testItemsChanged` is sent once a listing ends, when the whole tree differs from the last one sent, or answered
+  to a `piwi/testItems` of the whole tree ([Test items](#test-items));
 - `piwi/ciSessionChanged` is sent when a CI run's session differs from the last one sent for it, at most every
   500 ms ([CI runs of the branch](#ci-runs-of-the-branch));
 - `piwi/runSessionChanged` is sent when a run's session differs from the last one sent for it, at the pace

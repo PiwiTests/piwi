@@ -1,8 +1,13 @@
 # The full test tree in both editors
 
-**Status.** Proposed 2026-11-16, nothing built. The maintainer asked whether both editors can show every test of the
-workspace and run any of them, alone or by group, and whether the list should come from the Piwi instance or from the
-source code. Its open questions were decided the same day ([§9](#9-decisions)).
+**Status.** Proposed 2026-11-16; its open questions were decided the same day ([§9](#9-decisions)). The maintainer
+asked whether both editors can show every test of the workspace and run any of them, alone or by group, and whether the
+list should come from the Piwi instance or from the source code. **Stage 1 is built**: the listing
+(`packages/editor/src/test-listing.ts`), the tree in the service (`src/test-tree.ts`, `piwi/testItems` as nodes,
+`piwi/testItemsChanged`), and VS Code's Testing view drawing it, a project's node showing that project's result from
+the editor's own runs; `Protocol.kt` mirrors the types, which the JetBrains plugin does not call yet. Remaining: running
+a node with its own filter (stage 2: until then a group runs as its tests, by id or by `file:line`, and a project's node
+does not run), the JetBrains Tests tab (stage 3), and the docs' screenshots (stage 4).
 
 **Summary.** VS Code's Testing view already shows Piwi's tests and runs any node, but its list is incomplete: the spec
 files come from the instance's catalog (plus the specs open in the editor), and the tests inside each spec from a
@@ -85,17 +90,19 @@ Playwright the reporter supports.
 
 - **How.** Per config, with the project's own Playwright and Node, as the options read does: `playwright test --list`
   with the service's reporter, which also prints, when the service asks for it, one `PIWI_TESTS <json>` line from
-  `onBegin(config, suite)`: each test's Playwright id, title path (describe titles, then title), location (file, line,
-  column), project name, tags and expected status. No new file in `dist/`. The options read stays a process of its
+  `onBegin(config, suite)`: each test's Playwright id, its titled describe blocks with the line each starts on, its
+  title, location (file, line, column), project name and tags; and one `PIWI_ERROR <json>` line per error Playwright
+  reports while it loads the specs. No new file in `dist/`. The options read stays a process of its
   own: it loads no spec, so the recorder's answer stays fast.
-- **When.** At start; when the config changes (the fingerprint the options read already computes); when a spec is
+- **When.** When a client first asks for the whole tree (a config nobody asks the tree of is never listed); when the
+  config changes (the fingerprint the options read already computes); when a spec is
   created, deleted or renamed; when a spec is saved, the listing of that spec alone (`playwright test --list <spec>`),
   merged into the config's. Never as the person types.
 - **How often.** One listing per config at a time, the next one waiting for it as refreshes do (`refreshAll`), with a
   timeout as the options read has.
-- **Watching the files.** The service has no file watcher today. It registers `workspace/didChangeWatchedFiles` for the
-  config folders' scripts; whether the JetBrains LSP client of 2024.1 honors that registration is to check, else the
-  plugin sends the service's request from a VFS listener.
+- **Watching the files.** The service registers `workspace/didChangeWatchedFiles` for the scripts of the workspace
+  when the client takes dynamic registrations, as VS Code does; whether the JetBrains LSP client of 2024.1 honors that
+  registration is checked in stage 3, else the plugin sends the changes from a VFS listener.
 - **When it fails** (Playwright not installed, a config that throws, a spec that does not load): the last listing that
   succeeded is kept, the config node says why with the file and line Playwright gives, and a spec that does not load
   shows its line parse. A config never listed falls back to today's answer: the catalog's specs and the open ones, read
@@ -126,16 +133,19 @@ page on the dashboard. Nothing in the group runs: the checkout has no code for i
   projects when it runs in more than one; the config's **Not in this checkout** group last
   ([§3.3](#33-the-catalog)).
 - **Ids** are paths, joined by `\x1f` as VS Code's are today: the config's folder, the file, the describe titles, the
-  title, the project. They are the same whichever source gave the node, so an editor keeps a node's expanded state and
-  result when the listing replaces the line parse.
+  title, the project. None holds a URI, which VS Code and Node spell differently on Windows. They are the same whichever
+  source gave the node, so an editor keeps a node's expanded state and result when the listing replaces the line parse.
 - **Results**: a test takes the catalog's; a project node takes the result of a run the editor follows, by Playwright's
   id, which the run channel's `test-begin` names
   ([running-line-every-lane.md](running-line-every-lane.md) §1) and the listing gives. Each editor combines the
   results of a node's children itself, as both already do.
 - **Built by the service.** `piwi/testItems` answers the nodes, not the specs, and `testTree` leaves `glue.ts`: the
   JetBrains plugin needs the same tree, and the clients only draw the service's answers.
-- **Pushed.** `piwi/testItemsChanged` carries the whole tree when it differs from the last one sent, as the other
-  pushes do; the clients stop asking again on every change of the runs.
+- **Pushed.** Once a listing ends, `piwi/testItemsChanged` carries the whole tree when it differs from the last one sent
+  or answered, as the other pushes do. VS Code still reads the tree when the runs change, since a test run it follows
+  settles on that read, and one spec alone after an edit.
+- **The config's level** is the client's: a node per config when there are several, or when one could not be listed,
+  which says why (VS Code's `TestItem.error`).
 
 ## 5. Running a node
 
@@ -198,9 +208,10 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 
 All in `packages/editor/src/protocol.ts`, mirrored in `Protocol.kt` in the same change, with no compatibility path:
 
-- `TestItemsResult.contexts[]` gives `nodes` in place of `specs`: each with `id`, `kind` (`config`, `folder`,
-  `spec`, `describe`, `test`, `project`, `notInCheckout`), `label`, `uri`, `line`, `endLine`, `children`, `runnable` (false in
-  the **Not in this checkout** group), and for a test the fields of `SpecTest`. And `listing`: when the config was last
+- `TestItemsResult.contexts[]` gives `nodes` in place of `specs`: each with `id`, `kind` (`folder`, `spec`,
+  `describe`, `test`, `project`, `notInCheckout`), `label`, `uri`, `range`, `sortText`, `children`, `runnable` (false in
+  the **Not in this checkout** group), `project` on a project's node, and for a test the fields of `SpecTest` with its
+  config's folder, its spec and each project's Playwright id (`TreeTest`). And `listing`: when the config was last
   listed, and why the last listing failed, if it did.
 - `piwi/testItemsChanged`, pushed with the whole answer.
 - `piwi/testRuns`: `{ nodes: string[]; exclude?: string[]; repeat?: number; debug?: boolean; coverage?: boolean }` →
@@ -210,8 +221,8 @@ All in `packages/editor/src/protocol.ts`, mirrored in `Protocol.kt` in the same 
 
 Each a pull request with the `ide` scope.
 
-1. **The listing and the tree** in the service (the reporter's `PIWI_TESTS` line, the listing, its triggers and its
-   errors, the merge with the line parse and the catalog, `piwi/testItems` as nodes, `piwi/testItemsChanged`), and
+1. **The listing and the tree** (built) in the service (the reporter's `PIWI_TESTS` line, the listing, its triggers and
+   its errors, the merge with the line parse and the catalog, `piwi/testItems` as nodes, `piwi/testItemsChanged`), and
    VS Code drawing the service's nodes. Tested in `packages/editor/tests/` on a fixture with a real `@playwright/test`,
    two projects and a loop.
 2. **Running a node**: `piwi/testRuns` and its filters (`tests/commands.test.ts` for each kind of node), VS Code's

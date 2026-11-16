@@ -200,7 +200,7 @@ const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSessio
 describe('the tests a run begins, as the Testing view shows them running', () => {
   test('each test a worker begins, each attempt once, from the run’s own events', () => {
     const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
-    expect(testsBegun(undefined, begun)).toEqual([{ uri: spec, line: 2 }]);
+    expect(testsBegun(undefined, begun)).toEqual([{ id: 't1', uri: spec, line: 2 }]);
     expect(testsBegun(begun, begun)).toEqual([]);
     // A stop of the same test begins nothing; its retry, or another worker's test, does.
     const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
@@ -210,8 +210,8 @@ describe('the tests a run begins, as the Testing view shows them running', () =>
       worker(1, 'running', { test: { ...runTest(), id: 't2', line: 9 } }),
     ]);
     expect(testsBegun(stopped, retried)).toEqual([
-      { uri: spec, line: 2 },
-      { uri: spec, line: 9 },
+      { id: 't1', uri: spec, line: 2 },
+      { id: 't2', uri: spec, line: 9 },
     ]);
   });
 });

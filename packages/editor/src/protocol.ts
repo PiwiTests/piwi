@@ -193,14 +193,20 @@ export interface TestAtResult {
 export const TEST_AT_REQUEST = 'piwi/testAt';
 
 /**
- * `piwi/testItems`: the tests of the workspace's specs as they stand, each with its latest result, for a client's own
- * test tree (VS Code's Testing view): the specs of each connected context's catalog that the workspace holds, each
- * under the context whose folder holds it, and the specs `uris` names under a context's folder, known to the catalog
- * or not.
+ * `piwi/testItems`: the tests of the workspace as a tree, for a client's own test tree (VS Code's Testing view). Under
+ * each Playwright config, the specs Playwright lists for it (the listing, `playwright test --list`), each test as the
+ * listing gives it, or as the spec's text reads while the spec has changes the listing has not seen; and the
+ * catalog's tests none of them is, in a group of their own. Before a config's first listing, and for a config
+ * Playwright cannot list, the catalog's specs the workspace holds and the specs `uris` names, read from their text.
+ * Asking for it starts the listing of each config not listed yet; `piwi/testItemsChanged` brings the tree a listing
+ * changes.
  */
 export interface TestItemsParams {
   uris?: string[];
-  /** Whether the catalog's specs are answered; true when absent. False answers the specs `uris` names alone. */
+  /**
+   * Whether the whole tree is answered; true when absent. False answers the specs `uris` names alone, each with the
+   * folders above it, and lists nothing.
+   */
   catalog?: boolean;
 }
 
@@ -239,26 +245,74 @@ export interface SpecTest {
   resultDurationMs: number | null;
 }
 
-/** The tests of one spec. */
-export interface SpecTests {
+/** A test of the tree: a test of a spec as it stands, and where it runs from. */
+export interface TreeTest extends SpecTest {
+  /** The Playwright config's folder it runs from, as `RunTestsArgs.root` names it. */
+  root: string;
+  /** Its spec; empty for a test of the catalog that the checkout does not hold. */
   uri: string;
-  /** The spec relative to its Playwright config's folder. */
-  file: string;
-  tests: SpecTest[];
+  /** Playwright's id of the test in each project it runs in, from the listing; empty for a test read from the text. */
+  playwright: Array<{ project: string; id: string }>;
+}
+
+/**
+ * A node of the test tree. `notInCheckout` is the group of the catalog's tests that no test of the checkout is (a test
+ * deleted or renamed here, or one of another branch), each under its spec's path and describe blocks.
+ */
+export type TestTreeNodeKind = 'folder' | 'spec' | 'describe' | 'test' | 'project' | 'notInCheckout';
+
+export interface TestTreeNode {
+  /**
+   * Unique in the tree, and the same whichever source gave it: a spec's is its config's folder and its path, a test's
+   * its spec's, its describe blocks and its title, joined by `\x1f` (VS Code refuses `\0` in an id). No id holds a
+   * URI, which each editor spells its own way.
+   */
+  id: string;
+  label: string;
+  kind: TestTreeNodeKind;
+  /** Its spec's URI, on a spec, a describe block, a test and a project; null elsewhere. */
+  uri: string | null;
+  /** 0-based lines, from where its call starts to where it ends: a test's, a project's (its test's), a describe block's. */
+  range: { start: number; end: number } | null;
+  /** How it is ordered among its siblings: folders before specs, by name; a spec's content as in the file. */
+  sortText: string;
+  /** Whether a run takes it: false in the `notInCheckout` group, and on a project node. */
+  runnable: boolean;
+  /** On a test, what the service says of it. */
+  test: TreeTest | null;
+  /** On a project node (a test that runs in several), the project's name. */
+  project: string | null;
+  children: TestTreeNode[];
+}
+
+/** What the tree says of a config's listing. */
+export interface TestListing {
+  /** When Playwright last listed the whole config (ms since the epoch); null before it did. */
+  at: number | null;
+  /** Why the last listing failed, in a sentence; null when it did not. */
+  error: string | null;
+  /** Whether a listing runs now. */
+  running: boolean;
 }
 
 export interface TestItemsResult {
-  /** One per context holding one of the specs, in the contexts' order. */
+  /** One per context holding a test, in the contexts' order. */
   contexts: Array<{
     /** The Playwright config's folder, as `RunTestsArgs.root` names it. */
     root: string;
     /** The config as `piwi/status` names it (`StatusResult.contexts[].label`). */
     label: string;
-    specs: SpecTests[];
+    /** Its listing; null before one was asked for. */
+    listing: TestListing | null;
+    /** Its folders and specs, and the `notInCheckout` group last. */
+    nodes: TestTreeNode[];
   }>;
 }
 
 export const TEST_ITEMS_REQUEST = 'piwi/testItems';
+
+/** The whole tree (`piwi/testItems` with no specs named), pushed when a listing changes it. */
+export const TEST_ITEMS_CHANGED_NOTIFICATION = 'piwi/testItemsChanged';
 
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {

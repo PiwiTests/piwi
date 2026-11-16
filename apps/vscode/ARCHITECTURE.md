@@ -925,14 +925,20 @@ two writes, and a write while no editor shows the file (a workspace edit is an u
 `src/test-explorer.ts` lists Piwi's tests in VS Code's Testing view while `piwi.testExplorer` is on (the default). A
 change of the setting creates or disposes it (`showTestExplorer`).
 
-It is a `TestController` whose items come from `piwi/testItems`: the catalog's specs and the open ones. They are read
-again in full when the connection or the runs change, and one spec alone 300 ms after its last edit or when it opens
-(`withSpec`). What the service answers: [Test items](../../packages/editor/ARCHITECTURE.md#test-items) in the editor
-service's reference.
+It is a `TestController` whose items are the tree the service builds (`piwi/testItems`): the tests Playwright lists for
+each config, a spec with changes read from its text, and the catalog's tests the checkout does not hold in a **Not in
+this checkout** group. It is read again in full when the connection or the runs change, and one spec alone 300 ms after
+its last edit or when it opens (`withSpec`, which puts the spec and the folders above it in place); the tree a listing
+changes comes pushed (`piwi/testItemsChanged`, `itemsChanged`). What the service answers:
+[Test items](../../packages/editor/ARCHITECTURE.md#test-items) in the editor service's reference.
 
-`testTree` in `src/glue.ts` builds the tree: a node per Playwright config when there are several, then the spec's
-folders, the spec, its describe blocks and its tests. Item ids are joined by `\x1f`, since VS Code refuses `\0` in an
-id. An item is kept while its id stays, so its result stays too.
+`testTree` in `src/glue.ts` adds a node per Playwright config above the service's nodes when there are several, or
+when one could not be listed: its item's `error` says why. The service gives the ids, joined by `\x1f`, since VS Code
+refuses `\0` in an id. An item is kept while its id stays, so its result stays too.
+
+**What a run takes**: every item the service says is `runnable` carries the `runnable` tag (`RUNNABLE_TAG`), and the
+four profiles take only items with it (`TestRunProfile.tag`), so neither the **Not in this checkout** group nor a
+project's node shows a Run button, and **Run Tests** leaves them out. A test runs in all its projects.
 
 ### Results and test runs
 
@@ -964,6 +970,10 @@ A run that ended before it was followed is read from `piwi/runEnded` by its ref.
 a test no run gave a result for passes when every command exited with 0, and is an error otherwise
 (`unfollowedOutcome`). **Cancel** terminates the commands' tasks and ends the test run; the tests it showed no result
 for are skipped.
+
+**A test a run's worker begins or ends** is found by Playwright's id, which the listing gives each test in each project
+(`itemOf`), else by the line of its call: a loop's tests share it. A test that runs in several projects shows each
+project's result on its project's node too.
 
 **A test run's output** says what the run of this window it follows does, from its run sessions (`sessionChanged`, fed
 each `piwi/runSessionChanged`): the test each worker starts, each stop and why (`pausedText`, with the stop's place as

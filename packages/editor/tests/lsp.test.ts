@@ -45,10 +45,14 @@ import type {
   StatusResult,
   TestAtResult,
   TestItemsResult,
+  TestTreeNode,
+  TreeTest,
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
 import type { LaunchRequest, ServiceToLauncher } from '../src/recorder/ipc';
+import { ProjectOptionsError } from '../src/recorder/project-options';
+import type { ListRunner } from '../src/test-listing';
 import type { LauncherEvents } from '../src/recorder/sessions';
 
 /** The record channel every test run the service builds names: a socket path and its token. */
@@ -255,6 +259,11 @@ let url = '';
 let client: MessageConnection;
 let stop: () => void;
 const runStatuses: RunStatusResult[] = [];
+/** The fixture has no Playwright: its listing fails, unless a test lists its tests here. */
+const NO_PLAYWRIGHT: ListRunner = () =>
+  Promise.reject(new ProjectOptionsError('playwright-missing', 'Playwright is not installed in the fixture.'));
+let listRunner: ListRunner = NO_PLAYWRIGHT;
+const testItemsPushes: TestItemsResult[] = [];
 /** The `piwi/failuresChanged` notifications of the first service, in order. */
 const failuresChanges: FailuresResult[] = [];
 const diagnostics = new Map<
@@ -835,8 +844,12 @@ beforeAll(async () => {
   stop = startServer(createConnection(toServer, toClient), {
     env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
     debounceMs: 10,
+    listTests: (configFile, args) => listRunner(configFile, args),
   });
   client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+  client.onNotification('piwi/testItemsChanged', (p: TestItemsResult) => {
+    testItemsPushes.push(p);
+  });
   client.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
     diagnostics.set(p.uri, p.diagnostics);
   });
@@ -1804,59 +1817,93 @@ describe('the Piwi language server', () => {
   });
 });
 
+/** Each spec of a tree, with its tests, as its folders nest them. */
+function specsOf(nodes: readonly TestTreeNode[]): Array<{ uri: string | null; label: string; tests: TreeTest[] }> {
+  return nodes.flatMap((n) =>
+    n.kind === 'spec'
+      ? [{ uri: n.uri, label: n.label, tests: testsOf(n.children) }]
+      : n.kind === 'folder'
+        ? specsOf(n.children)
+        : [],
+  );
+}
+
+/** The tests of a tree, first to last. */
+function testsOf(nodes: readonly TestTreeNode[]): TreeTest[] {
+  return nodes.flatMap((n) => (n.test ? [n.test] : testsOf(n.children)));
+}
+
+/** The first node of a tree that `pick` takes. */
+function nodeOf(nodes: readonly TestTreeNode[], pick: (n: TestTreeNode) => boolean): TestTreeNode | undefined {
+  for (const n of nodes) {
+    if (pick(n)) return n;
+    const found = nodeOf(n.children, pick);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 describe('the test tree', () => {
-  test('lists the catalog’s specs as they stand, each test with its latest result and where it failed', async () => {
+  test('before a config is listed, lists the catalog’s specs as they stand, each test with its latest result', async () => {
     const items = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
-    expect(items).toEqual({
-      contexts: [
-        {
-          root: dir,
-          label: path.basename(dir),
-          specs: [
-            {
-              uri: uri('tests/checkout.spec.ts'),
-              file: 'tests/checkout.spec.ts',
-              tests: [
-                {
-                  title: 'pays',
-                  suite: [],
-                  line: 2,
-                  // As its open document stands: an earlier test opened it with a body.
-                  endLine: expect.any(Number),
-                  location: 'tests/checkout.spec.ts:3',
-                  testCaseId: 1,
-                  status: 'passed',
-                  failure: null,
-                  url: `${url}/test-cases/1`,
-                  // The catalog's tags, owner and latest duration, and the project's quarantine.
-                  tags: ['@smoke', '@checkout'],
-                  owner: 'ada',
-                  quarantined: true,
-                  resultDurationMs: 988,
-                },
-              ],
-            },
-            {
-              uri: uri('tests/rows.spec.ts'),
-              file: 'tests/rows.spec.ts',
-              tests: [
-                expect.objectContaining({
-                  title: 'removes a row',
-                  line: 3,
-                  endLine: 7,
-                  location: 'tests/rows.spec.ts:4',
-                  testCaseId: 3,
-                  status: 'failed',
-                  failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
-                  // The failure's own duration, not the catalog's run's.
-                  resultDurationMs: 5012,
-                }),
-              ],
-            },
-          ],
-        },
-      ],
+    expect(items.contexts).toHaveLength(1);
+    expect(items.contexts[0]).toMatchObject({ root: dir, label: path.basename(dir), listing: { at: null } });
+    expect(specsOf(items.contexts[0]!.nodes)).toEqual([
+      {
+        uri: uri('tests/checkout.spec.ts'),
+        label: 'checkout.spec.ts',
+        tests: [
+          {
+            title: 'pays',
+            suite: [],
+            line: 2,
+            // As its open document stands: an earlier test opened it with a body.
+            endLine: expect.any(Number),
+            location: 'tests/checkout.spec.ts:3',
+            testCaseId: 1,
+            status: 'passed',
+            failure: null,
+            url: `${url}/test-cases/1`,
+            // The catalog's tags, owner and latest duration, and the project's quarantine.
+            tags: ['@smoke', '@checkout'],
+            owner: 'ada',
+            quarantined: true,
+            resultDurationMs: 988,
+            root: dir,
+            uri: uri('tests/checkout.spec.ts'),
+            playwright: [],
+          },
+        ],
+      },
+      {
+        uri: uri('tests/rows.spec.ts'),
+        label: 'rows.spec.ts',
+        tests: [
+          expect.objectContaining({
+            title: 'removes a row',
+            line: 3,
+            endLine: 7,
+            location: 'tests/rows.spec.ts:4',
+            testCaseId: 3,
+            status: 'failed',
+            failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+            // The failure's own duration, not the catalog's run's.
+            resultDurationMs: 5012,
+          }),
+        ],
+      },
+    ]);
+    // The fixture has no Playwright: the listing says why, and the tree has no Not in this checkout group.
+    const listed = await waitFor(async () => {
+      const again = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
+      return again.contexts[0]?.listing?.error ? again : undefined;
     });
+    expect(listed.contexts[0]!.listing).toEqual({
+      at: null,
+      error: 'Playwright is not installed in the fixture.',
+      running: false,
+    });
+    expect(listed.contexts[0]!.nodes.map((n) => n.kind)).not.toContain('notInCheckout');
   });
 
   test('answers the specs it is asked for, a test Piwi does not know and its describe blocks included', async () => {
@@ -1878,10 +1925,12 @@ describe('the test tree', () => {
       catalog: false,
     })) as TestItemsResult;
     expect(items.contexts).toHaveLength(1);
-    expect(items.contexts[0]!.specs).toEqual([
+    // The spec, with the folders above it.
+    expect(items.contexts[0]!.nodes.map((n) => [n.kind, n.label])).toEqual([['folder', 'tests']]);
+    expect(specsOf(items.contexts[0]!.nodes)).toEqual([
       {
         uri: uri('tests/grouped.spec.ts'),
-        file: 'tests/grouped.spec.ts',
+        label: 'grouped.spec.ts',
         tests: [
           expect.objectContaining({ title: 'pays', suite: ['cart', 'as a guest'], line: 3, testCaseId: 1 }),
           {
@@ -1898,6 +1947,9 @@ describe('the test tree', () => {
             owner: null,
             quarantined: false,
             resultDurationMs: null,
+            root: dir,
+            uri: uri('tests/grouped.spec.ts'),
+            playwright: [],
           },
         ],
       },
@@ -1906,12 +1958,107 @@ describe('the test tree', () => {
     const all = (await client.sendRequest('piwi/testItems', {
       uris: [uri('tests/grouped.spec.ts'), uri('tests/rows.spec.ts')],
     })) as TestItemsResult;
-    expect(all.contexts[0]!.specs.map((s) => s.file)).toEqual([
-      'tests/checkout.spec.ts',
-      'tests/grouped.spec.ts',
-      'tests/rows.spec.ts',
+    expect(specsOf(all.contexts[0]!.nodes).map((s) => s.label)).toEqual([
+      'checkout.spec.ts',
+      'grouped.spec.ts',
+      'rows.spec.ts',
     ]);
     fs.rmSync(path.join(dir, 'tests/grouped.spec.ts'));
+  });
+
+  test('takes the tests Playwright lists, each project’s, and puts the catalog’s tests none of them is apart', async () => {
+    const LISTED = [
+      "import { test } from '@playwright/test';",
+      'for (const n of [1, 2]) test(`adds mug ${n}`, async () => {});',
+      "test.describe('cart', () => {",
+      "  test('pays', async () => {});",
+      '});',
+      '',
+    ].join('\n');
+    write('tests/listed.spec.ts', LISTED);
+    // The listing starts after the spec was last written.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const test = (fields: Record<string, unknown>) => ({
+      id: 'id',
+      file: 'tests/listed.spec.ts',
+      line: 2,
+      column: 26,
+      title: 'adds mug 1',
+      suites: [],
+      project: 'chromium',
+      tags: [],
+      ...fields,
+    });
+    const tests = [
+      test({ id: 'm1' }),
+      test({ id: 'm2', title: 'adds mug 2' }),
+      test({ id: 'pc', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], tags: ['@smoke'] }),
+      test({ id: 'pf', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], project: 'firefox' }),
+      test({ id: 'cc', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays' }),
+      test({ id: 'cf', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays', project: 'firefox' }),
+    ];
+    listRunner = () => Promise.resolve({ stdout: `PIWI_TESTS ${JSON.stringify(tests)}\n`, stderr: '' });
+    try {
+      // Read the configs again: the listed config is listed again, and its tree pushed.
+      await client.sendRequest('piwi/refresh');
+      const pushed = await waitFor(() =>
+        testItemsPushes.find((p) => p.contexts[0]?.listing?.at !== null && p.contexts[0]?.listing?.error === null),
+      );
+      const nodes = pushed.contexts[0]!.nodes;
+      const specs = specsOf(nodes);
+      // The catalog's rows.spec.ts is not listed: the tree is the listing's.
+      expect(specs.map((s) => s.label)).toEqual(['checkout.spec.ts', 'listed.spec.ts']);
+      expect(
+        specs[1]!.tests.map((t) => [t.title, t.suite, t.line, t.endLine, t.location, t.playwright, t.tags]),
+      ).toEqual([
+        ['adds mug 1', [], 1, 1, 'tests/listed.spec.ts:2', [{ project: 'chromium', id: 'm1' }], []],
+        ['adds mug 2', [], 1, 1, 'tests/listed.spec.ts:2', [{ project: 'chromium', id: 'm2' }], []],
+        [
+          'pays',
+          ['cart'],
+          3,
+          3,
+          'tests/listed.spec.ts:4',
+          [
+            { project: 'chromium', id: 'pc' },
+            { project: 'firefox', id: 'pf' },
+          ],
+          ['@smoke'],
+        ],
+      ]);
+      // A test of several projects has a node per project; a describe block spans its lines.
+      const cart = nodeOf(nodes, (n) => n.kind === 'describe' && n.label === 'cart')!;
+      expect(cart.range).toEqual({ start: 2, end: 4 });
+      expect(cart.children[0]!.children.map((p) => [p.kind, p.label, p.runnable])).toEqual([
+        ['project', 'chromium', false],
+        ['project', 'firefox', false],
+      ]);
+      // checkout.spec.ts, from the listing or, open with changes, from its text: each test with its projects' ids.
+      expect(specs[0]!.tests.map((t) => [t.title, t.testCaseId, t.playwright.map((p) => p.id)])).toEqual([
+        ['pays', 1, ['cc', 'cf']],
+      ]);
+      // The catalog's test of a spec the checkout does not hold, last, in a group no run takes.
+      const group = nodes[nodes.length - 1]!;
+      expect([group.kind, group.label, group.runnable]).toEqual(['notInCheckout', 'Not in this checkout', false]);
+      expect(group.children.map((n) => n.label)).toEqual(['tests/gone.spec.ts']);
+      expect(testsOf(group.children)).toEqual([
+        expect.objectContaining({ title: 'was deleted', testCaseId: 9, status: 'passed', uri: '', location: '' }),
+      ]);
+      // An edit the listing has not seen: the spec's tests are read from its text again, a loop's as one test.
+      open('tests/listed.spec.ts', LISTED.replace('pays', 'pays twice'));
+      const edited = (await client.sendRequest('piwi/testItems', {
+        uris: [uri('tests/listed.spec.ts')],
+        catalog: false,
+      })) as TestItemsResult;
+      expect(specsOf(edited.contexts[0]!.nodes)[0]!.tests.map((t) => [t.title, t.playwright.length])).toEqual([
+        ['adds mug ${n}', 0],
+        ['pays twice', 0],
+      ]);
+      await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/listed.spec.ts') } });
+    } finally {
+      listRunner = NO_PLAYWRIGHT;
+      fs.rmSync(path.join(dir, 'tests/listed.spec.ts'));
+    }
   });
 });
 
