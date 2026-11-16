@@ -561,16 +561,20 @@ filter Playwright takes for it, so a run needs no instance and a group is one ar
 | Node | Filter |
 | --- | --- |
 | A config | none (`RunTestsArgs.all`): `npx playwright test` |
-| A folder | its whole path, from the config's folder as the file system spells it, and as its `file:` URL does when that differs, then `/.` (`folderFilter`: `/repo/e2e/tests/cart/.`): Playwright matches a filter anywhere in a spec's path, and on Windows in its `file:` URL too, so `tests/cart/` would also take `e2e-tests/cart/`, and reads a filter that starts and ends with `/` as `/…/` syntax |
-| A spec | its path (`tests/cart.spec.ts`) |
+| A folder | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax |
+| A spec | its whole path (`^/repo/e2e/tests/cart.spec.ts`) |
 | A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
 | A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
 | A project's node | its test's, in that project alone (`--project`) |
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
-Every location is written by `locationArg`, from the config's folder as the file system spells it: a path, and its
-`file:` URL's spelling when that differs (`(?:tests/my cart.spec.ts|tests/my.20cart.spec.ts):3`), which Playwright
-tests on Windows. The filters of one config, set of projects and titles make one run, split where its locations, as
+Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
+anchored at its start (`^/repo/tests/cart.spec.ts:3`), as Playwright matches a file filter, a regular expression,
+anywhere in a spec's whole path (`tests/cart.spec.ts` alone would also take `e2e/tests/cart.spec.ts`, and `tests/cart/`
+`e2e-tests/cart/`). On Windows its `file:` URL's spelling is an alternative
+(`^(?:C:/repo/my cart.spec.ts|file:///C:/repo/my.20cart.spec.ts):3`), which Playwright tests up to 1.62. The end of a
+spec's path is not anchored, as `$` is a character a shell expands: `cart.spec.ts` also takes a `cart.spec.tsx` beside
+it. The filters of one config, set of projects and titles make one run, split where its locations, as
 written, would pass 8,000 characters (`cmd.exe` stops at 8,191), never widened to tests that were not picked.
 `--grep` matches a test's project, spec and its tags, each describe block and its tags, title and tags joined by
 spaces, case-insensitive: a title is matched within that line's tests alone, after its spec's name and describe blocks,

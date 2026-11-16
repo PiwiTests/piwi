@@ -2089,12 +2089,14 @@ describe('the test tree', () => {
         return ((await client.sendRequest('piwi/runArgs', run)) as RunCommand).command;
       };
       expect(await command([mug.id])).toBe(
-        'npx playwright test tests/listed.spec.ts:2 --grep "listed.spec.ts( @[^ ]+)* adds mug 1"',
+        `npx playwright test "^${dir}/tests/listed.spec.ts:2" --grep "listed.spec.ts( @[^ ]+)* adds mug 1"`,
       );
-      expect(await command([firefox.id])).toBe('npx playwright test tests/listed.spec.ts:4 --project firefox');
-      // A folder by its whole path.
+      expect(await command([firefox.id])).toBe(
+        `npx playwright test "^${dir}/tests/listed.spec.ts:4" --project firefox`,
+      );
+      // A folder, a spec and a test by their whole paths, anchored at their start.
       expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe(
-        `npx playwright test ${fs.realpathSync(dir)}/tests/.`,
+        `npx playwright test "^${dir}/tests/."`,
       );
       expect(await command([`${CONFIG_NODE}${dir}`])).toBe('npx playwright test');
       // The Not in this checkout group runs nothing.
@@ -2127,7 +2129,7 @@ describe('recording from a paused test', () => {
         testIds: [],
         locations: ['tests/paused.spec.ts:3'],
       })) as RunCommand;
-      expect(command.command).toBe('npx playwright test tests/paused.spec.ts:3 --headed');
+      expect(command.command).toBe(`npx playwright test "^${dir}/tests/paused.spec.ts:3" --headed`);
       expect(command.pauses).toBe(true);
       expect(parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)).not.toBeNull();
       // A page.pause() left in a comment pauses nothing.
@@ -2137,7 +2139,7 @@ describe('recording from a paused test', () => {
         testIds: [],
         locations: ['tests/paused.spec.ts:3'],
       })) as RunCommand;
-      expect(commented.command).toBe('npx playwright test tests/paused.spec.ts:3');
+      expect(commented.command).toBe(`npx playwright test "^${dir}/tests/paused.spec.ts:3"`);
       expect(commented.pauses).toBeUndefined();
     } finally {
       fs.rmSync(path.join(dir, 'tests/paused.spec.ts'));
@@ -3548,7 +3550,7 @@ describe('runs as they happen', () => {
 
   test('a run of a test three times says how many of its runs passed, counted from its stream', async () => {
     const command = await verifyPays();
-    expect(command.command).toBe('npx playwright test tests/checkout.spec.ts:3 --repeat-each=3 --retries=0');
+    expect(command.command).toBe(`npx playwright test "^${dir}/tests/checkout.spec.ts:3" --repeat-each=3 --retries=0`);
     expect(command.env).toEqual({
       PIWI_ORIGIN: 'editor',
       PIWI_ORIGIN_REF: command.ref,
@@ -5502,8 +5504,8 @@ describe('a test the instance does not know yet', () => {
     const run = await runArgs({ locations: ['tests/checkout.spec.ts:5'] });
     expect(run).toEqual({
       cwd: repo,
-      args: ['tests/checkout.spec.ts:5'],
-      command: 'npx playwright test tests/checkout.spec.ts:5',
+      args: [`^${repo}/tests/checkout.spec.ts:5`],
+      command: `npx playwright test "^${repo}/tests/checkout.spec.ts:5"`,
       env: {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: run?.ref,
@@ -5529,8 +5531,8 @@ describe('a test the instance does not know yet', () => {
     });
     expect(verify).toEqual({
       cwd: repo,
-      args: ['tests/checkout.spec.ts:5', '--repeat-each=3', '--retries=0'],
-      command: 'npx playwright test tests/checkout.spec.ts:5 --repeat-each=3 --retries=0',
+      args: [`^${repo}/tests/checkout.spec.ts:5`, '--repeat-each=3', '--retries=0'],
+      command: `npx playwright test "^${repo}/tests/checkout.spec.ts:5" --repeat-each=3 --retries=0`,
       // On the run channel, nobody attending it: no breakpoint, no record channel.
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),

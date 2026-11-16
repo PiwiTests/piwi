@@ -468,6 +468,7 @@ When it is on, a test run whose command is `npx playwright test …` (`Glue.play
 Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
 
 - its arguments go in `cliOptions`, with the command's environment and the config's folder;
+- it is named after the run (`RunCommand.name`), as the console's tab is, else after its first test file;
 - the IDE gives it the test tree, Debug and Rerun Failed Tests;
 - each run of the configuration is followed (`PiwiRunSessions.followRunner`, `ExecutionManager.EXECUTION_TOPIC`), its
   Rerun, Rerun Failed Tests (a `WrappingRunConfiguration` of it) and Debug included: Stop ends its process, and its end

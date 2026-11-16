@@ -361,11 +361,11 @@ describe('the runs of the nodes picked', () => {
     expect(split.length).toBeGreaterThan(1);
     expect(split.flatMap((r) => r.locations)).toHaveLength(400);
     for (const run of split) expect(run.locations.join(' ').length).toBeLessThanOrEqual(8000);
-    // A location counts as written: a folder from the config's folder, in two spellings when they differ.
+    // A location counts as written, from the config's folder.
     const deep = '/w/プロジェクト my repository';
     const folders = configTree(
       deep,
-      Array.from({ length: 60 }, (_, i) => ({
+      Array.from({ length: 200 }, (_, i) => ({
         uri: `file://${deep}/tests/folder-${i}/a.spec.ts`,
         file: `tests/folder-${i}/a.spec.ts`,
         entries: [entry({ line: 2, root: deep })],
@@ -376,7 +376,7 @@ describe('the runs of the nodes picked', () => {
       [{ root: deep, nodes: folders }],
       folders[0]!.children.map((n) => n.id),
     );
-    expect(byFolder.flatMap((r) => r.locations)).toHaveLength(60);
+    expect(byFolder.flatMap((r) => r.locations)).toHaveLength(200);
     expect(byFolder.length).toBeGreaterThan(1);
     for (const run of byFolder) {
       const written = run.locations.reduce((sum, l) => sum + locationArg(deep, l).length + 3, 0);
@@ -384,23 +384,32 @@ describe('the runs of the nodes picked', () => {
     }
   });
 
-  test('a location as the command line writes it, by its file: URL too when it spells it apart', () => {
-    const matches = (filter: string, file: string) => new RegExp(filter, 'gi').test(file);
-    expect(folderFilter('/w/tests')).toBe('/w/tests/.');
-    const spaced = folderFilter('/w/my tests');
-    expect(spaced).toBe('(?:/w/my tests|/w/my.20tests)/.');
-    expect(matches(spaced, '/w/my tests/a.spec.ts')).toBe(true);
-    expect(matches(spaced, 'file:///w/my%20tests/sub/a.spec.ts')).toBe(true);
-    expect(matches(spaced, '/w/e2e-my tests/a.spec.ts')).toBe(false);
-    expect(matches(folderFilter('/w/tests (old)'), '/w/tests (old)/a.spec.ts')).toBe(true);
-    expect(locationArg('/w', 'tests/')).toBe('/w/tests/.');
-    expect(locationArg('/w', 'tests/cart.spec.ts:3')).toBe('tests/cart.spec.ts:3');
-    expect(locationArg('/w/my repo', 'tests/my cart (1).spec.ts:3')).toBe(
-      '(?:tests/my cart [(]1[)].spec.ts|tests/my.20cart.20[(]1[)].spec.ts):3',
+  test('a location by its whole path anchored at its start, and on Windows by its file: URL too', () => {
+    /** Whether Playwright takes `file`, spelled as one of its versions tests it, for the location `arg`. */
+    const takes = (arg: string, file: string) => new RegExp(arg.replace(/:\d+$/, ''), 'gi').test(file);
+    // POSIX: the path alone.
+    expect(folderFilter('/w/tests', false)).toBe('^/w/tests/.');
+    expect(locationArg('/w', 'tests/', false)).toBe('^/w/tests/.');
+    const cart = locationArg('/w', 'tests/cart.spec.ts:3', false);
+    expect(cart).toBe('^/w/tests/cart.spec.ts:3');
+    expect(takes(cart, '/w/tests/cart.spec.ts')).toBe(true);
+    for (const other of ['/w/sub/tests/cart.spec.ts', '/w/xtests/cart.spec.ts', '/x/w/tests/cart.spec.ts']) {
+      expect(takes(cart, other), other).toBe(false);
+    }
+    expect(takes(locationArg('/w', 'tests/', false), '/w/e2e-tests/a.spec.ts')).toBe(false);
+    // Windows: the `/`-separated path (Playwright 1.63 on), or the `file:` URL (up to 1.62).
+    const spaced = locationArg('C:\\w\\my repo', 'tests/my cart (1).spec.ts:3', true);
+    expect(spaced).toBe(
+      '^(?:C:/w/my repo/tests/my cart [(]1[)].spec.ts|file:///C:/w/my.20repo/tests/my.20cart.20[(]1[)].spec.ts):3',
     );
-    expect(locationArg('/w', 'tests/panier é.spec.ts')).toBe(
-      '(?:tests/panier é.spec.ts|tests/panier.20.C3.A9.spec.ts)',
+    expect(takes(spaced, 'C:/w/my repo/tests/my cart (1).spec.ts')).toBe(true);
+    expect(takes(spaced, 'file:///C:/w/my%20repo/tests/my%20cart%20(1).spec.ts')).toBe(true);
+    expect(takes(spaced, 'C:/w/my repo/e2e/tests/my cart (1).spec.ts')).toBe(false);
+    expect(takes(spaced, 'C:\\w\\my repo\\tests\\my cart (1).spec.ts')).toBe(false);
+    expect(locationArg('C:\\w', 'tests/panier é.spec.ts', true)).toBe(
+      '^(?:C:/w/tests/panier é.spec.ts|file:///C:/w/tests/panier.20.C3.A9.spec.ts)',
     );
+    expect(folderFilter('C:\\w\\tests', true)).toBe('^(?:C:/w/tests|file:///C:/w/tests)/.');
   });
 
   test('a title as --grep reads it, with no character a shell expands', () => {

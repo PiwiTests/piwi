@@ -197,34 +197,36 @@ export function titlePattern(title: string): string {
   return specPattern(title.replace(/[\\\p{Cc}]/gu, '.'));
 }
 
-/** A file filter's two spellings as one, when they differ. */
-const either = (spelled: string, url: string) => (url === spelled ? spelled : `(?:${spelled}|${url})`);
-
-/** A path of `folder` (`tests/my cart.spec.ts`) as its `file:` URL spells it (`tests/my%20cart.spec.ts`). */
-function urlSpelling(folder: string, relative: string): string {
-  const prefix = pathToFileURL(path.join(folder, 'x')).pathname.length - 1;
-  return pathToFileURL(path.join(folder, relative)).pathname.slice(prefix);
+/**
+ * An absolute path as a file filter anchored at its start, written as `specPattern` writes a path: Playwright tests a
+ * filter, a regular expression, against a file's whole path, `/`-separated, and on Windows (up to 1.62) against its
+ * `file:` URL instead, so on Windows the URL's spelling is an alternative.
+ */
+function anchoredPath(absolute: string, windows: boolean): string {
+  const spelled = specPattern(absolute);
+  if (!windows) return `^${spelled}`;
+  return `^(?:${spelled}|${specPattern(pathToFileURL(absolute, { windows: true }).href)})`;
 }
 
 /**
- * The file filter of a folder (a whole path): the path as the file system spells it and as its `file:` URL does, then
- * `/.` (a filter ending in `/` reads as `/…/` syntax). Playwright tests a file filter, a regular expression, against a
- * file's whole path, and on Windows against its `file:` URL too.
+ * The file filter of a folder: its whole path anchored at its start (`anchoredPath`), then `/.`, as a filter ending in
+ * `/` reads as `/…/` syntax.
  */
-export function folderFilter(folder: string): string {
-  const url = pathToFileURL(folder).pathname.replace(/^\/(?=[A-Za-z]:)/, '');
-  return `${either(specPattern(folder), specPattern(url))}/.`;
+export function folderFilter(folder: string, windows = process.platform === 'win32'): string {
+  return `${anchoredPath(folder, windows)}/.`;
 }
 
 /**
- * A location of a run as the command line writes it, for the config's folder `folder` as the file system spells it: a
- * folder by `folderFilter`, a spec (and its `:line`) by its path as the file system spells it and as its `file:` URL
- * does.
+ * A location of a run (relative to the config's folder: `tests/`, `tests/cart.spec.ts`, `tests/cart.spec.ts:12`) as
+ * the command line writes it, from the config's folder `folder` as the file system spells it: a folder by
+ * `folderFilter`, a spec by its whole path anchored at its start, then its `:line`. The end of a spec's path is not
+ * anchored, as `$` is a character a shell expands: `cart.spec.ts` also takes `cart.spec.tsx` beside it.
  */
-export function locationArg(folder: string, location: string): string {
-  if (location.endsWith('/')) return folderFilter(path.join(folder, location.slice(0, -1)));
+export function locationArg(folder: string, location: string, windows = process.platform === 'win32'): string {
+  const join = windows ? path.win32.join : path.posix.join;
+  if (location.endsWith('/')) return folderFilter(join(folder, location.slice(0, -1)), windows);
   const spec = locationSpec(location);
-  return either(specPattern(spec), specPattern(urlSpelling(folder, spec))) + location.slice(spec.length);
+  return anchoredPath(join(folder, spec), windows) + location.slice(spec.length);
 }
 
 /** One node's filter. */
