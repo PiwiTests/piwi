@@ -3172,6 +3172,7 @@ export const credentials = pgTable(
   (t) => ({
     // Unique ignoring case, as the routes compare names.
     nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
+    createdByIdx: index('idx_credentials_created_by').on(t.createdBy),
   }),
 );
 
@@ -3221,5 +3222,7 @@ export const credentialUses = pgTable(
     credentialIdx: index('idx_credential_uses_credential').on(t.credentialId, t.createdAt),
     projectIdx: index('idx_credential_uses_project').on(t.projectId, t.createdAt),
     createdIdx: index('idx_credential_uses_created').on(t.createdAt),
+    userIdx: index('idx_credential_uses_user').on(t.userId),
+    apiKeyIdx: index('idx_credential_uses_api_key').on(t.apiKeyId),
   }),
 );

@@ -361,7 +361,7 @@ describe('rerun_cluster_in_ci', () => {
       args: 'tests/cart.spec.ts',
       dispatchedAt: '2026-10-02T00:00:00.000Z',
     });
-    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin' }, { actionId: undefined });
+    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin', apiKeyId: null }, { actionId: undefined });
   });
 
   test('runs the CI action the agent names and reports its id', async () => {
@@ -381,7 +381,12 @@ describe('rerun_cluster_in_ci', () => {
       maintainer,
     )) as { actionId: string };
     expect(result.actionId).toBe('smoke-staging');
-    expect(rerun.fn).toHaveBeenCalledWith(db, 1, { id: 2, name: 'Robin' }, { actionId: 'Smoke · staging' });
+    expect(rerun.fn).toHaveBeenCalledWith(
+      db,
+      1,
+      { id: 2, name: 'Robin', apiKeyId: null },
+      { actionId: 'Smoke · staging' },
+    );
   });
 
   test('passes on why the re-run is not available', async () => {

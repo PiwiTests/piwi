@@ -1240,6 +1240,13 @@
       "when": 1794856656436,
       "tag": "0176_credential_name_lower",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "6",
+      "when": 1794858811087,
+      "tag": "0177_credential_fk_indexes",
+      "breakpoints": true
     }
   ]
 }
