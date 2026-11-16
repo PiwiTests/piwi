@@ -1373,6 +1373,11 @@ machine without one, the IDE shows its license dialog:
 
 An EAP build asks for a JetBrains account, so it cannot serve.
 
+**The scenes.** `failures` and `heal` open the fixture as it is. `tests` runs last, since it changes the project before
+the Tests tab lists it (a second Playwright project, a spec a loop builds the tests of, a spec of the catalog deleted);
+it clicks the Tests tab at its place in the tool window's header at 2× (`Alt+Right` switches no tool window tab),
+maximizes the tool window and opens the tree's nodes with the arrow keys.
+
 **Other options.** `--ide` names another installed release, `--probe` captures the IDE as it stands without driving
 it, and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the license,
 the launcher, the properties that keep it quiet, what a check in the real IDE would need) is recorded in

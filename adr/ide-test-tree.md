@@ -1,5 +1,8 @@
 # The full test tree in both editors
 
+- Status: accepted
+- Date: 2026-11-16
+
 **Status.** Proposed 2026-11-16; its open questions were decided the same day ([§9](#9-decisions)). The maintainer
 asked whether both editors can show every test of the workspace and run any of them, alone or by group, and whether the
 list should come from the Piwi instance or from the source code. **Stage 1 is built**: the listing
@@ -8,8 +11,13 @@ list should come from the Piwi instance or from the source code. **Stage 1 is bu
 the editor's own runs. **Stage 2 is built**: `piwi/testRuns` runs each picked node by its narrowest filter
 (`nodeRuns`), a project's node in its project alone, and VS Code's profiles go through it. **Stage 3 is built**: the
 JetBrains plugin's **Tests** tab (`PiwiTestsTab.kt`), read once first selected, with its filter and `Piwi.Tests.*`
-actions; WebStorm 2024.1's LSP client takes the service's watched-files registration (`LspDynamicCapabilities`), not yet
-checked in a running IDE. Remaining: the docs' screenshots of both editors (stage 4).
+actions; WebStorm 2024.1's LSP client takes the service's watched-files registration (`LspDynamicCapabilities`).
+**Stage 4 is built**: `vscode-testing.png` and the other VS Code images recaptured, `jetbrains-tests.png` captured in
+WebStorm 2026.3 by a `tests` scene of the JetBrains script, the docs and both Marketplace READMEs saying what each tree
+does, the settings reference saying `piwi.testExplorer` off leaves the Testing view to another extension's tree (S9),
+and P1 of [developer-loop-audit.md](../proposals/developer-loop-audit.md) and LI8 of
+[editor-ux-coherence.md](../proposals/editor-ux-coherence.md) noted. The Tests tab also focuses its tree when shown and
+answers the IDE's Expand All and Collapse All keys.
 
 **Summary.** VS Code's Testing view already shows Piwi's tests and runs any node, but its list is incomplete: the spec
 files come from the instance's catalog (plus the specs open in the editor), and the tests inside each spec from a
@@ -139,7 +147,7 @@ page on the dashboard. Nothing in the group runs: the checkout has no code for i
   source gave the node, so an editor keeps a node's expanded state and result when the listing replaces the line parse.
 - **Results**: a test takes the catalog's; a project node takes the result of a run the editor follows, by Playwright's
   id, which the run channel's `test-begin` names
-  ([running-line-every-lane.md](running-line-every-lane.md) §1) and the listing gives. Each editor combines the
+  ([running-line-every-lane.md](../proposals/running-line-every-lane.md) §1) and the listing gives. Each editor combines the
   results of a node's children itself, as both already do.
 - **Built by the service.** `piwi/testItems` answers the nodes, not the specs, and `testTree` leaves `glue.ts`: the
   JetBrains plugin needs the same tree, and the clients only draw the service's answers.
@@ -195,7 +203,7 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 - To check in stage 2: with a filter on, the view's **Run Tests** runs only the tests the filter shows. If it runs
   them all, the docs say to run the filtered nodes from their own menu.
 - With Microsoft's Playwright Test extension installed, the view shows two trees
-  ([developer-loop-audit.md](developer-loop-audit.md) S9): the docs say what each one gives, and `piwi.testExplorer`
+  ([developer-loop-audit.md](../proposals/developer-loop-audit.md) S9): the docs say what each one gives, and `piwi.testExplorer`
   turns Piwi's off.
 
 ### JetBrains
@@ -208,7 +216,7 @@ Checked on Playwright 1.64.1: `x.spec.js:3`, the line of a describe block, liste
 - On any node, the toolbar and the context menu offer **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with
   Piwi**, the registered actions wrapped to act on the node (`registeredWith`), sent to `piwi/testRuns`. The run shows
   in its Run tab, as every Piwi run does.
-- New action ids go in D25 of [1.0-stabilization.md](1.0-stabilization.md) in the same change, as
+- New action ids go in D25 of [1.0-stabilization.md](../proposals/1.0-stabilization.md) in the same change, as
   `apps/application/tests/unit/editor-ids-register.test.ts` checks.
 
 ## 7. Protocol
@@ -235,8 +243,8 @@ Each a pull request with the `ide` scope.
 2. **Running a node** (built): `piwi/testRuns` and its filters (`tests/commands.test.ts` for each kind of node), VS Code's
    profiles on it.
 3. **The JetBrains Tests tab** (built), checked by `GlueTest` and `PiwiPluginTest`.
-4. **Docs and screenshots**: the editor feature pages, `vscode.md` and `jetbrains.md`, both screenshot sets; P1 of
-   [developer-loop-audit.md](developer-loop-audit.md) and LI8 of [editor-ux-coherence.md](editor-ux-coherence.md)
+4. **Docs and screenshots** (built): the editor feature pages, `vscode.md` and `jetbrains.md`, both screenshot sets; P1 of
+   [developer-loop-audit.md](../proposals/developer-loop-audit.md) and LI8 of [editor-ux-coherence.md](../proposals/editor-ux-coherence.md)
    updated.
 
 ## 9. Decisions

@@ -560,6 +560,64 @@ const SCENES = {
       await sleep(500);
     },
   },
+
+  /**
+   * The Tests tab: the tests Playwright lists for the fixture, run last since it changes the project: a second
+   * Playwright project, so each test has a node per project, a spec whose tests a loop builds, listed one by one, and a
+   * spec of the instance's catalog deleted here, which the tab puts in Not in this checkout.
+   */
+  tests: {
+    file: SPEC_FILE,
+    line: 1,
+    column: 1,
+    async run({ workspace }) {
+      const config = path.join(workspace, 'playwright.config.ts');
+      fs.writeFileSync(
+        config,
+        fs
+          .readFileSync(config, 'utf-8')
+          .replace(
+            "projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],",
+            "projects: [\n      { name: 'chromium', use: { browserName: 'chromium' } },\n      { name: 'firefox', use: { browserName: 'firefox' } },\n    ],",
+          ),
+      );
+      fs.writeFileSync(
+        path.join(workspace, 'tests', 'mugs.spec.ts'),
+        [
+          "import { test } from './fixtures';",
+          '',
+          "for (const size of ['small', 'large']) {",
+          '  test(`adds a ${size} mug`, async ({ page }) => {',
+          "    await page.goto('/mugs');",
+          '  });',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      fs.rmSync(path.join(workspace, 'tests', 'privacy.spec.ts'));
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      xinput('key', KEYS.piwiToolWindow.xinput);
+      await sleep(3000);
+      // The tab beside Failures, at its place in the tool window's header at 2×: shown, it asks for the tests, which the
+      // editor service lists with Playwright.
+      xinput('move', 448, 1171, 'sleep', 0.3, 'click', 1);
+      await sleep(25_000);
+      // The tool window over the editor, then from its first node, which has the focus: a test's projects, the loop's
+      // tests, and the test only the instance knows.
+      xinput('key', 'ctrl+shift+apostrophe');
+      await sleep(1500);
+      const keys = (...names) => names.flatMap((name) => ['key', name, 'sleep', 0.25]);
+      xinput(
+        ...keys('Home', 'Down', 'Down', 'Right', 'Down', 'Right', 'Down', 'Right'),
+        ...keys('Down', 'Down', 'Down', 'Down', 'Down', 'Right'),
+        ...keys('Down', 'Down', 'Down', 'Down', 'Right', 'Down', 'Right'),
+        ...keys('Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up'),
+      );
+      await sleep(1500);
+      await shoot('tests', { failing: true });
+    },
+  },
 };
 
 async function main() {
@@ -611,7 +669,7 @@ async function main() {
     if (unknown.length)
       throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
-    for (const name of names) await withIde(run, SCENES[name], SCENES[name].run);
+    for (const name of names) await withIde(run, SCENES[name], () => SCENES[name].run(run));
   } finally {
     xvfb.kill('SIGTERM');
     server.close();

@@ -27,6 +27,8 @@ Playwright Test suites in JavaScript and TypeScript.
   click picks the locator. In a remote window, Piwi Picker follows the runs through a port VS Code forwards.
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, its history
   on hover; above each locator line, the tests that use it; above an application file, the tests that reach it.
+- **Every test in the Testing view.** The tests Playwright finds for each config, with their latest results; a
+  folder, a spec, a describe block, a test or a Playwright project runs from its own entry.
 - **Coverage marks.** With coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike, the
   tests behind each function, and the lines changed since the coverage run. **Piwi: Show or hide the coverage marks** hides
   them.

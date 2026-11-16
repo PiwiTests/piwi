@@ -110,6 +110,11 @@ line** on the debugger's Show Execution Point key:
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
+<figure>
+  <img src="/screenshots/jetbrains-tests.png" alt="WebStorm: the Piwi tool window's Tests tab, a spec's tests with their results, a test's two Playwright projects, a loop's two tests and the Not in this checkout group">
+  <figcaption>The Tests tab: each test's latest result, a node per Playwright project, a loop's tests one by one.</figcaption>
+</figure>
+
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but in a keymap that gives one to another action
 ([Keys](/reference/editor-commands#keys)) and for a run's controls, which use the debugger's shortcuts of your keymap
 while they apply and the debugger does not take them ([the controls](./editor-run-control#the-controls)): in the
