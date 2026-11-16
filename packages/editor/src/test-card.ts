@@ -32,9 +32,6 @@ export const STRIP_FILLS: Record<TestCardResult['status'], string> = {
   skipped: '#a1a1aa',
 };
 
-/** The longest part of a failure's message a card shows. */
-const MAX_FAILURE = 160;
-
 /**
  * An attempt's outcome as the card counts it: a timeout a failure, a pass after a failed attempt flaky; null for one it
  * does not show, an interrupted attempt or one that did not run, as the dashboard's pass rate leaves them out.
@@ -62,7 +59,8 @@ export function runResults(executions: TestExecution[]): RunResult[] {
   const cut = executions.length >= TEST_HISTORY_ROWS ? executions[executions.length - 1]?.runId : undefined;
   const runs = new Map<number, Map<string, TestExecution>>();
   for (const e of executions) {
-    if (e.runId === cut) continue;
+    // A run's id goes into the card's links and words: an id that is not one is left out.
+    if (!Number.isSafeInteger(e.runId) || e.runId <= 0 || e.runId === cut) continue;
     const finals = runs.get(e.runId) ?? new Map<string, TestExecution>();
     runs.set(e.runId, finals);
     const key = `${e.repeatEachIndex ?? 0}\n${e.browserName ?? ''}`;
@@ -112,19 +110,11 @@ export function agoWords(at: string | null, now: number): string | null {
 }
 
 /**
- * Why a test failed, in one line: the failure's headline as the dashboard writes it (`Expected true, got false — toBe`),
- * else the first line of its message without its terminal colors, cut to `MAX_FAILURE` characters.
+ * Why a test failed, in one line: the headline of its error (`Expected true, got false — toBe`), from the error alone,
+ * without the step it failed in, which a history does not hold; null for an error with nothing to say.
  */
-export function failureWhy(error: string): string {
-  const text = stripAnsi(error);
-  const headline = describeFailureText(text)?.headline.trim();
-  if (headline) return headline;
-  const line =
-    text
-      .split('\n')
-      .find((l) => l.trim())
-      ?.trim() ?? '';
-  return line.length > MAX_FAILURE ? `${line.slice(0, MAX_FAILURE - 1)}…` : line;
+export function failureWhy(error: string): string | null {
+  return describeFailureText(stripAnsi(error))?.headline.trim() || null;
 }
 
 const mdText = (text: string) => text.replace(/[\\`*_[\]<>#|]/g, (c) => `\\${c}`);
@@ -164,7 +154,7 @@ export function testCard(input: TestCardInput): TestCard {
         runId: failed.runId,
         url: input.runUrl(failed.runId),
         where: `Last failed in run #${failed.runId}${failedAgo ? `, ${failedAgo}` : ''}`,
-        why: failed.error ? failureWhy(failed.error) || null : null,
+        why: failed.error ? failureWhy(failed.error) : null,
       }
     : null;
   const about = [
@@ -182,7 +172,7 @@ export function testCard(input: TestCardInput): TestCard {
     `**Piwi** · ${mdText(input.title)}`,
     strip.length ? `${strip.map(bar).join(' ')} ${summary}` : summary,
     failure
-      ? `${failure.where}${failure.why ? `<br><span style="color:${STRIP_FILLS.failed};">${mdText(failure.why)}</span>` : ''}`
+      ? `${failure.where}${failure.why ? `<br><span style="color:var(--vscode-errorForeground);">${mdText(failure.why)}</span>` : ''}`
       : '',
     about.map(mdText).join(' · '),
   ]

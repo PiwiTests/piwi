@@ -59,7 +59,7 @@ describe("a test's card", () => {
           bar('#f43f5e', 3, 'run #3 · failed · 1.2 s'),
           'Passed 1 of the last 3 runs · 1 flaky · median 1.2 s',
         ].join(' '),
-        'Last failed in run #3, 2 d ago<br><span style="color:#f43f5e;">getByRole(…) never became visible</span>',
+        'Last failed in run #3, 2 d ago<br><span style="color:var(--vscode-errorForeground);">getByRole(…) never became visible</span>',
         'owner alice · @smoke',
       ].join('\n\n'),
     );
@@ -78,11 +78,13 @@ describe("a test's card", () => {
     expect(card.about).toEqual(['owner alice', '@smoke']);
   });
 
-  test('says why a test failed as the dashboard does, else by the first line of its error', () => {
+  test('says why a test failed by the headline of its error, from the error alone', () => {
     expect(
       failureWhy('Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false'),
     ).toBe('Expected true, got false — toBe');
     expect(failureWhy('\u001b[31mError: boom\u001b[39m')).toBe('boom');
+    expect(failureWhy('Test timeout of 30000ms exceeded.')).toBe('Test timed out after 30 s');
+    expect(failureWhy('  \n')).toBeNull();
     const card = testCard({ ...input, executions: [execution(1, 'failed', { error: null })] });
     expect(card.failure).toMatchObject({ where: 'Last failed in run #1, 2 h ago', why: null });
     expect(card.markdown).toContain('\n\nLast failed in run #1, 2 h ago\n\n');
@@ -108,7 +110,9 @@ describe("a test's card", () => {
       ...input,
       executions: [execution(3, 'failed', { error: '\u001b[31mError: boom\u001b[39m' })],
     });
-    expect(card.markdown).toContain('Last failed in run #3, 2 h ago<br><span style="color:#f43f5e;">boom</span>');
+    expect(card.markdown).toContain(
+      'Last failed in run #3, 2 h ago<br><span style="color:var(--vscode-errorForeground);">boom</span>',
+    );
   });
 
   test('leaves out the oldest run of a full history, which may be cut short', () => {
@@ -135,6 +139,16 @@ describe("a test's card", () => {
       executions: [execution(2, 'skipped', { duration: 0 }), execution(1, 'passed', { duration: 900 })],
     });
     expect(card.markdown).toContain('Passed 1 of the last 1 run · median 900 ms');
+  });
+
+  test('leaves out an attempt whose run id is not one, as its links and words would carry it', () => {
+    const odd = { ...execution(2, 'failed'), runId: '1 [Run](command:piwi.runTests)' as unknown as number };
+    const card = testCard({
+      ...input,
+      executions: [odd, execution(1, 'passed', { runId: 0 }), execution(3, 'passed')],
+    });
+    expect(card.results.map((r) => r.runId)).toEqual([3]);
+    expect(card.markdown).not.toContain('command:');
   });
 
   test('escapes what a run says, so only the strip and the failure are HTML', () => {

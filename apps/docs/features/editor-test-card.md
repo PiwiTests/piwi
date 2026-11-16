@@ -20,8 +20,8 @@ A test's card answers "my bug or a flake?" without leaving the editor. In VS Cod
 - **How far back**: twenty runs at most, read from the test's last 50 attempts, so a test run in three projects shows
   about sixteen, and one run with `--repeat-each` fewer still. The dashboard's test page holds its whole history.
 - **How they went**: `Passed 17 of the last 20 runs · 2 flaky · median 1.4 s`, skipped runs left out.
-- **The last failure**: the run it failed in, how long ago, and why in one line, in red, as the dashboard's failure
-  headline says it (`Expected true, got false — toBe`).
+- **The last failure**: the run it failed in, how long ago, and why in one line, in the editor's error color: the
+  headline of its error (`Expected true, got false — toBe`).
 - **Its owner, tags and quarantine**: the owner its `piwi:owner` annotation names, its Playwright tags, and, while it
   is [quarantined](./flaky-tests#quarantine-with-a-way-out), for how long and how many passes it has toward release.
 

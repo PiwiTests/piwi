@@ -22,6 +22,7 @@ import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingConstants
+import javax.swing.SwingUtilities
 import javax.swing.ToolTipManager
 
 /**
@@ -47,7 +48,8 @@ internal object PiwiTestCard {
 
     /** The card of `card` for a test whose latest result is `status`; `browse` opens a run's or the test's page. */
     fun panel(card: TestCard, status: String?, links: List<Link>, browse: (String) -> Unit): JComponent {
-        val body = JPanel(VerticalLayout(JBUI.scale(6))).apply {
+        // The layouts scale their gaps themselves.
+        val body = JPanel(VerticalLayout(6)).apply {
             isOpaque = false
             border = JBUI.Borders.empty(10, 12, 10, 12)
         }
@@ -57,13 +59,13 @@ internal object PiwiTestCard {
             font = JBFont.label().asBold()
         })
         val results = card.results.orEmpty()
-        val history = JPanel(HorizontalLayout(JBUI.scale(8))).apply { isOpaque = false }
+        val history = JPanel(HorizontalLayout(8)).apply { isOpaque = false }
         // The strip reads as the dashboard's: oldest on the left, newest on the right.
         if (results.isNotEmpty()) history.add(ResultStrip(results.reversed(), browse))
         card.summary?.takeIf { it.isNotBlank() }?.let { history.add(hint(it)) }
         if (history.componentCount > 0) body.add(history)
         card.failure?.let { failure ->
-            val block = JPanel(VerticalLayout(JBUI.scale(2))).apply {
+            val block = JPanel(VerticalLayout(2)).apply {
                 isOpaque = false
                 border = JBUI.Borders.emptyTop(2)
             }
@@ -73,7 +75,7 @@ internal object PiwiTestCard {
         }
         card.about?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { body.add(hint(it.joinToString(" · "))) }
 
-        val foot = JPanel(HorizontalLayout(JBUI.scale(16))).apply {
+        val foot = JPanel(HorizontalLayout(16)).apply {
             isOpaque = false
             border = JBUI.Borders.compound(
                 JBUI.Borders.customLineTop(JBUI.CurrentTheme.Popup.separatorColor()),
@@ -90,9 +92,14 @@ internal object PiwiTestCard {
         }
     }
 
-    /** A line of the card's words: text from a run, never HTML. */
-    private fun text(words: String): JBLabel = JBLabel(words, SwingConstants.LEFT).apply {
+    /**
+     * A line of the card's words: text from a run, never HTML. The label is made empty: a label made with its text reads
+     * it as HTML before `html.disable` is set, and loads the images it names.
+     */
+    private fun text(words: String): JBLabel = JBLabel().apply {
         putClientProperty("html.disable", true)
+        horizontalAlignment = SwingConstants.LEFT
+        text = words
     }
 
     /** A line of the card's words in the secondary color. */
@@ -112,7 +119,7 @@ internal object PiwiTestCard {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
-                    at(e.x)?.let { results[it].url }?.let(browse)
+                    if (SwingUtilities.isLeftMouseButton(e)) at(e.x)?.let { results[it].url }?.let(browse)
                 }
             })
         }

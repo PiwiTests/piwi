@@ -346,7 +346,7 @@ export interface TestCardFailure {
   url: string;
   /** `Last failed in run #3, 2 d ago`. */
   where: string;
-  /** Why it failed, in one line as the dashboard writes it (`Expected true, got false — toBe`); null without an error. */
+  /** Why it failed, in one line: its error's headline (`Expected true, got false — toBe`); null without an error. */
   why: string | null;
 }
 
@@ -365,8 +365,9 @@ export interface TestCard {
   /** Its owner, its tags and its quarantine, each in words (`owner alice`, `@smoke @slow`, `quarantined 3 d · …`). */
   about: string[];
   /**
-   * The card in words, newest result on the right as the dashboard's strip, as Markdown for a hover, with the inline
-   * HTML a hover renders with `supportHtml`: a `span` of a background color for each result, `color` for why it failed.
+   * The card in words, newest result on the right as the dashboard's strip, as Markdown for VS Code's hover, with the
+   * inline HTML it renders with `supportHtml`: a `span` of a background color for each result, and why it failed in
+   * the theme's error color.
    */
   markdown: string;
 }
