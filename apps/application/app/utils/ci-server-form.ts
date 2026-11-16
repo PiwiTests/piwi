@@ -147,7 +147,7 @@ export function customizeCiServerForm(state: CiServerFormState): CiServerFormSta
 
 /** The values a preview fills a request with, in place of a real dispatch's. */
 export const CI_SERVER_PREVIEW_VALUES = {
-  args: '"tests/checkout.spec.ts:12" --project="chromium"',
+  args: '"/tests/checkout.spec.ts:12" --project="chromium"',
   dispatchId: '0f3a9c2e7b5d4e1a',
   commit: '4e1f2a9',
 };

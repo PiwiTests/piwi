@@ -35,15 +35,15 @@ describe('materializeSelection', () => {
   test('args format emits file:line tokens', () => {
     const m = materializeSelection(tests, 'args');
     expect(m.format).toBe('args');
-    expect(m.args).toEqual(['tests/login.spec.ts:10', 'tests/login.spec.ts:24', 'tests/cart.spec.ts']);
+    expect(m.args).toEqual(['/tests/login.spec.ts:10', '/tests/login.spec.ts:24', '/tests/cart.spec.ts']);
     expect(m.command).toBe(
-      'npx playwright test "tests/login.spec.ts:10" "tests/login.spec.ts:24" "tests/cart.spec.ts"',
+      'npx playwright test "/tests/login.spec.ts:10" "/tests/login.spec.ts:24" "/tests/cart.spec.ts"',
     );
   });
 
   test('files format dedupes to file paths', () => {
     const m = materializeSelection(tests, 'files');
-    expect(m.args).toEqual(['tests/login.spec.ts', 'tests/cart.spec.ts']);
+    expect(m.args).toEqual(['/tests/login.spec.ts', '/tests/cart.spec.ts']);
   });
 
   test('grep format builds a title alternation', () => {
@@ -107,12 +107,18 @@ describe('shell safety', () => {
     locks: [],
   };
 
+  test('a path that would match every file is left out', () => {
+    const blank = { ...tests[0]!, testCaseId: 9, filePath: '', line: 3 };
+    expect(materializeSelection([blank, tests[0]!], 'args').args).toEqual(['/tests/login.spec.ts:10']);
+    expect(materializeSelection([blank], 'files').format).toBe('grep');
+  });
+
   test('a file holding characters a shell expands is named with `.` in their place, in args and command', () => {
     const result = materializeSelection([hostile, tests[0]!], 'args');
-    expect(result.args).toEqual(['tests/.[(]touch pwned[)].spec.ts:5', 'tests/login.spec.ts:10']);
+    expect(result.args).toEqual(['/tests/.[(]touch pwned[)].spec.ts:5', '/tests/login.spec.ts:10']);
     expect(result.command).not.toContain('$(');
     const files = materializeSelection([hostile], 'files');
     expect(files.format).toBe('files');
-    expect(files.command).toBe('npx playwright test "tests/.[(]touch pwned[)].spec.ts"');
+    expect(files.command).toBe('npx playwright test "/tests/.[(]touch pwned[)].spec.ts"');
   });
 });

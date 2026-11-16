@@ -61,7 +61,7 @@ npm install -D @playwright/test@1.52.0
 # Install the browser
 npx playwright install chromium
 # Run the failing test
-npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
+npx playwright test "/tests/admin/users.spec.ts:42" --project="Chromium"
 ```
 
 The **bisect** walks the commits between the last
@@ -69,7 +69,7 @@ green run and the failing one, re-running the test at each step — a non-zero e
 
 ```bash
 git bisect start <failing-commit> <last-green-commit>
-git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page" --project="Chromium"
+git bisect run npx playwright test "/tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page" --project="Chromium"
 git bisect reset
 ```
 
