@@ -216,10 +216,10 @@ export async function getCapabilityEvidence(
 
 /**
  * One probe per detection id, answering whether its evidence exists. The
- * probes that look for rare rows in the largest tables (green samples, retry
- * passes, requests an instrumented backend answered) match a partial index each; their conditions are
- * written as literals, which is what lets a cached PostgreSQL plan use the
- * index.
+ * probes that read the largest tables for rows only some setups write (green
+ * samples, retry passes, requests an instrumented backend answered) match a
+ * partial index each; their conditions are written as literals, which is what
+ * lets a cached PostgreSQL plan use the index.
  */
 function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabilityId, () => Promise<boolean>> {
   const scoped = typeof projectId === 'number';
@@ -262,15 +262,21 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .limit(1)
           : db.select({ id: locatorSnapshots.id }).from(locatorSnapshots).limit(1),
       ),
+    // Scoped, the probe starts from the project's runs and looks each one up in the partial index, so a project
+    // without evidence never reads the requests of the others, which may all match.
     'backend-logs': () =>
       exists(
         db,
         scoped
           ? db
-              .select({ id: networkRequests.id })
-              .from(networkRequests)
-              .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-              .where(and(eq(testRuns.projectId, pid), INSTRUMENTED_REQUEST))
+              .select({ id: testRuns.id })
+              .from(testRuns)
+              .where(
+                and(
+                  eq(testRuns.projectId, pid),
+                  sql`exists (select 1 from ${networkRequests} where ${networkRequests.testRunId} = ${testRuns.id} and ${INSTRUMENTED_REQUEST})`,
+                ),
+              )
               .limit(1)
           : db.select({ id: networkRequests.id }).from(networkRequests).where(INSTRUMENTED_REQUEST).limit(1),
       ),
@@ -395,7 +401,8 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           ? db.select({ id: graphNodes.id }).from(graphNodes).where(eq(graphNodes.projectId, pid)).limit(1)
           : db.select({ id: graphNodes.id }).from(graphNodes).limit(1),
       ),
-    // Server probes are active once a server-level probe has run for the project.
+    // Server probes are active once the backend applied a server-level probe for the project: one it did not apply
+    // records as inconclusive and proves nothing.
     'server-probes': () =>
       exists(
         db,
@@ -403,9 +410,13 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           ? db
               .select({ id: probes.id })
               .from(probes)
-              .where(and(eq(probes.projectId, pid), eq(probes.level, 'server')))
+              .where(and(eq(probes.projectId, pid), eq(probes.level, 'server'), eq(probes.applied, true)))
               .limit(1)
-          : db.select({ id: probes.id }).from(probes).where(eq(probes.level, 'server')).limit(1),
+          : db
+              .select({ id: probes.id })
+              .from(probes)
+              .where(and(eq(probes.level, 'server'), eq(probes.applied, true)))
+              .limit(1),
       ),
     // Bug reports are active once Piwi Picker has sent one.
     'bug-reports': () =>

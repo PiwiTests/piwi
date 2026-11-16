@@ -27,19 +27,11 @@ async function freshDb(): Promise<Db> {
   return next;
 }
 
-/** A project that reaches one route, optionally with a server trace for it. */
-async function seedProject(projectId: number, opts: { serverTrace: boolean }): Promise<void> {
-  await db.insert(schema.projects).values({ id: projectId, name: `p${projectId}`, serverProbes: ENABLED });
-  await db.insert(schema.testCases).values({ id: projectId, projectId, filePath: 'orders.spec.ts', title: 'orders' });
-  await db.insert(schema.graphEdges).values({
-    projectId,
-    fromKind: 'test',
-    fromKey: String(projectId),
-    toKind: 'route',
-    toKey: 'GET /api/orders',
-    kind: 'reaches',
-  });
-  if (!opts.serverTrace) return;
+/** What a backend instrumentation sent on a request: its spans (Nitro), or only its logs (ASP.NET Core). */
+type Backend = 'spans' | 'logs';
+
+/** Record one run of the project with a request its backend instrumentation answered. */
+async function recordBackendRequest(projectId: number, backend: Backend): Promise<void> {
   const [run] = await db
     .insert(schema.testRuns)
     .values({ projectId, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
@@ -54,8 +46,29 @@ async function seedProject(projectId: number, opts: { serverTrace: boolean }): P
     url: 'https://example.test/api/orders',
     method: 'GET',
     status: 200,
-    serverTraces: [{ name: 'db.query', durationMs: 3 }],
+    ...(backend === 'spans' ? { serverTraces: [{ name: 'db.query', durationMs: 3 }] } : { serverLogs: [] }),
   });
+}
+
+/**
+ * A project with server probes on whose five tests reach one route, enough that the client plan cannot claim the
+ * whole budget, optionally with a request its backend answered.
+ */
+async function seedProject(projectId: number, backend: Backend | null): Promise<void> {
+  await db.insert(schema.projects).values({ id: projectId, name: `p${projectId}`, serverProbes: ENABLED });
+  const testCaseIds = [projectId, ...[0, 1, 2, 3].map((i) => projectId * 100 + i)];
+  for (const id of testCaseIds) {
+    await db.insert(schema.testCases).values({ id, projectId, filePath: `t${id}.spec.ts`, title: `t${id}` });
+    await db.insert(schema.graphEdges).values({
+      projectId,
+      fromKind: 'test',
+      fromKey: String(id),
+      toKind: 'route',
+      toKey: 'GET /api/orders',
+      kind: 'reaches',
+    });
+  }
+  if (backend) await recordBackendRequest(projectId, backend);
 }
 
 beforeEach(async () => {
@@ -64,19 +77,7 @@ beforeEach(async () => {
 
 describe('buildProbePlanForProject server-probes gating', () => {
   test('passes the project settings through, and server items get a real share of the budget', async () => {
-    await seedProject(1, { serverTrace: true });
-    // A few more reaching tests so the client plan cannot claim the whole budget.
-    for (let i = 10; i < 14; i++) {
-      await db.insert(schema.testCases).values({ id: i, projectId: 1, filePath: `t${i}.spec.ts`, title: `t${i}` });
-      await db.insert(schema.graphEdges).values({
-        projectId: 1,
-        fromKind: 'test',
-        fromKey: String(i),
-        toKind: 'route',
-        toKey: 'GET /api/orders',
-        kind: 'reaches',
-      });
-    }
+    await seedProject(1, 'spans');
 
     // Enabled settings, no decline and no server probe yet resolve to `available`.
     expect((await resolveProjectStates(db, 1))['server-probes']).toBe('available');
@@ -93,26 +94,33 @@ describe('buildProbePlanForProject server-probes gating', () => {
   });
 
   test('drops the server settings when the project declined server-probes', async () => {
-    await seedProject(1, { serverTrace: true });
+    await seedProject(1, 'spans');
     await setProjectDecisions(db, 1, { 'server-probes': 'declined' });
 
     expect((await resolveProjectStates(db, 1))['server-probes']).toBe('declined');
 
     // The gated plan matches the client-only plan, and carries no server items.
-    const gated = await buildProbePlanForProject(db, 1);
-    const clientOnly = await buildProbePlan(db, 1, { serverProbes: undefined });
+    const gated = await buildProbePlanForProject(db, 1, { budget: 4 });
+    const clientOnly = await buildProbePlan(db, 1, { serverProbes: undefined, budget: 4 });
     expect(gated.items).toEqual(clientOnly.items);
     expect(gated.items.every((i) => i.level !== 'server')).toBe(true);
   });
 
-  test('keeps the server settings of a project with no backend evidence yet', async () => {
-    await seedProject(2, { serverTrace: false });
+  test('withholds server items until a backend instrumentation answered a request of the project', async () => {
+    await seedProject(2, null);
 
-    // No backend evidence reads as not used yet, never as not applicable: the enabled settings make it available.
+    // The capability shows (available, never not applicable), but no server fault can apply yet.
     expect((await resolveProjectStates(db, 2))['server-probes']).toBe('available');
+    expect(
+      (await buildProbePlan(db, 2, { serverProbes: ENABLED, budget: 4 })).items.some((i) => i.level === 'server'),
+    ).toBe(true);
+    const gated = await buildProbePlanForProject(db, 2, { budget: 4 });
+    expect(gated.items).toEqual((await buildProbePlan(db, 2, { serverProbes: undefined, budget: 4 })).items);
+    expect(gated.items.every((i) => i.level !== 'server')).toBe(true);
 
-    const gated = await buildProbePlanForProject(db, 2);
-    const withSettings = await buildProbePlan(db, 2, { serverProbes: ENABLED });
-    expect(gated.items).toEqual(withSettings.items);
+    // A request carrying only backend logs, as the ASP.NET Core package answers outside a probe, is enough.
+    await recordBackendRequest(2, 'logs');
+    const answered = await buildProbePlanForProject(db, 2, { budget: 4 });
+    expect(answered.items.some((i) => i.level === 'server')).toBe(true);
   });
 });

@@ -113,7 +113,8 @@ It needs:
   `PATCH`, `DELETE`) stay off unless you allow them.
 
 With server probes on, half of the budget is kept for server faults, for the tests the run's client faults did not
-take. A pair a probe decided, at either level, is not planned again until its test changes.
+take, once a run of the project has recorded a request the backend instrumentation answered. A pair a probe decided,
+at either level, is not planned again until its test changes.
 
 ## Try it in the demo
 

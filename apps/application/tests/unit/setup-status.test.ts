@@ -148,6 +148,18 @@ describe('getSetupStatus', () => {
     expect(state('server-probes')).toBe('undecided');
   });
 
+  test('a server probe activates server-probes only once the backend applied it', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    const probe = { projectId: 1, level: 'server', routeKey: 'GET /api/orders', outcome: 'inconclusive' } as const;
+    await db.insert(schema.probes).values({ ...probe, fault: 'throw', applied: false });
+    expect((await getCapabilityEvidence(db, 1, { fresh: true }))['server-probes']).toBe(false);
+    expect((await activeIds(db)).has('server-probes')).toBe(false);
+
+    await db.insert(schema.probes).values({ ...probe, fault: 'status', applied: true, outcome: 'noticed' });
+    expect((await getCapabilityEvidence(db, 1, { fresh: true }))['server-probes']).toBe(true);
+    expect((await activeIds(db)).has('server-probes')).toBe(true);
+  });
+
   test('the backend-logs probe reads the partial index of instrumented requests, at both scopes', async () => {
     await seedRequest({});
     const statements: Array<{ query: string; params: unknown[] }> = [];

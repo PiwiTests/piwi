@@ -552,10 +552,12 @@ async function loadUnprobableTestIds(db: DrizzleDB, projectId: number, ids: numb
 
 /**
  * The probe plan for a project's `GET /probes/plan`, with the level-two server
- * items gated on the project's resolved `server-probes` state: a project that
- * declined the capability, or where it does not apply, gets the client plan
- * only. The reporter is not a surface, so the plan itself keeps
- * working whatever the decisions — this only withholds the server items.
+ * items gated on the project's resolved states: a project that declined
+ * `server-probes`, where it does not apply, or whose requests no backend
+ * instrumentation has answered yet (`backend-logs` not active), gets the client
+ * plan only, since no server fault can apply there. The reporter is not a
+ * surface, so the plan itself keeps working whatever the decisions — this only
+ * withholds the server items.
  */
 export async function buildProbePlanForProject(
   db: DrizzleDB,
@@ -566,8 +568,11 @@ export async function buildProbePlanForProject(
     .select({ serverProbes: projects.serverProbes })
     .from(projects)
     .where(eq(projects.id, projectId));
-  const serverProbesState = (await resolveProjectStates(db, projectId))['server-probes'];
-  const serverProbesOff = serverProbesState === 'declined' || serverProbesState === 'not-applicable';
+  const states = await resolveProjectStates(db, projectId);
+  const serverProbesOff =
+    states['server-probes'] === 'declined' ||
+    states['server-probes'] === 'not-applicable' ||
+    states['backend-logs'] !== 'active';
   return buildProbePlan(db, projectId, {
     budget: options.budget,
     serverProbes: serverProbesOff ? undefined : project?.serverProbes,

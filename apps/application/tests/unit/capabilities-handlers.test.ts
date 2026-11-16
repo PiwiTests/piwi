@@ -184,8 +184,7 @@ describe('the Test Map decline holds over passive ingest data', () => {
 });
 
 describe('backend logs and server probes without backend evidence', () => {
-  // No backend evidence never means a setup without a backend: an instrumented app sends nothing while its capture
-  // is off in the environment the suite runs against, or before its first run arrives. Neither capability is hidden.
+  // No backend evidence never means a setup without a backend: neither capability is hidden for it.
   test('read undecided, and server probes available once the project turns them on', async () => {
     await seedWithFixtures(1, 'no-backend-evidence');
 
