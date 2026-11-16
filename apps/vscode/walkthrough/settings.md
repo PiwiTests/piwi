@@ -11,7 +11,8 @@ workspace may set it.
 - **In the editor**: `piwi.codeLens`, the lines Piwi writes above the code; `piwi.gutterIcons` and
   `piwi.coverageMarks`, the marks in the gutter and at the left of the lines; `piwi.failureSeverity`, how a failure
   shows in the Problems panel; `piwi.locatorWarnings`, `piwi.failingTestTint` and `piwi.ciPositions`, the brittle
-  locators' warnings, the failing test's tint and where a CI run of the branch stands.
+  locators' warnings, the failing test's tint and where a CI run of the branch stands; `piwi.runningLines`, the line
+  each running test of your run is at.
 - **Agents (MCP)**: `piwi.mcpAuthorization`, how the agent signs in to Piwi's MCP server, and `piwi.serveRunsToAgents`,
   the runs this window starts served to agents.
 - **Advanced**: `piwi.hiddenMessages`, the messages a **Don't Show Again** hid, and `piwi.trace.server`, the traffic

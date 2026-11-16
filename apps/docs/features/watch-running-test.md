@@ -52,11 +52,18 @@ ends.
 
 Under the image, the editor's view, a CI run's lane included, the Runs window and the desktop app's tray show what the
 pixels cannot: why the test waits, the page's events, its text and a filmstrip of its calls
-([in your own tools](./live-view-layers#in-your-own-tools)). While an editor watches a worker of your run, the line
-of the call its test is in is marked until the test ends or stops, the call named after it (VS Code dims the line,
-`Worker 2 · Click getByRole('button')`; a JetBrains IDE adds an inlay), and the page's events go to VS Code's
-`Piwi: Page` output, its console and uncaught errors to the JetBrains Piwi tool window's **Page** tab, each test named
-as it begins.
+([in your own tools](./live-view-layers#in-your-own-tools)). While an editor watches a worker of your run, the page's
+events go to VS Code's `Piwi: Page` output, its console and uncaught errors to the JetBrains Piwi tool window's **Page**
+tab, each test named as it begins.
+
+## The running line
+
+While your run goes, the editor marks the line of the call each running test is in until the test ends or stops,
+naming the worker and the call: VS Code dims the line (`Worker 2 · Click getByRole('button')`), a JetBrains IDE adds an
+inlay. Workers on one line share its mark (`Worker 2, Worker 4 · Click`). The watched worker's line follows its call
+log; each other worker's comes from its reporter, four times a second at most, with a reporter newer than 0.71.0 (an
+older one's is marked only while watched). `piwi.runningLines` marks every running test's line, the watched worker's
+alone, or none ([settings](/reference/editor-settings#in-the-editor)).
 
 ## Open the trace so far
 

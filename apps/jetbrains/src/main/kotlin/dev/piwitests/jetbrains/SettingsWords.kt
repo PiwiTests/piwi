@@ -22,6 +22,7 @@ object SettingsWords {
         "runHoldFailures" to linkedMapOf("auto" to "Auto", "on" to "On", "off" to "Off"),
         "codeLens" to linkedMapOf("all" to "Every line", "problems" to "A failure's and an uncovered change's alone", "off" to "None"),
         "failureSeverity" to linkedMapOf("error" to "An error", "warning" to "A warning", "information" to "A weak warning", "off" to "Nothing in the editor's problems"),
+        "runningLines" to linkedMapOf("all" to "Every running test's", "watched" to "The watched worker's alone", "off" to "None"),
         "mcpAuthorization" to linkedMapOf("key" to "The IDE's API key", "sign-in" to "A sign-in in the browser"),
     )
 

@@ -176,9 +176,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the
   platform sends the service the change; checked by `PiwiRunControlTest` (`testTheCodeAStopMadeIsWrittenInOneCommand`).
   ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
-- **The running line's inlay goes as its test ends or stops, as the run ends and as the watch does, whatever the
-  service says after** (`Glue.runningLinesShown`, drawn on every draw). Checked by `GlueTest` and `PiwiRunControlTest`
-  (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`, `testARunningLineOfASlotNoLongerWatchedIsNotTaken`).
+- **A running line's inlay goes as its test ends or stops and as the run ends, whatever the service says after, and
+  the slots at one line share one inlay** (`Glue.runningLinesShown`, `Glue.runningLineText`, drawn on every draw).
+  Checked by `GlueTest` and `PiwiRunControlTest` (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`,
+  `testEverySlotsRunningLineIsMarkedOneInlayALine`).
   ([Run control](ARCHITECTURE.md#run-control))
 - **The Worker tab's watch goes on while the Worker tab or the Page tab is in sight, and ends once neither is**
   (`laneSightChanged`). Checked by `PiwiRunControlTest` (`testThePageTabKeepsTheWatchWhileItShows`).

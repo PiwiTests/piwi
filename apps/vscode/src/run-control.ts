@@ -1184,7 +1184,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   };
 }
 
-/** The line of the call a watched lane's test runs, as the editor marks it: its 0-based line now and its words. */
+/** The line of the call a lane's test runs, as the editor marks it: its 0-based line now and its words. */
 export interface RunningMark {
   line: number;
   text: string;
@@ -1192,7 +1192,7 @@ export interface RunningMark {
 
 /**
  * The running lines the service tells (`piwi/runningLine`), one per lane of a run, each a line of the run's code, kept
- * until the service says it goes (the test ended or stopped, the watch ended) or its run ends.
+ * until the service says it goes (the test ended or stopped, the setting no longer marks it) or its run ends.
  */
 export class RunningLines {
   private readonly lines = new Map<string, RunningLine>();
@@ -1234,16 +1234,25 @@ export class RunningLines {
 
   /**
    * The marks in the document `uri` of `lineCount` lines, each at its line now (`forward` maps a line of the run `ref`'s
-   * code through the edits since it started), by lane: `Worker 1 · Click getByRole('button')`.
+   * code through the edits since it started), one per line, naming its lanes by their call:
+   * `Worker 1 · Click getByRole('button')`, `Worker 2, Worker 4 · Click`, `Worker 2 · Click; Worker 3 · Fill`.
    */
   marks(uri: string, lineCount: number, forward: (uri: string, line: number, ref: string) => number): RunningMark[] {
-    return [...this.lines.values()]
+    const byLine = new Map<number, Map<string, string[]>>();
+    const lines = [...this.lines.values()]
       .filter((told) => told.call?.uri === uri)
-      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane)
-      .flatMap((told) => {
-        const line = forward(uri, told.call!.line, told.ref);
-        return line >= 0 && line < lineCount ? [{ line, text: `${workerName(told.lane)} · ${told.call!.title}` }] : [];
-      });
+      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane);
+    for (const told of lines) {
+      const line = forward(uri, told.call!.line, told.ref);
+      if (line < 0 || line >= lineCount) continue;
+      const calls = byLine.get(line) ?? new Map<string, string[]>();
+      calls.set(told.call!.title, [...(calls.get(told.call!.title) ?? []), workerName(told.lane)]);
+      byLine.set(line, calls);
+    }
+    return [...byLine].map(([line, calls]) => ({
+      line,
+      text: [...calls].map(([title, workers]) => `${workers.join(', ')} · ${title}`).join('; '),
+    }));
   }
 }
 

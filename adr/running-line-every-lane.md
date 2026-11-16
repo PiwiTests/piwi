@@ -1,10 +1,17 @@
 # The running line of every lane of the developer's own run
 
-**Status.** Proposed 2026-11-15. S1 built: the `positions` feature and the `position` message in
-`@piwitests/core/run-channel`, and the reporter sending them from `watchCalls`, paced; nothing asks for them yet. S2
-to S4 remain. The maintainer chose a proposal before building the rest of LR9 of
-[editor-ux-coherence.md](editor-ux-coherence.md): the line of the call each running test of the developer's own run is
-at, marked in the editor whether or not someone watches its lane.
+- Status: accepted
+- Date: 2026-11-16
+
+**Status.** Built in full, S1 to S4. The reporter sends `position` from `watchCalls`, paced, once the editor service
+asks (`positions` in `@piwitests/core/run-channel`). The service keeps a running line per lane (`RunningLines`,
+`packages/editor/src/running-lines.ts`), the watched lane's from its call log and every other lane's from its
+worker's positions, sent together at most every 250 ms. `piwi.runningLines` (`all`, the default; `watched`; `off`)
+reaches it in the credentials. The JetBrains plugin draws every lane, VS Code redraws once per burst, and both name
+the workers of a line in one mark. A `test.step` with a location does not move the line: only an API call does. A run nobody attends is marked as any
+other: only a desktop app's checkout is left out. It built the rest of LR9 of
+[editor-ux-coherence.md](../proposals/editor-ux-coherence.md), whose Status names it; the maintainer chose a design
+record first.
 
 **Summary.** Today the editors mark the running line of one lane: the one the editor watches. The call that line comes
 from rides on the lane view's call log, which a worker sends only while its lane is watched, and both the service and
@@ -89,8 +96,9 @@ An older reporter lists no `positions` and sends none: its lanes keep today's be
 S1 and S2 can ship together: core is bundled into both, and S2 keeps today's behavior for a reporter without the
 feature. S3 follows S2, since a client that draws every lane is useless before the service sends them.
 
-## 6. Open questions
+## 6. Decisions on the open questions
 
-- Whether a run with many workers (16 and more) marks every lane, or only the lanes of the files open.
-- Whether a `test.step` with a location moves the line, as an API call does.
-- Whether `all` or `watched` is the default.
+- **Every lane is marked**, whatever the number of workers: the pace to the client caps the notifications at four a
+  second.
+- **A `test.step` does not move the line**: a position is an API call's.
+- **`all` is the default.**
