@@ -1,8 +1,9 @@
 name: Tidy release notes
 
 # Keep every GitHub release body non-empty and free of duplicate entries. release-please
-# emits one line per commit, so squash and cherry-pick land the same subject several times;
-# this collapses them and merges their commit links. It runs deterministically (no external
+# emits one line per commit, so a merge commit's pull request title that repeats one of its
+# commits, a squash or a cherry-pick lands the same subject several times; this collapses
+# them and merges their commit links. It runs deterministically (no external
 # model), never writes an empty body, and leaves hand-authored notes (the polished
 # `## Highlights` format) untouched.
 
