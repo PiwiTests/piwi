@@ -1242,7 +1242,8 @@ async fn run_test_phase(
         return None;
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
-    node_args.extend(args.iter().cloned());
+    let cwd = crate::runner::playwright_folder(worktree);
+    node_args.extend(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows)));
     let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await

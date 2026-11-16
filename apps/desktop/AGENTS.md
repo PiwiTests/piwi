@@ -80,6 +80,11 @@ shell and are feature-equivalent.
   `apps/application/server/utils/desktop-runs.ts` wires. Agents steer those runs only through `/mcp`, behind the same
   token (`server/utils/mcp/run-tools.ts`), and never a run nobody attends. Piwi Runner's requested runs take the same
   `bundled_hub_env` from Runner's host (`a_requested_run_names_the_hosts_hub_and_nothing_else` in `runner_app.rs`).
+- **A test filter the window sends is anchored at the folder Playwright runs in before it runs.** The window writes
+  each spec relative to the config's folder; `spec_filter::anchored_filters` makes it the whole path from the run's
+  folder (`playwright_folder`), with its `file:` URL as an alternative on Windows, so it never takes a spec whose path
+  ends as its own. `desktop_run_local_tests` and the worktree's `run_test_phase` call it; a new spawn of the window's
+  filters does too. Checked by the module's tests.
 - **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
   - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
     the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in
