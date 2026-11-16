@@ -327,6 +327,21 @@ describe('specFileArgument', () => {
     expect(re.test('C:/shop/app/auth/i+x.spec.ts')).toBe(false);
   });
 
+  test('on Windows, takes the file: URL too, which Playwright up to 1.62 tests in place of the /-separated path', () => {
+    const native = 'C:\\my shop\\tests\\a.spec.ts';
+    const url = 'file:///C:/my%20shop/tests/a.spec.ts';
+    const { re, line } = playwrightReads(specFileArgument(native, 3, url));
+    expect(line).toBe(3);
+    // Playwright 1.59 to 1.62 tests the native path, then the URL; 1.63 on, the native path, then the `/`-separated one.
+    expect(re.test(native)).toBe(false);
+    expect(re.test(url)).toBe(true);
+    expect(re.test('C:/my shop/tests/a.spec.ts')).toBe(true);
+    for (const other of ['file:///C:/my%20shop/tests/a.spec.tsx', 'file:///C:/my%20shop/e2e/tests/a.spec.ts']) {
+      expect(re.test(other), other).toBe(false);
+    }
+    expect(playwrightReads(specFilePattern(native, url)).re.test(url)).toBe(true);
+  });
+
   test('without a line, matches every test of the one spec file', () => {
     const { re, line } = playwrightReads(specFilePattern('/home/me/shop/tests/a.spec.ts'));
     expect(line).toBe(null);

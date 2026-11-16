@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
 import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile, repositoryRoot } from './workspace';
 
@@ -96,15 +97,23 @@ export function picksByTitle(request: RunRequest, offCommit: boolean): boolean {
  * The arguments after `playwright test` for `request` in `folder` (its real path, as Playwright resolves the
  * config's folder): each test by `file:line`, or with `byTitle` each spec file and one `--grep` of the titles, then
  * the project and the options. A test with no line is never run as its whole file: the request goes by title. A
- * `--grep` value is one element written `--grep=<pattern>`, so it never reads as an option.
+ * `--grep` value is one element written `--grep=<pattern>`, so it never reads as an option. `windows`: whether
+ * Playwright runs on Windows, where each spec is also matched by its `file:` URL.
  */
-export function requestedRunArgs(request: RunRequest, folder: string, byTitle: boolean): string[] {
+export function requestedRunArgs(
+  request: RunRequest,
+  folder: string,
+  byTitle: boolean,
+  windows = process.platform === 'win32',
+): string[] {
   byTitle = picksByTitle(request, byTitle);
   const unique = (values: string[]) => [...new Set(values)];
   const files = (test: { filePath: string }) => path.resolve(folder, test.filePath.replaceAll('\\', '/'));
+  // On Windows, each spec's `file:` URL too, which Playwright up to 1.62 tests in place of the `/`-separated path.
+  const url = (file: string) => (windows ? pathToFileURL(file, { windows: true }).href : undefined);
   const args = byTitle
-    ? unique(request.tests.map((t) => specFilePattern(files(t))))
-    : unique(request.tests.map((t) => specFileArgument(files(t), t.line!)));
+    ? unique(request.tests.map((t) => specFilePattern(files(t), url(files(t)))))
+    : unique(request.tests.map((t) => specFileArgument(files(t), t.line!, url(files(t)))));
   if (byTitle) {
     // Playwright matches the title path (project, file, describe blocks, title) and the tags, joined by spaces, and
     // ignores case. Each title is anchored at the end, before the tags, and after a space or the start: a test whose

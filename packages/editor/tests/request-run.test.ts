@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
 import { argsLength, planRequestedRun, REQUESTED_RUN_ARGS_MAX_CHARS, requestedRunArgs } from '../src/request-run';
@@ -77,6 +78,16 @@ describe('requestedRunArgs', () => {
       '--retries=0',
       '--workers=2',
     ]);
+  });
+
+  test('on Windows, each spec by its file: URL too', () => {
+    const spec = path.join(folder, 'tests', 'checkout.spec.ts');
+    const url = pathToFileURL(spec, { windows: true }).href;
+    expect(requestedRunArgs(request(), folder, false, true).slice(0, 2)).toEqual([
+      specFileArgument(spec, 12, url),
+      specFileArgument(spec, 30, url),
+    ]);
+    expect(requestedRunArgs(request(), folder, true, true)[0]).toBe(specFilePattern(spec, url));
   });
 
   test('by title, each spec file once and one --grep of the escaped titles, in one element', () => {
