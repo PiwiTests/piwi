@@ -23,7 +23,8 @@ Playwright Test suites in JavaScript and TypeScript.
   Alt+Enter away: the same edit an auto-heal pull request would make.
 - **The Piwi tool window.** The run's failures as a tree, grouped by file, cluster or owner, with your runs since; each
   test re-runs, opens its trace or its page from its right-click menu. Compare with another branch, a run by its id, or your local
-  runs only.
+  runs only. Its **Tests** tab lists every test Playwright finds, each folder, spec, describe block, test or Playwright
+  project run from its right-click.
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, and above
   each locator line and each application file the tests that use or reach it, ready to run (Code Vision).
 - **Coverage marks.** With coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike, the

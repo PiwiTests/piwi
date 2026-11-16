@@ -47,7 +47,7 @@ describe('a run nobody attends', () => {
       locations: ['tests/cart.spec.ts:3'],
       repeat: 3,
     })) as RunCommand;
-    expect(verify.args).toEqual(['tests/cart.spec.ts:3', '--repeat-each=3', '--retries=0']);
+    expect(verify.args).toEqual([`^${dir}/tests/cart.spec.ts:3`, '--repeat-each=3', '--retries=0']);
     // It turns headed for no breakpoint and no `page.pause()`, and holds what the run channel holds alone.
     expect(verify.env).not.toHaveProperty('PIWI_PAUSE_AT');
     expect(verify.env).not.toHaveProperty('PIWI_RECORD_CHANNEL');

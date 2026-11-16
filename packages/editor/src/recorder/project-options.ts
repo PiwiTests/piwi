@@ -87,7 +87,7 @@ export function parseUseLine(output: string): ProjectOptions | null {
 }
 
 /** The first line of Playwright's output (run without colors), shortened, as the end of a sentence. */
-function firstLine(output: string): string {
+export function firstLine(output: string): string {
   const line =
     output
       .split(/\r?\n/)
@@ -182,9 +182,26 @@ export function configFingerprint(configFile: string): string | null {
     .join('\n');
 }
 
-function run(configFile: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
+/** What Playwright printed, run in list mode with the service's reporter. */
+export interface ListOutput {
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Runs a config's own Playwright (resolved from the config's folder, run there with the project's Node) as
+ * `playwright test --list --pass-with-no-tests` with `reporter` (the path of `piwi-use-reporter.cjs`), then `args`, and
+ * gives what it printed, whatever its exit code. Rejects with a {@link ProjectOptionsError} when Playwright is not
+ * installed, cannot start, or does not end within `timeoutMs` (`doing` says what it did not do in time: `read
+ * playwright.config.ts`).
+ */
+export function listWithReporter(
+  configFile: string,
+  reporter: string,
+  args: string[],
+  options: { timeoutMs: number; doing: string; env?: Record<string, string>; maxOutput?: number },
+): Promise<ListOutput> {
   const cwd = path.dirname(configFile);
-  const name = path.basename(configFile);
   const cli = resolvePlaywrightCli(cwd);
   if (!cli) {
     return Promise.reject(
@@ -194,14 +211,15 @@ function run(configFile: string, reporter: string, timeoutMs: number): Promise<P
   if (!fs.existsSync(reporter)) {
     return Promise.reject(new ProjectOptionsError('failed', `The editor service's reporter is missing: ${reporter}.`));
   }
+  const maxOutput = options.maxOutput ?? MAX_OUTPUT;
   return new Promise((resolve, reject) => {
     const node = projectNode();
     const child = spawn(
       node.execPath,
-      [cli, 'test', '--list', '--pass-with-no-tests', `--reporter=${reporter}`, '-c', configFile, NO_SPEC],
+      [cli, 'test', '--list', '--pass-with-no-tests', `--reporter=${reporter}`, '-c', configFile, ...args],
       {
         cwd,
-        env: projectNodeEnv(node, { ...process.env, FORCE_COLOR: '0' }),
+        env: projectNodeEnv(node, { ...process.env, ...options.env, FORCE_COLOR: '0' }),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       },
@@ -216,35 +234,42 @@ function run(configFile: string, reporter: string, timeoutMs: number): Promise<P
       fn();
     };
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-      if (stdout.length < MAX_OUTPUT) stdout += chunk;
+      if (stdout.length < maxOutput) stdout += chunk;
     });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-      if (stderr.length < MAX_OUTPUT) stderr += chunk;
+      if (stderr.length < maxOutput) stderr += chunk;
     });
     const timer = setTimeout(() => {
       child.kill();
       settle(() =>
         reject(
-          new ProjectOptionsError('timeout', `Playwright did not read ${name} within ${timeoutMs / 1000} seconds.`),
+          new ProjectOptionsError(
+            'timeout',
+            `Playwright did not ${options.doing} within ${options.timeoutMs / 1000} seconds.`,
+          ),
         ),
       );
-    }, timeoutMs);
+    }, options.timeoutMs);
     child.on('error', (error) =>
       settle(() =>
         reject(new ProjectOptionsError('failed', `Playwright could not start: ${firstLine(error.message)}`)),
       ),
     );
-    child.on('close', () => {
-      const options = parseUseLine(stdout);
-      settle(() =>
-        options
-          ? resolve(options)
-          : reject(
-              new ProjectOptionsError('failed', `Playwright could not read ${name}: ${firstLine(stderr || stdout)}`),
-            ),
-      );
-    });
+    child.on('close', () => settle(() => resolve({ stdout, stderr })));
   });
+}
+
+async function run(configFile: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
+  const name = path.basename(configFile);
+  const { stdout, stderr } = await listWithReporter(configFile, reporter, [NO_SPEC], {
+    timeoutMs,
+    doing: `read ${name}`,
+  });
+  const options = parseUseLine(stdout);
+  if (!options) {
+    throw new ProjectOptionsError('failed', `Playwright could not read ${name}: ${firstLine(stderr || stdout)}`);
+  }
+  return options;
 }
 
 const cache = new Map<string, { fingerprint: string; expires: number; options: Promise<ProjectOptions> }>();

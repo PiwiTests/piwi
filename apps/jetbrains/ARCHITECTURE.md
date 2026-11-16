@@ -21,6 +21,7 @@ does with it. It is reference material: open the section for the area you change
   - [Tree and nodes](#tree-and-nodes)
   - [Navigation and actions](#navigation-and-actions)
   - [Compare with](#compare-with)
+  - [Tests tab](#tests-tab)
 - [Status bar](#status-bar)
 - [Runs](#runs)
   - [Playwright runner](#playwright-runner)
@@ -371,6 +372,30 @@ The entries are:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
 
+### Tests tab
+
+`PiwiTestsTab.kt` adds the **Tests** tab beside Failures: the tree the editor service builds
+([Test items](../../packages/editor/ARCHITECTURE.md#test-items)), as VS Code's Testing view shows it.
+
+- **When it reads.** `PiwiProjectService.readTestItems` reads `piwi/testItems` once the tab is first selected, which
+  starts the service's listing, then again whenever the runs the tree's results stand for change
+  (`Glue.testsResultsKey`), one read at a time. The tree a listing changes comes pushed (`piwi/testItemsChanged`), and
+  a read started before a push keeps the pushed tree, as the other answers do.
+- **The tree.** `Glue.testsTree` adds a node per config above the service's nodes when there are several or when one
+  could not be listed, its error drawn in red; children in the service's order (`sortText`). Each node draws its
+  result's icon (`PiwiIcons.outcome`, a group's the first of running, failed, flaky, passed, skipped its tests have,
+  `Glue.testsStatus`) and a test its duration; the Not in this checkout group is dimmed. A draw builds the tree again
+  only when its nodes changed, keeping the expanded and selected nodes by id. `TreeSpeedSearch` finds a name.
+- **The filter** (`Glue.testsFiltered`) keeps the tests whose title, tags, owner (`owner:ada`) or result hold every
+  word, case aside, and a folder or spec whose name does, whole.
+- **Opening.** A double click or Enter opens a node's line; a test of Not in this checkout opens its dashboard page.
+  Shown, the tab gives its tree the focus (`preferredFocusableComponent`), and the IDE's Expand All and Collapse All
+  keys act on it (`TREE_EXPANDER`).
+- **Running.** `Piwi.Tests.Run`, `Piwi.Tests.Debug` and `Piwi.Tests.Verify`, on the toolbar and the right-click, act
+  on the selected nodes (`TESTS_SELECTION`): `PiwiCommands.runTestNodes` saves the files, asks `piwi/testRuns` for the
+  runs of their ids (`Glue.testsRunIds`: the runnable ones; with the filter on, the tests each shows), and starts each
+  as `runTests` does. ([Test runs](../../packages/editor/ARCHITECTURE.md#test-runs) in the editor service's reference.)
+
 ## Status bar
 
 The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel`, since the
@@ -443,6 +468,7 @@ When it is on, a test run whose command is `npx playwright test …` (`Glue.play
 Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
 
 - its arguments go in `cliOptions`, with the command's environment and the config's folder;
+- it is named after the run (`RunCommand.name`), as the console's tab is, else after its first test file;
 - the IDE gives it the test tree, Debug and Rerun Failed Tests;
 - each run of the configuration is followed (`PiwiRunSessions.followRunner`, `ExecutionManager.EXECUTION_TOPIC`), its
   Rerun, Rerun Failed Tests (a `WrappingRunConfiguration` of it) and Debug included: Stop ends its process, and its end
@@ -1351,6 +1377,11 @@ machine without one, the IDE shows its license dialog:
 - `--config` copies an activated IDE's config directory in instead.
 
 An EAP build asks for a JetBrains account, so it cannot serve.
+
+**The scenes.** `failures` and `heal` open the fixture as it is. `tests` runs last, since it changes the project before
+the Tests tab lists it (a second Playwright project, a spec a loop builds the tests of, a spec of the catalog deleted);
+it clicks the Tests tab at its place in the tool window's header at 2× (`Alt+Right` switches no tool window tab),
+maximizes the tool window and opens the tree's nodes with the arrow keys.
 
 **Other options.** `--ide` names another installed release, `--probe` captures the IDE as it stands without driving
 it, and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the license,

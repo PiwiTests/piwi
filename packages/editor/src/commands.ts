@@ -184,7 +184,13 @@ export function runName(args: readonly string[]): string {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (!arg.startsWith('-')) {
-      const file = arg.split(/[\\/]/).filter(Boolean).pop();
+      // A location anchored at its start (`^/w/a.spec.ts:3`), in two spellings (`^(?:a|b)/.`, `^(?:a|b):3`) by its first.
+      const file = arg
+        .replace(/^\^?\(\?:((?:\[.\]|[^|])*)\|.*\)(?=\/\.$|:\d+$|$)/, '$1')
+        .replace(/^\^/, '')
+        .split(/[\\/]/)
+        .filter((part) => part && part !== '.')
+        .pop();
       if (file) files.push(file.replace(/\[(.)\]/g, '$1'));
       continue;
     }

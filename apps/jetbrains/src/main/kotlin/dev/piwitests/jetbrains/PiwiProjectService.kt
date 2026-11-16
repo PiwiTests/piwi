@@ -201,6 +201,20 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var failuresResult: FailuresResult? = null
         private set
 
+    /** The test tree (`piwi/testItems`), once the Tests tab asked for it; null before. */
+    @Volatile var testItems: TestItemsResult? = null
+        private set
+
+    /** Whether the Tests tab asked for the test tree: the runs' changes then read it again. */
+    @Volatile private var testsWanted = false
+
+    /** What the published results of the test tree stand for (`Glue.testsResultsKey`): a change reads the tree again. */
+    @Volatile private var testsResultsKey: String? = null
+
+    /** Whether a read of the test tree runs, and whether another was asked for meanwhile. */
+    private val testsReading = AtomicBoolean()
+    private val testsReadAgain = AtomicBoolean()
+
     /** Whether a click on the status bar item is reading the latest run again. */
     @Volatile var refreshing = false
         private set
@@ -232,6 +246,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     private var statusPushes = 0L
     private var runsPushes = 0L
     private var failuresPushes = 0L
+    private var testItemsPushes = 0L
 
     /** Whether a whole read runs, and whether another was asked for meanwhile: it follows once the first ends. */
     private val reading = AtomicBoolean()
@@ -916,7 +931,48 @@ class PiwiProjectService(private val project: Project) : Disposable {
             runs = result
             runsPushes++
         }
+        testsResultsChanged(result)
         changed()
+    }
+
+    /** The test tree `piwi/testItemsChanged` carries, which a listing changed. */
+    fun testItemsChanged(result: TestItemsResult) {
+        synchronized(lock) {
+            testItems = result
+            testItemsPushes++
+        }
+        changed()
+    }
+
+    /** The runs changed: the test tree is read again when its results stand for other runs, once the Tests tab asked. */
+    private fun testsResultsChanged(result: RunStatusResult?) {
+        val key = Glue.testsResultsKey(result)
+        if (key == testsResultsKey) return
+        testsResultsKey = key
+        if (testsWanted) readTestItems()
+    }
+
+    /**
+     * Read the test tree, on a pooled thread, then tell the listeners: the Tests tab asks for it as it is first shown,
+     * which starts the service's listing, and the runs' changes ask again. A read asked for while one runs follows it.
+     */
+    fun readTestItems() {
+        testsWanted = true
+        testsReadAgain.set(true)
+        if (!testsReading.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                while (testsReadAgain.getAndSet(false) && !gone.value(null)) {
+                    val pushes = synchronized(lock) { testItemsPushes }
+                    val read = server()?.testItems(TestItemsParams())?.orNull()
+                    synchronized(lock) { if (read != null && testItemsPushes == pushes) testItems = read }
+                    changed()
+                }
+            } finally {
+                testsReading.set(false)
+            }
+            if (testsReadAgain.get()) readTestItems()
+        }
     }
 
     /** The failures `piwi/failuresChanged` carries, such as a line an edit moved. */
@@ -974,6 +1030,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
         }
         readKnownAddresses()
+        testsResultsChanged(runs)
         changed()
         offerDesktop(status)
     }

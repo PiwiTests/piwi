@@ -50,13 +50,14 @@ options…**). A
 
 ## The Testing view (VS Code)
 
-VS Code's Testing view lists Piwi's tests: the specs your instance knows, under their folders and `test.describe`
-blocks, each with its latest result and duration, and where and why it failed (**Peek Error**). The results are
-published as a test run (`Piwi: run #120 on main`) as the runs it shows change, and a run in progress is one of
-its own, each test shown as it begins and ends (by its worker, in a run the view started). Its gutter shows each
-result in place of Piwi's icon; the line keeps Piwi's hover. The view has no flaky result: a flaky test shows as passed, its line
-ending with _flaky_. An item is named by its test's title alone, as a screen reader reads it, and the view's
-filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@piwi:@smoke`) or an owner
+VS Code's Testing view lists the tests `playwright test --list` gives for each config, under their folders and
+`test.describe` blocks, a test of several Playwright projects with a node per project, each with its latest result and
+duration, and where and why it failed (**Peek Error**). A spec is listed again when saved, and read from its text while
+you edit it. A config Playwright cannot list says why. Tests only your instance knows go in **Not in this checkout**,
+which does not run. Results are published as a test run (`Piwi: run #120 on main`); a run in progress shows each test as
+it begins and ends. Its gutter shows each result in place of Piwi's icon; the line keeps Piwi's hover. A flaky test
+shows as passed, its line ending with _flaky_. An item is named by its test's title alone, as a screen reader reads it,
+and the view's filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playwright tag (`@piwi:@smoke`) or an owner
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
 Each test's actions are one list in both editors: **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi**,
@@ -72,14 +73,14 @@ hides the result icon and its list.
   <figcaption>The Testing view with the latest run's results, and why <strong>pays by card</strong> failed, at its line.</figcaption>
 </figure>
 
-**Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
-Playwright config, **Debug with Piwi** runs them headed at your breakpoints, holding each failure at its line, and
-**Verify ×3 with Piwi** runs them three times. Under Run with Coverage, **Run with Piwi** then shows their coverage in the
-Test Coverage view ([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as
-[Debug in my editor](./debug-in-editor) does, stopping once at the line it failed through, with no question. Tests show running as
-they begin, offline too. A test the run gave Piwi no
-result for, such as one the instance does not know, passes when the command exited with 0, else is an error. The view shows results; it does not discover tests, and its Debug runs Piwi's run control, not a debug session: a spec the instance has not seen joins
-the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
+**Run with Piwi**, the view's run profile, runs what you pick by the narrowest filter Playwright takes: a config whole, a
+folder or a spec by its path, a describe block or a test by its line (a loop's by its title), a project's node with
+`--project`. **Debug with Piwi** runs them headed at your breakpoints, holding each failure, and **Verify ×3
+with Piwi** runs them three times. Under Run with Coverage, it also shows their coverage in the Test Coverage view
+([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as [Debug in my
+editor](./debug-in-editor) does, stopping once at the line it failed through. A test the run gave Piwi no result for
+passes when the command exited with 0, else is an error. Debug runs Piwi's run control, not a debug session.
+`piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests
 

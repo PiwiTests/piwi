@@ -182,13 +182,20 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
  * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
  * (`waiting`) and end the test there as asked (`give-up`); bring the test's window to the front at a stop its pause
  * bar shows (`front`, **Show the browser**); send the layers of its lane view a viewer asks beside the images
- * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages); and say where its running attempt's
- * trace grows (`trace`: the request `trace`).
+ * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages); say where its running attempt's
+ * trace grows (`trace`: the request `trace`); and say where in the user's code each call of its running test begins,
+ * as asked (`positions`: the message `positions`, its `position` messages).
  */
-export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers' | 'trace';
+export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers' | 'trace' | 'positions';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers', 'trace'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers', 'trace', 'positions'];
+
+/** The most `position` messages a worker sends a second, the latest call begun in each while is told at its end. */
+export const POSITIONS_PER_SECOND = 4;
+
+/** The longest title a `position` carries, as a call's title is cut to. */
+export const MAX_POSITION_TITLE = 300;
 
 /**
  * The answer to `trace`: the absolute path of the running attempt's own trace file as the runner writes it while the
@@ -553,6 +560,13 @@ export type RunToHub =
    */
   | { type: 'waiting'; title: string | null; place: Place | null; ms: number | null; endable: boolean }
   /**
+   * While the service asks for positions (`positions`, to a worker that lists `positions` in `features`) and a test
+   * runs: a call of the test `testId` began at `place` in the user's code, its title through `hideTypedText` and
+   * `hideSecretsInText`. At most `POSITIONS_PER_SECOND`, the latest call begun in each while told at its end; a call
+   * with no place in the user's code says nothing.
+   */
+  | { type: 'position'; testId: string; title: string; place: Place }
+  /**
    * The test ended: its status as Playwright gives it, how long it stood stopped, and the status it was expected to end
    * with (Playwright's `expectedStatus`: `failed` for a `test.fail()` test), which an older reporter does not send.
    */
@@ -709,6 +723,11 @@ export type HubToRun =
    * more.
    */
   | { type: 'layers'; layers: LaneLayer[] }
+  /**
+   * Say where each call of the running test begins (`on`), to a worker whose `run-attach` lists `positions` in
+   * `features`, as `position` messages until a `positions` turns them off or the connection closes; or stop.
+   */
+  | { type: 'positions'; on: boolean }
   /**
    * The page's text now, to a worker that lists `layers`, while its lane view is on and `layers` asks for `text`, at a
    * stop or not: the trace's latest of its running test where the trace writes one, else an ARIA snapshot taken now,
@@ -1115,6 +1134,13 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (value.place !== null && !place) return null;
       return { type: 'waiting', title: title.slice(0, MAX_WAITING_TITLE), place, ms, endable };
     }
+    case 'position': {
+      const { testId, title } = value;
+      const place = readPlace(value.place);
+      if (typeof testId !== 'string' || !testId || testId.length > 256) return null;
+      if (typeof title !== 'string' || !title || !place) return null;
+      return { type: 'position', testId, title: title.slice(0, MAX_POSITION_TITLE), place };
+    }
     case 'test-end': {
       const { testId, status, pausedMs, expectedStatus } = value;
       const isStatus = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z]{1,32}$/.test(s);
@@ -1356,6 +1382,8 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       const layers = readLaneLayers(value.layers);
       return layers ? { type: 'layers', layers } : null;
     }
+    case 'positions':
+      return typeof value.on === 'boolean' ? { type: 'positions', on: value.on } : null;
     case 'share': {
       if (typeof value.on !== 'boolean') return null;
       return isInt(value.after, 1)

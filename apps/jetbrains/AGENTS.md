@@ -253,8 +253,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `Protocol.kt`: the protocol for lsp4j. `Glue.kt`: the pure half.
 - `PiwiTestAnnotator.kt`, `PiwiTestCard.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor
   shows on a file (`PiwiTestCard.kt`: the card a click on a test's result icon opens).
-- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiRunsTab.kt`: the **Piwi** tool window, the status bar item, and
-  the tool window's **Runs** tab.
+- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiRunsTab.kt`, `PiwiTestsTab.kt`: the **Piwi** tool window, the
+  status bar item, and the tool window's **Runs** and **Tests** tabs.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused

@@ -270,6 +270,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         )
         val content = ContentFactory.getInstance().createContent(panel, TAB_NAME, false).apply { isCloseable = false }
         toolWindow.contentManager.addContent(content)
+        project.service<PiwiTestsTab>().install(toolWindow)
         service.onChange(content, render)
         // The editor's own run counts as its process tells the hub.
         project.service<PiwiRunSessions>().onChange(content, render)

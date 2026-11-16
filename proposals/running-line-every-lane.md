@@ -1,6 +1,8 @@
 # The running line of every lane of the developer's own run
 
-**Status.** Proposed 2026-11-15, nothing built. The maintainer chose a proposal before building the rest of LR9 of
+**Status.** Proposed 2026-11-15. S1 built: the `positions` feature and the `position` message in
+`@piwitests/core/run-channel`, and the reporter sending them from `watchCalls`, paced; nothing asks for them yet. S2
+to S4 remain. The maintainer chose a proposal before building the rest of LR9 of
 [editor-ux-coherence.md](editor-ux-coherence.md): the line of the call each running test of the developer's own run is
 at, marked in the editor whether or not someone watches its lane.
 

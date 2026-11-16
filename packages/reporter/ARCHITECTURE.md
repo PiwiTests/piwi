@@ -413,6 +413,9 @@ What the package does to a user's run, process by process.
   console error or warning, uncaught error and failed request (a failure, or a status of
   400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
   URLs' credentials hidden.
+- `positions` (in `features`): while the editor asks, the worker says where each call of the running test begins
+  in the user's code, its title through `hideTypedText` and `hideSecretsInText`, `POSITIONS_PER_SECOND` at most,
+  from the same listener.
 - `bind` shares the stopped context's browser with Playwright's own tools
   (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
   test ends (`unbind` on `test-end`), or stops sharing it.
