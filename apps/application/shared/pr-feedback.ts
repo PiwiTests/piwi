@@ -13,6 +13,7 @@ import { lineRangesText, unreachedLinesText, type ChangedLines, type PatchCovera
 import type { ChangeReach, NotCountedChanges } from '#shared/handlers/change-coverage';
 import { coveragePercent } from '#shared/coverage-combine';
 import { durationShort } from '#shared/relative-time';
+import { literalMarkdown, markdownLinkTarget } from '#shared/markdown-text';
 
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
 export const PR_FEEDBACK_KEY = 'pr_feedback';
@@ -507,11 +508,6 @@ function oneLine(text: string): string {
   return text.replace(/\r?\n|\r/g, ' ').trim();
 }
 
-/** Escape the characters that would break out of a markdown table cell. */
-function escapeCell(text: string): string {
-  return oneLine(text).replace(/\|/g, '\\|');
-}
-
 /**
  * Wrap arbitrary text as an inline code span that no backtick run can break out
  * of. A backtick inside the text (a file path or branch name may carry one) would
@@ -520,29 +516,16 @@ function escapeCell(text: string): string {
  * space so a leading/trailing backtick is not eaten.
  */
 function codeSpan(text: string): string {
-  const clean = escapeCell(text);
+  const clean = oneLine(text);
   const longest = Math.max(0, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
   const fence = '`'.repeat(longest + 1);
   const pad = longest > 0 ? ' ' : '';
   return `${fence}${pad}${clean}${pad}${fence}`;
 }
 
-/**
- * Text a run or a repository wrote (a test title, an error headline, a cluster
- * signature, a project or ticket name), as inline markdown that renders
- * literally: every character with a meaning in markdown or HTML is escaped, and
- * an `@` before a name carries a zero-width space, so the text never links,
- * formats or notifies anyone.
- */
+/** Text a run or a repository wrote (a test title, an error headline, a cluster signature, a project or ticket name), trimmed and rendered as written. */
 function escapeInline(text: string): string {
-  return oneLine(text)
-    .replace(/[\\`*_[\]<>|~#!&]/g, '\\$&')
-    .replace(/@(?=[\w-])/g, '@\u200B');
-}
-
-/** A link's destination: its parentheses, angle brackets and spaces encoded, so the text after it stays text. */
-function linkTarget(url: string): string {
-  return url.replace(/[()<>\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+  return literalMarkdown(oneLine(text));
 }
 
 /** A one-line code block that no backtick run in the text can close. */
@@ -582,7 +565,7 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
     if (entry.errorExcerpt) line += `\n${codeBlock(entry.errorExcerpt, '  ')}`;
     if (entry.healPrNumber) {
       const pr = entry.healPrUrl
-        ? `[#${entry.healPrNumber}](${linkTarget(entry.healPrUrl)})`
+        ? `[#${entry.healPrNumber}](${markdownLinkTarget(entry.healPrUrl)})`
         : `#${entry.healPrNumber}`;
       line += `\n  🩹 Piwi opened ${pr} to heal this locator.`;
     } else if (entry.suggestedLocator) {
@@ -593,7 +576,7 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       line += `\n  🎲 Also flaky on ${codeSpan(branch)} (flakiness score ${flakinessScore}/100) — likely not yours.`;
     }
     if (entry.issue) {
-      line += `\n  🎫 Tracked in [${escapeInline(entry.issue.key)}](${linkTarget(entry.issue.url)}).`;
+      line += `\n  🎫 Tracked in [${escapeInline(entry.issue.key)}](${markdownLinkTarget(entry.issue.url)}).`;
     }
     return line;
   });
@@ -712,7 +695,7 @@ export function buildPrComment(input: PrSummaryInput): string {
         const age = cluster.timeToResolutionMs != null ? `, open ${formatAge(cluster.timeToResolutionMs)}` : '';
         const verified = cluster.verification === 'diagnosis-verified' ? ' — matches the diagnosed change' : '';
         const healed = cluster.healPr
-          ? ` — landed by auto-heal [#${cluster.healPr.number}](${linkTarget(cluster.healPr.url)})`
+          ? ` — landed by auto-heal [#${cluster.healPr.number}](${markdownLinkTarget(cluster.healPr.url)})`
           : '';
         return `- ${link} — ${tests}${age}${verified}${healed}`;
       })

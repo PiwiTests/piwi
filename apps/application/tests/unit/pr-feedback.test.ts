@@ -205,7 +205,7 @@ describe('buildPrComment', () => {
         newRegressions: [
           entry({
             title: 'pays](https://elsewhere.example) @org/admins <img src=x>\n## Done',
-            headline: 'cc @someone, see [here](https://elsewhere.example)',
+            headline: 'cc @someone, see [here](https://elsewhere.example), www.elsewhere.example, fixes #12, $5-$10',
             owner: '@org/checkout',
             clusterId: 3,
           }),
@@ -217,8 +217,21 @@ describe('buildPrComment', () => {
     expect(body).not.toMatch(/(?<!\\)\]\(https:\/\/elsewhere/);
     expect(body).not.toMatch(/(?<!\\)<img/);
     expect(body).not.toMatch(/^## Done/m);
+    expect(body).not.toMatch(/https:\/\/elsewhere|www\.elsewhere|#12/);
+    expect(body).toContain('\\$5-\\$10');
     expect(body).toContain('owner `@org/checkout`');
     expect(body).toContain('### ❌ Piwi — shop @\u200Borg/admins');
+  });
+
+  test('shows code as written, a pipe included', () => {
+    const body = buildPrComment(
+      summary({
+        failedTests: 1,
+        newRegressions: [entry({ owner: 'a|b', suggestedLocator: 'getByText(/Save|Submit/)' })],
+      }),
+    );
+    expect(body).toContain('owner `a|b`');
+    expect(body).toContain('`getByText(/Save|Submit/)`');
   });
 
   test('keeps an excerpt made of backticks inside its code block', () => {
