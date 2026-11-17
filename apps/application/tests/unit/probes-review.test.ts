@@ -233,6 +233,57 @@ describe('recordProbeResults — project scope + fault allow-list (F3, F5)', () 
     ]);
     expect(recorded).toBe(0);
   });
+
+  test('a result without a level is a client result: its handling and dependency write nothing', async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    const { recorded } = await recordProbeResults(db, 1, null, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'status-500',
+        outcome: 'noticed',
+        handled: 'unhandled',
+        dependency: 'postgres',
+      },
+    ]);
+    expect(recorded).toBe(1);
+    expect((await db.select().from(schema.probes)).map((r) => [r.level, r.handled])).toEqual([['client', 'n/a']]);
+    const edges = await db.select({ toKind: schema.graphEdges.toKind }).from(schema.graphEdges);
+    expect(edges.map((e) => e.toKind)).toEqual(['route']);
+    expect(await db.select().from(schema.scenarioGaps)).toEqual([]);
+  });
+
+  test('drops a fault outside its level’s vocabulary', async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    const { recorded } = await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'made-up', outcome: 'noticed', level: 'client' },
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'throw', outcome: 'noticed', level: 'client' },
+    ]);
+    expect(recorded).toBe(0);
+    expect(await db.select().from(schema.graphEdges)).toEqual([]);
+  });
+
+  test('keeps a run id of the project only, and drops evidence past its size', async () => {
+    await db.insert(schema.projects).values({ id: 2, name: 'other' });
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 2, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    await recordProbeResults(db, 1, 7, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'status-500',
+        outcome: 'noticed',
+        level: 'client',
+        evidence: { note: 'x'.repeat(10_000) },
+      },
+    ]);
+    const [row] = await db.select().from(schema.probes);
+    expect(row?.runId).toBeNull();
+    expect(row?.evidence).toBeNull();
+  });
 });
 
 describe('recordProbeResults — which results decide a check', () => {
