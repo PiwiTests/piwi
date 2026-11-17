@@ -27,13 +27,15 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray,
-    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs, tray_item, MenuIcon,
-    quit_after_confirming, random_hex_32, reapply_splash_status, reveal_log, run_app_menu_action, show_splash_status,
-    shut_down, supervise_server, toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed,
-    RunInBackground, ServerGaveUp, ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID,
-    TRAY_START_ON_LOGIN_ID,
+    append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray, hold_close_for_local_runs,
+    live_sidecar_port, main_window_may_navigate, node_path, private_fs, tray_item, MenuIcon, quit_after_confirming,
+    random_hex_32, reapply_splash_status, reveal_log, show_splash_status, shut_down, supervise_server,
+    toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed, RunInBackground, ServerGaveUp,
+    ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID, TRAY_START_ON_LOGIN_ID,
 };
+// The app menu is macOS's alone.
+#[cfg(target_os = "macos")]
+use crate::{app_menu_action, run_app_menu_action};
 use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
 use crate::shell_words::{self, shell_words, ShellLanguage};
 use crate::{

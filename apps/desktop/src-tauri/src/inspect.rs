@@ -165,7 +165,8 @@ fn config_project_name(source: &str) -> ConfigProjectName {
     }
 }
 
-/// The `projectName` the config writes as a plain literal, when it does.
+/// The `projectName` the config writes as a plain literal, when it does: what the tests read of a source.
+#[cfg(test)]
 fn parse_config_project_name(source: &str) -> Option<String> {
     match config_project_name(source) {
         ConfigProjectName::Literal(name) => Some(name),
