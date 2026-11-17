@@ -131,27 +131,37 @@ export function demoCallLog(
   };
 }
 
-/** The id of a step's call: the trace's, for a call Inspect shows the page of, else one of its own (`n`, its place). */
-export function demoCallId(step: DemoStep, n: number): string {
-  return (step.subtitle && DEMO_TRACE_CALLS[step.subtitle]?.call) || `demo@${n}`;
+/**
+ * The id of a step's call in one attempt of its test (`attempt`, unique in the run): the trace's, for a call Inspect
+ * shows the page of, else one of its own (`n`, its place), then the attempt (`call@12:7`). Each attempt's calls and
+ * pages are its own, as a worker's are; `demoTraceCall` reads the trace's id back.
+ */
+export function demoCallId(step: DemoStep, n: number, attempt: string): string {
+  return `${(step.subtitle && DEMO_TRACE_CALLS[step.subtitle]?.call) || `demo@${n}`}:${attempt}`;
+}
+
+/** The trace's call a demo call id names: `call@12` of `call@12:7`. */
+export function demoTraceCall(call: string): string {
+  return call.split(':')[0]!;
 }
 
 /**
- * The notice of the page at a step's call (`phase`), for Inspect, when the trace holds one: its call, title and
- * moment, `index` its place among the test's pages, `at` when it was taken. Null when the trace holds none.
+ * The notice of the page at a step's call (`call`, its id from `demoCallId`, at `phase`), for Inspect, when the trace
+ * holds one: its call, title and moment, `index` its place among the test's pages, `at` when it was taken. Null when
+ * the trace holds none.
  */
 export function demoSnapshotNotice(
   worker: LiveWorkerId,
   test: string,
   step: DemoStep,
-  opts: { testLocation: string; phase: DemoTracePhase; index: number; at: number },
+  opts: { call: string; testLocation: string; phase: DemoTracePhase; index: number; at: number },
 ): Extract<LiveViewerMessage, { type: 'snapshot' }> | null {
   const traced = step.subtitle ? DEMO_TRACE_CALLS[step.subtitle] : undefined;
   if (!traced?.phases.includes(opts.phase)) return null;
   return {
     type: 'snapshot',
     ...worker,
-    call: traced.call,
+    call: opts.call,
     title: demoCall(step, opts.testLocation).title,
     phase: opts.phase,
     page: TRACE_PAGE,

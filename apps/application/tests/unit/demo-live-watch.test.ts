@@ -26,7 +26,7 @@ function callLog(id: typeof paypal, ms: number, test = TEST): LiveViewerMessage 
   return { type: 'call-log', ...id, log, test };
 }
 function page(phase: 'before' | 'after', test = TEST): LiveViewerMessage {
-  const at = { testLocation: 'tests/a.spec.ts:1:1', phase, index: 0, at: 1_800_000_000_000 };
+  const at = { call: 'call@12:1', testLocation: 'tests/a.spec.ts:1:1', phase, index: 0, at: 1_800_000_000_000 };
   return demoSnapshotNotice(paypal, test, pay, at)!;
 }
 /** What a simulated worker of `runId` said, as the channel carries it. */
@@ -83,6 +83,19 @@ describe('the demo’s watch of a run', () => {
     expect(heard).toHaveLength(3);
   });
 
+  test('tells a view that attaches again to the same worker what it kept, as the page starts that view afresh', () => {
+    say(callLog(paypal, 1000));
+    say(page('before'));
+    const { watch, heard } = open();
+    watch.want(ask({ inspect: true }));
+    expect(heard.map((m) => m.type)).toEqual(['refused', 'call-log', 'snapshot']);
+
+    // The lane panel connects again on the same worker (another row's Watch): `show` resumes the watch.
+    watch.want(ask({ inspect: true }));
+    watch.resume();
+    expect(heard.map((m) => m.type)).toEqual(['refused', 'call-log', 'snapshot', 'refused', 'call-log', 'snapshot']);
+  });
+
   test('tells the pages of the worker’s test with Inspect open alone, those kept as Inspect opens', () => {
     say(page('before'));
     const { watch, heard } = open();
@@ -130,6 +143,22 @@ describe('the demo’s watch of a run', () => {
     late.watch.want(ask());
     expect(late.states).toEqual([{ kind: 'closed', status: null, reason: 'run-ended' }]);
     expect(late.heard).toEqual([]);
+  });
+
+  test('ends as the instance ends a run’s live view: cancelled, submitted whole or finalizing', () => {
+    for (const type of ['run-cancelled', 'run-submitted', 'run-finalizing'] as const) {
+      forgetDemoWorkers();
+      const { watch, heard, states } = open();
+      watch.want(ask());
+      hearDemoEvent({ scope: 'global', event: { type, runId: RUN, projectId: 1 } });
+      expect(heard.at(-1), type).toEqual({ type: 'end', reason: 'run-ended' });
+      expect(states.at(-1), type).toEqual({ kind: 'closed', status: null, reason: 'run-ended' });
+    }
+    forgetDemoWorkers();
+    const { watch, heard } = open();
+    watch.want(ask());
+    hearDemoEvent({ scope: 'run', runId: RUN, event: { type: 'run-finalizing', data: {} } });
+    expect(heard.at(-1)).toEqual({ type: 'end', reason: 'run-ended' });
   });
 
   test('closes once nothing is wanted, and hears nothing more', () => {

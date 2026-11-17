@@ -192,6 +192,17 @@ function forgetLayers(next = false): void {
   enlarged.value = null;
 }
 
+/** The lane's next attempt of the test shown began, once the test ended: the view starts it afresh. */
+function nextAttempt(): void {
+  outcome.value = null;
+  testDone = false;
+  log.value = null;
+  lastTarget.value = null;
+  if (zoom.value?.kind === 'element') zoom.value = null;
+  forgetLayers(true);
+  askText();
+}
+
 /** Ask the worker for its page's text now, while the text shows and the view is open. */
 function askText(): void {
   if (textOpen.value && !ended.value) props.live.askText();
@@ -313,15 +324,7 @@ function onMessage(message: LiveViewerMessage): void {
       return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
     }
     // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
-    if (testDone && follows.value) {
-      outcome.value = null;
-      testDone = false;
-      log.value = null;
-      lastTarget.value = null;
-      if (zoom.value?.kind === 'element') zoom.value = null;
-      forgetLayers(true);
-      askText();
-    }
+    if (testDone && follows.value) nextAttempt();
     showImage(message.image);
     call.value = message.call;
     frameAt.value = message.at ?? 0;
@@ -331,6 +334,9 @@ function onMessage(message: LiveViewerMessage): void {
     if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
       return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
     }
+    // A call other than the last one, logged after the test ended, is of the lane's next test of the same title, as
+    // a frame is: a retry with no image starts afresh too.
+    if (testDone && follows.value && message.log.id !== log.value?.id) nextAttempt();
     const before = log.value;
     log.value = message.log;
     logAt.value = Date.now();

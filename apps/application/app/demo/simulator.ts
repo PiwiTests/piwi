@@ -1289,11 +1289,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     id: 'stuck',
     label: 'Stuck test',
     description:
-      'A PayPal checkout waits on a payment that does not answer: its row turns Stuck? while the other tests go on',
+      'A PayPal checkout waits on a Pay button that stays disabled: its row turns Stuck? while the other tests go on',
     icon: 'i-lucide-hourglass',
     group: 'causes',
     result: {
-      text: 'The PayPal test ran past its usual time, so its row read Stuck? and its Timeline bar turned amber until the payment timed out.',
+      text: 'The PayPal test ran past its usual time, so its row read Stuck? and its Timeline bar turned amber until its click timed out.',
     },
     speed: 15,
     workers: 3,
@@ -1304,7 +1304,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         author: 'Priya Natarajan',
         commitMessage: 'feat(checkout): call the PayPal sandbox through the new payment gateway',
       }),
-    // The PayPal checkout test waits `STUCK_HANG_MS` on its Pay click, whose payment does not answer, then fails with
+    // The PayPal checkout test waits `STUCK_HANG_MS` on its Pay click, the button disabled for good, then fails with
     // its seeded story's error: a failure, so it never becomes one of the passes a later stuck check reads.
     tests: () => {
       const tests = baseTests();
@@ -1719,6 +1719,9 @@ async function runSingleSimulation(
     });
   }
 
+  /** The attempts the run's workers began, which names each attempt's calls (`demoCallId`). */
+  let attemptsRun = 0;
+
   /** What a worker of the run says to the views of it (`app/demo/live-calls.ts`). */
   function say(message: LiveViewerMessage): void {
     publishDemoLiveMessage(runId, message);
@@ -1801,6 +1804,8 @@ async function runSingleSimulation(
           say({ type: 'snapshot', ...liveWorker, refused: DEMO_NO_PAGES, test: test.title });
         }
         let pages = 0;
+        // The attempt's calls and pages are its own: a view that follows the lane takes each attempt's afresh.
+        const attemptKey = String(++attemptsRun);
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;
@@ -1810,7 +1815,7 @@ async function runSingleSimulation(
         } else {
           for (const [n, s] of liveSteps.entries()) {
             const seg = Math.min(Math.max(s.duration, 1), attemptRemaining);
-            const callId = demoCallId(s, n);
+            const callId = demoCallId(s, n, attemptKey);
             const logCall = (status: LiveCallLog['status'], ms: number, error: string | null = null) =>
               say({
                 type: 'call-log',
@@ -1819,7 +1824,7 @@ async function runSingleSimulation(
                 test: test.title,
               });
             const sendPage = (phase: DemoTracePhase) => {
-              const at = { testLocation: test.location, phase, index: pages, at: virtualNow };
+              const at = { call: callId, testLocation: test.location, phase, index: pages, at: virtualNow };
               const notice = demoSnapshotNotice(liveWorker, test.title, s, at);
               if (!notice) return;
               pages++;
@@ -1868,6 +1873,8 @@ async function runSingleSimulation(
                   pausedMs: 0,
                 };
                 await postEvents([{ type: 'test-stopped', ...of, stop }]);
+                // The test stands stopped between two calls: the one before the stop ended.
+                logCall('passed', seg);
               }
               while (hung < holdMs && !ctl.stopped) {
                 const tick = Math.min(HANG_TICK_MS, holdMs - hung);
@@ -1875,7 +1882,8 @@ async function runSingleSimulation(
                 virtualNow += tick;
                 hung += tick;
                 await postHeartbeat(virtualNow);
-                logCall('running', seg + hung);
+                // A hanging call keeps logging its retries; at a breakpoint no call runs.
+                if (!a.stopMs) logCall('running', seg + hung);
               }
               if (a.stopMs) await postEvents([{ type: 'test-resumed', ...of, pausedMs: hung }]);
               attemptRemaining -= hung;

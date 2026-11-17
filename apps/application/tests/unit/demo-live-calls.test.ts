@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { readLiveViewerMessage, type LiveViewerMessage } from '@piwitests/core/live-view';
+import { isLayerCallId } from '@piwitests/core/live-layers';
 import { SIMULATOR_CALL_LOGS, storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import { readZipEntries } from '../../app/demo/trace-zip.client';
 import { withLiveSecretsHidden } from '../../app/demo/api/dom-snapshot';
@@ -12,6 +13,7 @@ import {
   DEMO_TRACE_CALLS,
   demoCallError,
   demoCallId,
+  demoTraceCall,
   demoCallLog,
   demoSnapshotNotice,
   demoTestHasPages,
@@ -110,16 +112,21 @@ describe('the call log of a demo step', () => {
 
 describe('the pages Inspect shows of a demo step', () => {
   test('a step of the trace names its call and moment, read as a watch reads it; any other names none', () => {
-    const at = { testLocation: location, index: 2, at: 1_800_000_000_000 };
+    const at = { call: 'call@12:7', testLocation: location, index: 2, at: 1_800_000_000_000 };
     const before = demoSnapshotNotice(worker, 'should complete checkout with PayPal', pay, { ...at, phase: 'before' });
-    expect(before).toMatchObject({ type: 'snapshot', call: 'call@12', phase: 'before', main: true, index: 2 });
+    expect(before).toMatchObject({ type: 'snapshot', call: 'call@12:7', phase: 'before', main: true, index: 2 });
     expect(read(before!)).toEqual(before);
     expect(demoSnapshotNotice(worker, 'x', navigate, { ...at, phase: 'before' })).toBeNull();
-    expect(demoSnapshotNotice(worker, 'x', navigate, { ...at, phase: 'after' })).toMatchObject({ call: 'call@8' });
+    expect(demoSnapshotNotice(worker, 'x', navigate, { ...at, call: 'call@8:3', phase: 'after' })).toMatchObject({
+      call: 'call@8:3',
+    });
     const card = { ...email, subtitle: "getByLabel('Card number')", params: { locator: "getByLabel('Card number')" } };
     expect(demoSnapshotNotice(worker, 'x', card, { ...at, phase: 'after' })).toBeNull();
-    expect(demoCallId(pay, 6)).toBe('call@12');
-    expect(demoCallId(card, 3)).toBe('demo@3');
+    // Each attempt's calls are its own, the trace's call read back from them.
+    expect(demoCallId(pay, 6, '7')).toBe('call@12:7');
+    expect(demoCallId(card, 3, '7')).toBe('demo@3:7');
+    expect(demoTraceCall('call@12:7')).toBe('call@12');
+    expect(isLayerCallId(demoCallId(pay, 6, '1234'))).toBe(true);
     expect(demoTestHasPages([navigate, card])).toBe(true);
     expect(demoTestHasPages([card])).toBe(false);
   });

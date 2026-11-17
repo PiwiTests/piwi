@@ -1,10 +1,9 @@
-import { readLiveWorkerId, liveWorkerKey } from '@piwitests/core/live-view';
-import { isLayerCallId } from '@piwitests/core/live-layers';
-import type { SnapshotPhase } from '@piwitests/core/live-inspect';
+import { liveWorkerKey } from '@piwitests/core/live-view';
 import { isAuthEnabled } from '../../../../../../utils/auth';
 import { snapshotFrameDocument } from '../../../../../../utils/dom-snapshot-frame';
 import { snapshotFrameMode } from '../../../../../../utils/snapshot-frame-html';
 import { liveViewRelay } from '../../../../../../utils/live-view';
+import { readLiveSnapshotQuery } from '../../../../../../utils/live-snapshot-query';
 import {
   requireResolvedProjectAccess,
   requireRouteId,
@@ -48,29 +47,24 @@ defineRouteMeta({
   },
 });
 
-const PHASES: readonly string[] = ['before', 'action', 'after'];
-
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const { user } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
   const query = getQuery(event);
-  const worker = readLiveWorkerId(query.shard, query.worker);
-  if (!worker) throw apiError({ statusCode: 400, message: 'Name the worker: worker from 0, and shard from 1' });
-  const { call, phase } = query;
-  if (!isLayerCallId(call) || typeof phase !== 'string' || !PHASES.includes(phase)) {
-    throw apiError({ statusCode: 400, message: 'Name the call by its id, and the moment: before, action or after' });
-  }
+  const read = readLiveSnapshotQuery(query);
+  if (typeof read === 'string') throw apiError({ statusCode: 400, message: read });
+  const { worker, call, phase } = read;
   const watch = getRouterParam(event, 'watch') ?? '';
   const person = isAuthEnabled(event) ? user.id : null;
   const inspect = liveViewRelay.inspectOf(id, watch, person);
   if ('status' in inspect) throw apiError({ statusCode: inspect.status, message: inspect.message });
   const key = liveWorkerKey(worker);
   if (query.format === 'json') {
-    const viewport = inspect.viewport(key, call, phase as SnapshotPhase);
+    const viewport = inspect.viewport(key, call, phase);
     if (viewport && 'status' in viewport) throw apiError({ statusCode: viewport.status, message: viewport.message });
     return { viewport };
   }
-  const page = await inspect.render(key, call, phase as SnapshotPhase);
+  const page = await inspect.render(key, call, phase);
   if ('status' in page) throw apiError({ statusCode: page.status, message: page.message });
   return snapshotFrameDocument(event, page.html, snapshotFrameMode(query), { offline: true });
 });

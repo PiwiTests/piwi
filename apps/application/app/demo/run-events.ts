@@ -65,6 +65,13 @@ export type DemoEventMessage =
   /** What a simulated worker of a run says to the views of it, as a watch's message carries it, with no data. */
   | { scope: 'live'; runId: number; message: LiveViewerMessage };
 
+// ── Publishing (page side) ─────────────────────────────────────────────────
+
+/** Publish what a simulated worker of run `runId` says to the views of it, from the page that runs the simulator. */
+export function publishDemoLiveMessage(runId: number, message: LiveViewerMessage): void {
+  getPublishChannel().postMessage({ scope: 'live', runId, message } satisfies DemoEventMessage);
+}
+
 // ── Publishing (service worker side) ───────────────────────────────────────
 
 let publishChannel: BroadcastChannel | null = null;
@@ -117,11 +124,6 @@ export function publishDemoRunProgress(progress: RunProgressBroadcast): void {
 
 export function publishDemoNotificationEvent(event: Record<string, unknown>): void {
   getPublishChannel().postMessage({ scope: 'notification', event } satisfies DemoEventMessage);
-}
-
-/** Publish what a simulated worker of run `runId` says to the views of it, from the page that runs the simulator. */
-export function publishDemoLiveMessage(runId: number, message: LiveViewerMessage): void {
-  getPublishChannel().postMessage({ scope: 'live', runId, message } satisfies DemoEventMessage);
 }
 
 // ── Subscribing (window side) ──────────────────────────────────────────────

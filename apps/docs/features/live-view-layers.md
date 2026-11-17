@@ -89,8 +89,8 @@ older reporter, or team instance, may send none of them.
 
 The live demo runs no browser. **Watch** on a simulated run's running test, or a tile of
 [Watch all](./watch-all#in-the-demo), opens its worker's panel with no image: the call its test is in, with its log,
-and [Inspect](./live-inspect#in-the-demo) on the checkout page from a recorded trace. The page's events, its text and
-the filmstrip stay empty, and the panel says why.
+and [Inspect](./live-inspect#in-the-demo) on the checkout page from a recorded trace. The page's events and the
+filmstrip stay empty; the panel says why no image comes, and **Page text** why no text does.
 
 ## Related
 

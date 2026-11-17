@@ -63,7 +63,12 @@ describe("the 'stuck' scenario's workers", () => {
     expect(shown.call.title).toBe("Click getByRole('button', { name: 'Pay' })");
 
     const pages = ofTest.flatMap((m) => (m.type === 'snapshot' && 'call' in m ? [`${m.phase}@${m.call}`] : []));
-    expect(pages).toEqual(['after@call@8', 'before@call@10', 'after@call@10', 'before@call@12', 'after@call@12']);
+    const attempt = /:(\d+)$/.exec(pages[0] ?? '')?.[1];
+    expect(pages).toEqual(
+      ['after@call@8', 'before@call@10', 'after@call@10', 'before@call@12', 'after@call@12'].map(
+        (page) => `${page}:${attempt}`,
+      ),
+    );
     const ended = messages.find((m) => m.type === 'test-ended' && m.outcome?.test === TITLE);
     expect(ended).toMatchObject({ slot: (ofTest[0] as { slot: number }).slot, outcome: { status: 'failed' } });
     expect(messages.indexOf(ended!)).toBeGreaterThan(messages.indexOf(ofTest.at(-1)!));
@@ -72,14 +77,27 @@ describe("the 'stuck' scenario's workers", () => {
     const steps = run.events.filter((e) => e.type === 'step-begin' && e.parentTitle === TITLE);
     expect(steps.at(-1)).toMatchObject({ title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })" });
 
-    // Any other test has the one call of it the trace holds: the checkout page once it navigated there.
+    // Any other test has the one call of it the trace holds: the checkout page once it navigated there. Each attempt
+    // names its calls apart, so a view that follows a lane takes each test's pages afresh.
     const others = messages.filter((m) => m.type === 'snapshot' && m.test !== TITLE);
     expect(others.length).toBeGreaterThan(0);
-    for (const m of others) expect(m).toMatchObject({ call: 'call@8', phase: 'after' });
+    for (const m of others) expect(m).toMatchObject({ call: expect.stringMatching(/^call@8:\d+$/), phase: 'after' });
+    const calls = others.map((m) => (m as { call: string }).call);
+    expect(new Set(calls).size).toBe(calls.length);
     for (const m of messages) {
       expect(m).toMatchObject({ shard: null, worker: expect.any(Number) });
       expect((m as { slot?: number }).slot).toBe((m as { worker: number }).worker);
     }
+  });
+});
+
+describe("the 'breakpoint' scenario's workers", () => {
+  test('log no call running while the test stands stopped: the call before the stop ended', async () => {
+    await streamSimulation(simulator, 'breakpoint');
+    const logs = said.flatMap(({ message }) => (message.type === 'call-log' ? [message.log] : []));
+    expect(logs.length).toBeGreaterThan(0);
+    // The stop lasts 5 minutes: no call is still running a minute in.
+    expect(logs.filter((log) => log.status === 'running' && log.ms > 60_000)).toEqual([]);
   });
 });
 

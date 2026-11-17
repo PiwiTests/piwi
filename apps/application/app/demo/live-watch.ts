@@ -22,7 +22,7 @@ import type { LiveWorkerState } from '#shared/live-view';
 import { MAX_HEARD_SNAPSHOTS } from '~/utils/live-inspect';
 import { sameWorker, type LiveWatchAsk, type LiveWatchConnection, type LiveWatchEvents } from '~/utils/live-watch';
 import { DEMO_NO_IMAGE, DEMO_NO_TEXT } from './live-calls';
-import { subscribeDemoEvents, type DemoEventMessage } from './run-events';
+import { subscribeDemoEvents, type DemoEventMessage, type DemoGlobalEvent } from './run-events';
 
 type CallLogMessage = Extract<LiveViewerMessage, { type: 'call-log' }>;
 type SnapshotMessage = Extract<LiveViewerMessage, { type: 'snapshot' }>;
@@ -46,6 +46,13 @@ const endedRuns = new Set<number>();
 /** The open watches, each hearing every message the page reads, of every run. */
 const watches = new Set<(runId: number, message: LiveViewerMessage) => void>();
 let listening = false;
+/** What ends a run's live view, as the instance's relay reads the run's events (`RUN_ENDS`, `server/utils/live-view.ts`). */
+const DEMO_RUN_ENDS: ReadonlySet<DemoGlobalEvent['type']> = new Set([
+  'run-finalizing',
+  'run-finished',
+  'run-cancelled',
+  'run-submitted',
+]);
 
 /** Where a worker's messages are kept: its lane, which a worker started again in it takes over, else the worker. */
 function keptKey(id: LiveWorkerId): string {
@@ -101,15 +108,24 @@ export function hearDemoEvent(event: DemoEventMessage): void {
     if (!message || message.type === 'hello' || message.type === 'end') return;
     keep(event.runId, message);
     for (const tell of watches) tell(event.runId, message);
-  } else if (event.scope === 'run' && event.event.type === 'run-finished') {
-    kept.delete(event.runId);
-    endedRuns.add(event.runId);
+  } else {
+    const runId = endedRunOf(event);
+    if (runId === null || endedRuns.has(runId)) return;
+    kept.delete(runId);
+    endedRuns.add(runId);
     for (const old of endedRuns) {
       if (endedRuns.size <= MAX_KEPT_RUNS) break;
       endedRuns.delete(old);
     }
-    for (const tell of watches) tell(event.runId, { type: 'end', reason: 'run-ended' });
+    for (const tell of watches) tell(runId, { type: 'end', reason: 'run-ended' });
   }
+}
+
+/** The run an event of the demo's channel ends the live view of, or null. */
+function endedRunOf(event: DemoEventMessage): number | null {
+  if (event.scope === 'global') return DEMO_RUN_ENDS.has(event.event.type) ? event.event.runId : null;
+  if (event.scope !== 'run') return null;
+  return DEMO_RUN_ENDS.has(event.event.type as DemoGlobalEvent['type']) ? event.runId : null;
 }
 
 /** Hear the demo's workers from now on, in this page: once, for as long as the page lives. */
@@ -175,8 +191,13 @@ export class DemoLiveWatch implements LiveWatchConnection {
     this.events.message({ type: 'text', ...idOf(focus), refused: DEMO_NO_TEXT, test: null });
   }
 
+  /**
+   * Open the watch again, as the page asks when a view attaches (`useLiveWatch`'s `show`): the view shown in full hears
+   * again what its worker said, even of the worker shown before, as a view that starts afresh needs it.
+   */
   resume(): void {
     this.halted = false;
+    this.told = { focus: null, inspect: false };
     this.want(this.ask);
   }
 

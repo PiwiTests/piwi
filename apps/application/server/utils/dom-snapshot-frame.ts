@@ -1,6 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import { setResponseHeader, type H3Event } from 'h3';
-import { snapshotFrameHeaders, snapshotFrameHtml, type SnapshotFrameMode } from './snapshot-frame-html';
+import {
+  snapshotFrameHeaders,
+  snapshotFrameHtml,
+  snapshotFrameNonce,
+  type SnapshotFrameMode,
+} from './snapshot-frame-html';
 
 /**
  * The document of a rendered snapshot frame, with the headers that sandbox it: an opaque origin with scripts allowed,
@@ -17,7 +21,7 @@ export function snapshotFrameDocument(
   mode: SnapshotFrameMode,
   options: { offline?: boolean } = {},
 ): string {
-  const nonce = randomBytes(16).toString('base64');
+  const nonce = snapshotFrameNonce();
   for (const [name, value] of Object.entries(snapshotFrameHeaders(nonce))) setResponseHeader(event, name, value);
   return snapshotFrameHtml(html, mode, nonce, options);
 }
