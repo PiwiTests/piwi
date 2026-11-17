@@ -134,8 +134,8 @@
     "description": "Error when the bug report chosen for a replay has no steps."
   },
   "common_replayNeedsAccess": {
-    "message": "Piwi Picker needs access to this site to follow the replay from page to page. Open Piwi Picker on this tab and choose Replay a bug report.",
-    "description": "Error when a replay starts without the site’s permission. “Replay a bug report” is the popup button (popup_replayBug)."
+    "message": "Piwi Picker needs access to this site to follow the replay from page to page. Open Piwi Picker on this tab and choose Replay.",
+    "description": "Error when a replay starts without the site’s permission. “Replay” is the popup tile (popup_replay)."
   },
   "common_replayStartFailed": {
     "message": "The replay could not start.",
@@ -632,12 +632,12 @@
     "description": "Popup error on a page that is not a web site."
   },
   "popup_cannotReplay": {
-    "message": "Piwi Picker can’t replay a report on this page.",
+    "message": "Piwi Picker can’t replay a recording on this page.",
     "description": "Popup error on a page that is not a web site."
   },
   "popup_replayElsewhere": {
     "message": "A replay is running in another tab. Stop it there, or in the Piwi panel in DevTools, before replaying here.",
-    "description": "Popup status when Replay a bug report is clicked while a replay runs or is paused in another tab, which alone plays it."
+    "description": "Popup status when Replay is clicked while a replay runs or is paused in another tab, which alone plays it."
   },
   "popup_notRecordedTab": {
     "message": "This tab is not the one being recorded.",
@@ -2803,11 +2803,11 @@
   },
   "record_reviewLabel": {
     "message": "Your recording",
-    "description": "Recorder review panel: accessible name of the dialog that opens when a recording stops (read by screen readers, not shown)."
+    "description": "Finish panel: accessible name of the dialog that opens when a recording finishes (read by screen readers, not shown)."
   },
   "record_stepsRecorded_one": {
     "message": "$count$ step recorded",
-    "description": "Recorder review panel: title, how many steps the recording has.",
+    "description": "Finish panel: title, how many steps the recording has.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2817,7 +2817,7 @@
   },
   "record_stepsRecorded_other": {
     "message": "$count$ steps recorded",
-    "description": "Recorder review panel: title, how many steps the recording has.",
+    "description": "Finish panel: title, how many steps the recording has.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2827,7 +2827,7 @@
   },
   "record_stepsMatched_one": {
     "message": "$count$ step matches one of your test functions",
-    "description": "Recorder review panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
+    "description": "Finish panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2837,7 +2837,7 @@
   },
   "record_stepsMatched_other": {
     "message": "$count$ steps match your test functions",
-    "description": "Recorder review panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
+    "description": "Finish panel: line under the title when some steps will be written as calls to the project’s test functions in the exported code.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2847,7 +2847,7 @@
   },
   "record_noFunctionMatches": {
     "message": "None of your test functions match: the code uses locators only.",
-    "description": "Recorder review panel: line under the title when the project has test functions but none matches the steps."
+    "description": "Finish panel: line under the title when the project has test functions but none matches the steps."
   },
   "record_copyTest": {
     "message": "Copy test",
@@ -2867,7 +2867,7 @@
   },
   "record_notConnected": {
     "message": "Not connected to Piwi: the code uses locators only.",
-    "description": "Recorder review panel: line under the title when Piwi Picker is not connected to a Piwi instance, so it knows no test function."
+    "description": "Finish panel: line under the title when Piwi Picker is not connected to a Piwi instance, so it knows no test function."
   },
   "record_sendToEditor": {
     "message": "Send to editor",
@@ -2875,35 +2875,35 @@
   },
   "record_replay": {
     "message": "Replay",
-    "description": "Recorder review panel: button that plays the recorded steps again on the site, before they are exported. Short."
+    "description": "Finish panel: button that plays the recorded steps again on the site. Short."
   },
   "record_replayHint": {
     "message": "Play the steps again on this site, with a cursor, and see that each step still finds its element",
-    "description": "Recorder review panel: tooltip of “Replay”."
+    "description": "Finish panel: tooltip of “Replay” when nothing is marked wrong."
   },
   "bug_missing": {
     "message": "Something is missing",
-    "description": "Report a bug: button to name an element that should be on the page and is not. Also the title of the dialog it opens."
+    "description": "Recording bar: button to name an element that should be on the page and is not. Also the title of the dialog it opens."
   },
   "bug_missingHint": {
     "message": "Name an element that should be on this page and is not",
-    "description": "Report a bug: tooltip of the “Something is missing” button."
+    "description": "Recording bar: tooltip of the “Something is missing” button."
   },
   "bug_screenshot": {
     "message": "Screenshot",
-    "description": "Report a bug: HUD button that takes a screenshot of the page now, shown while Chrome's debugging protocol takes them. Short."
+    "description": "Recording bar: button that takes a screenshot of the page now, shown while Chrome’s debugging protocol takes them. Short."
   },
   "bug_screenshotHint": {
     "message": "Add a screenshot of the page as it is now",
-    "description": "Report a bug: tooltip of the HUD's Screenshot button."
+    "description": "Recording bar: tooltip of the Screenshot button."
   },
   "bug_debuggingOn": {
     "message": "Chrome shows a bar saying Piwi Picker started debugging this browser: that is this recording reading the console, the failed requests and screenshots. Nothing leaves your computer, and the bar goes when you finish.",
-    "description": "Report a bug: HUD line while Chrome's debugging protocol collects the evidence. Chrome's own bar says the extension started debugging the browser."
+    "description": "Recording bar: line while Chrome’s debugging protocol collects the evidence. Chrome’s own bar says the extension started debugging the browser."
   },
   "bug_debuggingCanceled": {
     "message": "The debugging bar was cancelled: the recording reads the console and the requests from the page from now on, and a screenshot needs \"$action$\" in Piwi Picker.",
-    "description": "Report a bug: HUD line after the person cancelled Chrome's debugging bar. $action$ is the name of the popup's “Take a screenshot” button.",
+    "description": "Recording bar: line after the person cancelled Chrome’s debugging bar. $action$ is the name of the popup’s “Take a screenshot” tile.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2913,7 +2913,7 @@
   },
   "bug_debuggingRefused": {
     "message": "Chrome refused the debugging session (another debugger on this tab, or a policy): the recording reads the console and the requests from the page, and a screenshot needs \"$action$\" in Piwi Picker.",
-    "description": "Report a bug: HUD line when Chrome refused or ended the debugging session. $action$ is the name of the popup's “Take a screenshot” button.",
+    "description": "Recording bar: line when Chrome refused or ended the debugging session. $action$ is the name of the popup’s “Take a screenshot” tile.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2923,11 +2923,11 @@
   },
   "bug_finish": {
     "message": "Finish",
-    "description": "Report a bug: button that stops recording and opens the finished report."
+    "description": "Recording bar: button that stops the recording, collects the last evidence and opens the finish panel."
   },
   "bug_screenshotBlocked": {
     "message": "Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose \"$action$\".",
-    "description": "Report a bug: warning when no screenshot could be taken. $action$ is the name of the popup’s “Take a screenshot” button.",
+    "description": "Recording: warning when no screenshot could be taken. $action$ is the name of the popup’s “Take a screenshot” button.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2937,7 +2937,7 @@
   },
   "bug_screenshotBlockedFirefox": {
     "message": "Firefox lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose \"$action$\".",
-    "description": "Report a bug, in Firefox: warning when no screenshot could be taken without the grant opening Piwi Picker on the tab gives. $action$ is the name of the popup’s “Take a screenshot” button.",
+    "description": "Recording, in Firefox: warning when no screenshot could be taken without the grant opening Piwi Picker on the tab gives. $action$ is the name of the popup’s “Take a screenshot” button.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2947,19 +2947,19 @@
   },
   "bug_screenshotNotInFront": {
     "message": "The tab was not the one in front, and the browser captures only the tab on screen.",
-    "description": "Report a bug: why there is no screenshot when the recorded tab was in the background. A sentence, also shown after “No screenshot:”."
+    "description": "Recording: why there is no screenshot when the recorded tab was in the background. A sentence, also shown after “No screenshot:”."
   },
   "bug_screenshotFailed": {
     "message": "The browser could not take the screenshot.",
-    "description": "Report a bug: why there is no screenshot when the browser failed to take it for another reason. A sentence, also shown after “No screenshot:”."
+    "description": "Recording: why there is no screenshot when the browser failed to take it for another reason. A sentence, also shown after “No screenshot:”."
   },
   "bug_screenshotNotKept": {
     "message": "The screenshot was too large to keep in this browser’s storage.",
-    "description": "Report a bug: warning when a screenshot was taken but session storage had no room left for it, so the report has none."
+    "description": "Recording: warning when a screenshot was taken but session storage had no room left for it, so the report has none."
   },
   "bug_stepShows": {
     "message": "shows \"$text$\"",
-    "description": "Report a bug: after a marked step, what the page showed. $text$ is the page’s text, as it is.",
+    "description": "Recording: after a step marked wrong, what the page showed. $text$ is the page’s text, as it is.",
     "placeholders": {
       "text": {
         "content": "$1",
@@ -2969,7 +2969,7 @@
   },
   "bug_stepIs": {
     "message": "is $state$",
-    "description": "Report a bug: after a marked step, the state the element was in. $state$ is one of the bug_state* words (visible, hidden, usable, grayed out).",
+    "description": "Recording: after a step marked wrong, the state the element was in. $state$ is one of the bug_state* words (visible, hidden, usable, grayed out).",
     "placeholders": {
       "state": {
         "content": "$1",
@@ -2979,71 +2979,71 @@
   },
   "bug_stepAbsent": {
     "message": "not on the page",
-    "description": "Report a bug: after a step saying an element is missing: the page does not have it."
+    "description": "Recording: after a step saying an element is missing: the page does not have it."
   },
   "bug_stateVisible": {
     "message": "visible",
-    "description": "Report a bug: an element’s state, in “is $state$” and “The page shows”."
+    "description": "Recording: an element’s state, in “is $state$” and “The page shows”."
   },
   "bug_stateHidden": {
     "message": "hidden",
-    "description": "Report a bug: an element’s state (not visible), in “is $state$” and “The page shows”. French: masculine (un élément)."
+    "description": "Recording: an element’s state (not visible), in “is $state$” and “The page shows”. French: masculine (un élément)."
   },
   "bug_stateEnabled": {
     "message": "usable",
-    "description": "Report a bug: an element’s state (enabled), in “is $state$” and “The page shows”."
+    "description": "Recording: an element’s state (enabled), in “is $state$” and “The page shows”."
   },
   "bug_stateDisabled": {
     "message": "grayed out",
-    "description": "Report a bug: an element’s state (disabled, cannot be used), in “is $state$” and “The page shows”. French: masculine (un élément)."
+    "description": "Recording: an element’s state (disabled, cannot be used), in “is $state$” and “The page shows”. French: masculine (un élément)."
   },
   "bug_addToReport": {
     "message": "Add to the report",
-    "description": "Report a bug: the main button of each dialog."
+    "description": "“Something is missing” dialog: its main button."
   },
   "bug_shouldBeVisible": {
     "message": "It should be visible",
-    "description": "Report a bug: a choice in “What’s wrong”, for an element that is hidden. “It” is the element (masculine in French)."
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is hidden. “It” is the element (masculine in French)."
   },
   "bug_shouldBeHidden": {
     "message": "It should be hidden",
-    "description": "Report a bug: a choice in “What’s wrong”, for an element that is visible."
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is visible."
   },
   "bug_shouldBeEnabled": {
     "message": "It should be usable, not grayed out",
-    "description": "Report a bug: a choice in “What’s wrong”, for an element that is disabled."
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is disabled."
   },
   "bug_shouldBeDisabled": {
     "message": "It should be grayed out, not usable",
-    "description": "Report a bug: a choice in “What’s wrong”, for an element that is enabled."
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is enabled."
   },
   "bug_pageShows": {
     "message": "The page shows",
-    "description": "Report a bug, “Mark what’s wrong” dialog: label above what the element shows now."
+    "description": "“Check an element” dialog: label above what the element shows now."
   },
   "bug_note": {
     "message": "Note",
-    "description": "Report a bug: label of the optional free-text note in each dialog."
+    "description": "“Check an element”, “Check the address” and “Something is missing” dialogs: label of the optional free-text note, shown when the page is marked wrong."
   },
   "bug_notePlaceholder": {
     "message": "What happened, in your words (optional)",
-    "description": "Report a bug: placeholder of the note field."
+    "description": "Placeholder of the note field of the check dialogs."
   },
   "bug_whatShouldBeThere": {
     "message": "What should be there",
-    "description": "Report a bug, “Something is missing” dialog: label of the list of element kinds."
+    "description": "“Something is missing” dialog: label of the list of element kinds."
   },
   "bug_itsNameLabel": {
     "message": "Its name",
-    "description": "Report a bug, “Something is missing” dialog: label of the field for the missing element’s name."
+    "description": "“Something is missing” dialog: label of the field for the missing element’s name."
   },
   "bug_namePlaceholder": {
     "message": "Its name as it reads on the page: Download invoice",
-    "description": "Report a bug, “Something is missing” dialog: placeholder of the name field, with an example after the colon."
+    "description": "“Something is missing” dialog: placeholder of the name field, with an example after the colon."
   },
   "bug_nameRequired": {
     "message": "Type its name, as it would read on the page.",
-    "description": "Report a bug, “Something is missing” dialog: error when the name is empty."
+    "description": "“Something is missing” dialog: error when the name is empty."
   },
   "bug_alreadyThere_one": {
     "message": "$count$ element like this is already on the page: use \"$mark$\" to check it, or to say what is wrong with it.",
@@ -3075,7 +3075,7 @@
   },
   "bug_youAreOn": {
     "message": "You are on $path$",
-    "description": "Report a bug, “Wrong page” dialog: under the title, the address of the current page. $path$ is the page’s path, as it is.",
+    "description": "“Check the address” dialog: under the title, the address of the current page. $path$ is the page’s path, as it is.",
     "placeholders": {
       "path": {
         "content": "$1",
@@ -3085,79 +3085,79 @@
   },
   "bug_kindButton": {
     "message": "Button",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindLink": {
     "message": "Link",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindHeading": {
     "message": "Title or heading",
-    "description": "Report a bug: a kind of element in “What should be there”: a heading."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”: a heading."
   },
   "bug_kindTextbox": {
     "message": "Text field",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindCombobox": {
     "message": "Dropdown",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindCheckbox": {
     "message": "Checkbox",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindRadio": {
     "message": "Radio button (one choice among several)",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindOption": {
     "message": "Choice in a dropdown or a list",
-    "description": "Report a bug: a kind of element in “What should be there”: an option."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”: an option."
   },
   "bug_kindTab": {
     "message": "Tab",
-    "description": "Report a bug: a kind of element in “What should be there”: a tab of a tabbed panel."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”: a tab of a tabbed panel."
   },
   "bug_kindMenuitem": {
     "message": "Menu item",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindListitem": {
     "message": "Item in a list",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindRow": {
     "message": "Table row",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindCell": {
     "message": "Table cell",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindImg": {
     "message": "Image or icon",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindDialog": {
     "message": "Dialog or popup window",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindAlert": {
     "message": "Error or warning message",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindStatus": {
     "message": "Status or confirmation message",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_kindRegion": {
     "message": "Section of the page",
-    "description": "Report a bug: a kind of element in “What should be there”."
+    "description": "“Something is missing” dialog: a kind of element in “What should be there”."
   },
   "bug_finishTitle_one": {
     "message": "Bug report · $count$ step",
-    "description": "Report a bug: title of the finished report panel. $count$ is the number of steps.",
+    "description": "Finish panel: title once a step says the page is wrong. $count$ is the number of steps.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3167,7 +3167,7 @@
   },
   "bug_finishTitle_other": {
     "message": "Bug report · $count$ steps",
-    "description": "Report a bug: title of the finished report panel. $count$ is the number of steps.",
+    "description": "Finish panel: title once a step says the page is wrong. $count$ is the number of steps.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3177,15 +3177,15 @@
   },
   "bug_title": {
     "message": "Title",
-    "description": "Report a bug, finished report: label of the report’s title field."
+    "description": "Finish panel: label of the recording’s title field, the title of its test and of its report."
   },
   "bug_titlePlaceholder": {
     "message": "What’s wrong, in a few words: Coupon not applied to the total",
-    "description": "Report a bug, finished report: placeholder of the title field, with an example after the colon."
+    "description": "Finish panel: placeholder of the title field, with an example after the colon."
   },
   "bug_attached": {
     "message": "Also in the report: $summary$",
-    "description": "Report a bug, finished report: what was collected besides the steps. $summary$ is a list such as “2 screenshots · 1 console error”, in the interface language.",
+    "description": "Finish panel: what was collected besides the steps. $summary$ is a list such as “2 screenshots · 1 console error”, in the interface language.",
     "placeholders": {
       "summary": {
         "content": "$1",
@@ -3195,7 +3195,7 @@
   },
   "bug_stepShots": {
     "message": "Screenshot of each step ($count$)",
-    "description": "Report a bug, finished report: checkbox, on by default, that keeps in the report the screenshot of the page as each step began. $count$ is how many were taken.",
+    "description": "Finish panel: checkbox, on by default, that keeps in the report the screenshot of the page as each step began. $count$ is how many were taken.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3205,11 +3205,11 @@
   },
   "bug_stepShotsHint": {
     "message": "The page as each step began, for whoever plays a step by hand. They show the whole page: leave them out if it shows what should not be shared.",
-    "description": "Report a bug, finished report: under the step screenshots checkbox, what they are for and why to leave them out."
+    "description": "Finish panel: under the step screenshots checkbox, what they are for and why to leave them out."
   },
   "bug_stepWarning": {
     "message": "Step $step$: $message$",
-    "description": "Report a bug, finished report: a warning about one step of the generated test. $message$ is the code generator’s warning, in English.",
+    "description": "Finish panel: a warning about one step of the generated test. $message$ is the code generator’s warning, in English.",
     "placeholders": {
       "message": {
         "content": "$1",
@@ -3223,7 +3223,7 @@
   },
   "bug_noScreenshot": {
     "message": "No screenshot: $reason$",
-    "description": "Report a bug, finished report: warning when the report has no screenshot. $reason$ says why, as a sentence.",
+    "description": "Finish panel: warning when the report has no screenshot. $reason$ says why, as a sentence.",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -3233,47 +3233,47 @@
   },
   "bug_noScreenshotTaken": {
     "message": "No screenshot was taken.",
-    "description": "Report a bug, finished report: warning when the report has no screenshot, for no known reason."
+    "description": "Finish panel: warning when the report has no screenshot, for no known reason."
   },
   "bug_copyTest": {
     "message": "Copy failing test",
-    "description": "Report a bug, finished report: button that copies a Playwright test that fails while the bug is there."
+    "description": "Finish panel: main button once a step says the page is wrong; copies a Playwright test that fails while the bug is there."
   },
   "bug_copyTestHint": {
     "message": "A Playwright test that fails while the bug is there, marked with test.fail()",
-    "description": "Report a bug: tooltip of “Copy failing test”. test.fail() is code, never translated."
+    "description": "Finish panel: tooltip of “Copy failing test”. test.fail() is code, never translated."
   },
   "bug_copyReport": {
     "message": "Copy report",
-    "description": "Report a bug, finished report: button that copies the report as Markdown."
+    "description": "Finish panel: button that copies the report as Markdown."
   },
   "bug_copyReportHint": {
     "message": "The report as Markdown, for a ticket or a message",
-    "description": "Report a bug: tooltip of “Copy report”."
+    "description": "Finish panel: tooltip of “Copy report”."
   },
   "bug_downloadReport": {
     "message": "Download .piwibug",
-    "description": "Report a bug, finished report: button that downloads every file of the report as one .piwibug file, a zip archive that Piwi Picker’s Replay and the Piwi desktop app open. “.piwibug” is a file extension, kept as it is."
+    "description": "Finish panel: button that downloads every file of the recording as one .piwibug file, a zip archive that Piwi Picker’s Replay and the Piwi desktop app open. “.piwibug” is a file extension, kept as it is."
   },
   "bug_downloadReportHint": {
     "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots, in one zip archive",
-    "description": "Report a bug: tooltip of “Download .piwibug”: the files in the archive. File names are never translated."
+    "description": "Finish panel: tooltip of “Download .piwibug”: the files in the archive. File names are never translated."
   },
   "bug_replayHint": {
     "message": "Play the steps again on this site, with a cursor, and see whether the bug shows",
-    "description": "Report a bug: tooltip of “Replay”."
+    "description": "Finish panel: tooltip of “Replay” once a step says the page is wrong."
   },
   "bug_staysLocal": {
     "message": "Everything here stays in this browser: nothing is sent anywhere.",
-    "description": "Report a bug, finished report: note at the bottom of the panel."
+    "description": "Finish panel: note at the bottom of the panel."
   },
   "bug_sendToPiwi": {
     "message": "Send to Piwi…",
-    "description": "Report a bug, finished report: the button that opens the preview of what is sent to the connected Piwi instance."
+    "description": "Finish panel: the button that opens the preview of what is sent to the connected Piwi instance."
   },
   "bug_sendToPiwiHint": {
     "message": "See exactly what is sent, then store the report on your Piwi instance",
-    "description": "Report a bug, finished report: tooltip of “Send to Piwi…”."
+    "description": "Finish panel: tooltip of “Send to Piwi…”."
   },
   "bug_sendTitle": {
     "message": "Send to $project$",
@@ -3441,10 +3441,10 @@
   },
   "bug_staysLocalUntilSent": {
     "message": "Everything here stays in this browser until you send it.",
-    "description": "Report a bug, finished report: note at the bottom of the panel when an instance is connected."
+    "description": "Finish panel: note at the bottom of the panel when an instance is connected."
   },
   "replay_hudLabel": {
-    "message": "Piwi Picker: replaying a bug report",
+    "message": "Piwi Picker: replaying a recording",
     "description": "Replay panel (the box in the corner while a bug report replays): its aria-label, read by screen readers."
   },
   "replay_statusRunning": {
@@ -3665,6 +3665,10 @@
     "message": "Reproduced: the bug shows here",
     "description": "Replay verdict title: an expected result of the bug report did not hold on this page, so the bug shows here."
   },
+  "replay_verdictCheckFailed": {
+    "message": "A check failed",
+    "description": "Replay verdict for a recording that marks nothing wrong, when one of its checks fails."
+  },
   "replay_verdictExpectedFound": {
     "message": "Step $step$: expected \"$expected$\", found $found$.",
     "description": "Replay verdict detail when the bug shows. $expected$ is the text the report expected, from the page, as written; $found$ what the page showed (replay_quotedText, replay_found* or a URL).",
@@ -3747,9 +3751,27 @@
       }
     }
   },
+  "replay_verdictChecksHold": {
+    "message": "Every check holds",
+    "description": "Replay verdict for a recording that marks nothing wrong, when every check holds."
+  },
+  "replay_verdictChecksHoldDetail": {
+    "message": "The steps played here, and each check found what it expects.",
+    "description": "Detail under “Every check holds”."
+  },
   "replay_verdictDiverged": {
     "message": "Could not reach the bug: stopped at step $step$",
     "description": "Replay verdict title when a step could not be done on this page.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedRecording": {
+    "message": "Stopped at step $step$: the page went another way",
+    "description": "Replay verdict for a recording that marks nothing wrong, when a step could not be played. $step$ is its number.",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -4238,8 +4260,8 @@
     }
   },
   "replay_dialogTitle": {
-    "message": "Replay a bug report",
-    "description": "Title and aria-label of the dialog that chooses which bug report to replay. Same name as the popup’s button (popup_replayBug)."
+    "message": "Replay a recording",
+    "description": "Title and aria-label of the dialog that chooses which recording to replay."
   },
   "replay_dialogIntro": {
     "message": "Plays its steps on $origin$, with a cursor showing each one, and says whether the bug shows here.",
@@ -4260,7 +4282,7 @@
     "description": "Replay dialog: button that picks the recording made in this browser, when nothing in it is marked wrong."
   },
   "replay_chooseFile": {
-    "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",
+    "message": "Or choose a .piwibug, or a steps.json, saved by Piwi Picker:",
     "description": "Replay dialog, above the file field. “.piwibug” and “steps.json” are file names, kept as they are."
   },
   "replay_pasteSteps": {
@@ -4494,11 +4516,11 @@
     "description": "Run with Playwright dialog: the desktop app finished the run without a verdict, or answered with a status or a verdict this version does not know."
   },
   "replay_fileLabel": {
-    "message": "The bug report’s .piwibug, or its steps.json",
+    "message": "A .piwibug, or a steps.json",
     "description": "Replay dialog: aria-label of the file field."
   },
   "replay_untitled": {
-    "message": "Untitled report",
+    "message": "Untitled recording",
     "description": "Replay dialog: the name of a chosen report that has no title."
   },
   "replay_summary_one": {
@@ -4558,7 +4580,7 @@
     "description": "Replay dialog button that starts the replay. Short."
   },
   "replay_chooseFirst": {
-    "message": "Choose a report first.",
+    "message": "Choose a recording first.",
     "description": "Replay dialog error: Replay was clicked before a report was chosen."
   },
   "replay_zipNoSteps": {
@@ -6384,8 +6406,8 @@
     "description": "DevTools, Piwi panel: tab showing the running replay. One word."
   },
   "devtools_noRecording": {
-    "message": "Nothing is being recorded. Start with Record actions or Report a bug in the toolbar popup: the steps show here as they are recorded.",
-    "description": "DevTools, Piwi panel, Record tab: nothing is being recorded. “Record actions” and “Report a bug” are the popup tiles' names (popup_record, popup_reportBug)."
+    "message": "Nothing is being recorded. Start with Record in the toolbar popup: the steps show here as they are recorded.",
+    "description": "DevTools, Piwi panel, Record tab: nothing is being recorded. “Record” is the popup tile’s name (popup_record)."
   },
   "devtools_recordingOn_one": {
     "message": "Recording on $site$: $count$ step",
@@ -6468,8 +6490,8 @@
     "description": "DevTools Record tab, while a recording runs: where to finish it."
   },
   "devtools_noReplay": {
-    "message": "No replay yet. Start one with Replay a bug report in the toolbar popup: its steps and results show here.",
-    "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay a bug report” is the popup tile's name (popup_replayBug)."
+    "message": "No replay yet. Start one with Replay in the toolbar popup: its steps and results show here.",
+    "description": "DevTools, Piwi panel, Replay tab: no replay has run. “Replay” is the popup tile’s name (popup_replay)."
   },
   "devtools_tabNetwork": {
     "message": "Network",

@@ -12,7 +12,7 @@ import { test, expect, openOptions } from './fixtures.js';
  * inject, tested directly).
  */
 const ACTION_BUTTON_NAMES = [
-  /Record actions/,
+  /Record/,
   /Pick an element/,
   /Multi-pick/,
   /Assertions/,
@@ -52,7 +52,7 @@ test.describe('popup.html', () => {
   test('every tool tile carries a digit shortcut, 1 through 7, in render order', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    // The Runs tile, under Run control while the editor's runs show, has a letter, as the flows do.
+    // The tiles under Tests have a letter each: Replay, Take a screenshot, Runs and Tested elements.
     const keys = await page.locator('.actions button').evaluateAll((buttons) =>
       buttons.map((b) => ({
         id: b.id,
@@ -220,20 +220,35 @@ test.describe('popup.html', () => {
     expect(optionTexts.filter((t) => t === 'Demo project')).toHaveLength(1);
   });
 
-  test('on a page that is not a web page, Record and Report a bug say they cannot record, and park nothing', async ({
+  test('on a page that is not a web page, Record says it cannot record, and parks nothing', async ({
     context,
     extensionId,
   }) => {
     // The popup opened as a tab is itself the active tab: an extension page, which no host permission covers.
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await page.getByRole('button', { name: /Record actions/ }).click();
+    await page.getByRole('button', { name: /Record/ }).click();
     await expect(page.getByRole('status')).toHaveText('Piwi Picker can’t record on this page.');
-    await page.evaluate(() => {
-      document.getElementById('status')!.textContent = '';
+    expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
+  });
+
+  test('opened after a Record prompt the site was refused in, it says the recording did not start', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    // The intent the Record click parked for this tab, for a site no grant covers: the prompt was refused.
+    await page.evaluate(async () => {
+      const tab = await chrome.tabs.getCurrent();
+      await chrome.storage.session.set({
+        piwiRecordIntent: { originPattern: 'https://refused.test/*', tabId: tab!.id, createdAt: Date.now() },
+      });
     });
-    await page.getByRole('button', { name: /Report a bug/ }).click();
-    await expect(page.getByRole('status')).toHaveText('Piwi Picker can’t record on this page.');
+    await page.reload();
+    await expect(page.getByRole('status')).toHaveText(
+      'The recording did not start: Piwi Picker was not allowed on this site.',
+    );
     expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
   });
 
@@ -252,7 +267,7 @@ test.describe('popup.html', () => {
         held.then(() => query(info))) as unknown as typeof chrome.tabs.query;
     });
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    const replay = page.getByRole('button', { name: /Replay a bug report/ });
+    const replay = page.getByRole('button', { name: /Replay/ });
     const tested = page.getByRole('button', { name: /Tested elements/ });
     await expect(replay).toBeDisabled();
     await expect(tested).toBeDisabled();
@@ -267,7 +282,7 @@ test.describe('popup.html', () => {
     await expect(replay).toBeEnabled();
     await expect(tested).toBeEnabled();
     await page.keyboard.press('r');
-    await expect(page.locator('#status')).toHaveText('Piwi Picker can’t replay a report on this page.');
+    await expect(page.locator('#status')).toHaveText('Piwi Picker can’t replay a recording on this page.');
   });
 
   test('Add this site, before the instance’s projects are read, fills a line of this browser in', async ({
@@ -392,48 +407,58 @@ test.describe('Tested elements tile', () => {
   });
 });
 
-test.describe('Report a bug tile', () => {
-  test('answers to B and says what it does in each recording state', async ({ context, extensionId }) => {
+test.describe('Record tile', () => {
+  test('says what it does in each recording state, and Take a screenshot takes Replay’s place while it records', async ({
+    context,
+    extensionId,
+  }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    const tile = page.getByRole('button', { name: /Report a bug/ });
-    await expect(tile).toBeEnabled();
-    await expect(tile).toHaveAttribute('aria-keyshortcuts', 'B');
-    await expect(page.locator('#report-bug-hint')).toHaveText("Steps and what's wrong → a failing test");
+    const record = page.locator('#record');
+    await expect(record).toBeEnabled();
+    await expect(page.locator('#record-hint')).toHaveText('A scenario or a bug');
+    await expect(page.locator('#replay')).toBeVisible();
+    await expect(page.locator('#screenshot')).toBeHidden();
+
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, bugToken: 'a'.repeat(32) },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#record-label')).toHaveText('Finish (0)');
+    await expect(page.locator('#replay')).toBeHidden();
+    const screenshot = page.locator('#screenshot');
+    await expect(screenshot).toBeVisible();
+    await expect(screenshot).toHaveAttribute('aria-keyshortcuts', 'S');
     await page.evaluate(() => {
       (globalThis as unknown as { clicked: string[] }).clicked = [];
-      document.getElementById('report-bug')!.addEventListener(
+      document.getElementById('screenshot')!.addEventListener(
         'click',
         (e) => {
           e.stopImmediatePropagation();
-          (globalThis as unknown as { clicked: string[] }).clicked.push('report-bug');
+          (globalThis as unknown as { clicked: string[] }).clicked.push('screenshot');
         },
         { capture: true },
       );
     });
-    await page.keyboard.press('b');
-    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual(['report-bug']);
+    await page.keyboard.press('s');
+    expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual(['screenshot']);
 
-    // During a bug recording the tile takes a screenshot, and the record tile finishes the report.
     await page.evaluate(() =>
       chrome.storage.session.set({
-        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'bug' },
+        piwiRecording: {
+          active: false,
+          events: [{ kind: 'click', timestamp: 1 }],
+          startedAt: 1,
+          grantedOriginPattern: null,
+        },
       }),
     );
     await page.reload();
-    await expect(page.locator('#report-bug-label')).toHaveText('Take a screenshot');
-    await expect(page.locator('#record-label')).toHaveText('Finish bug report (0)');
-
-    // A recording of actions in progress has to end first.
-    await page.evaluate(() =>
-      chrome.storage.session.set({
-        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'actions' },
-      }),
-    );
-    await page.reload();
-    await expect(page.locator('#report-bug-hint')).toHaveText('Finish or discard the current recording first');
-    await page.locator('#report-bug').click();
-    await expect(page.locator('#status')).toHaveText('Finish or discard the current recording before reporting a bug.');
+    await expect(page.locator('#record-label')).toHaveText('Review (1)');
+    await expect(page.locator('#record-hint')).toHaveText('Not exported yet');
+    await expect(page.locator('#screenshot')).toBeHidden();
   });
 });
 
@@ -477,15 +502,16 @@ async function connectedPopupHeight(page: Page, extensionId: string): Promise<nu
   return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
 }
 
-/** Whether the label or the hint of a tile side by side under its section's name is cut. */
-async function sectionTilesCut(page: Page): Promise<string[]> {
-  return page.locator('.grid.sections .tile').evaluateAll((tiles) =>
+/** The label or hint of a tile shown that is cut, or that takes more than one line. */
+async function tilesCutOrWrapped(page: Page): Promise<string[]> {
+  return page.locator('.tile:not([hidden])').evaluateAll((tiles) =>
     tiles.flatMap((tile) =>
       ['.label', '.hint'].flatMap((part) => {
         const el = tile.querySelector(part) as HTMLElement;
-        return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1
-          ? [`${tile.id} ${part}`]
-          : [];
+        const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+        const cut = el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+        const wrapped = el.getBoundingClientRect().height > lineHeight * 1.5;
+        return cut || wrapped ? [`${tile.id} ${part}`] : [];
       }),
     ),
   );
@@ -494,13 +520,28 @@ async function sectionTilesCut(page: Page): Promise<string[]> {
 for (const language of ['en', 'de', 'fr', 'es', 'pt-BR']) {
   test.describe(`in ${language}`, () => {
     test.use({ browserLanguage: language });
-    test('the popup fits a popup’s 600 pixels, its tiles under Run control, Dashboard and Agents cut nothing', async ({
+    test('the popup fits a popup’s 600 pixels, and no tile’s label or hint is cut or wraps, recording or not', async ({
       context,
       extensionId,
     }) => {
       const page = await context.newPage();
       expect(await connectedPopupHeight(page, extensionId)).toBeLessThanOrEqual(600);
-      expect(await sectionTilesCut(page)).toEqual([]);
+      expect(await tilesCutOrWrapped(page)).toEqual([]);
+      // While a recording runs: Finish with its count, and Take a screenshot in Replay's place.
+      await page.evaluate(() =>
+        chrome.storage.session.set({
+          piwiRecording: {
+            active: true,
+            events: [],
+            startedAt: 1,
+            grantedOriginPattern: null,
+            bugToken: 'a'.repeat(32),
+          },
+        }),
+      );
+      expect(await connectedPopupHeight(page, extensionId)).toBeLessThanOrEqual(600);
+      await expect(page.locator('#screenshot')).toBeVisible();
+      expect(await tilesCutOrWrapped(page)).toEqual([]);
     });
   });
 }

@@ -54,13 +54,11 @@ import { richText, STEP_CSS, stepView } from '../shared/step-view.js';
 import { IDE_BUILD } from '../shared/ide-build.js';
 
 /**
- * The bug recording's page UI: its HUD, the three ways to say what is wrong
- * (a picked element's expected value or state, an element that is missing,
- * the page the flow should have reached), its screenshots and page outline,
- * and the finish panel that exports the report. `record-panel.ts` does the
- * recording itself, relays the main-world evidence script's entries
- * (`shared/bug-relay.ts`), and calls into this module when the recording is a
- * bug report.
+ * The recording's page UI: its bar, the record dialog the checks and
+ * Something is missing open, the pick, the screenshots and the page outline.
+ * `record-panel.ts` does the recording itself and relays the main-world
+ * evidence script's entries (`shared/bug-relay.ts`); `check-panel.ts` holds
+ * the checks and `finish-panel.ts` the finish panel.
  */
 
 /** What `record-panel.ts` lends this module to record an assertion. */
@@ -203,7 +201,7 @@ function clearPickGlobals(): void {
 }
 
 /**
- * Ends Mark what's wrong's pick, if one is on screen, as Escape does: its
+ * Ends Check an element's pick, if one is on screen, as Escape does: its
  * overlay goes and the flow records nothing. Capture stopping calls it; a
  * global, since each injection of the recorder is its own module instance.
  */

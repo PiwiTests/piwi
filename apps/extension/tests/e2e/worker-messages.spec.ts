@@ -145,7 +145,6 @@ test('a recording stopped while a replay runs leaves the replay’s badge', asyn
           type: 'piwi-start-recording',
           originPattern: pattern,
           tabId: tab,
-          mode: 'actions',
         }),
       { tab: tabId, pattern: `${site}/*` },
     ),

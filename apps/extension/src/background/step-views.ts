@@ -19,7 +19,7 @@ import { sessionArea } from '../shared/session-area.js';
 import { captureThroughDebugger } from './cdp-evidence.js';
 
 /**
- * The page as each step of a bug recording began: the recorder asks for a
+ * The page as each step of a recording began: the recorder asks for a
  * view once the page has settled after a step, or as an action starts when
  * none is left, under an id it makes up, and keeps the id on the step. The
  * worker takes the screenshot, through the recording's debugging session or,

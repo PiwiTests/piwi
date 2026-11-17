@@ -315,6 +315,10 @@
       .tile.primary.running .label::after {
         color: #fff;
       }
+      /* A compact tile says so by its accent border alone: a word after its label would take a second line. */
+      .tile.compact.running .label::after {
+        content: none;
+      }
       .tile .text {
         flex: 1;
         min-width: 0;
@@ -517,7 +521,7 @@
             <circle cx="12" cy="12" r="8" />
           </svg>
           <span class="text">
-            <span class="label" id="record-label" data-i18n="popup_record">Record actions</span>
+            <span class="label" id="record-label" data-i18n="popup_record">Record</span>
             <span class="hint" id="record-hint" data-i18n="popup_recordHint">A scenario or a bug</span>
           </span>
           <kbd class="key" aria-hidden="true">1</kbd>
@@ -598,7 +602,7 @@
       </div>
 
       <div class="section-label" id="tests-section-label" data-i18n="popup_sectionTests">Tests</div>
-      <div class="grid actions" role="group" aria-labelledby="tests-section-label">
+      <div class="grid" role="group" aria-labelledby="tests-section-label">
         <button id="replay" class="tile compact" type="button" aria-keyshortcuts="R">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M8 5.5v13l10-6.5z" />

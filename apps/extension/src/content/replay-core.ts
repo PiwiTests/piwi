@@ -1,4 +1,5 @@
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
+import { isWrongStep } from '@piwitests/core/bug-report';
 import { t, tn } from '../shared/i18n.js';
 import type { IconName } from '../shared/icons.js';
 import type { ReplayEvidence, ReplayState, ReplayStepResult } from '../shared/replay-storage.js';
@@ -269,8 +270,13 @@ export function replayVerdict(
     : { kind: 'completed' };
 }
 
-/** The verdict as the replay panel says it. */
+/**
+ * The verdict as the replay panel says it. A bug report (a step says the page
+ * was wrong) is reproduced or not; a recording that marks nothing wrong has
+ * checks that hold or fail.
+ */
 export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { title: string; detail: string } {
+  const bugReport = steps.some(isWrongStep);
   switch (verdict.kind) {
     case 'reproduced': {
       const expected = steps[verdict.step]?.assertion?.expected;
@@ -286,9 +292,12 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
           ? t('replay_verdictFoundAsReported', { step, found })
           : t('replay_verdictFound', { step, found });
       }
-      return { title: t('replay_verdictReproduced'), detail };
+      return { title: bugReport ? t('replay_verdictReproduced') : t('replay_verdictCheckFailed'), detail };
     }
     case 'not-reproduced':
+      if (!bugReport && verdict.runStep == null) {
+        return { title: t('replay_verdictChecksHold'), detail: t('replay_verdictChecksHoldDetail') };
+      }
       return {
         title: t('replay_verdictNotReproduced'),
         detail:
@@ -304,7 +313,9 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
         };
       }
       return {
-        title: t('replay_verdictDiverged', { step: verdict.step + 1 }),
+        title: bugReport
+          ? t('replay_verdictDiverged', { step: verdict.step + 1 })
+          : t('replay_verdictDivergedRecording', { step: verdict.step + 1 }),
         detail: t('replay_verdictDivergedDetail', { reason: verdict.reason }),
       };
     case 'completed':
@@ -320,14 +331,19 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
   }
 }
 
-/** The icon in front of a verdict's title. */
-export const VERDICT_ICONS: Record<ReplayVerdict['kind'], IconName> = {
+const VERDICT_ICONS: Record<ReplayVerdict['kind'], IconName> = {
   reproduced: 'bug',
   'not-reproduced': 'check-circle',
   diverged: 'alert',
   completed: 'check-circle',
   stopped: 'stop',
 };
+
+/** The icon in front of a verdict's title: a check that failed in a recording that marks nothing wrong is no bug. */
+export function verdictIcon(verdict: ReplayVerdict, steps: RecordedStep[]): IconName {
+  if (verdict.kind === 'reproduced' && !steps.some(isWrongStep)) return 'alert';
+  return VERDICT_ICONS[verdict.kind];
+}
 
 /** A step's state in the replay's list, as an icon and the color it takes (`data-state`). */
 export function stepStatus(

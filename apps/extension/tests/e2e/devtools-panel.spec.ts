@@ -106,7 +106,10 @@ function setSession(panel: Page, values: Record<string, unknown>): Promise<void>
  * extension, which the spec writes as the recorder and the replay would.
  */
 test.describe('the Piwi panel', () => {
-  test('follows a recording as it is captured, stops it, and exports it', async ({ context, extensionId }) => {
+  test('follows a recording as it is captured, says where to finish it, and exports it', async ({
+    context,
+    extensionId,
+  }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const shop = await context.newPage();
     const panel = await openPanel(shop, extensionId, context);
@@ -117,7 +120,6 @@ test.describe('the Piwi panel', () => {
       active: true,
       startedAt: 1,
       grantedOriginPattern: `${ORIGIN}/*`,
-      mode: 'actions',
       title: 'Apply a coupon',
     };
     await setSession(panel, { piwiRecording: { ...recording, events: [click('apply-coupon', 'Apply coupon', 1)] } });
@@ -141,24 +143,20 @@ test.describe('the Piwi panel', () => {
     await setSession(panel, { piwiRecording: { ...recording, events: twoSteps, paused: false } });
     await expect(panel.getByRole('status')).toHaveText(`Recording on ${ORIGIN}: 2 steps`);
 
-    await panel.getByRole('button', { name: 'Stop recording' }).click();
+    // Finished from the bar on the page or the popup, which collect the last evidence.
+    await expect(panel.getByText(/^Finish the recording from its bar on the page/)).toBeVisible();
+    await expect(panel.getByRole('button', { name: /Stop|Finish/ })).toHaveCount(0);
+    await setSession(panel, { piwiRecording: { ...recording, events: twoSteps, active: false } });
     await expect(panel.getByRole('status')).toHaveText('Recording stopped: 2 steps, not exported yet');
-    expect(
-      await panel.evaluate(
-        async () => ((await chrome.storage.session.get('piwiRecording')).piwiRecording as { active: boolean }).active,
-      ),
-    ).toBe(false);
 
-    await panel.getByRole('button', { name: 'Copy as TypeScript' }).click();
+    await panel.getByRole('button', { name: 'Copy test' }).click();
     await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible();
     const spec = await panel.evaluate(() => navigator.clipboard.readText());
     expect(spec).toContain("test('Apply a coupon', async ({ page }) => {");
     expect(spec).toContain("await page.getByTestId('apply-coupon').click();");
     expect(spec).toContain("await page.getByTestId('checkout').click();");
 
-    const download = panel.waitForEvent('download');
-    await panel.getByRole('button', { name: 'Download steps' }).click();
-    expect((await download).suggestedFilename()).toMatch(/^piwi-steps-.*\.json$/);
+    await expect(panel.getByRole('button', { name: /Download/ })).toHaveCount(0);
 
     await panel.getByRole('button', { name: 'Discard' }).click();
     await expect(panel.getByText('Nothing is being recorded.')).toBeVisible();

@@ -11,7 +11,7 @@ import { readStoredZip } from '../zip-reader.js';
 import { engineBundle } from './engine-bundle.js';
 import { emptyBugEvidence, isBugReportArchive, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
-import { clippedInShadows, openShadowRoots } from './shadow.js';
+import { clippedInShadows, openShadowRoots, wrappedButtonsInShadows } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -38,7 +38,6 @@ async function startBugRecording(
         events: [],
         startedAt: Date.now(),
         grantedOriginPattern: `${SHOP_ORIGIN}/*`,
-        mode: 'bug',
         bugToken: TOKEN,
       },
     },
@@ -63,7 +62,7 @@ async function attachRecorder(page: Page): Promise<void> {
 }
 
 /** The HUD's buttons, in order, reached through its host: its shadow root delegates focus. */
-const HUD = { mark: 0, missing: 1, wrongPage: 2, finish: 3 } as const;
+const HUD = { checkElement: 0, checkAddress: 1, missing: 2, pause: 3, finish: 4 } as const;
 
 async function pressHudButton(page: Page, which: keyof typeof HUD): Promise<void> {
   // A hidden HUD takes no focus: it is hidden while a screenshot is taken.
@@ -156,7 +155,7 @@ const visibility = (page: Page, id: string): Promise<string | null> =>
     return host ? getComputedStyle(host).visibility : null;
   }, id);
 
-test.describe('Report a bug', () => {
+test.describe('A recording and its bug report', () => {
   test('records the flow, what is wrong, what is missing and the evidence, and exports a failing test', async ({
     context,
   }) => {
@@ -173,8 +172,8 @@ test.describe('Report a bug', () => {
     await expect.poll(async () => (await readEvidence(page)).requests?.length ?? 0).toBe(1);
     await expect.poll(async () => (await readEvidence(page)).console?.length ?? 0).toBe(1);
 
-    // Mark what's wrong: pick the total, say it should read "Total: 45".
-    await pressHudButton(page, 'mark');
+    // Check an element: pick the total, say it should read "Total: 45", which marks the page wrong.
+    await pressHudButton(page, 'checkElement');
     await expect(page.getByText('click any element to generate locators')).toBeVisible();
     await page.hover('#total');
     await page.click('#total');
@@ -217,9 +216,10 @@ test.describe('Report a bug', () => {
     expect(await hostPresent(page, 'piwi-record-hud-host')).toBe(false);
     expect(await hostPresent(page, 'piwi-record-frame-host')).toBe(false);
 
-    // Finish panel, in its closed shadow root: close, title, Copy failing test, Copy report, Download .piwibug.
+    // Finish panel, in its closed shadow root: close, title, Copy failing test, Replay, Copy report, Download .piwibug.
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
+    await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('Coupon not applied to the total');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
@@ -237,6 +237,7 @@ test.describe('Report a bug', () => {
     expect(spec).toContain(`await expect(page.getByRole('button', { name: 'Download invoice' })).toBeVisible();`);
     expect(spec).toMatch(/Checkout' \}\)\.click\(\);\n\}\);\n$/);
 
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
     await expect.poll(() => readClipboard(page)).toContain('# Coupon not applied to the total');
@@ -341,19 +342,16 @@ test.describe('Report a bug', () => {
     expect(await run()).toBe('passed');
   });
 
-  test('without the activeTab grant the report says there is no screenshot, and Wrong page adds a URL check', async ({
+  test('without the activeTab grant the report says there is no screenshot, and Check the address marks a wrong page', async ({
     context,
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: false });
 
-    await pressHudButton(page, 'wrongPage');
+    await pressHudButton(page, 'checkAddress');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
-    // The field holds this page's path; the same path is refused.
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    expect(await hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    // The field holds this page's path; another one marks the page wrong.
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('/cart/discounted');
     await page.keyboard.press('Enter');
@@ -371,6 +369,7 @@ test.describe('Report a bug', () => {
       .toContain("await expect(page).toHaveURL('/cart/discounted'); // recorded: '/cart'");
 
     await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
     await expect.poll(() => readClipboard(page)).toContain('No screenshot: Chrome lets Piwi Picker take a screenshot');
     const markdown = await readClipboard(page);
@@ -381,7 +380,7 @@ test.describe('Report a bug', () => {
   test('Escape during the pick records nothing and resumes capture', async ({ context }) => {
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await expect(page.getByText('click any element to generate locators')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByText('click any element to generate locators')).toBeHidden();
@@ -396,22 +395,49 @@ test.describe('Report a bug', () => {
       .toEqual(['viewport', 'navigate', 'input', 'click']);
   });
 
-  test('Mark what’s wrong shows the expected field only for a value', async ({ context }) => {
+  test('Check an element shows the expected field only for a value, and says what Add records', async ({ context }) => {
     await openShadowRoots(context);
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await page.hover('#total');
     await page.click('#total');
-    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Mark what’s wrong' });
-    await expect(dialog.getByLabel('What it should show')).toBeVisible();
+    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Check an element' });
+    const expected = dialog.getByLabel('Expected');
+    await expect(expected).toHaveValue('Total: 50');
+    await expect(dialog.getByText('A check: the test passes while the page shows this.')).toBeVisible();
+    await expect(dialog.getByLabel('Note')).toBeHidden();
 
-    await dialog.getByLabel('What’s wrong').selectOption({ label: 'It should be hidden' });
-    await expect(dialog.getByText('What it should show')).toBeHidden();
+    // Another value marks the page wrong, and asks for a note.
+    await expected.fill('Total: 45');
+    await expect(dialog.getByText(/^Marked as wrong: the recording becomes a bug report/)).toBeVisible();
+    await expect(dialog.getByLabel('Note')).toBeVisible();
+    await expected.fill('Total: 50');
+    await expect(dialog.getByText('A check: the test passes while the page shows this.')).toBeVisible();
+
+    // A state the element is in is a check; its opposite marks the page wrong.
+    await dialog.getByLabel('What to check').selectOption({ label: 'It is visible' });
+    await expect(dialog.getByText('Expected')).toBeHidden();
+    await expect(dialog.getByText('A check: the test passes while the page shows this.')).toBeVisible();
+    await dialog.getByLabel('What to check').selectOption({ label: 'It should be hidden' });
+    await expect(dialog.getByText(/^Marked as wrong/)).toBeVisible();
     await expect(dialog.getByRole('textbox')).toHaveCount(1);
 
-    await dialog.getByLabel('What’s wrong').selectOption({ label: 'Its text' });
-    await expect(dialog.getByLabel('What it should show')).toBeVisible();
+    await dialog.getByLabel('What to check').selectOption({ label: 'Its text' });
+    await expect(expected).toBeVisible();
+    await dialog.getByRole('button', { name: 'Add the check' }).click();
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+    const events = await readStoredEvents(page);
+    expect(events.find((e) => e.kind === 'assert')?.assertion).toEqual({
+      matcher: 'toHaveText',
+      expected: 'Total: 50',
+      actual: null,
+      negated: false,
+      note: null,
+    });
+    // A check that passes takes no screenshot of its own.
+    await page.waitForTimeout(300);
+    expect(await screenshotCount(page)).toBe(0);
   });
 
   test('in French: the HUD, the dialogs and the finished report', async ({ context }) => {
@@ -421,10 +447,10 @@ test.describe('Report a bug', () => {
     const page = await startBugRecording(context, { ok: false }, { language: 'fr' });
     const hud = page.locator('#piwi-record-hud-host');
 
-    await expect(hud.getByText('Signalement d’un bug · 1 étape')).toBeVisible();
-    await expect(hud.getByRole('button', { name: 'Marquer ce qui ne va pas' })).toHaveAttribute(
+    await expect(hud.getByText('Enregistrement\u00a0: 1 étape')).toBeVisible();
+    await expect(hud.getByRole('button', { name: 'Vérifier un élément' })).toHaveAttribute(
       'title',
-      'Choisissez un élément de la page et dites ce qu’il devrait afficher',
+      'Choisissez un élément de la page\u00a0: vérifiez ce qu’il affiche, ou dites ce qu’il devrait afficher',
     );
     await expect(hud.getByRole('button', { name: 'Il manque quelque chose' })).toBeVisible();
     await expect(hud.getByRole('button', { name: 'Terminer' })).toBeVisible();
@@ -440,17 +466,17 @@ test.describe('Report a bug', () => {
     await page.keyboard.type('Apply');
     await page.keyboard.press('Enter');
     await expect(dialog.getByRole('alert')).toHaveText(
-      '1 élément de ce type est déjà sur la page\u00a0: utilisez «\u202fMarquer ce qui ne va pas\u202f» pour dire ce qui ne va pas.',
+      '1 élément de ce type est déjà sur la page\u00a0: utilisez «\u202fVérifier un élément\u202f» pour le vérifier, ou pour dire ce qui ne va pas.',
     );
     await page.keyboard.press('Escape');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
 
-    // Mark what's wrong: the state choices and what the page shows, in French.
-    await pressHudButton(page, 'mark');
+    // Check an element: the state choices and what the page shows, in French.
+    await pressHudButton(page, 'checkElement');
     await page.hover('#total');
     await page.click('#total');
-    await expect(dialog.getByRole('dialog', { name: 'Marquer ce qui ne va pas' })).toBeVisible();
-    await expect(dialog.getByText('La page affiche')).toBeVisible();
+    await expect(dialog.getByRole('dialog', { name: 'Vérifier un élément' })).toBeVisible();
+    await expect(dialog.getByText('La page affiche', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('option', { name: 'Il devrait être masqué' })).toBeAttached();
     await page.keyboard.type('Total: 45');
     await page.keyboard.press('Enter');
@@ -459,7 +485,7 @@ test.describe('Report a bug', () => {
 
     await pressHudButton(page, 'finish');
     const review = page.locator('#piwi-record-review-host');
-    await expect(review.getByRole('dialog', { name: 'Rapport de bug Piwi Picker' })).toBeVisible();
+    await expect(review.getByRole('dialog', { name: 'Votre enregistrement' })).toBeVisible();
     expect(await panelLang(page, 'piwi-record-review-host', '.panel')).toBe('fr');
     await expect(review.getByText('Rapport de bug · 2 étapes')).toBeVisible();
     await expect(review.getByLabel('Titre')).toBeVisible();
@@ -477,6 +503,7 @@ test.describe('Report a bug', () => {
     await expect(review.locator('.step').first()).toContainText(/^1\s*Ouvrir /);
     await expect(review.locator('.step.marked')).toContainText('devrait afficher «\u202fTotal: 45\u202f»');
     expect(await clippedInShadows(page)).toEqual([]);
+    expect(await wrappedButtonsInShadows(page)).toEqual([]);
 
     // The report is written in French; the failing test is the one an English report makes.
     await review.getByRole('button', { name: 'Copier le rapport' }).click();
@@ -493,7 +520,8 @@ test.describe('Report a bug', () => {
     expect(spec).toContain(
       `await expect(page.getByTestId('cart-total')).toHaveText('Total: 45'); // recorded: 'Total: 50'`,
     );
-    expect(spec).toMatch(/test\('bug: bug on \/cart'/);
+    // The title the recording took from the first page.
+    expect(spec).toMatch(/test\('bug: cart'/);
   });
 
   test('in German: the HUD, the dialogs and the finished report lay out without clipping', async ({ context }) => {
@@ -503,6 +531,7 @@ test.describe('Report a bug', () => {
     const dialog = page.locator('#piwi-bug-dialog-host');
     await expect.poll(() => panelLang(page, 'piwi-record-hud-host', '.bar')).toBe('de');
     expect(await clippedInShadows(page)).toEqual([]);
+    expect(await wrappedButtonsInShadows(page)).toEqual([]);
 
     await pressHudButton(page, 'missing');
     await expect.poll(() => panelLang(page, 'piwi-bug-dialog-host', '.panel')).toBe('de');
@@ -514,7 +543,7 @@ test.describe('Report a bug', () => {
     await page.keyboard.press('Escape');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
 
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await page.hover('#total');
     await page.click('#total');
     await expect.poll(() => panelLang(page, 'piwi-bug-dialog-host', '.panel')).toBe('de');
@@ -529,6 +558,7 @@ test.describe('Report a bug', () => {
     await expect.poll(() => panelLang(page, 'piwi-record-review-host', '.panel')).toBe('de');
     await expect(page.locator('#piwi-record-review-host .step.marked')).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
+    expect(await wrappedButtonsInShadows(page)).toEqual([]);
   });
 
   test('in the real extension without the debugging protocol: the main-world script is registered for the recording, relays across worlds, and no screenshot is taken without activeTab', async () => {
@@ -560,7 +590,6 @@ test.describe('Report a bug', () => {
             type: 'piwi-start-recording',
             originPattern: `${origin}/*`,
             tabId: tab,
-            mode: 'bug',
           }),
         { origin: SHOP_ORIGIN, tab: tabId },
       );
@@ -621,7 +650,7 @@ test.describe('Report a bug', () => {
     }
   });
 
-  test('keeps the viewport the steps were played at, and the size a resize settles at, in the failing test', async ({
+  test('keeps the viewport the steps were played at, and the size a resize settles at, in the test', async ({
     context,
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -648,17 +677,19 @@ test.describe('Report a bug', () => {
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
-    await expect.poll(() => readClipboard(page)).toContain('test.fail();');
+    // Nothing marked wrong: the test passes, at the addresses as recorded.
+    await expect.poll(() => readClipboard(page)).toContain('setViewportSize');
     const spec = await readClipboard(page);
+    expect(spec).not.toContain('test.fail();');
     expect(spec).toContain(
-      `  await page.setViewportSize({ width: ${start.width}, height: ${start.height} });\n  await page.goto('/cart');`,
+      `  await page.setViewportSize({ width: ${start.width}, height: ${start.height} });\n  await page.goto('${SHOP_ORIGIN}/cart');`,
     );
     expect(spec).toMatch(
       /setViewportSize\(\{ width: 390, height: 664 \}\);\n {2}await page\.getByRole\('button', \{ name: 'Apply' \}\)\.click\(\);/,
     );
   });
 
-  test('a password shown in clear stays out of Mark what’s wrong and of the outline, as a card number does', async ({
+  test('a password shown in clear stays out of Check an element and of the outline, as a card number does', async ({
     context,
   }) => {
     await openShadowRoots(context);
@@ -671,16 +702,22 @@ test.describe('Report a bug', () => {
     await page.locator('#pw').click();
     await page.keyboard.type('et!');
 
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await page.hover('#pw');
     await page.click('#pw');
-    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Mark what’s wrong' });
+    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Check an element' });
     await expect(dialog).toBeVisible();
     // Its states only: no value, text or name, so what it holds is never shown or kept.
-    await expect(dialog.getByRole('option')).toHaveText(['It should be hidden', 'It should be grayed out, not usable']);
-    await expect(dialog.getByText('What it should show')).toBeHidden();
+    await expect(dialog.getByRole('option')).toHaveText([
+      'It is visible',
+      'It is usable, not grayed out',
+      'It should be hidden',
+      'It should be grayed out, not usable',
+    ]);
+    await expect(dialog.getByText('Expected')).toBeHidden();
     await expect(dialog).not.toContainText('s3cr');
-    await dialog.getByRole('button', { name: 'Add to the report' }).click();
+    await dialog.getByLabel('What to check').selectOption({ label: 'It should be hidden' });
+    await dialog.getByRole('button', { name: 'Add the check' }).click();
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
     await expect.poll(() => screenshotCount(page)).toBe(1);
 
@@ -713,7 +750,7 @@ test.describe('Report a bug', () => {
     // The view of the first step is taken as the page is reached, with the surfaces hidden.
     await expect.poll(() => visibility(page, 'piwi-record-hud-host')).toBe('visible');
     // The HUD redraws while the screenshot of a mark is taken: an evidence entry has come in.
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await page.hover('#total');
     await page.click('#total');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
@@ -761,7 +798,7 @@ test.describe('Report a bug', () => {
         },
       },
     );
-    await pressHudButton(page, 'wrongPage');
+    await pressHudButton(page, 'checkAddress');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('/cart/discounted');
@@ -818,7 +855,7 @@ test.describe('Report a bug', () => {
     );
     const evidence = page.locator('#piwi-record-hud-host .evidence').first();
     await expect(evidence).toHaveText(/^no screenshot/);
-    await pressHudButton(page, 'wrongPage');
+    await pressHudButton(page, 'checkAddress');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('/cart/discounted');
@@ -846,7 +883,7 @@ test.describe('Report a bug', () => {
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });
     const hud = page.locator('#piwi-record-hud-host');
-    await expect(hud.getByRole('region', { name: 'Piwi Picker bug report' })).toBeVisible();
+    await expect(hud.getByRole('region', { name: 'Recording' })).toBeVisible();
     const dotAnimation = () =>
       page.evaluate(
         () =>
@@ -889,7 +926,7 @@ test.describe('Report a bug', () => {
     await page.keyboard.press('Tab');
     const focusedButton = () =>
       page.evaluate(() => document.getElementById('piwi-record-hud-host')?.shadowRoot?.activeElement?.textContent);
-    expect(await focusedButton()).toBe('Wrong page');
+    expect(await focusedButton()).toBe('Something is missing');
     await page.evaluate(() => {
       (document.getElementById('piwi-record-hud-host') as HTMLElement & { __same?: boolean }).__same = true;
     });
@@ -900,9 +937,9 @@ test.describe('Report a bug', () => {
         page.evaluate(() => (document.getElementById('piwi-record-hud-host') as { __same?: boolean } | null)?.__same),
       )
       .toBeUndefined();
-    expect(await focusedButton()).toBe('Wrong page');
+    expect(await focusedButton()).toBe('Something is missing');
     await page.keyboard.press('Tab');
-    expect(await focusedButton()).toBe('Finish');
+    expect(await focusedButton()).toBe('Pause');
   });
 
   test('a dialog the page removes is cancelled: capture goes on, and the page has its Escape back', async ({
@@ -927,15 +964,15 @@ test.describe('Report a bug', () => {
     await expect
       .poll(async () => (await readStoredEvents(page)).map((e) => e.kind))
       .toEqual(['viewport', 'navigate', 'keydown', 'input', 'click']);
-    // Another way to mark what is wrong opens.
-    await pressHudButton(page, 'wrongPage');
+    // Another dialog opens.
+    await pressHudButton(page, 'checkAddress');
     await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
   });
 
-  test('a stop during Mark’s pick takes the pick down', async ({ context }) => {
+  test('a stop during Check an element’s pick takes the pick down', async ({ context }) => {
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     await expect(page.getByText('click any element to generate locators')).toBeVisible();
     await dispatchRuntimeMessage(page, { type: 'piwi-recording-stopped' });
     await expect(page.getByText('click any element to generate locators')).toBeHidden();
@@ -944,10 +981,10 @@ test.describe('Report a bug', () => {
     expect(await hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
   });
 
-  test('a Pick started during Mark’s pick leaves it be, and picks once it is over', async ({ context }) => {
+  test('a Pick started during Check an element’s pick leaves it be, and picks once it is over', async ({ context }) => {
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });
-    await pressHudButton(page, 'mark');
+    await pressHudButton(page, 'checkElement');
     const overlay = page.getByText('click any element to generate locators');
     await expect(overlay).toBeVisible();
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });

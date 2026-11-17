@@ -255,13 +255,13 @@ const sessionAccessReady = Promise.resolve()
   .catch(() => undefined);
 
 const RECORD_SCRIPT_ID = 'piwi-record-panel';
-/** The bug recording's main-world script: console errors and failed requests, registered only while one runs. */
+/** The recording's main-world script: console errors and failed requests, registered only while one runs. */
 const BUG_EVIDENCE_SCRIPT_ID = 'piwi-bug-evidence';
 const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
 
 /**
  * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
- * when one of the ids is not registered, as the bug recording's script is not
+ * when one of the ids is not registered, as the recording's script is not
  * during an actions recording.
  */
 async function unregisterScripts(ids: string[]): Promise<void> {
@@ -337,7 +337,7 @@ async function handleStartRecording(originPattern: string, tabId: number): Promi
 /**
  * Guards against starting the same recording twice.
  *
- * A first "Record actions" click resolves its grant down two paths that both
+ * A first Record click resolves its grant down two paths that both
  * land here: the popup's own `piwi-start-recording` message (when the popup
  * survives the permission prompt) and `chrome.permissions.onAdded` (when the
  * prompt closed it). `startInFlight` is set synchronously before the first
@@ -383,13 +383,13 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
   await startRecordingOnce(decision.originPattern, decision.tabId);
 }
 
-// The person cancelled the debugging bar during a bug recording: the recorder's page relay takes over.
+// The person cancelled the debugging bar during a recording: the recorder's page relay takes over.
 onBugDebuggerLost(async () => {
   const { grantedOriginPattern, active } = await getRecordingState();
   if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
 });
 
-// A bug recording's step screenshots go with it.
+// A recording's step screenshots go with it.
 clearViewsWithRecording();
 
 chrome.permissions.onAdded.addListener((permissions) => {
@@ -441,7 +441,7 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
 }
 
 /**
- * A screenshot of the tab a bug recording runs in, for its report.
+ * A screenshot of the tab a recording runs in, for its report.
  *
  * In Chrome, through the recording's debugging session (`Page.captureScreenshot`):
  * at any moment and on any page of the recording. Without it (Firefox, a
@@ -774,7 +774,7 @@ let replayStartQueue: Promise<unknown> = Promise.resolve();
  * again here, the state goes to session storage, and the replay script is
  * registered for the origin so every page the replay reaches continues it.
  * It needs the origin's host permission, which Replay in the popup requests
- * and a bug recording on the same site already holds. A content script starts
+ * and a recording on the same site already holds. A content script starts
  * a replay only on its own tab's origin; an extension page names any.
  */
 function handleStartReplay(
@@ -1088,7 +1088,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-tab-zoom') {
-    // The zoom of the sender's tab, which a bug recording keeps with each viewport size.
+    // The zoom of the sender's tab, which a recording keeps with each viewport size.
     const tabId = sender.tab?.id;
     void (tabId != null ? tabZoom(tabId) : Promise.resolve(1)).then((zoom) => sendResponse({ zoom }));
     return true;

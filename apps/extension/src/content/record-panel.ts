@@ -869,7 +869,7 @@ function stopCapture(): void {
 }
 
 /**
- * A bug recording's screenshots of the page as each step begins (see
+ * A recording's screenshots of the page as each step begins (see
  * `background/step-views.ts`). Once the page has been still for
  * `VIEW_SETTLE_MS` after a step, the recorder asks for the view the next step
  * begins from; an action that comes before one is taken asks for its own as it
@@ -1286,7 +1286,7 @@ async function runRecordPanel(restoredAt: number | null = null): Promise<void> {
   // Each run waits for the one before it: this script is injected both by the
   // dynamic registration (on every navigation) and one-off from the popup, and
   // the two can land together. Chained, the second sees the capture the first
-  // attached, and a run after a stop still renders the review panel. A failed
+  // attached, and a run after a stop still renders the finish panel. A failed
   // run never blocks the next: the usual cause is the worker not having
   // widened session-storage access yet, which is transient.
   g.__piwiRecordPanelRun = (g.__piwiRecordPanelRun ?? Promise.resolve())

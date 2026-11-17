@@ -16,7 +16,7 @@ const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAf/Z';
 
-const HUD = { mark: 0, missing: 1, wrongPage: 2, finish: 3 } as const;
+const HUD = { checkElement: 0, checkAddress: 1, missing: 2, pause: 3, finish: 4 } as const;
 
 async function pressHudButton(page: Page, which: keyof typeof HUD): Promise<void> {
   await page.focus('#piwi-record-hud-host');
@@ -41,7 +41,6 @@ async function recordReport(context: BrowserContext): Promise<Page> {
         events: [],
         startedAt: Date.now(),
         grantedOriginPattern: `${SHOP_ORIGIN}/*`,
-        mode: 'bug',
         bugToken: TOKEN,
       },
     },
@@ -80,7 +79,7 @@ async function recordReport(context: BrowserContext): Promise<Page> {
 
   await page.fill('#coupon', 'SPRING10');
   await page.getByRole('button', { name: 'Apply' }).click();
-  await pressHudButton(page, 'mark');
+  await pressHudButton(page, 'checkElement');
   await page.hover('#total');
   await page.click('#total');
   await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
@@ -182,7 +181,6 @@ test.describe('Send to Piwi', () => {
           events: [],
           startedAt: Date.now(),
           grantedOriginPattern: `${SHOP_ORIGIN}/*`,
-          mode: 'bug',
           bugToken: TOKEN,
         },
       },

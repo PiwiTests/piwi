@@ -115,7 +115,7 @@
     "message": "Le rapport ne contient aucune étape."
   },
   "common_replayNeedsAccess": {
-    "message": "Piwi Picker a besoin d’accéder à ce site pour suivre le rapport de page en page. Ouvrez Piwi Picker sur cet onglet et choisissez Rejouer un rapport de bug."
+    "message": "Piwi Picker a besoin d’accéder à ce site pour suivre le rejeu de page en page. Ouvrez Piwi Picker sur cet onglet et choisissez Rejouer."
   },
   "common_replayStartFailed": {
     "message": "Le rapport n’a pas pu être rejoué."
@@ -477,7 +477,7 @@
     }
   },
   "popup_stepsSoFar": {
-    "message": "Étapes enregistrées jusqu’ici"
+    "message": "Étapes enregistrées"
   },
   "popup_reviewRecording": {
     "message": "Revoir ($count$)",
@@ -513,7 +513,7 @@
     "message": "Piwi Picker ne peut pas enregistrer sur cette page."
   },
   "popup_cannotReplay": {
-    "message": "Piwi Picker ne peut pas rejouer de rapport sur cette page."
+    "message": "Piwi Picker ne peut pas rejouer d’enregistrement sur cette page."
   },
   "popup_replayElsewhere": {
     "message": "Un rejeu est en cours dans un autre onglet. Arrêtez-le là-bas, ou dans le panneau Piwi des DevTools, avant de rejouer ici."
@@ -2862,7 +2862,7 @@
     "message": "Tout reste dans ce navigateur tant que vous ne l’envoyez pas."
   },
   "replay_hudLabel": {
-    "message": "Piwi Picker : rapport de bug rejoué"
+    "message": "Piwi Picker : enregistrement rejoué"
   },
   "replay_statusRunning": {
     "message": "En cours"
@@ -3053,6 +3053,9 @@
   "replay_verdictReproduced": {
     "message": "Reproduit : le bug est visible ici"
   },
+  "replay_verdictCheckFailed": {
+    "message": "Une vérification a échoué"
+  },
   "replay_verdictExpectedFound": {
     "message": "Étape $step$ : attendu « $expected$ », résultat : $found$.",
     "placeholders": {
@@ -3128,8 +3131,23 @@
       }
     }
   },
+  "replay_verdictChecksHold": {
+    "message": "Toutes les vérifications passent"
+  },
+  "replay_verdictChecksHoldDetail": {
+    "message": "Les étapes ont été jouées ici, et chaque vérification a trouvé ce qu’elle attend."
+  },
   "replay_verdictDiverged": {
     "message": "Impossible d’atteindre le bug : arrêt à l’étape $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedRecording": {
+    "message": "Arrêté à l’étape $step$ : la page a pris un autre chemin",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3558,7 +3576,7 @@
     }
   },
   "replay_dialogTitle": {
-    "message": "Rejouer un rapport de bug"
+    "message": "Rejouer un enregistrement"
   },
   "replay_dialogIntro": {
     "message": "Rejoue ses étapes sur $origin$, avec un curseur qui montre chacune d’elles, et indique si le bug apparaît ici.",
@@ -3576,7 +3594,7 @@
     "message": "Utiliser l’enregistrement fait dans ce navigateur"
   },
   "replay_chooseFile": {
-    "message": "Ou choisissez le .piwibug du rapport, ou son steps.json, enregistré par Piwi Picker :"
+    "message": "Ou choisissez un .piwibug, ou un steps.json, enregistré par Piwi Picker :"
   },
   "replay_pasteSteps": {
     "message": "Ou collez le texte d’un steps.json, comme les étapes copiées depuis Piwi"
@@ -3776,10 +3794,10 @@
     "message": "L’application de bureau n’a envoyé aucun verdict que Piwi Picker sache afficher : voyez l’exécution dans sa fenêtre."
   },
   "replay_fileLabel": {
-    "message": "Le .piwibug du rapport de bug, ou son steps.json"
+    "message": "Un .piwibug, ou un steps.json"
   },
   "replay_untitled": {
-    "message": "Rapport sans titre"
+    "message": "Enregistrement sans titre"
   },
   "replay_summary_one": {
     "message": "$title$ · $count$ étape",
@@ -3832,7 +3850,7 @@
     "message": "Rejouer"
   },
   "replay_chooseFirst": {
-    "message": "Choisissez d’abord un rapport."
+    "message": "Choisissez d’abord un enregistrement."
   },
   "replay_zipNoSteps": {
     "message": "$file$ ne contient pas de steps.json : choisissez le .piwibug enregistré par Piwi Picker, ou son steps.json.",
@@ -5403,7 +5421,7 @@
     "message": "Rejouer"
   },
   "devtools_noRecording": {
-    "message": "Aucun enregistrement en cours. Commencez par Enregistrer ou Signaler un bug dans le menu de l’extension : les étapes s’affichent ici au fur et à mesure."
+    "message": "Aucun enregistrement en cours. Commencez par Enregistrer dans le menu de l’extension : les étapes s’affichent ici au fur et à mesure."
   },
   "devtools_recordingOn_one": {
     "message": "Enregistrement sur $site$ : $count$ étape",
@@ -5479,7 +5497,7 @@
     "message": "Terminez l’enregistrement depuis sa barre sur la page, ou depuis le menu de Piwi Picker : ils rassemblent les dernières preuves."
   },
   "devtools_noReplay": {
-    "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer un rapport de bug dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
+    "message": "Aucune relecture pour l’instant. Lancez-en une avec Rejouer dans le menu de l’extension : ses étapes et leurs résultats s’affichent ici."
   },
   "devtools_tabNetwork": {
     "message": "Réseau"

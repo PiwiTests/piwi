@@ -158,7 +158,7 @@ test.describe('in an English browser', () => {
     // A recording started while the replay ran keeps its badge.
     await page.evaluate(() =>
       chrome.storage.session.set({
-        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'actions' },
+        piwiRecording: { active: true, events: [], startedAt: 1, grantedOriginPattern: null },
       }),
     );
     expect(await replayFinished()).toBe('ENR');
@@ -183,19 +183,14 @@ test.describe('in a French browser', () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
-    for (const name of [
-      'Éléments testés',
-      'Signaler un bug',
-      'Rejouer un rapport de bug',
-      'Enregistrer',
-      'Choisir un élément',
-    ]) {
+    for (const name of ['Éléments testés', 'Rejouer', 'Enregistrer', 'Choisir un élément']) {
       await expect(page.getByRole('button', { name: new RegExp(name) })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: 'Réglages' })).toBeVisible();
     await expect(page.locator('#coverage-hint')).toHaveText('Connectez Piwi pour le voir');
-    // `U`, the Runs tile's, is there while hidden, until a paired editor's runs show it.
-    await expect(page.locator('.tile .key')).toHaveText(['1', '2', '3', '4', '5', '6', 'B', 'R', 'U', 'T', '7']);
+    // `S` and `U`, Take a screenshot's and the Runs tile's, are there while hidden, until a recording or a paired
+    // editor's runs show them.
+    await expect(page.locator('.tile .key')).toHaveText(['1', '2', '3', '4', '5', '6', '7', 'R', 'S', 'U', 'T']);
     expect(await untranslated(page)).toEqual([]);
     expect(await clipped(page)).toEqual([]);
 

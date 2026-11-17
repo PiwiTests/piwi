@@ -115,7 +115,7 @@
     "message": "O relatório não tem nenhum passo."
   },
   "common_replayNeedsAccess": {
-    "message": "O Piwi Picker precisa de acesso a este site para acompanhar a reprodução de página em página. Abra o Piwi Picker nesta aba e escolha Reproduzir um relatório de bug."
+    "message": "O Piwi Picker precisa de acesso a este site para acompanhar a reprodução de página em página. Abra o Piwi Picker nesta aba e escolha Reproduzir."
   },
   "common_replayStartFailed": {
     "message": "Não foi possível iniciar a reprodução."
@@ -513,7 +513,7 @@
     "message": "O Piwi Picker não pode gravar nesta página."
   },
   "popup_cannotReplay": {
-    "message": "O Piwi Picker não pode reproduzir um relatório nesta página."
+    "message": "O Piwi Picker não pode reproduzir uma gravação nesta página."
   },
   "popup_replayElsewhere": {
     "message": "Há uma reprodução em andamento em outra aba. Pare-a lá, ou no painel Piwi das DevTools, antes de reproduzir aqui."
@@ -2862,7 +2862,7 @@
     "message": "Tudo aqui fica neste navegador até você enviar."
   },
   "replay_hudLabel": {
-    "message": "Piwi Picker: reprodução de um relatório de bug"
+    "message": "Piwi Picker: reprodução de uma gravação"
   },
   "replay_statusRunning": {
     "message": "Reproduzindo"
@@ -3053,6 +3053,9 @@
   "replay_verdictReproduced": {
     "message": "Reproduzido: o bug aparece aqui"
   },
+  "replay_verdictCheckFailed": {
+    "message": "Uma verificação falhou"
+  },
   "replay_verdictExpectedFound": {
     "message": "Passo $step$: esperado “$expected$”, resultado: $found$.",
     "placeholders": {
@@ -3128,8 +3131,23 @@
       }
     }
   },
+  "replay_verdictChecksHold": {
+    "message": "Todas as verificações passam"
+  },
+  "replay_verdictChecksHoldDetail": {
+    "message": "Os passos foram reproduzidos aqui, e cada verificação encontrou o que espera."
+  },
   "replay_verdictDiverged": {
     "message": "Não foi possível chegar ao bug: parou no passo $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedRecording": {
+    "message": "Parou no passo $step$: a página seguiu outro caminho",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3558,7 +3576,7 @@
     }
   },
   "replay_dialogTitle": {
-    "message": "Reproduzir um relatório de bug"
+    "message": "Reproduzir uma gravação"
   },
   "replay_dialogIntro": {
     "message": "Reproduz os passos em $origin$, com um cursor que mostra cada um, e diz se o bug aparece aqui.",
@@ -3576,7 +3594,7 @@
     "message": "Usar a gravação feita neste navegador"
   },
   "replay_chooseFile": {
-    "message": "Ou escolha o .piwibug do relatório, ou o steps.json dele, salvo pelo Piwi Picker:"
+    "message": "Ou escolha um .piwibug, ou um steps.json, salvo pelo Piwi Picker:"
   },
   "replay_pasteSteps": {
     "message": "Ou cole o texto de um steps.json, como os passos copiados do Piwi"
@@ -3776,10 +3794,10 @@
     "message": "O aplicativo de desktop não enviou nenhum veredito que o Piwi Picker consiga mostrar: veja a execução na janela do aplicativo."
   },
   "replay_fileLabel": {
-    "message": "O .piwibug do relatório de bug, ou o steps.json dele"
+    "message": "Um .piwibug, ou um steps.json"
   },
   "replay_untitled": {
-    "message": "Relatório sem título"
+    "message": "Gravação sem título"
   },
   "replay_summary_one": {
     "message": "$title$ · $count$ passo",
@@ -3832,7 +3850,7 @@
     "message": "Reproduzir"
   },
   "replay_chooseFirst": {
-    "message": "Primeiro, escolha um relatório."
+    "message": "Primeiro, escolha uma gravação."
   },
   "replay_zipNoSteps": {
     "message": "$file$ não tem steps.json: escolha o .piwibug salvo pelo Piwi Picker, ou o steps.json dele.",
@@ -5403,7 +5421,7 @@
     "message": "Reproduzir"
   },
   "devtools_noRecording": {
-    "message": "Nada está sendo gravado. Comece com Gravar ou Relatar um bug no menu da extensão: os passos aparecem aqui conforme são gravados."
+    "message": "Nada está sendo gravado. Comece com Gravar no menu da extensão: os passos aparecem aqui conforme são gravados."
   },
   "devtools_recordingOn_one": {
     "message": "Gravando em $site$: $count$ passo",
@@ -5479,7 +5497,7 @@
     "message": "Termine a gravação pela barra dela na página, ou pelo menu do Piwi Picker: eles reúnem as últimas evidências."
   },
   "devtools_noReplay": {
-    "message": "Nenhuma reprodução ainda. Inicie uma com Reproduzir um relatório de bug no menu da extensão: os passos e resultados aparecem aqui."
+    "message": "Nenhuma reprodução ainda. Inicie uma com Reproduzir no menu da extensão: os passos e resultados aparecem aqui."
   },
   "devtools_tabNetwork": {
     "message": "Rede"

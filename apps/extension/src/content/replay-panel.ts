@@ -56,7 +56,7 @@ import {
   replayVerdict,
   stepStatus,
   stepTimeout,
-  VERDICT_ICONS,
+  verdictIcon,
   verdictText,
   wait,
   type ReplayVerdict,
@@ -595,7 +595,7 @@ function renderHud(
       box2.setAttribute('role', 'status');
       const titleEl = document.createElement('div');
       titleEl.className = 'title';
-      titleEl.append(icon(VERDICT_ICONS[verdict.kind]), verdictTitle);
+      titleEl.append(icon(verdictIcon(verdict, steps)), verdictTitle);
       const d = document.createElement('div');
       d.append(...richText(detail));
       box2.append(titleEl, d);
@@ -1363,7 +1363,7 @@ async function stopEvidence(): Promise<void> {
  * script while a replay runs) with the replay's token, and keeps its entries in
  * batches (`relayEvidence`), handing them to the worker as the page is left.
  * Only what the page showed from `since`, the replay's start, is the replay's:
- * the script in a page a bug recording ran on still holds what the recording's
+ * the script in a page a recording ran on still holds what the recording's
  * debugging session collected. Returns the disposer, which stores what is still
  * pending and stops listening.
  */

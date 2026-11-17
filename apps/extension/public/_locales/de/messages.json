@@ -115,7 +115,7 @@
     "message": "Der Bug-Report enthält keine Schritte."
   },
   "common_replayNeedsAccess": {
-    "message": "Piwi Picker braucht Zugriff auf diese Website, um das Abspielen von Seite zu Seite zu verfolgen. Öffnen Sie Piwi Picker in diesem Tab und wählen Sie Bug-Report abspielen."
+    "message": "Piwi Picker braucht Zugriff auf diese Website, um das Abspielen von Seite zu Seite zu verfolgen. Öffnen Sie Piwi Picker in diesem Tab und wählen Sie Abspielen."
   },
   "common_replayStartFailed": {
     "message": "Der Bug-Report konnte nicht abgespielt werden."
@@ -513,7 +513,7 @@
     "message": "Piwi Picker kann auf dieser Seite nicht aufzeichnen."
   },
   "popup_cannotReplay": {
-    "message": "Piwi Picker kann auf dieser Seite keinen Bug-Report abspielen."
+    "message": "Piwi Picker kann auf dieser Seite keine Aufzeichnung abspielen."
   },
   "popup_replayElsewhere": {
     "message": "In einem anderen Tab läuft eine Wiedergabe. Stoppen Sie sie dort oder im Piwi-Panel der DevTools, bevor Sie hier abspielen."
@@ -2862,7 +2862,7 @@
     "message": "Alles hier bleibt in diesem Browser, bis Sie es senden."
   },
   "replay_hudLabel": {
-    "message": "Piwi Picker: Bug-Report wird abgespielt"
+    "message": "Piwi Picker: Aufzeichnung wird abgespielt"
   },
   "replay_statusRunning": {
     "message": "Läuft"
@@ -3053,6 +3053,9 @@
   "replay_verdictReproduced": {
     "message": "Reproduziert: Der Bug tritt hier auf"
   },
+  "replay_verdictCheckFailed": {
+    "message": "Eine Prüfung ist fehlgeschlagen"
+  },
   "replay_verdictExpectedFound": {
     "message": "Schritt $step$: erwartet „$expected$“, Ergebnis: $found$.",
     "placeholders": {
@@ -3128,8 +3131,23 @@
       }
     }
   },
+  "replay_verdictChecksHold": {
+    "message": "Alle Prüfungen bestehen"
+  },
+  "replay_verdictChecksHoldDetail": {
+    "message": "Die Schritte liefen hier, und jede Prüfung fand, was sie erwartet."
+  },
   "replay_verdictDiverged": {
     "message": "Bug nicht erreicht: Abbruch bei Schritt $step$",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictDivergedRecording": {
+    "message": "Bei Schritt $step$ angehalten: Die Seite verlief anders",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3558,7 +3576,7 @@
     }
   },
   "replay_dialogTitle": {
-    "message": "Bug-Report abspielen"
+    "message": "Aufzeichnung abspielen"
   },
   "replay_dialogIntro": {
     "message": "Spielt seine Schritte auf $origin$ ab, mit einem Cursor, der jeden zeigt, und sagt, ob der Bug hier auftritt.",
@@ -3576,7 +3594,7 @@
     "message": "Die in diesem Browser gemachte Aufzeichnung verwenden"
   },
   "replay_chooseFile": {
-    "message": "Oder wählen Sie die .piwibug-Datei des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
+    "message": "Oder wählen Sie eine .piwibug-Datei oder eine steps.json, von Piwi Picker gespeichert:"
   },
   "replay_pasteSteps": {
     "message": "Oder den Text einer steps.json einfügen, etwa die aus Piwi kopierten Schritte"
@@ -3776,10 +3794,10 @@
     "message": "Die Desktop-App hat kein Ergebnis gesendet, das Piwi Picker anzeigen kann: Sehen Sie sich den Lauf im Fenster der App an."
   },
   "replay_fileLabel": {
-    "message": "Die .piwibug-Datei des Bug-Reports oder seine steps.json"
+    "message": "Eine .piwibug-Datei oder eine steps.json"
   },
   "replay_untitled": {
-    "message": "Bericht ohne Titel"
+    "message": "Aufzeichnung ohne Titel"
   },
   "replay_summary_one": {
     "message": "$title$ · $count$ Schritt",
@@ -3832,7 +3850,7 @@
     "message": "Abspielen"
   },
   "replay_chooseFirst": {
-    "message": "Wählen Sie zuerst einen Bericht."
+    "message": "Wählen Sie zuerst eine Aufzeichnung."
   },
   "replay_zipNoSteps": {
     "message": "$file$ enthält keine steps.json: Wählen Sie die von Piwi Picker gespeicherte .piwibug-Datei oder ihre steps.json.",
@@ -5403,7 +5421,7 @@
     "message": "Abspielen"
   },
   "devtools_noRecording": {
-    "message": "Es läuft keine Aufzeichnung. Starten Sie Aufzeichnen oder Bug melden im Menü der Erweiterung: Die Schritte erscheinen hier, während sie aufgezeichnet werden."
+    "message": "Es läuft keine Aufzeichnung. Starten Sie Aufzeichnen im Menü der Erweiterung: Die Schritte erscheinen hier, während sie aufgezeichnet werden."
   },
   "devtools_recordingOn_one": {
     "message": "Aufzeichnung auf $site$: $count$ Schritt",
@@ -5479,7 +5497,7 @@
     "message": "Schließen Sie die Aufzeichnung über ihre Leiste auf der Seite oder über das Menü von Piwi Picker ab: Sie sammeln die letzten Belege."
   },
   "devtools_noReplay": {
-    "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
+    "message": "Noch keine Wiedergabe. Starten Sie eine mit Abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."
   },
   "devtools_tabNetwork": {
     "message": "Netzwerk"
