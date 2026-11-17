@@ -8,8 +8,8 @@ asked how best to find a missing test. This one asks three other questions: is w
 is it **useful** enough to act on, and is it **easy to use**. It lists the defects found, with the file and the input
 behind each, says what to change and in what order, and proposes new features that the stored data already allows.
 
-**Status.** Proposed 2026-11-17, against `main` at v0.72.0 (`5efbb7c`). Nothing in it is built. A pull request that
-builds part of §11 updates this paragraph.
+**Status.** Proposed 2026-11-17, against `main` at v0.72.0 (`5efbb7c`). Nothing in it is built. Its delivery is
+planned in six pull requests (§13), and each updates this paragraph.
 
 **Summary.** The area holds a lot: the reference lists 24 detectors, coverage is recorded per test in the browser and
 on two backends and combined with unit suites per commit, and the dashboard, the pull request, two editors, the
@@ -40,8 +40,9 @@ defects are: appendix A lists 165, of which 24 are high, and 63 were reproduced 
   set up" and "nothing wrong" alike.
 
 §11 ranks the changes: 13 quick wins that make what exists true, 12 medium items, and the programs the earlier audit
-already named. §12 lists 18 feature opportunities. Security and permission findings are not in this document: they
-were reported to the maintainers apart.
+already named. §12 lists 18 feature opportunities. §13 plans the delivery: six pull requests, with every defect
+assigned to one. Security and permission findings are not in this document: they were reported to the maintainers
+apart.
 
 This document is written for the maintainers. Every finding carries a file reference and a marker of how it was
 confirmed:
@@ -553,16 +554,110 @@ Each names what exists and what is missing. They are ordered by what a team woul
 18. **A page that starts from the question**: "What do my tests miss?", with a table of what reach, server, browser,
     CSS and uploaded coverage each cost and give first, and a troubleshooting section for an empty tab.
 
-## 13. Open questions
+## 13. Delivery
 
-1. Should a change gap be keyed by pull request, or stay keyed by file with a verdict per pull request (M1)?
-2. Should a partial run's evidence open a gap at all, or only add to one a full run opened?
-3. Should *Accept* stay one verb for "I will write it" and "give me the draft", or become two?
-4. Should hash routes enter the page key for every project, or behind a project setting, given that it changes
-   existing keys?
-5. Should the 30-file cap of the coverage detectors become a share of the files in scope?
-6. Is a probe run acceptable against a backend the suite partly mocks, or should probes require a declared test
-   backend?
+Six pull requests: one short one for the security findings, then five by layer. Together they close the 165 defects
+of appendix A and build the 13 quick wins and 12 medium items of §11.
+
+### Decisions
+
+Decided by the maintainer on 2026-11-17:
+
+| # | Decision |
+|---|---|
+| D1 | **Six pull requests.** The six medium findings of the security list first, in one short pull request; then five by layer. The low findings of that list go with the pull request of their area |
+| D2 | **Scope.** Every defect of appendix A and every S and M item of §11. The 18 opportunities of §12 stay a backlog, planned apart |
+| D3 | **From the earlier audit, only its item M6**: a ranking that discriminates. Its other open ids keep their own plan |
+| D4 | **No GitHub issue.** The Status paragraph and the table below say what each pull request built |
+| D5 | **A change gap belongs to its pull requests through a join table**, with the verdict per pull request and a close on merge or abandon |
+| D6 | **A new page-key rule, with one migration.** 24-character hexadecimal ids, cuids and nanoids collapse for every project; a project setting keeps the URL fragment for a hash-routed application. Existing keys are migrated once, as route keys without their query were |
+| D7 | **A draft is a test**: built from the nearest test's stored steps, with the fault through `page.route` for an error-state gap, shown in a panel on the gap |
+
+Proposed with the plan, to confirm or change in the pull request that builds each:
+
+| # | Proposal |
+|---|---|
+| D8 | **A partial run adds evidence and never closes a gap.** Only a complete run's silence closes |
+| D9 | **Accept stays one verb.** The draft gets its own action in the panel, so accepting twice is never needed and never restarts the Home queue's week |
+| D10 | **The 30-file cap of the coverage detectors stays a number**, applied after verdicts are read, and the list says "30 of N files" |
+| D11 | **A probe never forwards a request the test mocks.** The pair is skipped as inconclusive, with its reason, and an event stream is left alone |
+| D12 | **The status context keeps its name.** `piwi/tests` states the worst result among the commit's runs of the project, so a required check keeps working; a second project of the same repository adds its key to the context |
+
+### Pull requests
+
+| PR | Content | Closes | Items of §11 | Needs | Size |
+|---|---|---|---|---|---|
+| 0 | **Security.** The six medium findings of the list reported apart | the private list, 1 to 6 | | none | 1 |
+| 1 | **Gaps and the pull request.** Verdicts kept through a reopen; complete runs' silence only; the join table of gaps and pull requests; the page-key rule and its migration; the coverage and change-time detectors; the ranking; a *covered by* that needs a reported test; the comment, the statuses and the gate | TM-18 to TM-24, TM-28 to TM-30, TM-32 to TM-36, CT-18 to CT-32, UI-2, AG-2, AG-14 to AG-16; TM-4 and CT-3 of the earlier audit | S1 to S3, M1, M4 to M7; M6 of the earlier audit | 0 | 3 |
+| 2 | **Coverage figures and capture.** The prune, the arrival clock, totals after a restart, the trend's marks; versions that disagree; replace and delete for a report, a history per suite; parsers and export; browser capture per renderer; run-level coverage retried and kept; warnings when nothing was recorded; the Nitro root | CV-17 to CV-37, CP-1 to CP-14, AG-18; CV-2 and CV-3 of the earlier audit | S4, S5, M8, M9 | 0 | 3 |
+| 3 | **Probes.** Mocked routes and event streams skipped, redirects untouched; the plan's server share, its settings form, dependent tests; findings from after the fault only; exit codes and reasons of `piwi probe` | PB-19 to PB-28, AG-19 | S6 | 0 | 2 |
+| 4 | **The Coverage tab, drafts, agents and docs.** One vocabulary of reasons for an empty answer; one card per subject, filters, search and paging, roles, Reopen and Undo; the draft panel and the real draft; the Map and the file page; MCP tools, the assistant, the skill; `piwi report`, the digest's links, the CI page; the demo | UI-1, UI-3 to UI-28, TM-25 to TM-27, TM-31, AG-1, AG-3 to AG-13, AG-17, DM-1, DM-2 | S9 to S13, M2, M3, M12 | 1, 2 | 3 |
+| 5 | **The editors and the extension.** Every version's lines united through its diff; a reason for an empty file and the source named; real paths, renames, the monorepo; VS Code's coverage run and totals; JetBrains' requests; the extension on the new page keys, its freshness, geometry, scan cost and figures; the privacy page | ED-1 to ED-18, EX-1 to EX-19 | S7, S8, M10, M11 | 1, 4 | 3 |
+
+Sizes are relative (1 small, 3 large). The five pull requests hold 35, 36, 11, 46 and 37 defects.
+
+### How each pull request is built
+
+- **One commit per topic**, in the order of its row above, so a large pull request reads one commit at a time and
+  release-please lists each fix. Scopes follow the code: `app`, `db`, `ui`, `reporter`, `demo`, `ide`, `extension`,
+  `docs`.
+- **A regression test with each fix.** The 63 reproductions of this audit were deleted after use; each comes back as
+  a unit test beside the fix, and a defect confirmed by reading gets a test that fails before the fix.
+- **The rules of the area in the same commit**: the docs page, the demo's handlers and seed, the screenshots of a
+  screen that changes, both database engines for a migration, an entry in
+  [`1.0-stabilization.md`](1.0-stabilization.md) for a new wire field, option, endpoint or MCP shape.
+- **A review before it opens**, by reviewers who get the diff and the area guides only, as the root guide asks.
+- **This document's Status paragraph** is updated by each pull request, and the document moves to `adr/` with the
+  last one.
+
+### Sequence
+
+1. **PR 0**, alone, so its fixes ship in the next release.
+2. **PR 1 and PR 2.** They touch different code (the gaps table and the pull request; coverage and the reporter) and
+   can be built side by side. Both write a migration: the second to merge rebases its migration as the database guide
+   says.
+3. **PR 3**, small and independent once PR 0 is in.
+4. **PR 4**, which draws what PR 1 and PR 2 return.
+5. **PR 5**, which needs the page keys of PR 1 and the reasons of PR 4.
+
+### Verification
+
+- **Each pull request**: typecheck, lint, format check and the unit tests of what it changes, once at the end;
+  `npx commitlint` over its commits.
+- **PR 1**: the migration replayed on a copy of a seeded SQLite database and on PostgreSQL in CI; the page-key
+  migration on a database holding two entity pages that collapse into one, their verdicts merged; the comment
+  rendered for every combination of file reach, patch coverage and pull-request gaps.
+- **PR 2**: the sample application's two backends for server coverage; a Vite front end added to the reporter's
+  tests for CP-1, a same-site popup for CP-2. The ASP.NET Core changes run in CI only (`dotnet` is not in the
+  authoring environment).
+- **PR 4**: the three views and the file page at 1280 and 375 pixels, for a viewer and a maintainer, on a project
+  with no input, with gaps and with 5,000 gaps; `npm run app:check:demo:runtime`; the performance suite, since the
+  list's rendering changes.
+- **PR 5**: the editor service's tests for the version merge; the extension's e2e fixtures for a hash route, an
+  unknown key, a clipped carousel, a `div` modal and 5,000 elements. A check in a real VS Code and a real JetBrains
+  IDE stays by hand ([`real-editor-checks.md`](real-editor-checks.md)).
+
+### Risks
+
+- **PR 1 is the largest**, with two migrations. If it grows past what one review can hold, its second half (the
+  comment, the statuses and the gate) is the part that can leave as a pull request of its own.
+- **The page-key migration merges rows.** Two nodes, gaps or probe outcomes that collapse to one key need one rule
+  for which verdict wins (the most recent one a person gave). Older reporters keep sending old keys: ingest applies
+  the new rule to what it receives.
+- **Changes a team will notice**, each with a `BREAKING CHANGE:` footer: page keys; MCP answers that gain fields and
+  a `covered-by` that refuses without a reported test; `piwi probe` exiting non-zero when nothing ran; a report file
+  without a version refused.
+- **D12 keeps `piwi/tests`** on purpose: renaming the context would break every branch protection rule that requires
+  it.
+- **The real draft (D7) depends on the nearest test's stored steps.** A project without the capture fixtures has
+  none: its draft stays a skeleton, and says why.
+
+## 14. Open questions
+
+1. Should a partial run's evidence open a gap at all, or only add to one a full run opened (D8 settles only the
+   closing)?
+2. Is a probe run acceptable against a backend the suite partly mocks, or should probes require a declared test
+   backend (D11 settles only the request the test mocks)?
 
 ## Appendix A. Defects found, with locations
 
