@@ -59,8 +59,6 @@ export interface StoredBugEvidence {
   outline: string | null;
   /** Why the last screenshot could not be taken, until one is. */
   screenshotNote: string | null;
-  /** The title typed in the finish panel. */
-  title: string | null;
   /** The page's context, taken at Finish. */
   context: BugContext | null;
   /** How many screenshots are kept, so the HUD need not read them to count them. */
@@ -84,7 +82,6 @@ const EMPTY: StoredBugEvidence = {
   requestsDropped: 0,
   outline: null,
   screenshotNote: null,
-  title: null,
   context: null,
   screenshots: 0,
 };
@@ -162,7 +159,7 @@ export function appendBugEntries(entries: {
 }
 
 export function setBugEvidenceFields(
-  fields: Partial<Pick<StoredBugEvidence, 'outline' | 'screenshotNote' | 'title' | 'context'>>,
+  fields: Partial<Pick<StoredBugEvidence, 'outline' | 'screenshotNote' | 'context'>>,
 ): Promise<StoredBugEvidence> {
   return update((current) => ({ ...current, ...fields }));
 }

@@ -57,9 +57,9 @@ The popup's tiles, and the same names in the panels, the store description and t
 | Session | Sessão |
 | Agent context | Contexto de IA |
 | Test functions | Funções de teste |
-| Record actions | Gravar |
-| Report a bug | Relatar um bug |
-| Replay a bug report | Reproduzir um relatório de bug |
+| Record | Gravar |
+| Replay | Reproduzir |
+| Check an element | Verificar um elemento |
 | Tested elements | Elementos testados |
 
 ## Typography

@@ -19,6 +19,7 @@ import {
   BUG_DIALOG_HOST_ID,
   FRAME_HOST_ID,
   HUD_HOST_ID,
+  PANEL_HOST_ID,
   SHARED_STYLE,
   hideSurfaces,
   isOwnHost,
@@ -374,7 +375,7 @@ interface DialogParts {
  * closes the dialog, and null keeps it open (after `say` explained why). A
  * dialog removed from the page (capture stopped, the page replaced its
  * content) answers null, as Cancel does. Its main button reads `submitLabel`.
- * Shared by the bug report's dialogs and a test recording's checks.
+ * Shared by the checks and Something is missing.
  */
 export function openRecordDialog<T>(
   title: string,
@@ -756,6 +757,8 @@ function focusedHudAction(): string | null {
 export function renderRecordingBar(view: RecordingBarView, handlers: RecordingBarHandlers): void {
   const focusedAction = focusedHudAction();
   document.getElementById(HUD_HOST_ID)?.remove();
+  // A finish panel left open on the page belongs to a recording that ended: a new one takes the page.
+  document.getElementById(PANEL_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
   host.style.cssText = `all:initial;position:fixed;inset:${cornerInset(hudCorner())};z-index:2147483647;`;

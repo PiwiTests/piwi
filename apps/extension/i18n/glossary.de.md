@@ -64,9 +64,9 @@ As the popup shows them; the panels, the store description and the phrasebook us
 | Session | Session |
 | Agent context | KI-Kontext |
 | Test functions | Testfunktionen |
-| Record actions | Aufzeichnen |
-| Report a bug | Bug melden |
-| Replay a bug report | Bug-Report abspielen |
+| Record | Aufzeichnen |
+| Replay | Abspielen |
+| Check an element | Element prüfen |
 | Tested elements | Getestete Elemente |
 
 ## Typography

@@ -9,7 +9,7 @@ dashboard, and it is where a new kind of page gets tried first.
 It is not part of CI: it needs a running app, takes several minutes, and a scenario can fail because the app changed.
 
 Two sets of scenarios: the dashboard's (`scenarios.ts`, the default) and public sites' (`wild.ts`, `LAB_SET=wild`),
-recorded as **Report a bug** records them: TodoMVC, The Internet, UI Testing Playground, Swag Labs, DemoQA,
+recorded as **Record** records them: TodoMVC, The Internet, UI Testing Playground, Swag Labs, DemoQA,
 Wikipedia, Hacker News, Books to Scrape and Conduit, each scenario picked for something a locator or a replay has to
 cope with. `LAB_SET=all` runs both.
 

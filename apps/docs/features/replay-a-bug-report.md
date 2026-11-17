@@ -12,8 +12,7 @@ lang: en-US
 caption saying what it does, then says whether each still finds its element and, for a [bug report](./report-a-bug),
 whether the bug shows there. It suits the developer who receives a report: open the app on your own dev server, and
 the steps run there, with your session and your browser's developer tools at hand, or
-[with Playwright](#running-it-with-playwright) in the desktop app. What an instance keeps:
-[Bug reports on your instance](./bug-reports).
+[with Playwright](#running-it-with-playwright) in the desktop app.
 
 <figure>
   <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
@@ -41,14 +40,18 @@ the replay. The element is then waited for as Playwright waits: visible, enabled
 waits or, when you waited longer for it while recording (a reply that takes the server fifteen seconds), that long and
 a few seconds more, up to a minute. The replay ends with one of five answers:
 
-- **Reproduced**: an expected result, or a recording's check, does not hold, such as a total that still reads
+- **Reproduced**: a step marked wrong, or a recording's check, does not hold, such as a total that still reads
   "Total: 40.00", and the panel says whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
-- **Could not reach the bug** (the dashboard's *diverged*): a step could not be played (it found no element, several, or a disabled one, or the
-  flow ended on another page) and you stopped there. The data, the login or a flag differ here.
+- **Could not reach the bug** (the dashboard's *diverged*): a step could not be played (it found no element, several,
+  or a disabled one, or the flow ended on another page) and you stopped there, or a check that held when recorded
+  fails. The data, the login or a flag differ here.
 - **Failed at step 4, as in the test run**: in a report made from a test run, the step that could not be played is
   the one the test failed at.
 - **Replayed every step**: the steps hold no check.
+
+A recording that marks nothing wrong says **A check failed**, **Every check holds** or **Stopped at step 4: the page
+went another way** for the first three.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
 "POST /api/cart/coupon answered 500": from the moment the replay started, never those of the recording, even when you
@@ -84,17 +87,11 @@ hands to you as above, with the line of the test it stands for, in Piwi Picker's
 all are listed in the report's Markdown under **Not replayed**.
 
 When the test failed on an action rather than on an assertion, the report says which step; reaching it and failing
-there answers **Failed at step N, as in the test run**, and playing it answers **Not reproduced**. A typed password is
-never in the report: the step asks for it.
+there answers **Failed at step N, as in the test run**, and playing it answers **Not reproduced**.
 
 A test run does not keep the page each step happened on once a click may have opened another, so Replay does not
 follow such a step into a new tab: it stays in the tab it started in, and a step the test played in a popup is handed
 to you.
-
-<figure>
-  <img src="/screenshots/execution-replay-export.png" alt="A failed execution's Export menu: downloads as HTML, ZIP, PDF, Markdown or JSON, the bug report to replay in a browser with its 6 steps, a Perfetto trace, and the report or the steps to copy">
-  <figcaption>The Export menu of a failed execution: its steps as a bug report to replay.</figcaption>
-</figure>
 
 ## Trusted input
 

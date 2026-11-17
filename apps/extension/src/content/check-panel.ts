@@ -212,7 +212,7 @@ function checkElementDialog(element: Element, target: RecordedTarget): Promise<S
 
 /** The dialog for the page's address, starting from the one it is on. */
 function checkAddressDialog(): Promise<StepAssertion | null> {
-  const here = `${location.pathname}${location.search}`;
+  const here = `${location.pathname}${location.search}${location.hash}`;
   return openRecordDialog<StepAssertion>(
     t('record_checkAddress'),
     ({ form, field, say }) => {
@@ -226,7 +226,7 @@ function checkAddressDialog(): Promise<StepAssertion | null> {
       const isWrong = (): boolean => {
         if (IDE_BUILD) return false;
         const value = expected.value.trim();
-        return value !== '' && value !== here && value !== location.pathname && value !== location.href;
+        return value !== '' && value !== here && value !== location.href;
       };
       expected.addEventListener('input', () => {
         verdict.show(isWrong());

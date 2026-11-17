@@ -224,8 +224,8 @@ own complexity genuinely outgrows it.
   the gear is Connection.
 - While a recording runs, the Record tile reads **Finish (n)** and **Take a screenshot** (`S`) takes Replay's place:
   a replay sends trusted input, which the recording would capture. Once stopped, the tile reads **Review (n)**.
-- Every tile shows its one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks the compact
-  tiles).
+- Every tile shows its one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks every tile
+  shown).
 - The developer tools that have a home in DevTools are there, not here (see "DevTools"). Pick, Lint and Tested elements
   are also in the Piwi panel's toolbar. The popup ends with a line saying so.
 - **Runs** shows only while the paired editor or desktop app is known (see "The Runs window").
@@ -1450,9 +1450,13 @@ steps, **Check an element**, **Check the address**, **Something is missing** (no
 (while the debugging protocol takes them), **Pause** and **Finish** (**Stop** in the IDE bundle), the matching test
 functions when the project has a catalog, and the evidence lines (not in the IDE bundle).
 
-- **No label wraps inside a button**: a row of buttons wraps between buttons (`white-space: nowrap`), and the title has
-  its row to itself, so a count stays with its noun. `wrappedButtonsInShadows` (`tests/e2e/shadow.ts`) checks it in
-  `record.spec.ts` and `bug-report.spec.ts` in French and German, and the replay bar keeps its buttons on one line too.
+- **No label wraps inside a button**: a row of buttons wraps between buttons (`white-space: nowrap`), and the replay
+  bar keeps its buttons on one line too. `wrappedButtonsInShadows` (`tests/e2e/shadow.ts`, which reads every text node
+  of a button, its label being in a span beside the icon) checks it in `record.spec.ts` and `bug-report.spec.ts` in
+  French and German. The title has its row to itself, so a count stays with its noun; no spec measures it.
+- A new recording's bar takes down a finish panel still open on the page, and the panel's Discard discards its own
+  recording alone (`discardRecordingStartedAt`), never one started since.
+- **The viewport is recorded while paused too**: the next step plays at the size the window has then.
 - The checks (`check-panel.ts`) pick with `pickElement` and open `openRecordDialog` (`bug-panel.ts`), and pause capture
   while they are on screen (`__piwiRecordPaused`, a global because every re-injection of `record-panel.js` is its own
   module instance).
@@ -1479,8 +1483,8 @@ functions when the project has a catalog, and the evidence lines (not in the IDE
 recording that stopped and was not discarded. Its first action follows the recording (`recordingSpec`,
 `src/shared/recording-spec.ts`): **Copy test**, a test that passes, or **Copy failing test** once a step says the page
 was wrong (`renderBugSpec`). Both put in the project's test functions, and **Without your functions** copies the
-locators alone. Then Send to editor (when paired), Replay, Copy report, Download the `.piwibug` and Send to Piwi… (when
-connected). Replay starts in the tab through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`), and the replay
+locators alone. Then Send to editor (when paired), Replay, Copy report, Download the `.piwibug` and, once a step says the
+page was wrong, Send to Piwi… (when connected): the instance keeps what it is sent as a bug report. Replay starts in the tab through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`), and the replay
 dialog offers the last recording not discarded (`lastRecordedReport`), as a bug report or a recording.
 
 **The recording's title** (`RecordingState.title`) is the first page's `document.title` as the recorder first attaches,
@@ -1493,15 +1497,22 @@ then the finish panel's **Title** field. It is the test's title and the report's
   stored recording is gone or a newer one (`isRecordingStartedAt`). So a late keystroke never brings a discarded
   recording back, nor renames the one another tab records. Pause names the recording its page started with the same
   way.
-- Every export goes through `recordingTitle` (`src/shared/recording-title.ts`), which falls back to the first action in
-  words (`titleFromSteps`). So no spec says `recorded flow` when the steps name it better.
+- Every export goes through `recordingTitle` (`src/shared/recording-title.ts`), the finish panel's with the field's
+  text, which falls back to the first action in words (`titleFromSteps`). So no spec says `recorded flow` when the
+  steps name it better.
 
 ## Evidence and bug reports
 
 Every recording of the extension collects evidence (the IDE bundle's does not), and a recording is a **bug report**
-once a step says the page was wrong (`isWrongStep`): its test is the failing one, its finish panel says "Bug report",
-Replay's chooser names it so, and Replay's verdict says reproduced or not (`verdictText`). Without one, the test
-passes and Replay says whether every check holds. The `assert` events stay in place through `normalizeSteps`.
+once a step says the page was wrong (`isWrongStep`): its test is the failing one, its finish panel says "Bug report"
+and offers Send to Piwi…, Replay's chooser names it so, and Replay's verdict says reproduced or not (`replayVerdict`,
+`verdictText`): a step marked wrong that does not hold is the bug showing, and a check that held when recorded failing
+means the page differs. Without one, the test passes and Replay says whether every check holds. The `assert` events
+stay in place through `normalizeSteps`.
+
+A report's expectations (`expectedSteps`, core) are all its checks, since a report made from a test run can expect an
+element it never found, with no `actual`; the dashboard's one-line claim of a report takes the first step marked wrong
+among them.
 
 - **Something is missing** checks its `getByRole` with the in-page engine, and refuses an element that is there.
 - Evidence lives under its own session storage keys (`bug-storage.ts`), not in `RecordingState`, which is rewritten on
@@ -1776,7 +1787,8 @@ the editor's `dist/`. Neither file is part of `dist/` or `dist-firefox/`.
   The page's own `chrome` is never touched. Without the binding the host installs nothing, and the recorder never
   starts. A `chrome` call the recorder starts making needs its answer in the host and in the launcher.
 - **What differs is behind `IDE_BUILD`** (`src/shared/ide-build.ts`, the build constant `__PIWI_IDE__`). It is false in
-  every bundle of the extension, where those branches fold away, and it is read in `record-panel.ts` alone:
+  every bundle of the extension, where those branches fold away, and it is read in `record-panel.ts` and the modules it
+  draws its bar and checks with (`bug-panel.ts`, `check-panel.ts`):
   - the IDE bundle records the top-level document of an http or https page and nothing else (the launcher's script also
     runs in frames and in a new tab's `about:blank`);
   - Stop opens no finish panel: capture stops, the bar and the border go, and `piwi-recording-stopped` still goes out;

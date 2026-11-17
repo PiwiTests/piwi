@@ -233,21 +233,22 @@ each rule below ends with the section to read there.
 ### Recording and replay
 
 - **A recording keeps a file's name, never its content** (`record.spec.ts`). (see "Files, double clicks and drags")
-- **Every capture listener checks `capturePaused()`; every exported title goes through `recordingTitle`.** (see
-  "The recording bar and its checks")
+- **Every capture listener checks `capturePaused()` (the viewport watch aside); every exported title goes through
+  `recordingTitle`.** (see "The recording bar and its checks")
 - **A step is never lost to its locators:** unchecked candidates are kept, and an element with a role and no name
   gets its bare role. (see "Naming and ranking an element")
 - **A replay hands a step it cannot play to the person;** it never types a redacted value or sends input twice. (see
   "How a replay finds a step's element", "Trusted input in a replay")
 - **Read a `.piwibug` by its content (`isBugReportArchive`), never by its name.** (see "Evidence and bug reports")
 - **A recording is a bug report only through a step that says the page was wrong** (`isWrongStep`,
-  `@piwitests/core/bug-report`): the tests (`recordingSpec`), the finish panel and Replay's verdict (`verdictText`)
-  follow it. (see "Evidence and bug reports")
+  `@piwitests/core/bug-report`): the tests (`recordingSpec`), Send to Piwi… and Replay's verdict follow it. (see
+  "Evidence and bug reports")
 - **Send `stepShot` parts only to an instance whose intake declares `stepShots`.** (see "A screenshot of each step")
 - **Never answer a refused `captureVisibleTab` with `<all_urls>`;** a missing screenshot never blocks Finish. (see
   "Screenshots without the protocol need `activeTab`")
-- **The IDE bundle never touches the page's `chrome`; what differs stays behind `IDE_BUILD` in `record-panel.ts`.** A
-  new `chrome` call needs its answer in `src/ide/host.ts` and the launcher. (see "The IDE bundle")
+- **The IDE bundle never touches the page's `chrome`; what differs stays behind `IDE_BUILD`** in `record-panel.ts`,
+  `bug-panel.ts` and `check-panel.ts`. A new `chrome` call needs its answer in `src/ide/host.ts` and the launcher. (see
+  "The IDE bundle")
 
 ### Locators and the in-page engine
 
@@ -279,8 +280,7 @@ each rule below ends with the section to read there.
   of one tile; a new tile goes in its section or in DevTools, with its hint under its label, never only a tooltip.
   (see "The popup")
 - **No button label wraps in a bar on the page:** a row of buttons wraps between buttons, never inside one
-  (`wrappedButtonsInShadows`, `tests/e2e/shadow.ts`, in `record.spec.ts` and `bug-report.spec.ts`). (see "The
-  recording bar and its checks")
+  (`wrappedButtonsInShadows` in `record.spec.ts` and `bug-report.spec.ts`). (see "The recording bar and its checks")
 - **A panel with a backdrop is modal through `holdFocus`; one that leaves the page usable is `role="region"`, never a
   dialog.** A bar on the page stops animating under `prefers-reduced-motion: reduce`. (see "Content-script
   structure")

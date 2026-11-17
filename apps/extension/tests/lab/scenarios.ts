@@ -17,8 +17,6 @@ export interface Scenario {
   /** The route the recording starts on, or the full URL of a site of its own (`wild.ts`). */
   start: string;
   run: (page: Page) => Promise<void>;
-  /** `bug` records it as Report a bug does; `actions` (the default) as Record actions does. */
-  mode?: 'actions' | 'bug';
   /** How long a person looks at the first page before acting, when it differs from `LAB_SETTLE_MS`. */
   settleMs?: number;
   /**

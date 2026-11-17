@@ -271,7 +271,7 @@
   },
   "badge_replay": {
     "message": "PLAY",
-    "description": "Toolbar badge while a bug report is replayed. At most 4 characters."
+    "description": "Toolbar badge while a recording is replayed. At most 4 characters."
   },
   "badge_runsPaused": {
     "message": "II",
@@ -331,11 +331,11 @@
   },
   "popup_testedElementsShort": {
     "message": "What your tests reach here",
-    "description": "Popup: the hint under “Tested elements”, in its tile a third of the popup wide under Dashboard: two short lines at most, about 36 characters."
+    "description": "Popup: the hint under “Tested elements”, in its compact tile half the popup wide under Tests: one line, at most about 26 characters."
   },
   "popup_testedElementsConnectShort": {
     "message": "Connect Piwi to see it",
-    "description": "Popup: the hint under “Tested elements” when no Piwi instance is set up, in its tile a third of the popup wide: two short lines at most, about 36 characters."
+    "description": "Popup: the hint under “Tested elements” when no Piwi instance is set up, in its compact tile half the popup wide: one line, at most about 26 characters."
   },
   "devtools_playwrightView": {
     "message": "Playwright view",
@@ -491,11 +491,11 @@
   },
   "popup_agentContext": {
     "message": "Agent context",
-    "description": "Popup tile: describes an element for an AI coding agent, under Agents. At most about 16 characters: the tile is a third of the popup wide while Runs shows, else half."
+    "description": "Popup tile: describes an element for an AI coding agent, under Pick. At most about 16 characters: the tile is half the popup wide."
   },
   "popup_agentContextHint": {
     "message": "Summary for an AI",
-    "description": "Popup tile hint, in a tile a third of the popup wide while Runs shows, else half: two short lines at most, about 20 characters each."
+    "description": "Popup tile hint, in a compact tile half the popup wide: one line, at most about 26 characters."
   },
   "popup_testFunctions": {
     "message": "Test functions",
@@ -507,7 +507,7 @@
   },
   "popup_sectionPick": {
     "message": "Pick",
-    "description": "Popup: small heading above Piwi Picker's own tools (multi-pick, assertions, lint overlay, test functions), the first section of Piwi's menu here. Short."
+    "description": "Popup: small heading above Piwi Picker's pick tools (multi-pick, assertions, lint overlay, test functions, agent context). Short."
   },
   "popup_sectionTests": {
     "message": "Tests",
@@ -604,8 +604,8 @@
     "description": "Popup tile: replays a recording (a bug report or not) in the tab, with a cursor. At most about 16 characters."
   },
   "popup_replayHint": {
-    "message": "A recording, here, with a cursor",
-    "description": "Hint under the Replay popup tile: what it plays, and where. At most about 26 characters, on one line."
+    "message": "A recording, here",
+    "description": "Hint under the Replay popup tile: what it plays, and where. One line, at most about 26 characters."
   },
   "popup_notExported": {
     "message": "Not exported yet",
@@ -3055,7 +3055,7 @@
       },
       "mark": {
         "content": "$2",
-        "example": "Mark what’s wrong"
+        "example": "Check an element"
       }
     }
   },
@@ -3069,7 +3069,7 @@
       },
       "mark": {
         "content": "$2",
-        "example": "Mark what’s wrong"
+        "example": "Check an element"
       }
     }
   },
@@ -3445,7 +3445,7 @@
   },
   "replay_hudLabel": {
     "message": "Piwi Picker: replaying a recording",
-    "description": "Replay panel (the box in the corner while a bug report replays): its aria-label, read by screen readers."
+    "description": "Replay panel (the box in the corner while a recording replays): its aria-label, read by screen readers."
   },
   "replay_statusRunning": {
     "message": "Replaying",
@@ -3671,7 +3671,7 @@
   },
   "replay_verdictExpectedFound": {
     "message": "Step $step$: expected \"$expected$\", found $found$.",
-    "description": "Replay verdict detail when the bug shows. $expected$ is the text the report expected, from the page, as written; $found$ what the page showed (replay_quotedText, replay_found* or a URL).",
+    "description": "Replay verdict detail when a check does not hold. $expected$ is the text the recording expected, from the page, as written; $found$ what the page showed (replay_quotedText, replay_found* or a URL).",
     "placeholders": {
       "expected": {
         "content": "$1",
@@ -3707,7 +3707,7 @@
   },
   "replay_verdictFound": {
     "message": "Step $step$: found $found$.",
-    "description": "Replay verdict detail when the bug shows and the step expected a state rather than a text (visible, enabled…). $found$ is what the page showed (replay_found*).",
+    "description": "Replay verdict detail when a check does not hold and the step expected a state rather than a text (visible, enabled…). $found$ is what the page showed (replay_found*).",
     "placeholders": {
       "found": {
         "content": "$1",
@@ -3782,6 +3782,16 @@
   "replay_verdictDivergedDetail": {
     "message": "$reason$ This page is not the same as in the report: other data, another account, or an option turned on or off.",
     "description": "Replay verdict detail when a step could not be done. $reason$ is why, a full sentence (replay_reason*).",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictDivergedRecordingDetail": {
+    "message": "$reason$ This page is not the same as when it was recorded: other data, another account, or an option turned on or off.",
+    "description": "Replay verdict detail when a step of a recording that marks nothing wrong could not be done. $reason$ is why, a full sentence (replay_reason*).",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -4264,7 +4274,7 @@
     "description": "Title and aria-label of the dialog that chooses which recording to replay."
   },
   "replay_dialogIntro": {
-    "message": "Plays its steps on $origin$, with a cursor showing each one, and says whether the bug shows here.",
+    "message": "Plays its steps on $origin$, with a cursor showing each one, and says whether its checks hold, or whether the bug shows here.",
     "description": "Replay dialog, under its title. $origin$ is the site of the current tab.",
     "placeholders": {
       "origin": {
@@ -7235,15 +7245,15 @@
   },
   "popup_runsHintNone": {
     "message": "Pause, step, resume",
-    "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A tile a third of the popup wide: two short lines at most, about 20 characters each."
+    "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A compact tile half the popup wide: one line, at most about 26 characters."
   },
   "popup_runsHintAway": {
     "message": "Not connected: see why",
-    "description": "Popup, the line under the Runs tile while an editor or the desktop app is paired and none of its windows answers: the Runs window says why. A tile a third of the popup wide: two short lines at most, about 20 characters each."
+    "description": "Popup, the line under the Runs tile while an editor or the desktop app is paired and none of its windows answers: the Runs window says why. A compact tile half the popup wide: one line, at most about 26 characters."
   },
   "popup_runsHint_one": {
     "message": "$count$ run in your editor",
-    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7253,7 +7263,7 @@
   },
   "popup_runsHint_other": {
     "message": "$count$ runs in your editor",
-    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7263,7 +7273,7 @@
   },
   "popup_runsHintWaiting_one": {
     "message": "$count$ test waits for you",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7273,7 +7283,7 @@
   },
   "popup_runsHintWaiting_other": {
     "message": "$count$ tests wait for you",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7283,7 +7293,7 @@
   },
   "popup_runsHintFailed_one": {
     "message": "$count$ test failed",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7293,7 +7303,7 @@
   },
   "popup_runsHintFailed_other": {
     "message": "$count$ tests failed",
-    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A tile a third of the popup wide: two short lines at most, about 20 characters each.",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile half the popup wide: one line, at most about 26 characters.",
     "placeholders": {
       "count": {
         "content": "$1",

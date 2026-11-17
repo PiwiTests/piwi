@@ -194,6 +194,35 @@ test.describe('Send to Piwi', () => {
     await expect(review.getByText('Everything here stays in this browser: nothing is sent anywhere.')).toBeVisible();
     await expect(review.getByRole('button', { name: 'Send to Piwi…' })).toBeHidden();
   });
+
+  test('is not offered for a recording that marks nothing wrong, connected or not', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: {
+          active: true,
+          events: [],
+          startedAt: Date.now(),
+          grantedOriginPattern: `${SHOP_ORIGIN}/*`,
+          bugToken: TOKEN,
+        },
+      },
+      responses: {
+        'piwi-bug-send-target': { connected: true, project: { id: 7, label: 'Shop' }, instance: 'piwi.acme.test' },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${SHOP_ORIGIN}/cart`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => hostPresent(page, 'piwi-record-hud-host')).toBe(true);
+    await page.fill('#coupon', 'SPRING10');
+    await pressHudButton(page, 'finish');
+    const review = page.locator('#piwi-record-review-host');
+    await expect(review.getByRole('button', { name: 'Copy test' })).toBeVisible();
+    await expect(review.getByText('Everything here stays in this browser: nothing is sent anywhere.')).toBeVisible();
+    await expect(review.getByRole('button', { name: 'Send to Piwi…' })).toHaveCount(0);
+  });
 });
 
 function sampleReport(): BugReport {

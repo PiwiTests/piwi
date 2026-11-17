@@ -33,7 +33,7 @@ import { downloadBlob } from '../shared/download.js';
 import { makeButton, type ButtonOptions } from '../shared/buttons.js';
 import { formatNumber, t, tn, uiLanguage } from '../shared/i18n.js';
 import { updateRecording, type RecordingState } from '../shared/recording-storage.js';
-import { cleanTitle, RECORDING_TITLE_MAX, titleFromSteps } from '../shared/recording-title.js';
+import { RECORDING_TITLE_MAX, recordingTitle, titleFromSteps } from '../shared/recording-title.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
@@ -115,17 +115,19 @@ export async function renderFinishPanel(state: RecordingState, onDiscard: () => 
   const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
 
   const startedAt = state.startedAt ?? state.events[0]?.timestamp ?? Date.now();
-  const fallbackTitle = titleFromSteps(normalizeSteps(state.events));
+  const recordedSteps = normalizeSteps(state.events);
+  const fallbackTitle = titleFromSteps(recordedSteps);
   const titles = titleWriter(state.startedAt);
   let typedTitle = state.title ?? '';
-  const title = (): string | null => cleanTitle(typedTitle) ?? fallbackTitle;
+  const title = (): string | null => recordingTitle({ title: typedTitle }, recordedSteps);
   /** The reporter keeps the step screenshots unless they leave them out. */
   let keepStepShots = true;
   const report = () => {
     const assembled = assembleBugReport({
       events: state.events,
       startedAt,
-      evidence: { ...evidence, title: title() },
+      evidence,
+      title: title(),
       screenshots,
       context,
       views,
@@ -345,22 +347,25 @@ export async function renderFinishPanel(state: RecordingState, onDiscard: () => 
       `piwi-${wrong ? 'bug' : 'recording'}-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
     );
   });
-  const sendBtn = action(reportActions, t('bug_sendToPiwi'), { icon: 'send', title: t('bug_sendToPiwiHint') }, () => {
-    void sendTarget().then((target) => {
-      if (!target.project) {
-        message.textContent = t('bug_sendNoProject');
-        return;
-      }
-      openSendPreview({
-        report: report(),
-        screenshots,
-        stepImages,
-        target: { ...target, project: target.project },
-        css: PANEL_CSS,
-      });
-    });
-  });
-  sendBtn.hidden = true;
+  // A recording that marks nothing wrong is no bug report: the instance would keep it as one, with a failing test.
+  const sendBtn = wrong
+    ? action(reportActions, t('bug_sendToPiwi'), { icon: 'send', title: t('bug_sendToPiwiHint') }, () => {
+        void sendTarget().then((target) => {
+          if (!target.project) {
+            message.textContent = t('bug_sendNoProject');
+            return;
+          }
+          openSendPreview({
+            report: report(),
+            screenshots,
+            stepImages,
+            target: { ...target, project: target.project },
+            css: PANEL_CSS,
+          });
+        });
+      })
+    : null;
+  if (sendBtn) sendBtn.hidden = true;
   action(reportActions, t('common_discard'), { icon: 'trash', tone: 'remove', className: 'discard' }, () => {
     void titles.drop().then(onDiscard).then(closePanel, closePanel);
   });
@@ -371,7 +376,7 @@ export async function renderFinishPanel(state: RecordingState, onDiscard: () => 
   local.textContent = t('bug_staysLocal');
   panel.appendChild(local);
   void sendTarget().then((target) => {
-    if (!target.connected) return;
+    if (!target.connected || !sendBtn) return;
     sendBtn.hidden = false;
     local.textContent = t('bug_staysLocalUntilSent');
   });

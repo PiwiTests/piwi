@@ -138,9 +138,9 @@ export async function record(scenario: Scenario): Promise<Recording> {
       return tab!.id!;
     }, origin);
     const started = await ctl.evaluate(
-      ({ tabId, pattern, mode }) =>
-        chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode }),
-      { tabId, pattern: `${origin}/*`, mode: scenario.mode ?? 'actions' },
+      ({ tabId, pattern }) =>
+        chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
+      { tabId, pattern: `${origin}/*` },
     );
     if (!started?.ok) throw new Error(`The recording did not start: ${JSON.stringify(started)}`);
     await page.waitForFunction(() => !!document.getElementById('piwi-record-hud-host'), null, { timeout: 15_000 });

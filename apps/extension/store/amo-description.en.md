@@ -3,7 +3,7 @@ Piwi Picker gives you the Playwright locator to use for any element of the page 
 **From the toolbar popup, on any page**
 
 - **Pick an element**: the ranked locators of one element, re-checked against the page, copied as a locator, an action line or an assertion. When several elements share a name, scope the locator to a stable parent.
-- **Record**: clicks, fills and choices across a site's pages, with checks of what the page shows, turned into a runnable TypeScript test. Passwords are never captured. Change what a check expects and the recording becomes a bug report: a failing test, a Markdown report and a .piwibug file with the console errors, the failed requests and a screenshot of each step.
+- **Record**: clicks, fills and choices across a site's pages, with checks of what the page shows, turned into a runnable TypeScript test. Passwords are never captured. Change what a check expects and the recording becomes a bug report: a failing test, a Markdown report and a .piwibug file with the console errors, the failed requests and screenshots.
 - **Replay**: a recording or a bug report played again in a tab, with a cursor on each step.
 - **Lint overlay**: the elements no stable locator finds alone, each with a suggested data-testid.
 - **Multi-pick**, **Assertions** and **Agent context**: the pattern shared by a list's rows, expect(...) lines for an element, and one block about an element for a coding agent.

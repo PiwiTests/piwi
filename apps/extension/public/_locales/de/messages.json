@@ -3164,6 +3164,15 @@
       }
     }
   },
+  "replay_verdictDivergedRecordingDetail": {
+    "message": "$reason$ Diese Seite ist nicht dieselbe wie bei der Aufzeichnung: andere Daten, ein anderes Konto oder eine Option, die an- oder ausgeschaltet ist.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
   "replay_verdictFailedAsInRun": {
     "message": "Fehlgeschlagen bei Schritt $step$, wie im Testlauf",
     "placeholders": {
@@ -3579,7 +3588,7 @@
     "message": "Aufzeichnung abspielen"
   },
   "replay_dialogIntro": {
-    "message": "Spielt seine Schritte auf $origin$ ab, mit einem Cursor, der jeden zeigt, und sagt, ob der Bug hier auftritt.",
+    "message": "Spielt seine Schritte auf $origin$ ab, mit einem Cursor, der jeden zeigt, und sagt, ob seine Prüfungen bestehen oder ob der Bug hier auftritt.",
     "placeholders": {
       "origin": {
         "content": "$1",
@@ -5494,7 +5503,7 @@
     }
   },
   "devtools_finishOnPage": {
-    "message": "Schließen Sie die Aufzeichnung über ihre Leiste auf der Seite oder über das Menü von Piwi Picker ab: Sie sammeln die letzten Belege."
+    "message": "Schließen Sie die Aufzeichnung über ihre Leiste auf der Seite oder über das Menü von Piwi Picker ab: Beide sammeln die letzten Belege."
   },
   "devtools_noReplay": {
     "message": "Noch keine Wiedergabe. Starten Sie eine mit Abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."

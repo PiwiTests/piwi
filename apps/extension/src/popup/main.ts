@@ -4,6 +4,7 @@ import {
   setRecordIntent,
   getRecordIntent,
   clearRecordIntent,
+  takeRecordStartError,
 } from '../shared/recording-storage.js';
 import { CONNECTION_KEY, getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
 import { CONNECTION_HEALTH_KEY, getConnectionHealth, healthSentence } from '../shared/connection-health.js';
@@ -442,9 +443,28 @@ function requestRecording(): void {
     void startRecordingFlow(pattern, tabId, granted);
     return;
   }
-  // Fire-and-forget: it must not delay the request above.
   const parked = setRecordIntent({ originPattern: pattern, tabId }).catch(() => undefined);
-  void Promise.all([parked, new Promise((resolve) => setTimeout(resolve, PROMPT_SHOWN_MS))]).then(() => window.close());
+  // Answered while the popup is still open (a policy, a prompt dismissed at once): the popup starts or says why.
+  let answered = false;
+  void granted.then(
+    (ok) => {
+      answered = true;
+      if (ok) {
+        void startRecordingFlow(pattern, tabId, granted);
+        return;
+      }
+      void clearRecordIntent().catch(() => undefined);
+      showStatus(t('popup_permissionNeeded'));
+    },
+    () => {
+      answered = true;
+      void clearRecordIntent().catch(() => undefined);
+      showStatus(t('popup_permissionNeeded'));
+    },
+  );
+  void Promise.all([parked, new Promise((resolve) => setTimeout(resolve, PROMPT_SHOWN_MS))]).then(() => {
+    if (!answered) window.close();
+  });
 }
 
 recordBtn.addEventListener('click', () => {
@@ -563,11 +583,18 @@ void Promise.all([getRecordIntent().catch(() => null), tabRead, getRecordingStat
     await clearRecordIntent().catch(() => undefined);
     const refused =
       intent.tabId === recordTab?.id &&
+      intent.originPattern === originPattern(recordTab?.url) &&
       !recording?.active &&
       !(await chrome.permissions.contains({ origins: [intent.originPattern] }).catch(() => true));
     if (refused) showStatus(t('popup_recordNotAllowed'));
   },
 );
+// A recording the grant should have started and could not: the worker kept why for this tab.
+void tabRead.then(async () => {
+  if (recordTab?.id == null) return;
+  const error = await takeRecordStartError(recordTab.id).catch(() => null);
+  if (error) showStatus(error);
+});
 // Each tile acts on what it needs read first: Record the recording's state, Replay the tab, Tested elements the
 // connection.
 recordBtn.disabled = true;

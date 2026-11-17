@@ -1,6 +1,12 @@
 import { normalizeSteps, sessionFromEvents, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
-import { BUG_REPORT_VERSION, bugContextFrom, emptyBugEvidence, type BugReport } from '@piwitests/core/bug-report';
+import {
+  BUG_REPORT_VERSION,
+  bugContextFrom,
+  emptyBugEvidence,
+  isWrongStep,
+  type BugReport,
+} from '@piwitests/core/bug-report';
 import { highlightLocator } from '@piwitests/picker-dom';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
@@ -109,7 +115,9 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
   if (state.active) {
     actions.push(iconLine('info', 'muted', t('devtools_finishOnPage')));
   } else {
-    const copy = button(t('record_copyTest'), () => void specFor(state).then((spec) => copyWithFeedback(spec, copy)), {
+    // A step marked wrong makes the copied test the failing one, named as the finish panel names it.
+    const label = steps.some(isWrongStep) ? t('bug_copyTest') : t('record_copyTest');
+    const copy = button(label, () => void specFor(state).then((spec) => copyWithFeedback(spec, copy)), {
       icon: 'copy',
       tone: 'primary',
     });

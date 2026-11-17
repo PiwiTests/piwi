@@ -10,6 +10,7 @@ import {
   replayVerdict,
   STEP_WAIT_MAX_MS,
   stepTimeout,
+  verdictIcon,
   verdictText,
   type LocatorLook,
   type Observation,
@@ -640,5 +641,59 @@ describe('stepTimeout', () => {
     expect(stepTimeout(at(5_000), 0, 10_000)).toBe(10_000);
     expect(stepTimeout(at(0, 0), 1, 10_000)).toBe(10_000);
     expect(stepTimeout(at(9_000, 2_000), 1, 10_000)).toBe(10_000);
+  });
+});
+
+describe('the verdict of a recording, by what it marks wrong', () => {
+  const click: RecordedStep = {
+    action: 'click',
+    target: null,
+    value: null,
+    redacted: false,
+    pageUrl: '/',
+    timestamp: 0,
+  };
+  const holds: RecordedStep = {
+    ...click,
+    action: 'assert',
+    assertion: { matcher: 'toHaveText', expected: 'Cart (1)', actual: null, negated: false, note: null },
+  };
+  const wrong: RecordedStep = {
+    ...click,
+    action: 'assert',
+    assertion: { matcher: 'toHaveText', expected: 'Total: 10', actual: 'Total: 0', negated: false, note: null },
+  };
+  const done = { status: 'done' as const, detail: null };
+  const passed = { status: 'passed' as const, detail: null };
+  const failed = (found: string) => ({ status: 'failed' as const, detail: `Found ${found}.`, found });
+
+  it('in a bug report, a check that held when recorded and fails here says the page differs, not that the bug shows', () => {
+    const verdict = replayVerdict([click, holds, wrong], [done, failed('"Cart (1 item)"'), passed], false);
+    expect(verdict).toEqual({ kind: 'diverged', step: 1, reason: 'Found "Cart (1 item)".' });
+    expect(verdictIcon(verdict, [click, holds, wrong])).toBe('alert');
+  });
+
+  it('in a bug report, the step marked wrong decides when it fails too, whatever failed before it', () => {
+    const verdict = replayVerdict([click, holds, wrong], [done, failed('"Cart (2)"'), failed('"Total: 0"')], false);
+    expect(verdict).toMatchObject({ kind: 'reproduced', step: 2, sameAsReported: true });
+    expect(verdictText(verdict, [click, holds, wrong]).title).toBe('Reproduced: the bug shows here');
+    expect(verdictIcon(verdict, [click, holds, wrong])).toBe('bug');
+  });
+
+  it('in a recording that marks nothing wrong, says a check failed, or that every check holds, with no bug words', () => {
+    const steps = [click, holds];
+    const failing = replayVerdict(steps, [done, failed('"Cart (2)"')], false);
+    expect(failing).toMatchObject({ kind: 'reproduced', step: 1 });
+    expect(verdictText(failing, steps).title).toBe('A check failed');
+    expect(verdictIcon(failing, steps)).toBe('alert');
+    const holding = replayVerdict(steps, [done, passed], false);
+    expect(verdictText(holding, steps)).toEqual({
+      title: 'Every check holds',
+      detail: 'The steps played here, and each check found what it expects.',
+    });
+    expect(verdictIcon(holding, steps)).toBe('check-circle');
+    expect(verdictText({ kind: 'diverged', step: 1, reason: 'Nothing matches.' }, steps).title).toBe(
+      'Stopped at step 2: the page went another way',
+    );
   });
 });

@@ -7,7 +7,7 @@
 popup's tools stand in two sections, Pick and Tests, since the merge left four sections of one tile each; and Replay's
 verdict for a recording that marks nothing wrong says whether every check holds rather than whether a bug reproduced.
 The DevTools Record tab finishes no recording: the bar on the page and the popup do, since they collect the last
-evidence.
+evidence. The review before merging added decision 9 and the gate on Send to Piwi in decision 5.
 
 **Summary.** Piwi Picker's popup had two tiles that start the same recorder: **Record actions** and **Report a bug**.
 They differ only by the tools of their bar and by what their last panel exports, and each lacks what the other has.
@@ -43,7 +43,7 @@ What each mode offered before this change:
 ## Decisions
 
 1. **One tile, Record**, with the line "A scenario or a bug". The red tile and the `BUG` badge go.
-   Replay a bug report becomes **Replay a recording**, which it already was.
+   Replay a bug report becomes **Replay**, its dialog **Replay a recording**, which it already was.
 2. **Every recording of the extension collects evidence**, as a bug recording did: the debugging protocol in Chrome and
    Edge from the start (its banner is expected, and the bar says why), the main-world evidence script elsewhere and
    once the session is lost, the viewport, and a screenshot of each step. The IDE bundle is unchanged: no evidence, no
@@ -57,23 +57,30 @@ What each mode offered before this change:
    element's current states (a check) and their opposites (an anomaly).
 5. **One finish panel**, its first action following what was recorded: **Copy test** without an anomaly, **Copy failing
    test** with one (`renderBugSpec`). Then Send to editor (when paired), Replay, Copy report, Download the `.piwibug`,
-   Send to Piwi… (when connected) and Discard. The test functions apply to the copied code in both cases.
+   Send to Piwi… (when connected, and only for a bug report: the instance keeps what it is sent as one) and Discard.
+   The test functions apply to the copied code in both cases.
 6. **The steps file download goes.** The `.piwibug` holds `steps.json`, and Replay, the desktop app and the instance
    read it. The steps format stays: Send to editor, the desktop app's runs, the instance's Steps export and Replay's
    chooser keep using it, and the chooser still opens a `.json`.
-7. **The popup gets out of the permission prompt's way.** When the site is not granted yet, the popup closes right after
-   the request, inside the click, and the worker starts the recording when the grant lands (`RecordIntent`, already
-   there for a prompt that closes the popup). A refusal fires no event, so nothing can reopen the popup; the next popup
-   on that tab says the recording did not start because the site was not allowed.
-8. **The DevTools Record tab** finishes a recording through the page, as the popup does, and copies the same test as the
-   finish panel. It loses Download steps.
+7. **The popup gets out of the permission prompt's way.** When the site is not granted yet, the popup parks the intent
+   inside the click and closes once the prompt has had `PROMPT_SHOWN_MS` (400 ms) to show, and the worker starts the
+   recording when the grant lands (`RecordIntent`, already there for a prompt that closes the popup). A refusal fires
+   no event, so nothing can reopen the popup; the next popup on that tab and site says the recording did not start
+   because the site was not allowed, and the next popup on that tab says why a recording the grant should have started
+   could not start.
+8. **The DevTools Record tab** leaves Finish to the bar and the popup, which collect the last evidence, and copies the
+   same test as the finish panel, under the same name. It loses Download steps.
+9. **Replay's verdict follows what was marked wrong.** In a bug report, a step marked wrong that does not hold is the
+   bug showing, and a check that held when recorded failing means the page differs. A recording that marks nothing
+   wrong has checks that hold or fail, in words that name no bug.
 
 ## Layout rules for the bars
 
 - **No label wraps inside a button.** Buttons keep their label on one line (`white-space: nowrap`), and a row of buttons
   wraps between buttons.
 - **A count stays with its noun**: the bar's title has its row to itself, beside the move button only.
-- **Checked by a spec** in English, French and German, at the bar's width: no button whose label takes two lines.
+- **Checked by a spec** in French and German, at the bar's width: no button whose label takes two lines; and by the
+  popup's spec in five languages, recording or not: no tile whose label or hint is cut or takes two lines.
 
 ## Delivery plan
 

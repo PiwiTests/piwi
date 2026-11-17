@@ -5,6 +5,9 @@ import {
   startRecording,
   stopRecording,
   discardRecording,
+  discardRecordingStartedAt,
+  setRecordStartError,
+  takeRecordStartError,
   appendRecordingEvent,
   setRecordIntent,
   getRecordIntent,
@@ -292,6 +295,23 @@ describe('recording state', () => {
     const state = await getRecordingState();
     expect(state.active).toBe(false);
     expect(state.events).toEqual([]);
+  });
+});
+
+describe('a finish panel’s Discard and a start that failed after the grant', () => {
+  it('discards the recording that started at the time given, and never one started since', async () => {
+    const first = await startRecording('https://x.test/*');
+    await discardRecordingStartedAt(first.startedAt! - 1);
+    expect((await getRecordingState()).startedAt).toBe(first.startedAt);
+    await discardRecordingStartedAt(first.startedAt);
+    expect(await getRecordingState()).toMatchObject({ active: false, events: [], startedAt: null });
+  });
+
+  it('keeps why a recording did not start for its tab, and says it once', async () => {
+    await setRecordStartError(7, 'Cannot access this page.');
+    expect(await takeRecordStartError(8)).toBeNull();
+    expect(await takeRecordStartError(7)).toBe('Cannot access this page.');
+    expect(await takeRecordStartError(7)).toBeNull();
   });
 });
 

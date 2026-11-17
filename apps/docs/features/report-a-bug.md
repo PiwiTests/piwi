@@ -97,7 +97,8 @@ steps with the wrong ones highlighted, and a line summing up the evidence.
 Typed values stay as you typed them, except passwords, card numbers, their security codes and one-time codes, which
 are never recorded: the spec reads them from an environment variable. Look over the report before you share it.
 
-With the extension connected to an instance, **Send to Piwi…** sends the report after a preview: see
+With the extension connected to an instance, **Send to Piwi…** sends the report after a preview. It shows once a step
+is marked wrong: a recording that marks nothing wrong is no bug report. See
 [Sending a report](./bug-reports#sending-a-report).
 
 ## Replaying a report

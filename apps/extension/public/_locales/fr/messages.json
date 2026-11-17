@@ -2411,7 +2411,7 @@
     "message": "Chrome affiche une barre indiquant que Piwi Picker a commencé à déboguer ce navigateur : c’est cet enregistrement qui lit la console, les requêtes en échec et les captures d’écran. Rien ne quitte votre ordinateur, et la barre disparaît quand vous terminez."
   },
   "bug_debuggingCanceled": {
-    "message": "La barre de débogage a été annulée : l’enregistrement lit désormais la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "message": "La barre de débogage a été annulée : l’enregistrement lit désormais la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2420,7 +2420,7 @@
     }
   },
   "bug_debuggingRefused": {
-    "message": "Chrome a refusé la session de débogage (un autre débogueur sur cet onglet, ou une règle d’entreprise) : l’enregistrement lit la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
+    "message": "Chrome a refusé la session de débogage (un autre débogueur sur cet onglet, ou une règle d’entreprise) : l’enregistrement lit la console et les requêtes depuis la page, et une capture d’écran demande « $action$ » dans Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2528,7 +2528,7 @@
     "message": "Saisissez son nom, tel qu’il se lirait sur la page."
   },
   "bug_alreadyThere_one": {
-    "message": "$count$ élément de ce type est déjà sur la page : utilisez « $mark$ » pour le vérifier, ou pour dire ce qui ne va pas.",
+    "message": "$count$ élément de ce type est déjà sur la page : utilisez « $mark$ » pour le vérifier, ou pour dire ce qui ne va pas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2541,7 +2541,7 @@
     }
   },
   "bug_alreadyThere_other": {
-    "message": "$count$ éléments de ce type sont déjà sur la page : utilisez « $mark$ » pour les vérifier, ou pour dire ce qui ne va pas.",
+    "message": "$count$ éléments de ce type sont déjà sur la page : utilisez « $mark$ » pour les vérifier, ou pour dire ce qui ne va pas.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3164,6 +3164,15 @@
       }
     }
   },
+  "replay_verdictDivergedRecordingDetail": {
+    "message": "$reason$ Cette page n’est pas la même qu’à l’enregistrement : d’autres données, un autre compte, ou une option activée ou non.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
   "replay_verdictFailedAsInRun": {
     "message": "Échec à l’étape $step$, comme lors de l’exécution du test",
     "placeholders": {
@@ -3579,7 +3588,7 @@
     "message": "Rejouer un enregistrement"
   },
   "replay_dialogIntro": {
-    "message": "Rejoue ses étapes sur $origin$, avec un curseur qui montre chacune d’elles, et indique si le bug apparaît ici.",
+    "message": "Rejoue ses étapes sur $origin$, avec un curseur qui montre chacune d’elles, et indique si ses vérifications passent, ou si le bug apparaît ici.",
     "placeholders": {
       "origin": {
         "content": "$1",

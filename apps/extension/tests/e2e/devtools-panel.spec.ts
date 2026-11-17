@@ -162,6 +162,35 @@ test.describe('the Piwi panel', () => {
     await expect(panel.getByText('Nothing is being recorded.')).toBeVisible();
   });
 
+  test('copies the failing test of a recording that marks the page wrong, named as the finish panel names it', async ({
+    context,
+    extensionId,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await context.newPage();
+    const panel = await openPanel(shop, extensionId, context);
+    const wrong = {
+      ...click('cart-total', 'Total', 2),
+      kind: 'assert',
+      assertion: { matcher: 'toHaveText', expected: 'Total: 45', actual: 'Total: 50', negated: false, note: null },
+    } as RawCaptureEvent;
+    await setSession(panel, {
+      piwiRecording: {
+        active: false,
+        startedAt: 1,
+        grantedOriginPattern: `${ORIGIN}/*`,
+        title: 'Coupon not applied',
+        events: [click('apply-coupon', 'Apply coupon', 1), wrong],
+      },
+    });
+    await expect(panel.getByRole('button', { name: 'Copy test', exact: true })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Copy failing test' }).click();
+    await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible();
+    const spec = await panel.evaluate(() => navigator.clipboard.readText());
+    expect(spec).toContain('test.fail();');
+    expect(spec).toContain("await expect(page.getByTestId('cart-total')).toHaveText('Total: 45');");
+  });
+
   test('follows a replay, pauses and stops it, and says the verdict', async ({ context, extensionId }) => {
     const shop = await context.newPage();
     const panel = await openPanel(shop, extensionId, context);

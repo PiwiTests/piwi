@@ -52,9 +52,11 @@ export function wrappedButtonsInShadows(page: Page): Promise<string[]> {
       for (const el of root.querySelectorAll<HTMLElement>('*')) {
         if (el.shadowRoot) walk(el.shadowRoot);
         if (!el.classList.contains('piwi-btn') || el.getClientRects().length === 0) continue;
+        // The label sits in a span beside the icon: every text node inside the button counts.
         const lines = new Set<number>();
-        for (const node of el.childNodes) {
-          if (node.nodeType !== Node.TEXT_NODE || !node.textContent!.trim()) continue;
+        const texts = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+          if (!node.textContent!.trim()) continue;
           const range = document.createRange();
           range.selectNodeContents(node);
           for (const rect of range.getClientRects()) if (rect.width > 0) lines.add(Math.round(rect.top));

@@ -238,10 +238,13 @@ function foundAsReported(assertion: StepAssertion | undefined, found: string): b
 /**
  * What a finished replay says. A step that could not be done means the page
  * differs here (diverged), or, at the step a report made from a test run
- * failed at (`runFailedStep`), that it fails as it did in the run. Otherwise a
- * bug report's expected result that does not hold is the bug showing
- * (reproduced), and every one holding means it did not show, as does the
- * run's failed step playing. A recording with nothing expected just completed.
+ * failed at (`runFailedStep`), that it fails as it did in the run. Otherwise,
+ * in a bug report, a step that says the page was wrong and still does not
+ * hold is the bug showing (reproduced), and a check that held when recorded
+ * failing means the page differs (diverged); in a recording that marks
+ * nothing wrong, a check that fails is reported as such. Every check holding
+ * means the bug did not show, as does the run's failed step playing. A
+ * recording with nothing expected just completed.
  */
 export function replayVerdict(
   steps: RecordedStep[],
@@ -256,11 +259,14 @@ export function replayVerdict(
       ? { kind: 'diverged', step: diverged, reason, asInRun: true }
       : { kind: 'diverged', step: diverged, reason };
   }
-  const failed = results.findIndex((r) => r?.status === 'failed');
-  if (failed >= 0) {
-    const found = results[failed]!.found ?? '';
-    const sameAsReported = foundAsReported(steps[failed]?.assertion, found);
-    return { kind: 'reproduced', step: failed, found, sameAsReported };
+  const failed = results.flatMap((r, i) => (r?.status === 'failed' ? [i] : []));
+  if (failed.length > 0) {
+    const bugReport = steps.some(isWrongStep);
+    const shown = bugReport ? failed.find((i) => steps[i] != null && isWrongStep(steps[i]!)) : failed[0];
+    if (shown === undefined) return { kind: 'diverged', step: failed[0]!, reason: results[failed[0]!]!.detail ?? '' };
+    const found = results[shown]!.found ?? '';
+    const sameAsReported = foundAsReported(steps[shown]?.assertion, found);
+    return { kind: 'reproduced', step: shown, found, sameAsReported };
   }
   if (stopped) return { kind: 'stopped', step: results.length };
   const runStep = runFailedStep == null ? undefined : results[runFailedStep]?.status;
@@ -316,7 +322,9 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
         title: bugReport
           ? t('replay_verdictDiverged', { step: verdict.step + 1 })
           : t('replay_verdictDivergedRecording', { step: verdict.step + 1 }),
-        detail: t('replay_verdictDivergedDetail', { reason: verdict.reason }),
+        detail: bugReport
+          ? t('replay_verdictDivergedDetail', { reason: verdict.reason })
+          : t('replay_verdictDivergedRecordingDetail', { reason: verdict.reason }),
       };
     case 'completed':
       return { title: t('replay_verdictCompleted'), detail: t('replay_verdictCompletedDetail') };

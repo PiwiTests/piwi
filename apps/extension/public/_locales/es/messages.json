@@ -3164,6 +3164,15 @@
       }
     }
   },
+  "replay_verdictDivergedRecordingDetail": {
+    "message": "$reason$ Esta página no es la misma que al grabarla: otros datos, otra cuenta o una opción activada o desactivada.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
   "replay_verdictFailedAsInRun": {
     "message": "Falló en el paso $step$, como en la ejecución del test",
     "placeholders": {
@@ -3579,7 +3588,7 @@
     "message": "Reproducir una grabación"
   },
   "replay_dialogIntro": {
-    "message": "Reproduce sus pasos en $origin$, con un cursor que muestra cada uno, y dice si el bug aparece aquí.",
+    "message": "Reproduce sus pasos en $origin$, con un cursor que muestra cada uno, y dice si sus comprobaciones pasan, o si el bug aparece aquí.",
     "placeholders": {
       "origin": {
         "content": "$1",

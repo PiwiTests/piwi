@@ -24,7 +24,7 @@ export interface RecordingState {
   startedAt: number | null;
   /** The origin pattern granted for this recording (e.g. `https://app.example.com/*`) — background re-registers the content script for it on every new tab/navigation. */
   grantedOriginPattern: string | null;
-  /** The recording's evidence token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. Null in the IDE bundle, which collects no evidence. */
+  /** The recording's evidence token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. Absent in the IDE bundle, which collects no evidence. */
   bugToken?: string | null;
   /** Paused from the recording bar, or from the editor that started the recording: nothing done in the browser is captured until it resumes. */
   paused?: boolean;
@@ -76,6 +76,16 @@ export async function stopRecording(): Promise<RecordingState> {
 export async function discardRecording(): Promise<void> {
   await sessionArea().remove(RECORDING_KEY);
   await clearBugEvidence();
+}
+
+/**
+ * Discards the recording that started at `startedAt`, and nothing when the one
+ * stored now is another: a panel left open on a page discards its own
+ * recording, never one started since.
+ */
+export async function discardRecordingStartedAt(startedAt: number | null): Promise<void> {
+  const stored = (await sessionArea().get(RECORDING_KEY))[RECORDING_KEY];
+  if (isRecordingStartedAt(stored, startedAt)) await discardRecording();
 }
 
 /**
@@ -131,6 +141,27 @@ export async function getRecordIntent(): Promise<RecordIntent | null> {
 
 export async function clearRecordIntent(): Promise<void> {
   await sessionArea().remove(RECORD_INTENT_KEY);
+}
+
+/**
+ * Why the recording a grant should have started did not start, for the tab it
+ * was asked on: the worker keeps it, since no popup is open by then, and the
+ * next popup on that tab says it once (`takeRecordStartError`).
+ */
+const RECORD_START_ERROR_KEY = 'piwiRecordStartError';
+
+export async function setRecordStartError(tabId: number, error: string): Promise<void> {
+  await sessionArea().set({ [RECORD_START_ERROR_KEY]: { tabId, error } });
+}
+
+/** The start error kept for `tabId`, removed as it is read; null when there is none for that tab. */
+export async function takeRecordStartError(tabId: number): Promise<string | null> {
+  const stored = (await sessionArea().get(RECORD_START_ERROR_KEY))[RECORD_START_ERROR_KEY] as
+    | { tabId?: unknown; error?: unknown }
+    | undefined;
+  if (!stored || stored.tabId !== tabId || typeof stored.error !== 'string') return null;
+  await sessionArea().remove(RECORD_START_ERROR_KEY);
+  return stored.error;
 }
 
 export type RecordIntentDecision =

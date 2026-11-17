@@ -21,8 +21,8 @@ the page gets wrong; this page covers the recording itself and a test that passe
 
 The first time on a site, Record asks the browser for access to it, so the recorder can follow you from page to page.
 The popup closes once the browser's prompt shows, and the recording starts when you allow it. If you refuse, nothing is
-recorded, and the next time you open the popup it says the recording did not start because Piwi Picker was not allowed
-on the site. While the recording runs, a red border marks the tab and the popup's first tile reads **Finish (3)**, with
+recorded, and the next time you open the popup on that tab and site it says the recording did not start because Piwi
+Picker was not allowed there. While the recording runs, a red border marks the tab and the popup's first tile reads **Finish (3)**, with
 the number of steps so far.
 
 The recorder captures clicks, double clicks, fills, checks, choices, drags, the names of chosen files (never their
@@ -77,8 +77,8 @@ actions:
   cursor.
 - [**Replay**](./replay-a-bug-report) plays the steps again in the tab, to see that each still finds its element.
 - **Copy report** copies the recording as Markdown, **Download .piwibug** saves its steps, its test and its evidence as
-  one [file](/reference/bug-report-file), and **Send to Piwi…**, with a connection, sends it to your instance after a
-  [preview](./bug-reports#sending-a-report).
+  one [file](/reference/bug-report-file). Once a step is [marked wrong](./report-a-bug), **Send to Piwi…**, with a
+  connection, sends it to your instance as a bug report after a [preview](./bug-reports#sending-a-report).
 - **Discard** drops the recording.
 
 Until you discard it, the popup's first tile reads **Review (7)** and opens the finish panel again. Once a step is marked

@@ -24,7 +24,7 @@ import {
   getRecordingState,
   appendRecordingEvent,
   stopRecording,
-  discardRecording,
+  discardRecordingStartedAt,
   updateRecording,
   type RecordingState,
 } from '../shared/recording-storage.js';
@@ -514,7 +514,7 @@ function focusInClosedShadowRoot(el: Element): boolean {
   }
 }
 
-/** Whether capture is paused in this document: a bug report's pick or dialog is on screen, or the recording is paused. */
+/** Whether capture is paused in this document: a check's pick or a record dialog is on screen, or the recording is paused. */
 function capturePaused(): boolean {
   return recorderGlobals().__piwiRecordPaused === true || recordingPaused;
 }
@@ -644,7 +644,7 @@ async function handleStop(): Promise<void> {
   stopCapture();
   await tellWorkerStopped();
   // The IDE bundle opens no finish panel: the steps are in the editor.
-  if (!IDE_BUILD) await renderFinishPanel(state, discardRecording);
+  if (!IDE_BUILD) await renderFinishPanel(state, () => discardRecordingStartedAt(state.startedAt));
 }
 
 /**
@@ -826,7 +826,7 @@ async function loadRecorderSettings(): Promise<void> {
 interface RecorderGlobals {
   /** Aborting this detaches every capture listener at once — see `stopCapture`. */
   __piwiRecordCapture?: AbortController;
-  /** Set while a bug report's pick or dialog is open: nothing is captured meanwhile. */
+  /** Set while a check's pick or a record dialog is open: nothing is captured meanwhile. */
   __piwiRecordPaused?: boolean;
   /** Stores the evidence entries received but not stored yet, and stops the relay. */
   __piwiBugRelayStop?: () => Promise<void>;
@@ -847,7 +847,7 @@ function recorderGlobals(): RecorderGlobals {
 }
 
 /**
- * Ends capture on this page: detaches the listeners, ends a bug report's pick
+ * Ends capture on this page: detaches the listeners, ends a check's pick
  * and closes its dialog, drops the HUD, and drops the border that says the tab
  * is being recorded.
  *
@@ -1218,7 +1218,7 @@ function attachListeners(): void {
 /**
  * Listens for a stop that came from somewhere other than this page's own HUD —
  * the popup's Stop button, or the HUD in a different tab of the same recording
- * — and for the popup's Finish of a bug report and its screenshot.
+ * — and for the popup's Finish and Take a screenshot.
  * The service worker fans the stop out with `chrome.tabs.sendMessage`, which is
  * the only thing that reaches a content script: `chrome.runtime.sendMessage`
  * goes to extension pages and the worker, never here, so a stop from the popup
@@ -1398,7 +1398,7 @@ function lastRecordedViewport(events: RawCaptureEvent[]): ViewportSize | null {
 }
 
 /**
- * A bug report keeps the viewport size its steps were played at: the page's
+ * A recording keeps the viewport size its steps were played at: the page's
  * size when the recording reaches it, if it differs from the last one kept.
  * Answers the size kept last.
  */
@@ -1464,7 +1464,9 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
     // only came back from the cache: the review is the stopping tab's. The
     // IDE bundle has no review: the steps are in the editor.
     stopCapture();
-    if (state.events.length > 0 && !restored && !IDE_BUILD) await renderFinishPanel(state, discardRecording);
+    if (state.events.length > 0 && !restored && !IDE_BUILD) {
+      await renderFinishPanel(state, () => discardRecordingStartedAt(state.startedAt));
+    }
     return;
   }
 

@@ -5,6 +5,7 @@ import {
   getRecordIntent,
   clearRecordIntent,
   decideRecordIntent,
+  setRecordStartError,
   serveAppendRecordingEvent,
   serveUpdateRecording,
 } from '../shared/recording-storage.js';
@@ -261,8 +262,8 @@ const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
 
 /**
  * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
- * when one of the ids is not registered, as the recording's script is not
- * during an actions recording.
+ * when one of the ids is not registered, as after a recording that could not
+ * register them.
  */
 async function unregisterScripts(ids: string[]): Promise<void> {
   try {
@@ -380,7 +381,11 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
     await clearRecordIntent().catch(() => undefined);
     return;
   }
-  await startRecordingOnce(decision.originPattern, decision.tabId);
+  const started = await startRecordingOnce(decision.originPattern, decision.tabId);
+  // No popup is open to say why: the next one on that tab does.
+  if (!started.ok) {
+    await setRecordStartError(decision.tabId, started.error ?? t('common_recordingStartFailed')).catch(() => undefined);
+  }
 }
 
 // The person cancelled the debugging bar during a recording: the recorder's page relay takes over.
@@ -447,8 +452,8 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
  * at any moment and on any page of the recording. Without it (Firefox, a
  * session refused or cancelled), `captureVisibleTab`, which needs `<all_urls>`
  * or the `activeTab` grant: the recorder's per-origin host permission is not
- * enough. `activeTab` is granted by opening the popup on the tab (as the Report
- * a bug click does) or by the keyboard shortcut, and lasts until the tab
+ * enough. `activeTab` is granted by opening the popup on the tab (as the Record
+ * click does) or by the keyboard shortcut, and lasts until the tab
  * navigates; outside it Chrome refuses, and the report says there is no
  * screenshot rather than asking for a wider permission.
  */

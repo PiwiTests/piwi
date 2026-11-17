@@ -3,7 +3,7 @@ Piwi Picker vous donne le locator Playwright à utiliser pour n’importe quel �
 **Depuis le bouton de la barre d’outils, sur n’importe quelle page**
 
 - **Choisir un élément** : les locators classés d’un élément, revérifiés sur la page, à copier seuls, en ligne d’action ou en assertion. Quand plusieurs éléments portent le même nom, limitez le locator à un parent stable.
-- **Enregistrer** : clics, saisies et choix sur les pages d’un site, avec des vérifications de ce que la page affiche, transformés en test TypeScript prêt à lancer. Les mots de passe ne sont jamais enregistrés. Changez ce qu’une vérification attend et l’enregistrement devient un rapport de bug : un test en échec, un rapport Markdown et un fichier .piwibug avec les erreurs de console, les requêtes en échec et une capture de chaque étape.
+- **Enregistrer** : clics, saisies et choix sur les pages d’un site, avec des vérifications de ce que la page affiche, transformés en test TypeScript prêt à lancer. Les mots de passe ne sont jamais enregistrés. Changez ce qu’une vérification attend et l’enregistrement devient un rapport de bug : un test en échec, un rapport Markdown et un fichier .piwibug avec les erreurs de console, les requêtes en échec et des captures d’écran.
 - **Rejouer** : un enregistrement ou un rapport de bug repassé dans un onglet, un curseur sur chaque étape.
 - **Contrôle** : les éléments qu’aucun locator stable ne trouve seul, chacun avec un data-testid suggéré.
 - **Multi-sélection**, **Assertions** et **Contexte IA** : le motif commun aux lignes d’une liste, des lignes expect(...) pour un élément, et un bloc décrivant un élément pour un agent de code.

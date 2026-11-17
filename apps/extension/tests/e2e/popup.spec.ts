@@ -232,26 +232,6 @@ test.describe('popup.html', () => {
     expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
   });
 
-  test('opened after a Record prompt the site was refused in, it says the recording did not start', async ({
-    context,
-    extensionId,
-  }) => {
-    const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    // The intent the Record click parked for this tab, for a site no grant covers: the prompt was refused.
-    await page.evaluate(async () => {
-      const tab = await chrome.tabs.getCurrent();
-      await chrome.storage.session.set({
-        piwiRecordIntent: { originPattern: 'https://refused.test/*', tabId: tab!.id, createdAt: Date.now() },
-      });
-    });
-    await page.reload();
-    await expect(page.getByRole('status')).toHaveText(
-      'The recording did not start: Piwi Picker was not allowed on this site.',
-    );
-    expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
-  });
-
   test('Replay and Tested elements wait for the tab and the connection they act on', async ({
     context,
     extensionId,
@@ -404,6 +384,138 @@ test.describe('Tested elements tile', () => {
     );
     await page.reload();
     await expect(page.locator('#coverage-hint')).toHaveText('What your tests reach here');
+  });
+});
+
+/**
+ * The popup opened over a web page, as it is over a tab of the browser: `chrome.tabs.query` answers that tab, and
+ * `chrome.permissions` answers whether its site is granted and what its prompt does. `window.close` is kept as a mark.
+ */
+async function popupOver(
+  page: Page,
+  extensionId: string,
+  tab: { id: number; url: string },
+  site: { granted: boolean; answer?: boolean },
+): Promise<void> {
+  await page.addInitScript(
+    ({ tab, site }) => {
+      const g = globalThis as unknown as { closeCalled: boolean; started: unknown[] };
+      g.closeCalled = false;
+      g.started = [];
+      window.close = () => {
+        g.closeCalled = true;
+      };
+      chrome.tabs.query = (async () => [{ ...tab, active: true }]) as unknown as typeof chrome.tabs.query;
+      chrome.permissions.contains = (async () => site.granted) as unknown as typeof chrome.permissions.contains;
+      // An answer the prompt gives at once, or a prompt still on screen.
+      chrome.permissions.request = (() =>
+        site.answer === undefined
+          ? new Promise(() => undefined)
+          : Promise.resolve(site.answer)) as unknown as typeof chrome.permissions.request;
+      const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = ((message: { type?: string }) => {
+        if (message?.type !== 'piwi-start-recording') return send(message);
+        g.started.push(message);
+        return Promise.resolve({ ok: true });
+      }) as typeof chrome.runtime.sendMessage;
+    },
+    { tab, site },
+  );
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+}
+
+const SHOP_TAB = { id: 4242, url: 'https://shop.test/cart' };
+const marks = (page: Page) =>
+  page.evaluate(() => {
+    const g = globalThis as unknown as { closeCalled: boolean; started: unknown[] };
+    return { closed: g.closeCalled, started: g.started.length };
+  });
+const parkedIntent = (page: Page) =>
+  page.evaluate(async () => (await chrome.storage.session.get('piwiRecordIntent')).piwiRecordIntent ?? null);
+
+test.describe('Record and the site’s permission prompt', () => {
+  test('on a site not granted yet, parks the intent and gets out of the prompt’s way', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await popupOver(page, extensionId, SHOP_TAB, { granted: false });
+    await page.locator('#record').click();
+    await expect.poll(() => marks(page)).toEqual({ closed: true, started: 0 });
+    expect(await parkedIntent(page)).toMatchObject({ originPattern: 'https://shop.test/*', tabId: 4242 });
+  });
+
+  test('on a site granted already, starts the recording itself', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await popupOver(page, extensionId, SHOP_TAB, { granted: true, answer: true });
+    await page.locator('#record').click();
+    await expect.poll(() => marks(page)).toEqual({ closed: true, started: 1 });
+    expect(await parkedIntent(page)).toBeNull();
+  });
+
+  test('a prompt answered No at once keeps the popup open, says why and parks nothing', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await popupOver(page, extensionId, SHOP_TAB, { granted: false, answer: false });
+    await page.locator('#record').click();
+    await expect(page.getByRole('status')).toHaveText(
+      'Piwi Picker needs access to this site to record from page to page.',
+    );
+    await page.waitForTimeout(800);
+    expect(await marks(page)).toEqual({ closed: false, started: 0 });
+    expect(await parkedIntent(page)).toBeNull();
+  });
+
+  test('opened after a refused prompt on that tab and site, it says the recording did not start', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await popupOver(page, extensionId, SHOP_TAB, { granted: false });
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecordIntent: { originPattern: 'https://shop.test/*', tabId: 4242, createdAt: Date.now() },
+      }),
+    );
+    await page.reload();
+    await expect(page.getByRole('status')).toHaveText(
+      'The recording did not start: Piwi Picker was not allowed on this site.',
+    );
+    expect(await parkedIntent(page)).toBeNull();
+  });
+
+  for (const [what, intent] of [
+    ['another tab', { originPattern: 'https://shop.test/*', tabId: 7 }],
+    ['another site in that tab', { originPattern: 'https://elsewhere.test/*', tabId: 4242 }],
+  ] as const) {
+    test(`says nothing of a refused prompt for ${what}, and lets its intent go`, async ({ context, extensionId }) => {
+      const page = await context.newPage();
+      await popupOver(page, extensionId, SHOP_TAB, { granted: false });
+      await page.evaluate(
+        (parked) => chrome.storage.session.set({ piwiRecordIntent: { ...parked, createdAt: Date.now() } }),
+        intent,
+      );
+      await page.reload();
+      await expect.poll(() => parkedIntent(page)).toBeNull();
+      await expect(page.locator('#status')).toBeEmpty();
+    });
+  }
+
+  test('says why a recording the grant should have started did not start, once, on its tab', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await popupOver(page, extensionId, SHOP_TAB, { granted: true });
+    await page.evaluate(() =>
+      chrome.storage.session.set({ piwiRecordStartError: { tabId: 4242, error: 'Cannot access this page.' } }),
+    );
+    await page.reload();
+    await expect(page.getByRole('status')).toHaveText('Cannot access this page.');
+    await page.reload();
+    await expect(page.locator('#status')).toBeEmpty();
   });
 });
 

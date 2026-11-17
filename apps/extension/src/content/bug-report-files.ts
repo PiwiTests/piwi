@@ -61,6 +61,8 @@ export function assembleBugReport(input: {
   events: RawCaptureEvent[];
   startedAt: number;
   evidence: StoredBugEvidence;
+  /** The recording's title (`recordingTitle`). */
+  title: string | null;
   screenshots: StoredBugScreenshot[];
   context: BugContext;
   views?: StoredStepView[];
@@ -76,7 +78,7 @@ export function assembleBugReport(input: {
   }));
   return {
     v: BUG_REPORT_VERSION,
-    steps: toStepsDocument(session, { title: evidence.title?.trim() || null }),
+    steps: toStepsDocument(session, { title: input.title?.trim() || null }),
     evidence: {
       console: evidence.console,
       consoleDropped: evidence.consoleDropped,

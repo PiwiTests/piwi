@@ -864,7 +864,7 @@ test.describe('record-panel.js', () => {
     return page;
   }
 
-  test('a stop from the popup reaches an already-recording page: HUD and border go, review panel opens', async ({
+  test('a stop from the popup reaches an already-recording page: bar and border go, finish panel opens', async ({
     context,
   }) => {
     const page = await recordingInProgress(context);
@@ -882,7 +882,7 @@ test.describe('record-panel.js', () => {
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
   });
 
-  test('the worker’s stop fan-out tears a non-initiating tab down without opening a review panel there', async ({
+  test('the worker’s stop fan-out tears a non-initiating tab down without opening a finish panel there', async ({
     context,
   }) => {
     const page = await recordingInProgress(context);
@@ -923,6 +923,7 @@ test.describe('record-panel.js', () => {
     // Nothing is recorded meanwhile, so no check is offered either.
     await expect(hud.getByRole('button', { name: 'Check an element' })).toBeDisabled();
     await expect(hud.getByRole('button', { name: 'Check the address' })).toBeDisabled();
+    await expect(hud.getByRole('button', { name: 'Something is missing' })).toBeDisabled();
     await page.fill('#username', 'alice');
     await page.getByTestId('remember-me').click();
 
@@ -1018,7 +1019,7 @@ test.describe('record-panel.js', () => {
     expect((await readStoredEvents(page)).length).toBe(before);
   });
 
-  test('stopping shows the review panel, and Copy as TypeScript substitutes a matching catalog function', async ({
+  test('stopping shows the finish panel, and Copy test substitutes a matching catalog function', async ({
     context,
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -1075,10 +1076,8 @@ test.describe('record-panel.js', () => {
     // The recording border must not outlive the capture it signals.
     expect(await page.evaluate(() => !!document.getElementById('piwi-record-frame-host'))).toBe(false);
 
-    // The review panel is in a closed shadow root (deliberate, same reasoning
-    // as session-panel.ts/results-panel.ts) — Tab/Enter reaches its buttons
-    // the same way session-panel.spec.ts drives its name prompt. Tab order:
-    // close button, the test's title, then "Copy as TypeScript".
+    // The finish panel is in a closed shadow root: Tab and Enter reach its
+    // buttons. Tab order: the close button, the title, then Copy test.
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
@@ -1091,7 +1090,7 @@ test.describe('record-panel.js', () => {
     expect(spec).not.toContain('recorded flow');
   });
 
-  test('Replay on the review panel replays the recorded steps here, and says why when it cannot start', async ({
+  test('Replay on the finish panel replays the recorded steps here, and says why when it cannot start', async ({
     context,
   }) => {
     const events: RawCaptureEvent[] = [
@@ -1159,7 +1158,7 @@ test.describe('record-panel.js', () => {
     ]);
   });
 
-  /** A stopped recording of one click on the login page, which the review panel opens on. */
+  /** A stopped recording of one click on the login page, which the finish panel opens on. */
   const stoppedLogin = {
     active: false,
     startedAt: 1,
@@ -1226,7 +1225,36 @@ test.describe('record-panel.js', () => {
     expect(await storedRecording(page)).toBeUndefined();
   });
 
-  test('a review panel’s title goes to the recording it reviews, never to a newer one', async ({ context }) => {
+  test('a new recording takes down a finish panel left open, whose Discard then leaves the new one alone', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, { session: { piwiRecording: stoppedLogin } });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+    await expect(review.getByRole('button', { name: 'Discard' })).toBeVisible();
+    const discard = await review.getByRole('button', { name: 'Discard' }).elementHandle();
+
+    // A new recording starts on this tab, from the popup.
+    const newer = { active: true, events: [], startedAt: 2, grantedOriginPattern: `${ORIGIN}/*`, title: 'Checkout' };
+    await page.evaluate(
+      (piwiRecording) => (globalThis as any).chrome.storage.session.set({ piwiRecording }),
+      newer as unknown,
+    );
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await expect(review).toHaveCount(0);
+
+    // The panel's Discard, had it stayed, discards its own recording alone.
+    await discard!.evaluate((button: HTMLElement) => button.click());
+    await page.waitForTimeout(500);
+    expect(await storedRecording(page)).toMatchObject({ startedAt: 2, active: true });
+  });
+
+  test('a finish panel’s title goes to the recording it shows, never to a newer one', async ({ context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await routePages(context);
     await openShadowRoots(context);
@@ -1449,7 +1477,7 @@ test.describe('record-panel.js in French and German', () => {
     expect(await wrappedButtonsInShadows(page)).toEqual([]);
   });
 
-  test('the review panel speaks French, and keeps the page’s text as it is', async ({ context }) => {
+  test('the finish panel speaks French, and keeps the page’s text as it is', async ({ context }) => {
     const page = await recordingIn('fr', context, false, [fillCoupon, clickAddToCart]);
     await expect.poll(() => shadowOf(page, 'piwi-record-review-host').then((s) => s?.lang ?? null)).toBe('fr');
     const review = (await shadowOf(page, 'piwi-record-review-host'))!;
@@ -1466,6 +1494,17 @@ test.describe('record-panel.js in French and German', () => {
     expect(await wrappedButtonsInShadows(page)).toEqual([]);
   });
 
+  test('the wrapped-label check sees an icon button whose label takes two lines', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent('<div id="host"></div>');
+    await page.evaluate(() => {
+      document.getElementById('host')!.attachShadow({ mode: 'open' }).innerHTML =
+        '<button class="piwi-btn" style="width: 70px"><svg width="14" height="14"></svg><span>Something is missing</span></button>' +
+        '<button class="piwi-btn" style="white-space: nowrap"><svg width="14" height="14"></svg><span>Pause</span></button>';
+    });
+    expect(await wrappedButtonsInShadows(page)).toEqual(['Something is missing']);
+  });
+
   test('the HUD lays out in German without clipping', async ({ context }) => {
     const page = await recordingIn('de', context, true, [clickAddToCart]);
     await expect.poll(() => shadowOf(page, 'piwi-record-hud-host').then((s) => s?.text ?? '')).toContain('addToCart');
@@ -1474,7 +1513,7 @@ test.describe('record-panel.js in French and German', () => {
     expect(await wrappedButtonsInShadows(page)).toEqual([]);
   });
 
-  test('the review panel lays out in German without clipping', async ({ context }) => {
+  test('the finish panel lays out in German without clipping', async ({ context }) => {
     const page = await recordingIn('de', context, false, [fillCoupon, clickAddToCart]);
     await expect.poll(() => shadowOf(page, 'piwi-record-review-host').then((s) => s?.lang ?? null)).toBe('de');
     expect(await clippedInShadows(page)).toEqual([]);

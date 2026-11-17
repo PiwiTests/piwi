@@ -377,6 +377,57 @@ test.describe('A recording and its bug report', () => {
     expect(markdown).toMatch(/^no screenshot · page outline$/m);
   });
 
+  test('Check the address keeping the page’s address records a check that passes, and the test passes', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'checkAddress');
+    const dialog = page.locator('#piwi-bug-dialog-host');
+    await expect(dialog.getByText('A check: the test passes while the page shows this.')).toBeVisible();
+    // The path alone, on a page with a query, is another address: the page is wrong there.
+    await dialog.getByLabel('The address the page should be on').fill('/cart?step=2');
+    await expect(dialog.getByText(/^Marked as wrong/)).toBeVisible();
+    await dialog.getByLabel('The address the page should be on').fill('/cart');
+    await expect(dialog.getByText('A check: the test passes while the page shows this.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Add the check' }).click();
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'assert').length).toBe(1);
+    const assert = (await readStoredEvents(page)).find((e) => e.kind === 'assert');
+    expect(assert?.assertion).toEqual({
+      matcher: 'toHaveURL',
+      expected: '/cart',
+      actual: null,
+      negated: false,
+      note: null,
+    });
+    await page.waitForTimeout(300);
+    expect(await screenshotCount(page)).toBe(0);
+
+    await pressHudButton(page, 'finish');
+    const review = page.locator('#piwi-record-review-host');
+    await expect(review.getByRole('button', { name: 'Copy test' })).toBeVisible();
+    await expect(review.getByRole('button', { name: 'Copy failing test' })).toHaveCount(0);
+    await expect(review.getByText(/^\d+ steps? recorded$/)).toBeVisible();
+  });
+
+  test('Something is missing alone makes the recording a bug report', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'missing');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.keyboard.type('Download invoice');
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'assert').length).toBe(1);
+    await expect.poll(() => screenshotCount(page)).toBe(1);
+    await pressHudButton(page, 'finish');
+    const review = page.locator('#piwi-record-review-host');
+    await expect(review.getByText(/^Bug report · \d+ steps?$/)).toBeVisible();
+    await expect(review.getByRole('button', { name: 'Copy failing test' })).toBeVisible();
+    await expect(review.getByRole('button', { name: 'Copy test', exact: true })).toHaveCount(0);
+  });
+
   test('Escape during the pick records nothing and resumes capture', async ({ context }) => {
     await routeShop(context, { fixed: false });
     const page = await startBugRecording(context, { ok: true });

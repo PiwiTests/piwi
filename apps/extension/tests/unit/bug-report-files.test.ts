@@ -66,7 +66,6 @@ const evidence: StoredBugEvidence = {
   requestsDropped: 0,
   outline: '- main',
   screenshotNote: null,
-  title: '  Coupon: not applied!  ',
   context: null,
   screenshots: 0,
 };
@@ -92,6 +91,7 @@ describe('assembleBugReport', () => {
       ],
       startedAt: 1,
       evidence,
+      title: '  Coupon: not applied!  ',
       screenshots: [
         { moment: 'marked', step: 1, takenAt: 2, dataUrl: 'data:image/png;base64,AA==' },
         { moment: 'finish', step: 1, takenAt: 3, dataUrl: 'data:image/png;base64,AQ==' },
@@ -109,12 +109,13 @@ describe('assembleBugReport', () => {
   });
 
   it('says why there is no screenshot', () => {
-    const report = assembleBugReport({ events: [], startedAt: 1, evidence, screenshots: [], context });
+    const report = assembleBugReport({ events: [], startedAt: 1, evidence, title: null, screenshots: [], context });
     expect(report.evidence.screenshotNote).toBe(NO_SCREENSHOT_TAKEN);
     const withNote = assembleBugReport({
       events: [],
       startedAt: 1,
-      evidence: { ...evidence, screenshotNote: 'no grant', title: null },
+      evidence: { ...evidence, screenshotNote: 'no grant' },
+      title: null,
       screenshots: [],
       context,
     });
@@ -133,7 +134,7 @@ describe('assembleBugReport', () => {
     const views = [
       { id: 'v1', dataUrl: 'data:image/jpeg;base64,AAEC', takenAt: 7, viewport: { width: 800, height: 600 } },
     ];
-    const report = assembleBugReport({ events, startedAt: 1, evidence, screenshots: [], context, views });
+    const report = assembleBugReport({ events, startedAt: 1, evidence, title: null, screenshots: [], context, views });
     expect(report.evidence.stepShots).toEqual([
       { step: 1, file: 'steps/002.jpg', box: view('v1').box, viewport: { width: 800, height: 600 }, takenAt: 7 },
     ]);
@@ -144,9 +145,9 @@ describe('assembleBugReport', () => {
     expect(bugReportEntries(withoutStepShots(report), [], undefined, images).map((e) => e.name)).not.toContain(
       'steps/002.jpg',
     );
-    expect(assembleBugReport({ events, startedAt: 1, evidence, screenshots: [], context }).evidence).not.toHaveProperty(
-      'stepShots',
-    );
+    expect(
+      assembleBugReport({ events, startedAt: 1, evidence, title: null, screenshots: [], context }).evidence,
+    ).not.toHaveProperty('stepShots');
   });
 
   it('puts the steps, the test, the Markdown, the evidence and the screenshots in the archive', () => {
@@ -155,6 +156,7 @@ describe('assembleBugReport', () => {
       events: [ev({ kind: 'navigate', value: `${ORIGIN}/cart` })],
       startedAt: 1,
       evidence,
+      title: '  Coupon: not applied!  ',
       screenshots: shots,
       context,
     });
@@ -177,6 +179,7 @@ describe('assembleBugReport', () => {
       events: [ev({ kind: 'navigate', value: `${ORIGIN}/cart` })],
       startedAt: 1,
       evidence,
+      title: '  Coupon: not applied!  ',
       screenshots: [],
       context,
     });
@@ -201,7 +204,8 @@ describe('bugReportMarkdown', () => {
         }),
       ],
       startedAt: 1,
-      evidence: { ...evidence, title: null },
+      evidence,
+      title: null,
       screenshots: [],
       context,
     });
