@@ -88,7 +88,7 @@ function createLauncher(settings: IdeRecorderSettings) {
   >;
   const local: Area = { piwiLanguage: { code: 'en', messages: catalogs.en }, [IDE_SETTINGS_KEY]: settings };
   const session: Area = {
-    piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: null, mode: 'actions' },
+    piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: null },
   };
   const heard = { messages: [] as Message[], frames: [] as string[] };
   const recording = () => session.piwiRecording as RecordingState;
