@@ -14,13 +14,18 @@ export const RUNNER_LANGUAGES = [
 export type RunnerLanguage = (typeof RUNNER_LANGUAGES)[number]['code'];
 
 /** Where a reader suggests a correction to a translation: GitHub's form for translation fixes. */
-export const RUNNER_TRANSLATION_ISSUE_URL = 'https://github.com/PiwiTests/piwi/issues/new?template=translation.yml';
+export const RUNNER_TRANSLATION_ISSUE_URL =
+  'https://github.com/PiwiTests/piwi/issues/new?template=translation-runner.yml';
 
-/** What the shell says of the language (`desktop_get_language`, `piwi:language`): on screen, chosen, the system's. */
+/**
+ * What the shell says of the language (`desktop_get_language`, `piwi:language`): on screen, chosen, the system's, and
+ * the number of the choice it follows, which only grows.
+ */
 export interface RunnerLanguageInfo {
   language: RunnerLanguage;
   chosen: RunnerLanguage | null;
   system: RunnerLanguage;
+  serial: number;
 }
 
 export function isRunnerLanguage(code: unknown): code is RunnerLanguage {
@@ -66,5 +71,6 @@ export function readRunnerLanguageInfo(value: unknown): RunnerLanguageInfo {
     language: isRunnerLanguage(info.language) ? info.language : 'en',
     chosen: isRunnerLanguage(info.chosen) ? info.chosen : null,
     system: isRunnerLanguage(info.system) ? info.system : 'en',
+    serial: typeof info.serial === 'number' && Number.isFinite(info.serial) ? info.serial : 0,
   };
 }

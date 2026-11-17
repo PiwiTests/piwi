@@ -25,26 +25,27 @@ interface Shown {
 }
 
 const shown = shallowRef<Shown>({
-  info: { language: 'en', chosen: null, system: 'en' },
+  info: { language: 'en', chosen: null, system: 'en', serial: 0 },
   layer: RUN_UI_ENGLISH_CATALOG,
   runner: englishCatalog,
   run: englishRunSpeaker,
 });
 
-/** The language the latest answer asked for, so an answer that loads late never replaces a newer one. */
-let asked: RunnerLanguage = 'en';
+/** The answer the window shows or loads last: an older one (a lower `serial`) never replaces it. */
+let latest: RunnerLanguageInfo | null = null;
 
 /** Shows the language the shell answered, once its catalogs are loaded. */
 async function show(value: unknown): Promise<void> {
   const info = readRunnerLanguageInfo(value);
-  asked = info.language;
+  if (latest && info.serial < latest.serial) return;
+  latest = info;
   const code = info.language;
   const [layer, runner, run] = await Promise.all([
     loadRunUiCatalog(code),
     code === 'en' ? englishCatalog : RUNNER_CATALOG_LOADERS[code]().then((m) => m.default),
     loadRunSpeaker(code),
   ]);
-  if (asked === code) shown.value = { info, layer, runner, run };
+  if (latest === info) shown.value = { info, layer, runner, run };
 }
 
 /**
@@ -67,7 +68,7 @@ export function useRunnerLanguage() {
   async function start(): Promise<void> {
     const core = tauriCore();
     if (!core) {
-      await show({ language: runnerLanguageOf(navigator.language), chosen: null, system: 'en' });
+      await show({ language: runnerLanguageOf(navigator.language), chosen: null, system: 'en', serial: 0 });
       return;
     }
     await tauriEvent()?.listen<RunnerLanguageInfo>('piwi:language', ({ payload }) => void show(payload));

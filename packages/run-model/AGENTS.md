@@ -6,7 +6,8 @@ share about a run they follow. Its modules: `attention` (what the runs ask of th
 its place, its error), `status` (a worker's status and tab), `controls`, `outcome` (how a run came out beyond its
 status: its tests ended at a stop), `presence` (who has a run open, watches or drives), `tabs` (the worker shown),
 `layers` (a watched lane's layers under its page: why it waits, its events, its text, its filmstrip), `view-input`
-(the live view's input, also the VS Code paused page's) and `words`. Read
+(the live view's input, also the VS Code paused page's), `ci` (the CI runs in progress), `words`, and `speakers` (the
+words in each of Piwi Picker's languages, for a surface without its catalogs). Read
 [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Rules

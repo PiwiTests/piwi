@@ -60,9 +60,10 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
     `s3 + postgres`), all four on `main`;
   - the package smoke test: Linux on a pull request, plus Windows, macOS and a Linux leg on the reporter's Playwright
     floor when it changes the packages or their dependencies, and all four on `main`.
-- A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the editor service or core (`runner`)
-  runs the `Piwi Runner` job: the layer's and the app's unit tests, then the host's bundle and the window's static
-  build. Neither the signing nor the installers are built there.
+- A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the run model, the editor service,
+  core or the catalog and text checks of `shared/` (`runner`) runs the `Piwi Runner` job: the layer's and the app's
+  unit tests, the host's bundle and the window's static build, then the built window in French and German
+  (`runner:e2e`). Neither the signing nor the installers are built there.
 - The JetBrains Plugin Verifier runs on two IDEs for a pull request and on four on `main`, where the plugin job also
   writes the Gradle cache.
 - Some jobs run on pull requests only: the extension, VS Code and desktop suites, the docs build, the container image

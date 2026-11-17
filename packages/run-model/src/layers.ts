@@ -128,15 +128,19 @@ function takeEvent(layers: LaneLayers, event: PageEvent, at: number): LaneLayers
 /** How a time is said: a number of seconds, in the surface's language (`12s`). */
 export type SaySeconds = (seconds: number) => string;
 
-const englishSecondsFormat = new Intl.NumberFormat('en', {
-  style: 'unit',
-  unit: 'second',
-  unitDisplay: 'narrow',
-  maximumFractionDigits: 1,
-});
+/** A number of seconds in the language `locale`, narrow, a tenth kept: `12s`, `0.4s` in English. */
+export function secondsIn(locale: string): SaySeconds {
+  const format = new Intl.NumberFormat(locale, {
+    style: 'unit',
+    unit: 'second',
+    unitDisplay: 'narrow',
+    maximumFractionDigits: 1,
+  });
+  return (seconds) => format.format(seconds);
+}
 
 /** A number of seconds in English, as the Runs window says it in English (`12s`, `0.4s`). */
-export const englishSeconds: SaySeconds = (seconds) => englishSecondsFormat.format(seconds);
+export const englishSeconds: SaySeconds = secondsIn('en');
 
 /** A time in milliseconds as seconds, a tenth kept under ten seconds. */
 function secondsOf(ms: number): number {

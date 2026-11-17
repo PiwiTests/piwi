@@ -1,9 +1,10 @@
 //! What the shell says (the tray menu, the start screen, the questions it asks), from Piwi Runner's catalogs
 //! (`apps/runner/locales/<code>.json`), embedded at build: the window's catalogs, in Piwi Picker's shape, whose
 //! `shell_` messages are the shell's. Piwi Runner speaks the language chosen in its window, else the system's; the
-//! desktop app manages no language and speaks English.
+//! desktop app manages no language and speaks English. The start screen speaks the language Runner started in.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use serde_json::json;
@@ -63,7 +64,8 @@ fn system_language() -> &'static str {
     shipped_language(&sys_locale::get_locale().unwrap_or_default())
 }
 
-/// The plural form `language` gives the count `n`: French and Portuguese put 0 with 1.
+/// The plural form `language` gives the count `n`: French and Portuguese put 0 with 1. A new language adds its rule
+/// here, as `Intl.PluralRules` gives it.
 fn plural_form(language: &str, n: usize) -> &'static str {
     let one = match language {
         "fr" | "pt_BR" => n <= 1,
@@ -146,20 +148,24 @@ impl ShellWords {
 pub(crate) struct ShellLanguage {
     chosen: RwLock<Option<&'static str>>,
     words: RwLock<Arc<ShellWords>>,
+    /// How many times the language was chosen since the launch: the window shows no answer older than one it showed.
+    serial: AtomicU64,
 }
 
 impl ShellLanguage {
     /// The language as last chosen, else the system's.
     pub(crate) fn from_saved(app: &AppHandle) -> Self {
+        // A saved language Runner does not ship follows the system's again.
         let chosen = app
             .store(crate::STORE_FILE)
             .ok()
             .and_then(|s| s.get(LANGUAGE_KEY))
-            .and_then(|v| v.as_str().map(shipped));
+            .and_then(|v| v.as_str().and_then(|code| LANGUAGES.iter().find(|known| **known == code).copied()));
         let words = ShellWords::of(chosen.unwrap_or_else(system_language));
         ShellLanguage {
             chosen: RwLock::new(chosen),
             words: RwLock::new(Arc::new(words)),
+            serial: AtomicU64::new(0),
         }
     }
 
@@ -168,6 +174,7 @@ impl ShellLanguage {
             language: self.words.read().map(|w| w.language).unwrap_or("en"),
             chosen: self.chosen.read().map(|c| *c).unwrap_or(None),
             system: system_language(),
+            serial: self.serial.load(Ordering::SeqCst),
         }
     }
 }
@@ -179,13 +186,14 @@ pub(crate) fn shell_words<R: tauri::Runtime>(app: &AppHandle<R>) -> Arc<ShellWor
         .unwrap_or_else(|| Arc::new(ShellWords::english()))
 }
 
-/// The language as the window shows it: the one on screen, the one chosen (none while it follows the system), and
-/// the system's.
+/// The language as the window shows it: the one on screen, the one chosen (none while it follows the system), the
+/// system's, and the number of the choice it follows (`ShellLanguage::serial`).
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct LanguageInfo {
     language: &'static str,
     chosen: Option<&'static str>,
     system: &'static str,
+    serial: u64,
 }
 
 #[tauri::command]
@@ -194,11 +202,13 @@ pub(crate) fn desktop_get_language(app: AppHandle) -> LanguageInfo {
         language: "en",
         chosen: None,
         system: system_language(),
+        serial: 0,
     })
 }
 
-/// Chooses the language, or follows the system's again (`None`): saved, said by the shell's next words and its
-/// tray, and told to the window (`piwi:language`). Refuses a language Runner does not ship.
+/// Chooses the language, or follows the system's again (`None`): saved, said by the tray and the shell's next words
+/// (the start screen's once Runner starts again), and told to the window (`piwi:language`). Refuses a language Runner
+/// does not ship.
 #[tauri::command]
 pub(crate) fn desktop_set_language(app: AppHandle, language: Option<String>) -> Result<LanguageInfo, String> {
     let chosen = match language.as_deref() {
@@ -222,6 +232,7 @@ pub(crate) fn desktop_set_language(app: AppHandle, language: Option<String>) -> 
     if let Ok(mut words) = state.words.write() {
         *words = Arc::new(ShellWords::of(chosen.unwrap_or_else(system_language)));
     }
+    state.serial.fetch_add(1, Ordering::SeqCst);
     crate::runner_app::relabel_tray(&app);
     let info = state.info();
     let _ = app.emit(LANGUAGE_EVENT, info.clone());
@@ -267,6 +278,60 @@ mod tests {
         let words = ShellWords::english();
         assert_eq!(words.say("shell_nowhere", &[]), "shell_nowhere");
         assert_eq!(super::ShellWords::of("xx").say("shell_showLogs", &[]), "Show logs");
+    }
+
+    /// Every key the crate says (`say("…"` and `count("…"` with a literal key), from its own source.
+    fn keys_said() -> Vec<String> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut keys = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().map_or(true, |e| e != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            for call in ["say(\"", "count(\""] {
+                for (at, _) in text.match_indices(call) {
+                    let rest = &text[at + call.len()..];
+                    let key: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+                    if rest[key.len()..].starts_with('"') && !key.is_empty() && key != "shell_nowhere" {
+                        keys.push(key);
+                    }
+                }
+            }
+        }
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
+    #[test]
+    fn every_key_the_shell_says_is_in_the_english_catalog() {
+        let english = super::messages(CATALOGS[0].1);
+        let said = keys_said();
+        assert!(said.len() > 20, "{said:?}");
+        for key in said {
+            assert!(
+                english.contains_key(&key) || english.contains_key(&format!("{key}_other")),
+                "{key} is in no catalog"
+            );
+        }
+    }
+
+    #[test]
+    fn ships_the_languages_of_runners_catalogs() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runner/locales");
+        let mut codes: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let name = entry.ok()?.file_name().into_string().ok()?;
+                name.strip_suffix(".json").map(str::to_string)
+            })
+            .collect();
+        codes.sort();
+        let mut shipped: Vec<String> = LANGUAGES.iter().map(|c| c.to_string()).collect();
+        shipped.sort();
+        assert_eq!(codes, shipped);
     }
 
     #[test]

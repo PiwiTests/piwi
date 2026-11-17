@@ -100,7 +100,7 @@ export function requestCheckWords(
     case 'specs-missing': {
       const more = Number(check.args?.more ?? 0);
       return more > 0
-        ? words.t('runui_checkSpecsMissingMore', { files: value('files'), more: words.number(more) })
+        ? words.tn('runui_checkSpecsMissingMore', more, { files: value('files') })
         : words.t('runui_checkSpecsMissing', { files: value('files') });
     }
     case 'specs-found':
@@ -121,8 +121,16 @@ export function requestCheckWords(
     case 'command-too-long':
       return words.t('runui_checkCommandTooLong', { max: words.number(Number(check.args?.max ?? 0)) });
     default:
-      return check.message;
+      return unknownCode(check.code, check.message) ?? check.message;
   }
+}
+
+/**
+ * The host's own sentence, for a code a newer host sends: the compiler fails here while a code of this version is not
+ * worded above.
+ */
+function unknownCode(_code: never, sentence: string | null): string | null {
+  return sentence;
 }
 
 /**
@@ -146,7 +154,9 @@ export function connectionErrorWords(
       return words.t('runui_connectionErrorSignInExpired');
     case 'denied':
       return words.t('runui_connectionErrorDenied');
-    default:
+    case null:
       return connection.error;
+    default:
+      return unknownCode(connection.errorCode, connection.error);
   }
 }

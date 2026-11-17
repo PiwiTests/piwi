@@ -390,5 +390,81 @@
         "example": "signature mismatch"
       }
     }
+  },
+  "shell_splashStarting": {
+    "message": "Starting the local host…",
+    "description": "First line of the start screen, while the app's local server starts."
+  },
+  "shell_pickFolderTitle": {
+    "message": "Choose your copy of the project's code: the folder with playwright.config.ts",
+    "description": "Title of the system's folder picker that links a requested run's project to a folder. Keep the file name as it is."
+  },
+  "shell_useFolderTitle": {
+    "message": "Use this folder?",
+    "description": "Title of the question asked before a found folder is linked to a project. Its path comes first in the body."
+  },
+  "shell_useFolderBody": {
+    "message": "Piwi runs the tests this project's requests ask for in this folder, once you click Run.",
+    "description": "Body of the question asked before a found folder is linked, under the folder's path. Run is the window's Run button (runui_requestRun in the layer's catalog), as that catalog says it."
+  },
+  "shell_useFolderButton": {
+    "message": "Use this folder",
+    "description": "Button of the question asked before a found folder is linked: links it."
+  },
+  "shell_betterFolderTitle": {
+    "message": "Link the folder that holds the tests?",
+    "description": "Title of the question asked when the picked folder does not hold the request's tests but a folder above or below it does."
+  },
+  "shell_betterFolderNotIn": {
+    "message": "The tests of this request are not in $folder$.",
+    "description": "First paragraph of the question shell_betterFolderTitle. $folder$ is the path of the folder picked.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "They are in $folder$, which holds the Playwright config: Playwright runs there.",
+    "description": "Second paragraph of the question shell_betterFolderTitle. $folder$ is the path of the folder that holds the tests.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Link that folder",
+    "description": "Button of the question shell_betterFolderTitle: links the folder that holds the tests."
+  },
+  "shell_betterFolderKeep": {
+    "message": "Keep my choice",
+    "description": "Button of the question shell_betterFolderTitle: links the folder picked."
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ is available",
+    "description": "Title of the system notification that a newer version is out. $version$ is a version number.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Install it from $menu$ in the tray icon's menu, or download it from the latest release.",
+    "description": "Body of the system notification that a newer version is out. $menu$ is the tray item shell_checkUpdates.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
+      }
+    }
   }
 }

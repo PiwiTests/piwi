@@ -3,7 +3,7 @@
 <!--
   Merged into Piwi Runner's Info.plist (`bundle.macOS.infoPlist` in runner.conf.json): the languages its texts ship in
   (apps/runner/locales/), so macOS shows its own panels and menu items, the folder picker among them, in the
-  language Runner speaks.
+  system's language when it is one of them.
 -->
 <plist version="1.0">
 <dict>

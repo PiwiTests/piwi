@@ -69,12 +69,9 @@ const NOTES_TIMEOUT: Duration = Duration::from_secs(15);
 /// The name the app goes by in the update notification and dialogs.
 const APP: &str = if cfg!(feature = "runner") { "Piwi Runner" } else { crate::APP_NAME };
 
-/// Where the startup notification sends the person to install the update.
-const INSTALL_FROM: &str = if cfg!(feature = "runner") {
-    "Install it from Check for updates in the tray icon's menu, or download it from the latest release."
-} else {
-    "Install it from Settings → About → Updates."
-};
+/// Where the desktop app's startup notification sends the person to install the update; Piwi Runner's is
+/// `shell_updateInstallFrom`, in its language.
+const DESKTOP_INSTALL_FROM: &str = "Install it from Settings → About → Updates.";
 
 /// The releases page, for what is new in a version the tray offers.
 const RELEASES_PAGE: &str = "https://github.com/PiwiTests/piwi/releases";
@@ -355,11 +352,17 @@ pub async fn notify_if_update_available(app: AppHandle) {
             version: Some(version),
             ..
         }) => {
+            let words = crate::shell_words::shell_words(&app);
+            let install_from = if cfg!(feature = "runner") {
+                words.say("shell_updateInstallFrom", &[("menu", &words.say("shell_checkUpdates", &[]))])
+            } else {
+                DESKTOP_INSTALL_FROM.to_string()
+            };
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("{APP} {version} is available"))
-                .body(INSTALL_FROM)
+                .title(words.say("shell_updateNotification", &[("app", APP), ("version", &version)]))
+                .body(install_from)
                 .show();
         }
         Ok(_) => {}
@@ -443,6 +446,13 @@ pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
 /// Set while the tray's check or install runs, so a second click starts nothing.
 #[derive(Default)]
 pub struct TrayUpdateBusy(AtomicBool);
+
+impl TrayUpdateBusy {
+    /// Whether an update the tray started is being checked or installed: its tooltip says so meanwhile.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
 
 /// What the tray's Check for updates says once the check answers.
 #[derive(Debug, PartialEq)]

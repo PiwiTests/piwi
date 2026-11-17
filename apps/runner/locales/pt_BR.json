@@ -257,7 +257,7 @@
     }
   },
   "shell_updateAvailable": {
-    "message": "O $app$ $offered$ está disponível (você tem a $installed$). Ela é instalada agora e depois o $app$ reinicia.",
+    "message": "O $app$ $offered$ está disponível (você tem a $installed$). A nova versão é instalada agora e depois o $app$ reinicia.",
     "placeholders": {
       "app": {
         "content": "$1",
@@ -328,6 +328,70 @@
       "error": {
         "content": "$1",
         "example": "signature mismatch"
+      }
+    }
+  },
+  "shell_splashStarting": {
+    "message": "Iniciando o servidor local…"
+  },
+  "shell_pickFolderTitle": {
+    "message": "Escolha a sua cópia do código do projeto: a pasta com playwright.config.ts"
+  },
+  "shell_useFolderTitle": {
+    "message": "Usar esta pasta?"
+  },
+  "shell_useFolderBody": {
+    "message": "O Piwi executa nesta pasta os testes dos pedidos de execução deste projeto, quando você clica em Executar."
+  },
+  "shell_useFolderButton": {
+    "message": "Usar esta pasta"
+  },
+  "shell_betterFolderTitle": {
+    "message": "Vincular a pasta que contém os testes?"
+  },
+  "shell_betterFolderNotIn": {
+    "message": "Os testes deste pedido não estão em $folder$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "Eles estão em $folder$, que contém a configuração do Playwright: é lá que o Playwright é executado.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Vincular essa pasta"
+  },
+  "shell_betterFolderKeep": {
+    "message": "Manter minha escolha"
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ está disponível",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Instale-a pelo item $menu$ no menu do ícone da área de notificação, ou baixe-a da versão mais recente publicada.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
       }
     }
   }

@@ -14,7 +14,8 @@ built with the `runner` feature.
   windows need goes there. The window has no router, no store beyond the run list and no network call but the
   layer's.
 - **Every text Runner shows comes from a catalog.** The window's own and the shell's are in `locales/<code>.json`
-  (`runner_` through `useRunnerWords()`, `shell_` read by the shell), the layer's in its own (`useRunUiWords()`).
+  (`runner_` through `useRunnerWords()`, `shell_` read by the shell, which also reads `runner_runInBackground` and
+  `runner_startOnLogin` for its tray), the layer's in its own (`useRunUiWords()`).
   `tests/catalogs.test.ts` holds them to Piwi Picker's rules and fails on text written in a template. How to add a
   message or a language, and who reviewed each: [`locales/README.md`](locales/README.md).
 - **The language comes from the shell.** `useRunnerLanguage` asks `desktop_get_language` before the window shows and

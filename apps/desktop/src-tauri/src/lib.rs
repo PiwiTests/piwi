@@ -1983,7 +1983,7 @@ fn give_up_server(app: &AppHandle) {
 
 /// The script writing `text` in the splash page's status line: a no-op on any
 /// other page, such as the dashboard once the window loaded it.
-fn splash_status_script(text: &str) -> String {
+pub(crate) fn splash_status_script(text: &str) -> String {
     format!(
         "var s=document.getElementById('splash-status');if(s){{s.textContent={};}}",
         serde_json::to_string(text).unwrap_or_else(|_| "''".into())
@@ -3173,7 +3173,7 @@ pub(crate) fn quit_after_confirming(app: &AppHandle, app_name: &str) {
 const DESKTOP_APP_NAME: &str = APP_NAME;
 
 /// Ids of the app menu's own items (see `app_menu`).
-const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+pub(crate) const APP_MENU_QUIT_ID: &str = "app-menu-quit";
 const APP_MENU_SETTINGS_ID: &str = "app-menu-settings";
 const APP_MENU_IMPORT_ID: &str = "app-menu-import";
 const APP_MENU_BACK_ID: &str = "app-menu-back";

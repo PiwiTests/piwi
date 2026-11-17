@@ -10,13 +10,7 @@
  * JPEG whose base64 `takeLaneLayer` checked again, its URL made once for each image.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import {
-  callWait,
-  laneEventSaid,
-  laneTextSource,
-  type LaneFilmEntry,
-  type SaySeconds,
-} from '@piwitests/run-model/layers';
+import { callWait, laneEventSaid, laneTextSource, secondsIn, type LaneFilmEntry } from '@piwitests/run-model/layers';
 import { statusPalette } from '../utils/status-palette';
 
 const props = defineProps<{
@@ -33,16 +27,8 @@ const lane = computed(() => props.worker.parallelIndex);
 const layers = computed(() => hub.laneLayers(runRef.value, lane.value));
 const text = computed(() => hub.laneText(runRef.value, lane.value));
 
-/** A number of seconds in the language on screen, narrow, a tenth kept: `12s`, `0.4s` in English (`englishSeconds`). */
-const saySeconds = computed((): SaySeconds => {
-  const format = new Intl.NumberFormat(runUiLocale(words.language), {
-    style: 'unit',
-    unit: 'second',
-    unitDisplay: 'narrow',
-    maximumFractionDigits: 1,
-  });
-  return (seconds) => format.format(seconds);
-});
+/** A number of seconds in the language on screen: `12s`, `0.4s` in English. */
+const saySeconds = computed(() => secondsIn(runUiLocale(words.language)));
 
 const wait = computed(() => (layers.value?.log ? callWait(layers.value.log, words.run, saySeconds.value) : null));
 const events = computed(() =>

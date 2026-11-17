@@ -330,5 +330,69 @@
         "example": "signature mismatch"
       }
     }
+  },
+  "shell_splashStarting": {
+    "message": "Iniciando el servidor local…"
+  },
+  "shell_pickFolderTitle": {
+    "message": "Elige tu copia del código del proyecto: la carpeta con playwright.config.ts"
+  },
+  "shell_useFolderTitle": {
+    "message": "¿Usar esta carpeta?"
+  },
+  "shell_useFolderBody": {
+    "message": "Piwi ejecuta en esta carpeta las pruebas de las solicitudes de ejecución de este proyecto, cuando haces clic en Ejecutar."
+  },
+  "shell_useFolderButton": {
+    "message": "Usar esta carpeta"
+  },
+  "shell_betterFolderTitle": {
+    "message": "¿Vincular la carpeta que contiene las pruebas?"
+  },
+  "shell_betterFolderNotIn": {
+    "message": "Las pruebas de esta solicitud no están en $folder$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "Están en $folder$, que contiene la configuración de Playwright: Playwright se ejecuta ahí.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Vincular esa carpeta"
+  },
+  "shell_betterFolderKeep": {
+    "message": "Mantener mi elección"
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ está disponible",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Instálala desde $menu$ en el menú del icono de la bandeja del sistema, o descárgala de la última versión publicada.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
+      }
+    }
   }
 }

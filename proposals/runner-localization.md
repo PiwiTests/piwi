@@ -67,6 +67,7 @@ instance*, *linked folder*, *run request*) is added to the glossary, so both too
 | The live view of a run: its states, controls, stops and layers | Playwright's output, locators, generated code |
 | What the host answers the window (a stop that went on, a pick that was refused) | The instance's own texts (an error it returns, a project's name) |
 | The tray menu, its tooltip, the startup screen, the native dialogs | The host's log lines, and what it tells other tools (reporters' workers, agents) |
+| | A run's output, the shell's reason it could not start included, which the instance receives too |
 | The built-in texts of Nuxt UI components (a close button's label) | The installers, and the documentation site |
 
 ## Where the texts come from today
@@ -116,8 +117,8 @@ words are reactive.
 
 `packages/run-model` gains the four other languages of its words: `RUN_WORDS` by language, written by a script from
 Picker's catalogs, and `runSpeakerFor(language)`. `apps/extension/tests/unit/run-words.test.ts`, which holds
-`RUN_WORDS_EN` to the English catalog, holds each language to its catalog. The files are generated and committed,
-listed with the other generated files in the root `AGENTS.md`.
+`RUN_WORDS_EN` to the English catalog, holds each language to its catalog. The files are generated and committed; the
+run model's guide says so, the root guide being at its size limit.
 
 `ANSWER_KEYS` (`apps/extension/src/shared/runs.ts`), which words a hub's answer by its `HubAnswerCode`, moves into
 run-model with its `runs_answer*` keys, so the layer words the hub's answers as Picker does.
@@ -137,8 +138,9 @@ the English sentence, which stays for every other reader (the dashboard, agents,
   file outside the linked folders, no window to stop the run) answer with a code, as the hub's answers already do with
   `HubAnswerCode`.
 
-Each change adds an optional field: the dashboard's desktop build keeps reading `message`. The host and the window ship
-together, so no entry in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
+Each change adds a field beside the English sentence, which the dashboard's desktop build keeps reading, and the window
+shows the sentence of a code it does not know. The host and the window ship together, so no entry in
+[`1.0-stabilization.md`](1.0-stabilization.md) is needed.
 
 ### Choosing the language
 
@@ -276,5 +278,9 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
   once per launch.
 - **The window's spec runs in CI's Piwi Runner job** (`npm run runner:e2e`, after the window's build), in French and in
   German, at the window's smallest size (640 × 480).
+- **What stays in the language it was said in.** A run card's title, made as its request starts, and a hub's answer
+  shown under a control keep the language they were said in after a change of language; the next ones follow it.
+- **Counts are written as the language writes numbers**, so the dashboard's English now groups a count past a
+  thousand (`1,500 tests`).
 - **The words chosen for the terms Runner adds** are in each glossary's new rows (*team instance*, *run
   request*, *linked folder*, *tray*, *local host*); a reviewer should check those first.

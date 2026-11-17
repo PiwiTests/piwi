@@ -26,8 +26,8 @@ export function isRunWordLanguage(code: unknown): code is RunWordLanguage {
 
 /**
  * Says `words` as the language `tag` (a BCP 47 tag) writes: each `$name$` takes the value of `name`, an absent one
- * empty, a counted message picks its plural form by the language's rules, else `_other`; a key `words` lacks is said
- * in English.
+ * empty as in `englishRunSpeaker`, and `$$` a dollar sign as in Piwi Picker; a counted message picks its plural form
+ * by the language's rules, else `_other`; a key `words` lacks is said in English.
  */
 export function runSpeakerOf(tag: string, words: Words): RunSpeaker {
   const plural = new Intl.PluralRules(tag);
@@ -37,9 +37,8 @@ export function runSpeakerOf(tag: string, words: Words): RunSpeaker {
   const speaker: RunSpeaker = {
     say(key, args = {}) {
       const values = new Map(Object.entries(args).map(([name, value]) => [name.toLowerCase(), value]));
-      return message(key).replace(
-        /\$([A-Za-z0-9_@]+)\$/g,
-        (_whole, name: string) => values.get(name.toLowerCase()) ?? '',
+      return message(key).replace(/\$\$|\$([A-Za-z0-9_@]+)\$/g, (_whole, name: string | undefined) =>
+        name === undefined ? '$' : (values.get(name.toLowerCase()) ?? ''),
       );
     },
     count(key, count, args = {}) {

@@ -16,6 +16,7 @@ import {
   type RunWordArgs,
   type RunWordKey,
 } from '@piwitests/run-model/words';
+import { RUN_WORD_LANGUAGES, type RunWordLanguage } from '@piwitests/run-model/speakers';
 import englishCatalog from '../../locales/en.json';
 
 /** A message as a catalog holds it. */
@@ -113,10 +114,10 @@ export function runUiTranslator<C extends object>(
   };
 }
 
-/** The languages of the layer's catalogs, by their codes: Piwi Picker's. */
-export const RUN_UI_LANGUAGES = ['en', 'de', 'es', 'fr', 'pt_BR'] as const;
+/** The languages of the layer's catalogs, by their codes: the run model's words', Piwi Picker's. */
+export const RUN_UI_LANGUAGES = RUN_WORD_LANGUAGES;
 
-export type RunUiLanguage = (typeof RUN_UI_LANGUAGES)[number];
+export type RunUiLanguage = RunWordLanguage;
 
 const RUN_UI_CATALOG_LOADERS: Record<Exclude<RunUiLanguage, 'en'>, () => Promise<{ default: RunUiRawCatalog }>> = {
   de: () => import('../../locales/de.json'),

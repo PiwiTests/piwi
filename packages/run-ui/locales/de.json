@@ -457,16 +457,29 @@
       }
     }
   },
-  "runui_checkSpecsMissingMore": {
-    "message": "Nicht im Ordner: $files$ und $more$ weitere.",
+  "runui_checkSpecsMissingMore_one": {
+    "message": "Nicht im Ordner: $files$ und $count$ weitere.",
     "placeholders": {
-      "files": {
+      "count": {
         "content": "$1",
-        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
-      },
-      "more": {
-        "content": "$2",
         "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore_other": {
+    "message": "Nicht im Ordner: $files$ und $count$ weitere.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
       }
     }
   },

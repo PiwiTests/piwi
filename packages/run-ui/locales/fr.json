@@ -457,16 +457,29 @@
       }
     }
   },
-  "runui_checkSpecsMissingMore": {
-    "message": "Absents du dossier : $files$ et $more$ autres.",
+  "runui_checkSpecsMissingMore_one": {
+    "message": "Absents du dossier : $files$ et $count$ autre.",
     "placeholders": {
-      "files": {
+      "count": {
         "content": "$1",
-        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
-      },
-      "more": {
-        "content": "$2",
         "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore_other": {
+    "message": "Absents du dossier : $files$ et $count$ autres.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
       }
     }
   },

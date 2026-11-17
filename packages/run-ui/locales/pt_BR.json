@@ -457,16 +457,29 @@
       }
     }
   },
-  "runui_checkSpecsMissingMore": {
-    "message": "Não estão na pasta: $files$ e mais $more$.",
+  "runui_checkSpecsMissingMore_one": {
+    "message": "Não estão na pasta: $files$ e mais $count$.",
     "placeholders": {
-      "files": {
+      "count": {
         "content": "$1",
-        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
-      },
-      "more": {
-        "content": "$2",
         "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore_other": {
+    "message": "Não estão na pasta: $files$ e mais $count$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
       }
     }
   },

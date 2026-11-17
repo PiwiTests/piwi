@@ -226,17 +226,39 @@ struct RunnerTray {
     quit: tauri::menu::IconMenuItem<tauri::Wry>,
 }
 
-/// Says the tray's rows and tooltip again, in the shell's language now (`desktop_set_language`).
+/// Says the tray's rows and tooltip, and the app menu's Quit, again in the shell's language now
+/// (`desktop_set_language`). An update the tray started keeps its own tooltip while it runs.
 pub(crate) fn relabel_tray(app: &AppHandle) {
+    let words = shell_words(app);
+    let quit = words.say("shell_quit", &[("app", APP_NAME)]);
     if let Some(tray) = app.try_state::<RunnerTray>() {
-        let words = shell_words(app);
         let _ = tray.open.set_text(words.say("shell_open", &[("app", APP_NAME)]));
         let _ = tray.logs.set_text(words.say("shell_showLogs", &[]));
         let _ = tray.update.set_text(words.say("shell_checkUpdates", &[]));
-        let _ = tray.quit.set_text(words.say("shell_quit", &[("app", APP_NAME)]));
+        let _ = tray.quit.set_text(&quit);
     }
-    idle_tooltip(app);
+    if !app.try_state::<updates::TrayUpdateBusy>().is_some_and(|busy| busy.is_busy()) {
+        idle_tooltip(app);
+    }
     crate::relabel_background_menu(app);
+    if let Some(menu) = app.menu() {
+        for entry in menu.items().unwrap_or_default() {
+            if let tauri::menu::MenuItemKind::Submenu(submenu) = entry {
+                if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = submenu.get(crate::APP_MENU_QUIT_ID) {
+                    let _ = item.set_text(&quit);
+                }
+            }
+        }
+    }
+}
+
+/// The start screen's first line, in the shell's language, while no other status stands; a page without the line
+/// (the host's) is left as it is.
+fn say_starting(webview: &tauri::Webview) {
+    if webview.try_state::<Session>().and_then(|s| s.status()).is_none() {
+        let text = shell_words(webview.app_handle()).say("shell_splashStarting", &[]);
+        let _ = webview.eval(&crate::splash_status_script(&text));
+    }
 }
 
 /// The tray icon: a click opens the window, and its menu holds, in the desktop app's order and with its glyphs, Open,
@@ -348,6 +370,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 })
                 .on_page_load(|webview, payload| {
                     if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        say_starting(webview);
                         reapply_splash_status(webview);
                     }
                 })

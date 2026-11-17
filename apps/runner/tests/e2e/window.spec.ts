@@ -205,15 +205,19 @@ async function playShell(page: Page, language: string) {
   );
 }
 
-/** The elements under `scope` whose text is wider than their box, as `tag: text`; code and a deliberate ellipsis aside. */
+/**
+ * The elements under `scope` whose own text is wider than their box, cut or spilling out, as `tag: text`. Code is left
+ * out, and so is a box that scrolls, whose text the reader reaches.
+ */
 function clipped(scope: Locator): Promise<string[]> {
   return scope.evaluate((root) =>
     [...root.querySelectorAll<HTMLElement>('*')]
       .filter((element) => {
         if (element.closest('code, pre, kbd')) return false;
-        if (!element.textContent?.trim() || element.children.length > 0) return false;
+        const own = [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent?.trim());
+        if (!own) return false;
         const style = getComputedStyle(element);
-        if (style.textOverflow === 'ellipsis' || style.visibility === 'hidden') return false;
+        if (style.visibility === 'hidden' || ['auto', 'scroll'].includes(style.overflowX)) return false;
         return element.scrollWidth > element.clientWidth + 1;
       })
       .map((element) => `${element.tagName.toLowerCase()}: ${element.textContent?.trim()}`),

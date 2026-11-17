@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -22,11 +24,20 @@ export interface CatalogSet {
   catalogs: Record<string, Catalog>;
   /** The prefixes a key starts with, before its `_`: the surfaces that show its message. */
   surfaces: readonly string[];
-  /** Keys older than the surface prefixes, which keep their names. */
+  /** Keys that carry no surface prefix (Piwi Picker's manifest keys). */
   unprefixed?: readonly string[];
 }
 
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
+
+/** The catalogs of a folder of `<code>.json` files, by code. */
+export function readCatalogs(dir: string): Record<string, Catalog> {
+  return Object.fromEntries(
+    readdirSync(dir)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => [name.slice(0, -'.json'.length), JSON.parse(readFileSync(path.join(dir, name), 'utf8'))]),
+  );
+}
 
 /** `pt_BR` → `pt-BR`: a catalog's code as a BCP 47 tag. */
 export function catalogLanguageTag(code: string): string {
