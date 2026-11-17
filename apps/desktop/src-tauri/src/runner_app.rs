@@ -33,7 +33,6 @@ use crate::{
     toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed, RunInBackground, ServerGaveUp,
     ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID, TRAY_START_ON_LOGIN_ID,
 };
-// The app menu is macOS's alone.
 #[cfg(target_os = "macos")]
 use crate::{app_menu_action, run_app_menu_action};
 use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
