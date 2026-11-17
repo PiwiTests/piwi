@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  buildRerunCommand,
   buildRetryCommand,
   buildRetryArgs,
   buildTitleGrepFlag,
@@ -440,6 +441,16 @@ describe('a spec named from a folder’s start', () => {
     expect(commandSpec('tests/é.spec.ts')).toBe('/tests/(?:é|.C3.A9).spec.ts');
     expect(commandSpec('tests/[id].spec.ts')).toBe('/tests/(?:[[]|.5B)id(?:]|.5D).spec.ts');
     expect(commandSpec('tests/a%b.spec.ts')).toBe('/tests/a(?:.|.25)b.spec.ts');
+  });
+
+  test('names a spec once, however its path’s separators are written', () => {
+    const cases = [
+      { filePath: 'tests\\a.spec.ts', title: 'x', line: 3 },
+      { filePath: 'tests/a.spec.ts', title: 'y', line: 3 },
+    ];
+    expect(buildRetryCommand(cases)).toBe('npx playwright test "/tests/a.spec.ts:3"');
+    expect(buildRetryArgs(cases)).toBe('"/tests/a.spec.ts:3"');
+    expect(buildRerunCommand(cases)).toBe('npx playwright test "/tests/a.spec.ts" -g "x|y"');
   });
 
   test('is written once, and never before a path that starts at a root', () => {

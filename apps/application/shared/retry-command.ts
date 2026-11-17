@@ -151,14 +151,14 @@ interface SpecLine {
 
 /**
  * The quoted filters of `specs` that Playwright takes as test filters (see {@link isSpecFilter}), each written by
- * {@link commandSpec} then its `:line`, and each that every shell leaves as it is.
+ * {@link commandSpec} then its `:line`, and each that every shell leaves as it is, once each (`tests\a.spec.ts` and
+ * `tests/a.spec.ts` are one filter).
  */
 function quoteSpecs(specs: SpecLine[]): string[] {
-  return quoteAll(
-    specs
-      .filter((s) => isSpecFilter(specPattern(s.filePath)))
-      .map((s) => (s.line ? `${commandSpec(s.filePath)}:${s.line}` : commandSpec(s.filePath))),
-  );
+  const filters = specs
+    .filter((s) => isSpecFilter(specPattern(s.filePath)))
+    .map((s) => (s.line ? `${commandSpec(s.filePath)}:${s.line}` : commandSpec(s.filePath)));
+  return quoteAll([...new Set(filters)]);
 }
 
 /**
@@ -361,7 +361,7 @@ export function buildRetryCommand(
 export function buildRetryArgs(allCases: RetryCase[]): string {
   const cases = allCases.filter((c) => isSpecFilter(specPattern(c.filePath)));
   if (cases.length === 0) return '';
-  const quoted = [...new Set(quoteSpecs(cases))];
+  const quoted = quoteSpecs(cases);
   if (quoted.length === 0) return '';
   return quoted.join(' ') + projectFlags(caseProjects(cases));
 }
