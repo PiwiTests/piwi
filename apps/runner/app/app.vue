@@ -4,6 +4,8 @@
  * runs. It holds no project data and no account; the shell keeps the instance's key in the OS keychain.
  */
 const { listen, startRequest } = useRunnerRuns();
+const words = useRunUiWords();
+const { t } = useRunnerWords();
 
 onMounted(() => {
   void listen();
@@ -15,12 +17,12 @@ onMounted(() => {
     <main class="mx-auto max-w-3xl space-y-6 p-6">
       <header>
         <h1 class="text-xl font-semibold">Piwi Runner</h1>
-        <p class="text-sm text-muted">Runs the tests a team instance asks for, on this machine.</p>
+        <p class="text-sm text-muted">{{ t('runner_tagline') }}</p>
       </header>
       <UCard data-testid="runner-connection">
         <template #header>
-          <h2 class="text-sm font-semibold">Run on my machine</h2>
-          <p class="text-xs text-muted">{{ CONNECTION_INTRO }}</p>
+          <h2 class="text-sm font-semibold">{{ t('runner_connectionHeading') }}</h2>
+          <p class="text-xs text-muted">{{ connectionIntro(words) }}</p>
         </template>
         <DesktopTeamInstance app-name="Piwi Runner" />
       </UCard>

@@ -1,0 +1,90 @@
+{
+  "runner_tagline": {
+    "message": "Runs the tests a team instance asks for, on this machine.",
+    "description": "Under the app's name, at the top of the window: what Piwi Runner does."
+  },
+  "runner_connectionHeading": {
+    "message": "Run on my machine",
+    "description": "Heading of the card that connects Piwi Runner to a team instance. The feature's name on the instance's pages."
+  },
+  "runner_runsHeading": {
+    "message": "Runs",
+    "description": "Heading of the list of the runs this window started."
+  },
+  "runner_noRuns": {
+    "message": "No runs yet. When a team instance asks for tests, you confirm them here first.",
+    "description": "In place of the list of runs, while there is none."
+  },
+  "runner_statusRunning": {
+    "message": "Running",
+    "description": "Badge of a run: its tests are running."
+  },
+  "runner_statusPassed": {
+    "message": "Passed",
+    "description": "Badge of a run: every test passed."
+  },
+  "runner_statusFailed": {
+    "message": "Failed",
+    "description": "Badge of a run: a test failed."
+  },
+  "runner_statusStopped": {
+    "message": "Stopped",
+    "description": "Badge of a run: the person stopped it before it ended."
+  },
+  "runner_statusError": {
+    "message": "Could not run",
+    "description": "Badge of a run: it could not start, or Playwright ended with an error."
+  },
+  "runner_stopping": {
+    "message": "Stopping…",
+    "description": "Badge of a run, and label of its Stop button, once Stop was clicked and the run has not ended yet."
+  },
+  "runner_stop": {
+    "message": "Stop",
+    "description": "Button: stops a run."
+  },
+  "runner_stopNow": {
+    "message": "Stop now",
+    "description": "Button, once Stop was clicked and the run has not ended yet: ends it at once."
+  },
+  "runner_holdFailures": {
+    "message": "Hold failures",
+    "description": "Switch of a running run: a failed test waits at its failure for the person to look before the run goes on."
+  },
+  "runner_holdFailuresHint": {
+    "message": "A failed test waits here for you to look before the run goes on.",
+    "description": "Under the Hold failures switch: what it does."
+  },
+  "runner_output": {
+    "message": "Output",
+    "description": "Summary of the collapsed block that shows a run's terminal output."
+  },
+  "runner_stillRunning": {
+    "message": "Still running from before the window reloaded",
+    "description": "On a run the window has no entry for: it was started before the window reloaded and still runs."
+  },
+  "runner_backgroundHeading": {
+    "message": "In the background",
+    "description": "Heading of the card of the settings that keep Piwi Runner running when its window is closed."
+  },
+  "runner_runInBackground": {
+    "message": "Run in background",
+    "description": "Checkbox, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
+  },
+  "runner_runInBackgroundHint": {
+    "message": "Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it.",
+    "description": "Under the Run in background checkbox: what it does."
+  },
+  "runner_startOnLogin": {
+    "message": "Start on login",
+    "description": "Checkbox, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
+  },
+  "runner_startOnLoginHint": {
+    "message": "Starts Piwi Runner in the tray when you sign in.",
+    "description": "Under the Start on login checkbox: what it does."
+  },
+  "runner_saveFailed": {
+    "message": "Could not save the setting",
+    "description": "Title of an error notification: a setting could not be saved. The reason follows below it."
+  }
+}

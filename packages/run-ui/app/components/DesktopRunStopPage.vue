@@ -17,9 +17,8 @@ import type { HubAction, HubImage, HubStop } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
 import { driverOf, givesBack } from '@piwitests/run-model/presence';
 import { stopError } from '@piwitests/run-model/stop';
-import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopFrame, DesktopRunAnswer } from '../composables/useDesktopRunHub';
-import { desktopImagePoint, desktopSay, isDesktopRunImage, type DesktopLiveImageHandle } from '../utils/run-view';
+import { desktopImagePoint, isDesktopRunImage, type DesktopLiveImageHandle } from '../utils/run-view';
 
 const props = defineProps<{
   runRef: string;
@@ -59,6 +58,8 @@ onBeforeUnmount(() => {
 });
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
+const { t } = words;
 
 // ── The image of the stop ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,8 @@ const still = ref<{
   since: string;
   src: string | null;
   viewport: { width: number; height: number } | null;
-  note: string;
+  /** Why no image shows: the hub's refusal, or null when the stop sent none. */
+  note: string | null;
 }>();
 
 async function askImage(since: string): Promise<void> {
@@ -79,7 +81,7 @@ async function askImage(since: string): Promise<void> {
     since,
     src: ok ? `data:image/jpeg;base64,${image!.data}` : null,
     viewport: ok && image!.width && image!.height ? { width: image!.width, height: image!.height } : null,
-    note: ok ? '' : answer.ok ? desktopSay('runs_imageNone') : answer.message,
+    note: ok ? '' : answer.ok ? null : answer.message,
   };
 }
 
@@ -203,7 +205,7 @@ async function interactOff(): Promise<void> {
   try {
     await drained;
     if (interact.value || props.stop.since !== since) return;
-    if (!givesBack(driverOf(props.stop, englishRunSpeaker), playedAt.value === since)) return;
+    if (!givesBack(driverOf(props.stop, words.run), playedAt.value === since)) return;
     playedAt.value = null;
     await props.giveBack(since);
   } finally {
@@ -291,8 +293,8 @@ onBeforeUnmount(() => {
 
 const imageAlt = computed(() =>
   props.stop.reason === 'failure'
-    ? desktopSay('runs_imageAltFailure', { error: stopError(props.stop).split('\n')[0] ?? '' })
-    : desktopSay('runs_imageAlt', { call: props.stop.title }),
+    ? words.say('runs_imageAltFailure', { error: stopError(props.stop).split('\n')[0] ?? '' })
+    : words.say('runs_imageAlt', { call: props.stop.title }),
 );
 
 /** An image of the page shows: the view's frame, else the stop's image. */
@@ -302,10 +304,12 @@ const note = computed((): { icon?: string; text: string } | null => {
   const v = view.value;
   if (v && v.since === props.stop.since && !live.value) return { icon: 'i-lucide-triangle-alert', text: v.note };
   if (live.value && v?.heavy) return { icon: 'i-lucide-triangle-alert', text: v.heavy };
-  if (live.value && !framed.value) return { icon: 'i-lucide-clock', text: desktopSay('runs_liveStarting') };
+  if (live.value && !framed.value) return { icon: 'i-lucide-clock', text: words.say('runs_liveStarting') };
   if (shown.value) return null;
-  if (stillShown.value && stillShown.value.note) return { text: stillShown.value.note };
-  return { text: desktopSay('runs_imageLoading') };
+  if (stillShown.value && stillShown.value.note !== '') {
+    return { text: stillShown.value.note ?? words.say('runs_imageNone') };
+  }
+  return { text: words.say('runs_imageLoading') };
 });
 </script>
 
@@ -322,10 +326,10 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="live"
         :aria-disabled="busy || undefined"
         :class="live ? PRESSED_TOGGLE_CLASS : ''"
-        :title="desktopSay('runs_watchTitle')"
+        :title="words.say('runs_watchTitle')"
         @click="toggleLive"
       >
-        {{ desktopSay('runs_watch') }}
+        {{ words.say('runs_watch') }}
       </UButton>
       <UButton
         v-if="canInteract"
@@ -337,11 +341,11 @@ const note = computed((): { icon?: string; text: string } | null => {
         icon="i-lucide-hand"
         :aria-pressed="interact"
         :class="interact ? PRESSED_TOGGLE_CLASS : ''"
-        :title="desktopSay('runs_interactTitle')"
+        :title="words.say('runs_interactTitle')"
         :aria-disabled="busy || undefined"
         @click="!busy && (interact ? interactOff() : (interact = true))"
       >
-        {{ desktopSay('runs_interact') }}
+        {{ words.say('runs_interact') }}
       </UButton>
       <UButton
         v-if="pickable"
@@ -352,17 +356,17 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="picking"
         :aria-disabled="busy || undefined"
         :class="picking ? PRESSED_TOGGLE_CLASS : ''"
-        title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
+        :title="t('runui_imagePickTitle')"
         @click="!busy && (picking = !picking)"
       >
-        {{ desktopSay('runs_pickAt') }}
+        {{ words.say('runs_pickAt') }}
       </UButton>
     </template>
     <DesktopRunLiveImage
       v-if="live"
       ref="liveImage"
       v-model:picking="picking"
-      :alt="desktopSay(inputTarget ? 'runs_liveAltInput' : 'runs_liveAlt')"
+      :alt="words.say(inputTarget ? 'runs_liveAltInput' : 'runs_liveAlt')"
       :input="inputTarget"
       mark="live"
       @pick="pickAt"

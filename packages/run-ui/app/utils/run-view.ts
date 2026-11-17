@@ -1,8 +1,9 @@
 /**
  * A shell window's view of the Playwright runs its host is the hub of (`@piwitests/editor/shell-runs`), the pure half
  * the dashboard's desktop window and Piwi Runner's window share: what the window keeps each worker, view and lane under,
- * where a stop stands, the run model's words in English (`desktopSay`) and its icons mapped once to lucide's
+ * where a stop stands, the run model's words (`desktopSay`) and its icons mapped once to lucide's
  * (`DESKTOP_RUN_ICONS`), what Share live says, and what a code made at a stop or a locator picked reads as, to copy.
+ * What it says is in the language of the words it is given (`RunUiWords`), English when none are.
  * The hub's shapes are `@piwitests/core/run-hub`'s; what a worker says, the controls it takes and who is present are
  * the run model's (`@piwitests/run-model`), which Piwi Picker's Runs window shares.
  */
@@ -13,7 +14,8 @@ import type { DesktopRunPick } from '@piwitests/editor/shell-run-events';
 import type { ControlIcon } from '@piwitests/run-model/controls';
 import type { WorkerIcon, WorkerTone } from '@piwitests/run-model/status';
 import { pagePoint, runFile, runName, stopSaid } from '@piwitests/run-model/stop';
-import { englishRunSpeaker, type RunWordArgs, type RunWordKey } from '@piwitests/run-model/words';
+import type { RunWordArgs, RunWordKey } from '@piwitests/run-model/words';
+import { ENGLISH_RUN_UI_WORDS, type RunUiWords } from './run-ui-words';
 
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */
 export function desktopWorkerKey(ref: string, worker: number): string {
@@ -92,18 +94,23 @@ export function desktopRunStop(worker: HubWorker): HubStop | null {
   return worker.state === 'stopped' ? worker.stop : null;
 }
 
-/** The run model's words as the window says them, in English (`englishRunSpeaker`). */
-export function desktopSay(key: RunWordKey, args?: RunWordArgs): string {
-  return englishRunSpeaker.say(key, args);
+/** The run model's words as the window says them, in the language of `words`. */
+export function desktopSay(key: RunWordKey, args?: RunWordArgs, words: RunUiWords = ENGLISH_RUN_UI_WORDS): string {
+  return words.say(key, args);
 }
 
 /**
  * The run model's words around one of their placeholders (`slot`), for a surface that sets its value apart (the call
  * a Pause waits in, as code): the words before it and after it, the other placeholders filled from `args`.
  */
-export function desktopSaidAround(key: RunWordKey, slot: string, args: RunWordArgs = {}): [string, string] {
+export function desktopSaidAround(
+  key: RunWordKey,
+  slot: string,
+  args: RunWordArgs = {},
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): [string, string] {
   const mark = '\u0000';
-  const [before = '', after = ''] = desktopSay(key, { ...args, [slot]: mark }).split(mark);
+  const [before = '', after = ''] = words.say(key, { ...args, [slot]: mark }).split(mark);
   return [before, after];
 }
 
@@ -141,38 +148,47 @@ export const DESKTOP_TONE_COLORS: Record<WorkerTone, string> = {
  * How long the call a Pause waits in has run at `now` (`for 12 s`, `for 2 min 5 s`); null while no Pause waits in a
  * call, or its worker cannot tell when the call began.
  */
-export function desktopWaitedFor(worker: HubWorker, now: number): string | null {
+export function desktopWaitedFor(
+  worker: HubWorker,
+  now: number,
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): string | null {
   const since = worker.pausing && !desktopRunStop(worker) ? worker.waiting?.since : null;
   const ms = since ? now - Date.parse(since) : Number.NaN;
   if (!Number.isFinite(ms)) return null;
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  const time = seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
-  return desktopSay('runs_waitedFor', { time });
+  const time =
+    seconds < 60
+      ? words.t('runui_durationSeconds', { seconds })
+      : words.t('runui_durationMinutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
+  return words.say('runs_waitedFor', { time });
 }
 
 /** What the window says of a stop it hears: the test, and where it failed or stopped (`stopSaid`). */
-export function desktopStopSaid(session: HubSession, worker: HubWorker, stop: HubStop): string {
-  return stopSaid(session, worker, stop, englishRunSpeaker);
+export function desktopStopSaid(
+  session: HubSession,
+  worker: HubWorker,
+  stop: HubStop,
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): string {
+  return stopSaid(session, worker, stop, words.run);
 }
 
 /** A run's name: its Piwi project, else its folder (`runName`). */
-export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): string {
-  return runName(session, englishRunSpeaker);
+export function desktopRunName(
+  session: Pick<HubSession, 'project' | 'label'>,
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): string {
+  return runName(session, words.run);
 }
 
 /**
  * What Share live sends, and who sees it, asked before the window first shares a run in this session of the app: the
  * instance's name in it when the run's page names one.
  */
-export function desktopShareWarning(live: Pick<HubLive, 'page'>): string {
-  const instance = desktopLiveInstance(live) ?? 'the Piwi instance this run reports to';
-  return (
-    `While this run is shared on ${instance}, anyone with its page open there sees each stop of its tests: the ` +
-    "call, its file and line, and the test's title, even while nobody watches. While someone watches a worker, " +
-    "images of its test's page go there too, each with its call and the test's title. Anyone who can open the run " +
-    'there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and ' +
-    'Stop sharing ends it within seconds.'
-  );
+export function desktopShareWarning(live: Pick<HubLive, 'page'>, words: RunUiWords = ENGLISH_RUN_UI_WORDS): string {
+  const instance = desktopLiveInstance(live) ?? words.t('runui_shareInstanceUnknown');
+  return words.t('runui_shareWarning', { instance });
 }
 
 /**
@@ -194,41 +210,55 @@ export function desktopLiveInstance(live: Pick<HubLive, 'page'>): string | null 
 }
 
 /** What the window says of a run shared live: where, and how many views of it are open there. */
-export function desktopLiveText(live: HubLive): string {
+export function desktopLiveText(live: HubLive, words: RunUiWords = ENGLISH_RUN_UI_WORDS): string {
   const instance = desktopLiveInstance(live);
-  const where = instance ? `Shared live on ${instance}` : 'Shared live';
-  if (live.viewers === 0) return `${where} · nobody watches yet`;
-  return `${where} · ${live.viewers === 1 ? '1 view open' : `${live.viewers} views open`}`;
+  const where = instance ? words.t('runui_liveSharedOn', { instance }) : words.t('runui_liveShared');
+  const watched = live.viewers === 0 ? words.t('runui_liveNobodyWatches') : words.tn('runui_liveViews', live.viewers);
+  return `${where} · ${watched}`;
 }
 
 /**
  * What **Stop sharing** asks before it stops sharing a run live: the run by its number once its process named its page,
  * what closes on the instance, and that nothing more of the run goes there.
  */
-export function desktopStopSharingQuestion(session: {
-  page?: { id: number } | null;
-  live: Pick<HubLive, 'page' | 'viewers'>;
-}): { title: string; body: string } {
-  const title = `Stop sharing ${session.page ? `run #${session.page.id}` : 'the run'} live?`;
-  const instance = desktopLiveInstance(session.live) ?? 'the team instance';
+export function desktopStopSharingQuestion(
+  session: {
+    page?: { id: number } | null;
+    live: Pick<HubLive, 'page' | 'viewers'>;
+  },
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): { title: string; body: string } {
+  const title = session.page
+    ? words.t('runui_stopSharingRunTitle', { id: session.page.id })
+    : words.t('runui_stopSharingTitle');
+  const instance = desktopLiveInstance(session.live) ?? words.t('runui_theTeamInstance');
   const viewers = session.live.viewers;
-  if (viewers === 0) return { title, body: `Nothing more of it goes to ${instance}.` };
-  const views =
-    viewers === 1 ? `The view open on ${instance} closes` : `The ${viewers} views open on ${instance} close`;
-  return { title, body: `${views}, and nothing more of the run goes there.` };
+  if (viewers === 0) return { title, body: words.t('runui_stopSharingNobody', { instance }) };
+  const body =
+    viewers === 1
+      ? words.t('runui_stopSharingOneView', { instance })
+      : words.tn('runui_stopSharingViews', viewers, { instance });
+  return { title, body };
 }
 
 /**
  * What a code made at a stop is, as its heading in the window says. The steps, an assertion and a locator for the
  * stopped line come from an agent alone here (the app takes no Record nor Assert), and say so.
  */
-const CODE_TITLES: Record<HubCodeAction | 'assert', string> = {
-  assert: 'Assertion the agent made',
-  'assert-region': 'Assert a region',
-  mock: 'Mock a request',
-  steps: 'Steps the agent took',
-  locator: 'Locator the agent picked',
-};
+function codeTitle(action: HubCodeAction | 'assert', words: RunUiWords): string {
+  switch (action) {
+    case 'assert':
+      return words.t('runui_codeAssert');
+    case 'assert-region':
+      return words.say('runs_assertRegion');
+    case 'mock':
+      return words.say('runs_mock');
+    case 'steps':
+      return words.t('runui_codeSteps');
+    case 'locator':
+      return words.t('runui_codeLocator');
+  }
+}
 
 /** A code made at a stop, or a locator picked, as the window lists it to copy. */
 export interface DesktopCopyItem {
@@ -252,10 +282,23 @@ export interface DesktopCopyItem {
  * lines its edits add or change, apart, so each is copied where it goes; or a locator for the stopped line's, with
  * that line's place. `root` is its run's folder, when known.
  */
-export function desktopCodeItem(code: StopCode, root: string | null, key: string): DesktopCopyItem {
+export function desktopCodeItem(
+  code: StopCode,
+  root: string | null,
+  key: string,
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): DesktopCopyItem {
   const place = `${runFile(code.uri, root)}:${code.line + 1}`;
   if (code.action === 'locator') {
-    return { key, title: CODE_TITLES.locator, place, text: code.code, imports: [], kind: 'locator', warnings: [] };
+    return {
+      key,
+      title: codeTitle('locator', words),
+      place,
+      text: code.code,
+      imports: [],
+      kind: 'locator',
+      warnings: [],
+    };
   }
   const block = `${code.code}\n`;
   const imports = code.edits
@@ -264,7 +307,7 @@ export function desktopCodeItem(code: StopCode, root: string | null, key: string
     .filter((text) => text.trim() !== '');
   return {
     key,
-    title: CODE_TITLES[code.action],
+    title: codeTitle(code.action, words),
     place,
     text: code.code,
     imports,
@@ -274,10 +317,14 @@ export function desktopCodeItem(code: StopCode, root: string | null, key: string
 }
 
 /** A locator a test picked, as the window lists it: the call's place, when the test named it. */
-export function desktopPickItem(pick: DesktopRunPick, key: string): DesktopCopyItem {
+export function desktopPickItem(
+  pick: DesktopRunPick,
+  key: string,
+  words: RunUiWords = ENGLISH_RUN_UI_WORDS,
+): DesktopCopyItem {
   return {
     key,
-    title: 'Locator picked',
+    title: words.t('runui_codeLocatorPicked'),
     place: pick.file && pick.line ? `${pick.file}:${pick.line}` : null,
     text: pick.locator,
     imports: [],

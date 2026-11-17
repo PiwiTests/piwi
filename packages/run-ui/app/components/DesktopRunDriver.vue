@@ -5,8 +5,6 @@
  * while an agent may act on it, or **Give back** while this window drives it (`mine`). A press waits while a command of
  * the worker is on its way (`busy`), the button keeping the focus.
  */
-import { desktopSay } from '../utils/run-view';
-
 const props = defineProps<{
   /** Who drives the stop, in the run model's words. */
   words: string;
@@ -16,6 +14,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ take: []; give: [] }>();
+const { say } = useRunUiWords();
 
 function press(): void {
   if (props.busy) return;
@@ -33,11 +32,11 @@ function press(): void {
       color="neutral"
       variant="outline"
       :icon="mine ? 'i-lucide-undo-2' : 'i-lucide-hand'"
-      :title="desktopSay(mine ? 'runs_giveBackTitle' : 'runs_takeControlTitle')"
+      :title="say(mine ? 'runs_giveBackTitle' : 'runs_takeControlTitle')"
       :aria-disabled="busy || undefined"
       @click="press"
     >
-      {{ desktopSay(mine ? 'runs_giveBack' : 'runs_takeControl') }}
+      {{ say(mine ? 'runs_giveBack' : 'runs_takeControl') }}
     </UButton>
   </div>
 </template>

@@ -1,8 +1,12 @@
+import { ENGLISH_RUN_UI_WORDS } from './run-ui-words';
+
 /**
  * Extract a human-readable message from an unknown error, unwrapping the
- * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws.
+ * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws. Without
+ * either, `fallback`: the catalog's English "Unknown error" unless the caller
+ * gives one in its own words.
  */
-export function errorMessage(err: unknown, fallback = 'Unknown error'): string {
+export function errorMessage(err: unknown, fallback = ENGLISH_RUN_UI_WORDS.t('runui_commonUnknownError')): string {
   if (err && typeof err === 'object') {
     const e = err as { data?: { message?: string }; message?: string };
     return e.data?.message ?? e.message ?? fallback;

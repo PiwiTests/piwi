@@ -33,6 +33,8 @@ const emit = defineEmits<{
 
 const { current, add, remove } = useDesktopTeamRequests();
 const toast = useToast();
+const words = useRunUiWords();
+const { t, tn } = words;
 const starting = ref(false);
 
 /** A folder the shell found for the request's project (`desktop_find_request_folders`). */
@@ -100,13 +102,13 @@ const open = computed({
   },
 });
 
-const host = computed(() => teamInstanceHost(current.value?.instance));
+const host = computed(() => teamInstanceHost(current.value?.instance, words));
 const project = computed(() =>
-  current.value ? current.value.projectName || `project ${current.value.projectId}` : '',
+  current.value ? current.value.projectName || t('runui_requestProject', { id: current.value.projectId }) : '',
 );
 const testCount = computed(() => current.value?.tests.length ?? 0);
-const answerBy = computed(() => (current.value ? new Date(current.value.answerBy) : null));
-const options = computed(() => optionWords(current.value?.options));
+const answerBy = computed(() => (current.value ? words.time(new Date(current.value.answerBy)) : ''));
+const options = computed(() => optionWords(current.value?.options, words));
 
 const finding = computed(() => !!current.value && findingFor.value === current.value.id);
 const linking = computed(() => !!current.value && linkingFor.value === current.value.id);
@@ -128,15 +130,36 @@ const folderIssue = computed<'none' | 'config' | 'tests' | null>(() => {
 const foundHere = computed(() => (found.value && found.value.requestId === current.value?.id ? found.value : null));
 /** The project's repository, once a search named it. */
 const repository = computed(() => foundHere.value?.repository ?? null);
-/** The project's code, in words: `Acme Checkout's code (github.com/acme/shop)`. */
-const projectCode = computed(() => `${project.value}'s code${repository.value ? ` (${repository.value})` : ''}`);
+/** The project's code, in words: `Acme Checkout's code`. */
+const projectCode = computed(() => t('runui_requestProjectCode', { project: project.value }));
+/** The project's code and its repository, once known: `Acme Checkout's code (github.com/acme/shop)`. */
+const projectCodeAt = computed(() =>
+  repository.value
+    ? t('runui_requestProjectCodeAt', { project: project.value, repository: repository.value })
+    : projectCode.value,
+);
 
 /** Which of the request's spec files a found folder holds, in words. */
 function testsHeld(folder: FoundFolder): string {
   const total = specFiles.value.length;
-  if (folder.specsFound < total) return `${folder.specsFound} of the ${total} test files: it may be an older copy`;
-  return total === 1 ? 'the test file' : 'the test files';
+  if (folder.specsFound < total) {
+    return t('runui_requestSomeTestFiles', { found: words.number(folder.specsFound), total: words.number(total) });
+  }
+  return total === 1 ? t('runui_requestTestFile') : t('runui_requestTestFiles');
 }
+
+/** What the dialog says when **Find it for me** found no folder. */
+const noneFound = computed(() => {
+  const other = folderIssue.value !== 'none';
+  const key = foundHere.value?.complete
+    ? other
+      ? 'runui_requestNoOtherFound'
+      : 'runui_requestNoneFound'
+    : other
+      ? 'runui_requestNoOtherFoundPartly'
+      : 'runui_requestNoneFoundPartly';
+  return t(key, { code: projectCode.value });
+});
 
 /** Ask the shell to look for the request's folder on this machine. */
 async function findFolder() {
@@ -149,7 +172,11 @@ async function findFolder() {
     const answer = await core.invoke<FolderSearch>('desktop_find_request_folders', { requestId: request.id });
     found.value = { requestId: request.id, ...answer };
   } catch (error) {
-    toast.add({ title: 'Could not look for the folder', description: errorMessage(error), color: 'error' });
+    toast.add({
+      title: t('runui_requestFindFailed'),
+      description: errorMessage(error, t('runui_commonUnknownError')),
+      color: 'error',
+    });
   } finally {
     findingFor.value = null;
   }
@@ -183,7 +210,11 @@ async function chooseFolder(place: number | null = null) {
   } catch (error) {
     // Answered while its folder was linked: nothing is left to show.
     if ((error as { statusCode?: number } | null)?.statusCode === 404) return;
-    toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
+    toast.add({
+      title: t('runui_requestLinkFailed'),
+      description: errorMessage(error, t('runui_commonUnknownError')),
+      color: 'error',
+    });
   } finally {
     linkingFor.value = null;
     linkingFound.value = null;
@@ -207,13 +238,20 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
         projectId: request.projectId,
         projectName: request.projectName,
         cases: request.tests,
-        title: `${testCount.value === 1 ? request.tests[0]!.title : `${testCount.value} tests`} for ${host.value}`,
+        title: t('runui_requestRunTitle', {
+          tests: testCount.value === 1 ? request.tests[0]!.title : tn('runui_tests', testCount.value),
+          host: host.value,
+        }),
       });
     }
     remove(request.id);
   } catch (error) {
     if (decision === 'run') {
-      toast.add({ title: 'Could not start the run', description: errorMessage(error), color: 'error' });
+      toast.add({
+        title: t('runui_requestStartFailed'),
+        description: errorMessage(error, t('runui_commonUnknownError')),
+        color: 'error',
+      });
     }
   } finally {
     starting.value = false;
@@ -222,14 +260,21 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
 </script>
 
 <template>
-  <UModal v-model:open="open" title="Run on this machine?" :ui="{ content: 'max-w-2xl' }">
+  <UModal v-model:open="open" :title="t('runui_requestTitle')" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <div v-if="current" :key="current.id" class="space-y-4" data-shot="desktop-team-run-request">
         <p class="text-sm text-muted">
-          You asked <span class="font-medium text-highlighted">{{ host }}</span> to run
-          {{ testCountWords(testCount) }} of <span class="font-medium text-highlighted">{{ project }}</span> here, in
-          the folder linked to that project. It runs the code of that folder on this machine; nothing runs until you
-          click <strong>Run</strong>. The request ends unanswered at {{ answerBy?.toLocaleTimeString() }}.
+          <RunUiText name="runui_requestIntro" :args="{ tests: testCountWords(testCount, words), time: answerBy }">
+            <template #host>
+              <span class="font-medium text-highlighted">{{ host }}</span>
+            </template>
+            <template #project>
+              <span class="font-medium text-highlighted">{{ project }}</span>
+            </template>
+            <template #run>
+              <strong>{{ t('runui_requestRun') }}</strong>
+            </template>
+          </RunUiText>
         </p>
 
         <ul class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm">
@@ -246,7 +291,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
         <ul class="space-y-1.5 text-sm" data-testid="team-run-request-checks">
           <li v-for="check in current.checks" :key="check.id" class="flex items-start gap-2">
             <UIcon :name="CHECK_ICONS[check.level]" :class="['size-4 mt-0.5 shrink-0', CHECK_COLORS[check.level]]" />
-            <span>{{ check.message }}</span>
+            <span>{{ requestCheckWords(check, words) }}</span>
           </li>
         </ul>
 
@@ -256,20 +301,22 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
           data-testid="team-run-request-folder"
         >
           <p v-if="folderIssue === 'tests'" class="text-sm text-highlighted leading-relaxed">
-            The linked folder lacks some of these tests: it may be an older copy of {{ project }}'s code. Get its latest
-            version (or ask whoever set up these tests to), or use another copy that holds them all.
+            {{ t('runui_requestFolderOlderCopy', { code: projectCode }) }}
           </p>
           <p v-else class="text-sm text-highlighted leading-relaxed">
-            <template v-if="folderIssue === 'config'">The linked folder is not the right one. </template>Piwi needs your
-            copy of {{ projectCode }} on this computer: the folder that holds its Playwright config (<code
-              class="font-mono"
-              >playwright.config.ts</code
-            >) and these tests, such as <code class="font-mono">{{ specFiles[0] }}</code
-            >.
+            <template v-if="folderIssue === 'config'">{{ `${t('runui_requestFolderNotRight')} ` }}</template>
+            <RunUiText name="runui_requestFolderNeeded" :args="{ code: projectCodeAt }">
+              <template #config>
+                <code class="font-mono">playwright.config.ts</code>
+              </template>
+              <template #spec>
+                <code class="font-mono">{{ specFiles[0] }}</code>
+              </template>
+            </RunUiText>
           </p>
 
           <div v-if="foundHere?.folders.length" class="space-y-1.5">
-            <p class="text-sm font-semibold text-highlighted">Found on this computer</p>
+            <p class="text-sm font-semibold text-highlighted">{{ t('runui_requestFoundHeading') }}</p>
             <ul class="divide-y divide-default rounded-md border border-default">
               <li
                 v-for="(folder, place) in foundHere.folders"
@@ -279,11 +326,15 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                 <div class="min-w-0 flex-1">
                   <code class="block text-xs font-mono text-highlighted break-all">{{ folder.path }}</code>
                   <p class="text-xs text-muted">
-                    <template v-if="folder.source === 'run'">A run of yours came from this folder. </template>
-                    <template v-else-if="folder.source === 'clone' && repository"
-                      >A copy of {{ repository }}.
-                    </template>
-                    Holds <code class="font-mono">{{ folder.playwrightConfig }}</code> and {{ testsHeld(folder) }}.
+                    <template v-if="folder.source === 'run'">{{ `${t('runui_requestFoundFromRun')} ` }}</template>
+                    <template v-else-if="folder.source === 'clone' && repository">{{
+                      `${t('runui_requestFoundClone', { repository })} `
+                    }}</template>
+                    <RunUiText name="runui_requestFoundHolds" :args="{ tests: testsHeld(folder) }">
+                      <template #config>
+                        <code class="font-mono">{{ folder.playwrightConfig }}</code>
+                      </template>
+                    </RunUiText>
                   </p>
                 </div>
                 <UButton
@@ -292,21 +343,16 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                   variant="outline"
                   :loading="linking && linkingFound === place"
                   :disabled="linking"
-                  :aria-label="`Use ${folder.path}`"
+                  :aria-label="t('runui_requestUseFolderLabel', { path: folder.path })"
                   @click="chooseFolder(place)"
-                  >Use this folder</UButton
+                  >{{ t('runui_requestUseFolder') }}</UButton
                 >
               </li>
             </ul>
           </div>
           <p v-else-if="foundHere" class="text-sm text-highlighted leading-relaxed">
-            {{
-              foundHere.complete
-                ? `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the usual places on this computer.`
-                : `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the places Piwi could look through.`
-            }}
-            If you have one elsewhere, choose its folder. If not, the code has to be set up on this computer first: ask
-            whoever set up these tests to help you{{ repository ? ` (it comes from ${repository})` : '' }}.
+            {{ noneFound }}
+            {{ repository ? t('runui_requestSetUpFirstFrom', { repository }) : t('runui_requestSetUpFirst') }}
           </p>
 
           <div class="flex flex-wrap gap-2">
@@ -317,7 +363,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
               :loading="finding"
               :disabled="linking"
               @click="findFolder"
-              >{{ foundHere ? 'Look again' : 'Find it for me' }}</UButton
+              >{{ foundHere ? t('runui_requestLookAgain') : t('runui_requestFindFolder') }}</UButton
             >
             <UButton
               icon="i-lucide-folder-open"
@@ -326,13 +372,15 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
               :loading="linking && linkingFound === null"
               :disabled="linking"
               @click="chooseFolder()"
-              >{{ foundHere?.folders.length ? 'Choose another folder…' : 'Choose the folder…' }}</UButton
+              >{{
+                foundHere?.folders.length ? t('runui_requestChooseOtherFolder') : t('runui_requestChooseFolder')
+              }}</UButton
             >
           </div>
         </div>
 
         <div v-if="current.command" class="space-y-1">
-          <div class="text-xs text-muted">Runs in the linked folder and reports to {{ host }}</div>
+          <div class="text-xs text-muted">{{ t('runui_requestRunsIn', { host }) }}</div>
           <CodeBlock :code="current.command" lang="text" />
         </div>
       </div>
@@ -341,14 +389,14 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
     <template #footer>
       <div class="flex justify-end gap-2 w-full">
         <UButton color="neutral" variant="ghost" :disabled="!armed" @click="answer('not-now', current?.id)">
-          Not now
+          {{ t('runui_requestNotNow') }}
         </UButton>
         <UButton
           icon="i-lucide-play"
           :disabled="!current?.runnable || !armed"
           :loading="starting"
           @click="answer('run', current?.id)"
-          >Run</UButton
+          >{{ t('runui_requestRun') }}</UButton
         >
       </div>
     </template>

@@ -19,17 +19,20 @@ import type { HubSession } from '@piwitests/core/run-hub';
 import { runLevelControls } from '@piwitests/run-model/controls';
 import { presenceLine } from '@piwitests/run-model/presence';
 import { tabStatus } from '@piwitests/run-model/status';
-import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { DESKTOP_RUN_ICONS, DESKTOP_TONE_COLORS, desktopRunName, desktopSay } from '../utils/run-view';
+import { DESKTOP_RUN_ICONS, DESKTOP_TONE_COLORS, desktopRunName } from '../utils/run-view';
 
 const props = defineProps<{ session: HubSession; named?: boolean }>();
 const emit = defineEmits<{ announce: [text: string] }>();
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
+const { t } = words;
 /** Who else has the run open while it runs, said only while the window hears the hub. */
 const presence = computed(() =>
-  props.session.ended || !hub.state.connected ? null : presenceLine(props.session.presence, englishRunSpeaker),
+  props.session.ended || !hub.state.connected ? null : presenceLine(props.session.presence, words.run),
 );
+/** The run's name: its Piwi project, else its folder. */
+const sessionName = computed(() => desktopRunName(props.session, words));
 const workers = computed(() => [...props.session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex));
 
 // ── The worker tabs ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -49,8 +52,8 @@ const tabList = computed(() =>
     return {
       worker,
       lane: worker.parallelIndex,
-      name: desktopSay('runs_worker', { number: String(worker.parallelIndex + 1) }),
-      words: desktopSay(status.message.key, status.message.args),
+      name: words.say('runs_worker', { number: String(worker.parallelIndex + 1) }),
+      words: words.say(status.message.key, status.message.args),
       icon: DESKTOP_RUN_ICONS[status.icon],
       tone: status.tone,
       style: colored ? { '--tone': DESKTOP_TONE_COLORS[status.tone] } : undefined,
@@ -170,13 +173,13 @@ watch(shown, async (lane, before) => {
 
 <template>
   <div class="space-y-1.5" data-shot="desktop-run-session">
-    <p v-if="named" class="text-sm font-semibold text-highlighted">{{ desktopRunName(session) }}</p>
+    <p v-if="named" class="text-sm font-semibold text-highlighted">{{ sessionName }}</p>
     <p v-if="presence" class="text-xs text-muted" data-testid="desktop-run-presence">{{ presence }}</p>
     <DesktopRunPageLink v-if="session.page" :page="session.page" />
     <div
       v-if="levelShown"
       role="group"
-      :aria-label="desktopSay('runs_runControls')"
+      :aria-label="words.say('runs_runControls')"
       class="flex flex-wrap items-center gap-1.5"
       data-testid="desktop-run-controls"
     >
@@ -186,11 +189,11 @@ watch(shown, async (lane, before) => {
         color="neutral"
         variant="outline"
         icon="i-lucide-play"
-        :title="desktopSay('runs_resumeAllTitle')"
+        :title="words.say('runs_resumeAllTitle')"
         :aria-disabled="resumeAllBusy || undefined"
         @click="resumeAll()"
       >
-        {{ desktopSay('runs_resumeAll') }}
+        {{ words.say('runs_resumeAll') }}
       </UButton>
       <UButton
         v-if="level.pauseAll"
@@ -198,20 +201,20 @@ watch(shown, async (lane, before) => {
         color="neutral"
         variant="outline"
         icon="i-lucide-pause"
-        :title="desktopSay('runs_pauseAllTitle')"
+        :title="words.say('runs_pauseAllTitle')"
         :aria-disabled="pauseAllBusy || undefined"
         @click="pauseAll()"
       >
-        {{ desktopSay('runs_pauseAll') }}
+        {{ words.say('runs_pauseAll') }}
       </UButton>
     </div>
     <DesktopRunShare :session="session" @announce="emit('announce', $event)" />
-    <p v-if="workers.length === 0" class="text-xs text-muted">Starting a worker…</p>
+    <p v-if="workers.length === 0" class="text-xs text-muted">{{ t('runui_sessionStartingWorker') }}</p>
     <div v-else ref="root" class="overflow-hidden rounded-md border border-default">
       <div
         v-if="tabs"
         role="tablist"
-        :aria-label="desktopSay('runs_workerTabs')"
+        :aria-label="words.say('runs_workerTabs')"
         class="flex gap-0.5 overflow-x-auto px-2 pt-1.5 shadow-[inset_0_-1px_0_var(--ui-border)]"
       >
         <button
@@ -242,7 +245,7 @@ watch(shown, async (lane, before) => {
       </div>
       <div
         :role="tabs ? undefined : 'list'"
-        :aria-label="tabs ? undefined : `The workers of ${desktopRunName(session)}`"
+        :aria-label="tabs ? undefined : t('runui_sessionWorkersLabel', { run: sessionName })"
         :class="{ 'divide-y divide-default': !tabs }"
       >
         <div

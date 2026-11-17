@@ -9,11 +9,88 @@ import { pathToFileURL } from 'node:url';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
 import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile, repositoryRoot } from './workspace';
 
+/**
+ * What a check says, as a code a window words in its own language from the check's `args`; `message` is the same
+ * sentence in English (`requestCheckSentence`).
+ */
+export type RequestCheckCode =
+  | 'folder-none'
+  | 'folder-gone'
+  | 'folder-linked'
+  | 'folder-busy'
+  | 'config-missing'
+  | 'specs-missing'
+  | 'specs-found'
+  | 'playwright-missing'
+  | 'playwright-installed'
+  | 'commit-differs'
+  | 'commit-same'
+  | 'changes-uncommitted'
+  | 'command-too-long';
+
+/**
+ * The values a check's sentence names, by code: the linked folder (`folder`), the missing specs named and how many
+ * more (`files`, `more`), the folder's branch and short commit and the run's (`branch`, `commit`, `sourceBranch`,
+ * `sourceCommit`, empty when unknown), and the longest command (`max`).
+ */
+export type RequestCheckArgs = Readonly<Record<string, string | number>>;
+
 /** One row of the confirmation: a check that failed stops **Run**, a warning does not. */
 export interface RequestCheck {
   id: 'folder' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
   level: 'ok' | 'warn' | 'fail';
+  code: RequestCheckCode;
+  args: RequestCheckArgs;
   message: string;
+}
+
+/** What a check of `code` says in English, with the values of `args`. */
+export function requestCheckSentence(code: RequestCheckCode, args: RequestCheckArgs = {}): string {
+  const value = (name: string) => String(args[name] ?? '');
+  switch (code) {
+    case 'folder-none':
+      return 'No folder is linked to this project on this machine.';
+    case 'folder-gone':
+      return 'The linked folder no longer exists: choose it again.';
+    case 'folder-linked':
+      return `Linked folder: ${value('folder')}`;
+    case 'folder-busy':
+      return 'Another run is going in this folder: this one can run once it ends.';
+    case 'config-missing':
+      return 'The folder holds no Playwright config.';
+    case 'specs-missing': {
+      const more = Number(args.more ?? 0);
+      return `Not in the folder: ${value('files')}${more > 0 ? ` and ${more} more` : ''}.`;
+    }
+    case 'specs-found':
+      return 'The specs are in the folder.';
+    case 'playwright-missing':
+      return 'Playwright is not installed in the folder: run `npm install` there.';
+    case 'playwright-installed':
+      return 'Playwright is installed.';
+    case 'commit-differs': {
+      const at = (branch: string, commit: string) =>
+        [branch ? `on ${branch}` : null, commit ? `at ${commit}` : null].filter(Boolean).join(' ');
+      const here = at(value('branch'), value('commit')) || 'outside a git repository';
+      return `Your folder is ${here}; the run you came from was ${at(value('sourceBranch'), value('sourceCommit'))}. The tests are selected by title.`;
+    }
+    case 'commit-same':
+      return 'Your folder is on the commit the run came from.';
+    case 'changes-uncommitted':
+      return 'Your folder has uncommitted changes.';
+    case 'command-too-long':
+      return `The command for these tests is longer than ${Number(args.max).toLocaleString('en-US')} characters: ask for fewer tests.`;
+  }
+}
+
+/** A check, its English sentence from its code. */
+function check(
+  id: RequestCheck['id'],
+  level: RequestCheck['level'],
+  code: RequestCheckCode,
+  args: RequestCheckArgs = {},
+): RequestCheck {
+  return { id, level, code, args, message: requestCheckSentence(code, args) };
 }
 
 /** What the target found in the folder, and the command it would run there. */
@@ -168,7 +245,7 @@ export async function planRequestedRun(
   };
 
   if (!folder) {
-    checks.push({ id: 'folder', level: 'fail', message: 'No folder is linked to this project on this machine.' });
+    checks.push(check('folder', 'fail', 'folder-none'));
     return done();
   }
   let real: string;
@@ -176,40 +253,24 @@ export async function planRequestedRun(
     real = fs.realpathSync(folder);
     if (!fs.statSync(real).isDirectory()) throw new Error('not a folder');
   } catch {
-    checks.push({ id: 'folder', level: 'fail', message: 'The linked folder no longer exists: choose it again.' });
+    checks.push(check('folder', 'fail', 'folder-gone'));
     return done();
   }
-  checks.push({ id: 'folder', level: 'ok', message: `Linked folder: ${folder}` });
-  if (runningIn.some((other) => realFolder(other) === real)) {
-    checks.push({
-      id: 'busy',
-      level: 'fail',
-      message: 'Another run is going in this folder: this one can run once it ends.',
-    });
-  }
+  checks.push(check('folder', 'ok', 'folder-linked', { folder }));
+  if (runningIn.some((other) => realFolder(other) === real)) checks.push(check('busy', 'fail', 'folder-busy'));
 
-  if (!playwrightConfigFile(real)) {
-    checks.push({ id: 'config', level: 'fail', message: 'The folder holds no Playwright config.' });
-  }
+  if (!playwrightConfigFile(real)) checks.push(check('config', 'fail', 'config-missing'));
 
   const missing = [...new Set(request.tests.map((t) => t.filePath))].filter((f) => !specInFolder(real, f));
   if (missing.length > 0) {
-    const named = missing.slice(0, NAMED_SPECS).join(', ');
-    const more = missing.length > NAMED_SPECS ? ` and ${missing.length - NAMED_SPECS} more` : '';
-    checks.push({ id: 'specs', level: 'fail', message: `Not in the folder: ${named}${more}.` });
+    const files = missing.slice(0, NAMED_SPECS).join(', ');
+    checks.push(check('specs', 'fail', 'specs-missing', { files, more: Math.max(0, missing.length - NAMED_SPECS) }));
   } else {
-    checks.push({ id: 'specs', level: 'ok', message: 'The specs are in the folder.' });
+    checks.push(check('specs', 'ok', 'specs-found'));
   }
 
-  if (!playwrightInstalled(real)) {
-    checks.push({
-      id: 'playwright',
-      level: 'fail',
-      message: 'Playwright is not installed in the folder: run `npm install` there.',
-    });
-  } else {
-    checks.push({ id: 'playwright', level: 'ok', message: 'Playwright is installed.' });
-  }
+  if (!playwrightInstalled(real)) checks.push(check('playwright', 'fail', 'playwright-missing'));
+  else checks.push(check('playwright', 'ok', 'playwright-installed'));
 
   const root = await repositoryRoot(real);
   const [branch, commit, changed] = await Promise.all([
@@ -220,27 +281,22 @@ export async function planRequestedRun(
   const { source } = request;
   const onCommit = !!source.commit && !!commit && sameCommit(source.commit, commit);
   if (source.commit && !onCommit) {
-    const here = [branch ? `on ${branch}` : null, commit ? `at ${commit.slice(0, 7)}` : null].filter(Boolean);
-    const there = [source.branch ? `on ${source.branch}` : null, `at ${source.commit.slice(0, 7)}`].filter(Boolean);
-    checks.push({
-      id: 'commit',
-      level: 'warn',
-      message: `Your folder is ${here.join(' ') || 'outside a git repository'}; the run you came from was ${there.join(' ')}. The tests are selected by title.`,
-    });
+    checks.push(
+      check('commit', 'warn', 'commit-differs', {
+        branch: branch ?? '',
+        commit: commit ? commit.slice(0, 7) : '',
+        sourceBranch: source.branch ?? '',
+        sourceCommit: source.commit.slice(0, 7),
+      }),
+    );
   } else if (onCommit) {
-    checks.push({ id: 'commit', level: 'ok', message: 'Your folder is on the commit the run came from.' });
+    checks.push(check('commit', 'ok', 'commit-same'));
   }
-  if (changed) {
-    checks.push({ id: 'changes', level: 'warn', message: 'Your folder has uncommitted changes.' });
-  }
+  if (changed) checks.push(check('changes', 'warn', 'changes-uncommitted'));
   const byTitle = picksByTitle(request, !onCommit || changed);
   const args = requestedRunArgs(request, real, byTitle);
   if (argsLength(args) > REQUESTED_RUN_ARGS_MAX_CHARS) {
-    checks.push({
-      id: 'command',
-      level: 'fail',
-      message: `The command for these tests is longer than ${REQUESTED_RUN_ARGS_MAX_CHARS.toLocaleString('en-US')} characters: ask for fewer tests.`,
-    });
+    checks.push(check('command', 'fail', 'command-too-long', { max: REQUESTED_RUN_ARGS_MAX_CHARS }));
   }
   return done({ args, byTitle, branch, commit });
 }

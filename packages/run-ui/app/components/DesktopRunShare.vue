@@ -22,6 +22,8 @@ const emit = defineEmits<{ announce: [text: string] }>();
 
 const hub = useDesktopRunHub();
 const { copy, copied } = useCopy();
+const words = useRunUiWords();
+const { t } = words;
 
 const live = computed(() => props.session.live ?? null);
 const busy = ref(false);
@@ -29,7 +31,7 @@ const asking = ref(false);
 /** Stop sharing asks what it closes before it stops. */
 const stopAsking = ref(false);
 const stopQuestion = computed(() =>
-  live.value ? desktopStopSharingQuestion({ page: props.session.page, live: live.value }) : null,
+  live.value ? desktopStopSharingQuestion({ page: props.session.page, live: live.value }, words) : null,
 );
 /** What the last share or stop answered, while it says something the run does not show. */
 const answer = ref<DesktopRunAnswer | null>(null);
@@ -65,7 +67,9 @@ function stopSharing(): void {
   <div v-if="live && desktopShareOffered(live) && !session.ended" class="space-y-1" data-shot="desktop-run-share">
     <div class="flex flex-wrap items-center gap-2">
       <template v-if="live.shared">
-        <UBadge color="info" variant="subtle" size="sm" icon="i-lucide-radio">{{ desktopLiveText(live) }}</UBadge>
+        <UBadge color="info" variant="subtle" size="sm" icon="i-lucide-radio">{{
+          desktopLiveText(live, words)
+        }}</UBadge>
         <UButton
           v-if="live.page"
           size="xs"
@@ -74,7 +78,7 @@ function stopSharing(): void {
           :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
           @click="copy(live.page)"
         >
-          {{ copied ? 'Copied' : "Copy the run page's link" }}
+          {{ copied ? t('runui_commonCopied') : t('runui_shareCopyPageLink') }}
         </UButton>
         <UButton
           size="xs"
@@ -84,10 +88,10 @@ function stopSharing(): void {
           :aria-disabled="busy || undefined"
           @click="!busy && (stopAsking = true)"
         >
-          Stop sharing…
+          {{ t('runui_shareStopSharing') }}
         </UButton>
       </template>
-      <UTooltip v-else text="Let a teammate watch this run from its page on your Piwi instance">
+      <UTooltip v-else :text="t('runui_shareLiveTooltip')">
         <UButton
           size="xs"
           color="neutral"
@@ -96,21 +100,21 @@ function stopSharing(): void {
           :aria-disabled="busy || undefined"
           @click="share"
         >
-          Share live
+          {{ words.say('runs_shareLive') }}
         </UButton>
       </UTooltip>
     </div>
     <p v-if="answer" class="text-xs text-muted" role="status">{{ answer.message }}</p>
     <p v-else-if="!live.shared && live.stopped" class="text-xs text-muted">{{ live.stopped }}</p>
 
-    <UModal v-model:open="asking" title="Share this run live?" :ui="{ content: 'max-w-lg' }">
+    <UModal v-model:open="asking" :title="t('runui_shareAskTitle')" :ui="{ content: 'max-w-lg' }">
       <template #body>
-        <p class="text-sm text-muted" data-shot="desktop-run-share-warning">{{ desktopShareWarning(live) }}</p>
+        <p class="text-sm text-muted" data-shot="desktop-run-share-warning">{{ desktopShareWarning(live, words) }}</p>
       </template>
       <template #footer>
         <div class="flex justify-end gap-2 w-full">
-          <UButton color="neutral" variant="ghost" @click="asking = false">Cancel</UButton>
-          <UButton icon="i-lucide-radio" @click="confirm">Share live</UButton>
+          <UButton color="neutral" variant="ghost" @click="asking = false">{{ t('runui_commonCancel') }}</UButton>
+          <UButton icon="i-lucide-radio" @click="confirm">{{ words.say('runs_shareLive') }}</UButton>
         </div>
       </template>
     </UModal>
@@ -121,8 +125,10 @@ function stopSharing(): void {
       </template>
       <template #footer>
         <div class="flex justify-end gap-2 w-full">
-          <UButton color="neutral" variant="ghost" @click="stopAsking = false">Cancel</UButton>
-          <UButton color="error" icon="i-lucide-circle-stop" @click="stopSharing">Stop sharing</UButton>
+          <UButton color="neutral" variant="ghost" @click="stopAsking = false">{{ t('runui_commonCancel') }}</UButton>
+          <UButton color="error" icon="i-lucide-circle-stop" @click="stopSharing">{{
+            words.say('runs_stopSharing')
+          }}</UButton>
         </div>
       </template>
     </UModal>

@@ -12,16 +12,26 @@ import { isUnattendedRef } from '@piwitests/core/run-channel';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { isRunnerRunRef, runnerShellIdOf, type RunnerRun, type RunnerRunStatus } from '~/utils/runner-runs';
 
+type RunnerStatusKey =
+  | 'runner_statusRunning'
+  | 'runner_statusPassed'
+  | 'runner_statusFailed'
+  | 'runner_statusStopped'
+  | 'runner_statusError';
+
 const { runs, stopRun, setHold, stopShellRun } = useRunnerRuns();
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
+const { t } = useRunnerWords();
 
-const STATUS: Record<RunnerRunStatus, { label: string; color: 'primary' | 'success' | 'error' | 'neutral' }> = {
-  running: { label: 'Running', color: 'primary' },
-  passed: { label: 'Passed', color: 'success' },
-  failed: { label: 'Failed', color: 'error' },
-  stopped: { label: 'Stopped', color: 'neutral' },
-  error: { label: 'Could not run', color: 'error' },
-};
+const STATUS: Record<RunnerRunStatus, { label: RunnerStatusKey; color: 'primary' | 'success' | 'error' | 'neutral' }> =
+  {
+    running: { label: 'runner_statusRunning', color: 'primary' },
+    passed: { label: 'runner_statusPassed', color: 'success' },
+    failed: { label: 'runner_statusFailed', color: 'error' },
+    stopped: { label: 'runner_statusStopped', color: 'neutral' },
+    error: { label: 'runner_statusError', color: 'error' },
+  };
 const SHOWN_LINES = 200;
 
 function output(run: RunnerRun): string {
@@ -63,19 +73,19 @@ function announce(text: string) {
 
 <template>
   <section class="space-y-3" data-testid="runner-runs">
-    <h2 class="text-sm font-semibold text-muted">Runs</h2>
+    <h2 class="text-sm font-semibold text-muted">{{ t('runner_runsHeading') }}</h2>
     <p v-if="!runs.length && !unlisted.length" class="text-sm text-muted">
-      No runs yet. When a team instance asks for tests, you confirm them here first.
+      {{ t('runner_noRuns') }}
     </p>
     <DesktopRunCopyList v-if="hub.state.kept.length" :kept="hub.state.kept" :roots="hub.state.roots" />
     <UCard v-for="run in runs" :key="run.key" :ui="{ body: 'space-y-2' }" data-testid="runner-run">
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium">{{ run.title }}</p>
-          <p class="truncate text-xs text-muted">{{ teamInstanceHost(run.instance) }}</p>
+          <p class="truncate text-xs text-muted">{{ teamInstanceHost(run.instance, words) }}</p>
         </div>
         <UBadge :color="STATUS[run.status].color" variant="subtle">
-          {{ run.stopRequested && run.status === 'running' ? 'Stopping…' : STATUS[run.status].label }}
+          {{ run.stopRequested && run.status === 'running' ? t('runner_stopping') : t(STATUS[run.status].label) }}
         </UBadge>
         <UButton
           v-if="run.status === 'running'"
@@ -85,7 +95,7 @@ function announce(text: string) {
           :disabled="run.shellId === null"
           @click="stopRun(run)"
         >
-          {{ run.stopRequested ? 'Stop now' : 'Stop' }}
+          {{ run.stopRequested ? t('runner_stopNow') : t('runner_stop') }}
         </UButton>
       </div>
       <template v-if="sessionOf(run)">
@@ -93,8 +103,8 @@ function announce(text: string) {
           v-if="!isUnattendedRef(sessionOf(run)!.ref)"
           :model-value="run.holdFailures"
           size="sm"
-          label="Hold failures"
-          description="A failed test waits here for you to look before the run goes on."
+          :label="t('runner_holdFailures')"
+          :description="t('runner_holdFailuresHint')"
           data-testid="runner-hold-failures"
           @update:model-value="setHold(run, $event)"
         />
@@ -102,13 +112,13 @@ function announce(text: string) {
       </template>
       <DesktopRunPageLink v-else-if="run.page" :page="run.page" />
       <details v-if="run.lines.length">
-        <summary class="cursor-pointer text-xs text-muted">Output</summary>
+        <summary class="cursor-pointer text-xs text-muted">{{ t('runner_output') }}</summary>
         <pre class="mt-2 max-h-72 overflow-auto rounded bg-elevated p-2 text-xs">{{ output(run) }}</pre>
       </details>
     </UCard>
     <UCard v-for="session in unlisted" :key="session.ref" :ui="{ body: 'space-y-2' }" data-testid="runner-unlisted-run">
       <div class="flex items-center gap-3">
-        <p class="min-w-0 flex-1 truncate text-xs text-muted">Still running from before the window reloaded</p>
+        <p class="min-w-0 flex-1 truncate text-xs text-muted">{{ t('runner_stillRunning') }}</p>
         <UButton
           size="xs"
           color="neutral"
@@ -116,7 +126,7 @@ function announce(text: string) {
           :disabled="stopping.has(session.ref)"
           @click="stopUnlisted(session)"
         >
-          {{ stopping.has(session.ref) ? 'Stopping…' : 'Stop' }}
+          {{ stopping.has(session.ref) ? t('runner_stopping') : t('runner_stop') }}
         </UButton>
       </div>
       <DesktopRunSession :session="session" named @announce="announce" />

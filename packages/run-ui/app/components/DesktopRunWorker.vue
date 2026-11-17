@@ -36,7 +36,6 @@ import {
   stopPlace,
   testName,
 } from '@piwitests/run-model/stop';
-import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
 import { PLAIN_RUN_VIEW_HOST, RUN_VIEW_HOST } from '../utils/run-view-host';
 import {
@@ -46,7 +45,6 @@ import {
   desktopLaneKey,
   desktopRunStop,
   desktopSaidAround,
-  desktopSay,
   desktopWaitedFor,
   desktopWorkerKey,
 } from '../utils/run-view';
@@ -60,6 +58,8 @@ const props = defineProps<{
 const emit = defineEmits<{ announce: [text: string]; busy: [on: boolean] }>();
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
+const { t, tn } = words;
 
 const stop = computed(() => desktopRunStop(props.worker));
 const since = computed(() => stop.value?.since ?? null);
@@ -89,7 +89,11 @@ async function openWindow() {
       lane: props.worker.parallelIndex,
     });
   } catch (error) {
-    toast.add({ title: 'The window could not open', description: errorMessage(error), color: 'error' });
+    toast.add({
+      title: t('runui_workerWindowFailed'),
+      description: errorMessage(error, t('runui_commonUnknownError')),
+      color: 'error',
+    });
   }
 }
 /**
@@ -115,16 +119,16 @@ const testText = computed(() => (props.worker.test ? testName(props.worker.test)
 const metaText = computed(() => {
   const test = props.worker.test;
   if (!test) return null;
-  return [test.project, desktopSay('runs_attempt', { attempt: String(test.retry + 1) })].filter(Boolean).join(' · ');
+  return [test.project, words.say('runs_attempt', { attempt: String(test.retry + 1) })].filter(Boolean).join(' · ');
 });
 const status = computed(() => workerStatus(props.worker, place.value));
 const toneColor = computed(() => DESKTOP_TONE_COLORS[status.value.tone]);
-const stateText = computed(() => desktopSay(status.value.message.key, status.value.message.args));
+const stateText = computed(() => words.say(status.value.message.key, status.value.message.args));
 /** The words around the call a Pause waits in, which shows as code. */
-const pausingIn = computed(() => desktopSaidAround('runs_statePausingIn', 'call'));
+const pausingIn = computed(() => desktopSaidAround('runs_statePausingIn', 'call', {}, words));
 /** The clock that counts how long the call a Pause waits in has run. */
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
-const waitedText = computed(() => desktopWaitedFor(props.worker, now.value));
+const waitedText = computed(() => desktopWaitedFor(props.worker, now.value, words));
 
 // ── Its lane and its page ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -151,11 +155,11 @@ const pageWatchable = computed(
   () => (laneWatch.value === 'watch' && (!stop.value || !!props.worker.test)) || takes.value.includes('view'),
 );
 /** Who watches the worker's page, said only while the window hears the hub. */
-const watchers = computed(() => (hub.state.connected ? watchersLine(props.worker.watchers, englishRunSpeaker) : null));
+const watchers = computed(() => (hub.state.connected ? watchersLine(props.worker.watchers, words.run) : null));
 
 // ── Who drives the stop ───────────────────────────────────────────────────────────────────────────────────────────
 
-const driver = computed(() => (stop.value && hub.state.connected ? driverOf(stop.value, englishRunSpeaker) : null));
+const driver = computed(() => (stop.value && hub.state.connected ? driverOf(stop.value, words.run) : null));
 const agentFollows = computed(() => !!props.session.presence?.some((tool) => tool.kind === 'agent'));
 /**
  * Who drives the stop shows while another tool or an agent drives it, an agent follows the run, or this window drives
@@ -166,7 +170,7 @@ const driverShown = computed(() => {
   const othersOpen = !!props.session.presence?.some((tool) => !tool.self);
   return (!!driver.value && (driver.value.who !== 'self' || othersOpen)) || agentFollows.value;
 });
-const driverWords = computed(() => driver.value?.words ?? 'An agent may act on this stop');
+const driverWords = computed(() => driver.value?.words ?? t('runui_driverAgentMayAct'));
 const drivesIt = computed(() => driver.value?.who === 'self');
 
 // ── The controls ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -185,11 +189,15 @@ const code = computed(() => controls.value.filter((what) => !STEERING.has(what))
 /** Watch, beside Pause while no stop shows. */
 const runningWatch = computed(() => (stop.value ? null : laneWatch.value));
 
-/** The tray's own titles: the code a stop makes comes to this window to copy, never to an editor. */
-const TITLES: Partial<Record<Control, string>> = {
-  'assert-region': 'Pick a region of the page: its ARIA snapshot becomes a toMatchAriaSnapshot check to copy',
-  mock: 'Choose a response the page got: it becomes a page.route mock to copy',
-};
+/**
+ * The tray's own title of a control, null for one the run model's title fits: the code a stop makes comes to this
+ * window to copy, never to an editor.
+ */
+function ownTitle(what: Control): string | null {
+  if (what === 'assert-region') return t('runui_workerAssertRegionTitle', { method: 'toMatchAriaSnapshot' });
+  if (what === 'mock') return t('runui_workerMockTitle', { method: 'page.route' });
+  return null;
+}
 
 /** A control's button: its words, icon and look, Resume the one solid primary button. */
 function look(what: Control) {
@@ -197,13 +205,13 @@ function look(what: Control) {
   const primary = 'tone' in control && control.tone === 'primary';
   const waits = held.value.includes(what);
   return {
-    label: desktopSay(control.label),
+    label: words.say(control.label),
     attrs: {
       'data-focus': `${STEERING.has(what) ? 'steer' : 'code'}:${what}`,
       color: primary ? ('primary' as const) : ('neutral' as const),
       variant: primary ? ('solid' as const) : ('outline' as const),
       icon: DESKTOP_RUN_ICONS[control.icon],
-      title: waits ? desktopSay('runs_watchToUse') : (TITLES[what] ?? desktopSay(controlTitle(what, stop.value))),
+      title: waits ? words.say('runs_watchToUse') : (ownTitle(what) ?? words.say(controlTitle(what, stop.value))),
       'aria-disabled': waits || waiting.value || undefined,
       'aria-expanded': what === 'mock' ? !!shownRequests.value : undefined,
     },
@@ -352,10 +360,7 @@ async function codeAction(what: Control): Promise<void> {
     if (!result) return;
     if (result.ok && result.requests) {
       requests.value = { since: at, list: result.requests };
-      emit(
-        'announce',
-        result.requests.length === 1 ? '1 response listed.' : `${result.requests.length} responses listed.`,
-      );
+      emit('announce', tn('runui_workerResponsesListed', result.requests.length));
     } else say(result, at);
     return;
   }
@@ -466,14 +471,14 @@ onBeforeUnmount(() => {
           color="neutral"
           variant="ghost"
           icon="i-lucide-picture-in-picture-2"
-          title="Open in a window, kept above the others"
-          aria-label="Open this worker in a window, kept above the others"
+          :title="t('runui_workerOpenWindowTitle')"
+          :aria-label="t('runui_workerOpenWindowLabel')"
           data-testid="desktop-worker-window"
           @click="openWindow"
         />
       </div>
       <p v-if="worker.test?.cannotPause" class="text-xs text-muted">
-        This test never stops: {{ worker.test.cannotPause }}
+        {{ t('runui_workerCannotPause', { reason: worker.test.cannotPause }) }}
       </p>
     </div>
 
@@ -497,9 +502,9 @@ onBeforeUnmount(() => {
       </p>
       <ErrorText v-if="stop && failed" :text="stopError(stop)" mode="block" class="mt-1.5" />
       <dl v-else-if="stop" class="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
-        <dt class="text-muted">{{ desktopSay('runs_nextLabel') }}</dt>
+        <dt class="text-muted">{{ words.say('runs_nextLabel') }}</dt>
         <dd class="font-mono break-words text-highlighted">{{ stop.title }}</dd>
-        <dt class="text-muted">{{ desktopSay('runs_whereLabel') }}</dt>
+        <dt class="text-muted">{{ words.say('runs_whereLabel') }}</dt>
         <dd class="min-w-0 text-highlighted">
           <component
             :is="host.placeLink"
@@ -537,10 +542,10 @@ onBeforeUnmount(() => {
           :aria-pressed="watchedLane"
           :aria-disabled="waiting || undefined"
           :class="watchedLane ? PRESSED_TOGGLE_CLASS : ''"
-          :title="desktopSay('runs_watchTitle')"
+          :title="words.say('runs_watchTitle')"
           @click="toggleWatch"
         >
-          {{ desktopSay('runs_watch') }}
+          {{ words.say('runs_watch') }}
         </UButton>
         <UButton
           v-else-if="runningWatch === 'outdated'"
@@ -549,10 +554,10 @@ onBeforeUnmount(() => {
           variant="outline"
           icon="i-lucide-eye"
           aria-disabled="true"
-          :title="desktopSay('runs_watchOutdated')"
+          :title="words.say('runs_watchOutdated')"
           data-testid="desktop-watch-needs-update"
         >
-          {{ desktopSay('runs_watch') }}
+          {{ words.say('runs_watch') }}
         </UButton>
         <div v-if="joined.length && steering.length" class="ml-auto flex flex-wrap gap-1.5">
           <UButton v-for="what in steering" :key="what" size="xs" v-bind="look(what).attrs" @click="press(what)">
@@ -563,10 +568,10 @@ onBeforeUnmount(() => {
       <div
         v-if="code.length"
         role="group"
-        :aria-label="desktopSay('runs_codeActions')"
+        :aria-label="words.say('runs_codeActions')"
         class="flex flex-wrap items-center gap-1.5"
       >
-        <span class="mr-0.5 text-xs text-muted" aria-hidden="true">{{ desktopSay('runs_codeLabel') }}</span>
+        <span class="mr-0.5 text-xs text-muted" aria-hidden="true">{{ words.say('runs_codeLabel') }}</span>
         <UButton v-for="what in code" :key="what" size="xs" v-bind="look(what).attrs" @click="press(what)">
           {{ look(what).label }}
         </UButton>
@@ -590,12 +595,12 @@ onBeforeUnmount(() => {
           color="neutral"
           variant="outline"
           :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-          @click="copy(shownAnswer.locator, { toast: 'Locator copied' })"
+          @click="copy(shownAnswer.locator, { toast: t('runui_copyLocatorCopied') })"
         >
-          Copy
+          {{ t('runui_commonCopy') }}
         </UButton>
       </div>
-      <ul v-if="shownAnswer.warnings.length" :aria-label="desktopSay('runs_codeWarnings')" class="space-y-0.5">
+      <ul v-if="shownAnswer.warnings.length" :aria-label="words.say('runs_codeWarnings')" class="space-y-0.5">
         <li v-for="warning in shownAnswer.warnings" :key="warning" class="text-xs text-muted">{{ warning }}</li>
       </ul>
     </div>

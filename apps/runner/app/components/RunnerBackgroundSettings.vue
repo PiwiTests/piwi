@@ -10,6 +10,7 @@ interface BackgroundSettings {
 }
 
 const toast = useToast();
+const { t } = useRunnerWords();
 const settings = ref<BackgroundSettings | null>(null);
 const saving = ref(false);
 
@@ -40,7 +41,7 @@ async function save(command: string, field: keyof BackgroundSettings, enabled: b
     settings.value[field] = enabled;
   } catch (error) {
     toast.add({
-      title: 'Could not save the setting',
+      title: t('runner_saveFailed'),
       description: error instanceof Error ? error.message : String(error),
       color: 'error',
     });
@@ -53,21 +54,21 @@ async function save(command: string, field: keyof BackgroundSettings, enabled: b
 <template>
   <UCard v-if="settings" data-testid="runner-background">
     <template #header>
-      <h2 class="text-sm font-semibold">In the background</h2>
+      <h2 class="text-sm font-semibold">{{ t('runner_backgroundHeading') }}</h2>
     </template>
     <div class="space-y-3">
       <UCheckbox
         :model-value="settings.run_in_background"
         :disabled="saving"
-        label="Run in background"
-        description="Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it."
+        :label="t('runner_runInBackground')"
+        :description="t('runner_runInBackgroundHint')"
         @update:model-value="save('desktop_set_run_in_background', 'run_in_background', $event === true)"
       />
       <UCheckbox
         :model-value="settings.start_on_login"
         :disabled="saving"
-        label="Start on login"
-        description="Starts Piwi Runner in the tray when you sign in."
+        :label="t('runner_startOnLogin')"
+        :description="t('runner_startOnLoginHint')"
         @update:model-value="save('desktop_set_start_on_login', 'start_on_login', $event === true)"
       />
     </div>

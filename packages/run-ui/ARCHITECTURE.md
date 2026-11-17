@@ -25,3 +25,5 @@ material: open it when you need to understand the code.
 | `src/fold-text.ts` (`@piwitests/run-ui/fold-text`)           | The search fold every list compares with, accents and case ignored                                                          |
 | `app/assets/css/run-ui.css` (`@piwitests/run-ui/run-ui.css`) | The outcome tokens (`--color-status-*`) and the highlight.js theme, imported by each host's Tailwind entry                  |
 | `app/plugins/desktop-external-links.client.ts`               | Opens a cross-origin link in the default browser inside a shell's window (`desktop_open_external`)                          |
+| `locales/<code>.json`, `app/utils/run-ui-words.ts`           | The layer's catalogs, in Piwi Picker's shape, and how they are read (`runUiTranslator`, `RUN_UI_WORDS`, English by default) |
+| `app/composables/useRunUiWords.ts`, `RunUiText.vue`          | The words a host provides, else English; a message whose placeholders hold markup                                           |
