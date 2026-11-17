@@ -29,6 +29,7 @@ import { runReadEndedNotice } from '~/utils/run-read-ended';
 import { desktopEditorRunOf } from '~/utils/desktop-run-view';
 import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import { demoLaneWorkers } from '~/demo/live-watch';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
 import { summarizeRunCases } from '#shared/utils/test-counts';
@@ -418,30 +419,21 @@ const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.
 const live = useLiveWatch(() => Number(runId));
 /** **Watch all**: a tile of every worker in the run's live view, above its tests. */
 const watchAll = ref(false);
-// The demo runs no worker to watch: its tiles name each lane's step.
+// The demo's workers send no image: its tiles name each lane's step.
 watch(watchAll, (on) => !isDemoMode && live.watchAll(on));
 // A worker that left the run's live view leaves its tile.
 watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
-/**
- * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, a stand-in of each lane
- * that runs a test.
- */
-const watchAllWorkers = computed<LiveWorkerState[]>(() => {
-  if (!isDemoMode) return Object.values(liveWorkers.value);
-  return Object.values(liveLanes.value).flatMap((lane) =>
-    lane.test && lane.state !== 'done'
-      ? [
-          {
-            shard: lane.id.shard,
-            worker: lane.worker ?? lane.id.lane,
-            slot: lane.id.lane,
-            connected: true,
-            paused: null,
-          },
-        ]
-      : [],
-  );
-});
+// The demo's simulated workers stand in the run's live view while their lane runs a test: a row or a tile shows one in
+// the lane panel, with its call log and Inspect's pages, and no image.
+if (isDemoMode) {
+  watch(liveLanes, (lanes) => {
+    const workers = demoLaneWorkers(Object.values(lanes));
+    const keys = Object.keys(workers).sort().join();
+    if (keys !== Object.keys(liveWorkers.value).sort().join()) liveWorkers.value = workers;
+  });
+}
+/** The workers Watch all shows: those in the run's live view. */
+const watchAllWorkers = computed<LiveWorkerState[]>(() => Object.values(liveWorkers.value));
 const lanesNow = computed(() => Object.values(liveLanes.value));
 /** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
 const offersWatchAll = computed(
