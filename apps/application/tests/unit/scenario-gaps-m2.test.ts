@@ -315,6 +315,38 @@ describe('renderScenarioDraft', () => {
     expect(gotoStep('/docs/a:b')).toBe("await page.goto('/docs/a:b');");
   });
 
+  test('keeps every text it quotes inside its comment or string, whatever line breaks it holds', () => {
+    const payload = 'x\nrequire("child_process").execSync("id");\r\u2028// y';
+    const draft = renderScenarioDraft({
+      gapTitle: `Cart total ${payload}`,
+      gapClass: 'false-comfort',
+      subject: { kind: 'route', key: `POST /api/${payload}` },
+      nearestTest: { title: `pays ${payload}`, feature: `Checkout ${payload}`, priority: null, location: 'a.spec.ts' },
+      path: [gotoStep(`/shop/${payload}/:id`)],
+      catalogMethods: [{ module: `./pages/${payload}`, name: 'pay', receiver: null }],
+      evidence: [`seen ${payload}`],
+    });
+    const str = String.raw`'(?:[^'\\\r\n\u2028\u2029]|\\.)*'`;
+    const skeleton = [
+      /^$/,
+      /^ *\/\/ /,
+      /^import \{ test, expect \} from '@playwright\/test';$/,
+      new RegExp(`^test\\(${str}, \\{$`),
+      new RegExp(
+        `^  annotation: \\[\\{ type: ${str}, description: ${str} \\}(, \\{ type: ${str}, description: ${str} \\})*\\],$`,
+      ),
+      /^\}, async \(\{ page \}\) => \{$/,
+      /^\}\);$/,
+    ];
+    const lines = draft.text.split(/\r\n|\r|\n|\u2028|\u2029/);
+    expect(lines.filter((line) => !skeleton.some((shape) => shape.test(line)))).toEqual([]);
+    expect(
+      lines
+        .filter((line) => line.includes('child_process'))
+        .every((line) => /^ *\/\/ |^test\(|^  annotation/.test(line)),
+    ).toBe(true);
+  });
+
   test('notes when there is no reachable path', () => {
     const draft = renderScenarioDraft({
       gapTitle: 'x',

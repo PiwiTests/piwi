@@ -4359,9 +4359,24 @@ export function gotoStep(key: string): string {
     : `await page.goto(${q(key)});`;
 }
 
-/** A safe single-quoted string for the generated source. */
+/** How `q` writes each character that would end a single-quoted string or its line. */
+const QUOTED_CHARS: Record<string, string> = {
+  '\\': '\\\\',
+  "'": "\\'",
+  '\n': '\\n',
+  '\r': '\\r',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+/** A single-quoted string for the generated source: no quote, backslash or line break of `s` leaves it. */
 function q(s: string): string {
-  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  return `'${s.replace(/[\\'\n\r\u2028\u2029]/g, (c) => QUOTED_CHARS[c]!)}'`;
+}
+
+/** A `//` comment line of the generated source holding `text`, which no line break of it can leave. */
+function commentLine(text: string, indent = ''): string {
+  return `${indent}// ${text.replace(/[\n\r\u2028\u2029]+/g, ' ')}`;
 }
 
 /** The TODO assertion a gap's class suggests. */
@@ -4390,10 +4405,10 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
   const lines: string[] = [];
   lines.push(`import { test, expect } from '@playwright/test';`);
   lines.push('');
-  lines.push(`// Draft for a ${input.gapClass} gap: ${input.gapTitle}`);
-  for (const e of input.evidence) lines.push(`// ${e}`);
+  lines.push(commentLine(`Draft for a ${input.gapClass} gap: ${input.gapTitle}`));
+  for (const e of input.evidence) lines.push(commentLine(e));
   if (input.nearestTest?.location)
-    lines.push(`// Nearest test: ${input.nearestTest.title} (${input.nearestTest.location})`);
+    lines.push(commentLine(`Nearest test: ${input.nearestTest.title} (${input.nearestTest.location})`));
   lines.push('');
 
   const annotationArg =
@@ -4413,11 +4428,11 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
     lines.push('  // Catalog methods that match this page:');
     for (const m of input.catalogMethods) {
       const recv = m.receiver ? `${m.receiver}.` : '';
-      lines.push(`  // await ${recv}${m.name}(); // from ${m.module}`);
+      lines.push(commentLine(`await ${recv}${m.name}(); // from ${m.module}`, '  '));
     }
   }
 
-  lines.push(`  // ${assertionForClass(input.gapClass, input.subject.key)}`);
+  lines.push(commentLine(assertionForClass(input.gapClass, input.subject.key), '  '));
   lines.push('});');
   lines.push('');
 
